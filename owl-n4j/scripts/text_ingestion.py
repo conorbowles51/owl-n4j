@@ -1,0 +1,48 @@
+"""
+Text Ingestion module - handles .txt file ingestion.
+
+Provides a simple wrapper around the core ingestion logic
+specifically for plain text files.
+"""
+
+from pathlib import Path
+from typing import Dict
+
+from ingestion import ingest_document
+
+
+def ingest_text_file(path: Path) -> Dict:
+    """
+    Ingest a single .txt file into the knowledge graph.
+
+    Args:
+        path: Path to the .txt file
+
+    Returns:
+        Ingestion result dict
+    """
+    doc_name = path.name
+
+    print(f"Reading text file: {path}")
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Try with latin-1 as fallback
+        text = path.read_text(encoding="latin-1")
+
+    if not text.strip():
+        print(f"WARNING: Text file is empty, skipping: {path}")
+        return {"status": "skipped", "reason": "empty", "file": str(path)}
+
+    doc_metadata = {
+        "filename": path.name,
+        "full_path": str(path.resolve()),
+        "source_type": "text",
+    }
+
+    return ingest_document(
+        text=text,
+        doc_name=doc_name,
+        doc_metadata=doc_metadata,
+    )
