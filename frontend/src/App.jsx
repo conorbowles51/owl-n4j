@@ -4,7 +4,8 @@ import {
   MessageSquare, 
   RefreshCw, 
   Loader2,
-  AlertCircle 
+  AlertCircle,
+  Calendar
 } from 'lucide-react';
 import { graphAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -12,11 +13,14 @@ import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
 import ContextMenu from './components/ContextMenu';
 import SearchBar from './components/SearchBar';
+import TimelineView from './components/TimelineView';  
 
 /**
  * Main App Component
  */
 export default function App() {
+  // View mode state
+  const [viewMode, setViewMode] = useState('graph'); // 'graph' or 'timeline'
   // Graph state
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [isLoading, setIsLoading] = useState(true);
@@ -153,6 +157,13 @@ export default function App() {
     setNodeDetails(null);
   }, []);
 
+  // Handle timeline event click
+  const handleTimelineEventClick = useCallback((event) => {
+    // Events have the same structure as nodes for details
+    setSelectedNode(event);
+    loadNodeDetails(event.key);
+  }, [loadNodeDetails]);
+
   // Calculate graph dimensions
   const sidebarWidth = nodeDetails ? 320 : 0;
   const chatWidth = isChatOpen ? 384 : 0;
@@ -171,7 +182,7 @@ export default function App() {
           <h1 className="text-lg font-semibold text-dark-100">
             Investigation Console
           </h1>
-          {graphData.nodes.length > 0 && (
+          {graphData.nodes.length > 0 && viewMode === 'graph' && (
             <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
               {graphData.nodes.length} entities · {graphData.links.length} relationships
             </span>
@@ -179,6 +190,32 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* View Toggle */}
+          <div className="flex items-center bg-dark-900 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('graph')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                viewMode === 'graph'
+                  ? 'bg-dark-700 text-dark-100'
+                  : 'text-dark-400 hover:text-dark-200'
+              }`}
+            >
+              <Network className="w-4 h-4" />
+              Graph
+            </button>
+            <button
+              onClick={() => setViewMode('timeline')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                viewMode === 'timeline'
+                  ? 'bg-dark-700 text-dark-100'
+                  : 'text-dark-400 hover:text-dark-200'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Timeline
+            </button>
+          </div>
+
           <SearchBar onSelectNode={handleSearchSelect} />
           
           <button
@@ -206,38 +243,47 @@ export default function App() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Graph area */}
+        {/* Main view area */}
         <div className="flex-1 relative">
-          {isLoading && graphData.nodes.length === 0 ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-3">
-                <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-                <span className="text-dark-400">Loading graph...</span>
+          {viewMode === 'graph' ? (
+            // Graph View
+            isLoading && graphData.nodes.length === 0 ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                  <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+                  <span className="text-dark-400">Loading graph...</span>
+                </div>
               </div>
-            </div>
-          ) : error ? (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="flex flex-col items-center gap-3 text-center">
-                <AlertCircle className="w-8 h-8 text-red-400" />
-                <span className="text-dark-200">Failed to load graph</span>
-                <span className="text-dark-400 text-sm">{error}</span>
-                <button
-                  onClick={loadGraph}
-                  className="mt-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-200 transition-colors"
-                >
-                  Retry
-                </button>
+            ) : error ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <AlertCircle className="w-8 h-8 text-red-400" />
+                  <span className="text-dark-200">Failed to load graph</span>
+                  <span className="text-dark-400 text-sm">{error}</span>
+                  <button
+                    onClick={loadGraph}
+                    className="mt-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-200 transition-colors"
+                  >
+                    Retry
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <GraphView
+                graphData={graphData}
+                selectedNode={selectedNode}
+                onNodeClick={handleNodeClick}
+                onNodeRightClick={handleNodeRightClick}
+                onBackgroundClick={handleBackgroundClick}
+                width={graphWidth}
+                height={graphHeight}
+              />
+            )
           ) : (
-            <GraphView
-              graphData={graphData}
-              selectedNode={selectedNode}
-              onNodeClick={handleNodeClick}
-              onNodeRightClick={handleNodeRightClick}
-              onBackgroundClick={handleBackgroundClick}
-              width={graphWidth}
-              height={graphHeight}
+            // Timeline View
+            <TimelineView
+              onSelectEvent={handleTimelineEventClick}
+              selectedEvent={selectedNode}
             />
           )}
         </div>
