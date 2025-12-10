@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 # Environment loading
 # ---------------------------------------------------------------------------
 
-BASE_DIR = Path(__file__).resolve().parents[1]
+BASE_DIR = Path(__file__).resolve().parents[2]
 ENV_PATH = BASE_DIR / ".env"
 
 if ENV_PATH.exists():
@@ -27,11 +27,10 @@ NEO4J_USER = os.getenv("NEO4J_USER")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 # ---------------------------------------------------------------------------
-# LLM Configuration (Ollama)
+# LLM Configuration (OpenAI)
 # ---------------------------------------------------------------------------
 
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
 
 # ---------------------------------------------------------------------------
 # Chunking Configuration

@@ -22,7 +22,7 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
 # Ollama Configuration
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 
 # API Configuration
 API_HOST = os.getenv("API_HOST", "0.0.0.0")

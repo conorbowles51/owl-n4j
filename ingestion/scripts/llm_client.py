@@ -8,11 +8,10 @@ Provides functions for:
 """
 from openai import OpenAI
 
-from typing import Any, Dict, Optional
-import requests
+from typing import Dict, Optional
 import json
 
-from config import LLM_BASE_URL, LLM_MODEL, ENTITY_TYPES, RELATIONSHIP_TYPES
+from config import OPENAI_MODEL, ENTITY_TYPES, RELATIONSHIP_TYPES
 
 client = OpenAI()
 
@@ -36,7 +35,7 @@ def call_llm(
     """
 
     kwargs = {
-        "model": LLM_MODEL,
+        "model": OPENAI_MODEL,
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -48,9 +47,7 @@ def call_llm(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    print(prompt)
     response = client.chat.completions.create(**kwargs)
-    print(response)
 
     # Extract content
     return response.choices[0].message.content
@@ -152,7 +149,7 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
   ]
 }}
 """
-    print(prompt)
+    
     response = call_llm(prompt, json_mode=True)
     return parse_json_response(response)
 
