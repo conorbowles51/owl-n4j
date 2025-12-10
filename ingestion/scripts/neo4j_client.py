@@ -182,7 +182,10 @@ class Neo4jClient:
         entity_type: str,
         name: str,
         notes: str,
-        summary: str,
+        summary: Optional[str] = None,
+        date: Optional[str] = None,
+        time: Optional[str] = None,
+        amount: Optional[str] = None,
         extra_props: Optional[Dict] = None,
     ) -> str:
         """
@@ -194,6 +197,9 @@ class Neo4jClient:
             name: Human-readable name
             notes: Initial notes text
             summary: Initial summary
+            date: Event date (YYYY-MM-DD) for event-type entities
+            time: Event time (HH:MM) for event-type entities
+            amount: Transaction amount for financial entities
             extra_props: Additional properties to set
 
         Returns:
@@ -206,8 +212,17 @@ class Neo4jClient:
             "key": key,
             "name": name,
             "notes": notes,
-            "summary": summary,
         }
+
+        # Add optional properties if provided
+        if summary:
+            props["summary"] = summary
+        if date:
+            props["date"] = date
+        if time:
+            props["time"] = time
+        if amount:
+            props["amount"] = amount
 
         if extra_props:
             props.update(extra_props)
