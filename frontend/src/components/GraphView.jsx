@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-
+import { Settings } from "lucide-react"
 /**
  * Color palette for entity types
  */
@@ -45,6 +45,12 @@ export default function GraphView({
   const graphRef = useRef();
   const [hoveredNode, setHoveredNode] = useState(null);
 
+  // Force simulation controls
+  const [showControls, setShowControls] = useState(false);
+  const [linkDistance, setLinkDistance] = useState(200);
+  const [chargeStrength, setChargeStrength] = useState(-500);
+  const [centerStrength, setCenterStrength] = useState(0.05);
+
   // Center graph on mount
   useEffect(() => {
     if (graphRef.current && graphData.nodes.length > 0) {
@@ -53,6 +59,24 @@ export default function GraphView({
       }, 500);
     }
   }, [graphData]);
+
+  // Apply force simulation settings
+  useEffect(() => {
+    if (graphRef.current) {
+      const fg = graphRef.current;
+      
+      const linkForce = fg.d3Force('link');
+      if (linkForce) linkForce.distance(linkDistance);
+      
+      const chargeForce = fg.d3Force('charge');
+      if (chargeForce) chargeForce.strength(chargeStrength);
+      
+      const centerForce = fg.d3Force('center');
+      if (centerForce) centerForce.strength(centerStrength);
+      
+      fg.d3ReheatSimulation();
+    }
+  }, [graphData, linkDistance, chargeStrength, centerStrength]);
 
   // Node canvas rendering
   const paintNode = useCallback((node, ctx, globalScale) => {
@@ -195,6 +219,84 @@ export default function GraphView({
           ))}
         </div>
       </div>
+
+      {/* Force Controls Toggle */}
+      <button
+        onClick={() => setShowControls(!showControls)}
+        className="absolute top-4 left-4 p-2 bg-dark-800/90 hover:bg-dark-700 rounded-lg transition-colors"
+        title="Graph Settings"
+      >
+        <Settings className={`w-5 h-5 ${showControls ? 'text-cyan-400' : 'text-dark-400'}`} />
+      </button>
+
+      {/* Force Controls Panel */}
+      {showControls && (
+        <div className="absolute top-14 left-4 bg-dark-800/95 rounded-lg p-4 text-sm w-64 space-y-4">
+          <div className="font-medium text-dark-200 border-b border-dark-700 pb-2">
+            Graph Layout
+          </div>
+          
+          {/* Link Distance */}
+          <div>
+            <div className="flex justify-between text-xs text-dark-400 mb-1">
+              <span>Link Distance</span>
+              <span>{linkDistance}</span>
+            </div>
+            <input
+              type="range"
+              min="20"
+              max="500"
+              value={linkDistance}
+              onChange={(e) => setLinkDistance(Number(e.target.value))}
+              className="w-full accent-cyan-500"
+            />
+          </div>
+          
+          {/* Charge Strength */}
+          <div>
+            <div className="flex justify-between text-xs text-dark-400 mb-1">
+              <span>Repulsion</span>
+              <span>{Math.abs(chargeStrength)}</span>
+            </div>
+            <input
+              type="range"
+              min="20"
+              max="1500"
+              value={Math.abs(chargeStrength)}
+              onChange={(e) => setChargeStrength(-Number(e.target.value))}
+              className="w-full accent-cyan-500"
+            />
+          </div>
+          
+          {/* Center Strength */}
+          <div>
+            <div className="flex justify-between text-xs text-dark-400 mb-1">
+              <span>Center Pull</span>
+              <span>{centerStrength.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={centerStrength * 1000}
+              onChange={(e) => setCenterStrength(Number(e.target.value) / 1000)}
+              className="w-full accent-cyan-500"
+            />
+          </div>
+          
+          {/* Reset Button */}
+          <button
+            onClick={() => {
+              setLinkDistance(200);
+              setChargeStrength(-500);
+              setCenterStrength(0.05);
+            }}
+            className="w-full py-1.5 bg-dark-700 hover:bg-dark-600 rounded text-dark-300 text-xs transition-colors"
+          >
+            Reset to Defaults
+          </button>
+        </div>
+      )}
     </div>
   );
 }
