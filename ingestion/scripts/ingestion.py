@@ -137,12 +137,20 @@ def process_chunk(
                 related_entities=None,
             )
 
+            # Extract event properties (date, time, amount)
+            date = ent.get("date")
+            time = ent.get("time")
+            amount = ent.get("amount")
+
             db.create_entity(
                 key=key,
                 entity_type=entity_type,
                 name=name,
                 notes=initial_notes,
                 summary=initial_summary,
+                date=date,
+                time=time,
+                amount=amount
             )
 
             # Add to existing keys for subsequent chunks

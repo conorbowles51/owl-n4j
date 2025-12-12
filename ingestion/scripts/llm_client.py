@@ -121,6 +121,7 @@ For each entity, provide:
 - type: One of [{entity_types_str}]
 - name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
 - notes: What role does this entity play in THIS document? What is relevant about them here?
+- date: (REQUIRED for event types: Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting) The date of the event in YYYY-MM-DD format if mentioned in the text, otherwise null
 
 For each relationship, provide:
 - from_key: The key of the source entity
@@ -136,7 +137,10 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
       "key": "string",
       "type": "string",
       "name": "string",
-      "notes": "string"
+      "notes": "string",
+      "date": "string or null (YYYY-MM-DD format, REQUIRED for event types)",
+      "time": "string or null (HH:MM format)",
+      "amount": "string or null (e.g., '$50,000')"
     }}
   ],
   "relationships": [
@@ -148,6 +152,8 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
     }}
   ]
 }}
+
+IMPORTANT: For event-type entities (Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting), you MUST look for dates in the text. Convert any date format (e.g., "March 15, 2024", "15/03/2024", "3-15-24") to YYYY-MM-DD format.
 """
     
     response = call_llm(prompt, json_mode=True)
