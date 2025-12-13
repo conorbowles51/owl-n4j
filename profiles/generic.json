@@ -1,0 +1,21 @@
+{
+  "name": "generic",
+  "description": "General purpose knowledge extraction",
+  
+  "ingestion": {
+    "system_context": "You are an assistant helping to extract structured information from documents.",
+    "entity_types": [
+      "Person", "Organisation", "Location", "Event", "Date",
+      "Document", "Concept", "Product", "Other"
+    ],
+    "relationship_types": [
+      "RELATED_TO", "ASSOCIATED_WITH", "PART_OF", "LOCATED_IN",
+      "WORKS_FOR", "CREATED_BY", "OCCURRED_ON"
+    ]
+  },
+  
+  "chat": {
+    "system_context": "You are an AI assistant helping to analyze and understand documents.",
+    "analysis_guidance": "Provide clear explanations and highlight important connections."
+  }
+}

@@ -7,11 +7,15 @@ import requests
 import json
 
 from config import OPENAI_MODEL
+from profile_loader import get_chat_config
 
 from openai import OpenAI
 
 client = OpenAI()
 
+config = get_chat_config()
+system_context = config.get("system_context", "You are an AI assistant.")
+analysis_guidance = config.get("analysis_guidance", "Provide clear and helpful answers.")
 
 class LLMService:
     """Service for LLM interactions via llm."""
@@ -51,29 +55,11 @@ class LLMService:
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
 
+        print(prompt)
         response = client.chat.completions.create(**kwargs)
 
         # Extract content
         return response.choices[0].message.content
-    
-        url = f"{self.base_url.rstrip('/')}/api/generate"
-
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": temperature,
-            },
-        }
-
-        if json_mode:
-            payload["format"] = "json"
-
-        resp = requests.post(url, json=payload, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("response", "")
 
     def parse_json_response(self, response_text: str) -> Dict:
         """
@@ -103,8 +89,8 @@ class LLMService:
         Returns:
             Cypher query string or None if generation failed
         """
-        prompt = f"""You are a Neo4j Cypher expert helping with fraud investigations.
 
+        prompt = f"""{system_context}. You are also a Neo4j Cypher expert.        
 Given the following graph schema and AVAILABLE ENTITIES:
 {schema_info}
 
@@ -156,6 +142,7 @@ Return ONLY valid JSON with this structure:
         Returns:
             Answer text
         """
+
         query_section = ""
         if query_results:
             query_section = f"""
@@ -163,7 +150,7 @@ Query Results:
 {query_results}
 """
 
-        prompt = f"""You are an AI assistant helping fraud investigators analyze a case.
+        prompt = f"""{system_context}
 
 You have access to the following information from the investigation graph:
 
@@ -174,6 +161,7 @@ Based on this information, please answer the investigator's question:
 "{question}"
 
 Guidelines:
+- {analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
 - Be specific and cite entity names when relevant
