@@ -1,0 +1,428 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Calendar, 
+  Clock, 
+  DollarSign, 
+  ChevronDown, 
+  ChevronRight,
+  Filter,
+  Loader2,
+  AlertCircle
+} from 'lucide-react';
+import { timelineAPI } from '../services/api';
+
+/**
+ * Color palette for event types (matches GraphView)
+ */
+const TYPE_COLORS = {
+  Transaction: '#06b6d4',  // cyan
+  Transfer: '#14b8a6',     // teal
+  Payment: '#84cc16',      // lime
+  Communication: '#f97316', // orange
+  Email: '#f97316',        // orange
+  PhoneCall: '#a855f7',    // purple
+  Meeting: '#eab308',      // yellow
+  Other: '#6b7280',        // gray
+};
+
+/**
+ * Format date for display
+ */
+function formatDate(dateStr) {
+  if (!dateStr) return 'Unknown date';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+/**
+ * Format time for display
+ */
+function formatTime(timeStr) {
+  if (!timeStr) return null;
+  return timeStr;
+}
+
+/**
+ * Group events by date
+ */
+function groupEventsByDate(events) {
+  const groups = {};
+  
+  events.forEach(event => {
+    const date = event.date || 'unknown';
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    groups[date].push(event);
+  });
+  
+  // Sort dates (newest first or oldest first based on preference)
+  const sortedDates = Object.keys(groups).sort((a, b) => {
+    if (a === 'unknown') return 1;
+    if (b === 'unknown') return -1;
+    return a.localeCompare(b); // Oldest first
+  });
+  
+  return sortedDates.map(date => ({
+    date,
+    events: groups[date],
+  }));
+}
+
+/**
+ * Single Event Card
+ */
+function EventCard({ event, onSelect, isSelected }) {
+  const color = TYPE_COLORS[event.type] || TYPE_COLORS.Other;
+  
+  return (
+    <button
+      onClick={() => onSelect(event)}
+      className={`w-full text-left p-3 rounded-lg transition-all ${
+        isSelected 
+          ? 'bg-dark-700 ring-2 ring-cyan-500' 
+          : 'bg-dark-800 hover:bg-dark-700'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        {/* Type indicator */}
+        <div 
+          className="w-3 h-3 rounded-full mt-1.5 flex-shrink-0"
+          style={{ backgroundColor: color }}
+        />
+        
+        <div className="flex-1 min-w-0">
+          {/* Header */}
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-medium text-dark-100 truncate">
+              {event.name}
+            </span>
+            <span 
+              className="text-xs px-2 py-0.5 rounded flex-shrink-0"
+              style={{ backgroundColor: `${color}20`, color }}
+            >
+              {event.type}
+            </span>
+          </div>
+          
+          {/* Time and Amount */}
+          <div className="flex items-center gap-3 mt-1 text-xs text-dark-400">
+            {event.time && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {formatTime(event.time)}
+              </span>
+            )}
+            {event.amount && (
+              <span className="flex items-center gap-1">
+                <DollarSign className="w-3 h-3" />
+                {event.amount}
+              </span>
+            )}
+          </div>
+          
+          {/* Connected entities */}
+          {event.connections && event.connections.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {event.connections.slice(0, 3).map((conn, idx) => (
+                <span 
+                  key={idx}
+                  className="text-xs bg-dark-900 text-dark-300 px-2 py-0.5 rounded"
+                >
+                  {conn.name}
+                </span>
+              ))}
+              {event.connections.length > 3 && (
+                <span className="text-xs text-dark-500">
+                  +{event.connections.length - 3} more
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Date Group Header
+ */
+function DateHeader({ date, eventCount, isExpanded, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-3 py-2 text-left group"
+    >
+      <div className="flex items-center justify-center w-6 h-6 rounded bg-dark-700 group-hover:bg-dark-600 transition-colors">
+        {isExpanded ? (
+          <ChevronDown className="w-4 h-4 text-dark-400" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-dark-400" />
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <Calendar className="w-4 h-4 text-dark-400" />
+        <span className="font-medium text-dark-200">
+          {formatDate(date)}
+        </span>
+        <span className="text-xs text-dark-500 bg-dark-700 px-2 py-0.5 rounded">
+          {eventCount} event{eventCount !== 1 ? 's' : ''}
+        </span>
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Filter Panel
+ */
+function FilterPanel({ eventTypes, selectedTypes, onToggleType, onSelectAll, onClearAll }) {
+  return (
+    <div className="bg-dark-800 rounded-lg p-3 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 text-sm text-dark-300">
+          <Filter className="w-4 h-4" />
+          <span>Filter by type</span>
+        </div>
+        <div className="flex gap-2">
+          <button 
+            onClick={onSelectAll}
+            className="text-xs text-dark-400 hover:text-dark-200"
+          >
+            All
+          </button>
+          <span className="text-dark-600">|</span>
+          <button 
+            onClick={onClearAll}
+            className="text-xs text-dark-400 hover:text-dark-200"
+          >
+            None
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {eventTypes.map(type => {
+          const isSelected = selectedTypes.has(type);
+          const color = TYPE_COLORS[type] || TYPE_COLORS.Other;
+          return (
+            <button
+              key={type}
+              onClick={() => onToggleType(type)}
+              className={`text-xs px-2 py-1 rounded transition-all ${
+                isSelected 
+                  ? 'opacity-100' 
+                  : 'opacity-40'
+              }`}
+              style={{ 
+                backgroundColor: `${color}20`, 
+                color,
+                border: `1px solid ${isSelected ? color : 'transparent'}`
+              }}
+            >
+              {type}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * TimelineView Component
+ * 
+ * Displays events in chronological order with swimlanes by type
+ */
+export default function TimelineView({ onSelectEvent, selectedEvent }) {
+  const [events, setEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [expandedDates, setExpandedDates] = useState(new Set());
+  const [selectedTypes, setSelectedTypes] = useState(new Set());
+  
+  // Available event types
+  const eventTypes = useMemo(() => {
+    const types = new Set();
+    events.forEach(e => types.add(e.type));
+    return Array.from(types).sort();
+  }, [events]);
+
+  // Initialize selected types when events load
+  useEffect(() => {
+    if (eventTypes.length > 0 && selectedTypes.size === 0) {
+      setSelectedTypes(new Set(eventTypes));
+    }
+  }, [eventTypes]);
+
+  // Load timeline data
+  useEffect(() => {
+    async function loadTimeline() {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await timelineAPI.getEvents();
+        setEvents(data.events || []);
+        
+        // Expand all dates by default
+        const dates = new Set(data.events?.map(e => e.date || 'unknown') || []);
+        setExpandedDates(dates);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    loadTimeline();
+  }, []);
+
+  // Filter events by selected types
+  const filteredEvents = useMemo(() => {
+    if (selectedTypes.size === 0) return events;
+    return events.filter(e => selectedTypes.has(e.type));
+  }, [events, selectedTypes]);
+
+  // Group filtered events by date
+  const groupedEvents = useMemo(() => {
+    return groupEventsByDate(filteredEvents);
+  }, [filteredEvents]);
+
+  // Toggle date expansion
+  const toggleDate = (date) => {
+    setExpandedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+      } else {
+        next.add(date);
+      }
+      return next;
+    });
+  };
+
+  // Toggle event type filter
+  const toggleType = (type) => {
+    setSelectedTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+
+  // Select all types
+  const selectAllTypes = () => {
+    setSelectedTypes(new Set(eventTypes));
+  };
+
+  // Clear all types
+  const clearAllTypes = () => {
+    setSelectedTypes(new Set());
+  };
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-dark-950">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+          <span className="text-dark-400">Loading timeline...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center bg-dark-950">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <AlertCircle className="w-8 h-8 text-red-400" />
+          <span className="text-dark-200">Failed to load timeline</span>
+          <span className="text-dark-400 text-sm">{error}</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state
+  if (events.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center bg-dark-950">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <Calendar className="w-12 h-12 text-dark-600" />
+          <span className="text-dark-200">No timeline events found</span>
+          <span className="text-dark-400 text-sm">
+            Events need a date property to appear on the timeline
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full bg-dark-950 overflow-hidden flex flex-col">
+      {/* Header */}
+      <div className="p-4 border-b border-dark-700 bg-dark-900">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-cyan-400" />
+            <h2 className="font-semibold text-dark-100">Timeline</h2>
+            <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
+              {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-y-auto p-4">
+        {/* Filters */}
+        {eventTypes.length > 1 && (
+          <FilterPanel
+            eventTypes={eventTypes}
+            selectedTypes={selectedTypes}
+            onToggleType={toggleType}
+            onSelectAll={selectAllTypes}
+            onClearAll={clearAllTypes}
+          />
+        )}
+
+        {/* Timeline */}
+        <div className="space-y-2">
+          {groupedEvents.map(({ date, events: dateEvents }) => (
+            <div key={date} className="border-l-2 border-dark-700 pl-4">
+              <DateHeader
+                date={date}
+                eventCount={dateEvents.length}
+                isExpanded={expandedDates.has(date)}
+                onToggle={() => toggleDate(date)}
+              />
+              
+              {expandedDates.has(date) && (
+                <div className="space-y-2 mt-2 mb-4">
+                  {dateEvents.map(event => (
+                    <EventCard
+                      key={event.key}
+                      event={event}
+                      onSelect={onSelectEvent}
+                      isSelected={selectedEvent?.key === event.key}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

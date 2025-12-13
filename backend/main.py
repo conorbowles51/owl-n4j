@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import API_HOST, API_PORT, CORS_ORIGINS
-from routers import graph_router, chat_router, query_router
+from routers import graph_router, chat_router, query_router, timeline_router
 from services.neo4j_service import neo4j_service
 
 
@@ -44,6 +44,7 @@ app.add_middleware(
 app.include_router(graph_router)
 app.include_router(chat_router)
 app.include_router(query_router)
+app.include_router(timeline_router)
 
 
 @app.get("/")

@@ -1,20 +1,23 @@
 """
-LLM Service - handles all Ollama API interactions for the investigation console.
+LLM Service - handles all AI API interactions for the investigation console.
 """
 
 from typing import Dict, Any, Optional
 import requests
 import json
 
-from config import LLM_BASE_URL, LLM_MODEL
+from config import OPENAI_MODEL
+
+from openai import OpenAI
+
+client = OpenAI()
 
 
 class LLMService:
-    """Service for LLM interactions via Ollama."""
+    """Service for LLM interactions via llm."""
 
     def __init__(self):
-        self.base_url = LLM_BASE_URL
-        self.model = LLM_MODEL
+        self.model = OPENAI_MODEL
 
     def call(
         self,
@@ -35,6 +38,24 @@ class LLMService:
         Returns:
             Model response text
         """
+        kwargs = {
+            "model": OPENAI_MODEL,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": temperature,
+            "timeout": timeout,
+        }
+
+        # Force JSON response if requested
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(**kwargs)
+
+        # Extract content
+        return response.choices[0].message.content
+    
         url = f"{self.base_url.rstrip('/')}/api/generate"
 
         payload: Dict[str, Any] = {

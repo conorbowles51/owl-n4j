@@ -108,3 +108,30 @@ export const queryAPI = {
       }),
     }),
 };
+
+/**
+ * Timeline API
+ */
+export const timelineAPI = {
+  /**
+   * Get timeline events
+   * @param {Object} options - Filter options
+   * @param {string} options.types - Comma-separated event types
+   * @param {string} options.startDate - Filter start date (YYYY-MM-DD)
+   * @param {string} options.endDate - Filter end date (YYYY-MM-DD)
+   */
+  getEvents: ({ types, startDate, endDate } = {}) => {
+    const params = new URLSearchParams();
+    if (types) params.append('types', types);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    
+    const queryString = params.toString();
+    return fetchAPI(`/timeline${queryString ? `?${queryString}` : ''}`);
+  },
+
+  /**
+   * Get available event types
+   */
+  getEventTypes: () => fetchAPI('/timeline/types'),
+};

@@ -8,11 +8,10 @@ Provides functions for:
 """
 from openai import OpenAI
 
-from typing import Any, Dict, Optional
-import requests
+from typing import Dict, Optional
 import json
 
-from config import LLM_BASE_URL, LLM_MODEL, ENTITY_TYPES, RELATIONSHIP_TYPES
+from config import OPENAI_MODEL, ENTITY_TYPES, RELATIONSHIP_TYPES
 
 client = OpenAI()
 
@@ -36,7 +35,7 @@ def call_llm(
     """
 
     kwargs = {
-        "model": LLM_MODEL,
+        "model": OPENAI_MODEL,
         "messages": [
             {"role": "user", "content": prompt}
         ],
@@ -48,9 +47,7 @@ def call_llm(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    # print(prompt)
     response = client.chat.completions.create(**kwargs)
-    # print(response)
 
     # Extract content
     return response.choices[0].message.content
@@ -124,6 +121,7 @@ For each entity, provide:
 - type: One of [{entity_types_str}]
 - name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
 - notes: What role does this entity play in THIS document? What is relevant about them here?
+- date: (REQUIRED for event types: Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting) The date of the event in YYYY-MM-DD format if mentioned in the text, otherwise null
 
 For each relationship, provide:
 - from_key: The key of the source entity
@@ -139,7 +137,10 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
       "key": "string",
       "type": "string",
       "name": "string",
-      "notes": "string"
+      "notes": "string",
+      "date": "string or null (YYYY-MM-DD format, REQUIRED for event types)",
+      "time": "string or null (HH:MM format)",
+      "amount": "string or null (e.g., '$50,000')"
     }}
   ],
   "relationships": [
@@ -151,8 +152,10 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
     }}
   ]
 }}
+
+IMPORTANT: For event-type entities (Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting), you MUST look for dates in the text. Convert any date format (e.g., "March 15, 2024", "15/03/2024", "3-15-24") to YYYY-MM-DD format.
 """
-    print(prompt)
+    
     response = call_llm(prompt, json_mode=True)
     return parse_json_response(response)
 

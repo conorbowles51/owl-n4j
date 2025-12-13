@@ -377,6 +377,93 @@ class Neo4jService:
         with self._driver.session() as session:
             result = session.run(query, params or {})
             return [dict(r) for r in result]
+        
+
+    def get_timeline_events(
+        self,
+        event_types: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> List[Dict]:
+        """
+        Get all event-type nodes that have dates, sorted chronologically.
+        
+        Args:
+            event_types: Filter by specific types (e.g., ['Transaction', 'Payment']).
+                        If None, returns all event types.
+            start_date: Filter events on or after this date (YYYY-MM-DD)
+            end_date: Filter events on or before this date (YYYY-MM-DD)
+        
+        Returns:
+            List of event nodes with their connected entities, sorted by date
+        """
+        # Default event types that belong on a timeline
+        default_event_types = [
+            'Transaction', 'Transfer', 'Payment', 
+            'Communication', 'Email', 'PhoneCall', 'Meeting'
+        ]
+        
+        types_to_query = event_types if event_types else default_event_types
+        
+        with self._driver.session() as session:
+            # Build date filter conditions
+            date_conditions = []
+            params = {"types": types_to_query}
+            
+            if start_date:
+                date_conditions.append("n.date >= $start_date")
+                params["start_date"] = start_date
+            if end_date:
+                date_conditions.append("n.date <= $end_date")
+                params["end_date"] = end_date
+            
+            date_filter = " AND " + " AND ".join(date_conditions) if date_conditions else ""
+            
+            query = f"""
+                MATCH (n)
+                WHERE labels(n)[0] IN $types
+                AND n.date IS NOT NULL
+                {date_filter}
+                OPTIONAL MATCH (n)-[r]-(connected)
+                WHERE NOT connected:Document AND NOT connected:Case
+                WITH n, collect(DISTINCT {{
+                    key: connected.key,
+                    name: connected.name,
+                    type: labels(connected)[0],
+                    relationship: type(r),
+                    direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
+                }}) AS connections
+                RETURN 
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.date AS date,
+                    n.time AS time,
+                    n.amount AS amount,
+                    n.summary AS summary,
+                    n.notes AS notes,
+                    connections
+                ORDER BY n.date ASC, n.time ASC
+            """
+            
+            result = session.run(query, **params)
+            
+            events = []
+            for record in result:
+                event = {
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "date": record["date"],
+                    "time": record["time"],
+                    "amount": record["amount"],
+                    "summary": record["summary"],
+                    "notes": record["notes"],
+                    "connections": [c for c in record["connections"] if c["key"]],
+                }
+                events.append(event)
+            
+            return events
 
 
 # Singleton instance
