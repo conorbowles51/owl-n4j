@@ -185,11 +185,25 @@ export default function App() {
     });
   }, []);
 
-  // Handle background click - clear selection
+  // Handle background click - clear selection (only for main graph)
   const handleBackgroundClick = useCallback(() => {
     setSelectedNodes([]);
     setSelectedNodesDetails([]);
     setContextMenu(null);
+  }, []);
+
+  // Handle subgraph background click - don't clear selection
+  const handleSubgraphBackgroundClick = useCallback(() => {
+    // Do nothing - don't clear selection when clicking background in subgraph
+    setContextMenu(null);
+  }, []);
+
+  // Handle subgraph node click - don't replace selection, preserve all selected nodes
+  const handleSubgraphNodeClick = useCallback((node, event) => {
+    // In subgraph, nodes are already selected, so clicking should not change the selection
+    // Just close context menu if open
+    setContextMenu(null);
+    // Don't modify selectedNodes - keep all selected nodes intact
   }, []);
 
   // Handle show details from context menu
@@ -762,14 +776,15 @@ export default function App() {
                         ref={subgraphGraphRef}
                         graphData={subgraphData}
                         selectedNodes={selectedNodes}
-                        onNodeClick={handleNodeClick}
+                        onNodeClick={handleSubgraphNodeClick}
                         onBulkNodeSelect={handleBulkNodeSelect}
                         onNodeRightClick={handleNodeRightClick}
-                        onBackgroundClick={handleBackgroundClick}
+                        onBackgroundClick={handleSubgraphBackgroundClick}
                         width={graphWidth}
                         height={graphHeight}
                         paneViewMode={paneViewMode}
                         onPaneViewModeChange={setPaneViewMode}
+                        isSubgraph={true}
                       />
                     </>
                   ) : (

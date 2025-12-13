@@ -45,6 +45,7 @@ const GraphView = forwardRef(function GraphView({
   showCenterButton = true, // Show center button by default
   paneViewMode, // 'single' or 'split'
   onPaneViewModeChange, // Callback to change pane view mode
+  isSubgraph = false, // Whether this is the subgraph view
 }, ref) {
   const graphRef = useRef();
   const containerRef = useRef();
@@ -208,7 +209,7 @@ const GraphView = forwardRef(function GraphView({
     ctx.fillText(displayLabel, node.x, node.y + nodeRadius + 2);
   }, [selectedNodes, hoveredNode]);
 
-  // Link rendering
+  // Link rendering - simple version that works
   const paintLink = useCallback((link, ctx, globalScale) => {
     const start = link.source;
     const end = link.target;
@@ -231,6 +232,7 @@ const GraphView = forwardRef(function GraphView({
     // Position arrow before the node
     const nodeRadius = 8;
     const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist === 0) return; // Avoid division by zero
     const arrowX = start.x + (dx / dist) * (dist - nodeRadius - 2);
     const arrowY = start.y + (dy / dist) * (dist - nodeRadius - 2);
 
