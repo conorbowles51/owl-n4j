@@ -48,9 +48,9 @@ def call_llm(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
-    print(prompt)
+    # print(prompt)
     response = client.chat.completions.create(**kwargs)
-    print(response)
+    # print(response)
 
     # Extract content
     return response.choices[0].message.content
