@@ -5,19 +5,24 @@ LLM Service - handles all AI API interactions for the investigation console.
 from typing import Dict, Any, Optional
 import requests
 import json
+import os
 
-from config import OPENAI_MODEL
+from config import OPENAI_MODEL, LLM_BASE_URL
 
-from openai import OpenAI
-
-client = OpenAI()
+# Conditionally initialize OpenAI client only if API key is provided
+openai_client = None
+if os.getenv("OPENAI_API_KEY"):
+    from openai import OpenAI
+    openai_client = OpenAI()
 
 
 class LLMService:
-    """Service for LLM interactions via llm."""
+    """Service for LLM interactions via Ollama or OpenAI."""
 
     def __init__(self):
-        self.model = OPENAI_MODEL
+        self.model = OPENAI_MODEL or "llama2"  # Default model if not set
+        self.base_url = LLM_BASE_URL
+        self.use_openai = openai_client is not None and OPENAI_MODEL is not None
 
     def call(
         self,
@@ -27,7 +32,7 @@ class LLMService:
         timeout: int = 180,
     ) -> str:
         """
-        Call the Ollama LLM.
+        Call the LLM (either Ollama or OpenAI).
 
         Args:
             prompt: The prompt to send
@@ -38,42 +43,43 @@ class LLMService:
         Returns:
             Model response text
         """
-        kwargs = {
-            "model": OPENAI_MODEL,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": temperature,
-            "timeout": timeout,
-        }
-
-        # Force JSON response if requested
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-
-        response = client.chat.completions.create(**kwargs)
-
-        # Extract content
-        return response.choices[0].message.content
-    
-        url = f"{self.base_url.rstrip('/')}/api/generate"
-
-        payload: Dict[str, Any] = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
+        if self.use_openai:
+            # Use OpenAI API
+            kwargs = {
+                "model": OPENAI_MODEL,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
                 "temperature": temperature,
-            },
-        }
+                "timeout": timeout,
+            }
 
-        if json_mode:
-            payload["format"] = "json"
+            # Force JSON response if requested
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
 
-        resp = requests.post(url, json=payload, timeout=timeout)
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("response", "")
+            response = openai_client.chat.completions.create(**kwargs)
+            return response.choices[0].message.content
+        else:
+            # Use Ollama API
+            url = f"{self.base_url.rstrip('/')}/api/generate"
+
+            payload: Dict[str, Any] = {
+                "model": self.model,
+                "prompt": prompt,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                },
+            }
+
+            if json_mode:
+                payload["format"] = "json"
+
+            resp = requests.post(url, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("response", "")
 
     def parse_json_response(self, response_text: str) -> Dict:
         """

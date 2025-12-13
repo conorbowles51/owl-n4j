@@ -5,7 +5,9 @@ import {
   RefreshCw, 
   Loader2,
   AlertCircle,
-  Calendar
+  Calendar,
+  Layout,
+  X
 } from 'lucide-react';
 import { graphAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -35,6 +37,9 @@ export default function App() {
 
   // Chat panel state
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Pane view state (single or split)
+  const [paneViewMode, setPaneViewMode] = useState('single'); // 'single' or 'split'
 
   // Dimensions
   const [dimensions, setDimensions] = useState({
@@ -167,7 +172,8 @@ export default function App() {
   // Calculate graph dimensions
   const sidebarWidth = nodeDetails ? 320 : 0;
   const chatWidth = isChatOpen ? 384 : 0;
-  const graphWidth = dimensions.width - sidebarWidth - chatWidth;
+  const availableWidth = dimensions.width - sidebarWidth - chatWidth;
+  const graphWidth = paneViewMode === 'split' ? availableWidth / 2 : availableWidth;
   const graphHeight = dimensions.height - 64; // Subtract header height
 
   // Get selected nodes for chat context
@@ -255,20 +261,113 @@ export default function App() {
                 </div>
               </div>
             ) : error ? (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <AlertCircle className="w-8 h-8 text-red-400" />
-                  <span className="text-dark-200">Failed to load graph</span>
-                  <span className="text-dark-400 text-sm">{error}</span>
-                  <button
-                    onClick={loadGraph}
-                    className="mt-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-200 transition-colors"
-                  >
-                    Retry
-                  </button>
+              paneViewMode === 'split' ? (
+                // Split panel error view
+                <div className="absolute inset-0 flex">
+                  {/* Left Panel - Error Details */}
+                  <div className="flex-1 flex flex-col items-center justify-center border-r border-dark-700 p-8">
+                    <div className="flex flex-col items-center gap-4 text-center max-w-md">
+                      <AlertCircle className="w-12 h-12 text-red-400" />
+                      <div>
+                        <h2 className="text-lg font-semibold text-dark-200 mb-2">
+                          Failed to load graph
+                        </h2>
+                        <p className="text-dark-400 text-sm mb-4">{error}</p>
+                      </div>
+                      <button
+                        onClick={loadGraph}
+                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm text-white transition-colors"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Right Panel - Fallback/Info */}
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-dark-950">
+                    <div className="flex flex-col items-center gap-4 text-center max-w-md">
+                      <Network className="w-12 h-12 text-dark-600" />
+                      <div>
+                        <h3 className="text-md font-medium text-dark-300 mb-2">
+                          Graph Unavailable
+                        </h3>
+                        <p className="text-dark-500 text-sm">
+                          The graph data could not be loaded. Please check your connection
+                          and ensure the backend API is running.
+                        </p>
+                      </div>
+                      <div className="mt-4 p-4 bg-dark-800 rounded-lg text-left w-full">
+                        <h4 className="text-xs font-semibold text-dark-400 mb-2 uppercase">
+                          Troubleshooting
+                        </h4>
+                        <ul className="text-xs text-dark-500 space-y-1">
+                          <li>• Verify backend is running on port 8000</li>
+                          <li>• Check Neo4j connection</li>
+                          <li>• Review browser console for details</li>
+                          <li>• Try refreshing the page</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Single pane error view
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-3 text-center">
+                    <AlertCircle className="w-8 h-8 text-red-400" />
+                    <span className="text-dark-200">Failed to load graph</span>
+                    <span className="text-dark-400 text-sm">{error}</span>
+                    <button
+                      onClick={loadGraph}
+                      className="mt-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-200 transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
+                </div>
+              )
+            ) : paneViewMode === 'split' ? (
+              // Split panel graph view
+              <div className="absolute inset-0 flex">
+                {/* Left Panel - Graph */}
+                <div className="flex-1 relative border-r border-dark-700">
+                  <GraphView
+                    graphData={graphData}
+                    selectedNode={selectedNode}
+                    onNodeClick={handleNodeClick}
+                    onNodeRightClick={handleNodeRightClick}
+                    onBackgroundClick={handleBackgroundClick}
+                    width={graphWidth}
+                    height={graphHeight}
+                  />
+                </div>
+                
+                {/* Right Panel - Info/Details */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-dark-950">
+                  <div className="flex flex-col items-center gap-4 text-center max-w-md">
+                    <Network className="w-12 h-12 text-cyan-400/50" />
+                    <div>
+                      <h3 className="text-md font-medium text-dark-300 mb-2">
+                        Graph View
+                      </h3>
+                      <p className="text-dark-500 text-sm">
+                        {graphData.nodes.length} entities · {graphData.links.length} relationships
+                      </p>
+                    </div>
+                    {selectedNode && (
+                      <div className="mt-4 p-4 bg-dark-800 rounded-lg text-left w-full">
+                        <h4 className="text-xs font-semibold text-dark-400 mb-2 uppercase">
+                          Selected Node
+                        </h4>
+                        <p className="text-xs text-dark-300">{selectedNode.name || selectedNode.key}</p>
+                        <p className="text-xs text-dark-500 mt-1">Type: {selectedNode.type}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (
+              // Single pane graph view
               <GraphView
                 graphData={graphData}
                 selectedNode={selectedNode}
@@ -285,6 +384,22 @@ export default function App() {
               onSelectEvent={handleTimelineEventClick}
               selectedEvent={selectedNode}
             />
+          )}
+
+          {/* Floating Pane Toggle Button - always visible in graph view, positioned above Entity Types legend */}
+          {viewMode === 'graph' && (
+            <button
+              onClick={() => setPaneViewMode(paneViewMode === 'split' ? 'single' : 'split')}
+              className={`absolute bottom-32 left-4 px-3 py-2 rounded-lg text-xs transition-colors flex items-center gap-2 shadow-lg backdrop-blur-sm z-10 ${
+                paneViewMode === 'split'
+                  ? 'bg-cyan-600/90 hover:bg-cyan-500 text-white'
+                  : 'bg-dark-800/90 hover:bg-dark-700 text-dark-200'
+              }`}
+              title={paneViewMode === 'split' ? 'Switch to single pane view' : 'Switch to split pane view'}
+            >
+              <Layout className="w-4 h-4" />
+              {paneViewMode === 'split' ? 'Single Pane' : 'Split View'}
+            </button>
           )}
         </div>
 
