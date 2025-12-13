@@ -238,7 +238,7 @@ function FilterPanel({ eventTypes, selectedTypes, onToggleType, onSelectAll, onC
  * 
  * Displays events in chronological order with swimlanes by type
  */
-export default function TimelineView({ onSelectEvent, selectedEvent }) {
+export default function TimelineView({ onSelectEvent, selectedEvent, selectedNodeKeys = [], timelineData = null }) {
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -259,19 +259,69 @@ export default function TimelineView({ onSelectEvent, selectedEvent }) {
     }
   }, [eventTypes]);
 
-  // Load timeline data
+  // Use provided timelineData if available (already filtered by parent), otherwise load from API
   useEffect(() => {
     async function loadTimeline() {
       setIsLoading(true);
       setError(null);
       try {
+        // If timelineData is provided as prop, use it (already filtered by parent App.jsx)
+        if (timelineData !== null && Array.isArray(timelineData)) {
+          console.log('📅 TimelineView using provided timelineData:', {
+            count: timelineData.length,
+            source: selectedNodeKeys.length > 0 ? 'subgraph' : 'main graph',
+            selectedNodeKeys: selectedNodeKeys.length
+          });
+          setEvents(timelineData);
+          // Expand all dates by default
+          const dates = new Set(timelineData.map(e => e.date || 'unknown'));
+          setExpandedDates(dates);
+          setIsLoading(false);
+          return;
+        }
+        
+        // Otherwise, load from API (fallback - should not happen in normal flow)
+        console.log('⚠️ TimelineView loading from API (no prop provided)');
         const data = await timelineAPI.getEvents();
-        setEvents(data.events || []);
+        let allEvents = Array.isArray(data) ? data : (data?.events || []);
+        
+        // Filter by selected nodes if any are selected (subgraph timeline)
+        // If no nodes selected, show all events from main graph
+        if (selectedNodeKeys.length > 0) {
+          const beforeCount = allEvents.length;
+          const selectedKeysSet = new Set(selectedNodeKeys);
+          
+          allEvents = allEvents.filter(event => {
+            // Check if the event itself is in the selected nodes
+            if (selectedKeysSet.has(event.key)) {
+              return true;
+            }
+            // Check if event is connected to any selected nodes via connections array
+            if (event.connections && Array.isArray(event.connections)) {
+              return event.connections.some(conn => 
+                conn.key && selectedKeysSet.has(conn.key)
+              );
+            }
+            return false;
+          });
+          console.log('TimelineView filtered for subgraph:', { 
+            before: beforeCount,
+            after: allEvents.length,
+            selectedNodeKeys
+          });
+        } else {
+          console.log('TimelineView showing all events from main graph:', { 
+            totalCount: allEvents.length
+          });
+        }
+        
+        setEvents(allEvents);
         
         // Expand all dates by default
-        const dates = new Set(data.events?.map(e => e.date || 'unknown') || []);
+        const dates = new Set(allEvents.map(e => e.date || 'unknown'));
         setExpandedDates(dates);
       } catch (err) {
+        console.error('Timeline load error:', err);
         setError(err.message);
       } finally {
         setIsLoading(false);
@@ -279,7 +329,7 @@ export default function TimelineView({ onSelectEvent, selectedEvent }) {
     }
     
     loadTimeline();
-  }, []);
+  }, [selectedNodeKeys, timelineData]);
 
   // Filter events by selected types
   const filteredEvents = useMemo(() => {

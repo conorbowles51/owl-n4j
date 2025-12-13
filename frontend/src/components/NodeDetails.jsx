@@ -24,36 +24,48 @@ function getTypeIcon(type) {
  * 
  * Displays detailed information about a selected node
  */
-export default function NodeDetails({ node, onClose, onSelectNode }) {
+export default function NodeDetails({ node, onClose, onSelectNode, compact = false }) {
   if (!node) return null;
 
   const Icon = getTypeIcon(node.type);
 
+  const containerClass = compact 
+    ? 'w-full bg-dark-800/50 flex flex-col'
+    : 'w-80 bg-dark-800 border-l border-dark-700 h-full flex flex-col';
+  const headerPadding = compact ? 'p-3' : 'p-4';
+  const iconSize = compact ? 'w-4 h-4' : 'w-5 h-5';
+  const titleSize = compact ? 'text-sm font-semibold' : 'font-semibold';
+  const contentClass = compact 
+    ? 'p-3 space-y-2'
+    : 'flex-1 overflow-y-auto p-4 space-y-4';
+
   return (
-    <div className="w-80 bg-dark-800 border-l border-dark-700 h-full flex flex-col">
+    <div className={containerClass}>
       {/* Header */}
-      <div className="p-4 border-b border-dark-700 flex items-start justify-between">
+      <div className={`${headerPadding} border-b border-dark-700 flex items-start justify-between`}>
         <div className="flex items-start gap-3">
           <div className="p-2 bg-dark-700 rounded-lg">
-            <Icon className="w-5 h-5 text-dark-300" />
+            <Icon className={`${iconSize} text-dark-300`} />
           </div>
           <div>
-            <h2 className="font-semibold text-dark-100">{node.name}</h2>
+            <h2 className={`${titleSize} text-dark-100`}>{node.name}</h2>
             <span className="text-xs text-dark-400 bg-dark-700 px-2 py-0.5 rounded">
               {node.type}
             </span>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 hover:bg-dark-700 rounded transition-colors"
-        >
-          <X className="w-5 h-5 text-dark-400" />
-        </button>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-dark-700 rounded transition-colors"
+          >
+            <X className="w-4 h-4 text-dark-400" />
+          </button>
+        )}
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className={contentClass}>
         {/* Key */}
         <div>
           <label className="text-xs font-medium text-dark-400 uppercase tracking-wide">

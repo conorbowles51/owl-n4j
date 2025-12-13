@@ -11,7 +11,8 @@ from openai import OpenAI
 from typing import Dict, Optional
 import json
 
-from config import OPENAI_MODEL, ENTITY_TYPES, RELATIONSHIP_TYPES
+from config import OPENAI_MODEL
+from profile_loader import get_ingestion_config
 
 client = OpenAI()
 
@@ -95,6 +96,13 @@ def extract_entities_and_relationships(
     Returns:
         Dict with 'entities' and 'relationships' lists
     """
+
+    config = get_ingestion_config()
+    
+    system_context = config.get("system_context")
+    entity_types = config.get("entity_types")
+    relationship_types = config.get("relationship_types")
+
     existing_keys_hint = ""
     if existing_entity_keys:
         keys_sample = existing_entity_keys[:50]  # Limit to avoid prompt bloat
@@ -104,10 +112,10 @@ The following entities already exist in the investigation graph (use these exact
 {"... and more" if len(existing_entity_keys) > 50 else ""}
 """
 
-    entity_types_str = ", ".join(ENTITY_TYPES)
-    relationship_types_str = ", ".join(RELATIONSHIP_TYPES)
+    entity_types_str = ", ".join(entity_types)
+    relationship_types_str = ", ".join(relationship_types)
 
-    prompt = f"""You are an assistant helping with fraud investigations.
+    prompt = f"""{system_context}
 
 Extract all entities and relationships from the following document excerpt.
 

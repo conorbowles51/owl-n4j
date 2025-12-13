@@ -120,18 +120,53 @@ export const timelineAPI = {
    * @param {string} options.startDate - Filter start date (YYYY-MM-DD)
    * @param {string} options.endDate - Filter end date (YYYY-MM-DD)
    */
-  getEvents: ({ types, startDate, endDate } = {}) => {
+  getEvents: async ({ types, startDate, endDate } = {}) => {
     const params = new URLSearchParams();
     if (types) params.append('types', types);
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     
     const queryString = params.toString();
-    return fetchAPI(`/timeline${queryString ? `?${queryString}` : ''}`);
+    const response = await fetchAPI(`/timeline${queryString ? `?${queryString}` : ''}`);
+    // The API returns { events: [...], total: ... }
+    // Return the full response object so TimelineView can access both events and total
+    return response;
   },
 
   /**
    * Get available event types
    */
   getEventTypes: () => fetchAPI('/timeline/types'),
+};
+
+/**
+ * Artifacts API
+ */
+export const artifactsAPI = {
+  /**
+   * Create a new artifact
+   */
+  create: (artifact) => 
+    fetchAPI('/artifacts', {
+      method: 'POST',
+      body: JSON.stringify(artifact),
+    }),
+
+  /**
+   * List all artifacts
+   */
+  list: () => fetchAPI('/artifacts'),
+
+  /**
+   * Get a specific artifact
+   */
+  get: (artifactId) => fetchAPI(`/artifacts/${encodeURIComponent(artifactId)}`),
+
+  /**
+   * Delete an artifact
+   */
+  delete: (artifactId) => 
+    fetchAPI(`/artifacts/${encodeURIComponent(artifactId)}`, {
+      method: 'DELETE',
+    }),
 };

@@ -21,7 +21,8 @@ export default function ChatPanel({
   isOpen, 
   onToggle, 
   selectedNodes = [],
-  onClose 
+  onClose,
+  onMessagesChange // Callback to notify parent of message changes
 }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -66,8 +67,13 @@ export default function ChatPanel({
       id: Date.now(),
       role: 'user',
       content: question,
+      selectedNodes: selectedNodes.map(n => n.key), // Store context
     };
-    setMessages(prev => [...prev, userMessage]);
+    setMessages(prev => {
+      const newMessages = [...prev, userMessage];
+      onMessagesChange?.(newMessages);
+      return newMessages;
+    });
 
     // Get selected node keys
     const selectedKeys = selectedNodes.map(n => n.key);
@@ -86,7 +92,11 @@ export default function ChatPanel({
         contextDescription: response.context_description,
         cypherUsed: response.cypher_used,
       };
-      setMessages(prev => [...prev, assistantMessage]);
+      setMessages(prev => {
+        const newMessages = [...prev, assistantMessage];
+        onMessagesChange?.(newMessages);
+        return newMessages;
+      });
     } catch (err) {
       // Add error message
       const errorMessage = {
@@ -95,7 +105,11 @@ export default function ChatPanel({
         content: `Error: ${err.message}`,
         isError: true,
       };
-      setMessages(prev => [...prev, errorMessage]);
+      setMessages(prev => {
+        const newMessages = [...prev, errorMessage];
+        onMessagesChange?.(newMessages);
+        return newMessages;
+      });
     } finally {
       setIsLoading(false);
     }

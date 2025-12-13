@@ -1,0 +1,66 @@
+{
+  "name": "fraud",
+  "description": "Analyze fraud cases and suspicious financial activity",
+  
+  "ingestion": {
+    "system_context": "You are an assistant helping with fraud investigations.",
+    "entity_types": [
+      "Person",
+      "Company",
+      "Account",
+      "Organisation",
+      "Bank",
+      "Location",
+      "Transaction",
+      "Payment",
+      "Communication",
+      "Email",
+      "PhoneCall",
+      "Meeting",
+      "Login",
+      "Withdrawal",
+      "Deposit",
+      "Transfer",
+      "Alert",
+      "Contract",
+      "Invoice",
+      "AccountOpening",
+      "AccountClosure",
+      "Investigation",
+      "Warrant",
+      "Subpoena",
+      "CourtFiling",
+      "PropertyTransaction",
+      "TravelEvent",
+      "CompanyRegistration",
+      "LicenseIssuance",
+      "Audit",
+      "Other"
+    ],
+    "relationship_types": [
+      "OWNS_ACCOUNT",
+      "OWNS_COMPANY",
+      "TRANSFERRED_TO",
+      "MENTIONED_IN",
+      "ASSOCIATED_WITH",
+      "RELATED_TO",
+      "PART_OF_CASE",
+      "CALLED",
+      "EMAILED",
+      "MET_WITH",
+      "ATTENDED",
+      "SIGNED",
+      "TRIGGERED",
+      "ISSUED_TO",
+      "RECEIVED_FROM",
+      "WORKS_FOR",
+      "DIRECTOR_OF",
+      "SHAREHOLDER_OF"
+    ]
+  },
+  
+  "chat": {
+    "system_context": "You are an AI assistant helping fraud investigators analyze a case.",
+    "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags."
+  }
+}
