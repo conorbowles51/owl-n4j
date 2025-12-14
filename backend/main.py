@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import API_HOST, API_PORT, CORS_ORIGINS
 from routers import graph_router, chat_router, query_router, timeline_router, artifacts_router
 from services.neo4j_service import neo4j_service
+from services.artifact_storage import artifact_storage
 
 
 @asynccontextmanager
@@ -18,6 +19,9 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
     print("Starting Investigation Console API...")
+    # Reload artifacts from disk
+    artifact_storage.reload()
+    print(f"Loaded {len(artifact_storage.get_all())} artifacts from storage")
     yield
     # Shutdown
     print("Shutting down, closing Neo4j connection...")

@@ -9,6 +9,8 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from services.artifact_storage import artifact_storage
+
 router = APIRouter(prefix="/api/artifacts", tags=["artifacts"])
 
 
@@ -47,10 +49,6 @@ class ArtifactResponse(BaseModel):
     created_at: str
 
 
-# In-memory storage (in production, use a database)
-artifacts_storage = {}
-
-
 @router.post("", response_model=ArtifactResponse)
 async def create_artifact(artifact: ArtifactCreate):
     """Create a new artifact."""
@@ -58,7 +56,7 @@ async def create_artifact(artifact: ArtifactCreate):
     timestamp = datetime.now().isoformat()
     
     # Store the full artifact data
-    artifacts_storage[artifact_id] = {
+    artifact_data = {
         "id": artifact_id,
         "name": artifact.name,
         "notes": artifact.notes,
@@ -69,6 +67,9 @@ async def create_artifact(artifact: ArtifactCreate):
         "timestamp": timestamp,
         "created_at": timestamp,
     }
+    
+    # Save to persistent storage
+    artifact_storage.save(artifact_id, artifact_data)
     
     node_count = len(artifact.subgraph.get("nodes", []))
     link_count = len(artifact.subgraph.get("links", []))
@@ -90,7 +91,9 @@ async def create_artifact(artifact: ArtifactCreate):
 async def list_artifacts():
     """List all artifacts."""
     artifacts = []
-    for artifact_id, artifact_data in artifacts_storage.items():
+    all_artifacts = artifact_storage.get_all()
+    
+    for artifact_id, artifact_data in all_artifacts.items():
         node_count = len(artifact_data.get("subgraph", {}).get("nodes", []))
         link_count = len(artifact_data.get("subgraph", {}).get("links", []))
         timeline_count = len(artifact_data.get("timeline", []))
@@ -114,10 +117,11 @@ async def list_artifacts():
 @router.get("/{artifact_id}", response_model=ArtifactData)
 async def get_artifact(artifact_id: str):
     """Get a specific artifact by ID."""
-    if artifact_id not in artifacts_storage:
+    artifact = artifact_storage.get(artifact_id)
+    
+    if artifact is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
     
-    artifact = artifacts_storage[artifact_id]
     return ArtifactData(
         id=artifact["id"],
         name=artifact["name"],
@@ -134,9 +138,8 @@ async def get_artifact(artifact_id: str):
 @router.delete("/{artifact_id}")
 async def delete_artifact(artifact_id: str):
     """Delete an artifact."""
-    if artifact_id not in artifacts_storage:
+    if not artifact_storage.delete(artifact_id):
         raise HTTPException(status_code=404, detail="Artifact not found")
     
-    del artifacts_storage[artifact_id]
     return {"status": "deleted", "id": artifact_id}
 
