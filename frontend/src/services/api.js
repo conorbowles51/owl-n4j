@@ -38,8 +38,18 @@ async function fetchAPI(endpoint, options = {}) {
 export const graphAPI = {
   /**
    * Get full graph data for visualization
+   * @param {Object} options - Filter options
+   * @param {string} options.start_date - Filter start date (YYYY-MM-DD)
+   * @param {string} options.end_date - Filter end date (YYYY-MM-DD)
    */
-  getGraph: () => fetchAPI('/graph'),
+  getGraph: ({ start_date, end_date } = {}) => {
+    const params = new URLSearchParams();
+    if (start_date) params.append('start_date', start_date);
+    if (end_date) params.append('end_date', end_date);
+    
+    const queryString = params.toString();
+    return fetchAPI(`/graph${queryString ? `?${queryString}` : ''}`);
+  },
 
   /**
    * Get details for a specific node

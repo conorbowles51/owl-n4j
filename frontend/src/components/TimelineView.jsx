@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Calendar, 
   Clock, 
@@ -10,6 +10,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { timelineAPI } from '../services/api';
+import GraphSearchFilter from './GraphSearchFilter';
+import { parseSearchQuery, matchesQuery } from '../utils/searchParser';
 
 /**
  * Color palette for event types (matches GraphView)
@@ -76,12 +78,21 @@ function groupEventsByDate(events) {
 /**
  * Single Event Card
  */
-function EventCard({ event, onSelect, isSelected }) {
+function EventCard({ event, onSelect, isSelected, modifierKeys }) {
   const color = TYPE_COLORS[event.type] || TYPE_COLORS.Other;
+  
+  const handleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Check modifier keys from the click event first (most reliable)
+    // Fall back to tracked state if event doesn't have it
+    const isMultiSelect = e.ctrlKey || e.metaKey || modifierKeys?.ctrl || modifierKeys?.meta;
+    onSelect(event, isMultiSelect);
+  };
   
   return (
     <button
-      onClick={() => onSelect(event)}
+      onClick={handleClick}
       className={`w-full text-left p-3 rounded-lg transition-all ${
         isSelected 
           ? 'bg-dark-700 ring-2 ring-cyan-500' 
@@ -238,12 +249,93 @@ function FilterPanel({ eventTypes, selectedTypes, onToggleType, onSelectAll, onC
  * 
  * Displays events in chronological order with swimlanes by type
  */
-export default function TimelineView({ onSelectEvent, selectedEvent, selectedNodeKeys = [], timelineData = null }) {
+export default function TimelineView({ 
+  onSelectEvent, 
+  selectedEvent, 
+  selectedNodeKeys = [], 
+  timelineData = null,
+  onSelectEvents,
+  selectedEventKeys = [],
+  onBackgroundClick
+}) {
   const [events, setEvents] = useState([]);
+  const [allEvents, setAllEvents] = useState([]); // Store unfiltered events
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedDates, setExpandedDates] = useState(new Set());
   const [selectedTypes, setSelectedTypes] = useState(new Set());
+  const [modifierKeys, setModifierKeys] = useState({ ctrl: false, meta: false });
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  // Track modifier keys for multi-select (similar to GraphView)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Control') {
+        setModifierKeys(prev => ({ ...prev, ctrl: true }));
+      }
+      if (e.key === 'Meta') {
+        setModifierKeys(prev => ({ ...prev, meta: true }));
+      }
+    };
+    
+    const handleKeyUp = (e) => {
+      // Reset when modifier key is released
+      if (e.key === 'Control') {
+        setModifierKeys(prev => ({ ...prev, ctrl: false }));
+      }
+      if (e.key === 'Meta') {
+        setModifierKeys(prev => ({ ...prev, meta: false }));
+      }
+      // Also check if modifier is no longer pressed
+      if (!e.ctrlKey) {
+        setModifierKeys(prev => ({ ...prev, ctrl: false }));
+      }
+      if (!e.metaKey) {
+        setModifierKeys(prev => ({ ...prev, meta: false }));
+      }
+    };
+    
+    // Also track mouse events to catch modifier state
+    const handleMouseDown = (e) => {
+      if (e.ctrlKey) setModifierKeys(prev => ({ ...prev, ctrl: true }));
+      if (e.metaKey) setModifierKeys(prev => ({ ...prev, meta: true }));
+    };
+
+    const handleMouseUp = (e) => {
+      if (!e.ctrlKey) setModifierKeys(prev => ({ ...prev, ctrl: false }));
+      if (!e.metaKey) setModifierKeys(prev => ({ ...prev, meta: false }));
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mouseup', handleMouseUp);
+    
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+  
+  // Handle event selection
+  const handleEventSelect = useCallback((event, isMultiSelect) => {
+    if (onSelectEvents) {
+      // Convert event to node-like structure for consistency
+      const eventNode = {
+        key: event.key,
+        id: event.key,
+        name: event.name,
+        type: event.type,
+      };
+      
+      onSelectEvents(eventNode, { ctrlKey: isMultiSelect, metaKey: isMultiSelect });
+    } else if (onSelectEvent) {
+      // Fallback to single event selection
+      onSelectEvent(event);
+    }
+  }, [onSelectEvents, onSelectEvent]);
   
   // Available event types
   const eventTypes = useMemo(() => {
@@ -272,6 +364,7 @@ export default function TimelineView({ onSelectEvent, selectedEvent, selectedNod
             source: selectedNodeKeys.length > 0 ? 'subgraph' : 'main graph',
             selectedNodeKeys: selectedNodeKeys.length
           });
+          setAllEvents(timelineData);
           setEvents(timelineData);
           // Expand all dates by default
           const dates = new Set(timelineData.map(e => e.date || 'unknown'));
@@ -315,6 +408,7 @@ export default function TimelineView({ onSelectEvent, selectedEvent, selectedNod
           });
         }
         
+        setAllEvents(allEvents);
         setEvents(allEvents);
         
         // Expand all dates by default
@@ -331,11 +425,27 @@ export default function TimelineView({ onSelectEvent, selectedEvent, selectedNod
     loadTimeline();
   }, [selectedNodeKeys, timelineData]);
 
-  // Filter events by selected types
+  // Filter events by search term (with boolean operators support)
+  const searchFilteredEvents = useMemo(() => {
+    if (!searchTerm) return events;
+    
+    // Parse the search query
+    const queryAST = parseSearchQuery(searchTerm);
+    
+    // Filter events that match the query
+    return events.filter(event => {
+      return matchesQuery(queryAST, event);
+    });
+  }, [events, searchTerm]);
+
+  // Filter events by selected types (applied after search filter)
   const filteredEvents = useMemo(() => {
-    if (selectedTypes.size === 0) return events;
-    return events.filter(e => selectedTypes.has(e.type));
-  }, [events, selectedTypes]);
+    let filtered = searchFilteredEvents;
+    if (selectedTypes.size > 0) {
+      filtered = filtered.filter(e => selectedTypes.has(e.type));
+    }
+    return filtered;
+  }, [searchFilteredEvents, selectedTypes]);
 
   // Group filtered events by date
   const groupedEvents = useMemo(() => {
@@ -429,7 +539,60 @@ export default function TimelineView({ onSelectEvent, selectedEvent, selectedNod
             <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
               {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
             </span>
+            {selectedEventKeys.length > 0 && (
+              <span className="text-xs text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded">
+                {selectedEventKeys.length} selected
+              </span>
+            )}
           </div>
+          {onSelectEvents && filteredEvents.length > 0 && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  // Select all visible events by calling onSelectEvents for each with Ctrl pressed
+                  // We need to simulate adding them one by one, but this will trigger multiple state updates
+                  // For now, let's select them by finding nodes in bulk
+                  filteredEvents.forEach((event) => {
+                    const eventNode = {
+                      key: event.key,
+                      id: event.key,
+                      name: event.name,
+                      type: event.type,
+                    };
+                    // Call with Ctrl pressed to add to selection (not replace)
+                    handleEventSelect(eventNode, true);
+                  });
+                }}
+                className="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded transition-colors"
+                title="Select all visible events (Ctrl/Cmd+click to add to selection)"
+              >
+                Select All
+              </button>
+              {selectedEventKeys.length > 0 && (
+                <button
+                  onClick={() => {
+                    // Clear selection
+                    if (onBackgroundClick) {
+                      onBackgroundClick();
+                    }
+                  }}
+                  className="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded transition-colors"
+                  title="Clear selection"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        
+        {/* Search Filter */}
+        <div className="flex items-center gap-2">
+          <GraphSearchFilter
+            onFilterChange={setSearchTerm}
+            placeholder="Filter timeline events..."
+            disabled={isLoading}
+          />
         </div>
       </div>
 
@@ -463,8 +626,9 @@ export default function TimelineView({ onSelectEvent, selectedEvent, selectedNod
                     <EventCard
                       key={event.key}
                       event={event}
-                      onSelect={onSelectEvent}
-                      isSelected={selectedEvent?.key === event.key}
+                      onSelect={handleEventSelect}
+                      isSelected={selectedEventKeys.includes(event.key) || selectedEvent?.key === event.key}
+                      modifierKeys={modifierKeys}
                     />
                   ))}
                 </div>

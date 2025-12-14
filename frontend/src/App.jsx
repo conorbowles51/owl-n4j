@@ -17,10 +17,13 @@ import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
 import ContextMenu from './components/ContextMenu';
 import SearchBar from './components/SearchBar';
+import GraphSearchFilter from './components/GraphSearchFilter';
 import TimelineView from './components/TimelineView';
 import ArtifactModal from './components/ArtifactModal';
 import ArtifactList from './components/ArtifactList';
-import { exportArtifactToPDF } from './utils/pdfExport';  
+import DateRangeFilter from './components/DateRangeFilter';
+import { exportArtifactToPDF } from './utils/pdfExport';
+import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 
 /**
  * Main App Component
@@ -30,8 +33,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState('graph'); // 'graph' or 'timeline'
   // Graph state
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+  const [fullGraphData, setFullGraphData] = useState({ nodes: [], links: [] }); // Store unfiltered graph
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [dateRange, setDateRange] = useState({ start_date: null, end_date: null });
+  const [graphSearchTerm, setGraphSearchTerm] = useState('');
 
   // Selection state - support multiple nodes
   const [selectedNodes, setSelectedNodes] = useState([]); // Array of node objects
@@ -59,24 +65,69 @@ export default function App() {
     height: window.innerHeight,
   });
 
+  // Apply search filter to graph data
+  const applyGraphFilter = useCallback((data, searchTerm) => {
+    if (!searchTerm) {
+      setGraphData(data);
+      return;
+    }
+
+    // Parse the search query
+    const queryAST = parseSearchQuery(searchTerm);
+    
+    // Filter nodes that match the query
+    const matchingNodes = data.nodes.filter(node => {
+      return matchesQuery(queryAST, node);
+    });
+
+    const matchingNodeKeys = new Set(matchingNodes.map(n => n.key));
+
+    // Filter links to only include connections between matching nodes
+    const matchingLinks = data.links.filter(link => {
+      const sourceKey = typeof link.source === 'string' ? link.source : link.source.key;
+      const targetKey = typeof link.target === 'string' ? link.target : link.target.key;
+      return matchingNodeKeys.has(sourceKey) && matchingNodeKeys.has(targetKey);
+    });
+
+    setGraphData({ nodes: matchingNodes, links: matchingLinks });
+  }, []);
+
   // Load graph data
   const loadGraph = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await graphAPI.getGraph();
-      setGraphData(data);
+      const data = await graphAPI.getGraph({
+        start_date: dateRange.start_date,
+        end_date: dateRange.end_date,
+      });
+      setFullGraphData(data);
+      // Apply search filter if exists
+      applyGraphFilter(data, graphSearchTerm);
     } catch (err) {
       setError(err.message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [dateRange, graphSearchTerm, applyGraphFilter]);
 
-  // Initial load
+  // Initial load - only reload when date range changes
   useEffect(() => {
     loadGraph();
-  }, [loadGraph]);
+  }, [dateRange]); // Only reload when date range changes, not search term
+
+  // Apply search filter when full graph data or search term changes
+  useEffect(() => {
+    if (fullGraphData.nodes.length > 0) {
+      applyGraphFilter(fullGraphData, graphSearchTerm);
+    }
+  }, [fullGraphData, graphSearchTerm, applyGraphFilter]);
+
+  // Handle graph search filter change
+  const handleGraphSearchChange = useCallback((searchTerm) => {
+    setGraphSearchTerm(searchTerm);
+    // Filter will be applied via useEffect when graphSearchTerm changes
+  }, []);
 
   // Handle window resize
   useEffect(() => {
@@ -177,6 +228,35 @@ export default function App() {
     setContextMenu(null);
   }, [loadNodeDetails]);
 
+  // Handle timeline event selection - convert events to nodes and use same selection logic
+  const handleTimelineEventSelect = useCallback((eventNode, event) => {
+    // First try to find the node in fullGraphData (unfiltered graph)
+    // This allows selecting nodes even when they're filtered out of the current view
+    let graphNode = fullGraphData.nodes.find(n => n.key === eventNode.key);
+    
+    // If not found in fullGraphData, try graphData (filtered graph)
+    if (!graphNode) {
+      graphNode = graphData.nodes.find(n => n.key === eventNode.key);
+    }
+    
+    if (!graphNode) {
+      // If node not found in either graph, create a node-like object from the event
+      // This allows selecting timeline events even if they're not in the current graph
+      const nodeFromEvent = {
+        key: eventNode.key,
+        id: eventNode.id || eventNode.key,
+        name: eventNode.name,
+        type: eventNode.type,
+      };
+      // Use the node selection handler with the event node
+      handleNodeClick(nodeFromEvent, event);
+      return;
+    }
+    
+    // Use the existing node selection handler with the found node
+    handleNodeClick(graphNode, event);
+  }, [fullGraphData, graphData, handleNodeClick]);
+
   // Handle node right-click
   const handleNodeRightClick = useCallback((node, event) => {
     setContextMenu({
@@ -264,12 +344,6 @@ export default function App() {
     setSelectedNodesDetails([]);
   }, []);
 
-  // Handle timeline event click
-  const handleTimelineEventClick = useCallback((event) => {
-    // Events have the same structure as nodes for details
-    setSelectedNodes([event]);
-    loadNodeDetails([event.key]);
-  }, [loadNodeDetails]);
 
   // Build subgraph from selected nodes
   const buildSubgraph = useCallback((selectedNodeKeys) => {
@@ -277,20 +351,25 @@ export default function App() {
       return { nodes: [], links: [] };
     }
 
-    // Get all selected nodes
-    const subgraphNodes = graphData.nodes.filter(node => 
+    // Use fullGraphData to build subgraph so timeline selections work even when graph is filtered
+    // This allows selecting timeline events and creating a subgraph even if those nodes aren't
+    // currently visible in the filtered graph view
+    const sourceData = fullGraphData.nodes.length > 0 ? fullGraphData : graphData;
+
+    // Get all selected nodes from the full graph
+    const subgraphNodes = sourceData.nodes.filter(node => 
       selectedNodeKeys.includes(node.key)
     );
 
     // Get all links between selected nodes
-    const subgraphLinks = graphData.links.filter(link => {
+    const subgraphLinks = sourceData.links.filter(link => {
       const sourceKey = typeof link.source === 'object' ? link.source.key : link.source;
       const targetKey = typeof link.target === 'object' ? link.target.key : link.target;
       return selectedNodeKeys.includes(sourceKey) && selectedNodeKeys.includes(targetKey);
     });
 
     return { nodes: subgraphNodes, links: subgraphLinks };
-  }, [graphData]);
+  }, [fullGraphData, graphData]);
 
   // Calculate graph dimensions
   const sidebarWidth = selectedNodesDetails.length > 0 ? 320 : 0;
@@ -310,10 +389,39 @@ export default function App() {
 
   // Load timeline - from subgraph when nodes are selected, from main graph when not
   const [timelineData, setTimelineData] = useState([]);
+  
+  // Calculate min/max dates from timeline for DateRangeFilter
+  const [dateExtents, setDateExtents] = useState({ min: null, max: null });
+  
+  useEffect(() => {
+    if (timelineData && timelineData.length > 0) {
+      const dates = timelineData
+        .map(e => e.date)
+        .filter(d => d)
+        .map(d => new Date(d));
+      
+      if (dates.length > 0) {
+        setDateExtents({
+          min: new Date(Math.min(...dates)).toISOString().split('T')[0],
+          max: new Date(Math.max(...dates)).toISOString().split('T')[0],
+        });
+      }
+    }
+  }, [timelineData]);
+  
   useEffect(() => {
     const loadTimeline = async () => {
       try {
-        const response = await timelineAPI.getEvents({});
+        // Pass date range to timeline API if set
+        const timelineParams = {};
+        if (dateRange.start_date) {
+          timelineParams.startDate = dateRange.start_date;
+        }
+        if (dateRange.end_date) {
+          timelineParams.endDate = dateRange.end_date;
+        }
+        
+        const response = await timelineAPI.getEvents(timelineParams);
         // Handle both array response and object with events property
         const events = Array.isArray(response) ? response : (response?.events || []);
         
@@ -376,7 +484,7 @@ export default function App() {
       }
     };
     loadTimeline();
-  }, [selectedNodeKeys]);
+  }, [selectedNodeKeys, dateRange]);
 
   // Load artifacts on mount
   useEffect(() => {
@@ -557,6 +665,14 @@ export default function App() {
     }
   }, [selectedNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
 
+  // Handle date range change - memoized to prevent infinite loops
+  const handleDateRangeChange = useCallback((range) => {
+    setDateRange({
+      start_date: range.start_date,
+      end_date: range.end_date,
+    });
+  }, []);
+
   return (
     <div className="h-screen w-screen bg-dark-900 flex flex-col overflow-hidden">
       {/* Header */}
@@ -578,7 +694,7 @@ export default function App() {
 
         <div className="flex items-center gap-4">
           {/* Save Artifact Button */}
-          {viewMode === 'graph' && selectedNodeKeys.length > 0 && (
+          {selectedNodeKeys.length > 0 && (
             <button
               onClick={() => setShowArtifactModal(true)}
               className="flex items-center gap-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md text-sm transition-colors"
@@ -629,6 +745,24 @@ export default function App() {
             </button>
           </div>
 
+          {/* Date Range Filter */}
+          {(viewMode === 'graph' || viewMode === 'timeline') && (
+            <DateRangeFilter
+              onDateRangeChange={handleDateRangeChange}
+              minDate={dateExtents.min}
+              maxDate={dateExtents.max}
+              timelineEvents={timelineData}
+            />
+          )}
+
+          {viewMode === 'graph' && (
+            <GraphSearchFilter
+              onFilterChange={handleGraphSearchChange}
+              placeholder="Filter graph nodes..."
+              disabled={isLoading}
+            />
+          )}
+          
           <SearchBar onSelectNode={handleSearchSelect} />
           
           <button
@@ -832,10 +966,12 @@ export default function App() {
             // Timeline View - only show if there are timeline events
             timelineData.length > 0 ? (
               <TimelineView
-                onSelectEvent={handleTimelineEventClick}
+                onSelectEvents={handleTimelineEventSelect}
                 selectedEvent={selectedNodes.length > 0 ? selectedNodes[0] : null}
                 selectedNodeKeys={selectedNodeKeys}
+                selectedEventKeys={selectedNodeKeys}
                 timelineData={timelineData}
+                onBackgroundClick={handleBackgroundClick}
               />
             ) : (
               <div className="h-full flex items-center justify-center bg-dark-950">

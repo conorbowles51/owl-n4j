@@ -11,14 +11,18 @@ router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 
 @router.get("")
-async def get_graph():
+async def get_graph(
+    start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
+):
     """
     Get the full graph for visualization.
 
-    Returns all nodes and relationships.
+    Returns all nodes and relationships. Optionally filter by date range.
+    Nodes included if they have a date in range or are connected to nodes with dates in range.
     """
     try:
-        return neo4j_service.get_full_graph()
+        return neo4j_service.get_full_graph(start_date=start_date, end_date=end_date)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

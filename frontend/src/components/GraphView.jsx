@@ -707,6 +707,27 @@ const GraphView = forwardRef(function GraphView({
     return null;
   }, [fixedSelectionBox, isDragging, dragStart, dragEnd]);
 
+  // Calculate all unique entity types from graph data
+  const entityTypesInGraph = useMemo(() => {
+    const typesMap = new Map();
+    graphData.nodes.forEach(node => {
+      const type = node.type || 'Unknown';
+      if (!typesMap.has(type)) {
+        typesMap.set(type, {
+          type,
+          count: 0,
+          color: TYPE_COLORS[type] || TYPE_COLORS.Other
+        });
+      }
+      typesMap.get(type).count++;
+    });
+    // Sort by count (descending), then by type name
+    return Array.from(typesMap.values()).sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.type.localeCompare(b.type);
+    });
+  }, [graphData.nodes]);
+
   return (
     <div 
       ref={containerRef}
@@ -758,8 +779,8 @@ const GraphView = forwardRef(function GraphView({
           </button>
         )}
         <div className="font-medium text-dark-200 mb-2">Entity Types</div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {Object.entries(TYPE_COLORS).slice(0, 10).map(([type, color]) => {
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-64 overflow-y-auto">
+          {entityTypesInGraph.map(({ type, count, color }) => {
             const isSelected = selectedEntityTypes.has(type);
             const nodesOfType = graphData.nodes.filter(n => n.type === type);
             const isSelectedInGraph = selectedNodes.some(n => n.type === type);
@@ -774,18 +795,16 @@ const GraphView = forwardRef(function GraphView({
                 className={`flex items-center gap-2 p-1 rounded transition-colors hover:bg-dark-700 ${
                   isSelected || isSelectedInGraph ? 'bg-cyan-600/20' : ''
                 }`}
-                title={`Click to select all ${type} entities (${nodesOfType.length})`}
+                title={`Click to select all ${type} entities (${count})`}
               >
                 <div 
-                  className={`w-3 h-3 rounded-full ${isSelected || isSelectedInGraph ? 'ring-2 ring-cyan-400' : ''}`}
+                  className={`w-3 h-3 rounded-full flex-shrink-0 ${isSelected || isSelectedInGraph ? 'ring-2 ring-cyan-400' : ''}`}
                   style={{ backgroundColor: color }}
                 />
-                <span className={`text-dark-300 ${isSelected || isSelectedInGraph ? 'text-cyan-300 font-medium' : ''}`}>
+                <span className={`text-dark-300 truncate ${isSelected || isSelectedInGraph ? 'text-cyan-300 font-medium' : ''}`}>
                   {type}
                 </span>
-                {nodesOfType.length > 0 && (
-                  <span className="text-dark-500 text-[10px]">({nodesOfType.length})</span>
-                )}
+                <span className="text-dark-500 text-[10px] flex-shrink-0">({count})</span>
               </button>
             );
           })}

@@ -35,54 +35,118 @@ class Neo4jService:
     # Graph Visualization Data
     # -------------------------------------------------------------------------
 
-    def get_full_graph(self) -> Dict[str, List]:
+    def get_full_graph(
+        self,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, List]:
         """
         Get all nodes and relationships for visualization.
+        
+        Args:
+            start_date: Filter to include nodes with date >= start_date (YYYY-MM-DD) or connected to such nodes
+            end_date: Filter to include nodes with date <= end_date (YYYY-MM-DD) or connected to such nodes
 
         Returns:
             Dict with 'nodes' and 'links' arrays
         """
         with self._driver.session() as session:
-            # Get all nodes
-            nodes_result = session.run(
+            # Build date filter query
+            if start_date or end_date:
+                # Find nodes in date range and all nodes connected to them
+                date_conditions = []
+                params = {}
+                
+                if start_date:
+                    date_conditions.append("n.date >= $start_date")
+                    params["start_date"] = start_date
+                if end_date:
+                    date_conditions.append("n.date <= $end_date")
+                    params["end_date"] = end_date
+                
+                date_filter = " AND " + " AND ".join(date_conditions)
+                
+                # Get nodes in date range and all nodes connected to them (directly or indirectly)
+                query = f"""
+                    // Find nodes with dates in range
+                    MATCH (n)
+                    WHERE n.date IS NOT NULL
+                    {date_filter}
+                    
+                    // Collect all nodes in range and their connections (up to 2 hops)
+                    WITH collect(DISTINCT n) AS nodes_in_range
+                    UNWIND nodes_in_range AS start_node
+                    
+                    // Find all nodes connected to nodes in range (up to 2 hops)
+                    MATCH path = (start_node)-[*0..2]-(connected)
+                    WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
+                    UNWIND all_nodes AS node
+                    
+                    WITH DISTINCT node
+                    RETURN 
+                        id(node) AS neo4j_id,
+                        node.id AS id,
+                        node.key AS key,
+                        node.name AS name,
+                        labels(node)[0] AS type,
+                        node.summary AS summary,
+                        node.notes AS notes,
+                        properties(node) AS properties
                 """
-                MATCH (n)
-                RETURN 
-                    id(n) AS neo4j_id,
-                    n.id AS id,
-                    n.key AS key,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes,
-                    properties(n) AS properties
+            else:
+                # No date filter - get all nodes
+                query = """
+                    MATCH (n)
+                    RETURN 
+                        id(n) AS neo4j_id,
+                        n.id AS id,
+                        n.key AS key,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.summary AS summary,
+                        n.notes AS notes,
+                        properties(n) AS properties
                 """
-            )
+                params = {}
+            
+            nodes_result = session.run(query, **params)
             nodes = []
+            node_keys = set()  # Track added nodes to avoid duplicates
+            
             for record in nodes_result:
-                node = {
-                    "neo4j_id": record["neo4j_id"],
-                    "id": record["id"] or record["key"],
-                    "key": record["key"],
-                    "name": record["name"] or record["key"],
-                    "type": record["type"],
-                    "summary": record["summary"],
-                    "notes": record["notes"],
-                    "properties": record["properties"],
-                }
-                nodes.append(node)
+                node_key = record["key"]
+                if node_key not in node_keys:
+                    node_keys.add(node_key)
+                    node = {
+                        "neo4j_id": record["neo4j_id"],
+                        "id": record["id"] or node_key,
+                        "key": node_key,
+                        "name": record["name"] or node_key,
+                        "type": record["type"],
+                        "summary": record["summary"],
+                        "notes": record["notes"],
+                        "properties": record["properties"],
+                    }
+                    nodes.append(node)
 
-            # Get all relationships
-            rels_result = session.run(
+            # Get relationships between the filtered nodes
+            if node_keys and len(node_keys) > 0:
+                # Build parameter list for IN clause
+                keys_list = list(node_keys)
+                rels_query = """
+                    MATCH (a)-[r]->(b)
+                    WHERE a.key IN $node_keys AND b.key IN $node_keys
+                    RETURN 
+                        a.key AS source,
+                        b.key AS target,
+                        type(r) AS type,
+                        properties(r) AS properties
                 """
-                MATCH (a)-[r]->(b)
-                RETURN 
-                    a.key AS source,
-                    b.key AS target,
-                    type(r) AS type,
-                    properties(r) AS properties
-                """
-            )
+                rels_result = session.run(rels_query, node_keys=keys_list)
+            else:
+                # No nodes, so no relationships
+                rels_result = []
+            
             links = []
             for record in rels_result:
                 link = {
@@ -386,29 +450,21 @@ class Neo4jService:
         end_date: Optional[str] = None,
     ) -> List[Dict]:
         """
-        Get all event-type nodes that have dates, sorted chronologically.
+        Get all nodes that have dates, sorted chronologically.
         
         Args:
             event_types: Filter by specific types (e.g., ['Transaction', 'Payment']).
-                        If None, returns all event types.
+                        If None, returns ALL entities with dates (not just event types).
             start_date: Filter events on or after this date (YYYY-MM-DD)
             end_date: Filter events on or before this date (YYYY-MM-DD)
         
         Returns:
-            List of event nodes with their connected entities, sorted by date
+            List of nodes with their connected entities, sorted by date
         """
-        # Default event types that belong on a timeline
-        default_event_types = [
-            'Transaction', 'Transfer', 'Payment', 
-            'Communication', 'Email', 'PhoneCall', 'Meeting'
-        ]
-        
-        types_to_query = event_types if event_types else default_event_types
-        
         with self._driver.session() as session:
             # Build date filter conditions
             date_conditions = []
-            params = {"types": types_to_query}
+            params = {}
             
             if start_date:
                 date_conditions.append("n.date >= $start_date")
@@ -419,10 +475,16 @@ class Neo4jService:
             
             date_filter = " AND " + " AND ".join(date_conditions) if date_conditions else ""
             
+            # Build type filter condition
+            type_filter = ""
+            if event_types:
+                type_filter = "AND labels(n)[0] IN $types"
+                params["types"] = event_types
+            
             query = f"""
                 MATCH (n)
-                WHERE labels(n)[0] IN $types
-                AND n.date IS NOT NULL
+                WHERE n.date IS NOT NULL
+                {type_filter}
                 {date_filter}
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE NOT connected:Document AND NOT connected:Case
