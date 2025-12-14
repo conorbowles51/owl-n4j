@@ -72,6 +72,18 @@ export const graphAPI = {
    * Get graph summary
    */
   getSummary: () => fetchAPI('/graph/summary'),
+
+  /**
+   * Get subgraph with shortest paths between selected nodes
+   */
+  getShortestPaths: (nodeKeys, maxDepth = 10) =>
+    fetchAPI('/graph/shortest-paths', {
+      method: 'POST',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        max_depth: maxDepth,
+      }),
+    }),
 };
 
 /**

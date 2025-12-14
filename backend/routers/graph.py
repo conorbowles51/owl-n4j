@@ -2,12 +2,19 @@
 Graph Router - endpoints for graph visualization data.
 """
 
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from services.neo4j_service import neo4j_service
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
+
+
+class ShortestPathsRequest(BaseModel):
+    """Request model for shortest paths endpoint."""
+    node_keys: List[str]
+    max_depth: int = 10
 
 
 @router.get("")
@@ -89,5 +96,33 @@ async def get_graph_summary():
     """
     try:
         return neo4j_service.get_graph_summary()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/shortest-paths")
+async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
+    """
+    Get subgraph containing shortest paths between selected nodes.
+    
+    Args:
+        request: Request with node_keys list and optional max_depth
+    """
+    if len(request.node_keys) < 2:
+        raise HTTPException(
+            status_code=400, 
+            detail="At least 2 node keys required for shortest path"
+        )
+    
+    if request.max_depth < 1 or request.max_depth > 20:
+        raise HTTPException(
+            status_code=400,
+            detail="max_depth must be between 1 and 20"
+        )
+    
+    try:
+        return neo4j_service.get_shortest_paths_subgraph(
+            request.node_keys, 
+            request.max_depth
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -64,6 +64,9 @@ export default function App() {
   // Subgraph menu state
   const [isSubgraphMenuOpen, setIsSubgraphMenuOpen] = useState(false);
   const subgraphMenuRef = useRef(null);
+  
+  // Path-based subgraph state (for shortest paths feature)
+  const [pathSubgraphData, setPathSubgraphData] = useState(null);
 
   // Dimensions
   const [dimensions, setDimensions] = useState({
@@ -362,6 +365,7 @@ export default function App() {
   const handleCloseDetails = useCallback(() => {
     setSelectedNodes([]);
     setSelectedNodesDetails([]);
+    setPathSubgraphData(null); // Clear path-based subgraph when closing
   }, []);
 
 
@@ -407,13 +411,56 @@ export default function App() {
   // Handle create subgraph from selected
   const handleCreateSubgraphFromSelected = useCallback(() => {
     if (selectedNodeKeys.length >= 2) {
+      setPathSubgraphData(null); // Clear path subgraph when using regular subgraph
       setPaneViewMode('split');
       setIsSubgraphMenuOpen(false);
     }
   }, [selectedNodeKeys.length]);
+
+  const handleCreateSubgraphFromPaths = useCallback(async () => {
+    if (selectedNodeKeys.length >= 2) {
+      try {
+        setIsLoading(true);
+        const pathData = await graphAPI.getShortestPaths(selectedNodeKeys, 10);
+        
+        // Check if paths were found
+        if (!pathData || !pathData.nodes || pathData.nodes.length === 0) {
+          alert('No paths found between the selected nodes. They may not be connected.');
+          return;
+        }
+        
+        // Set the path subgraph data
+        setPathSubgraphData(pathData);
+        
+        // Update selected nodes to include all nodes from paths for the sidebar
+        const pathNodeKeys = pathData.nodes.map(n => n.key);
+        const pathNodes = pathData.nodes.map(node => ({
+          key: node.key,
+          id: node.id || node.key,
+          name: node.name,
+          type: node.type,
+        }));
+        setSelectedNodes(pathNodes);
+        
+        // Load details for all path nodes
+        await loadNodeDetails(pathNodeKeys);
+        
+        // Enable split view
+        setPaneViewMode('split');
+        setIsSubgraphMenuOpen(false);
+      } catch (err) {
+        console.error('Failed to get shortest paths:', err);
+        const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
+        alert(`Failed to find paths: ${errorMessage}`);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+  }, [selectedNodeKeys.length, loadNodeDetails]);
   
   // Build subgraph for selected nodes
-  const subgraphData = buildSubgraph(selectedNodeKeys);
+  // Use path-based subgraph if available, otherwise build from selected nodes
+  const subgraphData = pathSubgraphData || buildSubgraph(selectedNodeKeys);
 
   // Load timeline - from subgraph when nodes are selected, from main graph when not
   const [timelineData, setTimelineData] = useState([]);
@@ -758,21 +805,42 @@ export default function App() {
                       </div>
                     )}
                   </button>
+
+                  <button
+                    onClick={handleCreateSubgraphFromPaths}
+                    disabled={selectedNodeKeys.length < 2}
+                    className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                      selectedNodeKeys.length >= 2
+                        ? 'text-light-800 hover:bg-light-50 cursor-pointer'
+                        : 'text-light-400 cursor-not-allowed opacity-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Network className="w-4 h-4" />
+                      <span>Shortest Paths</span>
+                    </div>
+                    {selectedNodeKeys.length < 2 && (
+                      <div className="text-xs text-light-500 mt-0.5 ml-6">
+                        Select 2+ nodes
+                      </div>
+                    )}
+                  </button>
                   
                   {paneViewMode === 'split' && (
                     <div className="border-t border-light-200 mt-1 pt-1">
-                      <button
-                        onClick={() => {
-                          setPaneViewMode('single');
-                          setIsSubgraphMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors"
-                      >
-                        <div className="flex items-center gap-2">
-                          <X className="w-4 h-4" />
-                          <span>Close Subgraph</span>
-                        </div>
-                      </button>
+                  <button
+                    onClick={() => {
+                      setPaneViewMode('single');
+                      setPathSubgraphData(null); // Clear path subgraph when closing
+                      setIsSubgraphMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <X className="w-4 h-4" />
+                      <span>Close Subgraph</span>
+                    </div>
+                  </button>
                     </div>
                   )}
                 </div>

@@ -526,6 +526,106 @@ class Neo4jService:
                 events.append(event)
             
             return events
+            
+    def get_shortest_paths_subgraph(self, node_keys: List[str], max_depth: int = 10) -> Dict[str, List]:
+        """
+        Find shortest paths between all pairs of selected nodes and return as subgraph.
+        
+        For multiple nodes, finds shortest paths between all pairs and combines them.
+        
+        Args:
+            node_keys: List of node keys to find paths between
+            max_depth: Maximum path length to search (default 10)
+        
+        Returns:
+            Dict with 'nodes' and 'links' arrays containing all nodes and relationships
+            from the shortest paths connecting the selected nodes
+        """
+        if len(node_keys) < 2:
+            return {"nodes": [], "links": []}
+        
+        with self._driver.session() as session:
+            # Find shortest paths between all pairs
+            all_nodes = set()
+            all_links = []
+            seen_links = set()
+            
+            # Generate all pairs
+            for i in range(len(node_keys)):
+                for j in range(i + 1, len(node_keys)):
+                    key1, key2 = node_keys[i], node_keys[j]
+                    
+                    # Find shortest path between this pair
+                    # Note: Neo4j doesn't support parameters in variable-length patterns,
+                    # so we use string formatting for max_depth (validated as int)
+                    result = session.run(
+                        f"""
+                        MATCH path = shortestPath((a {{key: $key1}})-[*..{int(max_depth)}]-(b {{key: $key2}}))
+                        WHERE a.key = $key1 AND b.key = $key2
+                        RETURN path
+                        """,
+                        key1=key1,
+                        key2=key2
+                    )
+                    
+                    for record in result:
+                        path = record["path"]
+                        if path:
+                            # Extract nodes from path
+                            for node in path.nodes:
+                                node_key = node.get("key")
+                                if node_key:
+                                    all_nodes.add(node_key)
+                            
+                            # Extract relationships from path
+                            for rel in path.relationships:
+                                source_key = rel.start_node.get("key")
+                                target_key = rel.end_node.get("key")
+                                rel_type = rel.type
+                                
+                                if source_key and target_key:
+                                    link_key = f"{source_key}-{target_key}-{rel_type}"
+                                    if link_key not in seen_links:
+                                        seen_links.add(link_key)
+                                        all_links.append({
+                                            "source": source_key,
+                                            "target": target_key,
+                                            "type": rel_type,
+                                            "properties": dict(rel)
+                                        })
+            
+            # Get full node details for all nodes in paths
+            if not all_nodes:
+                return {"nodes": [], "links": []}
+            
+            nodes_query = """
+                MATCH (n)
+                WHERE n.key IN $keys
+                RETURN 
+                    id(n) AS neo4j_id,
+                    n.id AS id,
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.summary AS summary,
+                    n.notes AS notes,
+                    properties(n) AS properties
+            """
+            
+            nodes_result = session.run(nodes_query, keys=list(all_nodes))
+            nodes = []
+            for record in nodes_result:
+                nodes.append({
+                    "id": record["id"],
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "summary": record["summary"],
+                    "notes": record["notes"],
+                    "properties": record["properties"] or {}
+                })
+            
+            return {"nodes": nodes, "links": all_links}
 
 
 # Singleton instance
