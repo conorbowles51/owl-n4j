@@ -133,7 +133,7 @@ export default function ChatPanel({
   const contextInfo = selectedNodes.length > 0 
     ? {
         icon: Target,
-        text: `Focused on ${selectedNodes.length} entity${selectedNodes.length > 1 ? 'ies' : ''}`,
+        text: `Focused on ${selectedNodes.length} ${selectedNodes.length > 1 ? 'entities' : 'entity'}`,
         color: 'text-owl-purple-600',
       }
     : {

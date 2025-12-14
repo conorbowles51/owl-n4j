@@ -69,6 +69,9 @@ const GraphView = forwardRef(function GraphView({
   const [chargeStrength, setChargeStrength] = useState(-500);
   const [centerStrength, setCenterStrength] = useState(0.05);
 
+  // Relationship labels toggle (independent per graph instance)
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(false);
+
   // Track modifier keys (Ctrl/Cmd)
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -208,13 +211,24 @@ const GraphView = forwardRef(function GraphView({
     ctx.fillText(displayLabel, node.x, node.y + nodeRadius + 2);
   }, [selectedNodes, hoveredNode]);
 
-  // Link rendering - updated for light theme
+  // Link rendering - updated for light theme with optional labels
   const paintLink = useCallback((link, ctx, globalScale) => {
     const start = link.source;
     const end = link.target;
 
     if (!start.x || !end.x) return;
 
+    // Calculate midpoint for label
+    const midX = (start.x + end.x) / 2;
+    const midY = (start.y + end.y) / 2;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const angle = Math.atan2(dy, dx);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist === 0) return; // Avoid division by zero
+
+    // Draw the link line
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
@@ -224,14 +238,7 @@ const GraphView = forwardRef(function GraphView({
 
     // Draw arrow
     const arrowLength = 6;
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const angle = Math.atan2(dy, dx);
-    
-    // Position arrow before the node
     const nodeRadius = 8;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist === 0) return; // Avoid division by zero
     const arrowX = start.x + (dx / dist) * (dist - nodeRadius - 2);
     const arrowY = start.y + (dy / dist) * (dist - nodeRadius - 2);
 
@@ -248,7 +255,40 @@ const GraphView = forwardRef(function GraphView({
     ctx.closePath();
     ctx.fillStyle = '#9ca3af'; // light-400 - match link color
     ctx.fill();
-  }, []);
+
+    // Draw relationship label (only if enabled and zoomed in enough)
+    if (showRelationshipLabels && link.type && globalScale > 0.3) {
+      const label = link.type || '';
+      const fontSize = Math.max(10 / globalScale, 8);
+      
+      ctx.save();
+      ctx.translate(midX, midY);
+      ctx.rotate(angle);
+      
+      // Draw background rectangle for better readability
+      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+      const metrics = ctx.measureText(label);
+      const textWidth = metrics.width;
+      const textHeight = fontSize;
+      const padding = 4;
+      
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'; // White background with slight transparency
+      ctx.fillRect(
+        -textWidth / 2 - padding,
+        -textHeight / 2 - padding / 2,
+        textWidth + padding * 2,
+        textHeight + padding
+      );
+      
+      // Draw text
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#1f2937'; // light-800 - dark text for light background
+      ctx.fillText(label, 0, 0);
+      
+      ctx.restore();
+    }
+  }, [showRelationshipLabels]);
 
   // Handle node click
   const handleNodeClick = useCallback((node, event) => {
@@ -777,6 +817,24 @@ const GraphView = forwardRef(function GraphView({
             {paneViewMode === 'split' ? 'Single Pane' : 'Split View'}
           </button>
         )}
+        
+        {/* Relationship Labels Toggle - Only show in subgraph */}
+        {isSubgraph && (
+          <div className="mb-3 pb-3 border-b border-light-200">
+            <label className="flex items-center gap-2 cursor-pointer hover:bg-light-50 rounded px-1 py-1 -mx-1 transition-colors">
+              <input
+                type="checkbox"
+                checked={showRelationshipLabels}
+                onChange={(e) => setShowRelationshipLabels(e.target.checked)}
+                className="w-3.5 h-3.5 rounded border-light-300 text-owl-blue-600 focus:ring-owl-blue-500 focus:ring-1 cursor-pointer"
+              />
+              <span className="text-xs text-light-700 select-none">
+                Show Relationship Labels
+              </span>
+            </label>
+          </div>
+        )}
+        
         <div className="font-medium text-owl-blue-900 mb-2">Entity Types</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-64 overflow-y-auto">
           {entityTypesInGraph.map(({ type, count, color }) => {
