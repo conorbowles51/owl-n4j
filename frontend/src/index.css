@@ -2,23 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar for dark mode */
+/* Custom scrollbar for light theme */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #202123;
+  background: #f3f4f6;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #565869;
+  background: #9ca3af;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #8e8ea0;
+  background: #6b7280;
 }
 
 /* Force graph canvas styling */

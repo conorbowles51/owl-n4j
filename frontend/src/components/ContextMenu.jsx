@@ -50,18 +50,18 @@ export default function ContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed bg-dark-800 border border-dark-600 rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
+      className="fixed bg-white border border-light-200 rounded-lg shadow-xl py-1 z-50 min-w-[160px]"
       style={{
         left: adjustedPosition.x,
         top: adjustedPosition.y,
       }}
     >
       {/* Node name header */}
-      <div className="px-3 py-2 border-b border-dark-700">
-        <div className="font-medium text-dark-100 text-sm truncate">
+      <div className="px-3 py-2 border-b border-light-200">
+        <div className="font-medium text-owl-blue-900 text-sm truncate">
           {node.name}
         </div>
-        <div className="text-xs text-dark-400">{node.type}</div>
+        <div className="text-xs text-light-600">{node.type}</div>
       </div>
 
       {/* Actions */}
@@ -71,9 +71,9 @@ export default function ContextMenu({
             onShowDetails(node);
             onClose();
           }}
-          className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2 transition-colors"
+          className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
         >
-          <Eye className="w-4 h-4 text-dark-400" />
+          <Eye className="w-4 h-4 text-owl-blue-600" />
           Show Details
         </button>
         <button
@@ -81,9 +81,9 @@ export default function ContextMenu({
             onExpand(node);
             onClose();
           }}
-          className="w-full px-3 py-2 text-left text-sm text-dark-200 hover:bg-dark-700 flex items-center gap-2 transition-colors"
+          className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
         >
-          <Maximize2 className="w-4 h-4 text-dark-400" />
+          <Maximize2 className="w-4 h-4 text-owl-blue-600" />
           Expand Connections
         </button>
       </div>

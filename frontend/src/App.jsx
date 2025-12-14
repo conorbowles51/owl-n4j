@@ -674,16 +674,14 @@ export default function App() {
   }, []);
 
   return (
-    <div className="h-screen w-screen bg-dark-900 flex flex-col overflow-hidden">
+    <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
       {/* Header */}
-      <header className="h-16 bg-dark-800 border-b border-dark-700 flex items-center justify-between px-4 flex-shrink-0">
+      <header className="h-16 bg-white border-b border-light-200 flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
         <div className="flex items-center gap-3">
-          <Network className="w-6 h-6 text-cyan-400" />
-          <h1 className="text-lg font-semibold text-dark-100">
-            Investigation Console
-          </h1>
+          <img src="/owl-logo.webp" alt="Owl Consultancy Group" className="w-40 h-40 object-contain" />
+          
           {viewMode === 'graph' && (
-            <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
+            <span className="text-xs text-light-600 bg-light-100 px-2 py-1 rounded">
               {selectedNodes.length > 0 
                 ? `${subgraphData.nodes.length} selected · ${subgraphData.links.length} connections`
                 : `${graphData.nodes.length} entities · ${graphData.links.length} relationships`
@@ -697,7 +695,7 @@ export default function App() {
           {selectedNodeKeys.length > 0 && (
             <button
               onClick={() => setShowArtifactModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md text-sm transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-md text-sm transition-colors"
               title="Save current selection as artifact"
             >
               <Save className="w-4 h-4" />
@@ -710,8 +708,8 @@ export default function App() {
             onClick={() => setShowArtifactList(!showArtifactList)}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
               showArtifactList
-                ? 'bg-dark-700 text-dark-100'
-                : 'text-dark-400 hover:text-dark-200'
+                ? 'bg-owl-blue-100 text-owl-blue-900'
+                : 'text-light-600 hover:text-light-800'
             }`}
             title="View saved artifacts"
           >
@@ -720,13 +718,13 @@ export default function App() {
           </button>
 
           {/* View Toggle */}
-          <div className="flex items-center bg-dark-900 rounded-lg p-1">
+          <div className="flex items-center bg-light-100 rounded-lg p-1">
             <button
               onClick={() => setViewMode('graph')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
                 viewMode === 'graph'
-                  ? 'bg-dark-700 text-dark-100'
-                  : 'text-dark-400 hover:text-dark-200'
+                  ? 'bg-white text-owl-blue-900 shadow-sm'
+                  : 'text-light-600 hover:text-light-800'
               }`}
             >
               <Network className="w-4 h-4" />
@@ -736,8 +734,8 @@ export default function App() {
               onClick={() => setViewMode('timeline')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
                 viewMode === 'timeline'
-                  ? 'bg-dark-700 text-dark-100'
-                  : 'text-dark-400 hover:text-dark-200'
+                  ? 'bg-white text-owl-blue-900 shadow-sm'
+                  : 'text-light-600 hover:text-light-800'
               }`}
             >
               <Calendar className="w-4 h-4" />
@@ -768,18 +766,18 @@ export default function App() {
           <button
             onClick={loadGraph}
             disabled={isLoading}
-            className="p-2 hover:bg-dark-700 rounded-lg transition-colors disabled:opacity-50"
+            className="p-2 hover:bg-light-100 rounded-lg transition-colors disabled:opacity-50"
             title="Refresh graph"
           >
-            <RefreshCw className={`w-5 h-5 text-dark-300 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-5 h-5 text-light-600 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
 
           <button
             onClick={() => setIsChatOpen(!isChatOpen)}
             className={`p-2 rounded-lg transition-colors ${
               isChatOpen 
-                ? 'bg-cyan-600 text-white' 
-                : 'hover:bg-dark-700 text-dark-300'
+                ? 'bg-owl-purple-500 text-white' 
+                : 'hover:bg-light-100 text-light-600'
             }`}
             title="Toggle AI Chat"
           >
@@ -797,8 +795,8 @@ export default function App() {
             isLoading && graphData.nodes.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
-                  <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-                  <span className="text-dark-400">Loading graph...</span>
+                  <Loader2 className="w-8 h-8 text-owl-blue-600 animate-spin" />
+                  <span className="text-light-600">Loading graph...</span>
                 </div>
               </div>
             ) : error ? (
@@ -806,18 +804,18 @@ export default function App() {
                 // Split panel error view
                 <div className="absolute inset-0 flex">
                   {/* Left Panel - Error Details */}
-                  <div className="flex-1 flex flex-col items-center justify-center border-r border-dark-700 p-8">
+                  <div className="flex-1 flex flex-col items-center justify-center border-r border-light-200 p-8">
                     <div className="flex flex-col items-center gap-4 text-center max-w-md">
-                      <AlertCircle className="w-12 h-12 text-red-400" />
+                      <AlertCircle className="w-12 h-12 text-red-500" />
                       <div>
-                        <h2 className="text-lg font-semibold text-dark-200 mb-2">
+                        <h2 className="text-lg font-semibold text-light-800 mb-2">
                           Failed to load graph
                         </h2>
-                        <p className="text-dark-400 text-sm mb-4">{error}</p>
+                        <p className="text-light-600 text-sm mb-4">{error}</p>
                       </div>
                       <button
                         onClick={loadGraph}
-                        className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 rounded-lg text-sm text-white transition-colors"
+                        className="px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 rounded-lg text-sm text-white transition-colors"
                       >
                         Retry
                       </button>
@@ -825,23 +823,23 @@ export default function App() {
                   </div>
                   
                   {/* Right Panel - Fallback/Info */}
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-dark-950">
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-light-50">
                     <div className="flex flex-col items-center gap-4 text-center max-w-md">
-                      <Network className="w-12 h-12 text-dark-600" />
+                      <Network className="w-12 h-12 text-light-400" />
                       <div>
-                        <h3 className="text-md font-medium text-dark-300 mb-2">
+                        <h3 className="text-md font-medium text-light-700 mb-2">
                           Graph Unavailable
                         </h3>
-                        <p className="text-dark-500 text-sm">
+                        <p className="text-light-600 text-sm">
                           The graph data could not be loaded. Please check your connection
                           and ensure the backend API is running.
                         </p>
                       </div>
-                      <div className="mt-4 p-4 bg-dark-800 rounded-lg text-left w-full">
-                        <h4 className="text-xs font-semibold text-dark-400 mb-2 uppercase">
+                      <div className="mt-4 p-4 bg-light-100 rounded-lg text-left w-full">
+                        <h4 className="text-xs font-semibold text-light-600 mb-2 uppercase">
                           Troubleshooting
                         </h4>
-                        <ul className="text-xs text-dark-500 space-y-1">
+                        <ul className="text-xs text-light-700 space-y-1">
                           <li>• Verify backend is running on port 8000</li>
                           <li>• Check Neo4j connection</li>
                           <li>• Review browser console for details</li>
@@ -855,12 +853,12 @@ export default function App() {
                 // Single pane error view
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="flex flex-col items-center gap-3 text-center">
-                    <AlertCircle className="w-8 h-8 text-red-400" />
-                    <span className="text-dark-200">Failed to load graph</span>
-                    <span className="text-dark-400 text-sm">{error}</span>
+                    <AlertCircle className="w-8 h-8 text-red-500" />
+                    <span className="text-light-800">Failed to load graph</span>
+                    <span className="text-light-600 text-sm">{error}</span>
                     <button
                       onClick={loadGraph}
-                      className="mt-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-200 transition-colors"
+                      className="mt-2 px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 rounded-lg text-sm text-white transition-colors"
                     >
                       Retry
                     </button>
@@ -871,7 +869,7 @@ export default function App() {
               // Split panel graph view
               <div className="absolute inset-0 flex">
                 {/* Left Panel - Graph */}
-                <div className="flex-1 relative border-r border-dark-700">
+                <div className="flex-1 relative border-r border-light-200">
                   <GraphView
                     graphData={graphData}
                     selectedNodes={selectedNodes}
@@ -887,23 +885,23 @@ export default function App() {
                 </div>
                 
                 {/* Right Panel - Subgraph View */}
-                <div className="flex-1 relative bg-dark-950 overflow-hidden" data-subgraph-container>
+                <div className="flex-1 relative bg-light-50 overflow-hidden" data-subgraph-container>
                   {selectedNodesDetails.length > 0 ? (
                     // Show subgraph of selected nodes
                     <>
-                      <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between bg-dark-800/90 rounded-lg p-2 px-3">
+                      <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between bg-white/90 backdrop-blur-sm rounded-lg p-2 px-3 shadow-sm border border-light-200">
                         <div className="flex items-center gap-2">
-                          <Network className="w-4 h-4 text-cyan-400" />
-                          <h3 className="text-sm font-semibold text-dark-100">
+                          <Network className="w-4 h-4 text-owl-blue-700" />
+                          <h3 className="text-sm font-semibold text-owl-blue-900">
                             Subgraph ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
                           </h3>
                         </div>
                         <button
                           onClick={handleCloseDetails}
-                          className="p-1 hover:bg-dark-700 rounded transition-colors"
+                          className="p-1 hover:bg-light-100 rounded transition-colors"
                           title="Clear selection"
                         >
-                          <X className="w-4 h-4 text-dark-400" />
+                          <X className="w-4 h-4 text-light-600" />
                         </button>
                       </div>
                       <GraphView
@@ -925,21 +923,21 @@ export default function App() {
                     // Show empty state when no nodes are selected
                     <div className="h-full flex flex-col items-center justify-center p-8">
                       <div className="flex flex-col items-center gap-4 text-center max-w-md">
-                        <Network className="w-12 h-12 text-cyan-400/50" />
+                        <Network className="w-12 h-12 text-owl-blue-300" />
                         <div>
-                          <h3 className="text-md font-medium text-dark-300 mb-2">
+                          <h3 className="text-md font-medium text-light-700 mb-2">
                             Subgraph View
                           </h3>
-                          <p className="text-dark-500 text-sm">
+                          <p className="text-light-600 text-sm">
                             Select nodes in the main graph to view their subgraph here.
                           </p>
                         </div>
-                        <div className="mt-4 p-4 bg-dark-800 rounded-lg text-left w-full">
-                          <p className="text-xs text-dark-400 mb-2">
+                        <div className="mt-4 p-4 bg-light-100 rounded-lg text-left w-full">
+                          <p className="text-xs text-light-600 mb-2">
                             Click on nodes in the left graph to select them.
                           </p>
-                          <p className="text-xs text-dark-500">
-                            Hold <kbd className="px-1.5 py-0.5 bg-dark-700 rounded text-xs">Ctrl</kbd> or <kbd className="px-1.5 py-0.5 bg-dark-700 rounded text-xs">Cmd</kbd> to select multiple nodes.
+                          <p className="text-xs text-light-700">
+                            Hold <kbd className="px-1.5 py-0.5 bg-white border border-light-200 rounded text-xs">Ctrl</kbd> or <kbd className="px-1.5 py-0.5 bg-white border border-light-200 rounded text-xs">Cmd</kbd> to select multiple nodes.
                           </p>
                         </div>
                       </div>
@@ -974,11 +972,11 @@ export default function App() {
                 onBackgroundClick={handleBackgroundClick}
               />
             ) : (
-              <div className="h-full flex items-center justify-center bg-dark-950">
+              <div className="h-full flex items-center justify-center bg-light-50">
                 <div className="flex flex-col items-center gap-3 text-center">
-                  <Calendar className="w-12 h-12 text-dark-600" />
-                  <span className="text-dark-200">No timeline events available</span>
-                  <span className="text-dark-400 text-sm">
+                  <Calendar className="w-12 h-12 text-light-400" />
+                  <span className="text-light-800">No timeline events available</span>
+                  <span className="text-light-600 text-sm">
                     {selectedNodeKeys.length > 0 
                       ? 'The selected subgraph has no timeline events with date information'
                       : 'No timeline events found in the graph'}
@@ -992,21 +990,21 @@ export default function App() {
 
         {/* Node details sidebar - show all selected nodes */}
         {selectedNodesDetails.length > 0 && (
-          <div className="w-80 bg-dark-800 border-l border-dark-700 h-full flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-dark-700 flex items-center justify-between flex-shrink-0">
-              <h2 className="font-semibold text-dark-100">
+          <div className="w-80 bg-white border-l border-light-200 h-full flex flex-col overflow-hidden shadow-sm">
+            <div className="p-4 border-b border-light-200 flex items-center justify-between flex-shrink-0">
+              <h2 className="font-semibold text-owl-blue-900">
                 Selected ({selectedNodesDetails.length})
               </h2>
               <button
                 onClick={handleCloseDetails}
-                className="p-1 hover:bg-dark-700 rounded transition-colors"
+                className="p-1 hover:bg-light-100 rounded transition-colors"
               >
-                <X className="w-5 h-5 text-dark-400" />
+                <X className="w-5 h-5 text-light-600" />
               </button>
             </div>
             <div className="flex-1 overflow-y-auto">
               {selectedNodesDetails.map((node, idx) => (
-                <div key={node.key} className={idx > 0 ? "border-t border-dark-700" : ""}>
+                <div key={node.key} className={idx > 0 ? "border-t border-light-200" : ""}>
                   <NodeDetails
                     node={node}
                     onClose={() => {

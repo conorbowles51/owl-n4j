@@ -174,7 +174,6 @@ const GraphView = forwardRef(function GraphView({
 
   // Node canvas rendering
   const paintNode = useCallback((node, ctx, globalScale) => {
-    console.log(node)
     const label = node.name || node.key;
     const fontSize = Math.max(12 / globalScale, 4);
     const isSelected = selectedNodes.some(n => n.key === node.key);
@@ -187,18 +186,18 @@ const GraphView = forwardRef(function GraphView({
     ctx.fillStyle = getNodeColor(node.type);
     ctx.fill();
 
-    // Selection/hover ring
+    // Selection/hover ring - using Owl blue for selection, light gray for hover
     if (isSelected || isHovered) {
-      ctx.strokeStyle = isSelected ? '#ffffff' : '#8e8ea0';
-      ctx.lineWidth = isSelected ? 2 : 1;
+      ctx.strokeStyle = isSelected ? '#245e8f' : '#9ca3af'; // owl-blue-700 for selected, light-400 for hover
+      ctx.lineWidth = isSelected ? 2.5 : 1.5;
       ctx.stroke();
     }
 
-    // Label
+    // Label - dark text for light theme
     ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#ececf1';
+    ctx.fillStyle = '#1f2937'; // light-800 - dark text for light background
     
     // Truncate long labels
     const maxLabelLength = 20;
@@ -209,7 +208,7 @@ const GraphView = forwardRef(function GraphView({
     ctx.fillText(displayLabel, node.x, node.y + nodeRadius + 2);
   }, [selectedNodes, hoveredNode]);
 
-  // Link rendering - simple version that works
+  // Link rendering - updated for light theme
   const paintLink = useCallback((link, ctx, globalScale) => {
     const start = link.source;
     const end = link.target;
@@ -219,8 +218,8 @@ const GraphView = forwardRef(function GraphView({
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
-    ctx.strokeStyle = '#565869';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#9ca3af'; // light-400 - lighter gray for light background
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
     // Draw arrow
@@ -247,7 +246,7 @@ const GraphView = forwardRef(function GraphView({
       arrowY - arrowLength * Math.sin(angle + Math.PI / 6)
     );
     ctx.closePath();
-    ctx.fillStyle = '#565869';
+    ctx.fillStyle = '#9ca3af'; // light-400 - match link color
     ctx.fill();
   }, []);
 
@@ -731,7 +730,7 @@ const GraphView = forwardRef(function GraphView({
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-full bg-dark-950"
+      className="relative w-full h-full bg-light-50"
       style={{ cursor: selectionMode === 'drag' ? 'crosshair' : 'default' }}
     >
       <ForceGraph2D
@@ -762,15 +761,15 @@ const GraphView = forwardRef(function GraphView({
       />
       
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-dark-800/90 rounded-lg p-3 text-xs z-10">
+      <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200">
         {/* Pane View Toggle */}
         {onPaneViewModeChange && (
           <button
             onClick={() => onPaneViewModeChange(paneViewMode === 'split' ? 'single' : 'split')}
             className={`mb-3 w-full px-2 py-1.5 rounded text-xs transition-colors flex items-center justify-center gap-2 ${
               paneViewMode === 'split'
-                ? 'bg-cyan-600/90 hover:bg-cyan-500 text-white'
-                : 'bg-dark-700 hover:bg-dark-600 text-dark-200'
+                ? 'bg-owl-orange-500 hover:bg-owl-orange-600 text-white'
+                : 'bg-light-100 hover:bg-light-200 text-light-700'
             }`}
             title={paneViewMode === 'split' ? 'Switch to single pane view' : 'Switch to split pane view'}
           >
@@ -778,7 +777,7 @@ const GraphView = forwardRef(function GraphView({
             {paneViewMode === 'split' ? 'Single Pane' : 'Split View'}
           </button>
         )}
-        <div className="font-medium text-dark-200 mb-2">Entity Types</div>
+        <div className="font-medium text-owl-blue-900 mb-2">Entity Types</div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-64 overflow-y-auto">
           {entityTypesInGraph.map(({ type, count, color }) => {
             const isSelected = selectedEntityTypes.has(type);
@@ -792,19 +791,19 @@ const GraphView = forwardRef(function GraphView({
                   e.stopPropagation();
                   handleEntityTypeClick(type, nodesOfType);
                 }}
-                className={`flex items-center gap-2 p-1 rounded transition-colors hover:bg-dark-700 ${
-                  isSelected || isSelectedInGraph ? 'bg-cyan-600/20' : ''
+                className={`flex items-center gap-2 p-1 rounded transition-colors hover:bg-light-100 ${
+                  isSelected || isSelectedInGraph ? 'bg-owl-blue-100' : ''
                 }`}
                 title={`Click to select all ${type} entities (${count})`}
               >
                 <div 
-                  className={`w-3 h-3 rounded-full flex-shrink-0 ${isSelected || isSelectedInGraph ? 'ring-2 ring-cyan-400' : ''}`}
+                  className={`w-3 h-3 rounded-full flex-shrink-0 ${isSelected || isSelectedInGraph ? 'ring-2 ring-owl-blue-500' : ''}`}
                   style={{ backgroundColor: color }}
                 />
-                <span className={`text-dark-300 truncate ${isSelected || isSelectedInGraph ? 'text-cyan-300 font-medium' : ''}`}>
+                <span className={`text-light-800 truncate ${isSelected || isSelectedInGraph ? 'text-owl-blue-700 font-medium' : ''}`}>
                   {type}
                 </span>
-                <span className="text-dark-500 text-[10px] flex-shrink-0">({count})</span>
+                <span className="text-light-600 text-[10px] flex-shrink-0">({count})</span>
               </button>
             );
           })}
@@ -815,7 +814,7 @@ const GraphView = forwardRef(function GraphView({
       {showCenterButton && (
         <button
           onClick={centerGraph}
-          className="absolute top-4 right-4 z-20 p-2 bg-dark-800/90 hover:bg-dark-700 rounded-lg transition-colors text-dark-300 hover:text-dark-100"
+          className="absolute top-4 right-4 z-20 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors text-light-700 hover:text-owl-blue-900 shadow-sm border border-light-200"
           title="Center and fit graph"
         >
           <Maximize2 className="w-4 h-4" />
@@ -825,31 +824,31 @@ const GraphView = forwardRef(function GraphView({
       {/* Selection Mode Toggle */}
       <button
         onClick={() => setSelectionMode(selectionMode === 'click' ? 'drag' : 'click')}
-        className={`absolute top-4 left-4 p-2 bg-dark-800/90 hover:bg-dark-700 rounded-lg transition-colors ${
-          selectionMode === 'drag' ? 'bg-cyan-600/20' : ''
+        className={`absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 ${
+          selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
         }`}
         title={selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
       >
         {selectionMode === 'click' ? (
-          <Square className="w-5 h-5 text-dark-400" />
+          <Square className="w-5 h-5 text-light-600" />
         ) : (
-          <MousePointer className="w-5 h-5 text-cyan-400" />
+          <MousePointer className="w-5 h-5 text-owl-blue-600" />
         )}
       </button>
 
       {/* Force Controls Toggle */}
       <button
         onClick={() => setShowControls(!showControls)}
-        className="absolute top-4 left-14 p-2 bg-dark-800/90 hover:bg-dark-700 rounded-lg transition-colors"
+        className="absolute top-4 left-14 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200"
         title="Graph Settings"
       >
-        <Settings className={`w-5 h-5 ${showControls ? 'text-cyan-400' : 'text-dark-400'}`} />
+        <Settings className={`w-5 h-5 ${showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />
       </button>
 
       {/* Selection Box Overlay */}
       {selectionBox && selectionBox.width > 0 && selectionBox.height > 0 && (
         <div
-          className="absolute border-2 border-cyan-400 bg-cyan-400/10 pointer-events-none z-50"
+          className="absolute border-2 border-owl-blue-500 bg-owl-blue-100/50 pointer-events-none z-50"
           style={{
             left: `${selectionBox.x}px`,
             top: `${selectionBox.y}px`,
@@ -863,7 +862,7 @@ const GraphView = forwardRef(function GraphView({
       
       {/* Debug info - remove after testing */}
       {selectionBox && process.env.NODE_ENV === 'development' && (
-        <div className="absolute top-20 left-4 bg-dark-800/90 p-2 text-xs text-dark-200 z-50">
+        <div className="absolute top-20 left-4 bg-white/90 backdrop-blur-sm p-2 text-xs text-light-800 z-50 rounded shadow-sm border border-light-200">
           Box: {selectionBox.x.toFixed(0)}, {selectionBox.y.toFixed(0)} - {selectionBox.width.toFixed(0)}x{selectionBox.height.toFixed(0)}
           {fixedSelectionBox && <div>FIXED</div>}
         </div>
@@ -871,14 +870,14 @@ const GraphView = forwardRef(function GraphView({
 
       {/* Force Controls Panel */}
       {showControls && (
-        <div className="absolute top-14 left-4 bg-dark-800/95 rounded-lg p-4 text-sm w-64 space-y-4">
-          <div className="font-medium text-dark-200 border-b border-dark-700 pb-2">
+        <div className="absolute top-14 left-4 bg-white/95 backdrop-blur-sm rounded-lg p-4 text-sm w-64 space-y-4 shadow-lg border border-light-200">
+          <div className="font-medium text-owl-blue-900 border-b border-light-200 pb-2">
             Graph Layout
           </div>
           
           {/* Link Distance */}
           <div>
-            <div className="flex justify-between text-xs text-dark-400 mb-1">
+            <div className="flex justify-between text-xs text-light-600 mb-1">
               <span>Link Distance</span>
               <span>{linkDistance}</span>
             </div>
@@ -888,13 +887,13 @@ const GraphView = forwardRef(function GraphView({
               max="500"
               value={linkDistance}
               onChange={(e) => setLinkDistance(Number(e.target.value))}
-              className="w-full accent-cyan-500"
+              className="w-full accent-owl-blue-500"
             />
           </div>
           
           {/* Charge Strength */}
           <div>
-            <div className="flex justify-between text-xs text-dark-400 mb-1">
+            <div className="flex justify-between text-xs text-light-600 mb-1">
               <span>Repulsion</span>
               <span>{Math.abs(chargeStrength)}</span>
             </div>
@@ -904,13 +903,13 @@ const GraphView = forwardRef(function GraphView({
               max="1500"
               value={Math.abs(chargeStrength)}
               onChange={(e) => setChargeStrength(-Number(e.target.value))}
-              className="w-full accent-cyan-500"
+              className="w-full accent-owl-blue-500"
             />
           </div>
           
           {/* Center Strength */}
           <div>
-            <div className="flex justify-between text-xs text-dark-400 mb-1">
+            <div className="flex justify-between text-xs text-light-600 mb-1">
               <span>Center Pull</span>
               <span>{centerStrength.toFixed(2)}</span>
             </div>
@@ -920,7 +919,7 @@ const GraphView = forwardRef(function GraphView({
               max="100"
               value={centerStrength * 1000}
               onChange={(e) => setCenterStrength(Number(e.target.value) / 1000)}
-              className="w-full accent-cyan-500"
+              className="w-full accent-owl-blue-500"
             />
           </div>
           
@@ -931,7 +930,7 @@ const GraphView = forwardRef(function GraphView({
               setChargeStrength(-500);
               setCenterStrength(0.05);
             }}
-            className="w-full py-1.5 bg-dark-700 hover:bg-dark-600 rounded text-dark-300 text-xs transition-colors"
+            className="w-full py-1.5 bg-light-100 hover:bg-light-200 rounded text-light-700 text-xs transition-colors"
           >
             Reset to Defaults
           </button>

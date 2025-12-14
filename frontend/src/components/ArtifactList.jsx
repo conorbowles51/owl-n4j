@@ -138,33 +138,33 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-dark-800 rounded-lg w-full max-w-4xl h-[80vh] flex flex-col border border-dark-700">
+      <div className="bg-white rounded-lg w-full max-w-4xl h-[80vh] flex flex-col border border-light-200 shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-dark-700">
+        <div className="flex items-center justify-between p-4 border-b border-light-200">
           <div className="flex items-center gap-2">
-            <Archive className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-lg font-semibold text-dark-100">Saved Artifacts</h2>
-            <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
+            <Archive className="w-5 h-5 text-owl-purple-500" />
+            <h2 className="text-lg font-semibold text-owl-blue-900">Saved Artifacts</h2>
+            <span className="text-xs text-light-600 bg-light-100 px-2 py-1 rounded">
               {artifacts.length} artifact{artifacts.length !== 1 ? 's' : ''}
             </span>
           </div>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-dark-700 rounded transition-colors"
+            className="p-1 hover:bg-light-100 rounded transition-colors"
           >
-            <X className="w-5 h-5 text-dark-400" />
+            <X className="w-5 h-5 text-light-600" />
           </button>
         </div>
 
         {/* Content */}
         <div className="flex-1 flex overflow-hidden">
           {/* Artifacts List */}
-          <div className="w-1/2 border-r border-dark-700 overflow-y-auto">
+          <div className="w-1/2 border-r border-light-200 overflow-y-auto">
             {loading ? (
-              <div className="p-8 text-center text-dark-400">Loading artifacts...</div>
+              <div className="p-8 text-center text-light-600">Loading artifacts...</div>
             ) : artifacts.length === 0 ? (
-              <div className="p-8 text-center text-dark-400">
-                <Archive className="w-12 h-12 mx-auto mb-3 text-dark-600" />
+              <div className="p-8 text-center text-light-600">
+                <Archive className="w-12 h-12 mx-auto mb-3 text-light-400" />
                 <p>No artifacts saved yet</p>
               </div>
             ) : (
@@ -175,15 +175,15 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
                     onClick={() => handleView(artifact)}
                     className={`p-3 mb-2 rounded-lg cursor-pointer transition-colors ${
                       selectedArtifact?.id === artifact.id
-                        ? 'bg-cyan-600/20 border border-cyan-500/50'
-                        : 'bg-dark-900/50 hover:bg-dark-900 border border-dark-700'
+                        ? 'bg-owl-orange-100 border border-owl-orange-300'
+                        : 'bg-light-50 hover:bg-light-100 border border-light-200'
                     }`}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-dark-100 truncate">{artifact.name}</h3>
-                        <p className="text-xs text-dark-400 mt-1 line-clamp-2">{artifact.notes || 'No notes'}</p>
-                        <div className="flex items-center gap-3 mt-2 text-xs text-dark-500">
+                        <h3 className="font-medium text-owl-blue-900 truncate">{artifact.name}</h3>
+                        <p className="text-xs text-light-600 mt-1 line-clamp-2">{artifact.notes || 'No notes'}</p>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-light-600">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
                             {formatDate(artifact.created_at)}
@@ -197,10 +197,10 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
                       </div>
                       <button
                         onClick={(e) => handleDelete(artifact.id, e)}
-                        className="p-1 hover:bg-dark-700 rounded transition-colors ml-2"
+                        className="p-1 hover:bg-light-200 rounded transition-colors ml-2"
                         title="Delete artifact"
                       >
-                        <Trash2 className="w-4 h-4 text-red-400" />
+                        <Trash2 className="w-4 h-4 text-red-500" />
                       </button>
                     </div>
                   </div>
@@ -214,11 +214,11 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
             {selectedArtifact ? (
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-dark-100 mb-2">{selectedArtifact.name}</h3>
-                  <p className="text-sm text-dark-300 whitespace-pre-wrap">{selectedArtifact.notes || 'No notes'}</p>
+                  <h3 className="text-lg font-semibold text-owl-blue-900 mb-2">{selectedArtifact.name}</h3>
+                  <p className="text-sm text-light-700 whitespace-pre-wrap">{selectedArtifact.notes || 'No notes'}</p>
                 </div>
 
-                <div className="text-xs text-dark-400">
+                <div className="text-xs text-light-600">
                   <p>Created: {formatDate(selectedArtifact.created_at)}</p>
                   <p>Nodes: {selectedArtifact.node_count || selectedArtifact.subgraph?.nodes?.length || 0}</p>
                   <p>Links: {selectedArtifact.link_count || selectedArtifact.subgraph?.links?.length || 0}</p>
@@ -229,31 +229,31 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
 
                 {selectedArtifact.timeline && Array.isArray(selectedArtifact.timeline) && selectedArtifact.timeline.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-semibold text-dark-200 mb-2">Timeline Events</h4>
+                    <h4 className="text-sm font-semibold text-owl-blue-900 mb-2">Timeline Events</h4>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {groupTimelineEvents(selectedArtifact.timeline).map((dateGroup, groupIdx) => (
-                        <div key={groupIdx} className="bg-dark-900/50 rounded p-2">
+                        <div key={groupIdx} className="bg-light-50 rounded p-2 border border-light-200">
                           <div className="flex items-center gap-2 mb-2">
-                            <Calendar className="w-3 h-3 text-cyan-400" />
-                            <span className="text-xs font-medium text-dark-200">
+                            <Calendar className="w-3 h-3 text-owl-orange-500" />
+                            <span className="text-xs font-medium text-owl-blue-900">
                               {formatEventDate(dateGroup.date)}
                             </span>
-                            <span className="text-xs text-dark-500">
+                            <span className="text-xs text-light-600">
                               ({dateGroup.events.length} event{dateGroup.events.length !== 1 ? 's' : ''})
                             </span>
                           </div>
                           <div className="space-y-2 ml-5">
                             {dateGroup.events.map((event, eventIdx) => (
-                              <div key={eventIdx} className="bg-dark-800 rounded p-2 text-xs">
+                              <div key={eventIdx} className="bg-white rounded p-2 text-xs border border-light-200">
                                 <div className="flex items-start justify-between gap-2 mb-1">
-                                  <span className="font-medium text-dark-100">{event.name || event.key}</span>
+                                  <span className="font-medium text-owl-blue-900">{event.name || event.key}</span>
                                   {event.type && (
-                                    <span className="text-xs px-2 py-0.5 rounded bg-cyan-600/20 text-cyan-400 flex-shrink-0">
+                                    <span className="text-xs px-2 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
                                       {event.type}
                                     </span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-3 mt-1 text-dark-400">
+                                <div className="flex items-center gap-3 mt-1 text-light-600">
                                   {event.time && (
                                     <span className="flex items-center gap-1">
                                       <Clock className="w-3 h-3" />
@@ -268,20 +268,20 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
                                   )}
                                 </div>
                                 {event.summary && (
-                                  <p className="text-dark-300 mt-1 line-clamp-2">{event.summary}</p>
+                                  <p className="text-light-700 mt-1 line-clamp-2">{event.summary}</p>
                                 )}
                                 {event.connections && event.connections.length > 0 && (
                                   <div className="flex flex-wrap gap-1 mt-2">
                                     {event.connections.slice(0, 3).map((conn, connIdx) => (
                                       <span
                                         key={connIdx}
-                                        className="text-xs bg-dark-700 text-dark-300 px-2 py-0.5 rounded"
+                                        className="text-xs bg-light-100 text-light-700 px-2 py-0.5 rounded"
                                       >
                                         {conn.name || conn.key}
                                       </span>
                                     ))}
                                     {event.connections.length > 3 && (
-                                      <span className="text-xs text-dark-500">
+                                      <span className="text-xs text-light-600">
                                         +{event.connections.length - 3} more
                                       </span>
                                     )}
@@ -298,12 +298,12 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
 
                 {selectedArtifact.chat_history && selectedArtifact.chat_history.length > 0 && (
                   <div>
-                    <h4 className="text-sm font-semibold text-dark-200 mb-2">Chat History</h4>
+                    <h4 className="text-sm font-semibold text-owl-blue-900 mb-2">Chat History</h4>
                     <div className="space-y-2">
                       {selectedArtifact.chat_history.map((msg, idx) => (
-                        <div key={idx} className="bg-dark-900/50 rounded p-2 text-xs">
-                          <span className="font-medium text-cyan-400">{msg.role === 'user' ? 'User' : 'AI'}:</span>
-                          <p className="text-dark-300 mt-1">{msg.content}</p>
+                        <div key={idx} className="bg-light-50 rounded p-2 text-xs border border-light-200">
+                          <span className="font-medium text-owl-purple-600">{msg.role === 'user' ? 'User' : 'AI'}:</span>
+                          <p className="text-light-700 mt-1">{msg.content}</p>
                         </div>
                       ))}
                     </div>
@@ -313,14 +313,14 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
                 <div className="flex gap-2">
                   <button
                     onClick={handleLoad}
-                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors"
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-lg transition-colors"
                   >
                     <Eye className="w-4 h-4" />
                     Load Artifact
                   </button>
                   <button
                     onClick={handleExportPDF}
-                    className="flex items-center justify-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg transition-colors"
+                    className="flex items-center justify-center gap-2 px-4 py-2 bg-light-100 hover:bg-light-200 text-light-700 rounded-lg transition-colors"
                     title="Export to PDF"
                   >
                     <FileDown className="w-4 h-4" />
@@ -329,9 +329,9 @@ export default function ArtifactList({ isOpen, onClose, onLoadArtifact }) {
                 </div>
               </div>
             ) : (
-              <div className="h-full flex items-center justify-center text-dark-400">
+              <div className="h-full flex items-center justify-center text-light-600">
                 <div className="text-center">
-                  <Eye className="w-12 h-12 mx-auto mb-3 text-dark-600" />
+                  <Eye className="w-12 h-12 mx-auto mb-3 text-light-400" />
                   <p>Select an artifact to view details</p>
                 </div>
               </div>

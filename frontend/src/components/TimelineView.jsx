@@ -95,8 +95,8 @@ function EventCard({ event, onSelect, isSelected, modifierKeys }) {
       onClick={handleClick}
       className={`w-full text-left p-3 rounded-lg transition-all ${
         isSelected 
-          ? 'bg-dark-700 ring-2 ring-cyan-500' 
-          : 'bg-dark-800 hover:bg-dark-700'
+          ? 'bg-owl-blue-100 ring-2 ring-owl-blue-500' 
+          : 'bg-white hover:bg-light-50 border border-light-200'
       }`}
     >
       <div className="flex items-start gap-3">
@@ -109,7 +109,7 @@ function EventCard({ event, onSelect, isSelected, modifierKeys }) {
         <div className="flex-1 min-w-0">
           {/* Header */}
           <div className="flex items-center justify-between gap-2">
-            <span className="font-medium text-dark-100 truncate">
+            <span className="font-medium text-owl-blue-900 truncate">
               {event.name}
             </span>
             <span 
@@ -121,7 +121,7 @@ function EventCard({ event, onSelect, isSelected, modifierKeys }) {
           </div>
           
           {/* Time and Amount */}
-          <div className="flex items-center gap-3 mt-1 text-xs text-dark-400">
+          <div className="flex items-center gap-3 mt-1 text-xs text-light-600">
             {event.time && (
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3" />
@@ -142,13 +142,13 @@ function EventCard({ event, onSelect, isSelected, modifierKeys }) {
               {event.connections.slice(0, 3).map((conn, idx) => (
                 <span 
                   key={idx}
-                  className="text-xs bg-dark-900 text-dark-300 px-2 py-0.5 rounded"
+                  className="text-xs bg-light-100 text-light-700 px-2 py-0.5 rounded"
                 >
                   {conn.name}
                 </span>
               ))}
               {event.connections.length > 3 && (
-                <span className="text-xs text-dark-500">
+                <span className="text-xs text-light-600">
                   +{event.connections.length - 3} more
                 </span>
               )}
@@ -169,19 +169,19 @@ function DateHeader({ date, eventCount, isExpanded, onToggle }) {
       onClick={onToggle}
       className="w-full flex items-center gap-3 py-2 text-left group"
     >
-      <div className="flex items-center justify-center w-6 h-6 rounded bg-dark-700 group-hover:bg-dark-600 transition-colors">
+      <div className="flex items-center justify-center w-6 h-6 rounded bg-light-100 group-hover:bg-light-200 transition-colors">
         {isExpanded ? (
-          <ChevronDown className="w-4 h-4 text-dark-400" />
+          <ChevronDown className="w-4 h-4 text-light-600" />
         ) : (
-          <ChevronRight className="w-4 h-4 text-dark-400" />
+          <ChevronRight className="w-4 h-4 text-light-600" />
         )}
       </div>
       <div className="flex items-center gap-2">
-        <Calendar className="w-4 h-4 text-dark-400" />
-        <span className="font-medium text-dark-200">
+        <Calendar className="w-4 h-4 text-light-600" />
+        <span className="font-medium text-owl-blue-900">
           {formatDate(date)}
         </span>
-        <span className="text-xs text-dark-500 bg-dark-700 px-2 py-0.5 rounded">
+        <span className="text-xs text-light-600 bg-light-100 px-2 py-0.5 rounded">
           {eventCount} event{eventCount !== 1 ? 's' : ''}
         </span>
       </div>
@@ -194,23 +194,23 @@ function DateHeader({ date, eventCount, isExpanded, onToggle }) {
  */
 function FilterPanel({ eventTypes, selectedTypes, onToggleType, onSelectAll, onClearAll }) {
   return (
-    <div className="bg-dark-800 rounded-lg p-3 mb-4">
+    <div className="bg-light-50 rounded-lg p-3 mb-4 border border-light-200">
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 text-sm text-dark-300">
+        <div className="flex items-center gap-2 text-sm text-light-700">
           <Filter className="w-4 h-4" />
           <span>Filter by type</span>
         </div>
         <div className="flex gap-2">
           <button 
             onClick={onSelectAll}
-            className="text-xs text-dark-400 hover:text-dark-200"
+            className="text-xs text-light-600 hover:text-light-800"
           >
             All
           </button>
-          <span className="text-dark-600">|</span>
+          <span className="text-light-400">|</span>
           <button 
             onClick={onClearAll}
-            className="text-xs text-dark-400 hover:text-dark-200"
+            className="text-xs text-light-600 hover:text-light-800"
           >
             None
           </button>
@@ -491,10 +491,10 @@ export default function TimelineView({
   // Loading state
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center bg-dark-950">
+      <div className="h-full flex items-center justify-center bg-light-50">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
-          <span className="text-dark-400">Loading timeline...</span>
+          <Loader2 className="w-8 h-8 text-owl-blue-600 animate-spin" />
+          <span className="text-light-600">Loading timeline...</span>
         </div>
       </div>
     );
@@ -503,11 +503,11 @@ export default function TimelineView({
   // Error state
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center bg-dark-950">
+      <div className="h-full flex items-center justify-center bg-light-50">
         <div className="flex flex-col items-center gap-3 text-center">
-          <AlertCircle className="w-8 h-8 text-red-400" />
-          <span className="text-dark-200">Failed to load timeline</span>
-          <span className="text-dark-400 text-sm">{error}</span>
+          <AlertCircle className="w-8 h-8 text-red-500" />
+          <span className="text-light-800">Failed to load timeline</span>
+          <span className="text-light-600 text-sm">{error}</span>
         </div>
       </div>
     );
@@ -516,11 +516,11 @@ export default function TimelineView({
   // Empty state
   if (events.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-dark-950">
+      <div className="h-full flex items-center justify-center bg-light-50">
         <div className="flex flex-col items-center gap-3 text-center">
-          <Calendar className="w-12 h-12 text-dark-600" />
-          <span className="text-dark-200">No timeline events found</span>
-          <span className="text-dark-400 text-sm">
+          <Calendar className="w-12 h-12 text-light-400" />
+          <span className="text-light-800">No timeline events found</span>
+          <span className="text-light-600 text-sm">
             Events need a date property to appear on the timeline
           </span>
         </div>
@@ -529,18 +529,18 @@ export default function TimelineView({
   }
 
   return (
-    <div className="h-full bg-dark-950 overflow-hidden flex flex-col">
+    <div className="h-full bg-light-50 overflow-hidden flex flex-col">
       {/* Header */}
-      <div className="p-4 border-b border-dark-700 bg-dark-900">
+      <div className="p-4 border-b border-light-200 bg-white">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-cyan-400" />
-            <h2 className="font-semibold text-dark-100">Timeline</h2>
-            <span className="text-xs text-dark-400 bg-dark-700 px-2 py-1 rounded">
+            <Calendar className="w-5 h-5 text-owl-blue-700" />
+            <h2 className="font-semibold text-owl-blue-900">Timeline</h2>
+            <span className="text-xs text-light-600 bg-light-100 px-2 py-1 rounded">
               {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
             </span>
             {selectedEventKeys.length > 0 && (
-              <span className="text-xs text-cyan-400 bg-cyan-900/30 px-2 py-1 rounded">
+              <span className="text-xs text-owl-orange-600 bg-owl-orange-100 px-2 py-1 rounded">
                 {selectedEventKeys.length} selected
               </span>
             )}
@@ -563,7 +563,7 @@ export default function TimelineView({
                     handleEventSelect(eventNode, true);
                   });
                 }}
-                className="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded transition-colors"
+                className="text-xs px-3 py-1.5 bg-light-100 hover:bg-light-200 text-light-700 rounded transition-colors"
                 title="Select all visible events (Ctrl/Cmd+click to add to selection)"
               >
                 Select All
@@ -576,7 +576,7 @@ export default function TimelineView({
                       onBackgroundClick();
                     }
                   }}
-                  className="text-xs px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded transition-colors"
+                  className="text-xs px-3 py-1.5 bg-light-100 hover:bg-light-200 text-light-700 rounded transition-colors"
                   title="Clear selection"
                 >
                   Clear
@@ -612,7 +612,7 @@ export default function TimelineView({
         {/* Timeline */}
         <div className="space-y-2">
           {groupedEvents.map(({ date, events: dateEvents }) => (
-            <div key={date} className="border-l-2 border-dark-700 pl-4">
+            <div key={date} className="border-l-2 border-light-300 pl-4">
               <DateHeader
                 date={date}
                 eventCount={dateEvents.length}

@@ -143,8 +143,8 @@ export default function DateRangeFilter({
         onClick={() => setIsOpen(!isOpen)}
         className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
           hasActiveFilter
-            ? 'bg-cyan-600 text-white hover:bg-cyan-500'
-            : 'bg-dark-700 text-dark-300 hover:bg-dark-600'
+            ? 'bg-owl-orange-500 text-white hover:bg-owl-orange-600'
+            : 'bg-light-100 text-light-700 hover:bg-light-200'
         }`}
         title="Filter by date range"
       >
@@ -158,34 +158,34 @@ export default function DateRangeFilter({
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 bg-dark-800 rounded-lg p-4 w-96 border border-dark-700 shadow-xl z-50">
+        <div className="absolute top-full left-0 mt-2 bg-white rounded-lg p-4 w-96 border border-light-200 shadow-xl z-50">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold text-dark-100 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-owl-blue-900 flex items-center gap-2">
               <Calendar className="w-4 h-4" />
               Date Range Filter
             </h3>
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1 hover:bg-dark-700 rounded transition-colors"
+              className="p-1 hover:bg-light-100 rounded transition-colors"
             >
-              <X className="w-4 h-4 text-dark-400" />
+              <X className="w-4 h-4 text-light-600" />
             </button>
           </div>
 
           {/* Visual Timeline Slider */}
           {(effectiveMinDate && effectiveMaxDate) && (
             <div className="mb-4">
-              <label className="block text-xs font-medium text-dark-400 mb-2">
+              <label className="block text-xs font-medium text-light-600 mb-2">
                 Timeline Range
               </label>
               <div className="relative h-8">
                 {/* Background track */}
-                <div className="absolute inset-0 bg-dark-700 rounded-full" />
+                <div className="absolute inset-0 bg-light-200 rounded-full" />
                 
                 {/* Active range */}
                 {startDate && endDate && (
                   <div
-                    className="absolute h-full bg-cyan-600 rounded-full"
+                    className="absolute h-full bg-owl-orange-500 rounded-full"
                     style={{
                       left: `${Math.min(timelineRange.min, timelineRange.max)}%`,
                       width: `${Math.abs(timelineRange.max - timelineRange.min)}%`,
@@ -218,10 +218,10 @@ export default function DateRangeFilter({
                 )}
                 
                 {/* Date labels */}
-                <div className="absolute -bottom-5 left-0 right-0 flex justify-between text-xs text-dark-500">
+                <div className="absolute -bottom-5 left-0 right-0 flex justify-between text-xs text-light-600">
                   <span>{effectiveMinDate}</span>
                   {startDate && endDate && (
-                    <span className="text-cyan-400">
+                    <span className="text-owl-orange-600">
                       {startDate} to {endDate}
                     </span>
                   )}
@@ -234,56 +234,56 @@ export default function DateRangeFilter({
           {/* Date and Time Inputs */}
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-dark-400 mb-1.5">
+              <label className="block text-xs font-medium text-light-600 mb-1.5">
                 Start Date & Time
               </label>
               <div className="flex gap-2">
-                <div className="flex-1 flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2 border border-dark-700">
-                  <Calendar className="w-4 h-4 text-dark-500" />
+                <div className="flex-1 flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-light-300">
+                  <Calendar className="w-4 h-4 text-light-600" />
                   <input
                     type="date"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
-                    className="flex-1 bg-transparent text-dark-100 text-sm focus:outline-none"
+                    className="flex-1 bg-transparent text-light-900 text-sm focus:outline-none"
                     min={effectiveMinDate}
                     max={effectiveMaxDate || endDate}
                   />
                 </div>
-                <div className="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2 border border-dark-700 w-24">
-                  <Clock className="w-4 h-4 text-dark-500" />
+                <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-light-300 w-24">
+                  <Clock className="w-4 h-4 text-light-600" />
                   <input
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="flex-1 bg-transparent text-dark-100 text-sm focus:outline-none"
+                    className="flex-1 bg-transparent text-light-900 text-sm focus:outline-none"
                   />
                 </div>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-dark-400 mb-1.5">
+              <label className="block text-xs font-medium text-light-600 mb-1.5">
                 End Date & Time
               </label>
               <div className="flex gap-2">
-                <div className="flex-1 flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2 border border-dark-700">
-                  <Calendar className="w-4 h-4 text-dark-500" />
+                <div className="flex-1 flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-light-300">
+                  <Calendar className="w-4 h-4 text-light-600" />
                   <input
                     type="date"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
-                    className="flex-1 bg-transparent text-dark-100 text-sm focus:outline-none"
+                    className="flex-1 bg-transparent text-light-900 text-sm focus:outline-none"
                     min={startDate || effectiveMinDate}
                     max={effectiveMaxDate}
                   />
                 </div>
-                <div className="flex items-center gap-2 bg-dark-900 rounded-lg px-3 py-2 border border-dark-700 w-24">
-                  <Clock className="w-4 h-4 text-dark-500" />
+                <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 border border-light-300 w-24">
+                  <Clock className="w-4 h-4 text-light-600" />
                   <input
                     type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="flex-1 bg-transparent text-dark-100 text-sm focus:outline-none"
+                    className="flex-1 bg-transparent text-light-900 text-sm focus:outline-none"
                   />
                 </div>
               </div>
@@ -294,20 +294,20 @@ export default function DateRangeFilter({
           <div className="mt-4 flex gap-2">
             <button
               onClick={handleClear}
-              className="flex-1 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm transition-colors"
+              className="flex-1 px-3 py-2 bg-light-100 hover:bg-light-200 text-light-700 rounded-lg text-sm transition-colors"
             >
               Clear Filter
             </button>
             <button
               onClick={handleApply}
-              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-sm transition-colors"
+              className="px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-lg text-sm transition-colors"
             >
               Apply
             </button>
           </div>
 
           {/* Info */}
-          <div className="mt-3 text-xs text-dark-500 bg-dark-900/50 rounded p-2">
+          <div className="mt-3 text-xs text-light-600 bg-light-50 rounded p-2 border border-light-200">
             <p>Shows nodes with dates in range or connected to nodes with dates in range.</p>
           </div>
         </div>
