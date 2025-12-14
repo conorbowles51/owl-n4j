@@ -9,7 +9,9 @@ import {
   Layout,
   X,
   Save,
-  Archive
+  Archive,
+  ChevronDown,
+  GitBranch
 } from 'lucide-react';
 import { graphAPI, artifactsAPI, timelineAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -58,6 +60,10 @@ export default function App() {
 
   // Pane view state (single or split)
   const [paneViewMode, setPaneViewMode] = useState('single'); // 'single' or 'split'
+  
+  // Subgraph menu state
+  const [isSubgraphMenuOpen, setIsSubgraphMenuOpen] = useState(false);
+  const subgraphMenuRef = useRef(null);
 
   // Dimensions
   const [dimensions, setDimensions] = useState({
@@ -141,6 +147,20 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Close subgraph menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (subgraphMenuRef.current && !subgraphMenuRef.current.contains(e.target)) {
+        setIsSubgraphMenuOpen(false);
+      }
+    };
+
+    if (isSubgraphMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isSubgraphMenuOpen]);
 
   // Debounce timer ref for loadNodeDetails
   const loadNodeDetailsTimerRef = useRef(null);
@@ -383,6 +403,14 @@ export default function App() {
     selectedNodes.map(n => n.key), 
     [selectedNodes]
   );
+  
+  // Handle create subgraph from selected
+  const handleCreateSubgraphFromSelected = useCallback(() => {
+    if (selectedNodeKeys.length >= 2) {
+      setPaneViewMode('split');
+      setIsSubgraphMenuOpen(false);
+    }
+  }, [selectedNodeKeys.length]);
   
   // Build subgraph for selected nodes
   const subgraphData = buildSubgraph(selectedNodeKeys);
@@ -691,6 +719,67 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Subgraph Menu - Only show in graph view */}
+          {viewMode === 'graph' && (
+            <div ref={subgraphMenuRef} className="relative">
+              <button
+                onClick={() => setIsSubgraphMenuOpen(!isSubgraphMenuOpen)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                  paneViewMode === 'split'
+                    ? 'bg-owl-blue-100 text-owl-blue-900'
+                    : 'text-light-600 hover:text-light-800 hover:bg-light-100'
+                }`}
+                title="Subgraph options"
+              >
+                <GitBranch className="w-4 h-4" />
+                Subgraph
+                <ChevronDown className={`w-4 h-4 transition-transform ${isSubgraphMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isSubgraphMenuOpen && (
+                <div className="absolute top-full right-0 mt-1 bg-white rounded-lg shadow-lg border border-light-200 py-1 min-w-[180px] z-50">
+                  <button
+                    onClick={handleCreateSubgraphFromSelected}
+                    disabled={selectedNodeKeys.length < 2}
+                    className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                      selectedNodeKeys.length >= 2
+                        ? 'text-light-800 hover:bg-light-50 cursor-pointer'
+                        : 'text-light-400 cursor-not-allowed opacity-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layout className="w-4 h-4" />
+                      <span>From Selected</span>
+                    </div>
+                    {selectedNodeKeys.length < 2 && (
+                      <div className="text-xs text-light-500 mt-0.5 ml-6">
+                        Select 2+ nodes
+                      </div>
+                    )}
+                  </button>
+                  
+                  {paneViewMode === 'split' && (
+                    <div className="border-t border-light-200 mt-1 pt-1">
+                      <button
+                        onClick={() => {
+                          setPaneViewMode('single');
+                          setIsSubgraphMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <X className="w-4 h-4" />
+                          <span>Close Subgraph</span>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Save Artifact Button */}
           {selectedNodeKeys.length > 0 && (
             <button

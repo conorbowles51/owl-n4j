@@ -802,22 +802,6 @@ const GraphView = forwardRef(function GraphView({
       
       {/* Legend */}
       <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200">
-        {/* Pane View Toggle */}
-        {onPaneViewModeChange && (
-          <button
-            onClick={() => onPaneViewModeChange(paneViewMode === 'split' ? 'single' : 'split')}
-            className={`mb-3 w-full px-2 py-1.5 rounded text-xs transition-colors flex items-center justify-center gap-2 ${
-              paneViewMode === 'split'
-                ? 'bg-owl-orange-500 hover:bg-owl-orange-600 text-white'
-                : 'bg-light-100 hover:bg-light-200 text-light-700'
-            }`}
-            title={paneViewMode === 'split' ? 'Switch to single pane view' : 'Switch to split pane view'}
-          >
-            <Layout className="w-3 h-3" />
-            {paneViewMode === 'split' ? 'Single Pane' : 'Split View'}
-          </button>
-        )}
-        
         {/* Relationship Labels Toggle - Only show in subgraph */}
         {isSubgraph && (
           <div className="mb-3 pb-3 border-b border-light-200">
