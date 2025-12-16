@@ -266,6 +266,26 @@ export default function TimelineView({
   const [selectedTypes, setSelectedTypes] = useState(new Set());
   const [modifierKeys, setModifierKeys] = useState({ ctrl: false, meta: false });
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchMode, setSearchMode] = useState('filter');
+  const [pendingSearchTerm, setPendingSearchTerm] = useState('');
+
+  const handleTimelineQueryChange = useCallback((value) => {
+    setPendingSearchTerm(value);
+    if (searchMode === 'filter') {
+      setSearchTerm(value);
+    }
+  }, [searchMode]);
+
+  const handleTimelineModeChange = useCallback((mode) => {
+    setSearchMode(mode);
+    if (mode === 'filter') {
+      setSearchTerm(pendingSearchTerm);
+    }
+  }, [pendingSearchTerm]);
+
+  const handleTimelineSearch = useCallback(() => {
+    setSearchTerm(pendingSearchTerm);
+  }, [pendingSearchTerm]);
   
   // Track modifier keys for multi-select (similar to GraphView)
   useEffect(() => {
@@ -434,7 +454,7 @@ export default function TimelineView({
     
     // Filter events that match the query
     return events.filter(event => {
-      return matchesQuery(queryAST, event);
+        return matchesQuery(queryAST, event);
     });
   }, [events, searchTerm]);
 
@@ -589,7 +609,11 @@ export default function TimelineView({
         {/* Search Filter */}
         <div className="flex items-center gap-2">
           <GraphSearchFilter
+            mode={searchMode}
+            onModeChange={handleTimelineModeChange}
             onFilterChange={setSearchTerm}
+            onQueryChange={handleTimelineQueryChange}
+            onSearch={handleTimelineSearch}
             placeholder="Filter timeline events..."
             disabled={isLoading}
           />

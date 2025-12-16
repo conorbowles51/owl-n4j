@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Settings, MousePointer, Square, Maximize2, Layout } from "lucide-react"
+import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight } from "lucide-react"
 /**
  * Color palette for entity types
  */
@@ -767,6 +767,28 @@ const GraphView = forwardRef(function GraphView({
     });
   }, [graphData.nodes]);
 
+  const areAllVisibleNodesSelected = useMemo(() => {
+    if (!graphData.nodes.length || !selectedNodes?.length) return false;
+    const visibleKeys = new Set(graphData.nodes.map(node => node.key));
+    return selectedNodes.every(n => visibleKeys.has(n.key));
+  }, [graphData.nodes, selectedNodes]);
+
+  const selectVisibleNodes = useCallback(() => {
+    if (!graphData.nodes.length) return;
+    onBulkNodeSelect?.(graphData.nodes);
+  }, [graphData.nodes, onBulkNodeSelect]);
+
+  const deselectVisibleNodes = useCallback(() => {
+    if (!graphData.nodes.length) return;
+    onBulkNodeSelect?.([]);
+  }, [graphData.nodes, onBulkNodeSelect]);
+
+  const toggleSubgraphPanel = useCallback(() => {
+    if (!onPaneViewModeChange) return;
+    const nextMode = paneViewMode === 'split' ? 'single' : 'split';
+    onPaneViewModeChange(nextMode);
+  }, [paneViewMode, onPaneViewModeChange]);
+
   return (
     <div 
       ref={containerRef}
@@ -819,7 +841,21 @@ const GraphView = forwardRef(function GraphView({
           </div>
         )}
         
-        <div className="font-medium text-owl-blue-900 mb-2">Entity Types</div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="font-medium text-owl-blue-900">Entity Types</div>
+          <button
+            onClick={toggleSubgraphPanel}
+            className="p-1 rounded hover:bg-light-100 transition-colors"
+            title={paneViewMode === 'split' ? 'Hide subgraph panel' : 'Show subgraph panel'}
+            type="button"
+          >
+            {paneViewMode === 'split' ? (
+              <ChevronLeft className="w-4 h-4 text-light-700" />
+            ) : (
+              <ChevronRight className="w-4 h-4 text-light-700" />
+            )}
+          </button>
+        </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-64 overflow-y-auto">
           {entityTypesInGraph.map(({ type, count, color }) => {
             const isSelected = selectedEntityTypes.has(type);
@@ -849,6 +885,15 @@ const GraphView = forwardRef(function GraphView({
               </button>
             );
           })}
+        </div>
+        <div className="mt-3 pt-2 border-t border-light-200">
+          <button
+            onClick={areAllVisibleNodesSelected ? deselectVisibleNodes : selectVisibleNodes}
+            className="w-full px-3 py-1.5 bg-light-100 hover:bg-light-200 rounded text-xs text-light-700 transition-colors"
+            title={areAllVisibleNodesSelected ? "Deselect all visible nodes" : "Select all currently visible nodes and open them in the subgraph"}
+          >
+            {areAllVisibleNodesSelected ? 'Deselect all visible' : 'Select all visible'}
+          </button>
         </div>
       </div>
 

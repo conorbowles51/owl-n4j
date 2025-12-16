@@ -13,7 +13,7 @@ import {
   ChevronDown,
   GitBranch
 } from 'lucide-react';
-import { graphAPI, artifactsAPI, timelineAPI } from './services/api';
+import { graphAPI, artifactsAPI, timelineAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
 import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
@@ -26,6 +26,7 @@ import ArtifactList from './components/ArtifactList';
 import DateRangeFilter from './components/DateRangeFilter';
 import { exportArtifactToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
+import LoginPanel from './components/LoginPanel';
 
 /**
  * Main App Component
@@ -40,6 +41,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState({ start_date: null, end_date: null });
   const [graphSearchTerm, setGraphSearchTerm] = useState('');
+  const [graphSearchMode, setGraphSearchMode] = useState('filter');
+  const [pendingGraphSearch, setPendingGraphSearch] = useState('');
 
   // Selection state - support multiple nodes
   const [selectedNodes, setSelectedNodes] = useState([]); // Array of node objects
@@ -57,6 +60,65 @@ export default function App() {
   const [showArtifactModal, setShowArtifactModal] = useState(false);
   const [showArtifactList, setShowArtifactList] = useState(false);
   const subgraphGraphRef = useRef(null); // Ref to subgraph GraphView for PDF export
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authUsername, setAuthUsername] = useState('');
+  const [showLoginPanel, setShowLoginPanel] = useState(false);
+  const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const accountDropdownRef = useRef(null);
+  const logoButtonRef = useRef(null);
+
+  useEffect(() => {
+    async function loadUser() {
+      try {
+        const current = await authAPI.me();
+        setIsAuthenticated(true);
+        setAuthUsername(current.username);
+      } catch {
+        setIsAuthenticated(false);
+        setAuthUsername('');
+        localStorage.removeItem('authToken');
+      }
+    }
+
+    loadUser();
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        isAccountDropdownOpen &&
+        accountDropdownRef.current &&
+        logoButtonRef.current &&
+        !accountDropdownRef.current.contains(event.target) &&
+        !logoButtonRef.current.contains(event.target)
+      ) {
+        setIsAccountDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAccountDropdownOpen]);
+
+  const handleLoginSuccess = useCallback((token, username) => {
+    localStorage.setItem('authToken', token);
+    setIsAuthenticated(true);
+    setAuthUsername(username);
+    setIsAccountDropdownOpen(false);
+  }, []);
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await authAPI.logout();
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem('authToken');
+    setIsAuthenticated(false);
+    setAuthUsername('');
+    setIsAccountDropdownOpen(false);
+  }, []);
+
 
   // Pane view state (single or split)
   const [paneViewMode, setPaneViewMode] = useState('single'); // 'single' or 'split'
@@ -133,10 +195,27 @@ export default function App() {
   }, [fullGraphData, graphSearchTerm, applyGraphFilter]);
 
   // Handle graph search filter change
-  const handleGraphSearchChange = useCallback((searchTerm) => {
+  const handleGraphFilterChange = useCallback((searchTerm) => {
     setGraphSearchTerm(searchTerm);
-    // Filter will be applied via useEffect when graphSearchTerm changes
   }, []);
+
+  const handleGraphQueryChange = useCallback((searchTerm) => {
+    setPendingGraphSearch(searchTerm);
+    if (graphSearchMode === 'filter') {
+      setGraphSearchTerm(searchTerm);
+    }
+  }, [graphSearchMode]);
+
+  const handleGraphSearchExecute = useCallback(() => {
+    setGraphSearchTerm(pendingGraphSearch);
+  }, [pendingGraphSearch]);
+
+  const handleGraphModeChange = useCallback((mode) => {
+    setGraphSearchMode(mode);
+    if (mode === 'filter') {
+      setGraphSearchTerm(pendingGraphSearch);
+    }
+  }, [pendingGraphSearch]);
 
   // Handle window resize
   useEffect(() => {
@@ -748,12 +827,73 @@ export default function App() {
     });
   }, []);
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <LoginPanel
+            isOpen={true}
+            inline
+            onLoginSuccess={handleLoginSuccess}
+            onLogout={handleLogout}
+            isAuthenticated={isAuthenticated}
+            username={authUsername}
+            onClose={() => {}}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="h-16 bg-white border-b border-light-200 flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
-        <div className="flex items-center gap-3">
-          <img src="/owl-logo.webp" alt="Owl Consultancy Group" className="w-40 h-40 object-contain" />
+        <div className="flex items-center gap-3 relative">
+          <button
+            ref={logoButtonRef}
+            onClick={() => setIsAccountDropdownOpen(prev => !prev)}
+            className="group focus:outline-none"
+            type="button"
+          >
+            <img src="/owl-logo.webp" alt="Owl Consultancy Group" className="w-40 h-40 object-contain" />
+          </button>
+
+          {isAccountDropdownOpen && (
+            <div
+              ref={accountDropdownRef}
+              className="absolute z-50 mt-2 w-48 rounded-lg bg-white shadow-lg border border-light-200 py-2 right-0"
+              style={{ top: '70px', left: '0' }}
+            >
+              {isAuthenticated ? (
+                <div className="px-3 py-1 space-y-1 text-sm text-dark-600">
+                  <p className="text-xs uppercase text-dark-400">Signed in as</p>
+                  <p className="font-semibold text-dark-800">{authUsername}</p>
+                  <button
+                    onClick={async () => {
+                      await handleLogout();
+                      setIsAccountDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                  >
+                    Logout
+                  </button>
+                </div>
+              ) : (
+                <div className="px-3 py-2">
+                  <button
+                    onClick={() => {
+                      setShowLoginPanel(true);
+                      setIsAccountDropdownOpen(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-2 bg-dark-900 text-light-100 rounded shadow-sm hover:bg-dark-800 transition-colors text-sm"
+                  >
+                    Login
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           
           {viewMode === 'graph' && (
             <span className="text-xs text-light-600 bg-light-100 px-2 py-1 rounded">
@@ -912,7 +1052,11 @@ export default function App() {
 
           {viewMode === 'graph' && (
             <GraphSearchFilter
-              onFilterChange={handleGraphSearchChange}
+              mode={graphSearchMode}
+              onModeChange={handleGraphModeChange}
+              onFilterChange={handleGraphFilterChange}
+              onQueryChange={handleGraphQueryChange}
+              onSearch={handleGraphSearchExecute}
               placeholder="Filter graph nodes..."
               disabled={isLoading}
             />
@@ -1243,6 +1387,14 @@ export default function App() {
             setShowArtifactList(false);
           }
         }}
+      />
+      <LoginPanel
+        isOpen={showLoginPanel}
+        onClose={() => setShowLoginPanel(false)}
+        onLoginSuccess={handleLoginSuccess}
+        onLogout={handleLogout}
+        isAuthenticated={isAuthenticated}
+        username={authUsername}
       />
     </div>
   );

@@ -14,7 +14,13 @@ async function fetchAPI(endpoint, options = {}) {
     'Content-Type': 'application/json',
   };
 
+  const token = localStorage.getItem('authToken');
+  if (token) {
+    defaultHeaders.Authorization = `Bearer ${token}`;
+  }
+
   const config = {
+    credentials: options.credentials || 'include',
     ...options,
     headers: {
       ...defaultHeaders,
@@ -190,5 +196,26 @@ export const artifactsAPI = {
   delete: (artifactId) => 
     fetchAPI(`/artifacts/${encodeURIComponent(artifactId)}`, {
       method: 'DELETE',
+    }),
+};
+
+/**
+ * Authentication API
+ */
+export const authAPI = {
+  login: ({ username, password }) =>
+    fetchAPI('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+
+  logout: () =>
+    fetchAPI('/auth/logout', {
+      method: 'POST',
+    }),
+
+  me: () =>
+    fetchAPI('/auth/me', {
+      method: 'GET',
     }),
 };

@@ -169,9 +169,8 @@ function processAndOperators(tokens) {
             : right
         });
       }
-    } else if (tokens[i].type !== 'operator' || tokens[i].value === 'OR') {
-      // Implicit AND if not an operator (or if it's OR which we'll handle later)
-      // Treat consecutive terms as AND
+    } else if (tokens[i].type !== 'operator') {
+      // Implicit AND for consecutive terms
       const left = result.pop();
       const right = tokens[i];
       result.push({
@@ -184,6 +183,7 @@ function processAndOperators(tokens) {
           : right
       });
     } else {
+      // Push operators (like OR) to be processed later
       result.push(tokens[i]);
     }
   }
@@ -274,6 +274,30 @@ export function matchesQuery(ast, item) {
     ].join(' ').toLowerCase();
 
     const normalizedTerm = term.toLowerCase();
+
+    // Handle wildcard search (supports * and ?)
+    if (normalizedTerm.includes('*') || normalizedTerm.includes('?')) {
+      const escaped = normalizedTerm.replace(/[-/\\^$+?.()|[\]{}]/g, '\\$&');
+      const pattern = escaped
+        .replace(/\\\*/g, '.*')
+        .replace(/\\\?/g, '.');
+      const regex = new RegExp(pattern, 'i');
+      return regex.test(searchableText);
+    }
+
+    // Simple fuzziness using "~" (characters must appear in order)
+    if (normalizedTerm.includes('~')) {
+      const fuzzy = normalizedTerm.replace(/~/g, '');
+      let cursor = 0;
+      for (const char of fuzzy) {
+        cursor = searchableText.indexOf(char, cursor);
+        if (cursor === -1) {
+          return false;
+        }
+        cursor += 1;
+      }
+      return true;
+    }
 
     if (exact) {
       // For quoted strings, match the exact phrase

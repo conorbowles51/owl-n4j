@@ -25,6 +25,13 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 
+# Authentication configuration
+AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
+AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "owlinvestigates")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "supersecretchange")
+AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
+AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "60"))
+
 # API Configuration
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))
