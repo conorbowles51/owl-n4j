@@ -11,7 +11,8 @@ import {
   Save,
   Archive,
   ChevronDown,
-  GitBranch
+  GitBranch,
+  CheckSquare
 } from 'lucide-react';
 import { graphAPI, artifactsAPI, timelineAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -47,6 +48,9 @@ export default function App() {
   // Selection state - support multiple nodes
   const [selectedNodes, setSelectedNodes] = useState([]); // Array of node objects
   const [selectedNodesDetails, setSelectedNodesDetails] = useState([]); // Array of node details
+  
+  // Subgraph state - separate from selection so nodes can be selected without being in subgraph
+  const [subgraphNodeKeys, setSubgraphNodeKeys] = useState([]); // Keys of nodes that are in the subgraph
   
   // Timeline context - separate from selection so inspecting events doesn't filter timeline
   const [timelineContextKeys, setTimelineContextKeys] = useState([]); // Keys that define what events show on timeline
@@ -298,7 +302,53 @@ export default function App() {
     // Update timeline context when selecting from graph
     setTimelineContextKeys(keys);
     setContextMenu(null);
+    // NOTE: This does NOT automatically add to subgraph - user must click "Add to subgraph"
   }, [loadNodeDetails]);
+
+  // Handle add selected nodes to subgraph
+  const handleAddToSubgraph = useCallback(() => {
+    if (selectedNodes.length === 0) return;
+    const selectedKeys = selectedNodes.map(n => n.key);
+    setSubgraphNodeKeys(prev => {
+      const existingKeys = new Set(prev);
+      const newKeys = selectedKeys.filter(key => !existingKeys.has(key));
+      return [...prev, ...newKeys];
+    });
+    // Enable split view if not already enabled
+    if (paneViewMode !== 'split') {
+      setPaneViewMode('split');
+    }
+  }, [selectedNodes, paneViewMode]);
+
+  // Handle remove selected nodes from subgraph
+  const handleRemoveFromSubgraph = useCallback(() => {
+    if (selectedNodes.length === 0) return;
+    const selectedKeys = new Set(selectedNodes.map(n => n.key));
+    setSubgraphNodeKeys(prev => prev.filter(key => !selectedKeys.has(key)));
+  }, [selectedNodes]);
+
+  // Handle select all subgraph nodes
+  const handleSelectAllSubgraphNodes = useCallback(() => {
+    if (subgraphNodeKeys.length === 0) return;
+    
+    // Use fullGraphData or graphData to get node objects
+    const sourceData = fullGraphData.nodes.length > 0 ? fullGraphData : graphData;
+    
+    // Get all subgraph nodes from the source data
+    const subgraphNodes = sourceData.nodes
+      .filter(node => subgraphNodeKeys.includes(node.key))
+      .map(node => ({
+        key: node.key,
+        id: node.id || node.key,
+        name: node.name,
+        type: node.type,
+      }));
+    
+    const nodeKeys = subgraphNodes.map(n => n.key);
+    setSelectedNodes(subgraphNodes);
+    loadNodeDetails(nodeKeys);
+    setTimelineContextKeys(nodeKeys);
+  }, [subgraphNodeKeys, fullGraphData, graphData, loadNodeDetails]);
 
   // Handle node click - support multi-select with Ctrl/Cmd
   const handleNodeClick = useCallback((node, event) => {
@@ -483,9 +533,9 @@ export default function App() {
   }, []);
 
 
-  // Build subgraph from selected nodes
-  const buildSubgraph = useCallback((selectedNodeKeys) => {
-    if (selectedNodeKeys.length === 0) {
+  // Build subgraph from subgraph node keys (not selected nodes)
+  const buildSubgraph = useCallback((nodeKeys) => {
+    if (nodeKeys.length === 0) {
       return { nodes: [], links: [] };
     }
 
@@ -494,16 +544,16 @@ export default function App() {
     // currently visible in the filtered graph view
     const sourceData = fullGraphData.nodes.length > 0 ? fullGraphData : graphData;
 
-    // Get all selected nodes from the full graph
+    // Get all subgraph nodes from the full graph
     const subgraphNodes = sourceData.nodes.filter(node => 
-      selectedNodeKeys.includes(node.key)
+      nodeKeys.includes(node.key)
     );
 
-    // Get all links between selected nodes
+    // Get all links between subgraph nodes
     const subgraphLinks = sourceData.links.filter(link => {
       const sourceKey = typeof link.source === 'object' ? link.source.key : link.source;
       const targetKey = typeof link.target === 'object' ? link.target.key : link.target;
-      return selectedNodeKeys.includes(sourceKey) && selectedNodeKeys.includes(targetKey);
+      return nodeKeys.includes(sourceKey) && nodeKeys.includes(targetKey);
     });
 
     return { nodes: subgraphNodes, links: subgraphLinks };
@@ -573,9 +623,9 @@ export default function App() {
     }
   }, [selectedNodeKeys.length, loadNodeDetails]);
   
-  // Build subgraph for selected nodes
-  // Use path-based subgraph if available, otherwise build from selected nodes
-  const subgraphData = pathSubgraphData || buildSubgraph(selectedNodeKeys);
+  // Build subgraph for subgraph node keys
+  // Use path-based subgraph if available, otherwise build from subgraph node keys
+  const subgraphData = pathSubgraphData || buildSubgraph(subgraphNodeKeys);
 
   // Load timeline - from subgraph when nodes are selected, from main graph when not
   const [timelineData, setTimelineData] = useState([]);
@@ -692,8 +742,8 @@ export default function App() {
 
   // Export artifact to PDF
   const handleExportPDF = useCallback(async (name, notes) => {
-    if (selectedNodeKeys.length === 0) {
-      alert('Please select nodes to export as PDF');
+    if (subgraphNodeKeys.length === 0) {
+      alert('Please add nodes to subgraph to export as PDF');
       return;
     }
 
@@ -727,9 +777,9 @@ export default function App() {
       const relevantChatHistory = [];
       for (let i = 0; i < chatHistory.length; i++) {
         const msg = chatHistory[i];
-        // Check if this is a user message with selected nodes matching our selection
+        // Check if this is a user message with selected nodes matching our subgraph
         if (msg.role === 'user' && msg.selectedNodes) {
-          const isRelevant = msg.selectedNodes.some(key => selectedNodeKeys.includes(key));
+          const isRelevant = msg.selectedNodes.some(key => subgraphNodeKeys.includes(key));
           if (isRelevant) {
             // Include the user message
             relevantChatHistory.push({
@@ -781,12 +831,12 @@ export default function App() {
       console.error('Failed to export PDF:', err);
       alert(`Failed to export PDF: ${err.message}`);
     }
-  }, [selectedNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
+  }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
 
   // Save artifact
   const handleSaveArtifact = useCallback(async (name, notes) => {
-    if (selectedNodeKeys.length === 0) {
-      alert('Please select nodes to save as an artifact');
+    if (subgraphNodeKeys.length === 0) {
+      alert('Please add nodes to subgraph to save as an artifact');
       return;
     }
 
@@ -796,9 +846,9 @@ export default function App() {
       const relevantChatHistory = [];
       for (let i = 0; i < chatHistory.length; i++) {
         const msg = chatHistory[i];
-        // Check if this is a user message with selected nodes matching our selection
+        // Check if this is a user message with selected nodes matching our subgraph
         if (msg.role === 'user' && msg.selectedNodes) {
-          const isRelevant = msg.selectedNodes.some(key => selectedNodeKeys.includes(key));
+          const isRelevant = msg.selectedNodes.some(key => subgraphNodeKeys.includes(key));
           if (isRelevant) {
             // Include the user message
             relevantChatHistory.push({
@@ -854,7 +904,7 @@ export default function App() {
       console.error('Failed to save artifact:', err);
       alert(`Failed to save artifact: ${err.message}`);
     }
-  }, [selectedNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
+  }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
 
   // Handle date range change - memoized to prevent infinite loops
   const handleDateRangeChange = useCallback((range) => {
@@ -1026,7 +1076,7 @@ export default function App() {
           )}
 
           {/* Save Artifact Button */}
-          {selectedNodeKeys.length > 0 && (
+          {subgraphNodeKeys.length > 0 && (
             <button
               onClick={() => setShowArtifactModal(true)}
               className="flex items-center gap-2 px-3 py-1.5 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-md text-sm transition-colors"
@@ -1219,12 +1269,15 @@ export default function App() {
                     height={graphHeight}
                     paneViewMode={paneViewMode}
                     onPaneViewModeChange={setPaneViewMode}
+                    onAddToSubgraph={handleAddToSubgraph}
+                    onRemoveFromSubgraph={handleRemoveFromSubgraph}
+                    subgraphNodeKeys={subgraphNodeKeys}
                   />
                 </div>
                 
                 {/* Right Panel - Subgraph View */}
                 <div className="flex-1 relative bg-light-50 overflow-hidden" data-subgraph-container>
-                  {selectedNodesDetails.length > 0 ? (
+                  {subgraphNodeKeys.length > 0 ? (
                     // Show subgraph of selected nodes
                     <>
                       <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between bg-white/90 backdrop-blur-sm rounded-lg p-2 px-3 shadow-sm border border-light-200">
@@ -1234,13 +1287,23 @@ export default function App() {
                             Subgraph ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
                           </h3>
                         </div>
-                        <button
-                          onClick={handleCloseDetails}
-                          className="p-1 hover:bg-light-100 rounded transition-colors"
-                          title="Clear selection"
-                        >
-                          <X className="w-4 h-4 text-light-600" />
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleSelectAllSubgraphNodes}
+                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
+                            title="Select all subgraph nodes"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            Select All
+                          </button>
+                          <button
+                            onClick={handleCloseDetails}
+                            className="p-1 hover:bg-light-100 rounded transition-colors"
+                            title="Clear selection"
+                          >
+                            <X className="w-4 h-4 text-light-600" />
+                          </button>
+                        </div>
                       </div>
                       <GraphView
                         ref={subgraphGraphRef}
@@ -1296,6 +1359,9 @@ export default function App() {
                 height={graphHeight}
                 paneViewMode={paneViewMode}
                 onPaneViewModeChange={setPaneViewMode}
+                onAddToSubgraph={handleAddToSubgraph}
+                onRemoveFromSubgraph={handleRemoveFromSubgraph}
+                subgraphNodeKeys={subgraphNodeKeys}
               />
             )
           ) : (
@@ -1406,7 +1472,7 @@ export default function App() {
         isOpen={showArtifactList}
         onClose={() => setShowArtifactList(false)}
         onLoadArtifact={async (artifact) => {
-          // Load artifact into subgraph (right pane) by setting selected nodes
+          // Load artifact into subgraph (right pane) by setting subgraph node keys
           // This will automatically build the subgraph in the right pane
           if (artifact.subgraph && artifact.subgraph.nodes) {
             // Ensure split view is enabled to show the subgraph
@@ -1414,10 +1480,11 @@ export default function App() {
               setPaneViewMode('split');
             }
             
-            // Set selected nodes to artifact's subgraph nodes
-            // The subgraph will be built automatically from these nodes
+            // Set subgraph node keys to artifact's subgraph nodes
+            // The subgraph will be built automatically from these keys
             const artifactNodes = artifact.subgraph.nodes;
             const nodeKeys = artifactNodes.map(n => n.key);
+            setSubgraphNodeKeys(nodeKeys);
             setSelectedNodes(artifactNodes);
             setTimelineContextKeys(nodeKeys);
             

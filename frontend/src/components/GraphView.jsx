@@ -46,6 +46,9 @@ const GraphView = forwardRef(function GraphView({
   paneViewMode, // 'single' or 'split'
   onPaneViewModeChange, // Callback to change pane view mode
   isSubgraph = false, // Whether this is the subgraph view
+  onAddToSubgraph, // Callback to add selected nodes to subgraph
+  onRemoveFromSubgraph, // Callback to remove selected nodes from subgraph
+  subgraphNodeKeys = [], // Keys of nodes currently in the subgraph
 }, ref) {
   const graphRef = useRef();
   const containerRef = useRef();
@@ -886,14 +889,36 @@ const GraphView = forwardRef(function GraphView({
             );
           })}
         </div>
-        <div className="mt-3 pt-2 border-t border-light-200">
+        <div className="mt-3 pt-2 border-t border-light-200 space-y-2">
           <button
             onClick={areAllVisibleNodesSelected ? deselectVisibleNodes : selectVisibleNodes}
             className="w-full px-3 py-1.5 bg-light-100 hover:bg-light-200 rounded text-xs text-light-700 transition-colors"
-            title={areAllVisibleNodesSelected ? "Deselect all visible nodes" : "Select all currently visible nodes and open them in the subgraph"}
+            title={areAllVisibleNodesSelected ? "Deselect all visible nodes" : "Select all currently visible nodes"}
           >
             {areAllVisibleNodesSelected ? 'Deselect all visible' : 'Select all visible'}
           </button>
+          
+          {/* Add/Remove from subgraph buttons - only show in main graph, not subgraph */}
+          {!isSubgraph && onAddToSubgraph && onRemoveFromSubgraph && selectedNodes.length > 0 && (
+            <div className="flex gap-2">
+              <button
+                onClick={onAddToSubgraph}
+                disabled={selectedNodes.every(n => subgraphNodeKeys.includes(n.key))}
+                className="flex-1 px-3 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
+                title="Add selected nodes to subgraph"
+              >
+                Add to subgraph
+              </button>
+              <button
+                onClick={onRemoveFromSubgraph}
+                disabled={!selectedNodes.some(n => subgraphNodeKeys.includes(n.key))}
+                className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
+                title="Remove selected nodes from subgraph"
+              >
+                Remove from subgraph
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
