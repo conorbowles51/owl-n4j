@@ -20,7 +20,7 @@ import ChatPanel from './components/ChatPanel';
 import ContextMenu from './components/ContextMenu';
 import SearchBar from './components/SearchBar';
 import GraphSearchFilter from './components/GraphSearchFilter';
-import TimelineView from './components/TimelineView';
+import TimelineView from './components/timeline/TimelineView';
 import ArtifactModal from './components/ArtifactModal';
 import ArtifactList from './components/ArtifactList';
 import DateRangeFilter from './components/DateRangeFilter';
@@ -47,6 +47,9 @@ export default function App() {
   // Selection state - support multiple nodes
   const [selectedNodes, setSelectedNodes] = useState([]); // Array of node objects
   const [selectedNodesDetails, setSelectedNodesDetails] = useState([]); // Array of node details
+  
+  // Timeline context - separate from selection so inspecting events doesn't filter timeline
+  const [timelineContextKeys, setTimelineContextKeys] = useState([]); // Keys that define what events show on timeline
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState(null);
@@ -292,6 +295,8 @@ export default function App() {
     setSelectedNodes(nodes);
     const keys = nodes.map(n => n.key);
     loadNodeDetails(keys);
+    // Update timeline context when selecting from graph
+    setTimelineContextKeys(keys);
     setContextMenu(null);
   }, [loadNodeDetails]);
 
@@ -313,12 +318,16 @@ export default function App() {
           } else {
             setSelectedNodesDetails([]);
           }
+          // Update timeline context when selecting from graph
+          setTimelineContextKeys(newKeys);
           return newSelection;
         } else {
           // Add to selection
           const newSelection = [...prev, node];
           const newKeys = newSelection.map(n => n.key);
           loadNodeDetails(newKeys);
+          // Update timeline context when selecting from graph
+          setTimelineContextKeys(newKeys);
           return newSelection;
         }
       });
@@ -326,14 +335,17 @@ export default function App() {
       // Single select - replace selection
       setSelectedNodes([node]);
       loadNodeDetails([node.key]);
+      // Update timeline context when selecting from graph
+      setTimelineContextKeys([node.key]);
     }
     setContextMenu(null);
   }, [loadNodeDetails]);
 
-  // Handle timeline event selection - convert events to nodes and use same selection logic
+  // Handle timeline event selection - show details without changing timeline context
+  // This is different from graph selection because we don't want clicking an event
+  // to re-filter the timeline to only show that event
   const handleTimelineEventSelect = useCallback((eventNode, event) => {
     // First try to find the node in fullGraphData (unfiltered graph)
-    // This allows selecting nodes even when they're filtered out of the current view
     let graphNode = fullGraphData.nodes.find(n => n.key === eventNode.key);
     
     // If not found in fullGraphData, try graphData (filtered graph)
@@ -341,23 +353,42 @@ export default function App() {
       graphNode = graphData.nodes.find(n => n.key === eventNode.key);
     }
     
-    if (!graphNode) {
-      // If node not found in either graph, create a node-like object from the event
-      // This allows selecting timeline events even if they're not in the current graph
-      const nodeFromEvent = {
-        key: eventNode.key,
-        id: eventNode.id || eventNode.key,
-        name: eventNode.name,
-        type: eventNode.type,
-      };
-      // Use the node selection handler with the event node
-      handleNodeClick(nodeFromEvent, event);
-      return;
-    }
+    const nodeToInspect = graphNode || {
+      key: eventNode.key,
+      id: eventNode.id || eventNode.key,
+      name: eventNode.name,
+      type: eventNode.type,
+    };
     
-    // Use the existing node selection handler with the found node
-    handleNodeClick(graphNode, event);
-  }, [fullGraphData, graphData, handleNodeClick]);
+    // Check for multi-select
+    const isMultiSelect = event?.ctrlKey || event?.metaKey;
+    
+    if (isMultiSelect) {
+      // Toggle node in selection for details only
+      setSelectedNodes(prev => {
+        const isSelected = prev.some(n => n.key === nodeToInspect.key);
+        if (isSelected) {
+          const newSelection = prev.filter(n => n.key !== nodeToInspect.key);
+          if (newSelection.length > 0) {
+            loadNodeDetails(newSelection.map(n => n.key));
+          } else {
+            setSelectedNodesDetails([]);
+          }
+          return newSelection;
+        } else {
+          const newSelection = [...prev, nodeToInspect];
+          loadNodeDetails(newSelection.map(n => n.key));
+          return newSelection;
+        }
+      });
+    } else {
+      // Single select - replace selection for details only
+      setSelectedNodes([nodeToInspect]);
+      loadNodeDetails([nodeToInspect.key]);
+    }
+    setContextMenu(null);
+    // NOTE: We do NOT update timelineContextKeys here, so timeline stays showing same events
+  }, [fullGraphData, graphData, loadNodeDetails]);
 
   // Handle node right-click
   const handleNodeRightClick = useCallback((node, event) => {
@@ -371,6 +402,7 @@ export default function App() {
   const handleBackgroundClick = useCallback(() => {
     setSelectedNodes([]);
     setSelectedNodesDetails([]);
+    setTimelineContextKeys([]);
     setContextMenu(null);
   }, []);
 
@@ -392,6 +424,7 @@ export default function App() {
   const handleShowDetails = useCallback((node) => {
     setSelectedNodes([node]);
     loadNodeDetails([node.key]);
+    setTimelineContextKeys([node.key]);
   }, [loadNodeDetails]);
 
   // Handle expand from context menu
@@ -437,6 +470,7 @@ export default function App() {
     if (node) {
       setSelectedNodes([node]);
       loadNodeDetails([key]);
+      setTimelineContextKeys([key]);
     }
   }, [graphData.nodes, loadNodeDetails]);
 
@@ -444,6 +478,7 @@ export default function App() {
   const handleCloseDetails = useCallback(() => {
     setSelectedNodes([]);
     setSelectedNodesDetails([]);
+    setTimelineContextKeys([]);
     setPathSubgraphData(null); // Clear path-based subgraph when closing
   }, []);
 
@@ -520,6 +555,7 @@ export default function App() {
           type: node.type,
         }));
         setSelectedNodes(pathNodes);
+        setTimelineContextKeys(pathNodeKeys);
         
         // Load details for all path nodes
         await loadNodeDetails(pathNodeKeys);
@@ -586,30 +622,31 @@ export default function App() {
           return;
         }
 
-        if (selectedNodeKeys.length > 0) {
-          // Filter events related to selected nodes (subgraph timeline)
+        // Use timelineContextKeys for filtering (separate from inspection selection)
+        if (timelineContextKeys.length > 0) {
+          // Filter events related to context nodes (subgraph timeline)
           // Timeline events have a 'connections' array with connected entity keys
-          console.log('🔍 Filtering timeline for subgraph:', {
-            selectedNodeKeys,
-            selectedNodeKeysCount: selectedNodeKeys.length,
+          console.log('🔍 Filtering timeline for context:', {
+            timelineContextKeys,
+            timelineContextKeysCount: timelineContextKeys.length,
             totalEvents: events.length,
             sampleEvent: events[0]
           });
           
           // Create a Set for faster lookup
-          const selectedKeysSet = new Set(selectedNodeKeys);
+          const contextKeysSet = new Set(timelineContextKeys);
           
           const filteredEvents = events.filter(event => {
-            // Check if the event itself is in the selected nodes
-            if (selectedKeysSet.has(event.key)) {
+            // Check if the event itself is in the context nodes
+            if (contextKeysSet.has(event.key)) {
               console.log('✅ Event matches by key:', event.key);
               return true;
             }
             
-            // Check if event is connected to any selected nodes via connections array
+            // Check if event is connected to any context nodes via connections array
             if (event.connections && Array.isArray(event.connections)) {
               const matchingConnections = event.connections.filter(conn => 
-                conn.key && selectedKeysSet.has(conn.key)
+                conn.key && contextKeysSet.has(conn.key)
               );
               
               if (matchingConnections.length > 0) {
@@ -623,13 +660,13 @@ export default function App() {
           console.log('📊 Timeline filtering result:', {
             before: events.length,
             after: filteredEvents.length,
-            selectedNodeKeys: Array.from(selectedKeysSet)
+            timelineContextKeys: Array.from(contextKeysSet)
           });
           
           setTimelineData(filteredEvents);
         } else {
-          // No subgraph selected - show all events from main graph
-          console.log('📅 Showing all timeline events (no subgraph):', events.length);
+          // No context set - show all events from main graph
+          console.log('📅 Showing all timeline events (no context):', events.length);
           setTimelineData(events);
         }
       } catch (err) {
@@ -638,7 +675,7 @@ export default function App() {
       }
     };
     loadTimeline();
-  }, [selectedNodeKeys, dateRange]);
+  }, [timelineContextKeys, dateRange]);
 
   // Load artifacts on mount
   useEffect(() => {
@@ -1089,8 +1126,8 @@ export default function App() {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Main view area */}
-        <div className="flex-1 relative">
+        {/* Main view area - min-w-0 prevents flex item from expanding beyond container */}
+        <div className="flex-1 relative overflow-hidden min-w-0">
           {viewMode === 'graph' ? (
             // Graph View
             isLoading && graphData.nodes.length === 0 ? (
@@ -1267,7 +1304,6 @@ export default function App() {
               <TimelineView
                 onSelectEvents={handleTimelineEventSelect}
                 selectedEvent={selectedNodes.length > 0 ? selectedNodes[0] : null}
-                selectedNodeKeys={selectedNodeKeys}
                 selectedEventKeys={selectedNodeKeys}
                 timelineData={timelineData}
                 onBackgroundClick={handleBackgroundClick}
@@ -1310,9 +1346,15 @@ export default function App() {
                     node={node}
                     onClose={() => {
                       const newSelection = selectedNodes.filter(n => n.key !== node.key);
+                      const newKeys = newSelection.map(n => n.key);
                       setSelectedNodes(newSelection);
+                      // Only update timeline context if we're in graph view
+                      // In timeline view, the context should stay stable
+                      if (viewMode === 'graph') {
+                        setTimelineContextKeys(newKeys);
+                      }
                       if (newSelection.length > 0) {
-                        loadNodeDetails(newSelection.map(n => n.key));
+                        loadNodeDetails(newKeys);
                       } else {
                         setSelectedNodesDetails([]);
                       }
@@ -1375,14 +1417,14 @@ export default function App() {
             // Set selected nodes to artifact's subgraph nodes
             // The subgraph will be built automatically from these nodes
             const artifactNodes = artifact.subgraph.nodes;
+            const nodeKeys = artifactNodes.map(n => n.key);
             setSelectedNodes(artifactNodes);
+            setTimelineContextKeys(nodeKeys);
             
             // Load node details for the selected nodes (for the overview panel)
-            const nodeKeys = artifactNodes.map(n => n.key);
             await loadNodeDetails(nodeKeys);
             
-            // Timeline will be loaded automatically by the useEffect when selectedNodes changes
-            // But if artifact has saved timeline data, we could use it here if needed
+            // Timeline will be loaded automatically by the useEffect when timelineContextKeys changes
             
             setShowArtifactList(false);
           }
