@@ -444,6 +444,79 @@ class Neo4jService:
             return [dict(r) for r in result]
         
 
+    def get_entities_with_locations(
+        self,
+        entity_types: Optional[List[str]] = None,
+    ) -> List[Dict]:
+        """
+        Get all entities that have geocoded locations.
+        
+        Args:
+            entity_types: Optional filter for specific entity types
+            
+        Returns:
+            List of entities with lat/lng coordinates
+        """
+        with self._driver.session() as session:
+            type_filter = ""
+            params = {}
+            
+            if entity_types:
+                type_filter = "AND labels(n)[0] IN $types"
+                params["types"] = entity_types
+            
+            query = f"""
+                MATCH (n)
+                WHERE n.latitude IS NOT NULL 
+                  AND n.longitude IS NOT NULL
+                  AND NOT n:Document
+                  {type_filter}
+                OPTIONAL MATCH (n)-[r]-(connected)
+                WHERE NOT connected:Document
+                WITH n, collect(DISTINCT {{
+                    key: connected.key,
+                    name: connected.name,
+                    type: labels(connected)[0],
+                    relationship: type(r),
+                    direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
+                }}) AS connections
+                RETURN 
+                    n.id AS id,
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.latitude AS latitude,
+                    n.longitude AS longitude,
+                    n.location_raw AS location_raw,
+                    n.location_formatted AS location_formatted,
+                    n.geocoding_confidence AS geocoding_confidence,
+                    n.summary AS summary,
+                    n.date AS date,
+                    connections
+            """
+            
+            result = session.run(query, **params)
+            
+            entities = []
+            for record in result:
+                entity = {
+                    "id": record["id"],
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "latitude": record["latitude"],
+                    "longitude": record["longitude"],
+                    "location_raw": record["location_raw"],
+                    "location_formatted": record["location_formatted"],
+                    "geocoding_confidence": record["geocoding_confidence"],
+                    "summary": record["summary"],
+                    "date": record["date"],
+                    "connections": [c for c in record["connections"] if c["key"]],
+                }
+                entities.append(entity)
+            
+            return entities
+
     def get_timeline_events(
         self,
         event_types: Optional[List[str]] = None,

@@ -19,7 +19,8 @@ import {
   HardDrive,
   Users,
   FileText,
-  Target
+  Target,
+  MapPin
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -29,6 +30,7 @@ import ContextMenu from './components/ContextMenu';
 import SearchBar from './components/SearchBar';
 import GraphSearchFilter from './components/GraphSearchFilter';
 import TimelineView from './components/timeline/TimelineView';
+import MapView from './components/MapView';
 import SnapshotModal from './components/SnapshotModal';
 import CaseModal from './components/CaseModal';
 import DateRangeFilter from './components/DateRangeFilter';
@@ -1620,10 +1622,21 @@ export default function App() {
               <Calendar className="w-4 h-4" />
               Timeline
             </button>
+            <button
+              onClick={() => setViewMode('map')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                viewMode === 'map'
+                  ? 'bg-white text-owl-blue-900 shadow-sm'
+                  : 'text-light-600 hover:text-light-800'
+              }`}
+            >
+              <MapPin className="w-4 h-4" />
+              Map
+            </button>
           </div>
 
           {/* Date Range Filter */}
-          {(viewMode === 'graph' || viewMode === 'timeline') && (
+          {(viewMode === 'graph' || viewMode === 'timeline' || viewMode === 'map') && (
             <DateRangeFilter
               onDateRangeChange={handleDateRangeChange}
               minDate={dateExtents.min}
@@ -1905,7 +1918,7 @@ export default function App() {
                 subgraphNodeKeys={subgraphNodeKeys}
               />
             )
-          ) : (
+          ) : viewMode === 'timeline' ? (
             // Timeline View - only show if there are timeline events
             timelineData.length > 0 ? (
               <TimelineView
@@ -1928,6 +1941,14 @@ export default function App() {
                 </div>
               </div>
             )
+          ) : (
+            // Map View
+            <MapView
+              selectedNodes={selectedNodes}
+              onNodeClick={handleNodeClick}
+              onBulkNodeSelect={handleBulkNodeSelect}
+              onBackgroundClick={handleBackgroundClick}
+            />
           )}
 
         </div>

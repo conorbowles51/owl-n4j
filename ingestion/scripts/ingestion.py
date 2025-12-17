@@ -19,6 +19,7 @@ from llm_client import (
 )
 from entity_resolution import normalise_key, resolve_entity, merge_entity_data
 from chunking import chunk_document
+from geocoding import get_location_properties
 
 
 def process_chunk(
@@ -116,11 +117,21 @@ def process_chunk(
                     related_entities=neighbour_descriptions,
                 )
 
+                # Check if we should add location data (if not already present)
+                extra_props = None
+                location = ent.get("location")
+                if location and not existing.get("latitude"):
+                    print(f"    Geocoding location for existing entity: {location}")
+                    location_props = get_location_properties(location)
+                    if location_props.get("latitude"):
+                        extra_props = location_props
+
                 # Update in database
                 db.update_entity(
                     key=resolved_key,
                     notes=updated_notes,
                     summary=new_summary,
+                    extra_props=extra_props,
                 )
 
                 print(f"    Updated existing entity: {resolved_key}")
@@ -141,6 +152,14 @@ def process_chunk(
             date = ent.get("date")
             time = ent.get("time")
             amount = ent.get("amount")
+            
+            # Geocode location if provided
+            location = ent.get("location")
+            extra_props = {}
+            if location:
+                print(f"    Geocoding location: {location}")
+                location_props = get_location_properties(location)
+                extra_props.update(location_props)
 
             db.create_entity(
                 key=key,
@@ -150,7 +169,8 @@ def process_chunk(
                 summary=initial_summary,
                 date=date,
                 time=time,
-                amount=amount
+                amount=amount,
+                extra_props=extra_props if extra_props else None,
             )
 
             # Add to existing keys for subsequent chunks

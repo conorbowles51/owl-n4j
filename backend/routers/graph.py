@@ -126,6 +126,24 @@ async def get_graph_summary():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/locations")
+async def get_entities_with_locations(
+    types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
+):
+    """
+    Get all entities that have geocoded locations for map display.
+    
+    Returns entities with latitude, longitude, and connection information.
+    """
+    try:
+        entity_types = None
+        if types:
+            entity_types = [t.strip() for t in types.split(",")]
+        return neo4j_service.get_entities_with_locations(entity_types)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/shortest-paths")
 async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
     """

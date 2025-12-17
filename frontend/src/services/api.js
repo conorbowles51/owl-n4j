@@ -92,6 +92,7 @@ export const graphAPI = {
     }),
 
   /**
+<<<<<<< HEAD
    * Get influential nodes using PageRank algorithm
    */
   getPageRank: (nodeKeys = null, topN = 20, iterations = 20, dampingFactor = 0.85) =>
@@ -141,6 +142,19 @@ export const graphAPI = {
         cypher_queries: cypherQueries,
       }),
     }),
+=======
+   * Get entities with geocoded locations for map display
+   * @param {Object} options - Filter options
+   * @param {string} options.types - Comma-separated entity types to filter
+   */
+  getLocations: ({ types } = {}) => {
+    const params = new URLSearchParams();
+    if (types) params.append('types', types);
+    
+    const queryString = params.toString();
+    return fetchAPI(`/graph/locations${queryString ? `?${queryString}` : ''}`);
+  },
+>>>>>>> 5d91d48159a92bd76b7347998a15558e94dc77e3
 };
 
 /**
