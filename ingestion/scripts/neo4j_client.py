@@ -82,7 +82,10 @@ class Neo4jClient:
                        e.name AS name,
                        labels(e)[0] AS type,
                        e.notes AS notes,
-                       e.summary AS summary
+                       e.summary AS summary,
+                       e.latitude AS latitude,
+                       e.longitude AS longitude,
+                       e.location_raw AS location_raw
                 """,
                 key=key,
             )

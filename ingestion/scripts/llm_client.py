@@ -130,6 +130,7 @@ For each entity, provide:
 - name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
 - notes: What role does this entity play in THIS document? What is relevant about them here?
 - date: (REQUIRED for event types: Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting) The date of the event in YYYY-MM-DD format if mentioned in the text, otherwise null
+- location: Any geographic location associated with this entity (address, city, country). Extract the most specific location mentioned. For companies: headquarters or office location. For persons: residence or workplace. For meetings/transactions: where it occurred. Set to null if no location mentioned.
 
 For each relationship, provide:
 - from_key: The key of the source entity
@@ -148,7 +149,8 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
       "notes": "string",
       "date": "string or null (YYYY-MM-DD format, REQUIRED for event types)",
       "time": "string or null (HH:MM format)",
-      "amount": "string or null (e.g., '$50,000')"
+      "amount": "string or null (e.g., '$50,000')",
+      "location": "string or null (e.g., 'London, UK' or '123 Main St, New York')"
     }}
   ],
   "relationships": [

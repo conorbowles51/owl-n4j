@@ -90,6 +90,19 @@ export const graphAPI = {
         max_depth: maxDepth,
       }),
     }),
+
+  /**
+   * Get entities with geocoded locations for map display
+   * @param {Object} options - Filter options
+   * @param {string} options.types - Comma-separated entity types to filter
+   */
+  getLocations: ({ types } = {}) => {
+    const params = new URLSearchParams();
+    if (types) params.append('types', types);
+    
+    const queryString = params.toString();
+    return fetchAPI(`/graph/locations${queryString ? `?${queryString}` : ''}`);
+  },
 };
 
 /**
