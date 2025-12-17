@@ -22,7 +22,14 @@ import CaseModal from './CaseModal';
  * Main view for managing cases - shown after login
  * Allows viewing, creating, and loading cases
  */
-export default function CaseManagementView({ onLoadCase, onCreateCase, onLogout, isAuthenticated, authUsername }) {
+export default function CaseManagementView({
+  onLoadCase,
+  onCreateCase,
+  onLogout,
+  isAuthenticated,
+  authUsername,
+  onGoToGraphView,
+}) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState(null);
@@ -183,13 +190,23 @@ export default function CaseManagementView({ onLoadCase, onCreateCase, onLogout,
             <p className="text-xs text-light-600">Manage and load investigation cases</p>
           </div>
         </div>
-        <button
-          onClick={() => setShowCaseModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded-lg transition-colors"
-        >
-          <FolderPlus className="w-4 h-4" />
-          Create New Case
-        </button>
+        <div className="flex items-center gap-3">
+          {onGoToGraphView && (
+            <button
+              onClick={onGoToGraphView}
+              className="px-3 py-2 text-sm text-owl-blue-900 border border-owl-blue-200 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors"
+            >
+              Go to Graph View
+            </button>
+          )}
+          <button
+            onClick={() => setShowCaseModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded-lg transition-colors"
+          >
+            <FolderPlus className="w-4 h-4" />
+            Create New Case
+          </button>
+        </div>
       </header>
 
       {/* Main Content */}

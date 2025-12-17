@@ -1380,6 +1380,7 @@ export default function App() {
         onLogout={handleLogout}
         isAuthenticated={isAuthenticated}
         authUsername={authUsername}
+        onGoToGraphView={() => setAppView('graph')}
       />
     );
   }
