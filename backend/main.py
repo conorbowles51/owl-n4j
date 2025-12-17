@@ -9,9 +9,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import API_HOST, API_PORT, CORS_ORIGINS
-from routers import graph_router, chat_router, query_router, timeline_router, artifacts_router, auth_router
+from routers import graph_router, chat_router, query_router, timeline_router, snapshots_router, cases_router, auth_router
 from services.neo4j_service import neo4j_service
-from services.artifact_storage import artifact_storage
+from services.snapshot_storage import snapshot_storage
+from services.case_storage import case_storage
 
 
 @asynccontextmanager
@@ -19,9 +20,12 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
     print("Starting Investigation Console API...")
-    # Reload artifacts from disk
-    artifact_storage.reload()
-    print(f"Loaded {len(artifact_storage.get_all())} artifacts from storage")
+    # Reload snapshots from disk
+    snapshot_storage.reload()
+    print(f"Loaded {len(snapshot_storage.get_all())} snapshots from storage")
+    # Reload cases from disk
+    case_storage.reload()
+    print(f"Loaded {len(case_storage.get_all())} cases from storage")
     yield
     # Shutdown
     print("Shutting down, closing Neo4j connection...")
@@ -49,7 +53,8 @@ app.include_router(graph_router)
 app.include_router(chat_router)
 app.include_router(query_router)
 app.include_router(timeline_router)
-app.include_router(artifacts_router)
+app.include_router(snapshots_router)
+app.include_router(cases_router)
 app.include_router(auth_router)
 
 

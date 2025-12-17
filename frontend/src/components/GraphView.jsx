@@ -29,6 +29,32 @@ function getNodeColor(type) {
 }
 
 /**
+ * Get color for community (for Louvain algorithm)
+ * Uses a color palette that's distinct from entity type colors
+ */
+const COMMUNITY_COLORS = [
+  '#8b5cf6', // violet
+  '#3b82f6', // blue
+  '#22c55e', // green
+  '#f59e0b', // amber
+  '#ef4444', // red
+  '#06b6d4', // cyan
+  '#ec4899', // pink
+  '#14b8a6', // teal
+  '#84cc16', // lime
+  '#f97316', // orange
+  '#a855f7', // purple
+  '#eab308', // yellow
+];
+
+function getCommunityColor(communityId) {
+  if (communityId === null || communityId === undefined) {
+    return null;
+  }
+  return COMMUNITY_COLORS[communityId % COMMUNITY_COLORS.length];
+}
+
+/**
  * GraphView Component
  * 
  * Renders the force-directed graph visualization
@@ -186,10 +212,20 @@ const GraphView = forwardRef(function GraphView({
     const nodeRadius = isSelected ? 8 : 6;
     const isHovered = node === hoveredNode;
 
+    // Get color - prioritize community_id if present (from Louvain), otherwise use entity type
+    let nodeColor;
+    if (node.community_id !== null && node.community_id !== undefined) {
+      // Use community color for Louvain communities
+      nodeColor = getCommunityColor(node.community_id);
+    } else {
+      // Use entity type color
+      nodeColor = getNodeColor(node.type);
+    }
+
     // Node circle
     ctx.beginPath();
     ctx.arc(node.x, node.y, nodeRadius, 0, 2 * Math.PI);
-    ctx.fillStyle = getNodeColor(node.type);
+    ctx.fillStyle = nodeColor;
     ctx.fill();
 
     // Selection/hover ring - using Owl blue for selection, light gray for hover

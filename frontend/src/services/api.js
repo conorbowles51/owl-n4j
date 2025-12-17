@@ -90,6 +90,57 @@ export const graphAPI = {
         max_depth: maxDepth,
       }),
     }),
+
+  /**
+   * Get influential nodes using PageRank algorithm
+   */
+  getPageRank: (nodeKeys = null, topN = 20, iterations = 20, dampingFactor = 0.85) =>
+    fetchAPI('/graph/pagerank', {
+      method: 'POST',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        top_n: topN,
+        iterations: iterations,
+        damping_factor: dampingFactor,
+      }),
+    }),
+
+  /**
+   * Get communities using Louvain modularity algorithm
+   */
+  getLouvainCommunities: (nodeKeys = null, resolution = 1.0, maxIterations = 10) =>
+    fetchAPI('/graph/louvain', {
+      method: 'POST',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        resolution: resolution,
+        max_iterations: maxIterations,
+      }),
+    }),
+
+  /**
+   * Get nodes with highest betweenness centrality
+   */
+  getBetweennessCentrality: (nodeKeys = null, topN = 20, normalized = true) =>
+    fetchAPI('/graph/betweenness-centrality', {
+      method: 'POST',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        top_n: topN,
+        normalized: normalized,
+      }),
+    }),
+
+  /**
+   * Load a case by executing Cypher queries
+   */
+  loadCase: (cypherQueries) =>
+    fetchAPI('/graph/load-case', {
+      method: 'POST',
+      body: JSON.stringify({
+        cypher_queries: cypherQueries,
+      }),
+    }),
 };
 
 /**
@@ -168,33 +219,80 @@ export const timelineAPI = {
 };
 
 /**
- * Artifacts API
+ * Snapshots API
  */
-export const artifactsAPI = {
+export const snapshotsAPI = {
   /**
-   * Create a new artifact
+   * Create a new snapshot
    */
-  create: (artifact) => 
-    fetchAPI('/artifacts', {
+  create: (snapshot) => 
+    fetchAPI('/snapshots', {
       method: 'POST',
-      body: JSON.stringify(artifact),
+      body: JSON.stringify(snapshot),
     }),
 
   /**
-   * List all artifacts
+   * List all snapshots
    */
-  list: () => fetchAPI('/artifacts'),
+  list: () => fetchAPI('/snapshots'),
 
   /**
-   * Get a specific artifact
+   * Get a specific snapshot
    */
-  get: (artifactId) => fetchAPI(`/artifacts/${encodeURIComponent(artifactId)}`),
+  get: (snapshotId) => fetchAPI(`/snapshots/${encodeURIComponent(snapshotId)}`),
 
   /**
-   * Delete an artifact
+   * Delete a snapshot
    */
-  delete: (artifactId) => 
-    fetchAPI(`/artifacts/${encodeURIComponent(artifactId)}`, {
+  delete: (snapshotId) => 
+    fetchAPI(`/snapshots/${encodeURIComponent(snapshotId)}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Restore a snapshot from case data
+   */
+  restore: (snapshotData) =>
+    fetchAPI('/snapshots/restore', {
+      method: 'POST',
+      body: JSON.stringify(snapshotData),
+    }),
+};
+
+/**
+ * Cases API
+ */
+export const casesAPI = {
+  /**
+   * Save a new version of a case
+   */
+  save: (caseData) => 
+    fetchAPI('/cases', {
+      method: 'POST',
+      body: JSON.stringify(caseData),
+    }),
+
+  /**
+   * List all cases
+   */
+  list: () => fetchAPI('/cases'),
+
+  /**
+   * Get a specific case with all versions
+   */
+  get: (caseId) => fetchAPI(`/cases/${encodeURIComponent(caseId)}`),
+
+  /**
+   * Get a specific version of a case
+   */
+  getVersion: (caseId, version) => 
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/versions/${version}`),
+
+  /**
+   * Delete a case
+   */
+  delete: (caseId) => 
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
 };

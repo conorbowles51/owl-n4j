@@ -11,10 +11,17 @@ import {
   Save,
   Archive,
   ChevronDown,
+  ChevronUp,
   GitBranch,
-  CheckSquare
+  CheckSquare,
+  FolderOpen,
+  TrendingUp,
+  HardDrive,
+  Users,
+  FileText,
+  Target
 } from 'lucide-react';
-import { graphAPI, artifactsAPI, timelineAPI, authAPI } from './services/api';
+import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
 import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
@@ -22,10 +29,11 @@ import ContextMenu from './components/ContextMenu';
 import SearchBar from './components/SearchBar';
 import GraphSearchFilter from './components/GraphSearchFilter';
 import TimelineView from './components/timeline/TimelineView';
-import ArtifactModal from './components/ArtifactModal';
-import ArtifactList from './components/ArtifactList';
+import SnapshotModal from './components/SnapshotModal';
+import CaseModal from './components/CaseModal';
 import DateRangeFilter from './components/DateRangeFilter';
-import { exportArtifactToPDF } from './utils/pdfExport';
+import FileManagementPanel from './components/FileManagementPanel';
+import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
 
@@ -51,6 +59,8 @@ export default function App() {
   
   // Subgraph state - separate from selection so nodes can be selected without being in subgraph
   const [subgraphNodeKeys, setSubgraphNodeKeys] = useState([]); // Keys of nodes that are in the subgraph
+  const [subgraphAnalysis, setSubgraphAnalysis] = useState(null); // Analysis text for PageRank/Louvain
+  const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false); // Whether analysis panel is expanded
   
   // Timeline context - separate from selection so inspecting events doesn't filter timeline
   const [timelineContextKeys, setTimelineContextKeys] = useState([]); // Keys that define what events show on timeline
@@ -62,11 +72,19 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState([]); // Track chat messages
 
-  // Artifacts state
-  const [artifacts, setArtifacts] = useState([]);
-  const [showArtifactModal, setShowArtifactModal] = useState(false);
-  const [showArtifactList, setShowArtifactList] = useState(false);
+  // Snapshots state
+  const [snapshots, setSnapshots] = useState([]);
+  const [showSnapshotModal, setShowSnapshotModal] = useState(false);
   const subgraphGraphRef = useRef(null); // Ref to subgraph GraphView for PDF export
+  
+  // Cases state
+  const [currentCaseId, setCurrentCaseId] = useState(null);
+  const [currentCaseName, setCurrentCaseName] = useState(null);
+  const [currentCaseVersion, setCurrentCaseVersion] = useState(0);
+  const [showCaseModal, setShowCaseModal] = useState(false);
+  
+  // File management panel state
+  const [showFilePanel, setShowFilePanel] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUsername, setAuthUsername] = useState('');
   const [showLoginPanel, setShowLoginPanel] = useState(false);
@@ -314,6 +332,8 @@ export default function App() {
       const newKeys = selectedKeys.filter(key => !existingKeys.has(key));
       return [...prev, ...newKeys];
     });
+    // Clear path subgraph data so subgraph rebuilds from subgraphNodeKeys
+    setPathSubgraphData(null);
     // Enable split view if not already enabled
     if (paneViewMode !== 'split') {
       setPaneViewMode('split');
@@ -325,6 +345,8 @@ export default function App() {
     if (selectedNodes.length === 0) return;
     const selectedKeys = new Set(selectedNodes.map(n => n.key));
     setSubgraphNodeKeys(prev => prev.filter(key => !selectedKeys.has(key)));
+    // Clear path subgraph data so subgraph rebuilds from subgraphNodeKeys
+    setPathSubgraphData(null);
   }, [selectedNodes]);
 
   // Handle select all subgraph nodes
@@ -607,6 +629,9 @@ export default function App() {
         setSelectedNodes(pathNodes);
         setTimelineContextKeys(pathNodeKeys);
         
+        // Also update subgraphNodeKeys so add/remove buttons work
+        setSubgraphNodeKeys(pathNodeKeys);
+        
         // Load details for all path nodes
         await loadNodeDetails(pathNodeKeys);
         
@@ -622,6 +647,292 @@ export default function App() {
       }
     }
   }, [selectedNodeKeys.length, loadNodeDetails]);
+
+  const handleCreateSubgraphFromPageRank = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      // Use selected nodes if available, otherwise analyze full graph
+      const nodeKeysToAnalyze = selectedNodeKeys.length > 0 ? selectedNodeKeys : null;
+      const pagerankData = await graphAPI.getPageRank(nodeKeysToAnalyze, 20, 20, 0.85);
+      
+      // Check if nodes were found
+      if (!pagerankData || !pagerankData.nodes || pagerankData.nodes.length === 0) {
+        alert('No influential nodes found. The graph may be too small or disconnected.');
+        return;
+      }
+      
+      // Set the path subgraph data (reusing same mechanism)
+      setPathSubgraphData(pagerankData);
+      
+      // Update selected nodes to include top influential nodes
+      const pagerankNodeKeys = pagerankData.nodes.map(n => n.key);
+      const pagerankNodes = pagerankData.nodes.map(node => ({
+        key: node.key,
+        id: node.id || node.key,
+        name: node.name,
+        type: node.type,
+      }));
+      setSelectedNodes(pagerankNodes);
+      setTimelineContextKeys(pagerankNodeKeys);
+      
+      // Also update subgraphNodeKeys so add/remove buttons work
+      setSubgraphNodeKeys(pagerankNodeKeys);
+      
+      // Generate analysis text for PageRank
+      const topNodes = pagerankData.nodes.slice(0, 10); // Top 10 nodes
+      const topScore = pagerankData.nodes[0]?.pagerank_score || 0;
+      const avgScore = pagerankData.nodes.reduce((sum, n) => sum + (n.pagerank_score || 0), 0) / pagerankData.nodes.length;
+      
+      let analysisText = `## PageRank Analysis: Influential Nodes\n\n`;
+      analysisText += `**Analysis Scope:** ${nodeKeysToAnalyze ? `${nodeKeysToAnalyze.length} selected nodes` : 'Full graph'}\n\n`;
+      analysisText += `**Summary:**\n`;
+      analysisText += `- Total influential nodes identified: **${pagerankData.nodes.length}**\n`;
+      analysisText += `- Highest PageRank score: **${topScore.toFixed(6)}**\n`;
+      analysisText += `- Average PageRank score: **${avgScore.toFixed(6)}**\n\n`;
+      analysisText += `**Top Influential Nodes:**\n\n`;
+      
+      topNodes.forEach((node, idx) => {
+        analysisText += `${idx + 1}. **${node.name || node.key}** (${node.type || 'Unknown'})\n`;
+        analysisText += `   - PageRank Score: ${(node.pagerank_score || 0).toFixed(6)}\n`;
+        if (node.summary) {
+          analysisText += `   - Summary: ${node.summary.substring(0, 100)}${node.summary.length > 100 ? '...' : ''}\n`;
+        }
+        analysisText += `\n`;
+      });
+      
+      analysisText += `\n**Interpretation:**\n`;
+      analysisText += `Nodes with higher PageRank scores are more influential in the network. `;
+      analysisText += `These nodes have more connections or are connected to other highly influential nodes. `;
+      analysisText += `Focusing on these nodes can help identify key entities in the investigation.`;
+      
+      setSubgraphAnalysis(analysisText);
+      
+      // Load details for all influential nodes
+      await loadNodeDetails(pagerankNodeKeys);
+      
+      // Enable split view
+      setPaneViewMode('split');
+      setIsSubgraphMenuOpen(false);
+      
+      console.log(`PageRank analysis complete. Top node score: ${topScore.toFixed(6)}`);
+    } catch (err) {
+      console.error('Failed to get PageRank:', err);
+      const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
+      alert(`Failed to calculate PageRank: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedNodeKeys, loadNodeDetails]);
+
+  const handleCreateSubgraphFromLouvain = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      // Priority: subgraph > selected nodes > full graph
+      let nodeKeysToAnalyze = null;
+      let analysisScope = 'full graph';
+      
+      if (subgraphNodeKeys.length > 0) {
+        // Use subgraph nodes if available
+        nodeKeysToAnalyze = subgraphNodeKeys;
+        analysisScope = `subgraph (${subgraphNodeKeys.length} nodes)`;
+      } else if (selectedNodeKeys.length > 0) {
+        // Use selected nodes if available
+        nodeKeysToAnalyze = selectedNodeKeys;
+        analysisScope = `${selectedNodeKeys.length} selected nodes`;
+      }
+      
+      const louvainData = await graphAPI.getLouvainCommunities(nodeKeysToAnalyze, 1.0, 10);
+      
+      // Check if nodes were found
+      if (!louvainData || !louvainData.nodes || louvainData.nodes.length === 0) {
+        alert('No communities found. The graph may be too small or disconnected.');
+        return;
+      }
+      
+      // Set the path subgraph data (reusing same mechanism)
+      setPathSubgraphData(louvainData);
+      
+      // Update selected nodes to include all nodes from communities
+      const louvainNodeKeys = louvainData.nodes.map(n => n.key);
+      const louvainNodes = louvainData.nodes.map(node => ({
+        key: node.key,
+        id: node.id || node.key,
+        name: node.name,
+        type: node.type,
+      }));
+      setSelectedNodes(louvainNodes);
+      setTimelineContextKeys(louvainNodeKeys);
+      
+      // Also update subgraphNodeKeys so add/remove buttons work
+      setSubgraphNodeKeys(louvainNodeKeys);
+      
+      // Generate analysis text for Louvain communities
+      const communityCount = louvainData.communities ? Object.keys(louvainData.communities).length : 0;
+      const communities = louvainData.communities || {};
+      
+      // Group nodes by community
+      const nodesByCommunity = {};
+      louvainData.nodes.forEach(node => {
+        const commId = node.community_id;
+        if (commId !== null && commId !== undefined) {
+          if (!nodesByCommunity[commId]) {
+            nodesByCommunity[commId] = [];
+          }
+          nodesByCommunity[commId].push(node);
+        }
+      });
+      
+      let analysisText = `## Louvain Community Detection Analysis\n\n`;
+      analysisText += `**Analysis Scope:** ${analysisScope}\n\n`;
+      analysisText += `**Summary:**\n`;
+      analysisText += `- Total communities detected: **${communityCount}**\n`;
+      analysisText += `- Total nodes analyzed: **${louvainData.nodes.length}**\n`;
+      analysisText += `- Average community size: **${(louvainData.nodes.length / communityCount).toFixed(1)}** nodes\n\n`;
+      
+      // Sort communities by size (largest first)
+      const sortedCommunities = Object.entries(communities)
+        .map(([id, info]) => ({ id: parseInt(id), size: info.size || 0 }))
+        .sort((a, b) => b.size - a.size);
+      
+      analysisText += `**Community Breakdown:**\n\n`;
+      sortedCommunities.slice(0, 10).forEach((comm, idx) => {
+        const commNodes = nodesByCommunity[comm.id] || [];
+        const nodeTypes = {};
+        commNodes.forEach(node => {
+          const type = node.type || 'Unknown';
+          nodeTypes[type] = (nodeTypes[type] || 0) + 1;
+        });
+        const typeBreakdown = Object.entries(nodeTypes)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([type, count]) => `${type} (${count})`)
+          .join(', ');
+        
+        analysisText += `${idx + 1}. **Community ${comm.id}** - ${comm.size} nodes\n`;
+        analysisText += `   - Top entity types: ${typeBreakdown || 'N/A'}\n`;
+        if (commNodes.length > 0) {
+          const sampleNodes = commNodes.slice(0, 3).map(n => n.name || n.key).join(', ');
+          analysisText += `   - Sample nodes: ${sampleNodes}${commNodes.length > 3 ? '...' : ''}\n`;
+        }
+        analysisText += `\n`;
+      });
+      
+      if (sortedCommunities.length > 10) {
+        analysisText += `*... and ${sortedCommunities.length - 10} more communities*\n\n`;
+      }
+      
+      analysisText += `\n**Interpretation:**\n`;
+      analysisText += `Communities represent groups of nodes that are more densely connected to each other than to the rest of the network. `;
+      analysisText += `Larger communities may indicate clusters of related entities, while smaller communities might represent isolated groups. `;
+      analysisText += `Nodes within the same community are colored identically in the visualization.`;
+      
+      setSubgraphAnalysis(analysisText);
+      
+      // Load details for all community nodes
+      await loadNodeDetails(louvainNodeKeys);
+      
+      // Enable split view
+      setPaneViewMode('split');
+      setIsSubgraphMenuOpen(false);
+      
+      console.log(`Louvain analysis complete on ${analysisScope}. Found ${communityCount} communities.`);
+    } catch (err) {
+      console.error('Failed to get Louvain communities:', err);
+      const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
+      alert(`Failed to calculate communities: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedNodeKeys, subgraphNodeKeys, loadNodeDetails]);
+
+  const handleCreateSubgraphFromBetweenness = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      // Priority: subgraph > selected nodes > full graph
+      let nodeKeysToAnalyze = null;
+      let analysisScope = 'full graph';
+      
+      if (subgraphNodeKeys.length > 0) {
+        // Use subgraph nodes if available
+        nodeKeysToAnalyze = subgraphNodeKeys;
+        analysisScope = `subgraph (${subgraphNodeKeys.length} nodes)`;
+      } else if (selectedNodeKeys.length > 0) {
+        // Use selected nodes if available
+        nodeKeysToAnalyze = selectedNodeKeys;
+        analysisScope = `${selectedNodeKeys.length} selected nodes`;
+      }
+      
+      const betweennessData = await graphAPI.getBetweennessCentrality(nodeKeysToAnalyze, 20, true);
+      
+      // Check if nodes were found
+      if (!betweennessData || !betweennessData.nodes || betweennessData.nodes.length === 0) {
+        alert('No nodes found with betweenness centrality. The graph may be too small or disconnected.');
+        return;
+      }
+      
+      // Set the path subgraph data (reusing same mechanism)
+      setPathSubgraphData(betweennessData);
+      
+      // Update selected nodes to include all nodes from betweenness analysis
+      const betweennessNodeKeys = betweennessData.nodes.map(n => n.key);
+      const betweennessNodes = betweennessData.nodes.map(node => ({
+        key: node.key,
+        id: node.id || node.key,
+        name: node.name,
+        type: node.type,
+      }));
+      setSelectedNodes(betweennessNodes);
+      setTimelineContextKeys(betweennessNodeKeys);
+      
+      // Also update subgraphNodeKeys so add/remove buttons work
+      setSubgraphNodeKeys(betweennessNodeKeys);
+      
+      // Generate analysis text for Betweenness Centrality
+      const topNodes = betweennessData.nodes.slice(0, 10); // Top 10 nodes
+      const topScore = betweennessData.nodes[0]?.betweenness_centrality || 0;
+      const avgScore = betweennessData.nodes.reduce((sum, n) => sum + (n.betweenness_centrality || 0), 0) / betweennessData.nodes.length;
+      
+      let analysisText = `## Betweenness Centrality Analysis: Bridge Nodes\n\n`;
+      analysisText += `**Analysis Scope:** ${analysisScope}\n\n`;
+      analysisText += `**Summary:**\n`;
+      analysisText += `- Total bridge nodes identified: **${betweennessData.nodes.length}**\n`;
+      analysisText += `- Highest betweenness centrality: **${topScore.toFixed(6)}**\n`;
+      analysisText += `- Average betweenness centrality: **${avgScore.toFixed(6)}**\n\n`;
+      analysisText += `**Top Bridge Nodes:**\n\n`;
+      
+      topNodes.forEach((node, idx) => {
+        analysisText += `${idx + 1}. **${node.name || node.key}** (${node.type || 'Unknown'})\n`;
+        analysisText += `   - Betweenness Centrality: ${(node.betweenness_centrality || 0).toFixed(6)}\n`;
+        if (node.summary) {
+          analysisText += `   - Summary: ${node.summary.substring(0, 100)}${node.summary.length > 100 ? '...' : ''}\n`;
+        }
+        analysisText += `\n`;
+      });
+      
+      analysisText += `\n**Interpretation:**\n`;
+      analysisText += `Betweenness centrality measures how often a node appears on the shortest path between other nodes. `;
+      analysisText += `Nodes with high betweenness centrality are critical bridges or connectors in the network. `;
+      analysisText += `These nodes control the flow of information or connections between different parts of the graph. `;
+      analysisText += `Removing or disrupting these nodes could significantly impact network connectivity.`;
+      
+      setSubgraphAnalysis(analysisText);
+      
+      // Load details for all bridge nodes
+      await loadNodeDetails(betweennessNodeKeys);
+      
+      // Enable split view
+      setPaneViewMode('split');
+      setIsSubgraphMenuOpen(false);
+      
+      console.log(`Betweenness centrality analysis complete on ${analysisScope}. Top node score: ${topScore.toFixed(6)}`);
+    } catch (err) {
+      console.error('Failed to get betweenness centrality:', err);
+      const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
+      alert(`Failed to calculate betweenness centrality: ${errorMessage}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [selectedNodeKeys, subgraphNodeKeys, loadNodeDetails]);
   
   // Build subgraph for subgraph node keys
   // Use path-based subgraph if available, otherwise build from subgraph node keys
@@ -727,20 +1038,20 @@ export default function App() {
     loadTimeline();
   }, [timelineContextKeys, dateRange]);
 
-  // Load artifacts on mount
+  // Load snapshots on mount
   useEffect(() => {
-    const loadArtifacts = async () => {
+    const loadSnapshots = async () => {
       try {
-        const data = await artifactsAPI.list();
-        setArtifacts(data);
+        const data = await snapshotsAPI.list();
+        setSnapshots(data);
       } catch (err) {
-        console.error('Failed to load artifacts:', err);
+        console.error('Failed to load snapshots:', err);
       }
     };
-    loadArtifacts();
+    loadSnapshots();
   }, []);
 
-  // Export artifact to PDF
+  // Export snapshot to PDF
   const handleExportPDF = useCallback(async (name, notes) => {
     if (subgraphNodeKeys.length === 0) {
       alert('Please add nodes to subgraph to export as PDF');
@@ -772,7 +1083,7 @@ export default function App() {
         }
       }
 
-      // Prepare artifact data for PDF - include both user questions and AI responses
+      // Prepare snapshot data for PDF - include both user questions and AI responses
       // Find relevant conversation pairs (user question + AI response)
       const relevantChatHistory = [];
       for (let i = 0; i < chatHistory.length; i++) {
@@ -804,8 +1115,8 @@ export default function App() {
         }
       }
 
-      const artifact = {
-        name: name || `Artifact ${new Date().toLocaleString()}`,
+      const snapshot = {
+        name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
         subgraph: subgraphData,
         timeline: timelineData || [], // Ensure timeline is always an array
@@ -818,14 +1129,14 @@ export default function App() {
         timestamp: new Date().toISOString(),
       };
 
-      console.log('Exporting artifact to PDF:', {
-        name: artifact.name,
-        timelineCount: artifact.timeline.length,
-        timeline: artifact.timeline
+      console.log('Exporting snapshot to PDF:', {
+        name: snapshot.name,
+        timelineCount: snapshot.timeline.length,
+        timeline: snapshot.timeline
       });
 
       // Export to PDF
-      await exportArtifactToPDF(artifact, graphCanvas);
+      await exportSnapshotToPDF(snapshot, graphCanvas);
       alert('PDF exported successfully!');
     } catch (err) {
       console.error('Failed to export PDF:', err);
@@ -833,10 +1144,10 @@ export default function App() {
     }
   }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
 
-  // Save artifact
-  const handleSaveArtifact = useCallback(async (name, notes) => {
+  // Save snapshot
+  const handleSaveSnapshot = useCallback(async (name, notes) => {
     if (subgraphNodeKeys.length === 0) {
-      alert('Please add nodes to subgraph to save as an artifact');
+      alert('Please add nodes to subgraph to save as a snapshot');
       return;
     }
 
@@ -873,8 +1184,8 @@ export default function App() {
         }
       }
 
-      const artifact = {
-        name: name || `Artifact ${new Date().toLocaleString()}`,
+      const snapshot = {
+        name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
         subgraph: subgraphData,
         timeline: timelineData || [], // Ensure timeline is always an array
@@ -886,25 +1197,137 @@ export default function App() {
         chat_history: relevantChatHistory,
       };
 
-      console.log('Saving artifact:', {
-        name: artifact.name,
-        timelineCount: artifact.timeline.length,
-        timeline: artifact.timeline
+      console.log('Saving snapshot:', {
+        name: snapshot.name,
+        timelineCount: snapshot.timeline.length,
+        timeline: snapshot.timeline
       });
 
-      await artifactsAPI.create(artifact);
-      setShowArtifactModal(false);
+      await snapshotsAPI.create(snapshot);
+      setShowSnapshotModal(false);
       
-      // Reload artifacts list
-      const data = await artifactsAPI.list();
-      setArtifacts(data);
+      // Reload snapshots list
+      const data = await snapshotsAPI.list();
+      setSnapshots(data);
       
-      alert('Artifact saved successfully!');
+      alert('Snapshot saved successfully!');
     } catch (err) {
-      console.error('Failed to save artifact:', err);
-      alert(`Failed to save artifact: ${err.message}`);
+      console.error('Failed to save snapshot:', err);
+      alert(`Failed to save snapshot: ${err.message}`);
     }
   }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
+
+  // Save case
+  const handleSaveCase = useCallback(async (caseName, saveNotes) => {
+    try {
+      // Get full snapshot data for all current snapshots
+      const snapshotData = [];
+      for (const snapshot of snapshots) {
+        try {
+          const fullSnapshot = await snapshotsAPI.get(snapshot.id);
+          snapshotData.push(fullSnapshot);
+        } catch (err) {
+          console.warn(`Failed to load snapshot ${snapshot.id}:`, err);
+          // Continue with other snapshots
+        }
+      }
+      
+      // Save case with current graph data and full snapshot data
+      const result = await casesAPI.save({
+        case_id: currentCaseId, // Will be null for new case
+        case_name: caseName,
+        graph_data: fullGraphData, // Use full graph data (unfiltered)
+        snapshots: snapshotData, // Full snapshot data
+        save_notes: saveNotes,
+      });
+      
+      // Update current case info
+      setCurrentCaseId(result.case_id);
+      setCurrentCaseName(caseName);
+      setCurrentCaseVersion(result.version);
+      setShowCaseModal(false);
+      
+      alert(`Case saved successfully! Version ${result.version} saved.`);
+    } catch (err) {
+      console.error('Failed to save case:', err);
+      alert(`Failed to save case: ${err.message}`);
+    }
+  }, [fullGraphData, snapshots, currentCaseId]);
+
+  // Load case version
+  const handleLoadCase = useCallback(async (caseData, versionData) => {
+    try {
+      // Execute Cypher queries to recreate the graph
+      const cypherQueries = versionData.cypher_queries;
+      
+      if (!cypherQueries) {
+        alert('No Cypher queries found in this case version');
+        return;
+      }
+      
+      // Execute queries via the graph API
+      const result = await graphAPI.loadCase(cypherQueries);
+      
+      if (result.errors && result.errors.length > 0) {
+        console.warn('Some queries failed:', result.errors);
+      }
+      
+      // Reload the graph
+      await loadGraph();
+      
+      // Set current case info
+      setCurrentCaseId(caseData.id);
+      setCurrentCaseName(caseData.name);
+      setCurrentCaseVersion(versionData.version);
+      
+      // Restore snapshots from the case version
+      // First, clear all existing snapshots that belong to this case (to avoid duplicates)
+      const allSnapshots = await snapshotsAPI.list();
+      for (const existingSnapshot of allSnapshots) {
+        try {
+          const fullSnapshot = await snapshotsAPI.get(existingSnapshot.id);
+          // If this snapshot belongs to the same case, delete it before restoring version-specific ones
+          if (fullSnapshot.case_id === caseData.id) {
+            await snapshotsAPI.delete(existingSnapshot.id);
+          }
+        } catch (err) {
+          // Snapshot might not exist, continue
+        }
+      }
+      
+      // Now restore snapshots from this specific version
+      if (versionData.snapshots && versionData.snapshots.length > 0) {
+        // Restore each snapshot to the snapshot storage
+        for (const snapshotData of versionData.snapshots) {
+          try {
+            // Ensure snapshot has case and version metadata
+            snapshotData.case_id = caseData.id;
+            snapshotData.case_version = versionData.version;
+            snapshotData.case_name = caseData.name;
+            
+            // Restore the snapshot using the restore endpoint
+            await snapshotsAPI.restore(snapshotData);
+          } catch (err) {
+            console.warn(`Failed to restore snapshot ${snapshotData.id}:`, err);
+            // Continue with other snapshots
+          }
+        }
+        
+        // Reload snapshots list to reflect restored snapshots
+        const snapshotsData = await snapshotsAPI.list();
+        setSnapshots(snapshotsData);
+      } else {
+        // No snapshots in this version, clear current snapshots list
+        setSnapshots([]);
+      }
+      
+      setShowCaseList(false);
+      alert(`Case loaded successfully! ${result.executed} queries executed.`);
+    } catch (err) {
+      console.error('Failed to load case:', err);
+      alert(`Failed to load case: ${err.message}`);
+    }
+  }, [loadGraph]);
 
   // Handle date range change - memoized to prevent infinite loops
   const handleDateRangeChange = useCallback((range) => {
@@ -937,6 +1360,19 @@ export default function App() {
       {/* Header */}
       <header className="h-16 bg-white border-b border-light-200 flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
         <div className="flex items-center gap-3 relative">
+          {/* File Management Button */}
+          <button
+            onClick={() => setShowFilePanel(!showFilePanel)}
+            className={`p-2 rounded-lg transition-colors ${
+              showFilePanel
+                ? 'bg-owl-blue-500 text-white'
+                : 'hover:bg-light-100 text-light-600'
+            }`}
+            title="File Management"
+          >
+            <HardDrive className="w-5 h-5" />
+          </button>
+
           <button
             ref={logoButtonRef}
             onClick={() => setIsAccountDropdownOpen(prev => !prev)}
@@ -981,15 +1417,21 @@ export default function App() {
               )}
             </div>
           )}
-          
-          {viewMode === 'graph' && (
-            <span className="text-xs text-light-600 bg-light-100 px-2 py-1 rounded">
-              {selectedNodes.length > 0 
-                ? `${subgraphData.nodes.length} selected · ${subgraphData.links.length} connections`
-                : `${graphData.nodes.length} entities · ${graphData.links.length} relationships`
-              }
+
+          {/* Current Case Name */}
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold text-owl-blue-900">
+              {currentCaseName || 'No Case Loaded'}
             </span>
-          )}
+            {viewMode === 'graph' && (
+              <span className="text-xs text-light-600 bg-light-100 px-2 py-1 rounded mt-1">
+                {selectedNodes.length > 0 
+                  ? `${subgraphData.nodes.length} selected · ${subgraphData.links.length} connections`
+                  : `${graphData.nodes.length} entities · ${graphData.links.length} relationships`
+                }
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-4">
@@ -1052,6 +1494,55 @@ export default function App() {
                       </div>
                     )}
                   </button>
+
+                  <button
+                    onClick={handleCreateSubgraphFromPageRank}
+                    className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      <span>PageRank (Influential Nodes)</span>
+                    </div>
+                    <div className="text-xs text-light-500 mt-0.5 ml-6">
+                      {selectedNodeKeys.length > 0 
+                        ? `Analyze ${selectedNodeKeys.length} selected nodes`
+                        : 'Analyze full graph'}
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={handleCreateSubgraphFromLouvain}
+                    className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      <span>Louvain (Communities)</span>
+                    </div>
+                    <div className="text-xs text-light-500 mt-0.5 ml-6">
+                      {subgraphNodeKeys.length > 0
+                        ? `Find communities in subgraph (${subgraphNodeKeys.length} nodes)`
+                        : selectedNodeKeys.length > 0 
+                        ? `Find communities in ${selectedNodeKeys.length} selected nodes`
+                        : 'Find communities in full graph'}
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={handleCreateSubgraphFromBetweenness}
+                    className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Target className="w-4 h-4" />
+                      <span>Betweenness Centrality (Bridge Nodes)</span>
+                    </div>
+                    <div className="text-xs text-light-500 mt-0.5 ml-6">
+                      {subgraphNodeKeys.length > 0
+                        ? `Find bridges in subgraph (${subgraphNodeKeys.length} nodes)`
+                        : selectedNodeKeys.length > 0 
+                        ? `Find bridges in ${selectedNodeKeys.length} selected nodes`
+                        : 'Find bridges in full graph'}
+                    </div>
+                  </button>
                   
                   {paneViewMode === 'split' && (
                     <div className="border-t border-light-200 mt-1 pt-1">
@@ -1059,6 +1550,8 @@ export default function App() {
                     onClick={() => {
                       setPaneViewMode('single');
                       setPathSubgraphData(null); // Clear path subgraph when closing
+                      setSubgraphAnalysis(null); // Clear analysis when closing
+                      setIsAnalysisExpanded(false); // Reset analysis expansion
                       setIsSubgraphMenuOpen(false);
                     }}
                     className="w-full text-left px-3 py-2 text-sm text-light-800 hover:bg-light-50 transition-colors"
@@ -1075,31 +1568,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Save Artifact Button */}
-          {subgraphNodeKeys.length > 0 && (
-            <button
-              onClick={() => setShowArtifactModal(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-md text-sm transition-colors"
-              title="Save current selection as artifact"
-            >
-              <Save className="w-4 h-4" />
-              Save Artifact
-            </button>
-          )}
-
-          {/* Artifacts List Button */}
-          <button
-            onClick={() => setShowArtifactList(!showArtifactList)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
-              showArtifactList
-                ? 'bg-owl-blue-100 text-owl-blue-900'
-                : 'text-light-600 hover:text-light-800'
-            }`}
-            title="View saved artifacts"
-          >
-            <Archive className="w-4 h-4" />
-            Artifacts
-          </button>
 
           {/* View Toggle */}
           <div className="flex items-center bg-light-100 rounded-lg p-1">
@@ -1280,31 +1748,77 @@ export default function App() {
                   {subgraphNodeKeys.length > 0 ? (
                     // Show subgraph of selected nodes
                     <>
-                      <div className="absolute top-4 left-4 right-4 z-10 flex items-center justify-between bg-white/90 backdrop-blur-sm rounded-lg p-2 px-3 shadow-sm border border-light-200">
-                        <div className="flex items-center gap-2">
-                          <Network className="w-4 h-4 text-owl-blue-700" />
-                          <h3 className="text-sm font-semibold text-owl-blue-900">
-                            Subgraph ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
-                          </h3>
+                      <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-2">
+                        {/* Subgraph Header */}
+                        <div className="flex items-center justify-between bg-white/90 backdrop-blur-sm rounded-lg p-2 px-3 shadow-sm border border-light-200">
+                          <div className="flex items-center gap-2">
+                            <Network className="w-4 h-4 text-owl-blue-700" />
+                            <h3 className="text-sm font-semibold text-owl-blue-900">
+                              Subgraph ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
+                            </h3>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={handleSelectAllSubgraphNodes}
+                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
+                              title="Select all subgraph nodes"
+                            >
+                              <CheckSquare className="w-3.5 h-3.5" />
+                              Select All
+                            </button>
+                            <button
+                              onClick={handleCloseDetails}
+                              className="p-1 hover:bg-light-100 rounded transition-colors"
+                              title="Clear selection"
+                            >
+                              <X className="w-4 h-4 text-light-600" />
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleSelectAllSubgraphNodes}
-                            className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
-                            title="Select all subgraph nodes"
-                          >
-                            <CheckSquare className="w-3.5 h-3.5" />
-                            Select All
-                          </button>
-                          <button
-                            onClick={handleCloseDetails}
-                            className="p-1 hover:bg-light-100 rounded transition-colors"
-                            title="Clear selection"
-                          >
-                            <X className="w-4 h-4 text-light-600" />
-                          </button>
-                        </div>
+                        
+                        {/* Analysis Overview - Expandable */}
+                        {subgraphAnalysis && (
+                          <div className="bg-white rounded-lg shadow-sm border border-light-200 overflow-hidden">
+                            <button
+                              onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                              className="w-full flex items-center justify-between p-3 hover:bg-light-50 transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-owl-blue-700" />
+                                <h4 className="text-sm font-semibold text-owl-blue-900">Analysis Overview</h4>
+                              </div>
+                              {isAnalysisExpanded ? (
+                                <ChevronUp className="w-4 h-4 text-light-600" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 text-light-600" />
+                              )}
+                            </button>
+                            {isAnalysisExpanded && (
+                              <div className="border-t border-light-200 max-h-96 overflow-y-auto p-4">
+                                <div className="prose prose-sm max-w-none text-light-700 whitespace-pre-wrap">
+                                  {subgraphAnalysis.split('\n').map((line, idx) => {
+                                    if (line.startsWith('## ')) {
+                                      return <h2 key={idx} className="text-base font-bold text-owl-blue-900 mt-2 mb-1">{line.substring(3)}</h2>;
+                                    } else if (line.startsWith('**') && line.endsWith('**')) {
+                                      return <strong key={idx} className="font-semibold text-owl-blue-900">{line.replace(/\*\*/g, '')}</strong>;
+                                    } else if (line.startsWith('- **')) {
+                                      const parts = line.match(/\*\*(.*?)\*\*(.*)/);
+                                      return <div key={idx} className="ml-4 mb-1"><strong className="font-semibold text-owl-blue-900">{parts[1]}</strong>{parts[2]}</div>;
+                                    } else if (line.startsWith('   - ')) {
+                                      return <div key={idx} className="ml-8 text-xs mb-1 text-light-600">{line.substring(5)}</div>;
+                                    } else if (line.trim() === '') {
+                                      return <br key={idx} />;
+                                    } else {
+                                      return <p key={idx} className="mb-1 text-sm">{line}</p>;
+                                    }
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
+                      
                       <GraphView
                         ref={subgraphGraphRef}
                         graphData={subgraphData}
@@ -1457,35 +1971,57 @@ export default function App() {
         />
       )}
 
-      {/* Artifact Modal */}
-      <ArtifactModal
-        isOpen={showArtifactModal}
-        onClose={() => setShowArtifactModal(false)}
-        onSave={handleSaveArtifact}
+      {/* Snapshot Modal */}
+      <SnapshotModal
+        isOpen={showSnapshotModal}
+        onClose={() => setShowSnapshotModal(false)}
+        onSave={handleSaveSnapshot}
         onExportPDF={handleExportPDF}
         nodeCount={subgraphData.nodes.length}
         linkCount={subgraphData.links.length}
       />
 
-      {/* Artifact List */}
-      <ArtifactList
-        isOpen={showArtifactList}
-        onClose={() => setShowArtifactList(false)}
-        onLoadArtifact={async (artifact) => {
-          // Load artifact into subgraph (right pane) by setting subgraph node keys
+      {/* File Management Panel */}
+      <FileManagementPanel
+        isOpen={showFilePanel}
+        onClose={() => setShowFilePanel(false)}
+        subgraphNodeKeys={subgraphNodeKeys}
+        onSaveSnapshot={() => setShowSnapshotModal(true)}
+        onExportPDF={async (snapshot) => {
+          try {
+            // Get full snapshot data if needed
+            let fullSnapshot = snapshot;
+            if (!fullSnapshot.subgraph) {
+              fullSnapshot = await snapshotsAPI.get(snapshot.id);
+            }
+            // Ensure timeline is included
+            if (!fullSnapshot.timeline) {
+              fullSnapshot.timeline = [];
+            }
+            // Export to PDF (no canvas available for saved snapshots, but we'll include the data)
+            await exportSnapshotToPDF(fullSnapshot, null);
+            alert('PDF exported successfully!');
+          } catch (err) {
+            console.error('Failed to export PDF:', err);
+            alert(`Failed to export PDF: ${err.message}`);
+          }
+        }}
+        snapshots={snapshots}
+        onLoadSnapshot={async (snapshot) => {
+          // Load snapshot into subgraph (right pane) by setting subgraph node keys
           // This will automatically build the subgraph in the right pane
-          if (artifact.subgraph && artifact.subgraph.nodes) {
+          if (snapshot.subgraph && snapshot.subgraph.nodes) {
             // Ensure split view is enabled to show the subgraph
             if (paneViewMode !== 'split') {
               setPaneViewMode('split');
             }
             
-            // Set subgraph node keys to artifact's subgraph nodes
+            // Set subgraph node keys to snapshot's subgraph nodes
             // The subgraph will be built automatically from these keys
-            const artifactNodes = artifact.subgraph.nodes;
-            const nodeKeys = artifactNodes.map(n => n.key);
+            const snapshotNodes = snapshot.subgraph.nodes;
+            const nodeKeys = snapshotNodes.map(n => n.key);
             setSubgraphNodeKeys(nodeKeys);
-            setSelectedNodes(artifactNodes);
+            setSelectedNodes(snapshotNodes);
             setTimelineContextKeys(nodeKeys);
             
             // Load node details for the selected nodes (for the overview panel)
@@ -1493,10 +2029,52 @@ export default function App() {
             
             // Timeline will be loaded automatically by the useEffect when timelineContextKeys changes
             
-            setShowArtifactList(false);
+            setShowFilePanel(false);
           }
         }}
+        onDeleteSnapshot={async (snapshotId) => {
+          try {
+            await snapshotsAPI.delete(snapshotId);
+            const data = await snapshotsAPI.list();
+            setSnapshots(data);
+          } catch (err) {
+            console.error('Failed to delete snapshot:', err);
+            throw err;
+          }
+        }}
+        currentCaseId={currentCaseId}
+        currentCaseName={currentCaseName}
+        currentCaseVersion={currentCaseVersion}
+        onSaveCase={() => setShowCaseModal(true)}
+        onLoadCase={handleLoadCase}
       />
+
+      {/* Snapshot Modal */}
+      <SnapshotModal
+        isOpen={showSnapshotModal}
+        onClose={() => setShowSnapshotModal(false)}
+        onSave={async (name, notes) => {
+          await handleSaveSnapshot(name, notes);
+          setShowFilePanel(true); // Reopen panel to show updated list
+        }}
+        onExportPDF={handleExportPDF}
+        nodeCount={subgraphData.nodes.length}
+        linkCount={subgraphData.links.length}
+      />
+
+      {/* Case Modal */}
+      <CaseModal
+        isOpen={showCaseModal}
+        onClose={() => setShowCaseModal(false)}
+        onSave={async (caseName, saveNotes) => {
+          await handleSaveCase(caseName, saveNotes);
+          setShowFilePanel(true); // Reopen panel to show updated list
+        }}
+        existingCaseId={currentCaseId}
+        existingCaseName={currentCaseName}
+        nextVersion={currentCaseVersion + 1}
+      />
+
       <LoginPanel
         isOpen={showLoginPanel}
         onClose={() => setShowLoginPanel(false)}

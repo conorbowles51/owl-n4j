@@ -17,6 +17,33 @@ class ShortestPathsRequest(BaseModel):
     max_depth: int = 10
 
 
+class PageRankRequest(BaseModel):
+    """Request model for PageRank endpoint."""
+    node_keys: Optional[List[str]] = None  # If None, runs on full graph
+    top_n: int = 20  # Number of top influential nodes to return
+    iterations: int = 20  # Number of PageRank iterations
+    damping_factor: float = 0.85  # Damping factor for PageRank
+
+
+class LouvainRequest(BaseModel):
+    """Request model for Louvain community detection endpoint."""
+    node_keys: Optional[List[str]] = None  # If None, runs on full graph
+    resolution: float = 1.0  # Resolution parameter for modularity (higher = more communities)
+    max_iterations: int = 10  # Maximum number of iterations
+
+
+class BetweennessCentralityRequest(BaseModel):
+    """Request model for Betweenness Centrality endpoint."""
+    node_keys: Optional[List[str]] = None  # If None, runs on full graph
+    top_n: int = 20  # Number of top nodes by betweenness centrality to return
+    normalized: bool = True  # Whether to normalize the scores
+
+
+class CaseLoadRequest(BaseModel):
+    """Request model for loading a case (executing Cypher queries)."""
+    cypher_queries: str
+
+
 @router.get("")
 async def get_graph(
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
@@ -124,5 +151,148 @@ async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
             request.node_keys, 
             request.max_depth
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/pagerank")
+async def get_pagerank(request: PageRankRequest):
+    """
+    Get influential nodes using PageRank algorithm.
+    
+    Can run on:
+    - Selected nodes and their connections (if node_keys provided)
+    - Full graph (if node_keys is None or empty)
+    
+    Args:
+        request: Request with optional node_keys, top_n, iterations, and damping_factor
+    """
+    if request.top_n < 1 or request.top_n > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="top_n must be between 1 and 100"
+        )
+    
+    if request.iterations < 1 or request.iterations > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="iterations must be between 1 and 100"
+        )
+    
+    if request.damping_factor < 0 or request.damping_factor > 1:
+        raise HTTPException(
+            status_code=400,
+            detail="damping_factor must be between 0 and 1"
+        )
+    
+    try:
+        return neo4j_service.get_pagerank_subgraph(
+            node_keys=request.node_keys if request.node_keys else None,
+            top_n=request.top_n,
+            iterations=request.iterations,
+            damping_factor=request.damping_factor
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/louvain")
+async def get_louvain_communities(request: LouvainRequest):
+    """
+    Get communities using Louvain modularity algorithm.
+    
+    Can run on:
+    - Selected nodes and their connections (if node_keys provided)
+    - Full graph (if node_keys is None or empty)
+    
+    Args:
+        request: Request with optional node_keys, resolution, and max_iterations
+    """
+    if request.resolution < 0.1 or request.resolution > 10.0:
+        raise HTTPException(
+            status_code=400,
+            detail="resolution must be between 0.1 and 10.0"
+        )
+    
+    if request.max_iterations < 1 or request.max_iterations > 50:
+        raise HTTPException(
+            status_code=400,
+            detail="max_iterations must be between 1 and 50"
+        )
+    
+    try:
+        return neo4j_service.get_louvain_communities(
+            node_keys=request.node_keys if request.node_keys else None,
+            resolution=request.resolution,
+            max_iterations=request.max_iterations
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/betweenness-centrality")
+async def get_betweenness_centrality(request: BetweennessCentralityRequest):
+    """
+    Get nodes with highest betweenness centrality.
+    
+    Can run on:
+    - Selected nodes and their connections (if node_keys provided)
+    - Full graph (if node_keys is None or empty)
+    
+    Args:
+        request: Request with optional node_keys, top_n, and normalized
+    """
+    if request.top_n < 1 or request.top_n > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="top_n must be between 1 and 100"
+        )
+    
+    try:
+        return neo4j_service.get_betweenness_centrality(
+            node_keys=request.node_keys if request.node_keys else None,
+            top_n=request.top_n,
+            normalized=request.normalized
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/load-case")
+async def load_case(request: CaseLoadRequest):
+    """
+    Load a case by executing Cypher queries.
+    This endpoint allows MERGE/CREATE operations for case restoration.
+    
+    Args:
+        request: Request with Cypher queries to execute
+    """
+    if not request.cypher_queries or not request.cypher_queries.strip():
+        raise HTTPException(status_code=400, detail="Cypher queries are required")
+    
+    try:
+        # Split queries by double newline and execute each
+        queries = [q.strip() for q in request.cypher_queries.split('\n\n') if q.strip()]
+        executed = 0
+        errors = []
+        
+        for query in queries:
+            query = query.strip()
+            if not query:
+                continue
+            try:
+                # Use run_cypher which allows write operations
+                neo4j_service.run_cypher(query, {})
+                executed += 1
+            except Exception as e:
+                errors.append(f"Query failed: {str(e)}")
+                # Continue with other queries
+        
+        return {
+            "success": True,
+            "executed": executed,
+            "total": len(queries),
+            "errors": errors if errors else None,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

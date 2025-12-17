@@ -1,19 +1,19 @@
 /**
  * PDF Export Utility
  * 
- * Exports artifacts to PDF format with subgraph, overview, chat history, and timeline
+ * Exports snapshots to PDF format with subgraph, overview, chat history, and timeline
  */
 
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 /**
- * Export artifact to PDF
+ * Export snapshot to PDF
  * 
- * @param {Object} artifact - The artifact data
+ * @param {Object} snapshot - The snapshot data
  * @param {HTMLCanvasElement} graphCanvas - The canvas element from the graph
  */
-export async function exportArtifactToPDF(artifact, graphCanvas = null) {
+export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -42,20 +42,20 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
   // Title
   doc.setFontSize(20);
   doc.setFont(undefined, 'bold');
-  doc.text(artifact.name || 'Artifact', margin, yPosition);
+  doc.text(snapshot.name || 'Snapshot', margin, yPosition);
   yPosition += 10;
 
   // Date
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
-  const dateStr = artifact.timestamp 
-    ? new Date(artifact.timestamp).toLocaleString() 
+  const dateStr = snapshot.timestamp 
+    ? new Date(snapshot.timestamp).toLocaleString() 
     : new Date().toLocaleString();
   doc.text(`Created: ${dateStr}`, margin, yPosition);
   yPosition += 8;
 
   // User Notes (Introduction)
-  if (artifact.notes) {
+  if (snapshot.notes) {
     checkPageBreak(30);
     doc.setFontSize(14);
     doc.setFont(undefined, 'bold');
@@ -64,7 +64,7 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
     
     doc.setFontSize(11);
     doc.setFont(undefined, 'normal');
-    const notesHeight = addWrappedText(artifact.notes, margin, yPosition, contentWidth);
+    const notesHeight = addWrappedText(snapshot.notes, margin, yPosition, contentWidth);
     yPosition += notesHeight + 10;
   }
 
@@ -155,7 +155,7 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
       doc.setFontSize(9);
       doc.setFont(undefined, 'italic');
       doc.text(
-        `Subgraph showing ${artifact.subgraph?.nodes?.length || 0} nodes and ${artifact.subgraph?.links?.length || 0} relationships`,
+        `Subgraph showing ${snapshot.subgraph?.nodes?.length || 0} nodes and ${snapshot.subgraph?.links?.length || 0} relationships`,
         margin,
         yPosition
       );
@@ -171,13 +171,13 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
     // Fallback if canvas not available
     doc.setFontSize(11);
     doc.setFont(undefined, 'normal');
-    doc.text(`Subgraph contains ${artifact.subgraph?.nodes?.length || 0} nodes and ${artifact.subgraph?.links?.length || 0} relationships`, margin, yPosition);
+    doc.text(`Subgraph contains ${snapshot.subgraph?.nodes?.length || 0} nodes and ${snapshot.subgraph?.links?.length || 0} relationships`, margin, yPosition);
     doc.text('(Graph visualization not available)', margin, yPosition + 7);
     yPosition += 15;
   }
 
   // Overview Section
-  if (artifact.overview && artifact.overview.nodes && artifact.overview.nodes.length > 0) {
+  if (snapshot.overview && snapshot.overview.nodes && snapshot.overview.nodes.length > 0) {
     checkPageBreak(30);
     doc.setFontSize(14);
     doc.setFont(undefined, 'bold');
@@ -187,7 +187,7 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
     doc.setFontSize(11);
     doc.setFont(undefined, 'normal');
     
-    artifact.overview.nodes.forEach((node, index) => {
+    snapshot.overview.nodes.forEach((node, index) => {
       checkPageBreak(25);
       
       // Node header
@@ -225,15 +225,15 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
   yPosition += 8;
 
   console.log('PDF Export - Timeline data:', {
-    hasTimeline: !!artifact.timeline,
-    timelineLength: artifact.timeline?.length || 0,
-    timeline: artifact.timeline
+    hasTimeline: !!snapshot.timeline,
+    timelineLength: snapshot.timeline?.length || 0,
+    timeline: snapshot.timeline
   });
 
-  if (artifact.timeline && Array.isArray(artifact.timeline) && artifact.timeline.length > 0) {
+  if (snapshot.timeline && Array.isArray(snapshot.timeline) && snapshot.timeline.length > 0) {
     doc.setFontSize(11);
     doc.setFont(undefined, 'normal');
-    doc.text(`Total events: ${artifact.timeline.length}`, margin, yPosition);
+    doc.text(`Total events: ${snapshot.timeline.length}`, margin, yPosition);
     yPosition += 8;
     
     // Draw a timeline line
@@ -241,7 +241,7 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
     const timelineLineX = margin + 5;
     const timelineLineWidth = 1;
     
-    artifact.timeline.forEach((event, index) => {
+    snapshot.timeline.forEach((event, index) => {
       checkPageBreak(30);
       
       // Timeline marker
@@ -308,12 +308,12 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
   } else {
     doc.setFontSize(11);
     doc.setFont(undefined, 'normal');
-    doc.text('No timeline events available for this artifact.', margin, yPosition);
+    doc.text('No timeline events available for this snapshot.', margin, yPosition);
     yPosition += 10;
   }
 
   // Chat History Section
-  if (artifact.chat_history && artifact.chat_history.length > 0) {
+  if (snapshot.chat_history && snapshot.chat_history.length > 0) {
     checkPageBreak(30);
     doc.setFontSize(14);
     doc.setFont(undefined, 'bold');
@@ -322,7 +322,7 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
 
     doc.setFontSize(11);
     
-    artifact.chat_history.forEach((message, index) => {
+    snapshot.chat_history.forEach((message, index) => {
       checkPageBreak(35);
       
       // Message role with styling
@@ -362,7 +362,7 @@ export async function exportArtifactToPDF(artifact, graphCanvas = null) {
   }
 
   // Save PDF
-  const fileName = `${artifact.name || 'artifact'}_${new Date().toISOString().split('T')[0]}.pdf`;
+  const fileName = `${snapshot.name || 'snapshot'}_${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
 
