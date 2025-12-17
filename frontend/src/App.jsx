@@ -33,6 +33,7 @@ import SnapshotModal from './components/SnapshotModal';
 import CaseModal from './components/CaseModal';
 import DateRangeFilter from './components/DateRangeFilter';
 import FileManagementPanel from './components/FileManagementPanel';
+import CaseManagementView from './components/CaseManagementView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
@@ -41,7 +42,9 @@ import LoginPanel from './components/LoginPanel';
  * Main App Component
  */
 export default function App() {
-  // View mode state
+  // Main app view state - 'caseManagement' or 'graph'
+  const [appView, setAppView] = useState('caseManagement'); // Start with case management after login
+  // View mode state (for graph view)
   const [viewMode, setViewMode] = useState('graph'); // 'graph' or 'timeline'
   // Graph state
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
@@ -1217,6 +1220,13 @@ export default function App() {
     }
   }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
 
+  // Handle create case (from case management view - requires graph first)
+  const handleCreateCase = useCallback(async (caseName, saveNotes) => {
+    // Creating a case from case management requires a graph first
+    // So we'll show an alert and switch to graph view
+    alert('To create a new case, please load an existing case first or switch to graph view to create a case from the current graph state.');
+  }, []);
+
   // Save case
   const handleSaveCase = useCallback(async (caseName, saveNotes) => {
     try {
@@ -1257,6 +1267,7 @@ export default function App() {
   // Load case version
   const handleLoadCase = useCallback(async (caseData, versionData) => {
     try {
+      setIsLoading(true);
       // Execute Cypher queries to recreate the graph
       const cypherQueries = versionData.cypher_queries;
       
@@ -1321,11 +1332,14 @@ export default function App() {
         setSnapshots([]);
       }
       
-      setShowCaseList(false);
+      // Switch to graph view
+      setAppView('graph');
       alert(`Case loaded successfully! ${result.executed} queries executed.`);
     } catch (err) {
       console.error('Failed to load case:', err);
       alert(`Failed to load case: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
   }, [loadGraph]);
 
@@ -1352,6 +1366,19 @@ export default function App() {
           />
         </div>
       </div>
+    );
+  }
+
+  // Show case management view if appView is 'caseManagement'
+  if (appView === 'caseManagement') {
+    return (
+      <CaseManagementView
+        onLoadCase={handleLoadCase}
+        onCreateCase={handleCreateCase}
+        onLogout={handleLogout}
+        isAuthenticated={isAuthenticated}
+        authUsername={authUsername}
+      />
     );
   }
 
@@ -1987,6 +2014,7 @@ export default function App() {
         onClose={() => setShowFilePanel(false)}
         subgraphNodeKeys={subgraphNodeKeys}
         onSaveSnapshot={() => setShowSnapshotModal(true)}
+        onReturnToCaseManagement={() => setAppView('caseManagement')}
         onExportPDF={async (snapshot) => {
           try {
             // Get full snapshot data if needed
