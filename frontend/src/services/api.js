@@ -9,24 +9,24 @@ const API_BASE = '/api';
  */
 async function fetchAPI(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
-  
-  const defaultHeaders = {
-    'Content-Type': 'application/json',
-  };
-
+ 
   const token = localStorage.getItem('authToken');
-  if (token) {
-    defaultHeaders.Authorization = `Bearer ${token}`;
-  }
+
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(options.headers || {}),
+  };
 
   const config = {
     credentials: options.credentials || 'include',
     ...options,
-    headers: {
-      ...defaultHeaders,
-      ...options.headers,
-    },
+    headers,
   };
+
+  // Automatically set JSON content type unless a FormData body is provided
+  if (!(config.body instanceof FormData) && !('Content-Type' in config.headers)) {
+    config.headers['Content-Type'] = 'application/json';
+  }
 
   const response = await fetch(url, config);
   
@@ -141,6 +141,19 @@ export const graphAPI = {
         cypher_queries: cypherQueries,
       }),
     }),
+
+  /**
+   * Clear the current graph, saving its Cypher as the "last graph"
+   */
+  clearGraph: () =>
+    fetchAPI('/graph/clear-graph', {
+      method: 'POST',
+    }),
+
+  /**
+   * Get the last-cleared graph's Cypher (if any)
+   */
+  getLastGraph: () => fetchAPI('/graph/last-graph'),
 
   /**
    * Get entities with geocoded locations for map display
@@ -308,6 +321,60 @@ export const casesAPI = {
     fetchAPI(`/cases/${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
+};
+
+/**
+ * Evidence API
+ */
+export const evidenceAPI = {
+  /**
+   * List evidence files for a case
+   */
+  list: (caseId, status = null) => {
+    const params = new URLSearchParams();
+    if (caseId) params.append('case_id', caseId);
+    if (status) params.append('status', status);
+    const qs = params.toString();
+    return fetchAPI(`/evidence${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * Upload one or more evidence files for a case
+   */
+  upload: (caseId, files) => {
+    const formData = new FormData();
+    formData.append('case_id', caseId);
+    Array.from(files).forEach((file) => {
+      formData.append('files', file);
+    });
+    return fetchAPI('/evidence/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  /**
+   * Process selected evidence files
+   */
+  process: (caseId, fileIds) =>
+    fetchAPI('/evidence/process', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        file_ids: fileIds,
+      }),
+    }),
+
+  /**
+   * Fetch recent ingestion logs for a case.
+   */
+  logs: (caseId, limit = 200) => {
+    const params = new URLSearchParams();
+    if (caseId) params.append('case_id', caseId);
+    if (limit) params.append('limit', String(limit));
+    const qs = params.toString();
+    return fetchAPI(`/evidence/logs${qs ? `?${qs}` : ''}`);
+  },
 };
 
 /**

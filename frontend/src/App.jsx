@@ -36,6 +36,7 @@ import CaseModal from './components/CaseModal';
 import DateRangeFilter from './components/DateRangeFilter';
 import FileManagementPanel from './components/FileManagementPanel';
 import CaseManagementView from './components/CaseManagementView';
+import EvidenceProcessingView from './components/EvidenceProcessingView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
@@ -1222,12 +1223,56 @@ export default function App() {
     }
   }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
 
-  // Handle create case (from case management view - requires graph first)
-  const handleCreateCase = useCallback(async (caseName, saveNotes) => {
-    // Creating a case from case management requires a graph first
-    // So we'll show an alert and switch to graph view
-    alert('To create a new case, please load an existing case first or switch to graph view to create a case from the current graph state.');
-  }, []);
+  const [lastGraphInfo, setLastGraphInfo] = useState(null);
+
+  // Create a new (empty) case from the case management view and go to evidence processing.
+  // Before creating the new case, capture the current graph as Cypher and clear it
+  // so the user starts with a fresh canvas. The Cypher is stored as "last graph"
+  // and can be reloaded from the case management top bar.
+  const handleCreateCase = useCallback(
+    async (caseName, saveNotes) => {
+      try {
+        // Ask backend to snapshot the current graph and then clear it
+        try {
+          const last = await graphAPI.clearGraph();
+          if (last && last.cypher) {
+            setLastGraphInfo(last);
+          }
+
+          // Clear frontend graph-related state so the canvas is visually empty
+          setGraphData({ nodes: [], links: [] });
+          setFullGraphData({ nodes: [], links: [] });
+          setSelectedNodes([]);
+          setSubgraphNodeKeys([]);
+          setTimelineContextKeys([]);
+        } catch (err) {
+          console.warn('Failed to snapshot & clear existing graph before creating case:', err);
+          // Continue with case creation even if snapshot/clear fails
+        }
+
+        const emptyGraph = { nodes: [], links: [] };
+        const result = await casesAPI.save({
+          case_id: null,
+          case_name: caseName,
+          graph_data: emptyGraph,
+          snapshots: [],
+          save_notes: saveNotes,
+        });
+
+        // Set current case context
+        setCurrentCaseId(result.case_id);
+        setCurrentCaseName(caseName);
+        setCurrentCaseVersion(result.version);
+
+        // Switch to evidence processing view for this new case
+        setAppView('evidence');
+      } catch (err) {
+        console.error('Failed to create case:', err);
+        alert(`Failed to create case: ${err.message}`);
+      }
+    },
+    []
+  );
 
   // Save case
   const handleSaveCase = useCallback(async (caseName, saveNotes) => {
@@ -1278,7 +1323,12 @@ export default function App() {
         return;
       }
       
-      // Execute queries via the graph API
+      // Clear any existing graph first, then execute queries via the graph API
+      try {
+        await graphAPI.clearGraph();
+      } catch (err) {
+        console.warn('Failed to clear existing graph before loading case:', err);
+      }
       const result = await graphAPI.loadCase(cypherQueries);
       
       if (result.errors && result.errors.length > 0) {
@@ -1381,6 +1431,120 @@ export default function App() {
         isAuthenticated={isAuthenticated}
         authUsername={authUsername}
         onGoToGraphView={() => setAppView('graph')}
+        onGoToEvidenceView={(caseData) => {
+          if (!caseData) return;
+          setCurrentCaseId(caseData.id);
+          setCurrentCaseName(caseData.name);
+          // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
+          setAppView('evidence');
+        }}
+        onLoadLastGraph={async () => {
+          try {
+            // If we don't have lastGraphInfo in memory yet, fetch from backend
+            let info = lastGraphInfo;
+            if (!info || !info.cypher) {
+              info = await graphAPI.getLastGraph();
+              setLastGraphInfo(info);
+            }
+
+            if (!info || !info.cypher) {
+              alert('No last graph is available to load.');
+              return;
+            }
+
+            const result = await graphAPI.loadCase(info.cypher);
+            if (result.errors && result.errors.length > 0) {
+              console.warn('Some queries failed when loading last graph:', result.errors);
+            }
+            await loadGraph();
+            setAppView('graph');
+            alert('Last graph loaded successfully.');
+          } catch (err) {
+            console.error('Failed to load last graph:', err);
+            alert(`Failed to load last graph: ${err.message}`);
+          }
+        }}
+        lastGraphInfo={lastGraphInfo}
+      />
+    );
+  }
+
+  // Evidence processing view for current case
+  if (appView === 'evidence') {
+    return (
+      <EvidenceProcessingView
+        caseId={currentCaseId}
+        caseName={currentCaseName}
+        onBackToCases={() => setAppView('caseManagement')}
+        onGoToGraph={async () => {
+          try {
+            if (!currentCaseId) {
+              // No case yet: ensure we show an empty graph
+              await graphAPI.clearGraph().catch(() => {});
+              setGraphData({ nodes: [], links: [] });
+              setFullGraphData({ nodes: [], links: [] });
+              await loadGraph();
+              setAppView('graph');
+              return;
+            }
+
+            // Load the latest case version's Cypher, if any
+            const caseData = await casesAPI.get(currentCaseId);
+            const versions = caseData.versions || [];
+            if (versions.length > 0) {
+              const sorted = [...versions].sort((a, b) => b.version - a.version);
+              const latest = sorted[0];
+              if (latest.cypher_queries && latest.cypher_queries.trim()) {
+                // Clear any existing graph first, then load this case's Cypher
+                await graphAPI.clearGraph().catch((err) => {
+                  console.warn('Failed to clear existing graph before opening case in graph:', err);
+                });
+                const result = await graphAPI.loadCase(latest.cypher_queries);
+                if (result.errors && result.errors.length > 0) {
+                  console.warn('Some queries failed when loading case graph:', result.errors);
+                }
+                await loadGraph();
+                setCurrentCaseId(caseData.id);
+                setCurrentCaseName(caseData.name);
+                setCurrentCaseVersion(latest.version);
+                setAppView('graph');
+                return;
+              }
+            }
+
+            // No Cypher exists for this case yet: show an empty graph
+            await graphAPI.clearGraph().catch(() => {});
+            setGraphData({ nodes: [], links: [] });
+            setFullGraphData({ nodes: [], links: [] });
+            await loadGraph();
+            setAppView('graph');
+          } catch (err) {
+            console.error('Failed to open case in graph:', err);
+            alert(`Failed to open case in graph: ${err.message}`);
+          }
+        }}
+        onLoadProcessedGraph={async (caseId, version) => {
+          try {
+            const versionData = await casesAPI.getVersion(caseId, version);
+            if (!versionData || !versionData.cypher_queries) {
+              alert('No Cypher queries found for the processed case version.');
+              return;
+            }
+            const result = await graphAPI.loadCase(versionData.cypher_queries);
+            if (result.errors && result.errors.length > 0) {
+              console.warn('Some queries failed when loading processed graph:', result.errors);
+            }
+            await loadGraph();
+            setCurrentCaseId(caseId);
+            setCurrentCaseName(currentCaseName || '');
+            setCurrentCaseVersion(version);
+            setAppView('graph');
+            alert('Processed graph loaded successfully.');
+          } catch (err) {
+            console.error('Failed to load processed graph:', err);
+            alert(`Failed to load processed graph: ${err.message}`);
+          }
+        }}
       />
     );
   }
@@ -2058,28 +2222,38 @@ export default function App() {
         }}
         snapshots={snapshots}
         onLoadSnapshot={async (snapshot) => {
-          // Load snapshot into subgraph (right pane) by setting subgraph node keys
-          // This will automatically build the subgraph in the right pane
-          if (snapshot.subgraph && snapshot.subgraph.nodes) {
+          try {
+            // Ensure we have full snapshot data (list() only returns summary)
+            let fullSnapshot = snapshot;
+            if (!fullSnapshot.subgraph || !fullSnapshot.subgraph.nodes) {
+              fullSnapshot = await snapshotsAPI.get(snapshot.id);
+            }
+
+            if (!fullSnapshot.subgraph || !fullSnapshot.subgraph.nodes) {
+              alert('This snapshot has no subgraph data to load.');
+              return;
+            }
+
             // Ensure split view is enabled to show the subgraph
             if (paneViewMode !== 'split') {
               setPaneViewMode('split');
             }
-            
+
             // Set subgraph node keys to snapshot's subgraph nodes
-            // The subgraph will be built automatically from these keys
-            const snapshotNodes = snapshot.subgraph.nodes;
+            const snapshotNodes = fullSnapshot.subgraph.nodes;
             const nodeKeys = snapshotNodes.map(n => n.key);
             setSubgraphNodeKeys(nodeKeys);
             setSelectedNodes(snapshotNodes);
             setTimelineContextKeys(nodeKeys);
-            
+
             // Load node details for the selected nodes (for the overview panel)
             await loadNodeDetails(nodeKeys);
-            
+
             // Timeline will be loaded automatically by the useEffect when timelineContextKeys changes
-            
             setShowFilePanel(false);
+          } catch (err) {
+            console.error('Failed to load snapshot:', err);
+            alert(`Failed to load snapshot: ${err.message}`);
           }
         }}
         onDeleteSnapshot={async (snapshotId) => {

@@ -9,5 +9,15 @@ from routers.timeline import router as timeline_router
 from routers.snapshots import router as snapshots_router
 from routers.cases import router as cases_router
 from routers.auth import router as auth_router
+from routers.evidence import router as evidence_router
 
-__all__ = ["graph_router", "chat_router", "query_router", "timeline_router", "snapshots_router", "cases_router", "auth_router"]
+__all__ = [
+    "graph_router",
+    "chat_router",
+    "query_router",
+    "timeline_router",
+    "snapshots_router",
+    "cases_router",
+    "auth_router",
+    "evidence_router",
+]

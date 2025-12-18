@@ -21,9 +21,15 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
-# Ollama Configuration
+# LLM / Ollama / OpenAI Configuration
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+
+# Ingestion chunking configuration
+# Keep these in sync with ingestion/scripts/config.py so the ingestion
+# pipeline can safely import them from the shared `config` module.
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "2500"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 
 # Authentication configuration
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")

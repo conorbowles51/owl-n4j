@@ -442,6 +442,11 @@ class Neo4jService:
         with self._driver.session() as session:
             result = session.run(query, params or {})
             return [dict(r) for r in result]
+    
+    def clear_graph(self) -> None:
+        """Delete all nodes and relationships from the graph."""
+        with self._driver.session() as session:
+            session.run("MATCH (n) DETACH DELETE n")
         
 
     def get_entities_with_locations(

@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from services.neo4j_service import neo4j_service
+from services.last_graph_storage import last_graph_storage
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
@@ -42,6 +43,11 @@ class BetweennessCentralityRequest(BaseModel):
 class CaseLoadRequest(BaseModel):
     """Request model for loading a case (executing Cypher queries)."""
     cypher_queries: str
+
+
+class LastGraphResponse(BaseModel):
+    cypher: Optional[str] = None
+    saved_at: Optional[str] = None
 
 
 @router.get("")
@@ -314,3 +320,38 @@ async def load_case(request: CaseLoadRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/clear-graph", response_model=LastGraphResponse)
+async def clear_graph():
+    """
+    Clear the current graph, after first saving its Cypher to 'last graph'
+    storage so it can be reloaded later from the UI.
+    """
+    try:
+        # Get full graph and generate Cypher
+        graph_data = neo4j_service.get_full_graph()
+
+        # Use the same generator as case saving
+        from services.cypher_generator import generate_cypher_from_graph
+
+        cypher = generate_cypher_from_graph(graph_data)
+        record = last_graph_storage.set(cypher)
+
+        # Clear the graph
+        neo4j_service.clear_graph()
+
+        return LastGraphResponse(cypher=record["cypher"], saved_at=record["saved_at"])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/last-graph", response_model=LastGraphResponse)
+async def get_last_graph():
+    """
+    Get the last-cleared graph Cypher, if available.
+    """
+    data = last_graph_storage.get()
+    if not data:
+        return LastGraphResponse(cypher=None, saved_at=None)
+    return LastGraphResponse(cypher=data.get("cypher"), saved_at=data.get("saved_at"))

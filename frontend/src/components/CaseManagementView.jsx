@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   FolderOpen,
   FolderPlus,
@@ -11,9 +11,11 @@ import {
   Code,
   ChevronDown,
   ChevronRight,
-  Loader2
+  Loader2,
+  RefreshCw,
+  UploadCloud,
 } from 'lucide-react';
-import { casesAPI } from '../services/api';
+import { casesAPI, evidenceAPI } from '../services/api';
 import CaseModal from './CaseModal';
 
 /**
@@ -29,6 +31,9 @@ export default function CaseManagementView({
   isAuthenticated,
   authUsername,
   onGoToGraphView,
+  onGoToEvidenceView,
+  onLoadLastGraph,
+  lastGraphInfo,
 }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,8 +44,13 @@ export default function CaseManagementView({
   const [showSnapshots, setShowSnapshots] = useState(true);
   const [showVersions, setShowVersions] = useState(true);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
+  const [evidenceLogs, setEvidenceLogs] = useState([]);
+  const [logsLoading, setLogsLoading] = useState(false);
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
+  const logsContainerRef = useRef(null);
 
   useEffect(() => {
     loadCases();
@@ -123,15 +133,16 @@ export default function CaseManagementView({
   };
 
   const handleCreateCase = async (caseName, saveNotes) => {
+    if (!onCreateCase) {
+      console.warn('onCreateCase handler is not provided');
+      return;
+    }
     try {
-      // Note: Creating a case from case management requires a graph
-      // For now, we'll show a message and let the user load a case first
-      // or switch to graph view to create from current graph
-      alert('To create a new case, please load an existing case first or switch to graph view to create a case from the current graph state.');
+      await onCreateCase(caseName, saveNotes);
       setShowCaseModal(false);
     } catch (err) {
       console.error('Failed to create case:', err);
-      throw err;
+      alert(`Failed to create case: ${err.message}`);
     }
   };
 
@@ -140,6 +151,59 @@ export default function CaseManagementView({
     const date = new Date(dateString);
     return date.toLocaleString();
   };
+
+  const loadEvidenceForCase = useCallback(
+    async (caseId) => {
+      if (!caseId) return;
+      setEvidenceLoading(true);
+      try {
+        const res = await evidenceAPI.list(caseId);
+        setEvidenceFiles(res?.files || []);
+      } catch (err) {
+        console.error('Failed to load evidence for case:', err);
+        // Keep UI non-blocking; errors here aren't critical
+      } finally {
+        setEvidenceLoading(false);
+      }
+    },
+    []
+  );
+
+  const loadEvidenceLogsForCase = useCallback(
+    async (caseId) => {
+      if (!caseId) return;
+      setLogsLoading(true);
+      try {
+        const res = await evidenceAPI.logs(caseId, 100);
+        const logs = res?.logs || [];
+        // Show oldest first for readability
+        setEvidenceLogs(logs.slice().reverse());
+      } catch (err) {
+        console.error('Failed to load evidence logs for case:', err);
+      } finally {
+        setLogsLoading(false);
+      }
+    },
+    []
+  );
+
+  // When a case is selected, load its evidence files and logs
+  useEffect(() => {
+    if (selectedCase) {
+      loadEvidenceForCase(selectedCase.id);
+      loadEvidenceLogsForCase(selectedCase.id);
+    } else {
+      setEvidenceFiles([]);
+      setEvidenceLogs([]);
+    }
+  }, [selectedCase, loadEvidenceForCase, loadEvidenceLogsForCase]);
+
+  // Auto-scroll processing history window to bottom as new logs arrive
+  useEffect(() => {
+    if (!logsContainerRef.current) return;
+    const el = logsContainerRef.current;
+    el.scrollTop = el.scrollHeight;
+  }, [evidenceLogs]);
 
   return (
     <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
@@ -191,6 +255,20 @@ export default function CaseManagementView({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {onLoadLastGraph && (
+            <button
+              onClick={onLoadLastGraph}
+              className="px-3 py-2 text-sm text-owl-blue-900 border border-owl-blue-200 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors"
+              title={
+                lastGraphInfo?.saved_at
+                  ? `Last graph saved at ${formatDate(lastGraphInfo.saved_at)}`
+                  : 'Load the last cleared graph (if available)'
+              }
+              disabled={!lastGraphInfo || !lastGraphInfo.cypher}
+            >
+              Load Last Graph
+            </button>
+          )}
           {onGoToGraphView && (
             <button
               onClick={onGoToGraphView}
@@ -294,23 +372,167 @@ export default function CaseManagementView({
                       <span>•</span>
                       <span>Updated: {formatDate(selectedCase.updated_at)}</span>
                       <span>•</span>
-                      <span>{selectedCase.versions?.length || 0} version{(selectedCase.versions?.length || 0) !== 1 ? 's' : ''}</span>
+                      <span>
+                        {selectedCase.versions?.length || 0} version
+                        {(selectedCase.versions?.length || 0) !== 1 ? 's' : ''}
+                      </span>
                     </div>
                   </div>
-                  {selectedVersion && (
-                    <button
-                      onClick={handleLoadCase}
-                      className="flex items-center gap-2 px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-lg transition-colors"
-                    >
-                      <Eye className="w-4 h-4" />
-                      Load Version {selectedVersion.version}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {onGoToEvidenceView && (
+                      <button
+                        onClick={() => onGoToEvidenceView(selectedCase)}
+                        className="flex items-center gap-2 px-4 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm"
+                      >
+                        <UploadCloud className="w-4 h-4" />
+                        Process Evidence
+                      </button>
+                    )}
+                    {selectedVersion && (
+                      <button
+                        onClick={handleLoadCase}
+                        className="flex items-center gap-2 px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-lg transition-colors text-sm"
+                      >
+                        <Eye className="w-4 h-4" />
+                        Load Version {selectedVersion.version}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* Case Content - Scrollable */}
               <div className="flex-1 overflow-y-auto p-6">
+                {/* Evidence Files Section */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <FolderOpen className="w-5 h-5 text-owl-blue-700" />
+                      <h3 className="text-md font-semibold text-owl-blue-900">
+                        Evidence Files
+                      </h3>
+                      <span className="text-xs text-light-600 bg-white px-2 py-0.5 rounded">
+                        {evidenceFiles.length}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (selectedCase) {
+                          loadEvidenceForCase(selectedCase.id);
+                        }
+                      }}
+                      className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                    >
+                      <RefreshCw
+                        className={`w-3 h-3 ${
+                          evidenceLoading ? 'animate-spin' : ''
+                        }`}
+                      />
+                      Refresh
+                    </button>
+                  </div>
+                  <div className="ml-2">
+                    {evidenceLoading ? (
+                      <div className="flex items-center gap-2 text-xs text-light-600">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading evidence files…
+                      </div>
+                    ) : evidenceFiles.length === 0 ? (
+                      <p className="text-sm text-light-600 italic">
+                        No evidence files have been uploaded for this case yet.
+                      </p>
+                    ) : (
+                      <div className="space-y-1">
+                        {evidenceFiles.map((file) => (
+                          <div
+                            key={file.id}
+                            className="flex items-center justify-between p-2 bg-white rounded border border-light-200 text-xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="w-3 h-3 text-owl-blue-700" />
+                              <span className="truncate text-owl-blue-900">
+                                {file.original_filename}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
+                              <span>{file.status}</span>
+                              <span className="hidden sm:inline">
+                                {new Date(file.created_at).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Processing History Section */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Archive className="w-5 h-5 text-owl-blue-700" />
+                      <h3 className="text-md font-semibold text-owl-blue-900">
+                        Processing History
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (selectedCase) {
+                          loadEvidenceLogsForCase(selectedCase.id);
+                        }
+                      }}
+                      className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                    >
+                      <RefreshCw
+                        className={`w-3 h-3 ${
+                          logsLoading ? 'animate-spin' : ''
+                        }`}
+                      />
+                      Refresh
+                    </button>
+                  </div>
+                  <div
+                    ref={logsContainerRef}
+                    className="ml-2 border border-light-200 rounded bg-light-50 max-h-56 overflow-y-auto text-xs font-mono p-2"
+                  >
+                    {logsLoading ? (
+                      <div className="flex items-center gap-2 text-light-600">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading processing history…
+                      </div>
+                    ) : evidenceLogs.length === 0 ? (
+                      <div className="text-light-500 italic">
+                        No processing activity recorded yet for this case.
+                      </div>
+                    ) : (
+                      evidenceLogs.map((entry) => (
+                        <div key={entry.id} className="mb-1">
+                          <span className="text-light-500 mr-2">
+                            {new Date(entry.timestamp).toLocaleString()}
+                          </span>
+                          {entry.filename && (
+                            <span className="text-owl-orange-600 mr-1">
+                              [{entry.filename}]
+                            </span>
+                          )}
+                          <span
+                            className={`whitespace-pre-wrap ${
+                              entry.level === 'error'
+                                ? 'text-red-700'
+                                : entry.level === 'debug'
+                                ? 'text-light-700'
+                                : 'text-owl-blue-900'
+                            }`}
+                          >
+                            {entry.message}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
                 {/* Versions Section */}
                 <div className="mb-6">
                   <button

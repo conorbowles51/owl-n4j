@@ -9,7 +9,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import API_HOST, API_PORT, CORS_ORIGINS
-from routers import graph_router, chat_router, query_router, timeline_router, snapshots_router, cases_router, auth_router
+from routers import (
+    graph_router,
+    chat_router,
+    query_router,
+    timeline_router,
+    snapshots_router,
+    cases_router,
+    auth_router,
+    evidence_router,
+)
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
 from services.case_storage import case_storage
@@ -56,6 +65,7 @@ app.include_router(timeline_router)
 app.include_router(snapshots_router)
 app.include_router(cases_router)
 app.include_router(auth_router)
+app.include_router(evidence_router)
 
 
 @app.get("/")
