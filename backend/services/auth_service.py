@@ -13,10 +13,21 @@ from config import AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET_KEY, AUTH_ALGORITHM
 
 ACCESS_TOKEN_EXPIRE_MINUTES = AUTH_TOKEN_EXPIRE_MINUTES
 
+# Allow multiple usernames that share the same admin password.
+# The primary admin username comes from AUTH_USERNAME; additional
+# named accounts are hard-coded here for convenience.
+ALLOWED_USERNAMES = {
+    AUTH_USERNAME,
+    "neil",
+    "conor",
+    "alex",
+    "arturo",
+}
+
 
 def authenticate(username: str, password: str) -> bool:
     """Validate provided credentials."""
-    return username == AUTH_USERNAME and password == AUTH_PASSWORD
+    return username in ALLOWED_USERNAMES and password == AUTH_PASSWORD
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:

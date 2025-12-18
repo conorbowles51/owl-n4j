@@ -60,9 +60,19 @@ class CaseStorage:
     def __init__(self):
         self._cases = load_cases()
     
-    def get_all(self) -> Dict:
-        """Get all cases."""
-        return self._cases.copy()
+    def get_all(self, owner: Optional[str] = None) -> Dict:
+        """
+        Get all cases.
+        
+        If owner is provided, only return cases owned by that username.
+        """
+        if not owner:
+            return self._cases.copy()
+        return {
+            case_id: data
+            for case_id, data in self._cases.items()
+            if data.get("owner") == owner
+        }
     
     def get_case(self, case_id: str) -> Optional[Dict]:
         """Get a specific case by ID."""
@@ -89,6 +99,7 @@ class CaseStorage:
         cypher_queries: str,
         snapshots: List[Dict],
         save_notes: str = "",
+        owner: Optional[str] = None,
     ) -> Dict:
         """
         Save a new version of a case.
@@ -114,25 +125,33 @@ class CaseStorage:
                 "name": case_name,
                 "created_at": datetime.now().isoformat(),
                 "versions": [],
+                "owner": owner,
             }
         else:
             # Update case name if provided
             if case_name:
                 self._cases[case_id]["name"] = case_name
+            # Ensure owner consistency if provided
+            existing_owner = self._cases[case_id].get("owner")
+            if owner and existing_owner and existing_owner != owner:
+                raise ValueError(f"Case owner mismatch for {case_id}")
         
         case = self._cases[case_id]
+        case_owner = case.get("owner") or owner
         
         # Determine next version number
         existing_versions = case.get("versions", [])
         next_version = len(existing_versions) + 1
         
-        # Add case and version metadata to each snapshot
+        # Add case, version and owner metadata to each snapshot
         snapshots_with_metadata = []
         for snapshot in snapshots:
             snapshot_with_metadata = snapshot.copy()
             snapshot_with_metadata["case_id"] = case_id
             snapshot_with_metadata["case_version"] = next_version
             snapshot_with_metadata["case_name"] = case_name
+            if case_owner:
+                snapshot_with_metadata["owner"] = case_owner
             snapshots_with_metadata.append(snapshot_with_metadata)
         
         # Create new version

@@ -1330,11 +1330,17 @@ export default function App() {
         console.warn('Failed to clear existing graph before loading case:', err);
       }
       const result = await graphAPI.loadCase(cypherQueries);
-      
-      if (result.errors && result.errors.length > 0) {
-        console.warn('Some queries failed:', result.errors);
+
+      if (!result.success) {
+        console.error('Case load sanity check failed:', result.errors);
+        const details = (result.errors || []).join('\n');
+        alert(
+          `Failed to load case: one or more Cypher statements did not validate.\n\n` +
+          (details ? `Details:\n${details}` : '')
+        );
+        return;
       }
-      
+
       // Reload the graph
       await loadGraph();
       
@@ -1453,8 +1459,14 @@ export default function App() {
             }
 
             const result = await graphAPI.loadCase(info.cypher);
-            if (result.errors && result.errors.length > 0) {
-              console.warn('Some queries failed when loading last graph:', result.errors);
+            if (!result.success) {
+              console.error('Last graph load sanity check failed:', result.errors);
+              const details = (result.errors || []).join('\n');
+              alert(
+                `Failed to load last graph: one or more Cypher statements did not validate.\n\n` +
+                (details ? `Details:\n${details}` : '')
+              );
+              return;
             }
             await loadGraph();
             setAppView('graph');
@@ -1500,8 +1512,14 @@ export default function App() {
                   console.warn('Failed to clear existing graph before opening case in graph:', err);
                 });
                 const result = await graphAPI.loadCase(latest.cypher_queries);
-                if (result.errors && result.errors.length > 0) {
-                  console.warn('Some queries failed when loading case graph:', result.errors);
+                if (!result.success) {
+                  console.error('Case load (from Evidence view) sanity check failed:', result.errors);
+                  const details = (result.errors || []).join('\n');
+                  alert(
+                    `Failed to load case graph: one or more Cypher statements did not validate.\n\n` +
+                    (details ? `Details:\n${details}` : '')
+                  );
+                  return;
                 }
                 await loadGraph();
                 setCurrentCaseId(caseData.id);
@@ -1531,8 +1549,14 @@ export default function App() {
               return;
             }
             const result = await graphAPI.loadCase(versionData.cypher_queries);
-            if (result.errors && result.errors.length > 0) {
-              console.warn('Some queries failed when loading processed graph:', result.errors);
+            if (!result.success) {
+              console.error('Processed graph load sanity check failed:', result.errors);
+              const details = (result.errors || []).join('\n');
+              alert(
+                `Failed to load processed graph: one or more Cypher statements did not validate.\n\n` +
+                (details ? `Details:\n${details}` : '')
+              );
+              return;
             }
             await loadGraph();
             setCurrentCaseId(caseId);

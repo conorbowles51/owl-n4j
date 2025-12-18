@@ -51,14 +51,16 @@ class EvidenceService:
         self,
         case_id: Optional[str] = None,
         status: Optional[str] = None,
+        owner: Optional[str] = None,
     ) -> List[Dict]:
         """Proxy to evidence_storage.list_files."""
-        return evidence_storage.list_files(case_id=case_id, status=status)
+        return evidence_storage.list_files(case_id=case_id, status=status, owner=owner)
 
     def add_uploaded_files(
         self,
         case_id: str,
         uploads: List[Dict],
+        owner: Optional[str] = None,
     ) -> List[Dict]:
         """
         Store uploaded files and register them in evidence storage.
@@ -90,9 +92,14 @@ class EvidenceService:
                 }
             )
 
-        return evidence_storage.add_files(case_id=case_id, files=file_infos)
+        return evidence_storage.add_files(case_id=case_id, files=file_infos, owner=owner)
 
-    def process_files(self, evidence_ids: List[str], case_id: Optional[str] = None) -> Dict:
+    def process_files(
+        self,
+        evidence_ids: List[str],
+        case_id: Optional[str] = None,
+        owner: Optional[str] = None,
+    ) -> Dict:
         """
         Process selected evidence files using ingest_data.ingest_file.
 
@@ -122,7 +129,11 @@ class EvidenceService:
         )
 
         records = [evidence_storage.get(eid) for eid in evidence_ids]
-        records = [r for r in records if r is not None]
+        # Only process records that belong to this owner (if provided)
+        records = [
+            r for r in records
+            if r is not None and (owner is None or r.get("owner") == owner)
+        ]
 
         if not records:
             return {"processed": 0, "skipped": 0, "errors": 0}

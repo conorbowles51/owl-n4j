@@ -431,17 +431,81 @@ class Neo4jService:
     def run_cypher(self, query: str, params: Optional[Dict] = None) -> List[Dict]:
         """
         Run a Cypher query and return results.
-
+        
         Args:
             query: Cypher query string
             params: Query parameters
-
+        
         Returns:
             List of result records as dicts
         """
         with self._driver.session() as session:
             result = session.run(query, params or {})
             return [dict(r) for r in result]
+    
+    def validate_cypher_batch(self, queries: List[str]) -> List[str]:
+        """
+        Sanity-check a batch of Cypher queries in a single transaction.
+        
+        Executes each query inside a transaction that is ALWAYS rolled back,
+        so no changes are persisted. Collects any errors per-query.
+        
+        Returns:
+            List of error strings. Empty list means all queries validated.
+        """
+        errors: List[str] = []
+        if not queries:
+            return errors
+
+        with self._driver.session() as session:
+            tx = session.begin_transaction()
+            try:
+                for idx, query in enumerate(queries):
+                    q = (query or "").strip()
+                    if not q:
+                        continue
+                    try:
+                        tx.run(q)
+                    except Exception as e:  # pragma: no cover - defensive
+                        errors.append(f"Query {idx + 1} failed sanity check: {e}")
+                # Always roll back - this is a dry run
+                tx.rollback()
+            except Exception:
+                # If something unexpected happens, ensure rollback
+                tx.rollback()
+                raise
+
+        return errors
+
+    def execute_cypher_batch(self, queries: List[str]) -> int:
+        """
+        Execute a batch of Cypher queries in a single transaction.
+        
+        Args:
+            queries: List of Cypher query strings.
+        
+        Returns:
+            Number of queries successfully executed.
+        """
+        if not queries:
+            return 0
+
+        executed = 0
+        with self._driver.session() as session:
+            tx = session.begin_transaction()
+            try:
+                for query in queries:
+                    q = (query or "").strip()
+                    if not q:
+                        continue
+                    tx.run(q)
+                    executed += 1
+                tx.commit()
+            except Exception:  # pragma: no cover - defensive
+                tx.rollback()
+                raise
+
+        return executed
     
     def clear_graph(self) -> None:
         """Delete all nodes and relationships from the graph."""

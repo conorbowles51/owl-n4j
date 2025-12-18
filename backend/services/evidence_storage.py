@@ -86,13 +86,16 @@ class EvidenceStorage:
         self,
         case_id: Optional[str] = None,
         status: Optional[str] = None,
+        owner: Optional[str] = None,
     ) -> List[dict]:
-        """List evidence files, optionally filtered by case_id and status."""
+        """List evidence files, optionally filtered by case_id, status, and owner."""
         results = []
         for rec in self._records.values():
             if case_id and rec.get("case_id") != case_id:
                 continue
             if status and rec.get("status") != status:
+                continue
+            if owner and rec.get("owner") != owner:
                 continue
             results.append(rec)
         # Sort newest first
@@ -112,6 +115,7 @@ class EvidenceStorage:
         self,
         case_id: str,
         files: List[dict],
+        owner: Optional[str] = None,
     ) -> List[dict]:
         """
         Add one or more uploaded files.
@@ -158,6 +162,7 @@ class EvidenceStorage:
             record = {
                 "id": evidence_id,
                 "case_id": case_id,
+                "owner": owner,
                 "original_filename": original_filename,
                 "stored_path": str(stored_path),
                 "size": size,

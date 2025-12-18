@@ -5,12 +5,13 @@ Handles uploading evidence files and triggering ingestion processing.
 """
 
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from services.evidence_service import evidence_service
 from services.evidence_log_storage import evidence_log_storage
+from .auth import get_current_user
 
 
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
@@ -69,6 +70,7 @@ class EvidenceLogListResponse(BaseModel):
 async def list_evidence(
     case_id: Optional[str] = None,
     status: Optional[str] = None,
+    user: dict = Depends(get_current_user),
 ):
     """
     List evidence files.
@@ -79,7 +81,11 @@ async def list_evidence(
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
     try:
-        files = evidence_service.list_files(case_id=case_id, status=status)
+        files = evidence_service.list_files(
+            case_id=case_id,
+            status=status,
+            owner=user["username"],
+        )
         return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -89,6 +95,7 @@ async def list_evidence(
 async def upload_evidence(
     case_id: str = Form(..., description="Associated case ID"),
     files: List[UploadFile] = File(..., description="Evidence files to upload"),
+    user: dict = Depends(get_current_user),
 ):
     """
     Upload one or more evidence files for a case.
@@ -110,14 +117,21 @@ async def upload_evidence(
                 }
             )
 
-        records = evidence_service.add_uploaded_files(case_id=case_id, uploads=uploads)
+        records = evidence_service.add_uploaded_files(
+            case_id=case_id,
+            uploads=uploads,
+            owner=user["username"],
+        )
         return {"files": records}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/process", response_model=ProcessResponse)
-async def process_evidence(request: ProcessRequest):
+async def process_evidence(
+    request: ProcessRequest,
+    user: dict = Depends(get_current_user),
+):
     """
     Process selected evidence files.
 
@@ -134,6 +148,7 @@ async def process_evidence(request: ProcessRequest):
             evidence_service.process_files,
             request.file_ids,
             request.case_id,
+            user["username"],
         )
         return ProcessResponse(**summary)
     except ImportError as e:

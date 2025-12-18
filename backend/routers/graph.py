@@ -286,40 +286,40 @@ async def get_betweenness_centrality(request: BetweennessCentralityRequest):
 async def load_case(request: CaseLoadRequest):
     """
     Load a case by executing Cypher queries.
-    This endpoint allows MERGE/CREATE operations for case restoration.
-    
+
+    The incoming `cypher_queries` string may contain multiple Cypher
+    statements separated by blank lines. Each statement is executed
+    individually so that a failure in one query does not prevent other
+    valid queries from running. Errors are collected and returned to
+    the client, and the caller can still proceed to load the graph.
+
     Args:
         request: Request with Cypher queries to execute
     """
     if not request.cypher_queries or not request.cypher_queries.strip():
         raise HTTPException(status_code=400, detail="Cypher queries are required")
-    
-    try:
-        # Split queries by double newline and execute each
-        queries = [q.strip() for q in request.cypher_queries.split('\n\n') if q.strip()]
-        executed = 0
-        errors = []
-        
-        for query in queries:
-            query = query.strip()
-            if not query:
-                continue
-            try:
-                # Use run_cypher which allows write operations
-                neo4j_service.run_cypher(query, {})
-                executed += 1
-            except Exception as e:
-                errors.append(f"Query failed: {str(e)}")
-                # Continue with other queries
-        
-        return {
-            "success": True,
-            "executed": executed,
-            "total": len(queries),
-            "errors": errors if errors else None,
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+    cypher = request.cypher_queries.strip()
+    # Split by double newlines into individual statements and trim empties
+    queries = [q.strip() for q in cypher.split("\n\n") if q.strip()]
+
+    executed = 0
+    errors: list[str] = []
+
+    for idx, q in enumerate(queries):
+        try:
+            neo4j_service.run_cypher(q, {})
+            executed += 1
+        except Exception as e:  # pragma: no cover - defensive
+            # Collect error but continue with remaining queries
+            errors.append(f"Query {idx + 1} failed: {e}")
+
+    return {
+        "success": len(errors) == 0,
+        "executed": executed,
+        "total": len(queries),
+        "errors": errors or None,
+    }
 
 
 @router.post("/clear-graph", response_model=LastGraphResponse)

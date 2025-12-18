@@ -6,10 +6,11 @@ Handles saving and retrieving investigation snapshots (saved subgraphs, timeline
 
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.snapshot_storage import snapshot_storage
+from .auth import get_current_user
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
 
@@ -56,7 +57,7 @@ class SnapshotResponse(BaseModel):
 
 
 @router.post("", response_model=SnapshotResponse)
-async def create_snapshot(snapshot: SnapshotCreate):
+async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_user)):
     """Create a new snapshot."""
     snapshot_id = f"snapshot_{datetime.now().isoformat().replace(':', '-').replace('.', '-')}"
     timestamp = datetime.now().isoformat()
@@ -72,6 +73,7 @@ async def create_snapshot(snapshot: SnapshotCreate):
         "chat_history": snapshot.chat_history or [],
         "timestamp": timestamp,
         "created_at": timestamp,
+        "owner": user["username"],
     }
     
     # Save to persistent storage
@@ -94,12 +96,16 @@ async def create_snapshot(snapshot: SnapshotCreate):
 
 
 @router.get("", response_model=List[SnapshotResponse])
-async def list_snapshots():
-    """List all snapshots."""
+async def list_snapshots(user: dict = Depends(get_current_user)):
+    """List all snapshots for the current user."""
     snapshots = []
     all_snapshots = snapshot_storage.get_all()
     
     for snapshot_id, snapshot_data in all_snapshots.items():
+        # Enforce ownership
+        if snapshot_data.get("owner") != user["username"]:
+            continue
+
         node_count = len(snapshot_data.get("subgraph", {}).get("nodes", []))
         link_count = len(snapshot_data.get("subgraph", {}).get("links", []))
         timeline_count = len(snapshot_data.get("timeline", []))
@@ -124,11 +130,13 @@ async def list_snapshots():
 
 
 @router.get("/{snapshot_id}", response_model=SnapshotData)
-async def get_snapshot(snapshot_id: str):
+async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Get a specific snapshot by ID."""
     snapshot = snapshot_storage.get(snapshot_id)
     
     if snapshot is None:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    if snapshot.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     
     return SnapshotData(
@@ -148,8 +156,12 @@ async def get_snapshot(snapshot_id: str):
 
 
 @router.delete("/{snapshot_id}")
-async def delete_snapshot(snapshot_id: str):
+async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Delete a snapshot."""
+    snapshot = snapshot_storage.get(snapshot_id)
+    if snapshot is None or snapshot.get("owner") != user["username"]:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    
     if not snapshot_storage.delete(snapshot_id):
         raise HTTPException(status_code=404, detail="Snapshot not found")
     
@@ -157,7 +169,7 @@ async def delete_snapshot(snapshot_id: str):
 
 
 @router.post("/restore")
-async def restore_snapshot(snapshot_data: dict):
+async def restore_snapshot(snapshot_data: dict, user: dict = Depends(get_current_user)):
     """
     Restore a snapshot from case data.
     This endpoint accepts full snapshot data and saves it directly.
@@ -166,7 +178,8 @@ async def restore_snapshot(snapshot_data: dict):
     if not snapshot_id:
         raise HTTPException(status_code=400, detail="Snapshot ID is required")
     
-    # Save the snapshot data directly
+    # Save the snapshot data directly, overriding owner to current user
+    snapshot_data["owner"] = user["username"]
     snapshot_storage.save(snapshot_id, snapshot_data)
     
     return {"status": "restored", "id": snapshot_id}

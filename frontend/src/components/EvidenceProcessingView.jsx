@@ -258,8 +258,13 @@ export default function EvidenceProcessingView({
           )}
           <button
             onClick={onGoToGraph}
-            className="flex items-center gap-2 px=3 py-1.5 border border-light-300 rounded-lg text-sm text-light-700 hover:bg-light-100 transition-colors"
-            title="Open this case in the graph view"
+            disabled={processing}
+            className={`flex items-center gap-2 px-3 py-1.5 border border-light-300 rounded-lg text-sm transition-colors ${
+              processing
+                ? 'text-light-400 bg-light-50 cursor-not-allowed'
+                : 'text-light-700 hover:bg-light-100'
+            }`}
+            title={processing ? 'Cannot open case while files are processing' : 'Open this case in the graph view'}
           >
             <PlayCircle className="w-4 h-4" />
             Open Case in Graph

@@ -104,9 +104,16 @@ def format_properties(properties: Dict) -> str:
     
     formatted_props = []
     for key, value in properties.items():
-        # Escape single quotes in string values
+        # Escape problematic characters in string values so generated Cypher
+        # is always syntactically valid, even when the text contains quotes
+        # or newlines.
         if isinstance(value, str):
-            escaped_value = value.replace("'", "\\'").replace("\\", "\\\\")
+            escaped_value = (
+                value.replace("\\", "\\\\")   # escape backslashes first
+                     .replace("'", "\\'")     # escape single quotes
+                     .replace("\n", "\\n")    # normalise newlines
+                     .replace("\r", "")       # drop CRs to avoid '\r' issues
+            )
             formatted_props.append(f"{key}: '{escaped_value}'")
         elif isinstance(value, (int, float)):
             formatted_props.append(f"{key}: {value}")

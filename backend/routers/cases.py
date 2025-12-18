@@ -6,11 +6,12 @@ Handles saving and retrieving investigation cases with versioning.
 
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
+from .auth import get_current_user
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -53,9 +54,10 @@ class CaseResponse(BaseModel):
 
 
 @router.post("", response_model=dict)
-async def save_case(case: CaseCreate):
+async def save_case(case: CaseCreate, user: dict = Depends(get_current_user)):
     """Save a new version of a case."""
     try:
+        username = user["username"]
         # Generate Cypher queries from graph data
         cypher_queries = generate_cypher_from_graph(case.graph_data)
         
@@ -66,6 +68,7 @@ async def save_case(case: CaseCreate):
             cypher_queries=cypher_queries,
             snapshots=case.snapshots,
             save_notes=case.save_notes,
+            owner=username,
         )
         
         return result
@@ -74,10 +77,11 @@ async def save_case(case: CaseCreate):
 
 
 @router.get("", response_model=List[CaseResponse])
-async def list_cases():
-    """List all cases."""
+async def list_cases(user: dict = Depends(get_current_user)):
+    """List all cases for the current user."""
+    username = user["username"]
     cases = []
-    all_cases = case_storage.get_all()
+    all_cases = case_storage.get_all(owner=username)
     
     for case_id, case_data in all_cases.items():
         versions = case_data.get("versions", [])
@@ -98,11 +102,14 @@ async def list_cases():
 
 
 @router.get("/{case_id}", response_model=CaseData)
-async def get_case(case_id: str):
+async def get_case(case_id: str, user: dict = Depends(get_current_user)):
     """Get a specific case with all versions."""
     case = case_storage.get_case(case_id)
     
     if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    # Enforce ownership
+    if case.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Case not found")
     
     # Convert versions to CaseVersionData
@@ -127,11 +134,14 @@ async def get_case(case_id: str):
 
 
 @router.get("/{case_id}/versions/{version}", response_model=CaseVersionData)
-async def get_case_version(case_id: str, version: int):
+async def get_case_version(case_id: str, version: int, user: dict = Depends(get_current_user)):
     """Get a specific version of a case."""
     case = case_storage.get_case(case_id)
     
     if case is None:
+        raise HTTPException(status_code=404, detail="Case not found")
+    # Enforce ownership
+    if case.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Case not found")
     
     versions = case.get("versions", [])
@@ -150,8 +160,12 @@ async def get_case_version(case_id: str, version: int):
 
 
 @router.delete("/{case_id}")
-async def delete_case(case_id: str):
+async def delete_case(case_id: str, user: dict = Depends(get_current_user)):
     """Delete a case."""
+    case = case_storage.get_case(case_id)
+    if case is None or case.get("owner") != user["username"]:
+        raise HTTPException(status_code=404, detail="Case not found")
+    
     if not case_storage.delete_case(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
     
