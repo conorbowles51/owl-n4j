@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { casesAPI, evidenceAPI } from '../services/api';
 import CaseModal from './CaseModal';
+import BackgroundTasksPanel from './BackgroundTasksPanel';
 
 /**
  * CaseManagementView Component
@@ -34,6 +35,8 @@ export default function CaseManagementView({
   onGoToEvidenceView,
   onLoadLastGraph,
   lastGraphInfo,
+  initialCaseToSelect,
+  onCaseSelected,
 }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +51,7 @@ export default function CaseManagementView({
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [evidenceLogs, setEvidenceLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
   const logsContainerRef = useRef(null);
@@ -55,6 +59,42 @@ export default function CaseManagementView({
   useEffect(() => {
     loadCases();
   }, []);
+
+  // Handle initial case selection (e.g., from background tasks)
+  useEffect(() => {
+    if (initialCaseToSelect && initialCaseToSelect.caseId && cases.length > 0 && !loading) {
+      const caseToSelect = cases.find(c => c.id === initialCaseToSelect.caseId);
+      if (caseToSelect) {
+        const selectCase = async () => {
+          await handleViewCase(caseToSelect);
+          // If a specific version was requested, select it
+          if (initialCaseToSelect.version) {
+            // Wait a bit for case data to load, then select the version
+            setTimeout(async () => {
+              try {
+                const fullCase = await casesAPI.get(initialCaseToSelect.caseId);
+                if (fullCase && fullCase.versions) {
+                  const versionToSelect = fullCase.versions.find(
+                    v => v.version === initialCaseToSelect.version
+                  );
+                  if (versionToSelect) {
+                    setSelectedVersion(versionToSelect);
+                  }
+                }
+              } catch (err) {
+                console.error('Failed to load case for version selection:', err);
+              }
+              onCaseSelected?.(); // Notify parent that selection is complete
+            }, 500);
+          } else {
+            onCaseSelected?.();
+          }
+        };
+        selectCase();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCaseToSelect, cases, loading]);
 
   // Handle clicks outside account dropdown
   useEffect(() => {
@@ -255,6 +295,19 @@ export default function CaseManagementView({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Background Tasks Button */}
+          <button
+            onClick={() => setShowBackgroundTasksPanel(!showBackgroundTasksPanel)}
+            className={`p-2 rounded-lg transition-colors relative ${
+              showBackgroundTasksPanel
+                ? 'bg-owl-blue-500 text-white'
+                : 'hover:bg-light-100 text-light-600'
+            }`}
+            title="Background Tasks"
+          >
+            <Loader2 className="w-5 h-5" />
+          </button>
+
           {onLoadLastGraph && (
             <button
               onClick={onLoadLastGraph}
@@ -732,6 +785,33 @@ export default function CaseManagementView({
         existingCaseId={null}
         existingCaseName={null}
         nextVersion={1}
+      />
+
+      {/* Background Tasks Panel */}
+      <BackgroundTasksPanel
+        isOpen={showBackgroundTasksPanel}
+        onClose={() => setShowBackgroundTasksPanel(false)}
+        authUsername={authUsername}
+        onViewCase={async (caseId, version) => {
+          setShowBackgroundTasksPanel(false);
+          // Find and select the case
+          const caseToSelect = cases.find(c => c.id === caseId);
+          if (caseToSelect) {
+            await handleViewCase(caseToSelect);
+            // If a specific version was requested, select it
+            if (version) {
+              setTimeout(() => {
+                const fullCase = cases.find(c => c.id === caseId);
+                if (fullCase && fullCase.versions) {
+                  const versionToSelect = fullCase.versions.find(v => v.version === version);
+                  if (versionToSelect) {
+                    setSelectedVersion(versionToSelect);
+                  }
+                }
+              }, 500);
+            }
+          }
+        }}
       />
     </div>
   );

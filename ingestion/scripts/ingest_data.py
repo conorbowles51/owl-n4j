@@ -18,6 +18,7 @@ from pathlib import Path
 from text_ingestion import ingest_text_file
 from pdf_ingestion import ingest_pdf_file
 from neo4j_client import Neo4jClient
+from typing import Optional, Callable
 
 
 def find_data_dir() -> Path:
@@ -32,12 +33,13 @@ def find_data_dir() -> Path:
     return data_dir
 
 
-def ingest_file(path: Path) -> dict:
+def ingest_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> dict:
     """
     Ingest a single file based on its extension.
 
     Args:
         path: Path to the file
+        log_callback: Optional callback function(message: str) to log progress messages
 
     Returns:
         Ingestion result dict
@@ -45,9 +47,9 @@ def ingest_file(path: Path) -> dict:
     suffix = path.suffix.lower()
 
     if suffix == ".txt":
-        return ingest_text_file(path)
+        return ingest_text_file(path, log_callback=log_callback)
     elif suffix == ".pdf":
-        return ingest_pdf_file(path)
+        return ingest_pdf_file(path, log_callback=log_callback)
     else:
         print(f"Unsupported file type: {suffix}")
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}

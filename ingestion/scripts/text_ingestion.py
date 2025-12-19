@@ -6,17 +6,18 @@ specifically for plain text files.
 """
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, Callable
 
 from ingestion import ingest_document
 
 
-def ingest_text_file(path: Path) -> Dict:
+def ingest_text_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> Dict:
     """
     Ingest a single .txt file into the knowledge graph.
 
     Args:
         path: Path to the .txt file
+        log_callback: Optional callback function(message: str) to log progress messages
 
     Returns:
         Ingestion result dict
@@ -45,4 +46,5 @@ def ingest_text_file(path: Path) -> Dict:
         text=text,
         doc_name=doc_name,
         doc_metadata=doc_metadata,
+        log_callback=log_callback,
     )

@@ -8,8 +8,10 @@ import {
   RefreshCw,
   ArrowLeft,
   PlayCircle,
+  Loader2,
 } from 'lucide-react';
 import { evidenceAPI } from '../services/api';
+import BackgroundTasksPanel from './BackgroundTasksPanel';
 
 /**
  * EvidenceProcessingView
@@ -28,6 +30,8 @@ export default function EvidenceProcessingView({
   onBackToCases,
   onGoToGraph,
   onLoadProcessedGraph,
+  authUsername,
+  onViewCase,
 }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +43,7 @@ export default function EvidenceProcessingView({
   const logContainerRef = useRef(null);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [lastProcessedVersion, setLastProcessedVersion] = useState(null);
+  const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
 
   // Simple polling for ingestion logs while on this screen
   const loadLogs = useCallback(async () => {
@@ -89,14 +94,15 @@ export default function EvidenceProcessingView({
     loadLogs();
   }, [loadFiles, loadLogs]);
 
-  // Poll logs every 5 seconds while this view is mounted
+  // Poll logs every 10 seconds only while actively processing
   useEffect(() => {
-    if (!caseId) return;
-    // While actively processing, poll more aggressively for a "tail" effect.
-    const intervalMs = processing ? 1000 : 5000;
+    if (!caseId || !processing) return;
+    
+    // Only poll while processing is active (every 10 seconds for progress updates)
     const intervalId = setInterval(() => {
       loadLogs();
-    }, intervalMs);
+    }, 10000); // 10 seconds as requested
+    
     return () => clearInterval(intervalId);
   }, [caseId, processing, loadLogs]);
 
@@ -154,14 +160,28 @@ export default function EvidenceProcessingView({
       alert('Please select one or more files to process.');
       return;
     }
+    
+    const fileIds = Array.from(selectedIds);
+    
+    // If more than 1 file, use background processing
+    if (fileIds.length > 1) {
+      try {
+        const res = await evidenceAPI.processBackground(caseId, fileIds);
+        alert(`Processing ${fileIds.length} files in the background. Check the Background Tasks panel for progress.`);
+        clearSelection();
+        await loadFiles();
+      } catch (err) {
+        console.error('Failed to start background processing:', err);
+        setError(err.message || 'Failed to start background processing');
+      }
+      return;
+    }
+    
+    // Single file: use synchronous processing
     setProcessing(true);
     setError(null);
-    // Kick off an immediate log refresh; the backend will append logs
-    // as each file is ingested, and the user can manually refresh with
-    // the log refresh button if desired.
     loadLogs();
     try {
-      const fileIds = Array.from(selectedIds);
       const res = await evidenceAPI.process(caseId, fileIds);
       const msg = [
         `Processed: ${res.processed || 0}`,
@@ -241,6 +261,19 @@ export default function EvidenceProcessingView({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Background Tasks Button */}
+          <button
+            onClick={() => setShowBackgroundTasksPanel(!showBackgroundTasksPanel)}
+            className={`p-2 rounded-lg transition-colors relative ${
+              showBackgroundTasksPanel
+                ? 'bg-owl-blue-500 text-white'
+                : 'hover:bg-light-100 text-light-600'
+            }`}
+            title="Background Tasks"
+          >
+            <Loader2 className="w-5 h-5" />
+          </button>
+
           {onLoadProcessedGraph && lastProcessedVersion && (
             <button
               onClick={() =>
@@ -574,6 +607,22 @@ export default function EvidenceProcessingView({
           )}
         </div>
       </div>
+
+      {/* Background Tasks Panel */}
+      <BackgroundTasksPanel
+        isOpen={showBackgroundTasksPanel}
+        onClose={() => setShowBackgroundTasksPanel(false)}
+        authUsername={authUsername}
+        onViewCase={(caseId, version) => {
+          setShowBackgroundTasksPanel(false);
+          if (onViewCase) {
+            onViewCase(caseId, version);
+          } else {
+            // Fallback: just navigate back
+            onBackToCases();
+          }
+        }}
+      />
     </div>
   );
 }

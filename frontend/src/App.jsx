@@ -35,6 +35,7 @@ import SnapshotModal from './components/SnapshotModal';
 import CaseModal from './components/CaseModal';
 import DateRangeFilter from './components/DateRangeFilter';
 import FileManagementPanel from './components/FileManagementPanel';
+import BackgroundTasksPanel from './components/BackgroundTasksPanel';
 import CaseManagementView from './components/CaseManagementView';
 import EvidenceProcessingView from './components/EvidenceProcessingView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
@@ -91,10 +92,13 @@ export default function App() {
   
   // File management panel state
   const [showFilePanel, setShowFilePanel] = useState(false);
+  // Background tasks panel state
+  const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUsername, setAuthUsername] = useState('');
   const [showLoginPanel, setShowLoginPanel] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const [caseToSelect, setCaseToSelect] = useState(null); // Case ID to select when navigating to case management
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
 
@@ -1444,6 +1448,8 @@ export default function App() {
           // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
           setAppView('evidence');
         }}
+        initialCaseToSelect={caseToSelect}
+        onCaseSelected={() => setCaseToSelect(null)}
         onLoadLastGraph={async () => {
           try {
             // If we don't have lastGraphInfo in memory yet, fetch from backend
@@ -1488,6 +1494,11 @@ export default function App() {
         caseId={currentCaseId}
         caseName={currentCaseName}
         onBackToCases={() => setAppView('caseManagement')}
+        authUsername={authUsername}
+        onViewCase={(caseId, version) => {
+          setCaseToSelect({ caseId, version });
+          setAppView('caseManagement');
+        }}
         onGoToGraph={async () => {
           try {
             if (!currentCaseId) {
@@ -1589,6 +1600,19 @@ export default function App() {
             title="File Management"
           >
             <HardDrive className="w-5 h-5" />
+          </button>
+
+          {/* Background Tasks Button */}
+          <button
+            onClick={() => setShowBackgroundTasksPanel(!showBackgroundTasksPanel)}
+            className={`p-2 rounded-lg transition-colors relative ${
+              showBackgroundTasksPanel
+                ? 'bg-owl-blue-500 text-white'
+                : 'hover:bg-light-100 text-light-600'
+            }`}
+            title="Background Tasks"
+          >
+            <Loader2 className="w-5 h-5" />
           </button>
 
           <button
@@ -2295,6 +2319,18 @@ export default function App() {
         currentCaseVersion={currentCaseVersion}
         onSaveCase={() => setShowCaseModal(true)}
         onLoadCase={handleLoadCase}
+      />
+
+      {/* Background Tasks Panel */}
+      <BackgroundTasksPanel
+        isOpen={showBackgroundTasksPanel}
+        onClose={() => setShowBackgroundTasksPanel(false)}
+        authUsername={authUsername}
+        onViewCase={(caseId, version) => {
+          setCaseToSelect({ caseId, version });
+          setShowBackgroundTasksPanel(false);
+          setAppView('caseManagement');
+        }}
       />
 
       {/* Snapshot Modal */}

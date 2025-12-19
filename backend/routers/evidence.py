@@ -127,15 +127,41 @@ async def upload_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/process/background")
+async def process_evidence_background(
+    request: ProcessRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Process selected evidence files in the background.
+
+    Returns immediately with a task ID. Use the background-tasks API
+    to monitor progress.
+    """
+    if not request.file_ids:
+        raise HTTPException(status_code=400, detail="No file_ids provided")
+
+    try:
+        task_id = evidence_service.process_files_background(
+            evidence_ids=request.file_ids,
+            case_id=request.case_id,
+            owner=user["username"],
+        )
+        return {"task_id": task_id, "message": "Processing started in background"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/process", response_model=ProcessResponse)
 async def process_evidence(
     request: ProcessRequest,
     user: dict = Depends(get_current_user),
 ):
     """
-    Process selected evidence files.
+    Process selected evidence files synchronously.
 
     Deduplicates by file hash so identical files are only ingested once.
+    For multiple files, consider using /process/background instead.
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")

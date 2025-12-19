@@ -295,3 +295,138 @@ def update_entity_notes(
         return existing_notes.strip() + new_entry
     else:
         return f"[{doc_name}]\n{new_observations}"
+
+
+def get_processing_estimate(
+    doc_name: str,
+    text_preview: str,
+    total_chunks: int,
+    existing_entity_count: int,
+) -> Dict:
+    """
+    Get an estimate of processing duration from the LLM.
+
+    Args:
+        doc_name: Name of the document being processed
+        text_preview: First 2000 characters of the document text
+        total_chunks: Total number of chunks the document will be split into
+        existing_entity_count: Number of existing entities in the graph
+
+    Returns:
+        Dict with 'estimated_duration_seconds' and 'estimated_duration_text'
+    """
+    prompt = f"""You are analyzing a document that will be processed for entity and relationship extraction.
+
+Document name: {doc_name}
+Document preview (first 2000 characters):
+{text_preview}
+
+Processing parameters:
+- Document will be split into {total_chunks} chunks
+- There are currently {existing_entity_count} existing entities in the knowledge graph
+
+Based on the document length, complexity, number of chunks, and existing graph size, estimate:
+1. How long the processing will take in seconds
+2. A human-readable description (e.g., "approximately 2-3 minutes")
+
+Consider:
+- Longer documents take more time
+- More chunks mean more LLM calls
+- Existing entity resolution adds processing time
+- Each chunk requires entity extraction, entity resolution, and relationship creation
+
+Return ONLY valid JSON:
+{{
+  "estimated_duration_seconds": <number>,
+  "estimated_duration_text": "<human-readable estimate>",
+  "reasoning": "<brief explanation of the estimate>"
+}}
+"""
+    
+    response = call_llm(prompt, json_mode=True, temperature=0.3)
+    result = parse_json_response(response)
+    
+    return {
+        "estimated_duration_seconds": result.get("estimated_duration_seconds", 60),
+        "estimated_duration_text": result.get("estimated_duration_text", "approximately 1 minute"),
+        "reasoning": result.get("reasoning", ""),
+    }
+
+
+def get_processing_progress_update(
+    doc_name: str,
+    chunks_processed: int,
+    total_chunks: int,
+    entities_processed: int,
+    relationships_processed: int,
+    elapsed_seconds: int,
+    initial_estimate_seconds: Optional[int] = None,
+) -> Dict:
+    """
+    Get a progress update from the LLM about work done and remaining.
+
+    Args:
+        doc_name: Name of the document being processed
+        chunks_processed: Number of chunks processed so far
+        total_chunks: Total number of chunks
+        entities_processed: Number of entities processed so far
+        relationships_processed: Number of relationships processed so far
+        elapsed_seconds: Number of seconds elapsed so far
+        initial_estimate_seconds: Optional initial time estimate in seconds
+
+    Returns:
+        Dict with progress information
+    """
+    progress_percent = (chunks_processed / total_chunks * 100) if total_chunks > 0 else 0
+    
+    if initial_estimate_seconds:
+        estimated_remaining = max(0, initial_estimate_seconds - elapsed_seconds)
+        estimated_remaining_text = f"approximately {estimated_remaining // 60} minutes {estimated_remaining % 60} seconds" if estimated_remaining >= 60 else f"approximately {estimated_remaining} seconds"
+        estimate_context = f"\nInitial estimate was {initial_estimate_seconds} seconds. Based on progress so far, remaining time is estimated at {estimated_remaining_text}."
+    else:
+        # Estimate based on current rate
+        if chunks_processed > 0:
+            seconds_per_chunk = elapsed_seconds / chunks_processed
+            remaining_chunks = total_chunks - chunks_processed
+            estimated_remaining = int(remaining_chunks * seconds_per_chunk)
+            estimated_remaining_text = f"approximately {estimated_remaining // 60} minutes {estimated_remaining % 60} seconds" if estimated_remaining >= 60 else f"approximately {estimated_remaining} seconds"
+        else:
+            estimated_remaining_text = "calculating..."
+        estimate_context = f"\nBased on current processing rate, remaining time is estimated at {estimated_remaining_text}."
+    
+    prompt = f"""You are monitoring the progress of document ingestion.
+
+Document: {doc_name}
+
+Current progress:
+- Chunks processed: {chunks_processed} / {total_chunks} ({progress_percent:.1f}%)
+- Entities processed so far: {entities_processed}
+- Relationships processed so far: {relationships_processed}
+- Elapsed time: {elapsed_seconds} seconds ({elapsed_seconds // 60} minutes {elapsed_seconds % 60} seconds)
+{estimate_context}
+
+Provide a concise progress update that:
+1. Describes what work has been completed
+2. Estimates remaining work and time
+3. Notes any patterns or observations about the processing so far
+
+Return ONLY valid JSON:
+{{
+  "work_completed": "<description of what has been done>",
+  "remaining_work": "<description of what remains>",
+  "estimated_remaining_seconds": <number>,
+  "estimated_remaining_text": "<human-readable time estimate>",
+  "observations": "<any notable observations about progress>"
+}}
+"""
+    
+    response = call_llm(prompt, json_mode=True, temperature=0.3)
+    result = parse_json_response(response)
+    
+    return {
+        "work_completed": result.get("work_completed", ""),
+        "remaining_work": result.get("remaining_work", ""),
+        "estimated_remaining_seconds": result.get("estimated_remaining_seconds", 60),
+        "estimated_remaining_text": result.get("estimated_remaining_text", "approximately 1 minute"),
+        "observations": result.get("observations", ""),
+    }

@@ -14,6 +14,7 @@ import contextlib
 from config import BASE_DIR
 from .evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
 from .evidence_log_storage import evidence_log_storage
+from .background_task_storage import background_task_storage, TaskStatus
 from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
@@ -191,11 +192,25 @@ class EvidenceService:
                     progress_total=total_batches,
                 )
 
+            # Create a log callback to capture progress messages from ingestion
+            log_messages = []
+            def log_callback(message: str) -> None:
+                """Callback to log progress messages from ingestion."""
+                log_messages.append(message)
+                if case_id:
+                    evidence_log_storage.add_log(
+                        case_id=case_id,
+                        evidence_id=evidence_id,
+                        filename=filename,
+                        level="info",
+                        message=message,
+                    )
+            
             # Capture console output from ingest_file so the UI can display it
             buf = io.StringIO()
             try:
                 with contextlib.redirect_stdout(buf):
-                    self._ingest_file(path)
+                    self._ingest_file(path, log_callback=log_callback)
 
                 ingest_output = buf.getvalue()
                 if case_id and ingest_output.strip():
@@ -296,6 +311,234 @@ class EvidenceService:
                 )
 
         return summary
+
+    def process_files_background(
+        self,
+        evidence_ids: List[str],
+        case_id: Optional[str] = None,
+        owner: Optional[str] = None,
+    ) -> str:
+        """
+        Process files in the background, returning a task ID immediately.
+
+        Args:
+            evidence_ids: List of evidence IDs to process
+            case_id: Optional case ID
+            owner: Optional owner username
+
+        Returns:
+            Task ID string
+        """
+        if not evidence_ids:
+            raise ValueError("No evidence_ids provided")
+
+        # Get file records to determine task name
+        records = [evidence_storage.get(eid) for eid in evidence_ids]
+        records = [
+            r for r in records
+            if r is not None and (owner is None or r.get("owner") == owner)
+        ]
+
+        if not records:
+            raise ValueError("No valid evidence records found")
+
+        # Create task name from file names
+        file_names = [r.get("original_filename", "Unknown") for r in records[:3]]
+        if len(records) > 3:
+            task_name = f"Processing {len(records)} files ({', '.join(file_names)}...)"
+        else:
+            task_name = f"Processing {len(records)} file(s): {', '.join(file_names)}"
+
+        # Create background task
+        task = background_task_storage.create_task(
+            task_type="evidence_processing",
+            task_name=task_name,
+            owner=owner,
+            case_id=case_id,
+            metadata={
+                "evidence_ids": evidence_ids,
+                "file_count": len(records),
+            },
+        )
+        task_id = task["id"]
+
+        # Start background processing (this will run in a separate thread)
+        import threading
+
+        # Store owner in closure for use in background thread
+        task_owner = owner
+
+        def process_task():
+            """Background task function."""
+            from datetime import datetime
+
+            try:
+                # Update task status to running
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.RUNNING.value,
+                    started_at=datetime.now().isoformat(),
+                )
+
+                # Group by hash for processing
+                by_hash: Dict[str, List[dict]] = {}
+                for rec in records:
+                    sha = rec.get("sha256")
+                    if not sha:
+                        continue
+                    by_hash.setdefault(sha, []).append(rec)
+
+                total_files = len(by_hash)
+                background_task_storage.update_task(
+                    task_id,
+                    progress_total=total_files,
+                    progress_completed=0,
+                    progress_failed=0,
+                )
+
+                processed_count = 0
+                failed_count = 0
+
+                # Ensure ingest function is available
+                self._ensure_ingest()
+
+                # Process each file
+                for sha, recs in by_hash.items():
+                    primary = recs[0]
+                    path_str = primary.get("stored_path")
+                    evidence_id = primary.get("id")
+                    filename = primary.get("original_filename")
+
+                    # Update file status to running
+                    background_task_storage.update_task(
+                        task_id,
+                        file_status={
+                            "file_id": evidence_id,
+                            "filename": filename,
+                            "status": "processing",
+                        },
+                    )
+
+                    if not path_str:
+                        failed_count += len(recs)
+                        background_task_storage.update_task(
+                            task_id,
+                            file_status={
+                                "file_id": evidence_id,
+                                "filename": filename,
+                                "status": "failed",
+                                "error": "Missing stored_path",
+                            },
+                            progress_failed=failed_count,
+                        )
+                        evidence_storage.mark_processed(
+                            [r["id"] for r in recs],
+                            error="Missing stored_path",
+                        )
+                        continue
+
+                    path = Path(path_str)
+
+                    # Create log callback that also updates task
+                    def log_callback(message: str) -> None:
+                        """Callback to log progress messages."""
+                        if case_id:
+                            evidence_log_storage.add_log(
+                                case_id=case_id,
+                                evidence_id=evidence_id,
+                                filename=filename,
+                                level="info",
+                                message=message,
+                            )
+
+                    # Process the file
+                    try:
+                        buf = io.StringIO()
+                        with contextlib.redirect_stdout(buf):
+                            self._ingest_file(path, log_callback=log_callback)
+
+                        # Mark as processed
+                        evidence_storage.mark_processed(
+                            [r["id"] for r in recs],
+                            error=None,
+                        )
+                        processed_count += len(recs)
+
+                        # Update file status to completed
+                        background_task_storage.update_task(
+                            task_id,
+                            file_status={
+                                "file_id": evidence_id,
+                                "filename": filename,
+                                "status": "completed",
+                            },
+                            progress_completed=processed_count,
+                        )
+                    except Exception as e:
+                        failed_count += len(recs)
+                        error_msg = str(e)
+                        evidence_storage.mark_processed(
+                            [r["id"] for r in recs],
+                            error=error_msg,
+                        )
+                        background_task_storage.update_task(
+                            task_id,
+                            file_status={
+                                "file_id": evidence_id,
+                                "filename": filename,
+                                "status": "failed",
+                                "error": error_msg,
+                            },
+                            progress_failed=failed_count,
+                        )
+
+                # Save case version if applicable
+                if case_id and processed_count > 0:
+                    try:
+                        graph_data = neo4j_service.get_full_graph()
+                        cypher_queries = generate_cypher_from_graph(graph_data)
+                        case = case_storage.get_case(case_id)
+                        case_name = case["name"] if case and case.get("name") else case_id
+
+                        case_result = case_storage.save_case_version(
+                            case_id=case_id,
+                            case_name=case_name,
+                            cypher_queries=cypher_queries,
+                            snapshots=[],
+                            save_notes=f"Auto-save after processing {processed_count} evidence file(s).",
+                            owner=task_owner,  # Pass owner to ensure case version is saved with correct owner
+                        )
+
+                        background_task_storage.update_task(
+                            task_id,
+                            metadata={
+                                **task["metadata"],
+                                "case_id": case_result.get("case_id"),
+                                "case_version": case_result.get("version"),
+                            },
+                        )
+                    except Exception as e:
+                        print(f"Warning: failed to save case version: {e}")
+
+                # Mark task as completed
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.COMPLETED.value,
+                    completed_at=datetime.now().isoformat(),
+                )
+            except Exception as e:
+                # Mark task as failed
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    error=str(e),
+                    completed_at=datetime.now().isoformat(),
+                )
+
+        thread = threading.Thread(target=process_task, daemon=True)
+        thread.start()
+
+        return task_id
 
 
 # Singleton instance

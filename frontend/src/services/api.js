@@ -354,10 +354,22 @@ export const evidenceAPI = {
   },
 
   /**
-   * Process selected evidence files
+   * Process selected evidence files synchronously
    */
   process: (caseId, fileIds) =>
     fetchAPI('/evidence/process', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        file_ids: fileIds,
+      }),
+    }),
+
+  /**
+   * Process selected evidence files in the background (returns task_id)
+   */
+  processBackground: (caseId, fileIds) =>
+    fetchAPI('/evidence/process/background', {
       method: 'POST',
       body: JSON.stringify({
         case_id: caseId,
@@ -395,5 +407,36 @@ export const authAPI = {
   me: () =>
     fetchAPI('/auth/me', {
       method: 'GET',
+    }),
+};
+
+/**
+ * Background Tasks API
+ */
+export const backgroundTasksAPI = {
+  /**
+   * List background tasks
+   */
+  list: (owner = null, caseId = null, status = null, limit = 100) => {
+    const params = new URLSearchParams();
+    if (owner) params.append('owner', owner);
+    if (caseId) params.append('case_id', caseId);
+    if (status) params.append('status', status);
+    if (limit) params.append('limit', String(limit));
+    const qs = params.toString();
+    return fetchAPI(`/background-tasks${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * Get a specific task by ID
+   */
+  get: (taskId) => fetchAPI(`/background-tasks/${encodeURIComponent(taskId)}`),
+
+  /**
+   * Delete a task
+   */
+  delete: (taskId) =>
+    fetchAPI(`/background-tasks/${encodeURIComponent(taskId)}`, {
+      method: 'DELETE',
     }),
 };

@@ -18,6 +18,7 @@ from routers import (
     cases_router,
     auth_router,
     evidence_router,
+    background_tasks_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -66,6 +67,7 @@ app.include_router(snapshots_router)
 app.include_router(cases_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)
+app.include_router(background_tasks_router)
 
 
 @app.get("/")
