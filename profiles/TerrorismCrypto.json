@@ -1,0 +1,89 @@
+{
+  "name": "TerrorismCrypto",
+  "description": "Analyze terrorism and crypto cases and suspicious activity",
+  "case_type": "Terrorism",
+  "agent_description": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Look out for crypto",
+  "instructions": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. look out for crypto",
+  "characteristics": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Look out for crypto",
+  "ingestion": {
+    "system_context": "You are an assistant helping with Case Type: Terrorism. Agent Description: Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Look out for crypto. Instructions: Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. look out for crypto. Characteristics: Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Look out for crypto.",
+    "entity_types": [
+      "bitcoin wallet",
+      "Person",
+      "Organisation",
+      "Location",
+      "Event",
+      "Date",
+      "Document",
+      "Concept",
+      "Product",
+      "Other",
+      "Digital Identity",
+      "Travel",
+      "Communication Platform"
+    ],
+    "entity_definitions": {
+      "bitcoin wallet": {
+        "color": "#F97316",
+        "description": "A bitcoin address usually the payer or payee in a transaction. Here is a sample bitcoin wallet address 1A2bC3dE4fG5hI6jK7lM8nO9pQ0rS1tU2vW3xY4z"
+      },
+      "Person": {
+        "color": "#84CC16",
+        "description": "Individual people mentioned in documents"
+      },
+      "Organisation": {
+        "color": "#A855F7",
+        "description": "Companies, institutions, or groups"
+      },
+      "Location": {
+        "color": "#EAB308",
+        "description": "Geographic locations, addresses, places"
+      },
+      "Event": {
+        "color": "#0EA5E9",
+        "description": "Occurrences, incidents, happenings"
+      },
+      "Date": {
+        "color": "#9333EA",
+        "description": "Specific dates or time periods"
+      },
+      "Document": {
+        "color": "#6B7280",
+        "description": "Documents, files, records"
+      },
+      "Concept": {
+        "color": "#84CC16",
+        "description": "Abstract ideas, topics, themes"
+      },
+      "Product": {
+        "color": "#F59E0B",
+        "description": "Products, services, items"
+      },
+      "Other": {
+        "color": "#DC2626",
+        "description": "Other entities not fitting the above categories"
+      },
+      "Digital Identity": {
+        "color": "#EC4899",
+        "description": "Movement between locations, physical or inferred.\n\nExamples\n\t•\tSame-day Hamburg–Brussels trip\n\t•\tCross-border travel without clear justification\n\nTypical attributes\n\t•\tOrigin and destination\n\t•\tDuration\n\t•\tPurpose (known / unknown)\n\nWhy it’s modeled separately\n\t•\tTravel often links persons, locations, and events\n\t•\tEnables detection of coordination or meetings"
+      },
+      "Travel": {
+        "color": "#EC4899",
+        "description": "Movement between locations, physical or inferred.\n\nExamples\n\t•\tSame-day Hamburg–Brussels trip\n\t•\tCross-border travel without clear justification\n\nTypical attributes\n\t•\tOrigin and destination\n\t•\tDuration\n\t•\tPurpose (known / unknown)\n\nWhy it’s modeled separately\n\t•\tTravel often links persons, locations, and events\n\t•\tEnables detection of coordination or meetings"
+      },
+      "Communication Platform": {
+        "color": "#84CC16",
+        "description": "A medium through which information is exchanged.\n\nExamples\n\t•\tPrivate discussion forums\n\t•\tEncrypted messaging applications\n\t•\tSocial media aliases\n\nTypical attributes\n\t•\tPlatform type (forum, messaging app)\n\t•\tAccess pattern (spike, baseline, dormant)\n\t•\tAnonymity level\n\nWhy investigators model this\n\t•\tPlatform choice can indicate intent to conceal\n\t•\tTiming and frequency often correlate with other events"
+      }
+    },
+    "relationship_examples": [
+      "Person works for Organisation",
+      "Event occurred at Location"
+    ],
+    "temperature": 2.0
+  },
+  "chat": {
+    "system_context": "You are an AI assistant helping terrorism investigators analyze a case.",
+    "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Look out for crypto"
+  }
+}

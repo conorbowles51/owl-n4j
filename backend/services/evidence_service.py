@@ -100,6 +100,7 @@ class EvidenceService:
         evidence_ids: List[str],
         case_id: Optional[str] = None,
         owner: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> Dict:
         """
         Process selected evidence files using ingest_data.ingest_file.
@@ -209,8 +210,20 @@ class EvidenceService:
             # Capture console output from ingest_file so the UI can display it
             buf = io.StringIO()
             try:
-                with contextlib.redirect_stdout(buf):
-                    self._ingest_file(path, log_callback=log_callback)
+                # Set profile environment variable if provided
+                import os
+                original_profile = os.environ.get("PROFILE")
+                if profile:
+                    os.environ["PROFILE"] = profile
+                try:
+                    with contextlib.redirect_stdout(buf):
+                        self._ingest_file(path, log_callback=log_callback)
+                finally:
+                    # Restore original profile or remove it
+                    if original_profile is not None:
+                        os.environ["PROFILE"] = original_profile
+                    elif "PROFILE" in os.environ:
+                        del os.environ["PROFILE"]
 
                 ingest_output = buf.getvalue()
                 if case_id and ingest_output.strip():
@@ -317,6 +330,7 @@ class EvidenceService:
         evidence_ids: List[str],
         case_id: Optional[str] = None,
         owner: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> str:
         """
         Process files in the background, returning a task ID immediately.
@@ -358,6 +372,7 @@ class EvidenceService:
             metadata={
                 "evidence_ids": evidence_ids,
                 "file_count": len(records),
+                "profile": profile,
             },
         )
         task_id = task["id"]
@@ -365,8 +380,9 @@ class EvidenceService:
         # Start background processing (this will run in a separate thread)
         import threading
 
-        # Store owner in closure for use in background thread
+        # Store owner and profile in closure for use in background thread
         task_owner = owner
+        task_profile = profile
 
         def process_task():
             """Background task function."""
@@ -453,9 +469,21 @@ class EvidenceService:
 
                     # Process the file
                     try:
-                        buf = io.StringIO()
-                        with contextlib.redirect_stdout(buf):
-                            self._ingest_file(path, log_callback=log_callback)
+                        # Set profile environment variable if provided
+                        import os
+                        original_profile = os.environ.get("PROFILE")
+                        if task_profile:
+                            os.environ["PROFILE"] = task_profile
+                        try:
+                            buf = io.StringIO()
+                            with contextlib.redirect_stdout(buf):
+                                self._ingest_file(path, log_callback=log_callback)
+                        finally:
+                            # Restore original profile or remove it
+                            if original_profile is not None:
+                                os.environ["PROFILE"] = original_profile
+                            elif "PROFILE" in os.environ:
+                                del os.environ["PROFILE"]
 
                         # Mark as processed
                         evidence_storage.mark_processed(

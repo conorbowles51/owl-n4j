@@ -28,8 +28,8 @@ class TokenResponse(BaseModel):
 
 
 def _extract_token(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    request: Request = None,
 ) -> str | None:
     if credentials and credentials.credentials:
         return credentials.credentials
@@ -76,4 +76,5 @@ def logout(response: Response):
 @router.get("/me")
 def me(user: dict = Depends(get_current_user)):
     return {"username": user["username"]}
+
 

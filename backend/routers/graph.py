@@ -50,6 +50,32 @@ class LastGraphResponse(BaseModel):
     saved_at: Optional[str] = None
 
 
+@router.get("/entity-types")
+async def get_entity_types():
+    """
+    Get all entity types in the graph with their counts.
+    
+    Returns a list of all entity types that exist in the database,
+    regardless of whether they're currently visible in the graph view.
+    """
+    try:
+        summary = neo4j_service.get_graph_summary()
+        entity_types = summary.get("entity_types", {})
+        
+        # Convert to list format
+        types_list = [
+            {"type": type_name, "count": count}
+            for type_name, count in entity_types.items()
+        ]
+        
+        # Sort by count descending, then by type name
+        types_list.sort(key=lambda x: (-x["count"], x["type"]))
+        
+        return {"entity_types": types_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("")
 async def get_graph(
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),

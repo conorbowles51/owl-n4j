@@ -1,0 +1,143 @@
+@page {
+  margin: 2cm 1.5cm;
+}
+
+body {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  line-height: 1.6;
+  color: #333;
+}
+
+/* Cover page styles */
+h1:first-of-type {
+  font-size: 32pt;
+  font-weight: bold;
+  color: #1e3a5f;
+  text-align: center;
+  margin-top: 3cm;
+  margin-bottom: 0.5cm;
+}
+
+h2:first-of-type {
+  font-size: 18pt;
+  color: #5a7fa3;
+  text-align: center;
+  margin-bottom: 2cm;
+}
+
+/* First image (logo) on cover */
+img:first-of-type {
+  display: block;
+  max-width: 200px;
+  height: auto;
+  margin: 2cm auto 2cm auto;
+}
+
+/* Regular headings */
+h1 {
+  color: #1e3a5f;
+  font-size: 24pt;
+  font-weight: bold;
+  margin-top: 1.5cm;
+  margin-bottom: 0.5cm;
+  page-break-after: avoid;
+  border-bottom: 3px solid #5a7fa3;
+  padding-bottom: 0.3cm;
+}
+
+h2 {
+  color: #2c5282;
+  font-size: 18pt;
+  font-weight: bold;
+  margin-top: 1.2cm;
+  margin-bottom: 0.4cm;
+  page-break-after: avoid;
+}
+
+h3 {
+  color: #3182ce;
+  font-size: 14pt;
+  font-weight: bold;
+  margin-top: 1cm;
+  margin-bottom: 0.3cm;
+  page-break-after: avoid;
+}
+
+p {
+  margin: 0.5cm 0;
+  text-align: justify;
+}
+
+ul, ol {
+  margin: 0.5cm 0;
+  padding-left: 1.5cm;
+}
+
+li {
+  margin: 0.3cm 0;
+}
+
+code {
+  background-color: #f5f5f5;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #d63384;
+}
+
+pre {
+  background-color: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 1cm;
+  page-break-inside: avoid;
+  overflow-x: auto;
+}
+
+pre code {
+  background-color: transparent;
+  padding: 0;
+  color: #333;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1cm 0;
+  page-break-inside: avoid;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 0.5cm;
+  text-align: left;
+}
+
+th {
+  background-color: #1e3a5f;
+  color: white;
+  font-weight: bold;
+}
+
+tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+blockquote {
+  border-left: 4px solid #5a7fa3;
+  margin: 1cm 0;
+  padding-left: 1cm;
+  color: #555;
+  font-style: italic;
+}
+
+strong {
+  font-weight: bold;
+}
+
+em {
+  font-style: italic;
+}
+
+

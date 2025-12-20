@@ -88,3 +88,4 @@ class SnapshotStorage:
 # Singleton instance
 snapshot_storage = SnapshotStorage()
 
+

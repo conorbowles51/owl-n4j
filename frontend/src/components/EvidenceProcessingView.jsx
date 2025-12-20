@@ -9,9 +9,15 @@ import {
   ArrowLeft,
   PlayCircle,
   Loader2,
+  Settings,
+  ChevronDown,
+  ChevronUp,
+  X,
+  Edit,
 } from 'lucide-react';
-import { evidenceAPI } from '../services/api';
+import { evidenceAPI, profilesAPI } from '../services/api';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
+import ProfileEditor from './ProfileEditor';
 
 /**
  * EvidenceProcessingView
@@ -44,6 +50,13 @@ export default function EvidenceProcessingView({
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [lastProcessedVersion, setLastProcessedVersion] = useState(null);
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
+  const [profiles, setProfiles] = useState([]);
+  const [selectedProfile, setSelectedProfile] = useState(null);
+  const [profileDetails, setProfileDetails] = useState(null);
+  const [showProfileDetails, setShowProfileDetails] = useState(false);
+  const [loadingProfiles, setLoadingProfiles] = useState(false);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [editingProfileName, setEditingProfileName] = useState(null);
 
   // Simple polling for ingestion logs while on this screen
   const loadLogs = useCallback(async () => {
@@ -88,6 +101,44 @@ export default function EvidenceProcessingView({
       setLoading(false);
     }
   }, [caseId]);
+
+  // Load profiles on mount
+  useEffect(() => {
+    const loadProfiles = async () => {
+      setLoadingProfiles(true);
+      try {
+        const data = await profilesAPI.list();
+        setProfiles(data || []);
+        // Default to first profile if available
+        if (data && data.length > 0 && !selectedProfile) {
+          setSelectedProfile(data[0].name);
+        }
+      } catch (err) {
+        console.error('Failed to load profiles:', err);
+      } finally {
+        setLoadingProfiles(false);
+      }
+    };
+    loadProfiles();
+  }, []);
+
+  // Load profile details when selected
+  useEffect(() => {
+    const loadProfileDetails = async () => {
+      if (!selectedProfile) {
+        setProfileDetails(null);
+        return;
+      }
+      try {
+        const details = await profilesAPI.get(selectedProfile);
+        setProfileDetails(details);
+      } catch (err) {
+        console.error('Failed to load profile details:', err);
+        setProfileDetails(null);
+      }
+    };
+    loadProfileDetails();
+  }, [selectedProfile]);
 
   useEffect(() => {
     loadFiles();
@@ -166,7 +217,7 @@ export default function EvidenceProcessingView({
     // If more than 1 file, use background processing
     if (fileIds.length > 1) {
       try {
-        const res = await evidenceAPI.processBackground(caseId, fileIds);
+        const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile);
         alert(`Processing ${fileIds.length} files in the background. Check the Background Tasks panel for progress.`);
         clearSelection();
         await loadFiles();
@@ -182,7 +233,7 @@ export default function EvidenceProcessingView({
     setError(null);
     loadLogs();
     try {
-      const res = await evidenceAPI.process(caseId, fileIds);
+      const res = await evidenceAPI.process(caseId, fileIds, selectedProfile);
       const msg = [
         `Processed: ${res.processed || 0}`,
         `Skipped (already processed/duplicates): ${res.skipped || 0}`,
@@ -261,6 +312,153 @@ export default function EvidenceProcessingView({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Profile Selection */}
+          <div className="relative">
+            <div className="flex items-center gap-2">
+              <Settings className="w-4 h-4 text-light-600" />
+              <label className="text-xs text-light-600 font-medium">LLM Profile:</label>
+              <select
+                value={selectedProfile || ''}
+                onChange={(e) => setSelectedProfile(e.target.value)}
+                disabled={loadingProfiles}
+                className="px-2 py-1 border border-light-300 rounded text-sm text-light-900 bg-white focus:outline-none focus:border-owl-blue-500 disabled:opacity-50"
+              >
+                {loadingProfiles ? (
+                  <option>Loading...</option>
+                ) : profiles.length === 0 ? (
+                  <option>No profiles available</option>
+                ) : (
+                  profiles.map((profile) => (
+                    <option key={profile.name} value={profile.name}>
+                      {profile.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              {profileDetails && (
+                <>
+                  <span className="text-xs text-light-600 max-w-xs truncate" title={profileDetails.description}>
+                    {profileDetails.description}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setEditingProfileName(selectedProfile);
+                      setShowProfileEditor(true);
+                    }}
+                    className="p-1.5 rounded hover:bg-light-100 text-light-600 transition-colors"
+                    title="Edit profile"
+                  >
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setShowProfileDetails(!showProfileDetails)}
+                    className="p-1.5 rounded hover:bg-light-100 text-light-600 transition-colors"
+                    title="View full profile details"
+                  >
+                    {showProfileDetails ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => {
+                  setEditingProfileName(null);
+                  setShowProfileEditor(true);
+                }}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm text-owl-blue-700 hover:bg-owl-blue-50 rounded-lg transition-colors"
+                title="Create new profile"
+              >
+                <Settings className="w-4 h-4" />
+                New Profile
+              </button>
+            </div>
+            
+            {/* Profile Details Panel */}
+            {showProfileDetails && profileDetails && (
+              <div className="absolute right-0 top-full mt-2 w-96 bg-white border border-light-300 rounded-lg shadow-lg z-50 p-4 max-h-96 overflow-y-auto">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-semibold text-light-900">{profileDetails.name}</h3>
+                  <button
+                    onClick={() => setShowProfileDetails(false)}
+                    className="p-1 rounded hover:bg-light-100 text-light-600"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <p className="text-sm text-light-600 mb-4">{profileDetails.description}</p>
+                
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-semibold text-light-700 uppercase tracking-wide mb-2">
+                      Ingestion Configuration
+                    </h4>
+                    <div className="bg-light-50 rounded p-3 space-y-2">
+                      <div>
+                        <p className="text-xs font-medium text-light-700 mb-1">System Context:</p>
+                        <p className="text-xs text-light-600 italic">
+                          {profileDetails.ingestion?.system_context || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-light-700 mb-1">
+                          Entity Types ({profileDetails.ingestion?.entity_types?.length || 0}):
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {profileDetails.ingestion?.entity_types?.map((type, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-owl-blue-100 text-owl-blue-700 text-xs rounded"
+                            >
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-light-700 mb-1">
+                          Relationship Types ({profileDetails.ingestion?.relationship_types?.length || 0}):
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {profileDetails.ingestion?.relationship_types?.map((type, idx) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 bg-owl-purple-100 text-owl-purple-700 text-xs rounded"
+                            >
+                              {type}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <h4 className="text-xs font-semibold text-light-700 uppercase tracking-wide mb-2">
+                      Chat Configuration
+                    </h4>
+                    <div className="bg-light-50 rounded p-3 space-y-2">
+                      <div>
+                        <p className="text-xs font-medium text-light-700 mb-1">System Context:</p>
+                        <p className="text-xs text-light-600 italic">
+                          {profileDetails.chat?.system_context || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-light-700 mb-1">Analysis Guidance:</p>
+                        <p className="text-xs text-light-600">
+                          {profileDetails.chat?.analysis_guidance || 'N/A'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Background Tasks Button */}
           <button
             onClick={() => setShowBackgroundTasksPanel(!showBackgroundTasksPanel)}
@@ -622,6 +820,16 @@ export default function EvidenceProcessingView({
             onBackToCases();
           }
         }}
+      />
+
+      {/* Profile Editor */}
+      <ProfileEditor
+        isOpen={showProfileEditor}
+        onClose={() => {
+          setShowProfileEditor(false);
+          setEditingProfileName(null);
+        }}
+        profileName={editingProfileName}
       />
     </div>
   );

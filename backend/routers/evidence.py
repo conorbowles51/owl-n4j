@@ -38,6 +38,7 @@ class EvidenceListResponse(BaseModel):
 class ProcessRequest(BaseModel):
     case_id: Optional[str] = None
     file_ids: List[str]
+    profile: Optional[str] = None  # LLM profile name (e.g., "fraud", "generic")
 
 
 class ProcessResponse(BaseModel):
@@ -146,6 +147,7 @@ async def process_evidence_background(
             evidence_ids=request.file_ids,
             case_id=request.case_id,
             owner=user["username"],
+            profile=request.profile,
         )
         return {"task_id": task_id, "message": "Processing started in background"}
     except Exception as e:
@@ -175,6 +177,7 @@ async def process_evidence(
             request.file_ids,
             request.case_id,
             user["username"],
+            request.profile,
         )
         return ProcessResponse(**summary)
     except ImportError as e:

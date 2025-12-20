@@ -116,10 +116,21 @@ class Neo4jClient:
         # Extract meaningful parts of the name for searching
         search_terms = name.lower().split()
 
+        # Sanitize entity_type if provided
+        sanitized_type = None
+        if entity_type:
+            import re
+            sanitized_type = entity_type.strip()
+            sanitized_type = re.sub(r'[^a-zA-Z0-9_]', '_', sanitized_type)
+            sanitized_type = re.sub(r'_+', '_', sanitized_type)
+            sanitized_type = sanitized_type.strip('_')
+            if not sanitized_type:
+                sanitized_type = None
+
         with self.driver.session() as session:
-            if entity_type:
+            if sanitized_type:
                 query = f"""
-                MATCH (e:{entity_type})
+                MATCH (e:`{sanitized_type}`)
                 WHERE e.name IS NOT NULL
                   AND any(term IN $terms WHERE toLower(e.name) CONTAINS term)
                 RETURN e.id AS id,
@@ -230,10 +241,25 @@ class Neo4jClient:
         if extra_props:
             props.update(extra_props)
 
+        # Sanitize entity_type for use as Cypher label
+        # Remove or replace characters that aren't valid in Cypher labels
+        # Labels can contain alphanumeric and underscore, but we'll allow common patterns
+        sanitized_type = entity_type.strip()
+        # Replace spaces and special chars with underscores, but keep alphanumeric
+        import re
+        sanitized_type = re.sub(r'[^a-zA-Z0-9_]', '_', sanitized_type)
+        # Remove multiple consecutive underscores
+        sanitized_type = re.sub(r'_+', '_', sanitized_type)
+        # Remove leading/trailing underscores
+        sanitized_type = sanitized_type.strip('_')
+        # Fallback to "Other" if empty after sanitization
+        if not sanitized_type:
+            sanitized_type = "Other"
+
         with self.driver.session() as session:
             session.run(
                 f"""
-                CREATE (e:{entity_type} $props)
+                CREATE (e:`{sanitized_type}` $props)
                 """,
                 props=props,
             )
@@ -352,17 +378,31 @@ class Neo4jClient:
         Args:
             from_key: Source entity key
             to_key: Target entity key
-            rel_type: Relationship type
+            rel_type: Relationship type (will be sanitized for Cypher)
             doc_name: Document where this relationship was found
             notes: Notes about this relationship
         """
+        # Sanitize relationship type for use as Cypher relationship type
+        # Relationship types can contain alphanumeric and underscores, but we'll sanitize special chars
+        import re
+        sanitized_rel_type = rel_type.strip()
+        # Replace spaces and special chars with underscores, but keep alphanumeric
+        sanitized_rel_type = re.sub(r'[^a-zA-Z0-9_]', '_', sanitized_rel_type)
+        # Remove multiple consecutive underscores
+        sanitized_rel_type = re.sub(r'_+', '_', sanitized_rel_type)
+        # Remove leading/trailing underscores
+        sanitized_rel_type = sanitized_rel_type.strip('_')
+        # Fallback to "RELATED_TO" if empty after sanitization
+        if not sanitized_rel_type:
+            sanitized_rel_type = "RELATED_TO"
+        
         with self.driver.session() as session:
             # First, create/merge the relationship
             session.run(
                 f"""
                 MATCH (from {{key: $from_key}})
                 MATCH (to {{key: $to_key}})
-                MERGE (from)-[r:{rel_type}]->(to)
+                MERGE (from)-[r:`{sanitized_rel_type}`]->(to)
                 """,
                 from_key=from_key,
                 to_key=to_key,
@@ -373,7 +413,7 @@ class Neo4jClient:
                 doc_ref_entry = f"\n\n[{doc_name}]\n{notes}"
                 session.run(
                     f"""
-                    MATCH (from {{key: $from_key}})-[r:{rel_type}]->(to {{key: $to_key}})
+                    MATCH (from {{key: $from_key}})-[r:`{sanitized_rel_type}`]->(to {{key: $to_key}})
                     SET r.doc_refs = COALESCE(r.doc_refs, '') + $doc_ref
                     """,
                     from_key=from_key,

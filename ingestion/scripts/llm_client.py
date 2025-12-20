@@ -83,6 +83,7 @@ def extract_entities_and_relationships(
     text: str,
     doc_name: str,
     existing_entity_keys: Optional[list] = None,
+    temperature: Optional[float] = None,
 ) -> Dict:
     """
     Extract entities and relationships from a text chunk.
@@ -100,8 +101,27 @@ def extract_entities_and_relationships(
     config = get_ingestion_config()
     
     system_context = config.get("system_context")
-    entity_types = config.get("entity_types")
+    entity_types = config.get("entity_types", [])
+    entity_definitions = config.get("entity_definitions", {})
+    
+    # Get temperature from config or use provided/default
+    config_temperature = config.get("temperature")
+    if temperature is None:
+        temperature = config_temperature if config_temperature is not None else 1.0
+    
+    # Support both new format (relationship_examples) and old format (relationship_types)
+    relationship_examples = config.get("relationship_examples")
     relationship_types = config.get("relationship_types")
+    
+    # Build entity type descriptions
+    entity_descriptions = []
+    for entity_type in entity_types:
+        entity_def = entity_definitions.get(entity_type, {})
+        description = entity_def.get("description", "")
+        if description:
+            entity_descriptions.append(f"- {entity_type}: {description}")
+        else:
+            entity_descriptions.append(f"- {entity_type}")
 
     existing_keys_hint = ""
     if existing_entity_keys:
@@ -113,7 +133,46 @@ The following entities already exist in the investigation graph (use these exact
 """
 
     entity_types_str = ", ".join(entity_types)
-    relationship_types_str = ", ".join(relationship_types)
+    
+    # Build relationship guidance
+    if relationship_examples:
+        # New format: use examples to guide the LLM
+        relationship_guidance = f"""
+For relationships, identify ALL connections between entities based on the context. Use descriptive relationship types that capture the nature of the connection. Examples of relationship types you might identify:
+{chr(10).join(f"- {example}" for example in relationship_examples)}
+
+You are not limited to these examples - use your judgment to create appropriate relationship types that accurately describe the connections you find in the document. The system will automatically create these relationship types in Neo4j, so be creative and specific. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", "RECEIVED_FROM", "SENT_TO", etc.
+"""
+    elif relationship_types:
+        # Old format: use predefined types, but allow new ones
+        relationship_guidance = f"""
+For each relationship, provide:
+- from_key: The key of the source entity
+- to_key: The key of the target entity
+- type: A descriptive relationship type. You may use one of these: [{", ".join(relationship_types)}], but you are also encouraged to create new relationship types if they better describe the connection. The system will automatically create any relationship type you specify.
+- notes: Brief description of the relationship as evidenced in this document
+
+IMPORTANT: Create relationship types that accurately capture the connection. You are not limited to the predefined types - create new ones as needed.
+"""
+    else:
+        relationship_guidance = """
+For relationships, identify ALL connections between entities and use descriptive relationship types. The system will automatically create these relationship types in Neo4j, so be specific and creative. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", etc.
+"""
+
+    entity_guidance = f"""
+For each entity, provide:
+- key: A stable, lowercase, hyphenated identifier (e.g., "john-smith", "emerald-imports-ltd", "acc-001")
+- type: The entity type. Prefer using one of the suggested types: [{entity_types_str}]. However, if you encounter an entity that doesn't fit any of these types, you may create a new descriptive type name (e.g., "Vehicle", "Account", "Transaction", "Meeting", "Email", "PhoneCall"). Use clear, descriptive type names.
+- name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
+- notes: What role does this entity play in THIS document? What is relevant about them here?
+- date: (REQUIRED for event types: Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting) The date of the event in YYYY-MM-DD format if mentioned in the text, otherwise null
+- location: Any geographic location associated with this entity (address, city, country). Extract the most specific location mentioned. For companies: headquarters or office location. For persons: residence or workplace. For meetings/transactions: where it occurred. Set to null if no location mentioned.
+
+Entity Type Guidelines:
+{chr(10).join(entity_descriptions)}
+
+IMPORTANT: If you find entities that don't match the suggested types above, create appropriate new entity types. The system will automatically create and display these new entity types.
+"""
 
     prompt = f"""{system_context}
 
@@ -124,19 +183,8 @@ Document: {doc_name}
 Text:
 \"\"\"{text}\"\"\"
 {existing_keys_hint}
-For each entity, provide:
-- key: A stable, lowercase, hyphenated identifier (e.g., "john-smith", "emerald-imports-ltd", "acc-001")
-- type: One of [{entity_types_str}]
-- name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
-- notes: What role does this entity play in THIS document? What is relevant about them here?
-- date: (REQUIRED for event types: Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting) The date of the event in YYYY-MM-DD format if mentioned in the text, otherwise null
-- location: Any geographic location associated with this entity (address, city, country). Extract the most specific location mentioned. For companies: headquarters or office location. For persons: residence or workplace. For meetings/transactions: where it occurred. Set to null if no location mentioned.
-
-For each relationship, provide:
-- from_key: The key of the source entity
-- to_key: The key of the target entity
-- type: One of [{relationship_types_str}]
-- notes: Brief description of the relationship as evidenced in this document
+{entity_guidance}
+{relationship_guidance}
 
 Return ONLY valid JSON with this exact structure (no markdown, no explanation):
 
@@ -166,7 +214,7 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
 IMPORTANT: For event-type entities (Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting), you MUST look for dates in the text. Convert any date format (e.g., "March 15, 2024", "15/03/2024", "3-15-24") to YYYY-MM-DD format.
 """
     
-    response = call_llm(prompt, json_mode=True)
+    response = call_llm(prompt, json_mode=True, temperature=temperature)
     return parse_json_response(response)
 
 

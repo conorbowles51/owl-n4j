@@ -156,6 +156,11 @@ export const graphAPI = {
   getLastGraph: () => fetchAPI('/graph/last-graph'),
 
   /**
+   * Get all entity types in the graph with their counts
+   */
+  getEntityTypes: () => fetchAPI('/graph/entity-types'),
+
+  /**
    * Get entities with geocoded locations for map display
    * @param {Object} options - Filter options
    * @param {string} options.types - Comma-separated entity types to filter
@@ -355,25 +360,33 @@ export const evidenceAPI = {
 
   /**
    * Process selected evidence files synchronously
+   * @param {string} caseId - Case ID
+   * @param {string[]} fileIds - Array of file IDs to process
+   * @param {string} [profile] - Optional LLM profile name (e.g., "fraud", "generic")
    */
-  process: (caseId, fileIds) =>
+  process: (caseId, fileIds, profile = null) =>
     fetchAPI('/evidence/process', {
       method: 'POST',
       body: JSON.stringify({
         case_id: caseId,
         file_ids: fileIds,
+        profile: profile,
       }),
     }),
 
   /**
    * Process selected evidence files in the background (returns task_id)
+   * @param {string} caseId - Case ID
+   * @param {string[]} fileIds - Array of file IDs to process
+   * @param {string} [profile] - Optional LLM profile name (e.g., "fraud", "generic")
    */
-  processBackground: (caseId, fileIds) =>
+  processBackground: (caseId, fileIds, profile = null) =>
     fetchAPI('/evidence/process/background', {
       method: 'POST',
       body: JSON.stringify({
         case_id: caseId,
         file_ids: fileIds,
+        profile: profile,
       }),
     }),
 
@@ -387,6 +400,41 @@ export const evidenceAPI = {
     const qs = params.toString();
     return fetchAPI(`/evidence/logs${qs ? `?${qs}` : ''}`);
   },
+};
+
+/**
+ * Profiles API
+ */
+export const profilesAPI = {
+  /**
+   * List all available LLM profiles
+   */
+  list: () => fetchAPI('/profiles'),
+
+  /**
+   * Get detailed information about a specific profile
+   * @param {string} profileName - Profile name (e.g., "fraud", "generic")
+   */
+  get: (profileName) => fetchAPI(`/profiles/${encodeURIComponent(profileName)}`),
+
+  /**
+   * Create or update a profile
+   * @param {Object} profileData - Profile data
+   */
+  save: (profileData) =>
+    fetchAPI('/profiles', {
+      method: 'POST',
+      body: JSON.stringify(profileData),
+    }),
+
+  /**
+   * Delete a profile
+   * @param {string} profileName - Profile name to delete
+   */
+  delete: (profileName) =>
+    fetchAPI(`/profiles/${encodeURIComponent(profileName)}`, {
+      method: 'DELETE',
+    }),
 };
 
 /**

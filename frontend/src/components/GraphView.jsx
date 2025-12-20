@@ -1,6 +1,7 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight } from "lucide-react"
+import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight } from "lucide-react";
+import { graphAPI, profilesAPI } from '../services/api';
 /**
  * Color palette for entity types
  */
@@ -22,10 +23,47 @@ const TYPE_COLORS = {
 };
 
 /**
- * Get color for entity type
+ * Generate a deterministic color for an entity type based on its name
  */
-function getNodeColor(type) {
-  return TYPE_COLORS[type] || TYPE_COLORS.Other;
+function generateColorForType(type) {
+  if (!type) return TYPE_COLORS.Other;
+  
+  // Use a simple hash function to generate a consistent color
+  let hash = 0;
+  for (let i = 0; i < type.length; i++) {
+    hash = type.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  
+  // Use a palette of distinct colors
+  const colors = [
+    '#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6',
+    '#06b6d4', '#ec4899', '#64748b', '#14b8a6', '#84cc16',
+    '#f97316', '#a855f7', '#eab308', '#10b981', '#6366f1',
+    '#ec4899', '#14b8a6', '#f43f5e', '#0ea5e9', '#22c55e',
+  ];
+  
+  return colors[Math.abs(hash) % colors.length];
+}
+
+/**
+ * Get color for entity type
+ * Uses profile colors if available, otherwise falls back to predefined or generated colors
+ */
+function getNodeColor(type, profileColors = {}) {
+  if (!type) return TYPE_COLORS.Other;
+  
+  // First check profile colors
+  if (profileColors[type]) {
+    return profileColors[type];
+  }
+  
+  // Then check predefined colors
+  if (TYPE_COLORS[type]) {
+    return TYPE_COLORS[type];
+  }
+  
+  // Finally generate a color
+  return generateColorForType(type);
 }
 
 /**
@@ -82,6 +120,8 @@ const GraphView = forwardRef(function GraphView({
   const [hoveredNode, setHoveredNode] = useState(null);
   const [modifierKeys, setModifierKeys] = useState({ ctrl: false, meta: false });
   const [selectedEntityTypes, setSelectedEntityTypes] = useState(new Set()); // Track selected entity types
+  const [allEntityTypes, setAllEntityTypes] = useState([]); // All entity types from database
+  const [profileColors, setProfileColors] = useState({}); // Entity type colors from profile
 
   // Selection mode: 'click' or 'drag'
   const [selectionMode, setSelectionMode] = useState('click');
@@ -218,8 +258,8 @@ const GraphView = forwardRef(function GraphView({
       // Use community color for Louvain communities
       nodeColor = getCommunityColor(node.community_id);
     } else {
-      // Use entity type color
-      nodeColor = getNodeColor(node.type);
+      // Use entity type color (with profile colors if available)
+      nodeColor = getNodeColor(node.type, profileColors);
     }
 
     // Node circle
@@ -248,7 +288,7 @@ const GraphView = forwardRef(function GraphView({
       : label;
     
     ctx.fillText(displayLabel, node.x, node.y + nodeRadius + 2);
-  }, [selectedNodes, hoveredNode]);
+  }, [selectedNodes, hoveredNode, profileColors]);
 
   // Link rendering - updated for light theme with optional labels
   const paintLink = useCallback((link, ctx, globalScale) => {
@@ -785,26 +825,63 @@ const GraphView = forwardRef(function GraphView({
     return null;
   }, [fixedSelectionBox, isDragging, dragStart, dragEnd]);
 
-  // Calculate all unique entity types from graph data
+  // Load all entity types from database and profile colors
+  useEffect(() => {
+    const loadEntityTypes = async () => {
+      try {
+        // Get all entity types from database
+        const typesData = await graphAPI.getEntityTypes();
+        setAllEntityTypes(typesData.entity_types || []);
+        
+        // Try to get colors from the currently selected profile (if any)
+        // For now, we'll use a default approach - in the future we could pass selected profile
+        // For now, we'll generate colors for all types
+        const colors = {};
+        (typesData.entity_types || []).forEach(({ type }) => {
+          colors[type] = getNodeColor(type, {});
+        });
+        setProfileColors(colors);
+      } catch (err) {
+        console.error('Failed to load entity types:', err);
+      }
+    };
+    
+    loadEntityTypes();
+  }, []);
+
+  // Calculate entity types to display - use all types from database, merge with graph data counts
   const entityTypesInGraph = useMemo(() => {
+    // Start with all types from database
     const typesMap = new Map();
+    
+    // Add all types from database with their counts
+    allEntityTypes.forEach(({ type, count }) => {
+      typesMap.set(type, {
+        type,
+        count: count || 0,
+        color: getNodeColor(type, profileColors)
+      });
+    });
+    
+    // Also add any types found in current graph data (in case they're new)
     graphData.nodes.forEach(node => {
       const type = node.type || 'Unknown';
       if (!typesMap.has(type)) {
         typesMap.set(type, {
           type,
           count: 0,
-          color: TYPE_COLORS[type] || TYPE_COLORS.Other
+          color: getNodeColor(type, profileColors)
         });
       }
-      typesMap.get(type).count++;
+      // Update count from visible graph (for reference, but database count is authoritative)
     });
+    
     // Sort by count (descending), then by type name
     return Array.from(typesMap.values()).sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return a.type.localeCompare(b.type);
     });
-  }, [graphData.nodes]);
+  }, [allEntityTypes, graphData.nodes, profileColors]);
 
   const areAllVisibleNodesSelected = useMemo(() => {
     if (!graphData.nodes.length || !selectedNodes?.length) return false;

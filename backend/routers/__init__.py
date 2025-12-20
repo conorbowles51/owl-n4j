@@ -11,6 +11,7 @@ from routers.cases import router as cases_router
 from routers.auth import router as auth_router
 from routers.evidence import router as evidence_router
 from routers.background_tasks import router as background_tasks_router
+from routers.profiles import router as profiles_router
 
 __all__ = [
     "graph_router",
@@ -22,4 +23,5 @@ __all__ = [
     "auth_router",
     "evidence_router",
     "background_tasks_router",
+    "profiles_router",
 ]
