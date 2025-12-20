@@ -18,6 +18,7 @@ import {
 import { casesAPI, evidenceAPI } from '../services/api';
 import CaseModal from './CaseModal';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
+import DocumentationViewer from './DocumentationViewer';
 
 /**
  * CaseManagementView Component
@@ -52,6 +53,7 @@ export default function CaseManagementView({
   const [evidenceLogs, setEvidenceLogs] = useState([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
+  const [showDocumentation, setShowDocumentation] = useState(false);
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
   const logsContainerRef = useRef(null);
@@ -270,6 +272,15 @@ export default function CaseManagementView({
                   <p className="text-xs uppercase text-dark-400">Signed in as</p>
                   <p className="font-semibold text-dark-800">{authUsername}</p>
                   <button
+                    onClick={() => {
+                      setShowDocumentation(true);
+                      setIsAccountDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                  >
+                    Documentation
+                  </button>
+                  <button
                     onClick={async () => {
                       if (onLogout) {
                         await onLogout();
@@ -282,8 +293,17 @@ export default function CaseManagementView({
                   </button>
                 </div>
               ) : (
-                <div className="px-3 py-2">
-                  <p className="text-sm text-light-600">Not logged in</p>
+                <div className="px-3 py-2 space-y-1">
+                  <button
+                    onClick={() => {
+                      setShowDocumentation(true);
+                      setIsAccountDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                  >
+                    Documentation
+                  </button>
+                  <p className="text-sm text-light-600 pt-1">Not logged in</p>
                 </div>
               )}
             </div>
@@ -812,6 +832,12 @@ export default function CaseManagementView({
             }
           }
         }}
+      />
+
+      {/* Documentation Viewer */}
+      <DocumentationViewer
+        isOpen={showDocumentation}
+        onClose={() => setShowDocumentation(false)}
       />
     </div>
   );

@@ -41,6 +41,7 @@ import EvidenceProcessingView from './components/EvidenceProcessingView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
+import DocumentationViewer from './components/DocumentationViewer';
 
 /**
  * Main App Component
@@ -98,6 +99,7 @@ export default function App() {
   const [authUsername, setAuthUsername] = useState('');
   const [showLoginPanel, setShowLoginPanel] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
+  const [showDocumentation, setShowDocumentation] = useState(false);
   const [caseToSelect, setCaseToSelect] = useState(null); // Case ID to select when navigating to case management
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
@@ -1635,6 +1637,15 @@ export default function App() {
                   <p className="text-xs uppercase text-dark-400">Signed in as</p>
                   <p className="font-semibold text-dark-800">{authUsername}</p>
                   <button
+                    onClick={() => {
+                      setShowDocumentation(true);
+                      setIsAccountDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                  >
+                    Documentation
+                  </button>
+                  <button
                     onClick={async () => {
                       await handleLogout();
                       setIsAccountDropdownOpen(false);
@@ -1645,7 +1656,16 @@ export default function App() {
                   </button>
                 </div>
               ) : (
-                <div className="px-3 py-2">
+                <div className="px-3 py-2 space-y-1">
+                  <button
+                    onClick={() => {
+                      setShowDocumentation(true);
+                      setIsAccountDropdownOpen(false);
+                    }}
+                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                  >
+                    Documentation
+                  </button>
                   <button
                     onClick={() => {
                       setShowLoginPanel(true);
@@ -2366,6 +2386,12 @@ export default function App() {
         onLogout={handleLogout}
         isAuthenticated={isAuthenticated}
         username={authUsername}
+      />
+
+      {/* Documentation Viewer */}
+      <DocumentationViewer
+        isOpen={showDocumentation}
+        onClose={() => setShowDocumentation(false)}
       />
     </div>
   );
