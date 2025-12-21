@@ -127,10 +127,6 @@ export default function DocumentationViewer({ isOpen, onClose }) {
       const h2Match = line.match(/^##\s+(.+)$/);
       if (h2Match) {
         const text = h2Match[1].trim();
-        // Skip version history section
-        if (text.toLowerCase().includes('version history')) {
-          break;
-        }
         const id = createId(text);
         currentSection = {
           text,

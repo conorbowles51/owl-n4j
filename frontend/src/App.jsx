@@ -23,7 +23,8 @@ import {
   MapPin,
   Plus,
   Link2,
-  Edit
+  Edit,
+  Focus
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -90,6 +91,7 @@ export default function App() {
   // Snapshots state
   const [snapshots, setSnapshots] = useState([]);
   const [showSnapshotModal, setShowSnapshotModal] = useState(false);
+  const mainGraphRef = useRef(null); // Ref to main GraphView for centering
   const subgraphGraphRef = useRef(null); // Ref to subgraph GraphView for PDF export
   
   // Cases state
@@ -2279,6 +2281,7 @@ export default function App() {
             ) : (
               // Single pane graph view
               <GraphView
+                ref={mainGraphRef}
                 graphData={graphData}
                 selectedNodes={selectedNodes}
                 onNodeClick={handleNodeClick}
@@ -2339,6 +2342,18 @@ export default function App() {
                 Selected ({selectedNodesDetails.length})
               </h2>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    if (mainGraphRef.current && selectedNodes.length > 0) {
+                      const nodeKeys = selectedNodes.map(n => n.key);
+                      mainGraphRef.current.centerOnNodes(nodeKeys);
+                    }
+                  }}
+                  className="p-1.5 hover:bg-light-100 rounded transition-colors text-owl-blue-600 hover:text-owl-blue-700"
+                  title="Center graph on selected nodes"
+                >
+                  <Focus className="w-4 h-4" />
+                </button>
                 <button
                   onClick={() => setShowEditNodeModal(true)}
                   className="p-1.5 hover:bg-light-100 rounded transition-colors text-owl-blue-600 hover:text-owl-blue-700"

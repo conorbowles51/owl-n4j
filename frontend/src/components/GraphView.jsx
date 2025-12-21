@@ -202,6 +202,52 @@ const GraphView = forwardRef(function GraphView({
     }
   }, [graphData]);
 
+  // Center graph on specific nodes
+  const centerOnNodes = useCallback((nodeKeys) => {
+    if (!graphRef.current || !nodeKeys || nodeKeys.length === 0) return;
+    
+    // Find the nodes in the graph data
+    const nodesToCenter = graphData.nodes.filter(node => nodeKeys.includes(node.key));
+    if (nodesToCenter.length === 0) return;
+    
+    // Calculate bounding box of selected nodes
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    
+    nodesToCenter.forEach(node => {
+      if (node.x !== undefined && node.y !== undefined) {
+        minX = Math.min(minX, node.x);
+        maxX = Math.max(maxX, node.x);
+        minY = Math.min(minY, node.y);
+        maxY = Math.max(maxY, node.y);
+      }
+    });
+    
+    // If no valid coordinates, use zoomToFit on all nodes
+    if (minX === Infinity) {
+      centerGraph();
+      return;
+    }
+    
+    // Calculate center point
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    
+    // Calculate dimensions
+    const nodeWidth = Math.max(maxX - minX, 100);
+    const nodeHeight = Math.max(maxY - minY, 100);
+    
+    // Calculate zoom level to fit nodes with padding
+    const padding = 100;
+    const zoomX = (width - padding * 2) / nodeWidth;
+    const zoomY = (height - padding * 2) / nodeHeight;
+    const zoom = Math.min(zoomX, zoomY, 2); // Cap zoom at 2x
+    
+    // Center on the nodes
+    graphRef.current.centerAt(centerX, centerY, 1000); // 1000ms animation
+    graphRef.current.zoom(zoom, 1000); // 1000ms animation
+  }, [graphData, width, height, centerGraph]);
+
   // Get graph canvas for PDF export
   const getGraphCanvas = useCallback(() => {
     if (containerRef.current) {
@@ -212,11 +258,12 @@ const GraphView = forwardRef(function GraphView({
     return null;
   }, []);
 
-  // Expose centerGraph and getGraphCanvas methods via ref
+  // Expose centerGraph, centerOnNodes, and getGraphCanvas methods via ref
   useImperativeHandle(ref, () => ({
     centerGraph,
+    centerOnNodes,
     getGraphCanvas,
-  }), [centerGraph, getGraphCanvas]);
+  }), [centerGraph, centerOnNodes, getGraphCanvas]);
 
   // Center graph on mount
   useEffect(() => {

@@ -763,6 +763,143 @@ Each task shows:
 
 ---
 
+## New Features
+
+This section provides a release-by-release overview of major features and enhancements added to the Owl Investigation Platform.
+
+### Version 2.1 (21/12/2025)
+
+**Manual Graph Editing:**
+- **Manual Node Creation**: Add nodes directly to the graph with custom properties (name, type, summary, description)
+- **Node Editing**: Edit summary and notes for selected nodes from the Selected Panel
+- **Manual Relationship Creation**: Create relationships between nodes with custom relationship types
+- **AI-Powered Relationship Analysis**: Right-click on a node to get AI suggestions for relationships with existing nodes
+- **Center on Selected Nodes**: New button in Selected Panel to center and zoom the graph on selected nodes
+
+**Case Management Enhancements:**
+- **Collapsible Sections**: Evidence Files, Processing History, Versions, and Snapshots can be collapsed/expanded
+- **Pagination**: All lists support pagination with 10 items per page for better navigation
+- **Text Filters**: Filter Evidence Files by filename, Versions by version number/notes, Snapshots by name/notes
+- **File Type Filter Pills**: Visual filter buttons for Evidence Files based on file extensions
+- **Smart Defaults**: Only latest version/snapshot expanded by default, older items collapsed
+- **Version Notes Visibility**: Version notes always visible even when collapsed
+
+**Documentation Viewer Improvements:**
+- **Expandable Subsections**: Table of contents supports expandable sections with subsections
+- **Hierarchical Navigation**: Click main sections to expand/collapse subsections
+- **Direct Subsection Navigation**: Click subsections to jump directly to that section in the documentation
+
+### Version 2.0 (20/12/2025)
+
+**LLM Profile Management:**
+- **Profile Creation and Editing**: Create custom LLM profiles for different case types
+- **Profile Cloning**: Clone existing profiles as a starting point for new ones
+- **Custom Entity Types**: Define entity types with custom colors and descriptions
+- **Relationship Examples**: Provide relationship examples instead of predefined types
+- **Temperature Control**: Adjust AI creativity level (0.0-2.0) for different use cases
+- **Profile Selection**: Choose which profile to use when processing evidence files
+
+**Enhanced Evidence Processing:**
+- **Dynamic Entity Creation**: System automatically creates new entity types found in documents
+- **Dynamic Relationship Creation**: New relationship types are created based on document content
+- **Profile-Based Colors**: Entity colors in graph are determined by selected profile
+- **Comprehensive Entity Legend**: All entity types in database are displayed in legend
+- **Improved Cypher Validation**: Better error handling and validation for generated queries
+
+**User Experience:**
+- **Password Visibility Toggle**: Show/hide password during login
+- **Documentation Viewer**: Access user guide directly from platform
+- **Improved Profile Editor**: New entities added to top of list for better UX
+
+### Background Tasks System (3 days ago)
+
+**Asynchronous Processing:**
+- **Background Task Management**: Process multiple files without blocking the UI
+- **Task Monitoring**: View task progress in dedicated flyout panel
+- **File-by-File Progress**: See individual file processing status
+- **Auto-Refresh**: Task panel automatically updates every 2 seconds
+- **View in Case**: Navigate directly to case after task completion
+
+### User Accounts and Case Management (3 days ago)
+
+**User-Specific Data:**
+- **User Authentication**: Multiple user accounts (admin, neil, conor, alex, arturo)
+- **Personal Case Lists**: Each user sees only their own cases ("Username's Cases")
+- **Case Ownership**: All case components (files, versions, snapshots) are user-specific
+- **Secure Access**: JWT-based authentication for all API endpoints
+
+**Case Management:**
+- **Case Creation**: Create new cases with custom names and notes
+- **Case Loading**: Load cases into graph view with automatic graph clearing
+- **Version Management**: Automatic versioning when saving cases
+- **Evidence File Integration**: Files associated with cases and visible in case details
+
+### File Processing and Ingestion (3 days ago)
+
+**Evidence File Handling:**
+- **File Upload**: Drag-and-drop or select files for upload
+- **File Hashing**: Automatic duplicate detection using file hashes
+- **Processing Integration**: Files automatically added to case after processing
+- **Ingestion Logs**: Real-time feedback during file processing
+- **Status Tracking**: Files show processing status (unprocessed, processed, duplicate, failed)
+
+### Graph Analysis Features
+
+**Advanced Algorithms:**
+- **Shortest Path**: Find shortest path between two selected nodes
+- **PageRank (Influence)**: Identify most influential nodes in graph
+- **Louvain Communities**: Detect communities/clusters of connected nodes
+- **Betweenness Centrality**: Find bridge nodes connecting different graph regions
+- **Analysis Overview**: Detailed explanations of analysis results
+
+**Subgraph Management:**
+- **Add to Subgraph**: Build custom subgraphs by adding selected nodes
+- **Remove from Subgraph**: Remove nodes from subgraph
+- **Subgraph View**: Dedicated split-pane view for subgraph visualization
+- **Subgraph Menu**: Consolidated menu for all subgraph operations
+
+### Timeline and Search Enhancements
+
+**Timeline View:**
+- **SwimLane Visualization**: Chronological view with swim lanes
+- **Event Organization**: Events organized by entity type or entity
+- **Multi-Select**: Select multiple events/nodes with Command+Click
+- **Timeline Context**: Selected timeline events become subgraph context
+
+**Search and Filter:**
+- **Complex Search**: Advanced search with boolean logic (AND, OR, NOT)
+- **Wildcard Support**: Use `*` for partial matches
+- **Fuzzy Matching**: Find similar but not exact matches
+- **Filter Mode**: Real-time filtering as you type
+- **Date Range Filter**: Filter nodes by timestamp with visual timeline slider
+
+### Map and Geocoding
+
+**Geographic Visualization:**
+- **Geocoding Service**: Automatic geocoding of location entities during ingestion
+- **Map View**: Interactive map showing geocoded entities
+- **Marker Clustering**: Nearby markers grouped into clusters
+- **Entity Type Filtering**: Filter map markers by entity type
+
+### Authentication and Security
+
+**Login System:**
+- **User Authentication**: Secure login with username and password
+- **Session Management**: JWT tokens for authenticated sessions
+- **Logout**: Secure logout with token cleanup
+- **Password Security**: Password visibility toggle with secure storage
+
+### Foundation Features
+
+**Core Graph Visualization:**
+- **Force-Directed Graph**: Interactive force-directed graph layout
+- **Node Selection**: Single and multi-select node selection
+- **Relationship Labels**: Toggle relationship labels in subgraph view
+- **Graph Controls**: Force simulation controls for customizing layout
+- **Zoom and Pan**: Mouse wheel zoom and drag-to-pan navigation
+
+---
+
 ## Support
 
 For technical support or questions, please contact your system administrator or refer to the technical documentation.
