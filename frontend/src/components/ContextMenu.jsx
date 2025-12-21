@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Eye, Maximize2, X } from 'lucide-react';
+import { Eye, Maximize2, Link2, Sparkles } from 'lucide-react';
 
 /**
  * ContextMenu Component
@@ -11,7 +11,12 @@ export default function ContextMenu({
   position, 
   onShowDetails, 
   onExpand, 
-  onClose 
+  onClose,
+  onAddRelationship,
+  onCreateRelationship,
+  onAnalyzeRelationships,
+  isRelationshipMode,
+  selectedNodes,
 }) {
   const menuRef = useRef(null);
 
@@ -66,26 +71,69 @@ export default function ContextMenu({
 
       {/* Actions */}
       <div className="py-1">
-        <button
-          onClick={() => {
-            onShowDetails(node);
-            onClose();
-          }}
-          className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
-        >
-          <Eye className="w-4 h-4 text-owl-blue-600" />
-          Show Details
-        </button>
-        <button
-          onClick={() => {
-            onExpand(node);
-            onClose();
-          }}
-          className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
-        >
-          <Maximize2 className="w-4 h-4 text-owl-blue-600" />
-          Expand Connections
-        </button>
+        {isRelationshipMode ? (
+          // In relationship mode: show "Create Relationship" if target nodes are selected
+          selectedNodes && selectedNodes.length > 0 && selectedNodes.some(n => n.key === node.key) ? (
+            <button
+              onClick={() => {
+                onCreateRelationship && onCreateRelationship();
+                onClose();
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+            >
+              <Link2 className="w-4 h-4 text-owl-blue-600" />
+              Create Relationship
+            </button>
+          ) : (
+            <div className="px-3 py-2 text-xs text-light-600">
+              Select target node(s) and right-click to create relationship
+            </div>
+          )
+        ) : (
+          // Normal mode: show standard actions
+          <>
+            <button
+              onClick={() => {
+                onShowDetails(node);
+                onClose();
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+            >
+              <Eye className="w-4 h-4 text-owl-blue-600" />
+              Show Details
+            </button>
+            <button
+              onClick={() => {
+                onExpand(node);
+                onClose();
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+            >
+              <Maximize2 className="w-4 h-4 text-owl-blue-600" />
+              Expand Connections
+            </button>
+            <button
+              onClick={() => {
+                onAnalyzeRelationships && onAnalyzeRelationships();
+                onClose();
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+            >
+              <Sparkles className="w-4 h-4 text-owl-blue-600" />
+              Relationship Analysis
+            </button>
+            <button
+              onClick={() => {
+                onAddRelationship && onAddRelationship();
+                onClose();
+              }}
+              className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+            >
+              <Link2 className="w-4 h-4 text-owl-blue-600" />
+              Add a Relationship
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

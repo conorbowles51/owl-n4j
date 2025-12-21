@@ -1,7 +1,7 @@
 # Owl Investigation Platform - User Guide
 
 **Version:** 2.0  
-**Last Updated:** 20/12/2025
+**Last Updated:** 21/12/2025
 
 ## Table of Contents
 
@@ -62,11 +62,57 @@ The Case Management view is your starting point for organizing investigations.
 When you select a case, you'll see:
 
 - **Case Information**: Name, creation date, update date, and version count
-- **Evidence Files**: List of uploaded and processed files
-- **Processing History**: Logs showing file processing activity
-- **Versions**: All saved versions of the case (most recent first)
+- **Evidence Files**: List of uploaded and processed files (collapsible section)
+- **Processing History**: Logs showing file processing activity (collapsible section)
+- **Versions**: All saved versions of the case (collapsible section, most recent first)
 - **Cypher Queries**: The database queries used to recreate the graph
-- **Snapshots**: Saved snapshots associated with each version
+- **Snapshots**: Saved snapshots associated with each version (collapsible section)
+
+### Collapsible Sections
+
+All major sections in the case details can be collapsed or expanded:
+
+- Click the section header to toggle visibility
+- **Evidence Files** and **Processing History** sections are expanded by default
+- **Versions** section is expanded by default
+- Use the chevron icon to see the current state (down = expanded, right = collapsed)
+
+### Filtering and Pagination
+
+#### Evidence Files Filtering
+
+- **Text Filter**: Enter text in the filter box to search by filename
+- **File Type Pills**: Click file type pills (e.g., "pdf", "txt", "docx") to filter by file extension
+  - Selected file types are highlighted in blue
+  - Click multiple pills to filter by multiple types
+  - Click "Clear" to remove all file type filters
+- **Pagination**: Lists with more than 10 files show pagination controls
+  - Use "Previous" and "Next" buttons to navigate
+  - Page indicator shows current page and total count
+
+#### Versions Filtering
+
+- **Text Filter**: Enter text to search by version number or notes
+- **Pagination**: Lists with more than 10 versions show pagination controls
+- **Default State**: Only the latest version is expanded by default
+  - Older versions are collapsed but still show their notes
+  - Click "Expand" on any version to see full details
+  - Click "Collapse" to hide details again
+
+#### Snapshots Filtering
+
+- **Text Filter**: Enter text to search by snapshot name or notes
+- **Pagination**: Lists with more than 10 snapshots show pagination controls
+- **Default State**: Only the latest snapshot of each version is expanded by default
+  - Older snapshots are collapsed
+  - Click "Expand" on any snapshot to see full details
+
+### Version Display
+
+- **Sorting**: Versions are automatically sorted by version number (most recent first)
+- **Notes Visibility**: Version notes are always visible, even when collapsed
+- **Details Visibility**: Full details (snapshot count, Cypher count) are only shown when expanded
+- **Latest Badge**: The most recent version shows a "Latest" badge
 
 ### Creating a New Case
 
@@ -328,6 +374,8 @@ Located in the top left (above the graph):
   - Properties and values
   - Connected relationships
   - Summary and notes
+- **Edit Button**: Click to edit summary and notes for selected nodes
+- **Searchable Content**: Both summary and notes are searchable and available to the AI assistant
 
 ### Adding/Removing from Subgraph
 
@@ -335,12 +383,71 @@ Located in the top left (above the graph):
 - **Remove from Subgraph**: Button removes selected nodes from subgraph
 - **Make All Subgraph Nodes Selected**: Button in subgraph header selects all subgraph nodes
 
+### Adding Nodes Manually
+
+You can manually add nodes to the graph:
+
+1. Click the **Add Node** button (Plus icon) in the top-left corner of the graph view
+2. Enter:
+   - **Name**: The node's name
+   - **Type**: Entity type (e.g., "Person", "Company") - you can type a new type or select from existing types
+   - **Summary**: Brief summary of the node
+   - **Description**: Detailed description
+3. Click **Create Node**
+4. The node is added to the graph and Cypher is generated automatically
+
+**Note**: New entity types can be created by typing them in the Type field. They will appear in the entity legend.
+
+### Editing Node Information
+
+You can edit summary and notes for existing nodes:
+
+1. Select one or more nodes on the graph
+2. In the **Selected** panel, click the **Edit** button
+3. Enter or modify:
+   - **Summary**: Brief summary
+   - **Notes**: Detailed notes
+4. Click **Save Changes**
+5. The information is saved and becomes searchable
+
+**Note**: When editing multiple nodes, the same summary and notes are applied to all selected nodes.
+
+### Creating Relationships
+
+You can manually create relationships between nodes:
+
+1. Right-click on a source node
+2. Select **Add a Relationship**
+3. Click on a target node (the relationship mode indicator appears at the top)
+4. Enter:
+   - **Relationship Type**: Type of relationship (e.g., "WORKS_FOR", "OWNS")
+   - **Notes**: Optional notes about the relationship
+5. Click **Create Relationship**
+6. The relationship is added to the graph
+
+**Note**: Duplicate relationships are automatically prevented. Existing relationships are preserved when adding new ones.
+
+### Relationship Analysis
+
+The AI can analyze a node and suggest relationships with existing nodes:
+
+1. Right-click on a node
+2. Select **Relationship Analysis**
+3. The AI analyzes the node and suggests potential relationships
+4. Review the suggested relationships in the dialog
+5. Select which relationships to add using checkboxes
+6. Click **Add Selected Relationships**
+7. Only the selected relationships are added to the graph
+
+**Note**: This feature uses the AI to understand context and suggest meaningful relationships based on node properties and existing graph structure.
+
 ### Context Menu
 
 Right-click on a node to see options:
-- View details
-- Remove from subgraph
-- Focus on node
+- **Show Details**: View full node information
+- **Expand Connections**: Show all connected nodes
+- **Add a Relationship**: Start relationship creation mode
+- **Relationship Analysis**: Analyze node for potential relationships
 
 ---
 
@@ -666,6 +773,37 @@ For technical support or questions, please contact your system administrator or 
 
 ## Version History
 
+### Version 2.1 (21/12/2025)
+
+**New Features:**
+- Enhanced Case Management Interface
+  - Collapsible sections for Evidence Files, Processing History, Versions, and Snapshots
+  - Pagination (10 items per page) for all lists
+  - Text filters for Evidence Files, Versions, and Snapshots
+  - File type filter pills for Evidence Files with dynamic type detection
+  - Default collapsed state: only latest version/snapshot expanded
+  - Version notes always visible, even when collapsed
+  - Automatic sorting: versions by version number, snapshots by timestamp
+
+- Manual Graph Editing
+  - Add nodes manually with custom properties
+  - Edit node summary and notes directly from the graph
+  - Create relationships between selected nodes
+  - AI-powered relationship analysis for nodes
+  - Node information (summary and notes) is searchable and available to AI
+
+- Graph Interaction Improvements
+  - Add Node button in top-left corner of graph view
+  - Edit button in Selected panel for quick node editing
+  - Context menu options for relationship creation and analysis
+  - Relationship mode indicator when creating relationships
+
+**Improvements:**
+- Better organization of case details with collapsible sections
+- Improved navigation with pagination for large lists
+- Enhanced filtering capabilities for finding specific items
+- More intuitive version and snapshot display
+
 ### Version 2.0 (20/12/2025)
 
 **New Features:**
@@ -696,6 +834,6 @@ For technical support or questions, please contact your system administrator or 
 
 ---
 
-*Last Updated: 20/12/2025*
+*Last Updated: 21/12/2025*
 
 

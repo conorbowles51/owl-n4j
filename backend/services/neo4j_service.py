@@ -294,7 +294,7 @@ class Neo4jService:
 
     def search_nodes(self, query: str, limit: int = 20) -> List[Dict]:
         """
-        Search nodes by name or key.
+        Search nodes by name, key, summary, or notes.
 
         Args:
             query: Search string
@@ -304,19 +304,27 @@ class Neo4jService:
             List of matching nodes
         """
         with self._driver.session() as session:
+            # Use a more robust search that handles null values and text normalization
+            # Normalize the search term to lowercase for case-insensitive matching
+            search_lower = query.lower().strip()
             result = session.run(
                 """
                 MATCH (n)
-                WHERE toLower(n.name) CONTAINS toLower($search_term)
-                   OR toLower(n.key) CONTAINS toLower($search_term)
+                WHERE (
+                    (n.name IS NOT NULL AND toLower(n.name) CONTAINS $search_lower)
+                    OR (n.key IS NOT NULL AND toLower(n.key) CONTAINS $search_lower)
+                    OR (n.summary IS NOT NULL AND toLower(n.summary) CONTAINS $search_lower)
+                    OR (n.notes IS NOT NULL AND size(n.notes) > 0 AND toLower(n.notes) CONTAINS $search_lower)
+                )
                 RETURN 
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
-                    n.summary AS summary
+                    n.summary AS summary,
+                    n.notes AS notes
                 LIMIT $limit
                 """,
-                search_term=query,
+                search_lower=search_lower,
                 limit=limit,
             )
             return [dict(r) for r in result]
@@ -343,16 +351,17 @@ class Neo4jService:
             )
             types = {r["type"]: r["count"] for r in type_counts}
 
-            # Get all entities with summaries
+            # Get all entities with summaries or notes (for AI context)
             entities_result = session.run(
                 """
                 MATCH (n)
-                WHERE n.summary IS NOT NULL
+                WHERE n.summary IS NOT NULL OR n.notes IS NOT NULL
                 RETURN 
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
-                    n.summary AS summary
+                    n.summary AS summary,
+                    n.notes AS notes
                 ORDER BY n.name
                 """
             )
@@ -433,15 +442,18 @@ class Neo4jService:
         Run a Cypher query and return results.
         
         Args:
-            query: Cypher query string
+            query: Cypher query string (should be a single query, not multiple)
             params: Query parameters
         
         Returns:
             List of result records as dicts
         """
         with self._driver.session() as session:
-            result = session.run(query, params or {})
-            return [dict(r) for r in result]
+            # Use write transaction to ensure proper execution
+            def work(tx):
+                result = tx.run(query, params or {})
+                return [dict(r) for r in result]
+            return session.execute_write(work)
     
     def validate_cypher_batch(self, queries: List[str]) -> List[str]:
         """

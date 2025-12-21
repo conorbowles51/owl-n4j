@@ -28,14 +28,32 @@ async function fetchAPI(endpoint, options = {}) {
     config.headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(url, config);
+  // Add timeout to prevent hanging (30 seconds default, 10 seconds for login)
+  const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : 30000);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
   
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-    throw new Error(error.detail || `HTTP ${response.status}`);
-  }
+  try {
+    const response = await fetch(url, {
+      ...config,
+      signal: controller.signal,
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
 
-  return response.json();
+    return response.json();
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Please check your connection and try again.');
+    }
+    throw err;
+  }
 }
 
 /**
@@ -159,6 +177,49 @@ export const graphAPI = {
    * Get all entity types in the graph with their counts
    */
   getEntityTypes: () => fetchAPI('/graph/entity-types'),
+
+  /**
+   * Create a new node in the graph
+   */
+  createNode: (nodeData) =>
+    fetchAPI('/graph/create-node', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: nodeData.name,
+        type: nodeData.type,
+        description: nodeData.description,
+        summary: nodeData.summary,
+      }),
+    }),
+
+  /**
+   * Create relationships between nodes
+   */
+  createRelationships: (relationships) =>
+    fetchAPI('/graph/relationships', {
+      method: 'POST',
+      body: JSON.stringify({ relationships }),
+    }),
+
+  /**
+   * Analyze relationships for a node
+   */
+  analyzeNodeRelationships: (nodeKey) =>
+    fetchAPI(`/graph/analyze-relationships/${encodeURIComponent(nodeKey)}`, {
+      method: 'POST',
+    }),
+
+  /**
+   * Update node properties (summary and/or notes)
+   */
+  updateNode: (nodeKey, updates) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        summary: updates.summary,
+        notes: updates.notes,
+      }),
+    }),
 
   /**
    * Get entities with geocoded locations for map display

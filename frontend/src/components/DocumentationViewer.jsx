@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, BookOpen } from 'lucide-react';
+import { X, BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
 
 /**
  * DocumentationViewer Component
@@ -9,6 +9,7 @@ import { X, BookOpen } from 'lucide-react';
 export default function DocumentationViewer({ isOpen, onClose }) {
   const [content, setContent] = useState('');
   const [toc, setToc] = useState([]);
+  const [expandedSections, setExpandedSections] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const contentRef = useRef(null);
@@ -86,34 +87,71 @@ export default function DocumentationViewer({ isOpen, onClose }) {
     }
   };
 
-  // Extract table of contents from markdown
+  // Extract table of contents from markdown - now extracts h2 and h3 headers
   const extractTOC = (markdown) => {
     const tocItems = [];
     const lines = markdown.split('\n');
-    let inTOC = false;
+    let skipUntilHR = false;
+    let currentSection = null;
     
-    for (const line of lines) {
-      // Check if we're in the TOC section
+    // Helper function to create anchor-friendly ID from text
+    const createId = (text) => {
+      return text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, '') // Remove special characters
+        .replace(/\s+/g, '-') // Replace spaces with hyphens
+        .replace(/-+/g, '-') // Replace multiple hyphens with single
+        .trim();
+    };
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Start skipping when we hit the TOC header
       if (line.match(/^##?\s+Table of Contents/i)) {
-        inTOC = true;
+        skipUntilHR = true;
         continue;
       }
       
-      // Stop when we hit the first section after TOC (but not horizontal rules)
-      if (inTOC && line.match(/^##\s+/) && !line.match(/^---/)) {
-        break;
+      // Stop skipping when we hit the horizontal rule after TOC
+      if (skipUntilHR) {
+        if (line.match(/^---$/)) {
+          skipUntilHR = false;
+          continue;
+        }
+        // Skip everything in TOC section
+        continue;
       }
       
-      // Extract TOC items (numbered list items with links)
-      if (inTOC && line.match(/^\d+\.\s+\[(.+)\]\(#(.+)\)/)) {
-        const match = line.match(/^\d+\.\s+\[(.+)\]\(#(.+)\)/);
-        if (match) {
-          tocItems.push({
-            text: match[1],
-            id: match[2],
-            level: 1
-          });
+      // Extract h2 headers (main sections)
+      const h2Match = line.match(/^##\s+(.+)$/);
+      if (h2Match) {
+        const text = h2Match[1].trim();
+        // Skip version history section
+        if (text.toLowerCase().includes('version history')) {
+          break;
         }
+        const id = createId(text);
+        currentSection = {
+          text,
+          id,
+          level: 1,
+          subsections: []
+        };
+        tocItems.push(currentSection);
+        continue;
+      }
+      
+      // Extract h3 headers (subsections)
+      const h3Match = line.match(/^###\s+(.+)$/);
+      if (h3Match && currentSection) {
+        const text = h3Match[1].trim();
+        const id = createId(text);
+        currentSection.subsections.push({
+          text,
+          id,
+          level: 2
+        });
       }
     }
     
@@ -252,15 +290,58 @@ export default function DocumentationViewer({ isOpen, onClose }) {
               </h3>
               <nav className="space-y-0.5">
                 {toc.length > 0 ? (
-                  toc.map((item, index) => (
-                    <button
-                      key={index}
-                      onClick={() => scrollToSection(item.id)}
-                      className="w-full text-left px-3 py-1.5 text-sm text-light-700 hover:bg-white hover:text-owl-blue-700 rounded transition-colors"
-                    >
-                      {item.text}
-                    </button>
-                  ))
+                  toc.map((item, index) => {
+                    const hasSubsections = item.subsections && item.subsections.length > 0;
+                    const isExpanded = expandedSections.has(item.id);
+                    
+                    return (
+                      <div key={index} className="space-y-0.5">
+                        <button
+                          onClick={() => {
+                            if (hasSubsections) {
+                              // Toggle expansion
+                              setExpandedSections(prev => {
+                                const next = new Set(prev);
+                                if (next.has(item.id)) {
+                                  next.delete(item.id);
+                                } else {
+                                  next.add(item.id);
+                                }
+                                return next;
+                              });
+                            }
+                            // Always scroll to section when clicking
+                            scrollToSection(item.id);
+                          }}
+                          className="w-full text-left px-3 py-1.5 text-sm text-light-700 hover:bg-white hover:text-owl-blue-700 rounded transition-colors flex items-center gap-2"
+                        >
+                          {hasSubsections && (
+                            <span className="flex-shrink-0">
+                              {isExpanded ? (
+                                <ChevronDown className="w-3 h-3" />
+                              ) : (
+                                <ChevronRight className="w-3 h-3" />
+                              )}
+                            </span>
+                          )}
+                          <span className="flex-1">{item.text}</span>
+                        </button>
+                        {hasSubsections && isExpanded && (
+                          <div className="ml-4 space-y-0.5">
+                            {item.subsections.map((subsection, subIndex) => (
+                              <button
+                                key={subIndex}
+                                onClick={() => scrollToSection(subsection.id)}
+                                className="w-full text-left px-3 py-1.5 text-xs text-light-600 hover:bg-white hover:text-owl-blue-600 rounded transition-colors"
+                              >
+                                {subsection.text}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 ) : (
                   <div className="text-xs text-light-500 px-3 py-2">
                     Loading contents...

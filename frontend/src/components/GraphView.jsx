@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight } from "lucide-react";
+import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { graphAPI, profilesAPI } from '../services/api';
 /**
  * Color palette for entity types
@@ -113,6 +113,7 @@ const GraphView = forwardRef(function GraphView({
   onAddToSubgraph, // Callback to add selected nodes to subgraph
   onRemoveFromSubgraph, // Callback to remove selected nodes from subgraph
   subgraphNodeKeys = [], // Keys of nodes currently in the subgraph
+  onAddNode, // Callback to open Add Node modal
 }, ref) {
   const graphRef = useRef();
   const containerRef = useRef();
@@ -1046,10 +1047,21 @@ const GraphView = forwardRef(function GraphView({
         </button>
       )}
 
+      {/* Add Node Button - Only show in main graph, not subgraph */}
+      {!isSubgraph && onAddNode && (
+        <button
+          onClick={onAddNode}
+          className="absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
+          title="Add Node to Graph"
+        >
+          <Plus className="w-5 h-5 text-light-600" />
+        </button>
+      )}
+
       {/* Selection Mode Toggle */}
       <button
         onClick={() => setSelectionMode(selectionMode === 'click' ? 'drag' : 'click')}
-        className={`absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 ${
+        className={`absolute top-4 ${!isSubgraph && onAddNode ? 'left-14' : 'left-4'} p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
           selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
         }`}
         title={selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
@@ -1064,7 +1076,7 @@ const GraphView = forwardRef(function GraphView({
       {/* Force Controls Toggle */}
       <button
         onClick={() => setShowControls(!showControls)}
-        className="absolute top-4 left-14 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200"
+        className={`absolute top-4 ${!isSubgraph && onAddNode ? 'left-24' : 'left-14'} p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
         title="Graph Settings"
       >
         <Settings className={`w-5 h-5 ${showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />
