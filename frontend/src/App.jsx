@@ -20,7 +20,10 @@ import {
   Users,
   FileText,
   Target,
-  MapPin
+  MapPin,
+  Plus,
+  Link2,
+  Edit
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -42,6 +45,10 @@ import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
 import DocumentationViewer from './components/DocumentationViewer';
+import AddNodeModal from './components/AddNodeModal';
+import CreateRelationshipModal from './components/CreateRelationshipModal';
+import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
+import EditNodeModal from './components/EditNodeModal';
 
 /**
  * Main App Component
@@ -100,7 +107,20 @@ export default function App() {
   const [showLoginPanel, setShowLoginPanel] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [showDocumentation, setShowDocumentation] = useState(false);
+  const [showAddNodeModal, setShowAddNodeModal] = useState(false);
   const [caseToSelect, setCaseToSelect] = useState(null); // Case ID to select when navigating to case management
+  
+  // Relationship creation state
+  const [isRelationshipMode, setIsRelationshipMode] = useState(false);
+  const [relationshipSourceNodes, setRelationshipSourceNodes] = useState([]);
+  const [showCreateRelationshipModal, setShowCreateRelationshipModal] = useState(false);
+  
+  // Relationship analysis state
+  const [showRelationshipAnalysisModal, setShowRelationshipAnalysisModal] = useState(false);
+  const [nodeForAnalysis, setNodeForAnalysis] = useState(null);
+  
+  // Edit node modal state
+  const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
 
@@ -482,13 +502,114 @@ export default function App() {
     });
   }, []);
 
+  // Handle start relationship creation
+  const handleStartRelationshipCreation = useCallback(() => {
+    // Use currently selected nodes as source, or the right-clicked node
+    const sourceNodes = selectedNodes.length > 0 ? selectedNodes : 
+      (contextMenu?.node ? [contextMenu.node] : []);
+    
+    if (sourceNodes.length > 0) {
+      setRelationshipSourceNodes(sourceNodes);
+      setIsRelationshipMode(true);
+      setContextMenu(null);
+    }
+  }, [selectedNodes, contextMenu]);
+
+  // Handle create relationship (when target nodes are selected)
+  const handleCreateRelationship = useCallback(() => {
+    // Target nodes are the currently selected nodes
+    if (selectedNodes.length > 0 && relationshipSourceNodes.length > 0) {
+      // Filter out source nodes from target nodes to avoid self-relationships
+      const targetNodes = selectedNodes.filter(
+        target => !relationshipSourceNodes.some(source => source.key === target.key)
+      );
+      
+      if (targetNodes.length > 0) {
+        setShowCreateRelationshipModal(true);
+        setContextMenu(null);
+      } else {
+        alert('Please select different nodes as targets (cannot create relationships to the same source nodes).');
+      }
+    }
+  }, [selectedNodes, relationshipSourceNodes]);
+
+  // Handle relationship created
+  const handleRelationshipCreated = useCallback(async (cypher) => {
+    // Reset relationship mode
+    setIsRelationshipMode(false);
+    setRelationshipSourceNodes([]);
+    
+    // Refresh the graph to show new relationships
+    await loadGraph();
+  }, [loadGraph]);
+
+  // Handle Escape key to cancel relationship mode
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === 'Escape' && isRelationshipMode) {
+        setIsRelationshipMode(false);
+        setRelationshipSourceNodes([]);
+        setShowCreateRelationshipModal(false);
+      }
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isRelationshipMode]);
+
+  // Cancel relationship creation
+  const handleCancelRelationshipCreation = useCallback(() => {
+    setIsRelationshipMode(false);
+    setRelationshipSourceNodes([]);
+    setShowCreateRelationshipModal(false);
+  }, []);
+
+  // Handle relationship analysis
+  const handleAnalyzeRelationships = useCallback(() => {
+    // Use the right-clicked node or first selected node
+    const nodeToAnalyze = contextMenu?.node || (selectedNodes.length > 0 ? selectedNodes[0] : null);
+    if (nodeToAnalyze) {
+      setNodeForAnalysis(nodeToAnalyze);
+      setShowRelationshipAnalysisModal(true);
+    }
+  }, [contextMenu, selectedNodes]);
+
+  // Handle relationships added from analysis
+  const handleRelationshipsAddedFromAnalysis = useCallback(async (cypher) => {
+    // Refresh the graph to show new relationships
+    await loadGraph();
+    setShowRelationshipAnalysisModal(false);
+    setNodeForAnalysis(null);
+  }, [loadGraph]);
+
+  // Handle updating node information
+  const handleUpdateNode = useCallback(async (nodeKey, updates) => {
+    try {
+      const result = await graphAPI.updateNode(nodeKey, updates);
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to update node');
+      }
+      // Refresh node details to show updated information
+      const selectedKeys = selectedNodesDetails.map(n => n.key);
+      await loadNodeDetails(selectedKeys);
+      // Refresh graph to ensure changes are visible
+      await loadGraph();
+    } catch (err) {
+      throw err;
+    }
+  }, [selectedNodesDetails, loadNodeDetails, loadGraph]);
+
   // Handle background click - clear selection (only for main graph)
   const handleBackgroundClick = useCallback(() => {
     setSelectedNodes([]);
     setSelectedNodesDetails([]);
     setTimelineContextKeys([]);
     setContextMenu(null);
-  }, []);
+    // Cancel relationship mode if active
+    if (isRelationshipMode) {
+      setIsRelationshipMode(false);
+      setRelationshipSourceNodes([]);
+    }
+  }, [isRelationshipMode]);
 
   // Handle subgraph background click - don't clear selection
   const handleSubgraphBackgroundClick = useCallback(() => {
@@ -1920,8 +2041,29 @@ export default function App() {
         {/* Main view area - min-w-0 prevents flex item from expanding beyond container */}
         <div className="flex-1 relative overflow-hidden min-w-0">
           {viewMode === 'graph' ? (
-            // Graph View
-            isLoading && graphData.nodes.length === 0 ? (
+            <>
+            {/* Relationship Mode Indicator */}
+            {isRelationshipMode && (
+              <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-50 bg-owl-blue-600 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+                <Link2 className="w-5 h-5" />
+                <div>
+                  <div className="font-semibold">Relationship Creation Mode</div>
+                  <div className="text-sm text-owl-blue-100">
+                    Source: {relationshipSourceNodes.map(n => n.name).join(', ')} • Select target node(s) and right-click to create relationship
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsRelationshipMode(false);
+                    setRelationshipSourceNodes([]);
+                  }}
+                  className="ml-4 px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {isLoading && graphData.nodes.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
                   <Loader2 className="w-8 h-8 text-owl-blue-600 animate-spin" />
@@ -2013,6 +2155,7 @@ export default function App() {
                     onAddToSubgraph={handleAddToSubgraph}
                     onRemoveFromSubgraph={handleRemoveFromSubgraph}
                     subgraphNodeKeys={subgraphNodeKeys}
+                    onAddNode={() => setShowAddNodeModal(true)}
                   />
                 </div>
                 
@@ -2149,8 +2292,10 @@ export default function App() {
                 onAddToSubgraph={handleAddToSubgraph}
                 onRemoveFromSubgraph={handleRemoveFromSubgraph}
                 subgraphNodeKeys={subgraphNodeKeys}
+                onAddNode={() => setShowAddNodeModal(true)}
               />
-            )
+            )}
+            </>
           ) : viewMode === 'timeline' ? (
             // Timeline View - only show if there are timeline events
             timelineData.length > 0 ? (
@@ -2193,12 +2338,21 @@ export default function App() {
               <h2 className="font-semibold text-owl-blue-900">
                 Selected ({selectedNodesDetails.length})
               </h2>
-              <button
-                onClick={handleCloseDetails}
-                className="p-1 hover:bg-light-100 rounded transition-colors"
-              >
-                <X className="w-5 h-5 text-light-600" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowEditNodeModal(true)}
+                  className="p-1.5 hover:bg-light-100 rounded transition-colors text-owl-blue-600 hover:text-owl-blue-700"
+                  title="Edit node information"
+                >
+                  <Edit className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleCloseDetails}
+                  className="p-1 hover:bg-light-100 rounded transition-colors"
+                >
+                  <X className="w-5 h-5 text-light-600" />
+                </button>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto">
               {selectedNodesDetails.map((node, idx) => (
@@ -2249,8 +2403,43 @@ export default function App() {
           onShowDetails={handleShowDetails}
           onExpand={handleExpand}
           onClose={() => setContextMenu(null)}
+          onAddRelationship={handleStartRelationshipCreation}
+          onCreateRelationship={handleCreateRelationship}
+          onAnalyzeRelationships={handleAnalyzeRelationships}
+          isRelationshipMode={isRelationshipMode}
+          selectedNodes={selectedNodes}
         />
       )}
+
+      {/* Create Relationship Modal */}
+      <CreateRelationshipModal
+        isOpen={showCreateRelationshipModal}
+        onClose={handleCancelRelationshipCreation}
+        sourceNodes={relationshipSourceNodes}
+        targetNodes={selectedNodes.filter(
+          target => !relationshipSourceNodes.some(source => source.key === target.key)
+        )}
+        onRelationshipCreated={handleRelationshipCreated}
+      />
+
+      {/* Relationship Analysis Modal */}
+      <RelationshipAnalysisModal
+        isOpen={showRelationshipAnalysisModal}
+        onClose={() => {
+          setShowRelationshipAnalysisModal(false);
+          setNodeForAnalysis(null);
+        }}
+        node={nodeForAnalysis}
+        onRelationshipsAdded={handleRelationshipsAddedFromAnalysis}
+      />
+
+      {/* Edit Node Modal */}
+      <EditNodeModal
+        isOpen={showEditNodeModal}
+        onClose={() => setShowEditNodeModal(false)}
+        nodes={selectedNodesDetails}
+        onSave={handleUpdateNode}
+      />
 
       {/* Snapshot Modal */}
       <SnapshotModal
@@ -2392,6 +2581,16 @@ export default function App() {
       <DocumentationViewer
         isOpen={showDocumentation}
         onClose={() => setShowDocumentation(false)}
+      />
+
+      {/* Add Node Modal */}
+      <AddNodeModal
+        isOpen={showAddNodeModal}
+        onClose={() => setShowAddNodeModal(false)}
+        onNodeCreated={async (nodeKey) => {
+          // Refresh the graph to show the new node
+          await loadGraph();
+        }}
       />
     </div>
   );

@@ -98,6 +98,12 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             lines.append(f"\n[{entity['type']}] {entity['name']} (key: {entity['key']})")
             if entity.get("summary"):
                 lines.append(f"  Summary: {entity['summary']}")
+            if entity.get("notes"):
+                # Truncate notes if too long
+                notes = entity["notes"]
+                if len(notes) > 500:
+                    notes = notes[:500] + "..."
+                lines.append(f"  Notes: {notes}")
 
         return "\n".join(lines)
 

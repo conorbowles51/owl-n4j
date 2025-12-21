@@ -11,9 +11,11 @@ import {
   Code,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Loader2,
   RefreshCw,
   UploadCloud,
+  Search,
 } from 'lucide-react';
 import { casesAPI, evidenceAPI } from '../services/api';
 import CaseModal from './CaseModal';
@@ -47,6 +49,8 @@ export default function CaseManagementView({
   const [showCypher, setShowCypher] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(true);
   const [showVersions, setShowVersions] = useState(true);
+  const [showEvidenceFiles, setShowEvidenceFiles] = useState(true);
+  const [showProcessingHistory, setShowProcessingHistory] = useState(true);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [evidenceFiles, setEvidenceFiles] = useState([]);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -54,6 +58,19 @@ export default function CaseManagementView({
   const [logsLoading, setLogsLoading] = useState(false);
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
   const [showDocumentation, setShowDocumentation] = useState(false);
+  // Filter states
+  const [evidenceFilesFilter, setEvidenceFilesFilter] = useState('');
+  const [selectedFileTypes, setSelectedFileTypes] = useState(new Set());
+  const [versionsFilter, setVersionsFilter] = useState('');
+  const [snapshotsFilter, setSnapshotsFilter] = useState('');
+  // Collapsed states for versions and snapshots (default to showing only latest)
+  const [expandedVersions, setExpandedVersions] = useState(new Set());
+  const [expandedSnapshots, setExpandedSnapshots] = useState(new Set());
+  // Pagination states
+  const [evidenceFilesPage, setEvidenceFilesPage] = useState(1);
+  const [versionsPage, setVersionsPage] = useState(1);
+  const [snapshotsPage, setSnapshotsPage] = useState(1);
+  const itemsPerPage = 10;
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
   const logsContainerRef = useRef(null);
@@ -137,12 +154,34 @@ export default function CaseManagementView({
       // Sort versions by version number descending (most recent first)
       if (fullCase.versions && fullCase.versions.length > 0) {
         fullCase.versions.sort((a, b) => b.version - a.version);
+        // Sort snapshots by timestamp descending (most recent first) for each version
+        fullCase.versions.forEach(version => {
+          if (version.snapshots && version.snapshots.length > 0) {
+            version.snapshots.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          }
+        });
       }
       setSelectedCase(fullCase);
-      // Select latest version by default
+      // Select latest version by default and expand only the latest
       if (fullCase.versions && fullCase.versions.length > 0) {
         setSelectedVersion(fullCase.versions[0]);
+        // Expand only the latest version by default
+        setExpandedVersions(new Set([fullCase.versions[0].version]));
+        // Expand only the latest snapshot of the latest version by default
+        if (fullCase.versions[0].snapshots && fullCase.versions[0].snapshots.length > 0) {
+          setExpandedSnapshots(new Set([fullCase.versions[0].snapshots[0].id]));
+        } else {
+          setExpandedSnapshots(new Set());
+        }
+      } else {
+        setExpandedVersions(new Set());
+        setExpandedSnapshots(new Set());
       }
+      // Reset filters when switching cases
+      setEvidenceFilesFilter('');
+      setSelectedFileTypes(new Set());
+      setVersionsFilter('');
+      setSnapshotsFilter('');
     } catch (err) {
       console.error('Failed to load case:', err);
       alert(`Failed to load case: ${err.message}`);
@@ -246,6 +285,76 @@ export default function CaseManagementView({
     const el = logsContainerRef.current;
     el.scrollTop = el.scrollHeight;
   }, [evidenceLogs]);
+
+  // Filter functions
+  // Extract file extension/type from filename
+  const getFileType = (filename) => {
+    if (!filename) return 'unknown';
+    const parts = filename.split('.');
+    if (parts.length < 2) return 'no extension';
+    return parts[parts.length - 1].toLowerCase();
+  };
+
+  // Get unique file types from evidence files
+  const getUniqueFileTypes = (files) => {
+    const types = new Set();
+    files.forEach(file => {
+      const type = getFileType(file.original_filename);
+      types.add(type);
+    });
+    return Array.from(types).sort();
+  };
+
+  const filterEvidenceFiles = (files) => {
+    let filtered = files;
+    
+    // Filter by text search
+    if (evidenceFilesFilter.trim()) {
+      const filterLower = evidenceFilesFilter.toLowerCase();
+      filtered = filtered.filter(file => 
+        file.original_filename?.toLowerCase().includes(filterLower)
+      );
+    }
+    
+    // Filter by file type
+    if (selectedFileTypes.size > 0) {
+      filtered = filtered.filter(file => {
+        const fileType = getFileType(file.original_filename);
+        return selectedFileTypes.has(fileType);
+      });
+    }
+    
+    return filtered;
+  };
+
+  const filterVersions = (versions) => {
+    if (!versionsFilter.trim()) return versions;
+    const filterLower = versionsFilter.toLowerCase();
+    return versions.filter(version => 
+      version.version?.toString().includes(filterLower) ||
+      version.save_notes?.toLowerCase().includes(filterLower)
+    );
+  };
+
+  const filterSnapshots = (snapshots) => {
+    if (!snapshotsFilter.trim()) return snapshots;
+    const filterLower = snapshotsFilter.toLowerCase();
+    return snapshots.filter(snapshot => 
+      snapshot.name?.toLowerCase().includes(filterLower) ||
+      snapshot.notes?.toLowerCase().includes(filterLower)
+    );
+  };
+
+  // Pagination helper function
+  const paginate = (items, currentPage, itemsPerPage) => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return {
+      paginatedItems: items.slice(startIndex, endIndex),
+      totalPages: Math.ceil(items.length / itemsPerPage),
+      currentPage,
+    };
+  };
 
   return (
     <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
@@ -482,7 +591,10 @@ export default function CaseManagementView({
               <div className="flex-1 overflow-y-auto p-6">
                 {/* Evidence Files Section */}
                 <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
+                  <button
+                    onClick={() => setShowEvidenceFiles(!showEvidenceFiles)}
+                    className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
+                  >
                     <div className="flex items-center gap-2">
                       <FolderOpen className="w-5 h-5 text-owl-blue-700" />
                       <h3 className="text-md font-semibold text-owl-blue-900">
@@ -492,23 +604,94 @@ export default function CaseManagementView({
                         {evidenceFiles.length}
                       </span>
                     </div>
-                    <button
-                      onClick={() => {
-                        if (selectedCase) {
-                          loadEvidenceForCase(selectedCase.id);
-                        }
-                      }}
-                      className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
-                    >
-                      <RefreshCw
-                        className={`w-3 h-3 ${
-                          evidenceLoading ? 'animate-spin' : ''
-                        }`}
-                      />
-                      Refresh
-                    </button>
-                  </div>
-                  <div className="ml-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (selectedCase) {
+                            loadEvidenceForCase(selectedCase.id);
+                          }
+                        }}
+                        className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                      >
+                        <RefreshCw
+                          className={`w-3 h-3 ${
+                            evidenceLoading ? 'animate-spin' : ''
+                          }`}
+                        />
+                        Refresh
+                      </button>
+                      {showEvidenceFiles ? (
+                        <ChevronDown className="w-4 h-4 text-light-600" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-light-600" />
+                      )}
+                    </div>
+                  </button>
+                  {showEvidenceFiles && (
+                    <div className="ml-2">
+                      {/* Filter Input */}
+                      <div className="mb-2 relative">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-light-400" />
+                        <input
+                          type="text"
+                          placeholder="Filter by filename..."
+                          value={evidenceFilesFilter}
+                          onChange={(e) => {
+                            setEvidenceFilesFilter(e.target.value);
+                            setEvidenceFilesPage(1); // Reset to first page when filter changes
+                          }}
+                          className="w-full pl-8 pr-3 py-1.5 text-sm border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      {/* File Type Filter Pills */}
+                      {evidenceFiles.length > 0 && (() => {
+                        const uniqueFileTypes = getUniqueFileTypes(evidenceFiles);
+                        if (uniqueFileTypes.length === 0) return null;
+                        
+                        return (
+                          <div className="mb-3 flex flex-wrap gap-2">
+                            {uniqueFileTypes.map((fileType) => {
+                              const isSelected = selectedFileTypes.has(fileType);
+                              return (
+                                <button
+                                  key={fileType}
+                                  onClick={() => {
+                                    setSelectedFileTypes(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(fileType)) {
+                                        next.delete(fileType);
+                                      } else {
+                                        next.add(fileType);
+                                      }
+                                      return next;
+                                    });
+                                    setEvidenceFilesPage(1); // Reset to first page when filter changes
+                                  }}
+                                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                                    isSelected
+                                      ? 'bg-owl-blue-500 text-white hover:bg-owl-blue-600'
+                                      : 'bg-white text-light-700 border border-light-300 hover:bg-light-50 hover:border-owl-blue-300'
+                                  }`}
+                                >
+                                  {fileType}
+                                </button>
+                              );
+                            })}
+                            {selectedFileTypes.size > 0 && (
+                              <button
+                                onClick={() => {
+                                  setSelectedFileTypes(new Set());
+                                  setEvidenceFilesPage(1);
+                                }}
+                                className="px-3 py-1 text-xs rounded-full bg-light-200 text-light-700 hover:bg-light-300 border border-light-300 transition-colors"
+                              >
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     {evidenceLoading ? (
                       <div className="flex items-center gap-2 text-xs text-light-600">
                         <Loader2 className="w-4 h-4 animate-spin" />
@@ -518,96 +701,145 @@ export default function CaseManagementView({
                       <p className="text-sm text-light-600 italic">
                         No evidence files have been uploaded for this case yet.
                       </p>
-                    ) : (
-                      <div className="space-y-1">
-                        {evidenceFiles.map((file) => (
-                          <div
-                            key={file.id}
-                            className="flex items-center justify-between p-2 bg-white rounded border border-light-200 text-xs"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <FileText className="w-3 h-3 text-owl-blue-700" />
-                              <span className="truncate text-owl-blue-900">
-                                {file.original_filename}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
-                              <span>{file.status}</span>
-                              <span className="hidden sm:inline">
-                                {new Date(file.created_at).toLocaleString()}
-                              </span>
-                            </div>
+                    ) : (() => {
+                      const filteredFiles = filterEvidenceFiles(evidenceFiles);
+                      const { paginatedItems, totalPages, currentPage } = paginate(filteredFiles, evidenceFilesPage, itemsPerPage);
+                      
+                      return (
+                        <>
+                          <div className="space-y-1">
+                            {paginatedItems.map((file) => (
+                              <div
+                                key={file.id}
+                                className="flex items-center justify-between p-2 bg-white rounded border border-light-200 text-xs"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <FileText className="w-3 h-3 text-owl-blue-700" />
+                                  <span className="truncate text-owl-blue-900">
+                                    {file.original_filename}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
+                                  <span>{file.status}</span>
+                                  <span className="hidden sm:inline">
+                                    {new Date(file.created_at).toLocaleString()}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                            {filteredFiles.length === 0 && evidenceFiles.length > 0 && (
+                              <p className="text-sm text-light-600 italic text-center py-2">
+                                No files match the filter
+                              </p>
+                            )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                          {totalPages > 1 && (
+                            <div className="flex items-center justify-between mt-3 pt-3 border-t border-light-200">
+                              <button
+                                onClick={() => setEvidenceFilesPage(prev => Math.max(1, prev - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
+                              >
+                                <ChevronLeft className="w-3 h-3" />
+                                Previous
+                              </button>
+                              <span className="text-xs text-light-600">
+                                Page {currentPage} of {totalPages} ({filteredFiles.length} total)
+                              </span>
+                              <button
+                                onClick={() => setEvidenceFilesPage(prev => Math.min(totalPages, prev + 1))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
+                              >
+                                Next
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                    </div>
+                  )}
                 </div>
 
                 {/* Processing History Section */}
                 <div className="mb-6">
-                  <div className="flex items-center justify-between mb-2">
+                  <button
+                    onClick={() => setShowProcessingHistory(!showProcessingHistory)}
+                    className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
+                  >
                     <div className="flex items-center gap-2">
                       <Archive className="w-5 h-5 text-owl-blue-700" />
                       <h3 className="text-md font-semibold text-owl-blue-900">
                         Processing History
                       </h3>
                     </div>
-                    <button
-                      onClick={() => {
-                        if (selectedCase) {
-                          loadEvidenceLogsForCase(selectedCase.id);
-                        }
-                      }}
-                      className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (selectedCase) {
+                            loadEvidenceLogsForCase(selectedCase.id);
+                          }
+                        }}
+                        className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                      >
+                        <RefreshCw
+                          className={`w-3 h-3 ${
+                            logsLoading ? 'animate-spin' : ''
+                          }`}
+                        />
+                        Refresh
+                      </button>
+                      {showProcessingHistory ? (
+                        <ChevronDown className="w-4 h-4 text-light-600" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-light-600" />
+                      )}
+                    </div>
+                  </button>
+                  {showProcessingHistory && (
+                    <div
+                      ref={logsContainerRef}
+                      className="ml-2 border border-light-200 rounded bg-light-50 max-h-56 overflow-y-auto text-xs font-mono p-2"
                     >
-                      <RefreshCw
-                        className={`w-3 h-3 ${
-                          logsLoading ? 'animate-spin' : ''
-                        }`}
-                      />
-                      Refresh
-                    </button>
-                  </div>
-                  <div
-                    ref={logsContainerRef}
-                    className="ml-2 border border-light-200 rounded bg-light-50 max-h-56 overflow-y-auto text-xs font-mono p-2"
-                  >
-                    {logsLoading ? (
-                      <div className="flex items-center gap-2 text-light-600">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Loading processing history…
-                      </div>
-                    ) : evidenceLogs.length === 0 ? (
-                      <div className="text-light-500 italic">
-                        No processing activity recorded yet for this case.
-                      </div>
-                    ) : (
-                      evidenceLogs.map((entry) => (
-                        <div key={entry.id} className="mb-1">
-                          <span className="text-light-500 mr-2">
-                            {new Date(entry.timestamp).toLocaleString()}
-                          </span>
-                          {entry.filename && (
-                            <span className="text-owl-orange-600 mr-1">
-                              [{entry.filename}]
-                            </span>
-                          )}
-                          <span
-                            className={`whitespace-pre-wrap ${
-                              entry.level === 'error'
-                                ? 'text-red-700'
-                                : entry.level === 'debug'
-                                ? 'text-light-700'
-                                : 'text-owl-blue-900'
-                            }`}
-                          >
-                            {entry.message}
-                          </span>
+                      {logsLoading ? (
+                        <div className="flex items-center gap-2 text-light-600">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Loading processing history…
                         </div>
-                      ))
-                    )}
-                  </div>
+                      ) : evidenceLogs.length === 0 ? (
+                        <div className="text-light-500 italic">
+                          No processing activity recorded yet for this case.
+                        </div>
+                      ) : (
+                        evidenceLogs.map((entry) => (
+                          <div key={entry.id} className="mb-1">
+                            <span className="text-light-500 mr-2">
+                              {new Date(entry.timestamp).toLocaleString()}
+                            </span>
+                            {entry.filename && (
+                              <span className="text-owl-orange-600 mr-1">
+                                [{entry.filename}]
+                              </span>
+                            )}
+                            <span
+                              className={`whitespace-pre-wrap ${
+                                entry.level === 'error'
+                                  ? 'text-red-700'
+                                  : entry.level === 'debug'
+                                  ? 'text-light-700'
+                                  : 'text-owl-blue-900'
+                              }`}
+                            >
+                              {entry.message}
+                            </span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Versions Section */}
@@ -630,53 +862,147 @@ export default function CaseManagementView({
                     )}
                   </button>
                   {showVersions && (
-                    <div className="space-y-2 ml-2">
-                      {selectedCase.versions && selectedCase.versions.length > 0 ? (
-                        selectedCase.versions.map((version) => (
-                          <div
-                            key={version.version}
-                            onClick={() => setSelectedVersion(version)}
-                            className={`p-4 rounded-lg cursor-pointer transition-colors border-2 ${
-                              selectedVersion?.version === version.version
-                                ? 'bg-owl-blue-50 border-owl-blue-300'
-                                : 'bg-white hover:bg-light-50 border-light-200'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-4 h-4 text-owl-blue-600" />
-                                <span className="font-medium text-owl-blue-900">
-                                  Version {version.version}
-                                </span>
-                                {version.version === selectedCase.versions[0].version && (
-                                  <span className="text-xs bg-owl-blue-100 text-owl-blue-700 px-2 py-0.5 rounded">
-                                    Latest
-                                  </span>
-                                )}
+                    <div className="ml-2">
+                      {/* Filter Input */}
+                      <div className="mb-2 relative">
+                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-light-400" />
+                        <input
+                          type="text"
+                          placeholder="Filter by version number or notes..."
+                          value={versionsFilter}
+                          onChange={(e) => {
+                            setVersionsFilter(e.target.value);
+                            setVersionsPage(1); // Reset to first page when filter changes
+                          }}
+                          className="w-full pl-8 pr-3 py-1.5 text-sm border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        {selectedCase.versions && selectedCase.versions.length > 0 ? (() => {
+                          const filteredVersions = filterVersions(selectedCase.versions);
+                          const { paginatedItems, totalPages, currentPage } = paginate(filteredVersions, versionsPage, itemsPerPage);
+                          
+                          return (
+                            <>
+                              {paginatedItems.map((version) => {
+                            const isLatest = version.version === selectedCase.versions[0].version;
+                            const isExpanded = expandedVersions.has(version.version);
+                            // Only the latest version is expanded by default, all others are collapsed
+                            const shouldShowDetails = isLatest || isExpanded;
+                            
+                            return (
+                              <div key={version.version}>
+                                <div
+                                  onClick={() => {
+                                    setSelectedVersion(version);
+                                    // Expand this version if it's not the latest
+                                    if (!isLatest && !expandedVersions.has(version.version)) {
+                                      setExpandedVersions(prev => new Set([...prev, version.version]));
+                                    }
+                                    // Expand only the latest snapshot of the selected version
+                                    if (version.snapshots && version.snapshots.length > 0) {
+                                      setExpandedSnapshots(new Set([version.snapshots[0].id]));
+                                    } else {
+                                      setExpandedSnapshots(new Set());
+                                    }
+                                  }}
+                                  className={`p-4 rounded-lg cursor-pointer transition-colors border-2 ${
+                                    selectedVersion?.version === version.version
+                                      ? 'bg-owl-blue-50 border-owl-blue-300'
+                                      : 'bg-white hover:bg-light-50 border-light-200'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                      <FileText className="w-4 h-4 text-owl-blue-600" />
+                                      <span className="font-medium text-owl-blue-900">
+                                        Version {version.version}
+                                      </span>
+                                      {isLatest && (
+                                        <span className="text-xs bg-owl-blue-100 text-owl-blue-700 px-2 py-0.5 rounded">
+                                          Latest
+                                        </span>
+                                      )}
+                                      {!isLatest && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setExpandedVersions(prev => {
+                                              const next = new Set(prev);
+                                              if (next.has(version.version)) {
+                                                next.delete(version.version);
+                                              } else {
+                                                next.add(version.version);
+                                              }
+                                              return next;
+                                            });
+                                          }}
+                                          className="text-xs text-owl-blue-600 hover:text-owl-blue-700"
+                                        >
+                                          {isExpanded ? 'Collapse' : 'Expand'}
+                                        </button>
+                                      )}
+                                    </div>
+                                    <span className="text-xs text-light-600">
+                                      {formatDate(version.timestamp)}
+                                    </span>
+                                  </div>
+                                  {/* Always show notes, even when collapsed */}
+                                  {version.save_notes && (
+                                    <p className="text-sm text-light-700 mb-2 line-clamp-2">
+                                      {version.save_notes}
+                                    </p>
+                                  )}
+                                  {/* Only show details (snapshots count, cypher count) when expanded */}
+                                  {shouldShowDetails && (
+                                    <div className="flex items-center gap-4 text-xs text-light-600">
+                                      <span>
+                                        {version.snapshots?.length || 0} snapshot{(version.snapshots?.length || 0) !== 1 ? 's' : ''}
+                                      </span>
+                                      <span>•</span>
+                                      <span>
+                                        {version.cypher_queries?.split('\n\n').filter(q => q.trim()).length || 0} Cypher statement{(version.cypher_queries?.split('\n\n').filter(q => q.trim()).length || 0) !== 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <span className="text-xs text-light-600">
-                                {formatDate(version.timestamp)}
-                              </span>
-                            </div>
-                            {version.save_notes && (
-                              <p className="text-sm text-light-700 mb-2 line-clamp-2">
-                                {version.save_notes}
-                              </p>
-                            )}
-                            <div className="flex items-center gap-4 text-xs text-light-600">
-                              <span>
-                                {version.snapshots?.length || 0} snapshot{(version.snapshots?.length || 0) !== 1 ? 's' : ''}
-                              </span>
-                              <span>•</span>
-                              <span>
-                                {version.cypher_queries?.split('\n\n').filter(q => q.trim()).length || 0} Cypher statement{(version.cypher_queries?.split('\n\n').filter(q => q.trim()).length || 0) !== 1 ? 's' : ''}
-                              </span>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-light-600 italic ml-4">No versions available</p>
-                      )}
+                            );
+                          })}
+                              {totalPages > 1 && (
+                                <div className="flex items-center justify-between mt-3 pt-3 border-t border-light-200">
+                                  <button
+                                    onClick={() => setVersionsPage(prev => Math.max(1, prev - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
+                                  >
+                                    <ChevronLeft className="w-3 h-3" />
+                                    Previous
+                                  </button>
+                                  <span className="text-xs text-light-600">
+                                    Page {currentPage} of {totalPages} ({filteredVersions.length} total)
+                                  </span>
+                                  <button
+                                    onClick={() => setVersionsPage(prev => Math.min(totalPages, prev + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
+                                  >
+                                    Next
+                                    <ChevronRight className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })() : (
+                          <p className="text-sm text-light-600 italic ml-4">No versions available</p>
+                        )}
+                        {filterVersions(selectedCase.versions || []).length === 0 && selectedCase.versions && selectedCase.versions.length > 0 && (
+                          <p className="text-sm text-light-600 italic text-center py-2">
+                            No versions match the filter
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -733,37 +1059,123 @@ export default function CaseManagementView({
                         )}
                       </button>
                       {showSnapshots && (
-                        <div className="ml-2 space-y-2">
-                          {selectedVersion.snapshots && selectedVersion.snapshots.length > 0 ? (
-                            selectedVersion.snapshots.map((snapshot) => (
-                              <div
-                                key={snapshot.id}
-                                className="p-4 bg-white rounded-lg border border-light-200"
-                              >
-                                <div className="flex items-start justify-between mb-2">
-                                  <div className="flex-1">
-                                    <h4 className="font-medium text-owl-blue-900 mb-1">
-                                      {snapshot.name}
-                                    </h4>
-                                    {snapshot.notes && (
-                                      <p className="text-sm text-light-700 line-clamp-2 mb-2">
-                                        {snapshot.notes}
-                                      </p>
-                                    )}
+                        <div className="ml-2">
+                          {/* Filter Input */}
+                          <div className="mb-2 relative">
+                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-light-400" />
+                            <input
+                              type="text"
+                              placeholder="Filter by name or notes..."
+                              value={snapshotsFilter}
+                              onChange={(e) => {
+                                setSnapshotsFilter(e.target.value);
+                                setSnapshotsPage(1); // Reset to first page when filter changes
+                              }}
+                              className="w-full pl-8 pr-3 py-1.5 text-sm border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            {selectedVersion.snapshots && selectedVersion.snapshots.length > 0 ? (() => {
+                              const filteredSnapshots = filterSnapshots(selectedVersion.snapshots);
+                              const { paginatedItems, totalPages, currentPage } = paginate(filteredSnapshots, snapshotsPage, itemsPerPage);
+                              
+                              return (
+                                <>
+                                  {paginatedItems.map((snapshot, index) => {
+                                const isLatest = index === 0;
+                                const isExpanded = expandedSnapshots.has(snapshot.id);
+                                const shouldShow = isLatest || isExpanded;
+                                
+                                return (
+                                  <div
+                                    key={snapshot.id}
+                                    className="p-4 bg-white rounded-lg border border-light-200"
+                                  >
+                                    <div className="flex items-start justify-between mb-2">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                          <h4 className="font-medium text-owl-blue-900">
+                                            {snapshot.name}
+                                          </h4>
+                                          {isLatest && (
+                                            <span className="text-xs bg-owl-blue-100 text-owl-blue-700 px-2 py-0.5 rounded">
+                                              Latest
+                                            </span>
+                                          )}
+                                          {!isLatest && (
+                                            <button
+                                              onClick={() => {
+                                                setExpandedSnapshots(prev => {
+                                                  const next = new Set(prev);
+                                                  if (next.has(snapshot.id)) {
+                                                    next.delete(snapshot.id);
+                                                  } else {
+                                                    next.add(snapshot.id);
+                                                  }
+                                                  return next;
+                                                });
+                                              }}
+                                              className="text-xs text-owl-blue-600 hover:text-owl-blue-700"
+                                            >
+                                              {isExpanded ? 'Collapse' : 'Expand'}
+                                            </button>
+                                          )}
+                                        </div>
+                                        {shouldShow && (
+                                          <>
+                                            {snapshot.notes && (
+                                              <p className="text-sm text-light-700 line-clamp-2 mb-2">
+                                                {snapshot.notes}
+                                              </p>
+                                            )}
+                                            <div className="flex items-center gap-4 text-xs text-light-600">
+                                              <span>{snapshot.node_count || 0} nodes</span>
+                                              <span>•</span>
+                                              <span>{snapshot.link_count || 0} links</span>
+                                              <span>•</span>
+                                              <span>{formatDate(snapshot.timestamp)}</span>
+                                            </div>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="flex items-center gap-4 text-xs text-light-600">
-                                  <span>{snapshot.node_count || 0} nodes</span>
-                                  <span>•</span>
-                                  <span>{snapshot.link_count || 0} links</span>
-                                  <span>•</span>
-                                  <span>{formatDate(snapshot.timestamp)}</span>
-                                </div>
-                              </div>
-                            ))
-                          ) : (
-                            <p className="text-sm text-light-600 italic ml-4">No snapshots in this version</p>
-                          )}
+                                );
+                              })}
+                                  {totalPages > 1 && (
+                                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-light-200">
+                                      <button
+                                        onClick={() => setSnapshotsPage(prev => Math.max(1, prev - 1))}
+                                        disabled={currentPage === 1}
+                                        className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
+                                      >
+                                        <ChevronLeft className="w-3 h-3" />
+                                        Previous
+                                      </button>
+                                      <span className="text-xs text-light-600">
+                                        Page {currentPage} of {totalPages} ({filteredSnapshots.length} total)
+                                      </span>
+                                      <button
+                                        onClick={() => setSnapshotsPage(prev => Math.min(totalPages, prev + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
+                                      >
+                                        Next
+                                        <ChevronRight className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })() : (
+                              <p className="text-sm text-light-600 italic ml-4">No snapshots in this version</p>
+                            )}
+                            {filterSnapshots(selectedVersion.snapshots || []).length === 0 && selectedVersion.snapshots && selectedVersion.snapshots.length > 0 && (
+                              <p className="text-sm text-light-600 italic text-center py-2">
+                                No snapshots match the filter
+                              </p>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>

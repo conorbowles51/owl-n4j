@@ -29,11 +29,13 @@ export default function LoginPanel({
         username: credentials.username,
         password: credentials.password,
       });
+      
       onLoginSuccess(response.access_token, response.username);
       setCredentials({ username: '', password: '' });
       onClose();
     } catch (err) {
-      setError(err.message);
+      setError(err.message || 'Login failed. Please try again.');
+      console.error('Login error:', err);
     } finally {
       setLoading(false);
     }
