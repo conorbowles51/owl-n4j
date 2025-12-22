@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight, Plus, ChevronDown, ChevronUp, Target } from "lucide-react";
 import { graphAPI, profilesAPI } from '../services/api';
 /**
  * Color palette for entity types
@@ -123,6 +123,7 @@ const GraphView = forwardRef(function GraphView({
   const [selectedEntityTypes, setSelectedEntityTypes] = useState(new Set()); // Track selected entity types
   const [allEntityTypes, setAllEntityTypes] = useState([]); // All entity types from database
   const [profileColors, setProfileColors] = useState({}); // Entity type colors from profile
+  const [isLegendMinimized, setIsLegendMinimized] = useState(false); // Track if legend is minimized
 
   // Selection mode: 'click' or 'drag'
   const [selectionMode, setSelectionMode] = useState('click');
@@ -247,6 +248,16 @@ const GraphView = forwardRef(function GraphView({
     graphRef.current.centerAt(centerX, centerY, 1000); // 1000ms animation
     graphRef.current.zoom(zoom, 1000); // 1000ms animation
   }, [graphData, width, height, centerGraph]);
+
+  // Handle center button click - center on selected nodes if any, otherwise center whole graph
+  const handleCenterClick = useCallback(() => {
+    if (selectedNodes && selectedNodes.length > 0) {
+      const nodeKeys = selectedNodes.map(n => n.key);
+      centerOnNodes(nodeKeys);
+    } else {
+      centerGraph();
+    }
+  }, [selectedNodes, centerOnNodes, centerGraph]);
 
   // Get graph canvas for PDF export
   const getGraphCanvas = useCallback(() => {
@@ -990,7 +1001,7 @@ const GraphView = forwardRef(function GraphView({
       <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200">
         {/* Relationship Labels Toggle - Only show in subgraph */}
         {isSubgraph && (
-          <div className="mb-3 pb-3 border-b border-light-200">
+          <div className={`${isLegendMinimized ? 'mb-0 pb-0' : 'mb-3 pb-3 border-b border-light-200'}`}>
             <label className="flex items-center gap-2 cursor-pointer hover:bg-light-50 rounded px-1 py-1 -mx-1 transition-colors">
               <input
                 type="checkbox"
@@ -1005,82 +1016,108 @@ const GraphView = forwardRef(function GraphView({
           </div>
         )}
         
-        <div className="flex items-center justify-between mb-2">
+        <div className={`flex items-center justify-between ${isLegendMinimized ? '' : 'mb-2'}`}>
           <div className="font-medium text-owl-blue-900">Entity Types</div>
-          <button
-            onClick={toggleSubgraphPanel}
-            className="p-1 rounded hover:bg-light-100 transition-colors"
-            title={paneViewMode === 'split' ? 'Hide subgraph panel' : 'Show subgraph panel'}
-            type="button"
-          >
-            {paneViewMode === 'split' ? (
-              <ChevronLeft className="w-4 h-4 text-light-700" />
-            ) : (
-              <ChevronRight className="w-4 h-4 text-light-700" />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setIsLegendMinimized(!isLegendMinimized)}
+              className="p-1 rounded hover:bg-light-100 transition-colors"
+              title={isLegendMinimized ? 'Expand legend' : 'Minimize legend'}
+              type="button"
+            >
+              {isLegendMinimized ? (
+                <ChevronUp className="w-4 h-4 text-light-700" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-light-700" />
+              )}
+            </button>
+            {!isSubgraph && (
+              <button
+                onClick={toggleSubgraphPanel}
+                className="p-1 rounded hover:bg-light-100 transition-colors"
+                title={paneViewMode === 'split' ? 'Hide subgraph panel' : 'Show subgraph panel'}
+                type="button"
+              >
+                {paneViewMode === 'split' ? (
+                  <ChevronLeft className="w-4 h-4 text-light-700" />
+                ) : (
+                  <ChevronRight className="w-4 h-4 text-light-700" />
+                )}
+              </button>
             )}
-          </button>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-64 overflow-y-auto">
-          {entityTypesInGraph.map(({ type, count, color }) => {
-            const isSelected = selectedEntityTypes.has(type);
-            const nodesOfType = graphData.nodes.filter(n => n.type === type);
-            const isSelectedInGraph = selectedNodes.some(n => n.type === type);
-            
-            return (
-              <button
-                key={type}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEntityTypeClick(type, nodesOfType);
-                }}
-                className={`flex items-center gap-2 p-1 rounded transition-colors hover:bg-light-100 ${
-                  isSelected || isSelectedInGraph ? 'bg-owl-blue-100' : ''
-                }`}
-                title={`Click to select all ${type} entities (${count})`}
-              >
-                <div 
-                  className={`w-3 h-3 rounded-full flex-shrink-0 ${isSelected || isSelectedInGraph ? 'ring-2 ring-owl-blue-500' : ''}`}
-                  style={{ backgroundColor: color }}
-                />
-                <span className={`text-light-800 truncate ${isSelected || isSelectedInGraph ? 'text-owl-blue-700 font-medium' : ''}`}>
-                  {type}
-                </span>
-                <span className="text-light-600 text-[10px] flex-shrink-0">({count})</span>
-              </button>
-            );
-          })}
-        </div>
-        <div className="mt-3 pt-2 border-t border-light-200 space-y-2">
-          <button
-            onClick={areAllVisibleNodesSelected ? deselectVisibleNodes : selectVisibleNodes}
-            className="w-full px-3 py-1.5 bg-light-100 hover:bg-light-200 rounded text-xs text-light-700 transition-colors"
-            title={areAllVisibleNodesSelected ? "Deselect all visible nodes" : "Select all currently visible nodes"}
-          >
-            {areAllVisibleNodesSelected ? 'Deselect all visible' : 'Select all visible'}
-          </button>
-          
-          {/* Add/Remove from subgraph buttons - only show in main graph, not subgraph */}
-          {!isSubgraph && onAddToSubgraph && onRemoveFromSubgraph && selectedNodes.length > 0 && (
-            <div className="flex gap-2">
-              <button
-                onClick={onAddToSubgraph}
-                disabled={selectedNodes.every(n => subgraphNodeKeys.includes(n.key))}
-                className="flex-1 px-3 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
-                title="Add selected nodes to subgraph"
-              >
-                Add to subgraph
-              </button>
-              <button
-                onClick={onRemoveFromSubgraph}
-                disabled={!selectedNodes.some(n => subgraphNodeKeys.includes(n.key))}
-                className="flex-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
-                title="Remove selected nodes from subgraph"
-              >
-                Remove from subgraph
-              </button>
+        {!isLegendMinimized && (
+          <>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 max-h-64 overflow-y-auto">
+              {entityTypesInGraph.map(({ type, count, color }) => {
+                const isSelected = selectedEntityTypes.has(type);
+                const nodesOfType = graphData.nodes.filter(n => n.type === type);
+                const isSelectedInGraph = selectedNodes.some(n => n.type === type);
+                
+                return (
+                  <button
+                    key={type}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEntityTypeClick(type, nodesOfType);
+                    }}
+                    className={`flex items-center gap-2 p-1 rounded transition-colors hover:bg-light-100 ${
+                      isSelected || isSelectedInGraph ? 'bg-owl-blue-100' : ''
+                    }`}
+                    title={`Click to select all ${type} entities (${count})`}
+                  >
+                    <div 
+                      className={`w-3 h-3 rounded-full flex-shrink-0 ${isSelected || isSelectedInGraph ? 'ring-2 ring-owl-blue-500' : ''}`}
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className={`text-light-800 truncate ${isSelected || isSelectedInGraph ? 'text-owl-blue-700 font-medium' : ''}`}>
+                      {type}
+                    </span>
+                    <span className="text-light-600 text-[10px] flex-shrink-0">({count})</span>
+                  </button>
+                );
+              })}
             </div>
-          )}
-        </div>
+            <div className="mt-3 pt-2 border-t border-light-200 space-y-2">
+              <button
+                onClick={areAllVisibleNodesSelected ? deselectVisibleNodes : selectVisibleNodes}
+                className="w-full px-3 py-1.5 bg-light-100 hover:bg-light-200 rounded text-xs text-light-700 transition-colors"
+                title={areAllVisibleNodesSelected ? "Deselect all visible nodes" : "Select all currently visible nodes"}
+              >
+                {areAllVisibleNodesSelected ? 'Deselect all visible' : 'Select all visible'}
+              </button>
+              
+              {/* Add/Remove from subgraph buttons */}
+              {selectedNodes.length > 0 && (
+                <>
+                  {/* Add to subgraph - only show in main graph */}
+                  {!isSubgraph && onAddToSubgraph && (
+                    <button
+                      onClick={onAddToSubgraph}
+                      disabled={selectedNodes.every(n => subgraphNodeKeys.includes(n.key))}
+                      className="w-full px-3 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
+                      title="Add selected nodes to subgraph"
+                    >
+                      Add to subgraph
+                    </button>
+                  )}
+                  {/* Remove from subgraph - show in both main graph and subgraph */}
+                  {onRemoveFromSubgraph && (
+                    <button
+                      onClick={onRemoveFromSubgraph}
+                      disabled={!selectedNodes.some(n => subgraphNodeKeys.includes(n.key))}
+                      className="w-full px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
+                      title="Remove selected nodes from subgraph"
+                    >
+                      Remove from subgraph
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       {/* Center Graph Button */}
@@ -1094,11 +1131,20 @@ const GraphView = forwardRef(function GraphView({
         </button>
       )}
 
+      {/* Center Graph Button */}
+      <button
+        onClick={handleCenterClick}
+        className="absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
+        title={selectedNodes && selectedNodes.length > 0 ? "Center on selected nodes" : "Center and fit graph"}
+      >
+        <Target className="w-5 h-5 text-light-600" />
+      </button>
+
       {/* Add Node Button - Only show in main graph, not subgraph */}
       {!isSubgraph && onAddNode && (
         <button
           onClick={onAddNode}
-          className="absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
+          className="absolute top-14 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
           title="Add Node to Graph"
         >
           <Plus className="w-5 h-5 text-light-600" />
@@ -1108,7 +1154,7 @@ const GraphView = forwardRef(function GraphView({
       {/* Selection Mode Toggle */}
       <button
         onClick={() => setSelectionMode(selectionMode === 'click' ? 'drag' : 'click')}
-        className={`absolute top-4 ${!isSubgraph && onAddNode ? 'left-14' : 'left-4'} p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
+        className={`absolute ${!isSubgraph && onAddNode ? 'top-24' : 'top-14'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
           selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
         }`}
         title={selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
@@ -1123,7 +1169,7 @@ const GraphView = forwardRef(function GraphView({
       {/* Force Controls Toggle */}
       <button
         onClick={() => setShowControls(!showControls)}
-        className={`absolute top-4 ${!isSubgraph && onAddNode ? 'left-24' : 'left-14'} p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
+        className={`absolute ${!isSubgraph && onAddNode ? 'top-32' : 'top-24'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
         title="Graph Settings"
       >
         <Settings className={`w-5 h-5 ${showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />

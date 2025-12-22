@@ -24,7 +24,8 @@ import {
   Plus,
   Link2,
   Edit,
-  Focus
+  Focus,
+  Camera
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI } from './services/api';
 import GraphView from './components/GraphView';
@@ -76,6 +77,7 @@ export default function App() {
   // Subgraph state - separate from selection so nodes can be selected without being in subgraph
   const [subgraphNodeKeys, setSubgraphNodeKeys] = useState([]); // Keys of nodes that are in the subgraph
   const [subgraphAnalysis, setSubgraphAnalysis] = useState(null); // Analysis text for PageRank/Louvain
+  const [subgraphCommunityData, setSubgraphCommunityData] = useState(null); // Community data for Louvain analysis
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false); // Whether analysis panel is expanded
   
   // Timeline context - separate from selection so inspecting events doesn't filter timeline
@@ -613,19 +615,53 @@ export default function App() {
     }
   }, [isRelationshipMode]);
 
-  // Handle subgraph background click - don't clear selection
+  // Handle subgraph background click - clear selection in subgraph
   const handleSubgraphBackgroundClick = useCallback(() => {
-    // Do nothing - don't clear selection when clicking background in subgraph
+    // Clear selection when clicking background in subgraph
+    setSelectedNodes([]);
+    setSelectedNodesDetails([]);
     setContextMenu(null);
-  }, []);
+    // Cancel relationship mode if active
+    if (isRelationshipMode) {
+      setIsRelationshipMode(false);
+      setRelationshipSourceNodes([]);
+    }
+  }, [isRelationshipMode]);
 
-  // Handle subgraph node click - don't replace selection, preserve all selected nodes
+  // Handle subgraph node click - allow selection in subgraph
   const handleSubgraphNodeClick = useCallback((node, event) => {
-    // In subgraph, nodes are already selected, so clicking should not change the selection
-    // Just close context menu if open
+    // Check both the event and tracked state (event might not have modifiers for canvas clicks)
+    const isMultiSelect = event?.ctrlKey || event?.metaKey || event?.originalCtrlKey || event?.originalMetaKey;
+    
+    if (isMultiSelect) {
+      // Toggle node in selection
+      setSelectedNodes(prev => {
+        const isSelected = prev.some(n => n.key === node.key);
+        if (isSelected) {
+          // Remove from selection
+          const newSelection = prev.filter(n => n.key !== node.key);
+          const newKeys = newSelection.map(n => n.key);
+          if (newKeys.length > 0) {
+            loadNodeDetails(newKeys);
+          } else {
+            setSelectedNodesDetails([]);
+          }
+          return newSelection;
+        } else {
+          // Add to selection
+          const newSelection = [...prev, node];
+          const newKeys = newSelection.map(n => n.key);
+          loadNodeDetails(newKeys);
+          return newSelection;
+        }
+      });
+    } else {
+      // Single select - replace selection
+      setSelectedNodes([node]);
+      loadNodeDetails([node.key]);
+    }
     setContextMenu(null);
-    // Don't modify selectedNodes - keep all selected nodes intact
-  }, []);
+  }, [loadNodeDetails]);
 
   // Handle show details from context menu
   const handleShowDetails = useCallback((node) => {
@@ -830,7 +866,7 @@ export default function App() {
         analysisText += `${idx + 1}. **${node.name || node.key}** (${node.type || 'Unknown'})\n`;
         analysisText += `   - PageRank Score: ${(node.pagerank_score || 0).toFixed(6)}\n`;
         if (node.summary) {
-          analysisText += `   - Summary: ${node.summary.substring(0, 100)}${node.summary.length > 100 ? '...' : ''}\n`;
+          analysisText += `   - Summary: ${node.summary}\n`;
         }
         analysisText += `\n`;
       });
@@ -841,6 +877,7 @@ export default function App() {
       analysisText += `Focusing on these nodes can help identify key entities in the investigation.`;
       
       setSubgraphAnalysis(analysisText);
+      setSubgraphCommunityData(null); // Clear community data (not applicable for PageRank)
       
       // Load details for all influential nodes
       await loadNodeDetails(pagerankNodeKeys);
@@ -946,8 +983,8 @@ export default function App() {
         analysisText += `${idx + 1}. **Community ${comm.id}** - ${comm.size} nodes\n`;
         analysisText += `   - Top entity types: ${typeBreakdown || 'N/A'}\n`;
         if (commNodes.length > 0) {
-          const sampleNodes = commNodes.slice(0, 3).map(n => n.name || n.key).join(', ');
-          analysisText += `   - Sample nodes: ${sampleNodes}${commNodes.length > 3 ? '...' : ''}\n`;
+          const allNodes = commNodes.map(n => n.name || n.key).join(', ');
+          analysisText += `   - Nodes: ${allNodes}\n`;
         }
         analysisText += `\n`;
       });
@@ -962,6 +999,7 @@ export default function App() {
       analysisText += `Nodes within the same community are colored identically in the visualization.`;
       
       setSubgraphAnalysis(analysisText);
+      setSubgraphCommunityData(nodesByCommunity); // Store community data for click handling
       
       // Load details for all community nodes
       await loadNodeDetails(louvainNodeKeys);
@@ -1039,7 +1077,7 @@ export default function App() {
         analysisText += `${idx + 1}. **${node.name || node.key}** (${node.type || 'Unknown'})\n`;
         analysisText += `   - Betweenness Centrality: ${(node.betweenness_centrality || 0).toFixed(6)}\n`;
         if (node.summary) {
-          analysisText += `   - Summary: ${node.summary.substring(0, 100)}${node.summary.length > 100 ? '...' : ''}\n`;
+          analysisText += `   - Summary: ${node.summary}\n`;
         }
         analysisText += `\n`;
       });
@@ -1051,6 +1089,7 @@ export default function App() {
       analysisText += `Removing or disrupting these nodes could significantly impact network connectivity.`;
       
       setSubgraphAnalysis(analysisText);
+      setSubgraphCommunityData(null); // Clear community data (not applicable for Betweenness)
       
       // Load details for all bridge nodes
       await loadNodeDetails(betweennessNodeKeys);
@@ -1936,6 +1975,7 @@ export default function App() {
                       setPaneViewMode('single');
                       setPathSubgraphData(null); // Clear path subgraph when closing
                       setSubgraphAnalysis(null); // Clear analysis when closing
+                      setSubgraphCommunityData(null); // Clear community data
                       setIsAnalysisExpanded(false); // Reset analysis expansion
                       setIsSubgraphMenuOpen(false);
                     }}
@@ -2213,21 +2253,188 @@ export default function App() {
                             </button>
                             {isAnalysisExpanded && (
                               <div className="border-t border-light-200 max-h-96 overflow-y-auto p-4">
-                                <div className="prose prose-sm max-w-none text-light-700 whitespace-pre-wrap">
+                                <div className="prose prose-sm max-w-none text-light-700 whitespace-pre-wrap break-words">
                                   {subgraphAnalysis.split('\n').map((line, idx) => {
                                     if (line.startsWith('## ')) {
-                                      return <h2 key={idx} className="text-base font-bold text-owl-blue-900 mt-2 mb-1">{line.substring(3)}</h2>;
+                                      return <h2 key={idx} className="text-base font-bold text-owl-blue-900 mt-2 mb-1 break-words">{line.substring(3)}</h2>;
                                     } else if (line.startsWith('**') && line.endsWith('**')) {
-                                      return <strong key={idx} className="font-semibold text-owl-blue-900">{line.replace(/\*\*/g, '')}</strong>;
+                                      return <strong key={idx} className="font-semibold text-owl-blue-900 break-words">{line.replace(/\*\*/g, '')}</strong>;
                                     } else if (line.startsWith('- **')) {
                                       const parts = line.match(/\*\*(.*?)\*\*(.*)/);
-                                      return <div key={idx} className="ml-4 mb-1"><strong className="font-semibold text-owl-blue-900">{parts[1]}</strong>{parts[2]}</div>;
+                                      return <div key={idx} className="ml-4 mb-1 break-words"><strong className="font-semibold text-owl-blue-900">{parts[1]}</strong><span className="break-words">{parts[2]}</span></div>;
                                     } else if (line.startsWith('   - ')) {
-                                      return <div key={idx} className="ml-8 text-xs mb-1 text-light-600">{line.substring(5)}</div>;
+                                      return <div key={idx} className="ml-8 text-xs mb-1 text-light-600 break-words">{line.substring(5)}</div>;
                                     } else if (line.trim() === '') {
                                       return <br key={idx} />;
                                     } else {
-                                      return <p key={idx} className="mb-1 text-sm">{line}</p>;
+                                      // Parse node names in bold and make them clickable
+                                      const renderLineWithClickableNodes = (text) => {
+                                        // Match patterns like "1. **NodeName** (Type)" or "**NodeName**"
+                                        const nodeNamePattern = /\*\*([^*]+)\*\*/g;
+                                        const parts = [];
+                                        let lastIndex = 0;
+                                        let match;
+                                        
+                                        while ((match = nodeNamePattern.exec(text)) !== null) {
+                                          // Add text before the match
+                                          if (match.index > lastIndex) {
+                                            parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+                                          }
+                                          
+                                          // Add the clickable node name
+                                          const nodeName = match[1];
+                                          parts.push({ type: 'node', name: nodeName });
+                                          
+                                          lastIndex = match.index + match[0].length;
+                                        }
+                                        
+                                        // Add remaining text
+                                        if (lastIndex < text.length) {
+                                          parts.push({ type: 'text', content: text.substring(lastIndex) });
+                                        }
+                                        
+                                        // If no matches, return the text as-is
+                                        if (parts.length === 0) {
+                                          return text;
+                                        }
+                                        
+                                        return parts.map((part, partIdx) => {
+                                          if (part.type === 'text') {
+                                            return <span key={partIdx}>{part.content}</span>;
+                                          } else {
+                                            // Check if this is a community (format: "Community X")
+                                            const communityMatch = part.name.match(/^Community (\d+)$/);
+                                            if (communityMatch && subgraphCommunityData) {
+                                              const communityId = parseInt(communityMatch[1]);
+                                              const communityNodes = subgraphCommunityData[communityId] || [];
+                                              
+                                              if (communityNodes.length > 0) {
+                                                return (
+                                                  <button
+                                                    key={partIdx}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const isMultiSelect = e.ctrlKey || e.metaKey;
+                                                      
+                                                      // Get all nodes in this community
+                                                      const communityNodeObjects = communityNodes.map(node => ({
+                                                        key: node.key,
+                                                        id: node.id || node.key,
+                                                        name: node.name,
+                                                        type: node.type,
+                                                      }));
+                                                      
+                                                      const communityNodeKeys = communityNodeObjects.map(n => n.key);
+                                                      const currentlySelectedKeys = new Set(selectedNodes.map(n => n.key));
+                                                      
+                                                      // Check if all community nodes are already selected
+                                                      const allSelected = communityNodeKeys.every(key => currentlySelectedKeys.has(key));
+                                                      
+                                                      if (isMultiSelect) {
+                                                        // Toggle community: add if not all selected, remove if all selected
+                                                        if (allSelected) {
+                                                          // Remove all community nodes
+                                                          setSelectedNodes(prev => {
+                                                            const newSelection = prev.filter(n => !communityNodeKeys.includes(n.key));
+                                                            const newKeys = newSelection.map(n => n.key);
+                                                            if (newKeys.length > 0) {
+                                                              loadNodeDetails(newKeys);
+                                                            } else {
+                                                              setSelectedNodesDetails([]);
+                                                            }
+                                                            return newSelection;
+                                                          });
+                                                        } else {
+                                                          // Add all community nodes
+                                                          setSelectedNodes(prev => {
+                                                            const existingKeys = new Set(prev.map(n => n.key));
+                                                            const newNodes = communityNodeObjects.filter(n => !existingKeys.has(n.key));
+                                                            const newSelection = [...prev, ...newNodes];
+                                                            const newKeys = newSelection.map(n => n.key);
+                                                            loadNodeDetails(newKeys);
+                                                            return newSelection;
+                                                          });
+                                                        }
+                                                      } else {
+                                                        // Single click: replace selection with all community nodes
+                                                        setSelectedNodes(communityNodeObjects);
+                                                        loadNodeDetails(communityNodeKeys);
+                                                      }
+                                                    }}
+                                                    className="font-semibold text-owl-blue-900 hover:text-owl-blue-700 hover:underline cursor-pointer break-words"
+                                                    title={`Click to select all ${communityNodes.length} nodes in this community (hold Ctrl/Cmd for multi-select)`}
+                                                  >
+                                                    {part.name}
+                                                  </button>
+                                                );
+                                              }
+                                            }
+                                            
+                                            // Find node in subgraph data by name
+                                            const node = subgraphData.nodes.find(n => 
+                                              (n.name === part.name) || (n.key === part.name)
+                                            );
+                                            
+                                            if (node) {
+                                              return (
+                                                <button
+                                                  key={partIdx}
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const isMultiSelect = e.ctrlKey || e.metaKey;
+                                                    
+                                                    if (isMultiSelect) {
+                                                      // Toggle node in selection
+                                                      setSelectedNodes(prev => {
+                                                        const isSelected = prev.some(n => n.key === node.key);
+                                                        if (isSelected) {
+                                                          const newSelection = prev.filter(n => n.key !== node.key);
+                                                          const newKeys = newSelection.map(n => n.key);
+                                                          if (newKeys.length > 0) {
+                                                            loadNodeDetails(newKeys);
+                                                          } else {
+                                                            setSelectedNodesDetails([]);
+                                                          }
+                                                          return newSelection;
+                                                        } else {
+                                                          const newSelection = [...prev, {
+                                                            key: node.key,
+                                                            id: node.id || node.key,
+                                                            name: node.name,
+                                                            type: node.type,
+                                                          }];
+                                                          const newKeys = newSelection.map(n => n.key);
+                                                          loadNodeDetails(newKeys);
+                                                          return newSelection;
+                                                        }
+                                                      });
+                                                    } else {
+                                                      // Single select
+                                                      const nodeObj = {
+                                                        key: node.key,
+                                                        id: node.id || node.key,
+                                                        name: node.name,
+                                                        type: node.type,
+                                                      };
+                                                      setSelectedNodes([nodeObj]);
+                                                      loadNodeDetails([nodeObj.key]);
+                                                    }
+                                                  }}
+                                                  className="font-semibold text-owl-blue-900 hover:text-owl-blue-700 hover:underline cursor-pointer break-words"
+                                                  title="Click to select (hold Ctrl/Cmd for multi-select)"
+                                                >
+                                                  {part.name}
+                                                </button>
+                                              );
+                                            } else {
+                                              // Node not found, render as plain bold text
+                                              return <strong key={partIdx} className="font-semibold text-owl-blue-900">{part.name}</strong>;
+                                            }
+                                          }
+                                        });
+                                      };
+                                      
+                                      return <p key={idx} className="mb-1 text-sm break-words">{renderLineWithClickableNodes(line)}</p>;
                                     }
                                   })}
                                 </div>
@@ -2250,6 +2457,8 @@ export default function App() {
                         paneViewMode={paneViewMode}
                         onPaneViewModeChange={setPaneViewMode}
                         isSubgraph={true}
+                        onRemoveFromSubgraph={handleRemoveFromSubgraph}
+                        subgraphNodeKeys={subgraphNodeKeys}
                       />
                     </>
                   ) : (
@@ -2343,16 +2552,11 @@ export default function App() {
               </h2>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    if (mainGraphRef.current && selectedNodes.length > 0) {
-                      const nodeKeys = selectedNodes.map(n => n.key);
-                      mainGraphRef.current.centerOnNodes(nodeKeys);
-                    }
-                  }}
+                  onClick={() => setShowSnapshotModal(true)}
                   className="p-1.5 hover:bg-light-100 rounded transition-colors text-owl-blue-600 hover:text-owl-blue-700"
-                  title="Center graph on selected nodes"
+                  title="Create snapshot"
                 >
-                  <Focus className="w-4 h-4" />
+                  <Camera className="w-4 h-4" />
                 </button>
                 <button
                   onClick={() => setShowEditNodeModal(true)}
