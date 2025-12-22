@@ -233,6 +233,40 @@ export const graphAPI = {
     const queryString = params.toString();
     return fetchAPI(`/graph/locations${queryString ? `?${queryString}` : ''}`);
   },
+
+  /**
+   * Toggle pin status for a verified fact
+   * @param {string} nodeKey - Node key
+   * @param {number} factIndex - Index of the fact in verified_facts array
+   * @param {boolean} pinned - Whether to pin (true) or unpin (false)
+   */
+  pinFact: (nodeKey, factIndex, pinned) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/pin-fact`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        fact_index: factIndex,
+        pinned: pinned,
+      }),
+    }),
+
+  /**
+   * Convert an AI insight to a verified fact
+   * @param {string} nodeKey - Node key
+   * @param {number} insightIndex - Index of the insight in ai_insights array
+   * @param {string} username - Username of the verifying investigator
+   * @param {string} [sourceDoc] - Optional source document reference
+   * @param {number} [page] - Optional page number
+   */
+  verifyInsight: (nodeKey, insightIndex, username, sourceDoc = null, page = null) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/verify-insight`, {
+      method: 'POST',
+      body: JSON.stringify({
+        insight_index: insightIndex,
+        username: username,
+        source_doc: sourceDoc,
+        page: page,
+      }),
+    }),
 };
 
 /**
@@ -460,6 +494,29 @@ export const evidenceAPI = {
     if (limit) params.append('limit', String(limit));
     const qs = params.toString();
     return fetchAPI(`/evidence/logs${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
+   * Get the file URL for viewing a document
+   * Returns the URL that can be used to fetch/display the file
+   * @param {string} evidenceId - Evidence ID
+   */
+  getFileUrl: (evidenceId) => {
+    const token = localStorage.getItem('authToken');
+    // Return the API URL - the DocumentViewer will use this directly
+    return `${API_BASE}/evidence/${encodeURIComponent(evidenceId)}/file`;
+  },
+
+  /**
+   * Find evidence by filename
+   * @param {string} filename - Original filename to search for
+   * @param {string} [caseId] - Optional case ID to filter by
+   */
+  findByFilename: (filename, caseId = null) => {
+    const params = new URLSearchParams();
+    if (caseId) params.append('case_id', caseId);
+    const qs = params.toString();
+    return fetchAPI(`/evidence/by-filename/${encodeURIComponent(filename)}${qs ? `?${qs}` : ''}`);
   },
 };
 

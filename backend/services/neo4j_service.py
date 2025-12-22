@@ -5,8 +5,27 @@ Neo4j Service - handles all database operations for the investigation console.
 from typing import Dict, List, Optional, Any
 from neo4j import GraphDatabase
 import random
+import json
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+
+
+def parse_json_field(value: Optional[str]) -> Optional[List]:
+    """
+    Parse a JSON string field into a Python list.
+    
+    Args:
+        value: JSON string or None
+        
+    Returns:
+        Parsed list or None if parsing fails
+    """
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
 
 
 class Neo4jService:
@@ -118,6 +137,7 @@ class Neo4jService:
                 node_key = record["key"]
                 if node_key not in node_keys:
                     node_keys.add(node_key)
+                    props = record["properties"] or {}
                     node = {
                         "neo4j_id": record["neo4j_id"],
                         "id": record["id"] or node_key,
@@ -126,7 +146,9 @@ class Neo4jService:
                         "type": record["type"],
                         "summary": record["summary"],
                         "notes": record["notes"],
-                        "properties": record["properties"],
+                        "verified_facts": parse_json_field(props.get("verified_facts")),
+                        "ai_insights": parse_json_field(props.get("ai_insights")),
+                        "properties": props,
                     }
                     nodes.append(node)
 
@@ -249,7 +271,7 @@ class Neo4jService:
             key: The node key
 
         Returns:
-            Node details dict or None
+            Node details dict or None, including parsed verified_facts and ai_insights
         """
         with self._driver.session() as session:
             result = session.run(
@@ -263,6 +285,8 @@ class Neo4jService:
                     labels(n)[0] AS type,
                     n.summary AS summary,
                     n.notes AS notes,
+                    n.verified_facts AS verified_facts,
+                    n.ai_insights AS ai_insights,
                     properties(n) AS properties,
                     collect(DISTINCT {
                         key: connected.key,
@@ -276,6 +300,10 @@ class Neo4jService:
             )
             record = result.single()
             if record:
+                # Parse JSON fields for verified_facts and ai_insights
+                verified_facts = parse_json_field(record["verified_facts"])
+                ai_insights = parse_json_field(record["ai_insights"])
+                
                 return {
                     "id": record["id"],
                     "key": record["key"],
@@ -283,6 +311,8 @@ class Neo4jService:
                     "type": record["type"],
                     "summary": record["summary"],
                     "notes": record["notes"],
+                    "verified_facts": verified_facts,
+                    "ai_insights": ai_insights,
                     "properties": record["properties"],
                     "connections": [c for c in record["connections"] if c["key"]],
                 }
@@ -1409,6 +1439,136 @@ class Neo4jService:
                 "nodes": top_nodes,
                 "links": top_links,
                 "scores": {key: betweenness[key] for key in top_node_keys if key in betweenness}
+            }
+
+    # -------------------------------------------------------------------------
+    # Fact and Insight Management
+    # -------------------------------------------------------------------------
+
+    def pin_fact(self, node_key: str, fact_index: int, pinned: bool) -> Dict:
+        """
+        Toggle the pinned status of a verified fact.
+        
+        Args:
+            node_key: The node's key
+            fact_index: Index of the fact in the verified_facts array
+            pinned: True to pin, False to unpin
+            
+        Returns:
+            Updated verified_facts array
+        """
+        with self._driver.session() as session:
+            # Get current verified_facts
+            result = session.run(
+                """
+                MATCH (n {key: $key})
+                RETURN n.verified_facts AS verified_facts
+                """,
+                key=node_key,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key}")
+            
+            verified_facts = parse_json_field(record["verified_facts"]) or []
+            
+            if fact_index < 0 or fact_index >= len(verified_facts):
+                raise ValueError(f"Invalid fact index: {fact_index}")
+            
+            # Update the pinned status
+            verified_facts[fact_index]["pinned"] = pinned
+            
+            # Save back to Neo4j
+            session.run(
+                """
+                MATCH (n {key: $key})
+                SET n.verified_facts = $verified_facts
+                """,
+                key=node_key,
+                verified_facts=json.dumps(verified_facts),
+            )
+            
+            return verified_facts
+
+    def verify_insight(
+        self, 
+        node_key: str, 
+        insight_index: int, 
+        username: str,
+        source_doc: Optional[str] = None,
+        page: Optional[int] = None
+    ) -> Dict:
+        """
+        Convert an AI insight to a verified fact with user attribution.
+        
+        Args:
+            node_key: The node's key
+            insight_index: Index of the insight in the ai_insights array
+            username: Username of the verifying investigator
+            source_doc: Optional source document for the verification
+            page: Optional page number in the source document
+            
+        Returns:
+            Dict with updated verified_facts and ai_insights arrays
+        """
+        from datetime import datetime
+        
+        with self._driver.session() as session:
+            # Get current facts and insights
+            result = session.run(
+                """
+                MATCH (n {key: $key})
+                RETURN n.verified_facts AS verified_facts, n.ai_insights AS ai_insights
+                """,
+                key=node_key,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key}")
+            
+            verified_facts = parse_json_field(record["verified_facts"]) or []
+            ai_insights = parse_json_field(record["ai_insights"]) or []
+            
+            if insight_index < 0 or insight_index >= len(ai_insights):
+                raise ValueError(f"Invalid insight index: {insight_index}")
+            
+            # Get the insight to convert
+            insight = ai_insights[insight_index]
+            
+            # Create a new verified fact from the insight
+            new_fact = {
+                "text": insight.get("text", ""),
+                "quote": None,  # No direct quote since it was an inference
+                "page": page,
+                "source_doc": source_doc,
+                "importance": 3,  # Default to medium importance for user-verified insights
+                "pinned": False,
+                "verified_by": username,
+                "verified_at": datetime.utcnow().isoformat(),
+                "original_confidence": insight.get("confidence"),
+                "original_reasoning": insight.get("reasoning"),
+            }
+            
+            # Add to verified facts
+            verified_facts.append(new_fact)
+            
+            # Remove from ai_insights
+            ai_insights.pop(insight_index)
+            
+            # Save back to Neo4j
+            session.run(
+                """
+                MATCH (n {key: $key})
+                SET n.verified_facts = $verified_facts, n.ai_insights = $ai_insights
+                """,
+                key=node_key,
+                verified_facts=json.dumps(verified_facts),
+                ai_insights=json.dumps(ai_insights),
+            )
+            
+            return {
+                "verified_facts": verified_facts,
+                "ai_insights": ai_insights,
             }
 
 

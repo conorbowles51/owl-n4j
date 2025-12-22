@@ -4,12 +4,15 @@ Evidence Router
 Handles uploading evidence files and triggering ingestion processing.
 """
 
+from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from services.evidence_service import evidence_service
+from services.evidence_storage import evidence_storage
 from services.evidence_log_storage import evidence_log_storage
 from .auth import get_current_user
 
@@ -200,6 +203,102 @@ async def get_evidence_logs(
     try:
         logs = evidence_log_storage.list_logs(case_id=case_id, limit=limit)
         return {"logs": logs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{evidence_id}/file")
+async def get_evidence_file(
+    evidence_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Serve the actual file content for a given evidence ID.
+    
+    Returns the PDF/document file with appropriate content type headers.
+    Used by the document viewer to display original source documents.
+    """
+    try:
+        # Get the evidence record
+        record = evidence_storage.get(evidence_id)
+        
+        if not record:
+            raise HTTPException(status_code=404, detail="Evidence not found")
+        
+        # Check ownership
+        if record.get("owner") and record.get("owner") != user["username"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get the stored file path
+        stored_path = record.get("stored_path")
+        if not stored_path:
+            raise HTTPException(status_code=404, detail="File path not found")
+        
+        file_path = Path(stored_path)
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="File not found on disk")
+        
+        # Determine content type based on file extension
+        filename = record.get("original_filename", file_path.name)
+        extension = file_path.suffix.lower()
+        
+        content_type_map = {
+            ".pdf": "application/pdf",
+            ".txt": "text/plain",
+            ".doc": "application/msword",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+        }
+        
+        content_type = content_type_map.get(extension, "application/octet-stream")
+        
+        return FileResponse(
+            path=file_path,
+            filename=filename,
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f"inline; filename=\"{filename}\"",
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/by-filename/{filename}")
+async def get_evidence_by_filename(
+    filename: str,
+    case_id: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Find evidence by original filename and return file info.
+    
+    This endpoint helps the frontend locate evidence IDs from document names
+    stored in entity citations.
+    """
+    try:
+        # Search for files matching the filename
+        all_files = evidence_storage.list_files(
+            case_id=case_id,
+            owner=user["username"]
+        )
+        
+        # Find matching file
+        for record in all_files:
+            if record.get("original_filename") == filename:
+                return {
+                    "found": True,
+                    "evidence_id": record.get("id"),
+                    "case_id": record.get("case_id"),
+                    "original_filename": record.get("original_filename"),
+                    "stored_path": record.get("stored_path"),
+                }
+        
+        return {"found": False, "message": f"No evidence file found with name: {filename}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

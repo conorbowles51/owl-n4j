@@ -214,52 +214,15 @@ export default function EvidenceProcessingView({
     
     const fileIds = Array.from(selectedIds);
     
-    // If more than 1 file, use background processing
-    if (fileIds.length > 1) {
-      try {
-        const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile);
-        alert(`Processing ${fileIds.length} files in the background. Check the Background Tasks panel for progress.`);
-        clearSelection();
-        await loadFiles();
-      } catch (err) {
-        console.error('Failed to start background processing:', err);
-        setError(err.message || 'Failed to start background processing');
-      }
-      return;
-    }
-    
-    // Single file: use synchronous processing
-    setProcessing(true);
-    setError(null);
-    loadLogs();
+    // Always use background processing - ingestion with AI extraction can take a long time
     try {
-      const res = await evidenceAPI.process(caseId, fileIds, selectedProfile);
-      const msg = [
-        `Processed: ${res.processed || 0}`,
-        `Skipped (already processed/duplicates): ${res.skipped || 0}`,
-        res.errors ? `Errors: ${res.errors}` : null,
-      ]
-        .filter(Boolean)
-        .join(' • ');
-      alert(`File processing complete.\n${msg}`);
-
-      // Track the auto-saved case version so the user can explicitly
-      // load its generated Cypher into the graph, even if currently empty.
-      if (res.case_id && res.case_version) {
-        setLastProcessedVersion({
-          caseId: res.case_id,
-          version: res.case_version,
-        });
-      }
-
-      await loadFiles();
-      await loadLogs();
+      const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile);
+      alert(`Processing ${fileIds.length} file(s) in the background. Check the Background Tasks panel for progress.`);
       clearSelection();
+      await loadFiles();
     } catch (err) {
-      console.error('Failed to process files:', err);
-      setError(err.message || 'Failed to process files');
-    } finally {
-      setProcessing(false);
+      console.error('Failed to start background processing:', err);
+      setError(err.message || 'Failed to start background processing');
     }
   };
 

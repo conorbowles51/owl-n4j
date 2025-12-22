@@ -7,11 +7,13 @@ This is the main logic that:
 3. Resolves entities (exact match, fuzzy match, disambiguation)
 4. Creates or updates entities in Neo4j
 5. Updates summaries inline
+6. Stores verified facts with citations and AI insights separately
 """
 
 from typing import Dict, List, Optional, Callable
 import time
 import threading
+import json
 
 from neo4j_client import Neo4jClient
 from llm_client import (
@@ -26,6 +28,76 @@ from chunking import chunk_document
 from geocoding import get_location_properties
 
 
+def merge_verified_facts(existing_facts: List[Dict], new_facts: List[Dict], doc_name: str) -> List[Dict]:
+    """
+    Merge new verified facts with existing ones, avoiding duplicates.
+    
+    Args:
+        existing_facts: List of existing fact dicts
+        new_facts: List of new fact dicts from extraction
+        doc_name: Source document name to add to new facts
+        
+    Returns:
+        Merged list of verified facts
+    """
+    if not existing_facts:
+        existing_facts = []
+    
+    # Add source_doc to new facts
+    enriched_new_facts = []
+    for fact in (new_facts or []):
+        enriched_fact = dict(fact)
+        enriched_fact["source_doc"] = doc_name
+        enriched_new_facts.append(enriched_fact)
+    
+    # Simple merge - combine and dedupe by text
+    existing_texts = {f.get("text", "").lower().strip() for f in existing_facts}
+    
+    merged = list(existing_facts)
+    for fact in enriched_new_facts:
+        fact_text = fact.get("text", "").lower().strip()
+        if fact_text and fact_text not in existing_texts:
+            merged.append(fact)
+            existing_texts.add(fact_text)
+    
+    return merged
+
+
+def merge_ai_insights(existing_insights: List[Dict], new_insights: List[Dict], doc_name: str) -> List[Dict]:
+    """
+    Merge new AI insights with existing ones, avoiding duplicates.
+    
+    Args:
+        existing_insights: List of existing insight dicts
+        new_insights: List of new insight dicts from extraction
+        doc_name: Source document name to add to new insights
+        
+    Returns:
+        Merged list of AI insights
+    """
+    if not existing_insights:
+        existing_insights = []
+    
+    # Add source_doc to new insights
+    enriched_new_insights = []
+    for insight in (new_insights or []):
+        enriched_insight = dict(insight)
+        enriched_insight["source_doc"] = doc_name
+        enriched_new_insights.append(enriched_insight)
+    
+    # Simple merge - combine and dedupe by text
+    existing_texts = {i.get("text", "").lower().strip() for i in existing_insights}
+    
+    merged = list(existing_insights)
+    for insight in enriched_new_insights:
+        insight_text = insight.get("text", "").lower().strip()
+        if insight_text and insight_text not in existing_texts:
+            merged.append(insight)
+            existing_texts.add(insight_text)
+    
+    return merged
+
+
 def process_chunk(
     chunk_text: str,
     doc_name: str,
@@ -33,6 +105,8 @@ def process_chunk(
     total_chunks: int,
     db: Neo4jClient,
     existing_keys: List[str],
+    page_start: Optional[int] = None,
+    page_end: Optional[int] = None,
 ) -> Dict:
     """
     Process a single text chunk: extract and resolve entities.
@@ -44,18 +118,29 @@ def process_chunk(
         total_chunks: Total number of chunks in document
         db: Neo4j client
         existing_keys: List of existing entity keys (for LLM context)
+        page_start: First page this chunk covers (for citations)
+        page_end: Last page this chunk covers (for citations)
 
     Returns:
         Dict with 'entities_processed' and 'relationships_processed' counts
     """
-    print(f"  Processing chunk {chunk_index + 1}/{total_chunks}...")
+    page_info = ""
+    if page_start is not None:
+        if page_end is not None and page_end != page_start:
+            page_info = f" (pages {page_start}-{page_end})"
+        else:
+            page_info = f" (page {page_start})"
+    
+    print(f"  Processing chunk {chunk_index + 1}/{total_chunks}{page_info}...")
 
-    # Extract entities and relationships from chunk
+    # Extract entities and relationships from chunk with page context
     try:
         extraction = extract_entities_and_relationships(
             text=chunk_text,
             doc_name=doc_name,
             existing_entity_keys=existing_keys,
+            page_start=page_start,
+            page_end=page_end,
         )
     except Exception as e:
         print(f"  Error extracting from chunk: {e}")
@@ -74,7 +159,14 @@ def process_chunk(
         raw_key = ent.get("key", "") or ent.get("name", "")
         name = ent.get("name", raw_key)
         entity_type = ent.get("type", "Other")
-        notes = ent.get("notes", "")
+        
+        # Get the new structured data
+        verified_facts = ent.get("verified_facts", [])
+        ai_insights = ent.get("ai_insights", [])
+        
+        # Build legacy notes from verified facts for backwards compatibility
+        notes_parts = [f.get("text", "") for f in verified_facts if f.get("text")]
+        notes = "; ".join(notes_parts) if notes_parts else ent.get("notes", "")
 
         if not raw_key or not name:
             print(f"  Skipping entity with missing key/name: {ent}")
@@ -102,11 +194,20 @@ def process_chunk(
             # Update existing entity
             existing = db.find_entity_by_key(resolved_key)
             if existing:
-                # Merge notes
+                # Merge notes (legacy)
                 merged = merge_entity_data(existing, notes, doc_name)
                 updated_notes = merged["notes"]
+                
+                # Merge verified facts and AI insights
+                existing_facts_json = existing.get("verified_facts")
+                existing_facts = json.loads(existing_facts_json) if existing_facts_json else []
+                merged_facts = merge_verified_facts(existing_facts, verified_facts, doc_name)
+                
+                existing_insights_json = existing.get("ai_insights")
+                existing_insights = json.loads(existing_insights_json) if existing_insights_json else []
+                merged_insights = merge_ai_insights(existing_insights, ai_insights, doc_name)
 
-                # Generate updated summary
+                # Generate updated summary from verified facts
                 neighbours = db.get_entity_neighbours(resolved_key, limit=5)
                 neighbour_descriptions = [
                     f"{n['name']} ({n['type']}) - {n['relationship']}"
@@ -119,42 +220,62 @@ def process_chunk(
                     entity_type=existing.get("type", entity_type),
                     all_notes=updated_notes,
                     related_entities=neighbour_descriptions,
+                    verified_facts=merged_facts,
                 )
 
                 # Check if we should add location data (if not already present)
-                extra_props = None
+                extra_props = {}
                 location = ent.get("location")
                 if location and not existing.get("latitude"):
                     print(f"    Geocoding location for existing entity: {location}")
                     location_props = get_location_properties(location)
                     if location_props.get("latitude"):
-                        extra_props = location_props
+                        extra_props.update(location_props)
+                
+                # Add structured data as JSON strings
+                extra_props["verified_facts"] = json.dumps(merged_facts)
+                extra_props["ai_insights"] = json.dumps(merged_insights)
 
                 # Update in database
                 db.update_entity(
                     key=resolved_key,
                     notes=updated_notes,
                     summary=new_summary,
-                    extra_props=extra_props,
+                    extra_props=extra_props if extra_props else None,
                 )
 
                 print(f"    Updated existing entity: {resolved_key}")
         else:
             # Create new entity
             initial_notes = f"[{doc_name}]\n{notes}"
+            
+            # Enrich verified facts with source document
+            enriched_facts = []
+            for fact in verified_facts:
+                enriched_fact = dict(fact)
+                enriched_fact["source_doc"] = doc_name
+                enriched_facts.append(enriched_fact)
+            
+            # Enrich AI insights with source document
+            enriched_insights = []
+            for insight in ai_insights:
+                enriched_insight = dict(insight)
+                enriched_insight["source_doc"] = doc_name
+                enriched_insights.append(enriched_insight)
 
-            # Generate initial summary
+            # Generate initial summary from verified facts
             initial_summary = generate_entity_summary(
                 entity_key=key,
                 entity_name=name,
                 entity_type=entity_type,
                 all_notes=initial_notes,
                 related_entities=None,
+                verified_facts=enriched_facts,
             )
 
             # Extract event properties (date, time, amount)
             date = ent.get("date")
-            time = ent.get("time")
+            ent_time = ent.get("time")
             amount = ent.get("amount")
             
             # Geocode location if provided
@@ -164,6 +285,10 @@ def process_chunk(
                 print(f"    Geocoding location: {location}")
                 location_props = get_location_properties(location)
                 extra_props.update(location_props)
+            
+            # Add structured data as JSON strings
+            extra_props["verified_facts"] = json.dumps(enriched_facts)
+            extra_props["ai_insights"] = json.dumps(enriched_insights)
 
             db.create_entity(
                 key=key,
@@ -172,7 +297,7 @@ def process_chunk(
                 notes=initial_notes,
                 summary=initial_summary,
                 date=date,
-                time=time,
+                time=ent_time,
                 amount=amount,
                 extra_props=extra_props if extra_props else None,
             )
@@ -375,6 +500,8 @@ def ingest_document(
                     total_chunks=chunk_info["total_chunks"],
                     db=db,
                     existing_keys=existing_keys,
+                    page_start=chunk_info.get("page_start"),
+                    page_end=chunk_info.get("page_end"),
                 )
 
                 chunk_entities = result["entities_processed"]
