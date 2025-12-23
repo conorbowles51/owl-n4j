@@ -12,6 +12,7 @@ from routers.auth import router as auth_router
 from routers.evidence import router as evidence_router
 from routers.background_tasks import router as background_tasks_router
 from routers.profiles import router as profiles_router
+from routers.filesystem import router as filesystem_router
 
 __all__ = [
     "graph_router",
@@ -24,4 +25,5 @@ __all__ = [
     "evidence_router",
     "background_tasks_router",
     "profiles_router",
+    "filesystem_router",
 ]

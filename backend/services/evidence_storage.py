@@ -109,6 +109,14 @@ class EvidenceStorage:
                 return rec
         return None
 
+    def find_all_by_hash(self, sha256: str) -> List[dict]:
+        """Find all records matching a given hash."""
+        results = []
+        for rec in self._records.values():
+            if rec.get("sha256") == sha256:
+                results.append(rec)
+        return results
+
     # ------------- Mutating operations -------------
 
     def add_files(

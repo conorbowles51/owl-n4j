@@ -79,26 +79,37 @@ async def save_case(case: CaseCreate, user: dict = Depends(get_current_user)):
 @router.get("", response_model=List[CaseResponse])
 async def list_cases(user: dict = Depends(get_current_user)):
     """List all cases for the current user."""
-    username = user["username"]
-    cases = []
-    all_cases = case_storage.get_all(owner=username)
-    
-    for case_id, case_data in all_cases.items():
-        versions = case_data.get("versions", [])
-        latest_version = max([v.get("version", 0) for v in versions], default=0)
+    try:
+        # Reload cases from disk to ensure we have the latest data
+        # This is fast for JSON files unless they're extremely large
+        case_storage.reload()
         
-        cases.append(CaseResponse(
-            id=case_data["id"],
-            name=case_data["name"],
-            created_at=case_data["created_at"],
-            updated_at=case_data.get("updated_at", case_data["created_at"]),
-            version_count=len(versions),
-            latest_version=latest_version,
-        ))
-    
-    # Sort by updated_at descending (most recently updated first)
-    cases.sort(key=lambda x: x.updated_at, reverse=True)
-    return cases
+        username = user["username"]
+        cases = []
+        all_cases = case_storage.get_all(owner=username)
+        
+        # Process cases efficiently
+        for case_id, case_data in all_cases.items():
+            versions = case_data.get("versions", [])
+            # Get latest version efficiently
+            latest_version = max([v.get("version", 0) for v in versions], default=0) if versions else 0
+            
+            cases.append(CaseResponse(
+                id=case_data["id"],
+                name=case_data["name"],
+                created_at=case_data["created_at"],
+                updated_at=case_data.get("updated_at", case_data["created_at"]),
+                version_count=len(versions),
+                latest_version=latest_version,
+            ))
+        
+        # Sort by updated_at descending (most recently updated first)
+        cases.sort(key=lambda x: x.updated_at, reverse=True)
+        return cases
+    except Exception as e:
+        # Log the error and return empty list rather than timing out
+        print(f"Error listing cases: {e}")
+        return []
 
 
 @router.get("/{case_id}", response_model=CaseData)

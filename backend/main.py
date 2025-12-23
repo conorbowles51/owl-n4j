@@ -20,6 +20,7 @@ from routers import (
     evidence_router,
     background_tasks_router,
     profiles_router,
+    filesystem_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -31,16 +32,38 @@ async def lifespan(app: FastAPI):
     """Handle startup and shutdown events."""
     # Startup
     print("Starting Investigation Console API...")
-    # Reload snapshots from disk
-    snapshot_storage.reload()
-    print(f"Loaded {len(snapshot_storage.get_all())} snapshots from storage")
-    # Reload cases from disk
-    case_storage.reload()
-    print(f"Loaded {len(case_storage.get_all())} cases from storage")
+    try:
+        # Reload snapshots from disk (non-blocking)
+        snapshot_storage.reload()
+        print(f"Loaded {len(snapshot_storage.get_all())} snapshots from storage")
+    except Exception as e:
+        print(f"Warning: Failed to load snapshots: {e}")
+    
+    try:
+        # Reload cases from disk (non-blocking)
+        # Use a quick check to see if file exists and is readable
+        from services.case_storage import STORAGE_FILE
+        if STORAGE_FILE.exists():
+            try:
+                case_storage.reload()
+                case_count = len(case_storage.get_all())
+                print(f"Loaded {case_count} cases from storage")
+            except Exception as e:
+                print(f"Warning: Failed to load cases: {e}")
+                # Continue anyway - cases will be loaded on-demand
+        else:
+            print("No cases file found, starting with empty case storage")
+    except Exception as e:
+        print(f"Warning: Failed to initialize case storage: {e}")
+        # Continue anyway - cases will be loaded on-demand
+    
     yield
     # Shutdown
     print("Shutting down, closing Neo4j connection...")
-    neo4j_service.close()
+    try:
+        neo4j_service.close()
+    except Exception as e:
+        print(f"Warning: Error closing Neo4j connection: {e}")
 
 
 app = FastAPI(
@@ -70,6 +93,7 @@ app.include_router(auth_router)
 app.include_router(evidence_router)
 app.include_router(background_tasks_router)
 app.include_router(profiles_router)
+app.include_router(filesystem_router)
 
 
 @app.get("/")

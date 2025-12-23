@@ -1,0 +1,37 @@
+<?xml version="1.0" standalone="yes"?>
+<SessionReporting>
+  <Session_Reporting>
+    <sid>1094008</sid>
+    <call_language>QB</call_language>
+    <pertinent_flag>true</pertinent_flag>
+    <privileged_flag>false</privileged_flag>
+  </Session_Reporting>
+  <Session_SRI_Dynamic>
+    <sid>1094008</sid>
+    <length>4</length>
+    <review_status>Reviewed</review_status>
+    <comment>JV/ SOCIAL, CC#164 CHARLIE TO UF#96</comment>
+  </Session_SRI_Dynamic>
+  <EviActivityLog>
+    <sid>1094008</sid>
+    <event_seq_num>6</event_seq_num>
+    <timestamp>1182115399</timestamp>
+    <user_id>jxvillar</user_id>
+    <event_str>Registered</event_str>
+  </EviActivityLog>
+  <EviActivityLog>
+    <sid>1094008</sid>
+    <event_seq_num>7</event_seq_num>
+    <timestamp>1182115399</timestamp>
+    <user_id>jxvillar</user_id>
+    <event_str>Contact ID</event_str>
+    <event_value_str>FMI=157,903,8333</event_value_str>
+  </EviActivityLog>
+  <EviActivityLog>
+    <sid>1094008</sid>
+    <event_seq_num>12</event_seq_num>
+    <timestamp>1182115405</timestamp>
+    <user_id>jxvillar</user_id>
+    <event_str>Call Stop</event_str>
+  </EviActivityLog>
+</SessionReporting>

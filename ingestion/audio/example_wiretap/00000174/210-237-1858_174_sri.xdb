@@ -1,0 +1,37 @@
+<?xml version="1.0" standalone="yes"?>
+<SessionReporting>
+  <Session_Reporting>
+    <sid>1094128</sid>
+    <call_language>QB</call_language>
+    <pertinent_flag>true</pertinent_flag>
+    <privileged_flag>false</privileged_flag>
+  </Session_Reporting>
+  <Session_SRI_Dynamic>
+    <sid>1094128</sid>
+    <length>68</length>
+    <review_status>Reviewed</review_status>
+    <comment>JV/ ARREST, MILITARY, CHARLIE ASKS COMANDANTE HOW MANY WERE TAKEN AFTER ALL.</comment>
+  </Session_SRI_Dynamic>
+  <EviActivityLog>
+    <sid>1094128</sid>
+    <event_seq_num>6</event_seq_num>
+    <timestamp>1182117329</timestamp>
+    <user_id>jxvillar</user_id>
+    <event_str>Registered</event_str>
+  </EviActivityLog>
+  <EviActivityLog>
+    <sid>1094128</sid>
+    <event_seq_num>7</event_seq_num>
+    <timestamp>1182117329</timestamp>
+    <user_id>jxvillar</user_id>
+    <event_str>Contact ID</event_str>
+    <event_value_str>FMI=126,68,818</event_value_str>
+  </EviActivityLog>
+  <EviActivityLog>
+    <sid>1094128</sid>
+    <event_seq_num>12</event_seq_num>
+    <timestamp>1182117402</timestamp>
+    <user_id>jxvillar</user_id>
+    <event_str>Call Stop</event_str>
+  </EviActivityLog>
+</SessionReporting>

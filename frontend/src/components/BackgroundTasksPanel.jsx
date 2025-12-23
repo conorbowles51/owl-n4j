@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderOpen,
+  UploadCloud,
 } from 'lucide-react';
 import { backgroundTasksAPI } from '../services/api';
 
@@ -221,13 +222,24 @@ function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgress
 
   const progressPercent = getProgressPercent(task);
   const { progress } = task;
+  
+  // Determine task icon based on task type
+  const getTaskIcon = () => {
+    if (task.task_type === 'file_upload') {
+      return <UploadCloud className="w-4 h-4 text-owl-blue-600" />;
+    }
+    if (task.task_type === 'wiretap_processing') {
+      return <FolderOpen className="w-4 h-4 text-owl-blue-600" />;
+    }
+    return getStatusIcon(task.status);
+  };
 
   return (
     <div className="bg-light-50 rounded-lg border border-light-200 p-4">
       {/* Task Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
-          <div className="mt-0.5">{getStatusIcon(task.status)}</div>
+          <div className="mt-0.5">{getTaskIcon()}</div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h4 className="font-medium text-owl-blue-900 truncate">{task.task_name}</h4>
@@ -255,7 +267,7 @@ function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgress
         <div className="mb-3">
           <div className="flex items-center justify-between text-xs text-light-600 mb-1">
             <span>
-              {progress.completed || 0} / {progress.total} files
+              {progress.completed || 0} / {progress.total} {task.task_type === 'file_upload' ? 'files uploaded' : 'files'}
             </span>
             <span>{progressPercent}%</span>
           </div>

@@ -774,7 +774,25 @@ This section provides a release-by-release overview of major features and enhanc
 - **Node Editing**: Edit summary and notes for selected nodes from the Selected Panel
 - **Manual Relationship Creation**: Create relationships between nodes with custom relationship types
 - **AI-Powered Relationship Analysis**: Right-click on a node to get AI suggestions for relationships with existing nodes
-- **Center on Selected Nodes**: New button in Selected Panel to center and zoom the graph on selected nodes
+- **Create Snapshot from Selected Panel**: Camera icon button in Selected Panel to quickly create snapshots
+- **Center Graph Button**: New center/focus button in top-left graph controls that focuses on selected nodes if any are selected, otherwise centers the whole graph
+
+**Graph Controls and UI Improvements:**
+- **Vertical Graph Controls**: Graph control buttons (center, add node, selection mode, settings) are now arranged vertically in the top-left corner
+- **Minimizable Entity Type Legend**: Entity type legend on graph and subgraph can be collapsed/expanded with a minimize button
+- **Smart Center Behavior**: Center graph button automatically focuses on selected nodes when available, falls back to centering entire graph
+
+**Subgraph Enhancements:**
+- **Subgraph Node Selection**: Select single or multiple nodes directly in the subgraph view (single click or Ctrl/Cmd+click)
+- **Remove from Subgraph**: Button in subgraph legend to remove selected nodes from the subgraph
+- **Subgraph Selection Management**: Clear selection by clicking background in subgraph view
+
+**Analysis Overview Improvements:**
+- **Clickable Node Names**: All node names listed in analysis results (PageRank, Betweenness Centrality) are clickable to select them
+- **Clickable Communities**: Community names in Louvain analysis are clickable to select all nodes in that community
+- **Multi-Select Support**: Hold Ctrl/Cmd while clicking node names or communities to toggle them in selection
+- **No Text Truncation**: Analysis overview text, node summaries, and community descriptions are displayed in full without truncation
+- **Full Text Display**: All analysis descriptions and summaries show complete text with proper word wrapping
 
 **Case Management Enhancements:**
 - **Collapsible Sections**: Evidence Files, Processing History, Versions, and Snapshots can be collapsed/expanded
@@ -788,6 +806,7 @@ This section provides a release-by-release overview of major features and enhanc
 - **Expandable Subsections**: Table of contents supports expandable sections with subsections
 - **Hierarchical Navigation**: Click main sections to expand/collapse subsections
 - **Direct Subsection Navigation**: Click subsections to jump directly to that section in the documentation
+- **Version History in TOC**: Version History section now appears in the table of contents for easy navigation
 
 ### Version 2.0 (20/12/2025)
 

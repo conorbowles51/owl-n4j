@@ -57,11 +57,16 @@ class EvidenceService:
         """Proxy to evidence_storage.list_files."""
         return evidence_storage.list_files(case_id=case_id, status=status, owner=owner)
 
+    def find_duplicates(self, sha256: str) -> List[Dict]:
+        """Find all files with the same hash (duplicates)."""
+        return evidence_storage.find_all_by_hash(sha256)
+
     def add_uploaded_files(
         self,
         case_id: str,
         uploads: List[Dict],
         owner: Optional[str] = None,
+        preserve_structure: bool = False,
     ) -> List[Dict]:
         """
         Store uploaded files and register them in evidence storage.
@@ -72,7 +77,9 @@ class EvidenceService:
                 {
                   "original_filename": str,
                   "content": bytes,
+                  "relative_path": Optional[str],  # For folder uploads
                 }
+            preserve_structure: If True, preserve folder structure from relative_path
         """
         case_dir = EVIDENCE_ROOT_DIR / case_id
         case_dir.mkdir(parents=True, exist_ok=True)
@@ -81,19 +88,348 @@ class EvidenceService:
         for upload in uploads:
             original_filename = upload["original_filename"]
             content: bytes = upload["content"]
-            stored_path = case_dir / original_filename
-            # Overwrite existing file with same name
+            relative_path = upload.get("relative_path")
+            
+            # Determine stored path
+            if preserve_structure and relative_path:
+                # Preserve folder structure
+                # Normalize path separators
+                normalized_path = relative_path.replace('\\', '/')
+                # Remove leading slash if present
+                normalized_path = normalized_path.lstrip('/')
+                stored_path = case_dir / normalized_path
+            else:
+                # Flat structure - just use filename
+                stored_path = case_dir / original_filename
+            
+            # Create parent directories if needed
+            stored_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Write file
             stored_path.write_bytes(content)
+            
             file_infos.append(
                 {
                     "original_filename": original_filename,
                     "stored_path": stored_path,
                     "content": content,
                     "size": len(content),
+                    "relative_path": relative_path if preserve_structure else None,
                 }
             )
 
         return evidence_storage.add_files(case_id=case_id, files=file_infos, owner=owner)
+
+    def upload_folders_background(
+        self,
+        case_id: str,
+        files: List[Dict],  # List of dicts with 'original_filename', 'content', 'relative_path'
+        owner: Optional[str] = None,
+    ) -> List[str]:
+        """
+        Upload multiple folders in the background, creating a separate task for each top-level folder.
+        
+        Detects top-level folders by analyzing relative_path of files and groups them accordingly.
+
+        Args:
+            case_id: Associated case ID
+            files: List of dicts with 'original_filename', 'content', 'relative_path'
+            owner: Optional owner username
+
+        Returns:
+            List of task ID strings (one per folder)
+        """
+        if not files:
+            raise ValueError("No files provided")
+
+        # Group files by top-level folder
+        folders_dict: Dict[str, List[Dict]] = {}
+        
+        for file_data in files:
+            relative_path = file_data.get("relative_path")
+            if not relative_path:
+                # File without a path - treat as root folder
+                root_key = ""
+                if root_key not in folders_dict:
+                    folders_dict[root_key] = []
+                folders_dict[root_key].append(file_data)
+            else:
+                # Extract top-level folder name (first component of path)
+                # Normalize path separators
+                normalized_path = relative_path.replace('\\', '/')
+                # Get first component
+                path_parts = normalized_path.split('/')
+                top_level_folder = path_parts[0] if path_parts else ""
+                
+                if top_level_folder not in folders_dict:
+                    folders_dict[top_level_folder] = []
+                folders_dict[top_level_folder].append(file_data)
+        
+        # Create a background task for each top-level folder
+        task_ids = []
+        import threading
+        
+        # Capture self reference for use in nested function
+        service_self = self
+        
+        for folder_name, folder_files in folders_dict.items():
+            # Create task name
+            folder_display_name = folder_name if folder_name else "root"
+            task_name = f"Uploading folder '{folder_display_name}' ({len(folder_files)} files)"
+            
+            # Create background task
+            task = background_task_storage.create_task(
+                task_type="file_upload",
+                task_name=task_name,
+                owner=owner,
+                case_id=case_id,
+                metadata={
+                    "file_count": len(folder_files),
+                    "is_folder": True,
+                    "folder_name": folder_name,
+                },
+            )
+            task_id = task["id"]
+            task_ids.append(task_id)
+            
+            # Start background upload for this folder (runs in a separate thread)
+            def upload_folder_task(folder_files_param, task_id_param):
+                """Background upload task function for a single folder."""
+                from datetime import datetime
+                
+                try:
+                    # Update task status to running
+                    background_task_storage.update_task(
+                        task_id_param,
+                        status=TaskStatus.RUNNING.value,
+                        started_at=datetime.now().isoformat(),
+                        progress_total=len(folder_files_param),
+                        progress_completed=0,
+                    )
+
+                    # Process files one by one with progress updates
+                    uploaded_files = []
+                    for index, file_data in enumerate(folder_files_param):
+                        try:
+                            # Extract file info
+                            original_filename = file_data.get("original_filename", "unknown")
+                            content = file_data.get("content")
+                            relative_path = file_data.get("relative_path")
+
+                            # Update file status to processing
+                            background_task_storage.update_task(
+                                task_id_param,
+                                file_status={
+                                    "file_id": f"file_{index}",
+                                    "filename": original_filename,
+                                    "status": "processing",
+                                },
+                            )
+
+                            # Upload single file using evidence_service instance
+                            uploads = [{
+                                "original_filename": original_filename,
+                                "content": content,
+                                "relative_path": relative_path,
+                            }]
+
+                            # Use add_uploaded_files on the service instance
+                            records = service_self.add_uploaded_files(
+                                case_id=case_id,
+                                uploads=uploads,
+                                owner=owner,
+                                preserve_structure=True,  # Always preserve structure for folder uploads
+                            )
+
+                            uploaded_files.extend(records)
+
+                            # Update file status to completed
+                            background_task_storage.update_task(
+                                task_id_param,
+                                progress_completed=index + 1,
+                                file_status={
+                                    "file_id": f"file_{index}",
+                                    "filename": original_filename,
+                                    "status": "completed",
+                                },
+                            )
+                        except Exception as file_error:
+                            print(f"Error uploading file {original_filename}: {file_error}")
+                            background_task_storage.update_task(
+                                task_id_param,
+                                progress_completed=index + 1,
+                                file_status={
+                                    "file_id": f"file_{index}",
+                                    "filename": original_filename,
+                                    "status": "failed",
+                                    "error": str(file_error),
+                                },
+                            )
+
+                    # Mark task as completed
+                    background_task_storage.update_task(
+                        task_id_param,
+                        status=TaskStatus.COMPLETED.value,
+                        completed_at=datetime.now().isoformat(),
+                    )
+                    print(f"Folder upload task {task_id_param} completed: {len(uploaded_files)} files uploaded")
+                except Exception as e:
+                    print(f"Error in folder upload task {task_id_param}: {e}")
+                    background_task_storage.update_task(
+                        task_id_param,
+                        status=TaskStatus.FAILED.value,
+                        error=str(e),
+                        completed_at=datetime.now().isoformat(),
+                    )
+            
+            # Start the background thread for this folder
+            thread = threading.Thread(
+                target=upload_folder_task,
+                args=(folder_files, task_id),
+                daemon=True,
+            )
+            thread.start()
+        
+        return task_ids
+
+    def upload_files_background(
+        self,
+        case_id: str,
+        files: List[Dict],  # List of dicts with 'original_filename', 'content', 'relative_path'
+        owner: Optional[str] = None,
+        is_folder: bool = False,
+    ) -> str:
+        """
+        Upload files in the background, returning a task ID immediately.
+
+        Args:
+            case_id: Associated case ID
+            files: List of dicts with 'original_filename', 'content', 'relative_path'
+            owner: Optional owner username
+            is_folder: Whether this is a folder upload
+
+        Returns:
+            Task ID string
+        """
+        if not files:
+            raise ValueError("No files provided")
+
+        # Create task name
+        file_count = len(files)
+        if is_folder:
+            task_name = f"Uploading folder ({file_count} files)"
+        else:
+            task_name = f"Uploading {file_count} file(s)"
+
+        # Create background task
+        task = background_task_storage.create_task(
+            task_type="file_upload",
+            task_name=task_name,
+            owner=owner,
+            case_id=case_id,
+            metadata={
+                "file_count": file_count,
+                "is_folder": is_folder,
+            },
+        )
+        task_id = task["id"]
+
+        # Start background upload (this will run in a separate thread)
+        import threading
+
+        def upload_task():
+            """Background upload task function."""
+            from datetime import datetime
+
+            try:
+                # Update task status to running
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.RUNNING.value,
+                    started_at=datetime.now().isoformat(),
+                    progress_total=file_count,
+                    progress_completed=0,
+                )
+
+                # Process files one by one with progress updates
+                uploaded_files = []
+                for index, file_data in enumerate(files):
+                    try:
+                        # Extract file info
+                        original_filename = file_data.get("original_filename", "unknown")
+                        content = file_data.get("content")
+                        relative_path = file_data.get("relative_path")
+
+                        # Update file status to processing
+                        background_task_storage.update_task(
+                            task_id,
+                            file_status={
+                                "file_id": f"file_{index}",
+                                "filename": original_filename,
+                                "status": "processing",
+                            },
+                        )
+
+                        # Upload single file
+                        uploads = [{
+                            "original_filename": original_filename,
+                            "content": content,
+                            "relative_path": relative_path,
+                        }]
+
+                        records = self.add_uploaded_files(
+                            case_id=case_id,
+                            uploads=uploads,
+                            owner=owner,
+                            preserve_structure=is_folder,
+                        )
+
+                        uploaded_files.extend(records)
+
+                        # Update file status to completed
+                        background_task_storage.update_task(
+                            task_id,
+                            progress_completed=index + 1,
+                            file_status={
+                                "file_id": f"file_{index}",
+                                "filename": original_filename,
+                                "status": "completed",
+                            },
+                        )
+                    except Exception as e:
+                        # Mark file as failed
+                        background_task_storage.update_task(
+                            task_id,
+                            progress_completed=index + 1,
+                            file_status={
+                                "file_id": f"file_{index}",
+                                "filename": file_data.get("original_filename", "unknown"),
+                                "status": "failed",
+                                "error": str(e),
+                            },
+                        )
+
+                # Mark task as completed
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.COMPLETED.value,
+                    completed_at=datetime.now().isoformat(),
+                )
+
+            except Exception as e:
+                # Mark task as failed
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    error=str(e),
+                    completed_at=datetime.now().isoformat(),
+                )
+
+        # Start background thread
+        thread = threading.Thread(target=upload_task, daemon=True)
+        thread.start()
+
+        return task_id
 
     def process_files(
         self,

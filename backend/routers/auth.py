@@ -52,19 +52,28 @@ def get_current_user(
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(request: LoginRequest, response: Response):
-    if not auth_service["authenticate"](request.username, request.password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+async def login(request: LoginRequest, response: Response):
+    """Login endpoint - authenticates user and returns JWT token."""
+    try:
+        if not auth_service["authenticate"](request.username, request.password):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    token = auth_service["create_access_token"]({"sub": request.username})
-    response.set_cookie(
-        key="access_token",
-        value=token,
-        httponly=True,
-        samesite="lax",
-    )
+        token = auth_service["create_access_token"]({"sub": request.username})
+        response.set_cookie(
+            key="access_token",
+            value=token,
+            httponly=True,
+            samesite="lax",
+        )
 
-    return TokenResponse(access_token=token, username=request.username)
+        return TokenResponse(access_token=token, username=request.username)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Login error: {str(e)}"
+        )
 
 
 @router.post("/logout")

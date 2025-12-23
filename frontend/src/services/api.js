@@ -28,8 +28,8 @@ async function fetchAPI(endpoint, options = {}) {
     config.headers['Content-Type'] = 'application/json';
   }
 
-  // Add timeout to prevent hanging (30 seconds default, 10 seconds for login)
-  const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : 30000);
+  // Add timeout to prevent hanging (5 minutes default, 10 seconds for login, 30 seconds for auth/me)
+  const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : endpoint.includes('/auth/me') ? 30000 : 300000);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
   
@@ -50,7 +50,10 @@ async function fetchAPI(endpoint, options = {}) {
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      throw new Error('Request timed out. Please check your connection and try again.');
+      throw new Error(`Request timed out after ${timeout}ms. Please check that the backend server is running on port 8000 and try again.`);
+    }
+    if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
+      throw new Error('Cannot connect to the server. Please ensure the backend is running on port 8000.');
     }
     throw err;
   }
@@ -367,7 +370,9 @@ export const casesAPI = {
   /**
    * List all cases
    */
-  list: () => fetchAPI('/cases'),
+  list: () => fetchAPI('/cases', {
+    timeout: 60000, // 60 seconds for cases (may have large snapshot data)
+  }),
 
   /**
    * Get a specific case with all versions
@@ -405,13 +410,75 @@ export const evidenceAPI = {
   },
 
   /**
+   * Find all duplicate files by SHA256 hash
+   */
+  findDuplicates: (sha256) =>
+    fetchAPI(`/evidence/duplicates/${encodeURIComponent(sha256)}`),
+
+  /**
+   * Check if a folder is suitable for wiretap processing
+   */
+  checkWiretapFolder: (caseId, folderPath) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('folder_path', folderPath);
+    return fetchAPI(`/evidence/wiretap/check?${params.toString()}`);
+  },
+
+  /**
+   * Process wiretap folders
+   */
+  processWiretapFolders: (caseId, folderPaths, whisperModel = 'base') =>
+    fetchAPI('/evidence/wiretap/process', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        folder_paths: folderPaths,
+        whisper_model: whisperModel,
+      }),
+      timeout: 60000, // 60 seconds for wiretap processing (folder validation may take time)
+    }),
+
+  /**
+   * List all processed wiretap folders
+   */
+  listProcessedWiretaps: (caseId = null) => {
+    const params = new URLSearchParams();
+    if (caseId) params.append('case_id', caseId);
+    const qs = params.toString();
+    return fetchAPI(`/evidence/wiretap/processed${qs ? `?${qs}` : ''}`);
+  },
+
+  /**
    * Upload one or more evidence files for a case
+   * Returns either {files: [...]} for synchronous uploads or {task_id: "...", message: "..."} for background uploads
    */
   upload: (caseId, files) => {
     const formData = new FormData();
     formData.append('case_id', caseId);
     Array.from(files).forEach((file) => {
       formData.append('files', file);
+    });
+    return fetchAPI('/evidence/upload', {
+      method: 'POST',
+      body: formData,
+    });
+  },
+
+  /**
+   * Upload a folder of files (or folder of folders) for a case
+   * Uses webkitdirectory to preserve folder structure
+   */
+  uploadFolder: (caseId, files) => {
+    const formData = new FormData();
+    formData.append('case_id', caseId);
+    formData.append('is_folder', 'true');
+    Array.from(files).forEach((file, index) => {
+      // Append file with relative path as third parameter to FormData
+      const relativePath = file.webkitRelativePath || file.name;
+      formData.append('files', file, relativePath);
+      // Also send relative path as separate field for easier parsing
+      formData.append(`file_path_${index}`, relativePath);
     });
     return fetchAPI('/evidence/upload', {
       method: 'POST',
@@ -499,6 +566,37 @@ export const profilesAPI = {
 };
 
 /**
+ * File System API
+ */
+export const filesystemAPI = {
+  /**
+   * List files and directories in a given path for a case
+   * @param {string} caseId - Case ID
+   * @param {string} [path] - Relative path from case root (e.g., "subfolder" or "subfolder/nested")
+   * @returns {Promise<{items: Array, current_path: string, root_path: string}>}
+   */
+  list: (caseId, path = null) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    if (path) params.append('path', path);
+    return fetchAPI(`/filesystem/list?${params.toString()}`);
+  },
+
+  /**
+   * Read a text file's contents
+   * @param {string} caseId - Case ID
+   * @param {string} path - Relative path from case root (e.g., "file.txt" or "subfolder/file.txt")
+   * @returns {Promise<{path: string, content: string, size: number}>}
+   */
+  readFile: (caseId, path) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('path', path);
+    return fetchAPI(`/filesystem/read?${params.toString()}`);
+  },
+};
+
+/**
  * Authentication API
  */
 export const authAPI = {
@@ -506,16 +604,19 @@ export const authAPI = {
     fetchAPI('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
+      timeout: 10000, // 10 second timeout for login
     }),
 
   logout: () =>
     fetchAPI('/auth/logout', {
       method: 'POST',
+      timeout: 5000, // 5 second timeout for logout
     }),
 
   me: () =>
     fetchAPI('/auth/me', {
       method: 'GET',
+      timeout: 5000, // 5 second timeout for me
     }),
 };
 

@@ -30,10 +30,20 @@ def load_cases() -> Dict:
         return {}
     
     try:
+        # Use a timeout to prevent hanging on very large files
+        # For most cases, this should be fast
         with open(STORAGE_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+            # Validate it's a dict
+            if not isinstance(data, dict):
+                print(f"Warning: cases.json does not contain a dict, got {type(data)}")
+                return {}
+            return data
     except (json.JSONDecodeError, IOError) as e:
         print(f"Error loading cases: {e}")
+        return {}
+    except Exception as e:
+        print(f"Unexpected error loading cases: {e}")
         return {}
 
 

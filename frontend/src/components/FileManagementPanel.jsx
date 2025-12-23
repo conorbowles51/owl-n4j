@@ -11,7 +11,6 @@ import {
   FileText,
   ChevronDown,
   ChevronRight,
-  ArrowLeft
 } from 'lucide-react';
 import { casesAPI, snapshotsAPI } from '../services/api';
 
@@ -147,7 +146,6 @@ const FileManagementPanel = ({
       <div className="fixed left-0 top-0 bottom-0 w-96 bg-white border-r border-light-200 shadow-xl z-50 flex flex-col overflow-hidden transform transition-transform duration-300 ease-in-out">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-light-200 flex-shrink-0">
-          <h2 className="text-lg font-semibold text-owl-blue-900">File Management</h2>
           <div className="flex items-center gap-2">
             {onReturnToCaseManagement && (
               <button
@@ -156,11 +154,14 @@ const FileManagementPanel = ({
                   onReturnToCaseManagement();
                 }}
                 className="p-1.5 hover:bg-light-100 rounded transition-colors"
-                title="Return to Case Management"
+                title="Case Management"
               >
-                <ArrowLeft className="w-5 h-5 text-owl-blue-600" />
+                <FolderOpen className="w-5 h-5 text-owl-blue-600" />
               </button>
             )}
+            <h2 className="text-lg font-semibold text-owl-blue-900">Case Management</h2>
+          </div>
+          <div className="flex items-center gap-2">
             <button
               onClick={onClose}
               className="p-1 hover:bg-light-100 rounded transition-colors"

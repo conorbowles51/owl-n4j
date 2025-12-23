@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, BookOpen, ChevronDown, ChevronRight } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 /**
  * DocumentationViewer Component
@@ -154,11 +155,10 @@ export default function DocumentationViewer({ isOpen, onClose }) {
     return tocItems;
   };
 
-  // Convert markdown to HTML (simple conversion)
-  const markdownToHtml = (markdown) => {
-    // Remove table of contents section from content before processing
+  // Remove table of contents section from markdown content
+  const removeTOC = (markdown) => {
     const lines = markdown.split('\n');
-    let html = '';
+    let result = [];
     let skipTOC = false;
     
     for (let i = 0; i < lines.length; i++) {
@@ -174,7 +174,7 @@ export default function DocumentationViewer({ isOpen, onClose }) {
       if (skipTOC) {
         if (line.match(/^##\s+/) || line.match(/^---$/)) {
           skipTOC = false;
-          // Include the horizontal rule or next section header
+          // Include the next section header, but skip the horizontal rule
           if (line.match(/^---$/)) {
             continue; // Skip the horizontal rule too
           }
@@ -183,76 +183,20 @@ export default function DocumentationViewer({ isOpen, onClose }) {
         }
       }
       
-      html += line + '\n';
+      result.push(line);
     }
     
-    // Helper function to create anchor-friendly ID from text
-    const createId = (text) => {
-      return text
-        .toLowerCase()
-        .replace(/[^\w\s-]/g, '') // Remove special characters
-        .replace(/\s+/g, '-') // Replace spaces with hyphens
-        .replace(/-+/g, '-') // Replace multiple hyphens with single
-        .trim();
-    };
-    
-    // Headers with IDs for anchor links
-    html = html.replace(/^### (.*$)/gim, (match, text) => {
-      const id = createId(text);
-      return `<h3 id="${id}" class="text-lg font-semibold text-owl-blue-900 mt-6 mb-3 scroll-mt-4">${text}</h3>`;
-    });
-    html = html.replace(/^## (.*$)/gim, (match, text) => {
-      const id = createId(text);
-      return `<h2 id="${id}" class="text-xl font-bold text-owl-blue-900 mt-8 mb-4 border-b border-light-200 pb-2 scroll-mt-4">${text}</h2>`;
-    });
-    html = html.replace(/^# (.*$)/gim, (match, text) => {
-      const id = createId(text);
-      return `<h1 id="${id}" class="text-2xl font-bold text-owl-blue-900 mt-8 mb-4 scroll-mt-4">${text}</h1>`;
-    });
-    
-    // Bold
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-dark-800">$1</strong>');
-    
-    // Italic
-    html = html.replace(/\*(.*?)\*/g, '<em class="italic">$1</em>');
-    
-    // Code blocks
-    html = html.replace(/```[\s\S]*?```/g, (match) => {
-      const code = match.replace(/```/g, '').trim();
-      return `<pre class="bg-light-100 border border-light-300 rounded-lg p-4 overflow-x-auto my-4"><code class="text-sm font-mono">${code}</code></pre>`;
-    });
-    
-    // Inline code
-    html = html.replace(/`([^`]+)`/g, '<code class="bg-light-100 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>');
-    
-    // Links - handle internal anchor links differently
-    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, text, href) => {
-      if (href.startsWith('#')) {
-        // Internal anchor link - no target="_blank"
-        return `<a href="${href}" class="text-owl-blue-600 hover:underline cursor-pointer">${text}</a>`;
-      } else {
-        // External link - open in new tab
-        return `<a href="${href}" class="text-owl-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">${text}</a>`;
-      }
-    });
-    
-    // Lists
-    html = html.replace(/^\d+\.\s+(.*$)/gim, '<li class="ml-6 mb-1">$1</li>');
-    html = html.replace(/^-\s+(.*$)/gim, '<li class="ml-6 mb-1 list-disc">$1</li>');
-    html = html.replace(/(<li.*<\/li>)/s, '<ul class="list-disc ml-6 mb-4 space-y-1">$1</ul>');
-    
-    // Paragraphs
-    html = html.split('\n\n').map(para => {
-      if (para.trim() && !para.match(/^<[hul]/) && !para.match(/^<pre/)) {
-        return `<p class="mb-4 text-light-700 leading-relaxed">${para.trim()}</p>`;
-      }
-      return para;
-    }).join('\n');
-    
-    // Horizontal rules
-    html = html.replace(/^---$/gim, '<hr class="my-6 border-light-200" />');
-    
-    return html;
+    return result.join('\n');
+  };
+  
+  // Helper function to create anchor-friendly ID from text
+  const createId = (text) => {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .replace(/-+/g, '-') // Replace multiple hyphens with single
+      .trim();
   };
 
   if (!isOpen) return null;
@@ -363,9 +307,88 @@ export default function DocumentationViewer({ isOpen, onClose }) {
             ) : (
               <div 
                 ref={contentRef}
-                className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: markdownToHtml(content) }}
-              />
+                className="prose prose-sm prose-headings:text-owl-blue-900 prose-headings:font-bold prose-p:text-light-700 prose-p:leading-relaxed prose-p:mb-4 prose-strong:text-dark-800 prose-strong:font-semibold prose-a:text-owl-blue-600 prose-a:no-underline hover:prose-a:underline prose-code:bg-light-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-code:font-mono prose-pre:bg-light-100 prose-pre:border prose-pre:border-light-300 prose-pre:rounded-lg prose-pre:p-4 prose-pre:overflow-x-auto prose-pre:my-4 prose-ul:list-disc prose-ul:ml-6 prose-ul:mb-4 prose-ul:space-y-1 prose-ol:list-decimal prose-ol:ml-6 prose-ol:mb-4 prose-ol:space-y-1 prose-li:mb-1 prose-hr:my-6 prose-hr:border-light-200 max-w-none"
+              >
+                <ReactMarkdown
+                  components={{
+                    h1: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const id = createId(text);
+                      return <h1 id={id} className="text-3xl font-bold text-owl-blue-900 mt-10 mb-6 scroll-mt-4" {...props}>{children}</h1>;
+                    },
+                    h2: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const id = createId(text);
+                      return <h2 id={id} className="text-2xl font-bold text-owl-blue-900 mt-8 mb-4 border-b border-light-200 pb-2 scroll-mt-4" {...props}>{children}</h2>;
+                    },
+                    h3: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const id = createId(text);
+                      return <h3 id={id} className="text-xl font-bold text-owl-blue-900 mt-6 mb-3 scroll-mt-4" {...props}>{children}</h3>;
+                    },
+                    h4: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const id = createId(text);
+                      return <h4 id={id} className="text-lg font-bold text-owl-blue-900 mt-5 mb-2 scroll-mt-4" {...props}>{children}</h4>;
+                    },
+                    h5: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const id = createId(text);
+                      return <h5 id={id} className="text-base font-bold text-owl-blue-900 mt-4 mb-2 scroll-mt-4" {...props}>{children}</h5>;
+                    },
+                    h6: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const id = createId(text);
+                      return <h6 id={id} className="text-sm font-bold text-owl-blue-900 mt-3 mb-2 scroll-mt-4" {...props}>{children}</h6>;
+                    },
+                    a: ({ node, href, children, ...props }) => {
+                      if (href?.startsWith('#')) {
+                        return (
+                          <a 
+                            href={href} 
+                            className="text-owl-blue-600 hover:underline cursor-pointer"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const id = href.substring(1);
+                              scrollToSection(id);
+                            }}
+                            {...props}
+                          >
+                            {children}
+                          </a>
+                        );
+                      }
+                      return (
+                        <a 
+                          href={href} 
+                          className="text-owl-blue-600 hover:underline" 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          {...props}
+                        >
+                          {children}
+                        </a>
+                      );
+                    },
+                    code: ({ node, inline, className, children, ...props }) => {
+                      if (inline) {
+                        return (
+                          <code className="bg-light-100 px-1.5 py-0.5 rounded text-sm font-mono" {...props}>
+                            {children}
+                          </code>
+                        );
+                      }
+                      return (
+                        <code className="text-sm font-mono" {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
+                  }}
+                >
+                  {removeTOC(content)}
+                </ReactMarkdown>
+              </div>
             )}
           </div>
         </div>
