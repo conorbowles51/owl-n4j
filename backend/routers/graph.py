@@ -79,6 +79,20 @@ class UpdateNodeResponse(BaseModel):
     error: Optional[str] = None
 
 
+class PinFactRequest(BaseModel):
+    """Request model for pinning/unpinning a fact."""
+    fact_index: int
+    pinned: bool
+
+
+class VerifyInsightRequest(BaseModel):
+    """Request model for verifying an AI insight."""
+    insight_index: int
+    username: str
+    source_doc: Optional[str] = None
+    page: Optional[int] = None
+
+
 class RelationshipRequest(BaseModel):
     """Request model for creating a relationship."""
     from_key: str
@@ -713,3 +727,62 @@ async def update_node(node_key: str, request: UpdateNodeRequest):
             cypher="",
             error=str(e)
         )
+
+
+@router.put("/node/{node_key}/pin-fact")
+async def pin_fact(node_key: str, request: PinFactRequest):
+    """
+    Toggle the pinned status of a verified fact.
+    
+    Args:
+        node_key: The key of the node
+        request: Request with fact_index and pinned status
+        
+    Returns:
+        Updated verified_facts array
+    """
+    try:
+        updated_facts = neo4j_service.pin_fact(
+            node_key=node_key,
+            fact_index=request.fact_index,
+            pinned=request.pinned
+        )
+        return {
+            "success": True,
+            "verified_facts": updated_facts
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/node/{node_key}/verify-insight")
+async def verify_insight(node_key: str, request: VerifyInsightRequest):
+    """
+    Convert an AI insight to a verified fact with user attribution.
+    
+    Args:
+        node_key: The key of the node
+        request: Request with insight_index, username, and optional source info
+        
+    Returns:
+        Updated verified_facts and ai_insights arrays
+    """
+    try:
+        result = neo4j_service.verify_insight(
+            node_key=node_key,
+            insight_index=request.insight_index,
+            username=request.username,
+            source_doc=request.source_doc,
+            page=request.page
+        )
+        return {
+            "success": True,
+            "verified_facts": result["verified_facts"],
+            "ai_insights": result["ai_insights"]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

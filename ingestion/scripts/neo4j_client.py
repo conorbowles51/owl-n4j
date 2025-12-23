@@ -85,7 +85,9 @@ class Neo4jClient:
                        e.summary AS summary,
                        e.latitude AS latitude,
                        e.longitude AS longitude,
-                       e.location_raw AS location_raw
+                       e.location_raw AS location_raw,
+                       e.verified_facts AS verified_facts,
+                       e.ai_insights AS ai_insights
                 """,
                 key=key,
             )

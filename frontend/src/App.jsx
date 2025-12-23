@@ -27,7 +27,7 @@ import {
   Focus,
   Camera
 } from 'lucide-react';
-import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI } from './services/api';
+import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI } from './services/api';
 import GraphView from './components/GraphView';
 import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
@@ -47,6 +47,7 @@ import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
 import DocumentationViewer from './components/DocumentationViewer';
+import DocumentViewer from './components/DocumentViewer';
 import AddNodeModal from './components/AddNodeModal';
 import CreateRelationshipModal from './components/CreateRelationshipModal';
 import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
@@ -125,6 +126,16 @@ export default function App() {
   
   // Edit node modal state
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
+  
+  // Document viewer state
+  const [documentViewerState, setDocumentViewerState] = useState({
+    isOpen: false,
+    documentUrl: null,
+    documentName: null,
+    page: 1,
+    highlightText: null,
+  });
+  
   const accountDropdownRef = useRef(null);
   const logoButtonRef = useRef(null);
 
@@ -706,6 +717,58 @@ export default function App() {
       console.error('Failed to expand node:', err);
     }
   }, [loadNodeDetails]);
+
+  // Handle viewing a source document from a citation
+  const handleViewDocument = useCallback(async (sourceDoc, page = 1) => {
+    try {
+      // First, find the evidence file by filename
+      const result = await evidenceAPI.findByFilename(sourceDoc, currentCaseId);
+      
+      if (result.found && result.evidence_id) {
+        // Get the file URL
+        const fileUrl = evidenceAPI.getFileUrl(result.evidence_id);
+        
+        setDocumentViewerState({
+          isOpen: true,
+          documentUrl: fileUrl,
+          documentName: sourceDoc,
+          page: page || 1,
+          highlightText: null,
+        });
+      } else {
+        console.warn(`Document not found: ${sourceDoc}`);
+        // Still try to show a message in the viewer
+        setDocumentViewerState({
+          isOpen: true,
+          documentUrl: null,
+          documentName: sourceDoc,
+          page: 1,
+          highlightText: null,
+        });
+      }
+    } catch (err) {
+      console.error('Failed to load document:', err);
+      // Show viewer with error state
+      setDocumentViewerState({
+        isOpen: true,
+        documentUrl: null,
+        documentName: sourceDoc,
+        page: 1,
+        highlightText: null,
+      });
+    }
+  }, [currentCaseId]);
+
+  // Close document viewer
+  const handleCloseDocumentViewer = useCallback(() => {
+    setDocumentViewerState({
+      isOpen: false,
+      documentUrl: null,
+      documentName: null,
+      page: 1,
+      highlightText: null,
+    });
+  }, []);
 
   // Handle search select
   const handleSearchSelect = useCallback((key) => {
@@ -2594,6 +2657,14 @@ export default function App() {
                       }
                     }}
                     onSelectNode={handleSearchSelect}
+                    onViewDocument={handleViewDocument}
+                    onNodeUpdate={(updatedNode) => {
+                      // Update the node in selectedNodesDetails
+                      setSelectedNodesDetails(prev => 
+                        prev.map(n => n.key === updatedNode.key ? updatedNode : n)
+                      );
+                    }}
+                    username={authUsername}
                     compact={selectedNodesDetails.length > 1}
                   />
                 </div>
@@ -2810,6 +2881,16 @@ export default function App() {
           // Refresh the graph to show the new node
           await loadGraph();
         }}
+      />
+
+      {/* Document Viewer Modal */}
+      <DocumentViewer
+        isOpen={documentViewerState.isOpen}
+        onClose={handleCloseDocumentViewer}
+        documentUrl={documentViewerState.documentUrl}
+        documentName={documentViewerState.documentName}
+        initialPage={documentViewerState.page}
+        highlightText={documentViewerState.highlightText}
       />
     </div>
   );

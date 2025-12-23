@@ -84,6 +84,8 @@ def extract_entities_and_relationships(
     doc_name: str,
     existing_entity_keys: Optional[list] = None,
     temperature: Optional[float] = None,
+    page_start: Optional[int] = None,
+    page_end: Optional[int] = None,
 ) -> Dict:
     """
     Extract entities and relationships from a text chunk.
@@ -93,9 +95,13 @@ def extract_entities_and_relationships(
         doc_name: Name of the source document (for notes)
         existing_entity_keys: List of existing entity keys in the graph
                               (helps LLM reference existing entities)
+        temperature: LLM temperature parameter
+        page_start: First page number this chunk covers (for citation)
+        page_end: Last page number this chunk covers (for citation)
 
     Returns:
-        Dict with 'entities' and 'relationships' lists
+        Dict with 'entities' and 'relationships' lists.
+        Each entity includes 'verified_facts' and 'ai_insights' arrays.
     """
 
     config = get_ingestion_config()
@@ -134,49 +140,100 @@ The following entities already exist in the investigation graph (use these exact
 
     entity_types_str = ", ".join(entity_types)
     
+    # Page context for citations
+    page_context = ""
+    if page_start is not None:
+        if page_end is not None and page_end != page_start:
+            page_context = f"\nThis text is from pages {page_start}-{page_end} of the document."
+        else:
+            page_context = f"\nThis text is from page {page_start} of the document."
+    
     # Build relationship guidance
     if relationship_examples:
-        # New format: use examples to guide the LLM
         relationship_guidance = f"""
 For relationships, identify ALL connections between entities based on the context. Use descriptive relationship types that capture the nature of the connection. Examples of relationship types you might identify:
 {chr(10).join(f"- {example}" for example in relationship_examples)}
 
-You are not limited to these examples - use your judgment to create appropriate relationship types that accurately describe the connections you find in the document. The system will automatically create these relationship types in Neo4j, so be creative and specific. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", "RECEIVED_FROM", "SENT_TO", etc.
+You are not limited to these examples - use your judgment to create appropriate relationship types that accurately describe the connections you find in the document. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", "RECEIVED_FROM", "SENT_TO", etc.
 """
     elif relationship_types:
-        # Old format: use predefined types, but allow new ones
         relationship_guidance = f"""
 For each relationship, provide:
 - from_key: The key of the source entity
 - to_key: The key of the target entity
-- type: A descriptive relationship type. You may use one of these: [{", ".join(relationship_types)}], but you are also encouraged to create new relationship types if they better describe the connection. The system will automatically create any relationship type you specify.
+- type: A descriptive relationship type. You may use one of these: [{", ".join(relationship_types)}], but you are also encouraged to create new relationship types if they better describe the connection.
 - notes: Brief description of the relationship as evidenced in this document
 
-IMPORTANT: Create relationship types that accurately capture the connection. You are not limited to the predefined types - create new ones as needed.
+IMPORTANT: Create relationship types that accurately capture the connection. You are not limited to the predefined types.
 """
     else:
         relationship_guidance = """
-For relationships, identify ALL connections between entities and use descriptive relationship types. The system will automatically create these relationship types in Neo4j, so be specific and creative. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", etc.
+For relationships, identify ALL connections between entities and use descriptive relationship types. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", etc.
 """
 
     entity_guidance = f"""
-For each entity, provide:
+For each entity, you MUST provide:
+
+BASIC INFORMATION:
 - key: A stable, lowercase, hyphenated identifier (e.g., "john-smith", "emerald-imports-ltd", "acc-001")
-- type: The entity type. Prefer using one of the suggested types: [{entity_types_str}]. However, if you encounter an entity that doesn't fit any of these types, you may create a new descriptive type name (e.g., "Vehicle", "Account", "Transaction", "Meeting", "Email", "PhoneCall"). Use clear, descriptive type names.
+- type: The entity type. Prefer: [{entity_types_str}]. Create new types if needed.
 - name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
-- notes: What role does this entity play in THIS document? What is relevant about them here?
-- date: (REQUIRED for event types: Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting) The date of the event in YYYY-MM-DD format if mentioned in the text, otherwise null
-- location: Any geographic location associated with this entity (address, city, country). Extract the most specific location mentioned. For companies: headquarters or office location. For persons: residence or workplace. For meetings/transactions: where it occurred. Set to null if no location mentioned.
+- date: (REQUIRED for event types) The date in YYYY-MM-DD format if mentioned, otherwise null
+- location: Geographic location if mentioned, otherwise null
+
+VERIFIED FACTS (REQUIRED) - Facts that are DIRECTLY stated in the document:
+For each entity, provide an array of "verified_facts". Each fact MUST:
+- Be directly stated or clearly evidenced in the text (not inferred)
+- Include the exact quote from the document that supports it
+- Include the page number where it was found
+- Include an importance score (1-5) indicating relevance to the investigation
+
+IMPORTANCE SCORING GUIDE:
+- 5 = Critical: Key evidence, major actors, significant transactions, smoking gun details
+- 4 = High: Important connections, notable activities, relevant financial data
+- 3 = Medium: Supporting details, contextual information, secondary actors
+- 2 = Low: Minor details, background information
+- 1 = Minimal: Tangential information, standard identifiers
+
+VERIFIED FACT FORMAT:
+{{
+  "text": "The factual statement about this entity",
+  "quote": "The exact words from the document that prove this fact",
+  "page": <page number as integer>,
+  "importance": <1-5 importance score>
+}}
+
+AI INSIGHTS (OPTIONAL) - Logical inferences or analysis NOT directly stated:
+For each entity, you may provide an array of "ai_insights". These are:
+- Logical conclusions drawn from combining multiple facts
+- Pattern observations
+- Potential connections or implications
+- Things that "seem likely" but aren't explicitly stated
+
+AI INSIGHT FORMAT:
+{{
+  "text": "Your insight or inference",
+  "confidence": "high" | "medium" | "low",
+  "reasoning": "Why you believe this based on the evidence"
+}}
+
+CRITICAL RULES:
+1. NEVER put inferences in verified_facts - only things explicitly stated in the document
+2. If you cannot find a direct quote for a fact, it belongs in ai_insights instead
+3. Always include page numbers for verified_facts
+4. Be conservative - when in doubt, put it in ai_insights
 
 Entity Type Guidelines:
 {chr(10).join(entity_descriptions)}
-
-IMPORTANT: If you find entities that don't match the suggested types above, create appropriate new entity types. The system will automatically create and display these new entity types.
 """
+
+    # Determine the page number to use in the output
+    current_page = page_start if page_start is not None else 1
 
     prompt = f"""{system_context}
 
 Extract all entities and relationships from the following document excerpt.
+{page_context}
 
 Document: {doc_name}
 
@@ -194,11 +251,25 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
       "key": "string",
       "type": "string",
       "name": "string",
-      "notes": "string",
-      "date": "string or null (YYYY-MM-DD format, REQUIRED for event types)",
+      "date": "string or null (YYYY-MM-DD format)",
       "time": "string or null (HH:MM format)",
       "amount": "string or null (e.g., '$50,000')",
-      "location": "string or null (e.g., 'London, UK' or '123 Main St, New York')"
+      "location": "string or null",
+      "verified_facts": [
+        {{
+          "text": "Factual statement directly from the document",
+          "quote": "Exact quote from the text proving this fact",
+          "page": {current_page},
+          "importance": 4
+        }}
+      ],
+      "ai_insights": [
+        {{
+          "text": "Inference or analysis not directly stated",
+          "confidence": "high|medium|low",
+          "reasoning": "Why this inference makes sense"
+        }}
+      ]
     }}
   ],
   "relationships": [
@@ -211,7 +282,10 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
   ]
 }}
 
-IMPORTANT: For event-type entities (Transaction, Transfer, Payment, Communication, Email, PhoneCall, Meeting), you MUST look for dates in the text. Convert any date format (e.g., "March 15, 2024", "15/03/2024", "3-15-24") to YYYY-MM-DD format.
+IMPORTANT REMINDERS:
+1. verified_facts must have direct quotes from the document. If you can't quote it, it's an ai_insight.
+2. For event-type entities, dates are REQUIRED if present in the text.
+3. Use page number {current_page} for facts from this chunk (or the specific page if you can identify it from page markers in the text).
 """
     
     response = call_llm(prompt, json_mode=True, temperature=temperature)
@@ -279,19 +353,21 @@ def generate_entity_summary(
     entity_type: str,
     all_notes: str,
     related_entities: Optional[list] = None,
+    verified_facts: Optional[list] = None,
 ) -> str:
     """
-    Generate or update an entity's summary based on all accumulated notes.
+    Generate or update an entity's summary based on VERIFIED FACTS ONLY.
 
     Args:
         entity_key: The entity's key
         entity_name: The entity's name
         entity_type: The entity's type
-        all_notes: All notes accumulated for this entity
+        all_notes: All notes accumulated for this entity (legacy, used as fallback)
         related_entities: List of related entity names/descriptions
+        verified_facts: List of verified fact objects with text, quote, page, source_doc
 
     Returns:
-        A concise summary paragraph
+        A concise, factual summary paragraph
     """
     related_context = ""
     if related_entities:
@@ -300,16 +376,37 @@ Related entities:
 {chr(10).join(f'- {r}' for r in related_entities[:10])}
 """
 
-    prompt = f"""You are summarising an entity in a fraud investigation.
+    # Build facts context from verified_facts if available
+    if verified_facts and len(verified_facts) > 0:
+        facts_text = "\n".join([
+            f"- {fact.get('text', '')} (Source: {fact.get('source_doc', 'unknown')}, p.{fact.get('page', '?')})"
+            for fact in verified_facts[:20]  # Limit to avoid prompt bloat
+        ])
+        observations_section = f"""
+VERIFIED FACTS from source documents:
+{facts_text}
+"""
+    else:
+        # Fallback to legacy notes
+        observations_section = f"""
+Observations from documents:
+{all_notes}
+"""
+
+    prompt = f"""You are summarising an entity in an investigation.
 
 Entity: {entity_name}
 Key: {entity_key}
 Type: {entity_type}
-
-All observations from documents:
-{all_notes}
+{observations_section}
 {related_context}
-Write a concise summary (2-4 sentences) describing who/what this entity is and their significance to the investigation. Focus on facts, roles, and connections.
+
+CRITICAL INSTRUCTIONS:
+1. Write a concise summary (2-4 sentences) describing ONLY verified facts about this entity
+2. Do NOT include any speculation, inference, or "likely" statements
+3. Do NOT add information beyond what is in the verified facts
+4. Focus on: who/what this entity is, their role, and documented actions
+5. Use factual language only (e.g., "is the CFO of..." not "appears to be..." or "may be...")
 
 Return ONLY the summary text, no JSON, no quotes, no preamble.
 """
