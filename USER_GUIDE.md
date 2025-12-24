@@ -1,7 +1,7 @@
 # Owl Investigation Platform - User Guide
 
-**Version:** 2.0  
-**Last Updated:** 21/12/2025
+**Version:** 2.2  
+**Last Updated:** 24/12/2025
 
 ## Table of Contents
 
@@ -44,6 +44,22 @@
 
 - Click on the **Owl logo** in the top left corner of any view.
 - Select **Documentation** from the dropdown menu to view this user guide.
+
+#### Searching Documentation
+
+The documentation viewer includes a powerful search feature:
+
+1. **Search Bar**: Located at the top of the documentation viewer, below the header
+2. **Real-time Search**: As you type, the system searches through all documentation content
+3. **Result Highlighting**: All matching terms are highlighted in yellow
+4. **Navigation Controls**: 
+   - Use the **Previous** (↑) and **Next** (↓) buttons to jump between results
+   - The counter shows "X / Y" where X is the current result and Y is the total number of matches
+5. **Keyboard Shortcuts**:
+   - **Enter**: Jump to next search result (when search input is focused)
+   - **Shift+Enter**: Jump to previous search result
+6. **Clear Search**: Click the X button in the search input to clear the search and remove highlights
+7. **Auto-scroll**: When navigating results, the document automatically scrolls to show the current match
 
 ---
 
@@ -200,6 +216,96 @@ The selected profile guides the AI in:
 - How to identify relationships
 - What to prioritize in the analysis
 - The creativity level (temperature) of responses
+
+### Wiretap Audio Processing
+
+The platform supports processing wiretap audio recordings with automatic transcription and translation.
+
+#### Understanding Wiretap Folders
+
+Wiretap folders contain:
+- **Audio files**: `.wav`, `.mp3`, `.m4a`, or `.flac` files containing recorded conversations
+- **Metadata files**: `.sri` files with call information (time, contact IDs, session length)
+- **Interpretation files**: `.rtf` files with prosecutor interpretations/notes
+
+#### Uploading Wiretap Folders
+
+1. In the **Evidence Processing** view, use the **File Navigator** to browse your case's file system
+2. Navigate to folders containing wiretap audio files
+3. Folders suitable for wiretap processing are automatically detected and marked
+4. You can upload wiretap folders using the standard file upload (folder upload preserves structure)
+
+#### Identifying Wiretap Folders
+
+The system automatically checks folders for wiretap suitability:
+- **Suitable folders** show a "Wiretap Processing" indicator in the File Info panel
+- The indicator shows:
+  - Whether the folder is suitable for processing
+  - Whether it has been processed before
+  - File statistics (total files, processed count, unprocessed count)
+  - Available file types in the folder
+
+#### Processing Wiretap Folders
+
+1. **Select a Wiretap Folder**:
+   - Click on a folder in the File Navigator
+   - The File Info panel shows wiretap processing options
+
+2. **Check Folder Suitability**:
+   - The system automatically checks if the folder contains audio files
+   - A message indicates if the folder is suitable or what's missing
+
+3. **Process Single Folder**:
+   - Click **Process as Wiretap** button in the File Info panel
+   - Select Whisper model size (tiny, base, small, medium, large)
+   - Processing starts in the background
+
+4. **Process Multiple Folders**:
+   - Select multiple folders (Ctrl/Cmd+Click)
+   - Click **Process All [N] Folders as Wiretaps** button
+   - Each folder is processed in a separate background task
+
+#### Whisper Model Selection
+
+Choose the Whisper model size based on your needs:
+- **Tiny**: Fastest, least accurate (good for quick processing)
+- **Base**: Balanced speed and accuracy (recommended default)
+- **Small**: Better accuracy, slower
+- **Medium**: High accuracy, significantly slower
+- **Large**: Best accuracy, slowest (requires more memory)
+
+#### Monitoring Wiretap Processing
+
+1. **Background Tasks Panel**: Click the background tasks icon to monitor progress
+2. **Task Details**: Each wiretap processing task shows:
+   - Folder name being processed
+   - Progress status
+   - Estimated completion time
+3. **Processing Logs**: Real-time logs appear in the Ingestion Log panel
+4. **Task Completion**: When complete, the folder is marked as processed
+
+#### Processed Wiretap Tracking
+
+- **Processed Wiretap List**: View all successfully processed wiretap folders
+- **Status Indicators**: Processed folders show a checkmark in the File Navigator
+- **Avoid Duplicate Processing**: The system prevents reprocessing already-processed folders
+
+#### What Happens During Processing
+
+1. **Audio Transcription**: Whisper AI transcribes audio to text (Spanish and English)
+2. **Metadata Extraction**: System extracts call metadata from `.sri` files
+3. **RTF Parsing**: Prosecutor interpretations are parsed from `.rtf` files
+4. **Entity Extraction**: AI extracts entities (people, locations, events) from transcriptions
+5. **Relationship Creation**: Relationships between entities are identified
+6. **Graph Integration**: All data is added to the Neo4j knowledge graph
+7. **Case Versioning**: A new case version is automatically saved after successful processing
+
+#### Troubleshooting Wiretap Processing
+
+- **Missing Dependencies**: If processing fails, check that `openai-whisper`, `striprtf`, and `ffmpeg` are installed (see WIRETAP_DEPENDENCIES.md)
+- **Error Messages**: Check the Background Tasks panel for detailed error messages
+- **Processing Logs**: Review the Ingestion Log for specific error details
+- **Folder Requirements**: Ensure folders contain at least one audio file
 
 ---
 
@@ -368,14 +474,107 @@ Located in the top left (above the graph):
 
 ### Node Details
 
-- **Overview Panel**: Shows details of selected nodes (left side in split view).
-- Click on a node to see:
-  - Node name and type
-  - Properties and values
-  - Connected relationships
-  - Summary and notes
-- **Edit Button**: Click to edit summary and notes for selected nodes
+The **Selected Nodes Panel** (right side of the graph view) displays detailed information about selected nodes.
+
+#### Basic Node Information
+
+When you select a node, the panel shows:
+- **Node Name and Type**: The entity name and its type (Person, Company, Location, etc.)
+- **Key**: Unique identifier for the node
+- **Summary**: Brief factual summary of the node
+
+#### Verified Facts Section
+
+The **Verified Facts** section displays confirmed information about the node:
+
+- **Fact Display**: Each verified fact shows:
+  - Fact text (confirmed information)
+  - Source citation (document name and page number, if available)
+  - Verification badge (showing who verified it, if verified by a user)
+  - Quote from source document (if available)
+  - Pin/unpin button (star icon)
+
+- **Viewing Source Documents**:
+  - Click the **source citation link** (document name with page number) next to any fact
+  - The Document Viewer opens showing the original source document
+  - The document opens to the specific page referenced
+  - Use page navigation buttons to move through the document
+  - Click **Open in new tab** to view in a separate browser window
+
+- **Pinning Facts**:
+  - Click the **star icon** next to a fact to pin it
+  - Pinned facts appear at the top of the list
+  - Pinned facts have a highlighted background
+  - Click again to unpin
+
+- **Collapsible Section**: Click the section header to expand/collapse
+- **Show All**: If there are more than 5 facts, click "Show all" to see all facts
+
+#### AI Insights Section
+
+The **AI Insights - Unverified** section displays AI-generated inferences that haven't been confirmed:
+
+- **Insight Display**: Each insight shows:
+  - Insight text (AI inference)
+  - Confidence level (high, medium, low)
+  - Reasoning (why the AI made this inference)
+  - "Mark as Verified" button
+
+- **Verifying Insights**:
+  1. Click **Mark as Verified** on an insight
+  2. Optionally add:
+     - **Source document**: Name of the document that confirms this insight
+     - **Page number**: Specific page reference
+  3. Click **Confirm Verification**
+  4. The insight is converted to a verified fact
+  5. Your username is recorded as the verifier
+
+- **Important**: AI insights are inferences, not confirmed facts. Always verify before marking as verified.
+
+- **Collapsible Section**: Click the section header to expand/collapse
+- **Empty State**: If there are no insights, the section shows "No AI insights."
+
+#### Viewing Source Documents
+
+When viewing node details, you can access source documents in several ways:
+
+1. **From Verified Facts**:
+   - Click any citation link (document name with page number)
+   - Example: "report.pdf, p.5" opens the document at page 5
+
+2. **Document Viewer Features**:
+   - **Page Navigation**: Use Previous/Next buttons or type page number
+   - **Open in New Tab**: Click the external link icon
+   - **Keyboard Shortcut**: Press `Esc` to close the viewer
+   - **Scroll Navigation**: Use mouse wheel or scrollbar within the document
+
+3. **Supported File Formats**:
+   - PDF documents (most common)
+   - Text files (.txt)
+   - Word documents (.doc, .docx)
+   - Images (.png, .jpg, .jpeg)
+
+#### Connections Section
+
+- **Relationship Display**: Shows all relationships connected to the node
+- **Direction Indicators**: 
+  - Right arrow (→) for outgoing relationships
+  - Left arrow (←) for incoming relationships
+- **Click to Navigate**: Click any connection to select that connected node
+- **Relationship Type**: Shows the type of relationship (e.g., "WORKS_FOR", "OWNS")
+
+#### Properties Section
+
+- **Additional Properties**: Displays other node properties not shown in main sections
+- **Key-Value Pairs**: Shows property names and their values
+- **Technical Data**: May include internal identifiers and metadata
+
+#### Editing Node Information
+
+- **Edit Button**: Click the **Edit** button in the Selected panel header
+- **Edit Summary and Notes**: Modify the node's summary and detailed notes
 - **Searchable Content**: Both summary and notes are searchable and available to the AI assistant
+- **Multi-Node Editing**: When multiple nodes are selected, editing applies to all selected nodes
 
 ### Adding/Removing from Subgraph
 
@@ -767,6 +966,46 @@ Each task shows:
 
 This section provides a release-by-release overview of major features and enhancements added to the Owl Investigation Platform.
 
+### Version 2.2 (24/12/2025)
+
+**Wiretap Audio Processing:**
+- **Wiretap Folder Detection**: Automatically detect folders suitable for wiretap processing based on audio files (.wav, .mp3, .m4a, .flac), metadata files (.sri), and interpretation files (.rtf)
+- **Wiretap Processing**: Process wiretap folders with Whisper AI for audio transcription and translation
+- **Background Processing**: Wiretap folders are processed in the background with real-time progress tracking
+- **Multiple Folder Processing**: Process multiple wiretap folders simultaneously, each in its own background task
+- **Whisper Model Selection**: Choose Whisper model size (tiny, base, small, medium, large) for transcription accuracy vs. speed trade-off
+- **Processed Wiretap Tracking**: Track which wiretap folders have been successfully processed
+- **Automatic Case Versioning**: Automatically save new case versions after successful wiretap processing
+- **Wiretap Metadata Extraction**: Extract metadata from .sri files including call times, contact IDs, session lengths, and participants
+- **RTF Interpretation Parsing**: Parse prosecutor interpretation files (.rtf) for additional context
+- **Error Handling**: Comprehensive error messages with detailed output for troubleshooting wiretap processing issues
+- **Dependency Checking**: Automatic detection of missing dependencies (openai-whisper, striprtf, ffmpeg) with helpful error messages
+
+**File System Browser:**
+- **Case File System Navigation**: Browse files and directories within case data folders
+- **File System API**: New filesystem router for listing directories and reading files
+- **Recursive Folder Navigation**: Navigate through nested folder structures
+- **File Information**: View file sizes, modification dates, and file types
+- **Text File Reading**: Read text file contents directly from the file system browser
+
+**Document Viewer Enhancements:**
+- **Evidence File Serving**: Direct access to evidence files via evidence ID endpoint
+- **Find Evidence by Filename**: Search for evidence files by original filename to locate evidence IDs from citations
+- **Improved File Access**: Secure file serving with ownership verification and proper content-type headers
+- **Multiple File Format Support**: Support for PDFs, text files, Word documents, and images in document viewer
+
+**Background Tasks Improvements:**
+- **Wiretap Task Tracking**: Dedicated task type for wiretap processing with progress monitoring
+- **Task Icons**: Visual indicators for different task types (file upload, wiretap processing)
+- **Enhanced Error Messages**: Detailed error output included in task failure messages for better debugging
+- **Multiple Task Management**: Support for processing multiple wiretap folders with separate background tasks
+
+**Error Handling and Diagnostics:**
+- **Dependency Validation**: Pre-flight checks for required dependencies before starting wiretap processing
+- **Detailed Error Logging**: Full error output captured and displayed in evidence logs
+- **Script Output Capture**: Last 10 lines of script output included in error messages for troubleshooting
+- **Installation Guide**: Comprehensive dependency installation guide (WIRETAP_DEPENDENCIES.md) for server setup
+
 ### Version 2.1 (21/12/2025)
 
 **Manual Graph Editing:**
@@ -928,6 +1167,44 @@ For technical support or questions, please contact your system administrator or 
 ---
 
 ## Version History
+
+### Version 2.2 (24/12/2025)
+
+**New Features:**
+- Wiretap Audio Processing System
+  - Automatic detection of wiretap folders suitable for processing
+  - Background processing with Whisper AI for transcription and translation
+  - Support for multiple wiretap folders processed simultaneously
+  - Whisper model selection (tiny, base, small, medium, large)
+  - Metadata extraction from .sri files (call times, contact IDs, participants)
+  - RTF interpretation file parsing
+  - Processed wiretap tracking and history
+  - Automatic case versioning after successful processing
+  - Comprehensive error handling with detailed diagnostics
+
+- File System Browser
+  - Browse case file systems with directory navigation
+  - View file information (size, modification date, type)
+  - Read text file contents directly
+  - Recursive folder navigation support
+
+- Document Viewer Enhancements
+  - Direct evidence file serving by evidence ID
+  - Find evidence files by original filename
+  - Improved file access with ownership verification
+  - Support for multiple file formats (PDF, text, Word, images)
+
+- Background Tasks Improvements
+  - Dedicated wiretap processing task type
+  - Visual task type indicators
+  - Enhanced error messages with script output
+  - Multiple concurrent task support
+
+**Improvements:**
+- Better error diagnostics for wiretap processing failures
+- Dependency validation before processing starts
+- Comprehensive installation guide for server dependencies
+- Improved error logging with full output capture
 
 ### Version 2.1 (21/12/2025)
 

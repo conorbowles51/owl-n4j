@@ -135,6 +135,30 @@ async def process_wiretap_folder_async(
             "error": f"Wiretap processing script not found: {ingest_script}"
         }
     
+    # Check if required Python dependencies are available
+    try:
+        import whisper
+    except ImportError:
+        return {
+            "success": False,
+            "error": (
+                "Missing required dependency: openai-whisper\n"
+                "Install with: pip install openai-whisper\n"
+                "Note: This also requires ffmpeg to be installed on the system."
+            )
+        }
+    
+    try:
+        from striprtf.striprtf import rtf_to_text
+    except ImportError:
+        return {
+            "success": False,
+            "error": (
+                "Missing required dependency: striprtf\n"
+                "Install with: pip install striprtf"
+            )
+        }
+    
     try:
         # Change to scripts directory and run the script
         cmd = [

@@ -525,10 +525,28 @@ async def process_wiretap_folders(
                                     message=f"Failed to save case version after wiretap processing: {e}",
                                 )
                         else:
+                            # Include output in error message for debugging
+                            error_msg = result.get("error", "Unknown error")
+                            output = result.get("output", "")
+                            if output:
+                                # Append last few lines of output to error for context
+                                output_lines = output.split('\n')
+                                last_lines = '\n'.join(output_lines[-10:])  # Last 10 lines
+                                error_msg = f"{error_msg}\n\nScript output:\n{last_lines}"
+                            
+                            # Log the full error to evidence logs
+                            evidence_log_storage.add_log(
+                                case_id=request.case_id,
+                                evidence_id=None,
+                                filename=None,
+                                level="error",
+                                message=f"Wiretap processing failed: {error_msg}"
+                            )
+                            
                             background_task_storage.update_task(
                                 tid,
                                 status=TaskStatus.FAILED.value,
-                                error=result.get("error", "Unknown error"),
+                                error=error_msg,
                                 completed_at=datetime.now().isoformat()
                             )
                     except Exception as e:
