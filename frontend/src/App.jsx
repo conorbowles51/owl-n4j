@@ -1186,13 +1186,20 @@ export default function App() {
       const dates = timelineData
         .map(e => e.date)
         .filter(d => d)
-        .map(d => new Date(d));
+        .map(d => new Date(d))
+        .filter(d => !isNaN(d.getTime())); // Filter out invalid dates
       
       if (dates.length > 0) {
-        setDateExtents({
-          min: new Date(Math.min(...dates)).toISOString().split('T')[0],
-          max: new Date(Math.max(...dates)).toISOString().split('T')[0],
-        });
+        const minTimestamp = Math.min(...dates.map(d => d.getTime()));
+        const maxTimestamp = Math.max(...dates.map(d => d.getTime()));
+        
+        // Validate timestamps before creating Date objects
+        if (!isNaN(minTimestamp) && !isNaN(maxTimestamp)) {
+          setDateExtents({
+            min: new Date(minTimestamp).toISOString().split('T')[0],
+            max: new Date(maxTimestamp).toISOString().split('T')[0],
+          });
+        }
       }
     }
   }, [timelineData]);
