@@ -7,6 +7,7 @@ import { X, Save } from 'lucide-react';
  * Modal for editing node information (summary and notes) for one or more selected nodes
  */
 export default function EditNodeModal({ isOpen, onClose, nodes, onSave }) {
+  const [name, setName] = useState('');
   const [summary, setSummary] = useState('');
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -18,9 +19,11 @@ export default function EditNodeModal({ isOpen, onClose, nodes, onSave }) {
       // If editing multiple nodes, start with empty fields (user adds new info)
       // If editing single node, pre-fill with existing values
       if (nodes.length === 1) {
+        setName(nodes[0].name || '');
         setSummary(nodes[0].summary || '');
         setNotes(nodes[0].notes || '');
       } else {
+        setName('');
         setSummary('');
         setNotes('');
       }
@@ -37,6 +40,9 @@ export default function EditNodeModal({ isOpen, onClose, nodes, onSave }) {
     try {
       // Build updates object with only fields that have values
       const updates = {};
+      if (name.trim()) {
+        updates.name = name.trim();
+      }
       if (summary.trim()) {
         updates.summary = summary.trim();
       }
@@ -119,6 +125,26 @@ export default function EditNodeModal({ isOpen, onClose, nodes, onSave }) {
               <strong>Note:</strong> The information you enter will be saved to all {nodeCount} selected nodes. Leave fields empty to keep existing values unchanged.
             </div>
           )}
+
+          {/* Name field */}
+          <div>
+            <label className="block text-sm font-medium text-light-700 mb-2">
+              Name
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={nodeCount > 1 ? "Enter name to update for all selected nodes..." : "Enter or edit node name..."}
+              className="w-full px-3 py-2 border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
+              disabled={isSaving}
+            />
+            {nodeCount === 1 && nodes[0].name && (
+              <p className="text-xs text-light-500 mt-1">
+                Current: {nodes[0].name}
+              </p>
+            )}
+          </div>
 
           {/* Summary field */}
           <div>

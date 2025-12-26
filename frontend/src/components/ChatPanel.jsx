@@ -7,10 +7,12 @@ import {
   Loader2, 
   Sparkles,
   Target,
-  Globe
+  Globe,
+  History
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { chatAPI } from '../services/api';
+import ChatHistoryList from './ChatHistoryList';
 
 /**
  * ChatPanel Component
@@ -22,14 +24,29 @@ export default function ChatPanel({
   onToggle, 
   selectedNodes = [],
   onClose,
-  onMessagesChange // Callback to notify parent of message changes
+  onMessagesChange, // Callback to notify parent of message changes
+  initialMessages = [], // Initial messages to load (e.g., from snapshot)
+  onAutoSave, // Callback to auto-save chat history
+  currentCaseId, // Current case ID for associating chat history
+  currentCaseName, // Current case name
+  currentCaseVersion, // Current case version
 }) {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState([]);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const [lastAutoSaveCount, setLastAutoSaveCount] = useState(0);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Update messages when initialMessages changes (e.g., when loading a snapshot)
+  useEffect(() => {
+    if (initialMessages && initialMessages.length > 0) {
+      setMessages(initialMessages);
+      onMessagesChange?.(initialMessages);
+    }
+  }, [initialMessages, onMessagesChange]);
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -68,6 +85,7 @@ export default function ChatPanel({
       role: 'user',
       content: question,
       selectedNodes: selectedNodes.map(n => n.key), // Store context
+      timestamp: new Date().toISOString(),
     };
     setMessages(prev => {
       const newMessages = [...prev, userMessage];
@@ -91,10 +109,24 @@ export default function ChatPanel({
         contextMode: response.context_mode,
         contextDescription: response.context_description,
         cypherUsed: response.cypher_used,
+        timestamp: new Date().toISOString(),
       };
       setMessages(prev => {
         const newMessages = [...prev, assistantMessage];
         onMessagesChange?.(newMessages);
+        
+        // Auto-save after significant queries
+        // Consider a query "significant" if:
+        // 1. It uses Cypher (has cypherUsed)
+        // 2. Or we've accumulated 3+ messages since last save
+        const isSignificant = !!response.cypher_used || newMessages.length - lastAutoSaveCount >= 3;
+        
+        if (isSignificant && onAutoSave && currentCaseId) {
+          // Auto-save chat history
+          onAutoSave(newMessages);
+          setLastAutoSaveCount(newMessages.length);
+        }
+        
         return newMessages;
       });
     } catch (err) {
@@ -163,12 +195,21 @@ export default function ChatPanel({
           <Sparkles className="w-5 h-5 text-owl-purple-500" />
           <h2 className="font-semibold text-owl-blue-900">AI Assistant</h2>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 hover:bg-light-100 rounded transition-colors"
-        >
-          <X className="w-5 h-5 text-light-600" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowChatHistory(true)}
+            className="p-1 hover:bg-light-100 rounded transition-colors"
+            title="View chat history"
+          >
+            <History className="w-5 h-5 text-light-600" />
+          </button>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-light-100 rounded transition-colors"
+          >
+            <X className="w-5 h-5 text-light-600" />
+          </button>
+        </div>
       </div>
 
       {/* Context Indicator */}
@@ -282,6 +323,19 @@ export default function ChatPanel({
           </button>
         </div>
       </div>
+
+      {/* Chat History List Modal */}
+      <ChatHistoryList
+        isOpen={showChatHistory}
+        onClose={() => setShowChatHistory(false)}
+        onLoadChat={(chatMessages) => {
+          setMessages(chatMessages);
+          onMessagesChange?.(chatMessages);
+          setLastAutoSaveCount(chatMessages.length);
+          setShowChatHistory(false);
+        }}
+        currentCaseId={currentCaseId}
+      />
     </div>
   );
 }

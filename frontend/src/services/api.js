@@ -240,12 +240,13 @@ export const graphAPI = {
     }),
 
   /**
-   * Update node properties (summary and/or notes)
+   * Update node properties (name, summary, and/or notes)
    */
   updateNode: (nodeKey, updates) =>
     fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}`, {
       method: 'PUT',
       body: JSON.stringify({
+        name: updates.name,
         summary: updates.summary,
         notes: updates.notes,
       }),
@@ -583,6 +584,44 @@ export const casesAPI = {
     fetchAPI(`/cases/${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
+};
+
+/**
+ * Chat History API
+ */
+export const chatHistoryAPI = {
+  /**
+   * Create a new chat history
+   */
+  create: (chatData) =>
+    fetchAPI('/chat-history', {
+      method: 'POST',
+      body: JSON.stringify(chatData),
+    }),
+
+  /**
+   * List all chat histories for the current user
+   */
+  list: () => fetchAPI('/chat-history'),
+
+  /**
+   * Get a specific chat history
+   */
+  get: (chatId) => fetchAPI(`/chat-history/${encodeURIComponent(chatId)}`),
+
+  /**
+   * Delete a chat history
+   */
+  delete: (chatId) =>
+    fetchAPI(`/chat-history/${encodeURIComponent(chatId)}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Get chat histories by snapshot ID
+   */
+  getBySnapshot: (snapshotId) =>
+    fetchAPI(`/chat-history/by-snapshot/${encodeURIComponent(snapshotId)}`),
 };
 
 /**

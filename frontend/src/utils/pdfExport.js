@@ -217,6 +217,64 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
     });
   }
 
+  // Citations Section
+  if (snapshot.citations && Object.keys(snapshot.citations).length > 0) {
+    checkPageBreak(30);
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Source Citations', margin, yPosition);
+    yPosition += 8;
+
+    doc.setFontSize(11);
+    doc.setFont(undefined, 'normal');
+    
+    Object.values(snapshot.citations).forEach((nodeCitation, index) => {
+      checkPageBreak(30);
+      
+      // Node header
+      doc.setFont(undefined, 'bold');
+      doc.text(`${index + 1}. ${nodeCitation.node_name || nodeCitation.node_key} (${nodeCitation.node_type})`, margin, yPosition);
+      yPosition += 7;
+      
+      doc.setFont(undefined, 'normal');
+      nodeCitation.citations.forEach((citation) => {
+        checkPageBreak(15);
+        
+        const citationText = `${citation.source_doc}${citation.page ? `, page ${citation.page}` : ''} (${citation.type === 'verified_fact' ? 'Verified Fact' : citation.type === 'ai_insight' ? 'AI Insight' : 'Property'})`;
+        const citationHeight = addWrappedText(
+          `• ${citationText}`,
+          margin + 5,
+          yPosition,
+          contentWidth - 5,
+          10,
+          5
+        );
+        yPosition += citationHeight + 2;
+        
+        if (citation.fact_text) {
+          const factHeight = addWrappedText(
+            `  "${citation.fact_text.substring(0, 100)}${citation.fact_text.length > 100 ? '...' : ''}"`,
+            margin + 10,
+            yPosition,
+            contentWidth - 10,
+            9,
+            4
+          );
+          yPosition += factHeight + 2;
+        }
+        
+        if (citation.verified_by) {
+          doc.setFontSize(9);
+          doc.text(`  Verified by: ${citation.verified_by}`, margin + 10, yPosition);
+          yPosition += 5;
+          doc.setFontSize(11);
+        }
+      });
+      
+      yPosition += 3;
+    });
+  }
+
   // Timeline Section
   checkPageBreak(30);
   doc.setFontSize(14);

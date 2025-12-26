@@ -27,7 +27,7 @@ import {
   Focus,
   Camera
 } from 'lucide-react';
-import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI } from './services/api';
+import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI } from './services/api';
 import GraphView from './components/GraphView';
 import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
@@ -527,6 +527,28 @@ export default function App() {
     });
   }, []);
 
+  // Handle node double-click - open edit modal for name editing
+  const handleNodeDoubleClick = useCallback(async (node, event) => {
+    // Load node details if not already loaded
+    if (!selectedNodesDetails.find(n => n.key === node.key)) {
+      await loadNodeDetails([node.key]);
+    }
+    
+    // Find the node in selectedNodesDetails or use the node from graph
+    const nodeDetails = selectedNodesDetails.find(n => n.key === node.key) || {
+      key: node.key,
+      name: node.name,
+      type: node.type,
+      summary: node.summary,
+      notes: node.notes,
+    };
+    
+    // Set this node as selected and open edit modal
+    setSelectedNodes([node]);
+    setSelectedNodesDetails([nodeDetails]);
+    setShowEditNodeModal(true);
+  }, [selectedNodesDetails, loadNodeDetails]);
+
   // Handle start relationship creation
   const handleStartRelationshipCreation = useCallback(() => {
     // Use currently selected nodes as source, or the right-clicked node
@@ -622,6 +644,33 @@ export default function App() {
       throw err;
     }
   }, [selectedNodesDetails, loadNodeDetails, loadGraph]);
+
+  // Auto-save chat history after significant queries
+  const handleAutoSaveChat = useCallback(async (messages) => {
+    if (!currentCaseId || !messages || messages.length === 0) {
+      return; // Don't save if no case or no messages
+    }
+
+    try {
+      // Generate a name for this chat session
+      const chatName = currentCaseName 
+        ? `${currentCaseName} - Chat ${new Date().toLocaleString()}`
+        : `Chat ${new Date().toLocaleString()}`;
+
+      await chatHistoryAPI.create({
+        name: chatName,
+        messages: messages,
+        snapshot_id: null, // Not associated with a snapshot yet
+        case_id: currentCaseId,
+        case_version: currentCaseVersion,
+      });
+      
+      console.log('Chat history auto-saved');
+    } catch (err) {
+      console.warn('Failed to auto-save chat history:', err);
+      // Don't show error to user - auto-save failures should be silent
+    }
+  }, [currentCaseId, currentCaseName, currentCaseVersion]);
 
   // Handle background click - clear selection (only for main graph)
   const handleBackgroundClick = useCallback(() => {
@@ -1406,6 +1455,82 @@ export default function App() {
     }
 
     try {
+      // Load full node details for all subgraph nodes to get citations
+      // Use the same batching logic as loadNodeDetails but return results directly
+      const BATCH_SIZE = 10;
+      const allSubgraphNodeDetails = [];
+      
+      for (let i = 0; i < subgraphNodeKeys.length; i += BATCH_SIZE) {
+        const batch = subgraphNodeKeys.slice(i, i + BATCH_SIZE);
+        const batchPromises = batch.map(key => graphAPI.getNodeDetails(key));
+        const batchResults = await Promise.all(batchPromises);
+        allSubgraphNodeDetails.push(...batchResults);
+        
+        // Small delay between batches
+        if (i + BATCH_SIZE < subgraphNodeKeys.length) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
+      
+      // Extract citations from all subgraph nodes
+      const citations = {};
+      for (const nodeDetail of allSubgraphNodeDetails) {
+        if (!nodeDetail || !nodeDetail.key) continue;
+        
+        const nodeCitations = [];
+        
+        // Extract citations from verified_facts
+        if (nodeDetail.verified_facts && Array.isArray(nodeDetail.verified_facts)) {
+          for (const fact of nodeDetail.verified_facts) {
+            if (fact.source_doc) {
+              nodeCitations.push({
+                source_doc: fact.source_doc,
+                page: fact.page || null,
+                type: 'verified_fact',
+                fact_text: fact.text || null,
+                verified_by: fact.verified_by || null,
+              });
+            }
+          }
+        }
+        
+        // Extract citations from ai_insights (if they have source info)
+        if (nodeDetail.ai_insights && Array.isArray(nodeDetail.ai_insights)) {
+          for (const insight of nodeDetail.ai_insights) {
+            if (insight.source_doc) {
+              nodeCitations.push({
+                source_doc: insight.source_doc,
+                page: insight.page || null,
+                type: 'ai_insight',
+                insight_text: insight.text || null,
+                confidence: insight.confidence || null,
+              });
+            }
+          }
+        }
+        
+        // Also check node properties for source_doc
+        if (nodeDetail.properties) {
+          const props = nodeDetail.properties;
+          if (props.source_doc) {
+            nodeCitations.push({
+              source_doc: props.source_doc,
+              page: props.page || props.page_number || null,
+              type: 'node_property',
+            });
+          }
+        }
+        
+        if (nodeCitations.length > 0) {
+          citations[nodeDetail.key] = {
+            node_key: nodeDetail.key,
+            node_name: nodeDetail.name,
+            node_type: nodeDetail.type,
+            citations: nodeCitations,
+          };
+        }
+      }
+      
       // Filter chat history to include both user questions and AI responses
       // Find relevant conversation pairs (user question + AI response)
       const relevantChatHistory = [];
@@ -1444,10 +1569,11 @@ export default function App() {
         subgraph: subgraphData,
         timeline: timelineData || [],
         overview: {
-          nodes: selectedNodesDetails,
+          nodes: allSubgraphNodeDetails, // Use full details for all subgraph nodes
           nodeCount: subgraphData.nodes.length,
           linkCount: subgraphData.links.length,
         },
+        citations: citations, // Add citations structure
         chat_history: relevantChatHistory,
       };
 
@@ -1460,8 +1586,25 @@ export default function App() {
       });
 
       // Backend will automatically chunk large snapshots
-      await snapshotsAPI.create(snapshot);
+      const savedSnapshot = await snapshotsAPI.create(snapshot);
       setShowSnapshotModal(false);
+      
+      // Also save chat history separately for easy reloading
+      // Use the full chat history, not just relevant, to preserve complete context
+      if (chatHistory.length > 0) {
+        try {
+          await chatHistoryAPI.create({
+            name: `${snapshot.name} - Chat`,
+            messages: chatHistory, // Save full chat history, not just relevant
+            snapshot_id: savedSnapshot.id,
+            case_id: currentCaseId,
+            case_version: currentCaseVersion,
+          });
+        } catch (err) {
+          console.warn('Failed to save chat history separately:', err);
+          // Don't fail the snapshot save if chat history save fails
+        }
+      }
       
       // Reload snapshots list
       const data = await snapshotsAPI.list();
@@ -1564,6 +1707,13 @@ export default function App() {
 
   // Load case version
   const handleLoadCase = useCallback(async (caseData, versionData) => {
+    // Check if this case/version is already loaded - if so, just switch to graph view
+    if (currentCaseId === caseData.id && currentCaseVersion === versionData.version) {
+      console.log('Case/version already loaded, switching to graph view without reloading');
+      setAppView('graph');
+      return;
+    }
+    
     // Execute Cypher queries to recreate the graph
     const cypherQueries = versionData.cypher_queries;
     
@@ -1607,11 +1757,13 @@ export default function App() {
     try {
       setIsLoading(true);
       
-      // Clear any existing graph first
-      try {
-        await graphAPI.clearGraph();
-      } catch (err) {
-        console.warn('Failed to clear existing graph before loading case:', err);
+      // Only clear graph if switching to a different case/version
+      if (currentCaseId !== caseData.id || currentCaseVersion !== versionData.version) {
+        try {
+          await graphAPI.clearGraph();
+        } catch (err) {
+          console.warn('Failed to clear existing graph before loading case:', err);
+        }
       }
       
       // Execute queries one at a time with progress updates
@@ -1653,10 +1805,36 @@ export default function App() {
       // Reload the graph
       await loadGraph();
       
+      // Store previous case ID to check if we're switching cases
+      const previousCaseId = currentCaseId;
+      
       // Set current case info
       setCurrentCaseId(caseData.id);
       setCurrentCaseName(caseData.name);
       setCurrentCaseVersion(versionData.version);
+      
+      // If switching to a different case, clear chat history and load case-specific history
+      if (previousCaseId !== caseData.id) {
+        // Clear current chat history when switching cases
+        setChatHistory([]);
+        
+        // Load most recent chat history for this case/version
+        try {
+          const allChatHistories = await chatHistoryAPI.list();
+          const caseChatHistories = allChatHistories
+            .filter(chat => chat.case_id === caseData.id && chat.case_version === versionData.version)
+            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          
+          if (caseChatHistories.length > 0) {
+            // Use the most recent case-specific chat history
+            const latestChat = caseChatHistories[0];
+            setChatHistory(latestChat.messages);
+          }
+        } catch (err) {
+          console.warn('Failed to load case chat history:', err);
+          // Continue without chat history
+        }
+      }
       
       // Restore snapshots from the case version
       // First, clear all existing snapshots that belong to this case (to avoid duplicates)
@@ -1718,7 +1896,7 @@ export default function App() {
       // Ensure dialog is closed
       setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
     }
-  }, [loadGraph]);
+  }, [loadGraph, currentCaseId, currentCaseVersion]);
 
   // Handle date range change - memoized to prevent infinite loops
   const handleDateRangeChange = useCallback((range) => {
@@ -1849,11 +2027,22 @@ export default function App() {
             if (versions.length > 0) {
               const sorted = [...versions].sort((a, b) => b.version - a.version);
               const latest = sorted[0];
+              
+              // Check if this case/version is already loaded
+              if (currentCaseId === caseData.id && currentCaseVersion === latest.version) {
+                // Already loaded, just switch to graph view
+                console.log('Case/version already loaded, switching to graph view');
+                setAppView('graph');
+                return;
+              }
+              
               if (latest.cypher_queries && latest.cypher_queries.trim()) {
-                // Clear any existing graph first, then load this case's Cypher
-                await graphAPI.clearGraph().catch((err) => {
-                  console.warn('Failed to clear existing graph before opening case in graph:', err);
-                });
+                // Only clear if switching to a different case/version
+                if (currentCaseId !== caseData.id || currentCaseVersion !== latest.version) {
+                  await graphAPI.clearGraph().catch((err) => {
+                    console.warn('Failed to clear existing graph before opening case in graph:', err);
+                  });
+                }
                 const result = await graphAPI.loadCase(latest.cypher_queries);
                 if (!result.success) {
                   console.error('Case load (from Evidence view) sanity check failed:', result.errors);
@@ -1874,9 +2063,12 @@ export default function App() {
             }
 
             // No Cypher exists for this case yet: show an empty graph
-            await graphAPI.clearGraph().catch(() => {});
-            setGraphData({ nodes: [], links: [] });
-            setFullGraphData({ nodes: [], links: [] });
+            // Only clear if we don't already have this case loaded
+            if (currentCaseId !== caseData.id) {
+              await graphAPI.clearGraph().catch(() => {});
+              setGraphData({ nodes: [], links: [] });
+              setFullGraphData({ nodes: [], links: [] });
+            }
             await loadGraph();
             setAppView('graph');
           } catch (err) {
@@ -1886,11 +2078,24 @@ export default function App() {
         }}
         onLoadProcessedGraph={async (caseId, version) => {
           try {
+            // Check if this case/version is already loaded
+            if (currentCaseId === caseId && currentCaseVersion === version) {
+              console.log('Case/version already loaded, switching to graph view');
+              setAppView('graph');
+              return;
+            }
+            
             const versionData = await casesAPI.getVersion(caseId, version);
             if (!versionData || !versionData.cypher_queries) {
               alert('No Cypher queries found for the processed case version.');
               return;
             }
+            
+            // Only clear if switching to a different case/version
+            if (currentCaseId !== caseId || currentCaseVersion !== version) {
+              await graphAPI.clearGraph().catch(() => {});
+            }
+            
             const result = await graphAPI.loadCase(versionData.cypher_queries);
             if (!result.success) {
               console.error('Processed graph load sanity check failed:', result.errors);
@@ -2372,6 +2577,7 @@ export default function App() {
                     onNodeClick={handleNodeClick}
                     onBulkNodeSelect={handleBulkNodeSelect}
                     onNodeRightClick={handleNodeRightClick}
+                    onNodeDoubleClick={handleNodeDoubleClick}
                     onBackgroundClick={handleBackgroundClick}
                     width={graphWidth}
                     height={graphHeight}
@@ -2634,6 +2840,7 @@ export default function App() {
                         onNodeClick={handleSubgraphNodeClick}
                         onBulkNodeSelect={handleBulkNodeSelect}
                         onNodeRightClick={handleNodeRightClick}
+                    onNodeDoubleClick={handleNodeDoubleClick}
                         onBackgroundClick={handleSubgraphBackgroundClick}
                         width={graphWidth}
                         height={graphHeight}
@@ -2801,6 +3008,11 @@ export default function App() {
             onClose={() => setIsChatOpen(false)}
             selectedNodes={selectedNodesDetails}
             onMessagesChange={setChatHistory}
+            initialMessages={chatHistory}
+            onAutoSave={handleAutoSaveChat}
+            currentCaseId={currentCaseId}
+            currentCaseName={currentCaseName}
+            currentCaseVersion={currentCaseVersion}
           />
         )}
       </div>
@@ -2915,6 +3127,47 @@ export default function App() {
 
             // Load node details for the selected nodes (for the overview panel)
             await loadNodeDetails(nodeKeys);
+
+            // Restore chat history from snapshot
+            // First try to load case-specific chat histories
+            if (currentCaseId) {
+              try {
+                const allChatHistories = await chatHistoryAPI.list();
+                const caseChatHistories = allChatHistories
+                  .filter(chat => chat.case_id === currentCaseId)
+                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                
+                if (caseChatHistories.length > 0) {
+                  // Use the most recent case-specific chat history
+                  const latestChat = caseChatHistories[0];
+                  setChatHistory(latestChat.messages);
+                } else if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
+                  // Fall back to snapshot's chat history
+                  setChatHistory(fullSnapshot.chat_history);
+                }
+              } catch (err) {
+                console.warn('Failed to load case chat history:', err);
+                // Fall back to snapshot chat history
+                if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
+                  setChatHistory(fullSnapshot.chat_history);
+                }
+              }
+            } else if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
+              setChatHistory(fullSnapshot.chat_history);
+            } else {
+              // Try to load chat history separately if not in snapshot
+              try {
+                const chatHistories = await chatHistoryAPI.getBySnapshot(snapshot.id);
+                if (chatHistories && chatHistories.length > 0) {
+                  // Use the most recent chat history
+                  const latestChat = chatHistories[0];
+                  setChatHistory(latestChat.messages);
+                }
+              } catch (err) {
+                console.warn('Failed to load separate chat history:', err);
+                // Continue without chat history
+              }
+            }
 
             // Timeline will be loaded automatically by the useEffect when timelineContextKeys changes
             setShowFilePanel(false);

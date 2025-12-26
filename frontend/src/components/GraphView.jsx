@@ -103,6 +103,7 @@ const GraphView = forwardRef(function GraphView({
   onNodeClick,
   onBulkNodeSelect, // New prop for bulk selection
   onNodeRightClick,
+  onNodeDoubleClick, // Callback for double-clicking a node
   onBackgroundClick,
   width,
   height,
@@ -452,6 +453,11 @@ const GraphView = forwardRef(function GraphView({
     event.preventDefault();
     onNodeRightClick?.(node, event);
   }, [onNodeRightClick]);
+
+  // Handle double click
+  const handleNodeDoubleClick = useCallback((node, event) => {
+    onNodeDoubleClick?.(node, event);
+  }, [onNodeDoubleClick]);
 
   // Handle background click
   const handleBackgroundClick = useCallback((event) => {
@@ -987,6 +993,7 @@ const GraphView = forwardRef(function GraphView({
         linkDirectionalArrowLength={0}
         onNodeClick={handleNodeClick}
         onNodeRightClick={handleNodeRightClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
         enableZoomInteraction={selectionMode !== 'drag'}
         enablePanInteraction={selectionMode !== 'drag'}
         onBackgroundClick={handleBackgroundClick}

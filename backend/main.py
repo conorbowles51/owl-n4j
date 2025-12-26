@@ -21,6 +21,7 @@ from routers import (
     background_tasks_router,
     profiles_router,
     filesystem_router,
+    chat_history_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -94,6 +95,7 @@ app.include_router(evidence_router)
 app.include_router(background_tasks_router)
 app.include_router(profiles_router)
 app.include_router(filesystem_router)
+app.include_router(chat_history_router)
 
 
 @app.get("/")

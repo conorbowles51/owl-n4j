@@ -40,6 +40,8 @@ const FileManagementPanel = ({
   const [snapshotsExpanded, setSnapshotsExpanded] = useState(false);
   const [casesExpanded, setCasesExpanded] = useState(false);
   const [olderVersionsExpanded, setOlderVersionsExpanded] = useState(false);
+  const [expandedSnapshotIds, setExpandedSnapshotIds] = useState(new Set());
+  const [loadedSnapshotDetails, setLoadedSnapshotDetails] = useState({}); // Store full snapshot data by ID
 
   useEffect(() => {
     if (isOpen) {
@@ -217,54 +219,289 @@ const FileManagementPanel = ({
                   {snapshots.length === 0 ? (
                     <p className="text-xs text-light-500 italic">No snapshots saved yet</p>
                   ) : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {snapshots.map((snapshot) => (
-                        <div
-                          key={snapshot.id}
-                          className="p-3 bg-light-50 rounded-lg border border-light-200 hover:border-owl-blue-300 transition-colors"
-                        >
-                          <div className="flex items-start justify-between gap-2 mb-2">
-                            <div className="flex-1 min-w-0">
-                              <h5 className="font-medium text-owl-blue-900 truncate text-sm">{snapshot.name}</h5>
-                              <p className="text-xs text-light-600 mt-1 line-clamp-2">{snapshot.notes || 'No notes'}</p>
-                              <div className="flex items-center gap-2 mt-2 text-xs text-light-500">
-                                <span>{snapshot.node_count} nodes</span>
-                                <span>•</span>
-                                <span>{snapshot.link_count} links</span>
-                                {snapshot.case_name && (
-                                  <>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {snapshots.map((snapshot) => {
+                        const isExpanded = expandedSnapshotIds.has(snapshot.id);
+                        return (
+                          <div
+                            key={snapshot.id}
+                            className="bg-light-50 rounded-lg border border-light-200 hover:border-owl-blue-300 transition-colors"
+                          >
+                            <div className="p-3">
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <h5 className="font-medium text-owl-blue-900 truncate text-sm">{snapshot.name}</h5>
+                                    <button
+                                      onClick={async () => {
+                                        const next = new Set(expandedSnapshotIds);
+                                        if (next.has(snapshot.id)) {
+                                          next.delete(snapshot.id);
+                                        } else {
+                                          next.add(snapshot.id);
+                                          // Load full snapshot details if not already loaded
+                                          if (!loadedSnapshotDetails[snapshot.id]) {
+                                            try {
+                                              const fullSnapshot = await snapshotsAPI.get(snapshot.id);
+                                              setLoadedSnapshotDetails(prev => ({
+                                                ...prev,
+                                                [snapshot.id]: fullSnapshot
+                                              }));
+                                            } catch (err) {
+                                              console.error('Failed to load snapshot details:', err);
+                                            }
+                                          }
+                                        }
+                                        setExpandedSnapshotIds(next);
+                                      }}
+                                      className="text-xs text-owl-blue-600 hover:text-owl-blue-700 flex items-center gap-1"
+                                    >
+                                      {isExpanded ? (
+                                        <>
+                                          <ChevronDown className="w-3 h-3" />
+                                          Collapse
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronRight className="w-3 h-3" />
+                                          Expand
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                  <p className="text-xs text-light-600 mt-1 whitespace-pre-wrap">{snapshot.notes || 'No notes'}</p>
+                                  <div className="flex items-center gap-2 mt-2 text-xs text-light-500">
+                                    <span>{snapshot.node_count} nodes</span>
                                     <span>•</span>
-                                    <span className="text-owl-blue-600">{snapshot.case_name}</span>
-                                  </>
-                                )}
+                                    <span>{snapshot.link_count} links</span>
+                                    {snapshot.case_name && (
+                                      <>
+                                        <span>•</span>
+                                        <span className="text-owl-blue-600">{snapshot.case_name}</span>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Detailed Snapshot Information */}
+                              {isExpanded && loadedSnapshotDetails[snapshot.id] && (() => {
+                                const fullSnapshot = loadedSnapshotDetails[snapshot.id];
+                                return (
+                                  <div className="mt-3 pt-3 border-t border-light-200 space-y-3">
+                                    {/* Overview Nodes */}
+                                    {fullSnapshot.overview && fullSnapshot.overview.nodes && fullSnapshot.overview.nodes.length > 0 && (
+                                      <div>
+                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                          <FileText className="w-3 h-3" />
+                                          Node Overview ({fullSnapshot.overview.nodes.length} nodes)
+                                        </h6>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                          {fullSnapshot.overview.nodes.map((node, nodeIdx) => (
+                                            <div key={nodeIdx} className="bg-white rounded p-2 border border-light-200">
+                                              <div className="flex items-start justify-between gap-2 mb-1">
+                                                <h7 className="font-medium text-owl-blue-900 text-xs">
+                                                  {node.name || node.key}
+                                                </h7>
+                                                {node.type && (
+                                                  <span className="text-xs px-1.5 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
+                                                    {node.type}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              {node.summary && (
+                                                <p className="text-xs text-light-700 mt-1 line-clamp-2">
+                                                  {node.summary}
+                                                </p>
+                                              )}
+                                              {node.notes && (
+                                                <p className="text-xs text-light-600 mt-1 italic line-clamp-1">
+                                                  {node.notes}
+                                                </p>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Citations */}
+                                    {fullSnapshot.citations && Object.keys(fullSnapshot.citations).length > 0 && (
+                                      <div>
+                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                          <FileText className="w-3 h-3" />
+                                          Source Citations
+                                        </h6>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                          {Object.values(fullSnapshot.citations).map((nodeCitation, idx) => (
+                                            <div key={idx} className="bg-white rounded p-2 border border-light-200">
+                                              <div className="font-medium text-owl-blue-900 text-xs mb-1">
+                                                {nodeCitation.node_name} ({nodeCitation.node_type})
+                                              </div>
+                                              <div className="space-y-1">
+                                                {nodeCitation.citations.map((citation, cIdx) => (
+                                                  <div key={cIdx} className="text-xs text-light-700 pl-2 border-l-2 border-owl-blue-300">
+                                                    <div className="flex items-center gap-1 flex-wrap">
+                                                      <FileText className="w-3 h-3 text-owl-blue-600" />
+                                                      <span className="font-medium">
+                                                        {citation.source_doc}
+                                                        {citation.page && `, page ${citation.page}`}
+                                                      </span>
+                                                      <span className="text-light-500">
+                                                        ({citation.type === 'verified_fact' ? 'Verified Fact' : citation.type === 'ai_insight' ? 'AI Insight' : 'Property'})
+                                                      </span>
+                                                    </div>
+                                                    {citation.fact_text && (
+                                                      <p className="text-light-600 mt-0.5 italic line-clamp-1">
+                                                        {citation.fact_text}
+                                                      </p>
+                                                    )}
+                                                    {citation.verified_by && (
+                                                      <p className="text-light-500 text-xs mt-0.5">
+                                                        Verified by: {citation.verified_by}
+                                                      </p>
+                                                    )}
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Timeline Events */}
+                                    {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && fullSnapshot.timeline.length > 0 && (
+                                      <div>
+                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                          <Calendar className="w-3 h-3" />
+                                          Timeline Events ({fullSnapshot.timeline.length} events)
+                                        </h6>
+                                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                                          {fullSnapshot.timeline.slice(0, 5).map((event, eventIdx) => (
+                                            <div key={eventIdx} className="bg-white rounded p-2 border border-light-200">
+                                              <div className="flex items-start justify-between gap-2 mb-1">
+                                                <span className="font-medium text-owl-blue-900 text-xs">
+                                                  {event.name || event.key}
+                                                </span>
+                                                {event.type && (
+                                                  <span className="text-xs px-1.5 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
+                                                    {event.type}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              {event.date && (
+                                                <p className="text-xs text-light-600 mt-0.5">
+                                                  {new Date(event.date).toLocaleDateString()}
+                                                  {event.time && ` at ${event.time}`}
+                                                </p>
+                                              )}
+                                              {event.summary && (
+                                                <p className="text-xs text-light-700 mt-0.5 line-clamp-1">
+                                                  {event.summary}
+                                                </p>
+                                              )}
+                                            </div>
+                                          ))}
+                                          {fullSnapshot.timeline.length > 5 && (
+                                            <p className="text-xs text-light-500 text-center py-1">
+                                              ... and {fullSnapshot.timeline.length - 5} more events
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Chat History */}
+                                    {fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0 && (
+                                      <div>
+                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                          <FileText className="w-3 h-3" />
+                                          Chat History ({fullSnapshot.chat_history.length} messages)
+                                        </h6>
+                                        <div className="space-y-1 max-h-48 overflow-y-auto">
+                                          {fullSnapshot.chat_history.map((msg, msgIdx) => (
+                                            <div key={msgIdx} className="bg-white rounded p-2 border border-light-200">
+                                              <div className="flex items-center gap-2 mb-0.5">
+                                                <span className="text-xs font-medium text-owl-purple-600">
+                                                  {msg.role === 'user' ? 'User' : 'AI'}
+                                                </span>
+                                                {msg.timestamp && (
+                                                  <span className="text-xs text-light-500">
+                                                    {new Date(msg.timestamp).toLocaleDateString()}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <p className="text-xs text-light-700 whitespace-pre-wrap line-clamp-2">
+                                                {msg.content}
+                                              </p>
+                                              {msg.cypherUsed && (
+                                                <p className="text-xs text-light-500 mt-0.5 italic">
+                                                  Cypher query used
+                                                </p>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Subgraph Statistics */}
+                                    {fullSnapshot.subgraph && (
+                                      <div>
+                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                          <FileText className="w-3 h-3" />
+                                          Subgraph Statistics
+                                        </h6>
+                                        <div className="bg-white rounded p-2 border border-light-200 text-xs">
+                                          <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                              <span className="text-light-600">Nodes:</span>
+                                              <span className="ml-2 font-medium text-owl-blue-900">
+                                                {fullSnapshot.subgraph.nodes?.length || 0}
+                                              </span>
+                                            </div>
+                                            <div>
+                                              <span className="text-light-600">Links:</span>
+                                              <span className="ml-2 font-medium text-owl-blue-900">
+                                                {fullSnapshot.subgraph.links?.length || 0}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+                              
+                              <div className="flex items-center gap-2 mt-3">
+                                <button
+                                  onClick={() => onLoadSnapshot(snapshot)}
+                                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded text-xs transition-colors"
+                                >
+                                  <Eye className="w-3.5 h-3.5" />
+                                  Load
+                                </button>
+                                <button
+                                  onClick={() => onExportPDF(snapshot)}
+                                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-light-100 hover:bg-light-200 text-light-700 rounded text-xs transition-colors"
+                                  title="Export to PDF"
+                                >
+                                  <FileDown className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSnapshot(snapshot.id)}
+                                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs transition-colors"
+                                  title="Delete snapshot"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <button
-                              onClick={() => onLoadSnapshot(snapshot)}
-                              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded text-xs transition-colors"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                              Load
-                            </button>
-                            <button
-                              onClick={() => onExportPDF(snapshot)}
-                              className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-light-100 hover:bg-light-200 text-light-700 rounded text-xs transition-colors"
-                              title="Export to PDF"
-                            >
-                              <FileDown className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteSnapshot(snapshot.id)}
-                              className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs transition-colors"
-                              title="Delete snapshot"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </>

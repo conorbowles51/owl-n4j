@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Archive, X, Trash2, Eye, Calendar, FileDown, Clock, DollarSign } from 'lucide-react';
+import { Archive, X, Trash2, Eye, Calendar, FileDown, Clock, DollarSign, FileText } from 'lucide-react';
 import { snapshotsAPI } from '../services/api';
 import { exportSnapshotToPDF } from '../utils/pdfExport';
 
@@ -301,6 +301,43 @@ export default function SnapshotList({ isOpen, onClose, onLoadSnapshot }) {
                                       </span>
                                     )}
                                   </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedSnapshot.citations && Object.keys(selectedSnapshot.citations).length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-owl-blue-900 mb-2">Source Citations</h4>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {Object.values(selectedSnapshot.citations).map((nodeCitation, idx) => (
+                        <div key={idx} className="bg-light-50 rounded p-2 text-xs border border-light-200">
+                          <div className="font-medium text-owl-blue-900 mb-1">
+                            {nodeCitation.node_name} ({nodeCitation.node_type})
+                          </div>
+                          <div className="space-y-1">
+                            {nodeCitation.citations.map((citation, cIdx) => (
+                              <div key={cIdx} className="text-light-700 pl-2 border-l-2 border-owl-blue-300">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="w-3 h-3 text-owl-blue-600" />
+                                  <span className="font-medium">
+                                    {citation.source_doc}
+                                    {citation.page && `, page ${citation.page}`}
+                                  </span>
+                                  <span className="text-light-500">
+                                    ({citation.type === 'verified_fact' ? 'Verified Fact' : citation.type === 'ai_insight' ? 'AI Insight' : 'Property'})
+                                  </span>
+                                </div>
+                                {citation.fact_text && (
+                                  <p className="text-light-600 mt-1 italic line-clamp-2">{citation.fact_text}</p>
+                                )}
+                                {citation.verified_by && (
+                                  <p className="text-light-500 text-xs mt-0.5">Verified by: {citation.verified_by}</p>
                                 )}
                               </div>
                             ))}

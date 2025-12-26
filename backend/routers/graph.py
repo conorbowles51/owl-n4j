@@ -73,6 +73,7 @@ class CreateNodeResponse(BaseModel):
 
 class UpdateNodeRequest(BaseModel):
     """Request model for updating a node."""
+    name: Optional[str] = None
     summary: Optional[str] = None
     notes: Optional[str] = None
 
@@ -728,6 +729,11 @@ async def update_node(node_key: str, request: UpdateNodeRequest):
         # Build SET clause for properties to update
         set_clauses = []
         
+        if request.name is not None:
+            # Escape single quotes in name
+            escaped_name = request.name.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+            set_clauses.append(f"n.name = '{escaped_name}'")
+        
         if request.summary is not None:
             # Escape single quotes in summary
             escaped_summary = request.summary.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
@@ -739,7 +745,7 @@ async def update_node(node_key: str, request: UpdateNodeRequest):
             set_clauses.append(f"n.notes = '{escaped_notes}'")
         
         if not set_clauses:
-            raise HTTPException(status_code=400, detail="At least one field (summary or notes) must be provided")
+            raise HTTPException(status_code=400, detail="At least one field (name, summary, or notes) must be provided")
         
         # Generate Cypher query to update the node
         # Find the node by key and update properties

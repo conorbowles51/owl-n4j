@@ -23,6 +23,7 @@ class SnapshotData(BaseModel):
     subgraph: dict  # {nodes: [], links: []}
     timeline: Optional[List[dict]] = None
     overview: Optional[dict] = None
+    citations: Optional[dict] = None  # Citations and references to source documents
     chat_history: Optional[List[dict]] = None  # Questions and responses
     notes: str
     timestamp: str
@@ -39,6 +40,7 @@ class SnapshotCreate(BaseModel):
     subgraph: dict
     timeline: Optional[List[dict]] = None
     overview: Optional[dict] = None
+    citations: Optional[dict] = None  # Citations and references to source documents
     chat_history: Optional[List[dict]] = None
 
 
@@ -84,6 +86,7 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
         "subgraph": snapshot.subgraph,
         "timeline": snapshot.timeline or [],
         "overview": snapshot.overview or {},
+        "citations": snapshot.citations or {},
         "chat_history": snapshot.chat_history or [],
         "timestamp": timestamp,
         "created_at": timestamp,
@@ -169,6 +172,7 @@ async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user))
         subgraph=snapshot["subgraph"],
         timeline=snapshot["timeline"],
         overview=snapshot["overview"],
+        citations=snapshot.get("citations", {}),
         chat_history=snapshot["chat_history"],
         notes=snapshot["notes"],
         timestamp=snapshot["timestamp"],
