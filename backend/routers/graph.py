@@ -45,6 +45,11 @@ class CaseLoadRequest(BaseModel):
     cypher_queries: str
 
 
+class SingleQueryRequest(BaseModel):
+    """Request model for executing a single Cypher query (for case loading with progress)."""
+    query: str
+
+
 class LastGraphResponse(BaseModel):
     cypher: Optional[str] = None
     saved_at: Optional[str] = None
@@ -434,6 +439,37 @@ async def load_case(request: CaseLoadRequest):
         "total": len(queries),
         "errors": errors or None,
     }
+
+
+@router.post("/execute-single-query")
+async def execute_single_query(request: SingleQueryRequest):
+    """
+    Execute a single Cypher query (for case loading with progress tracking).
+    
+    This endpoint is used when loading case versions to execute queries
+    one at a time and track progress.
+    
+    Args:
+        request: Request with a single Cypher query to execute
+    """
+    if not request.query or not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query is required")
+
+    query = request.query.strip()
+    
+    try:
+        neo4j_service.run_cypher(query, {})
+        return {
+            "success": True,
+            "error": None,
+        }
+    except Exception as e:
+        error_msg = str(e)
+        query_preview = query[:100] + "..." if len(query) > 100 else query
+        return {
+            "success": False,
+            "error": f"{error_msg}\nQuery: {query_preview}",
+        }
 
 
 @router.post("/clear-graph", response_model=LastGraphResponse)

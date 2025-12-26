@@ -111,12 +111,25 @@ export function getDateRange(events) {
     .map(e => e.date)
     .filter(d => d)
     .map(d => parseDate(d))
-    .filter(d => d);
+    .filter(d => d && !isNaN(d.getTime())); // Filter out null and invalid dates
   
   if (dates.length === 0) return { min: null, max: null };
   
-  const min = new Date(Math.min(...dates.map(d => d.getTime())));
-  const max = new Date(Math.max(...dates.map(d => d.getTime())));
+  // Get timestamps and validate they're valid numbers
+  const timestamps = dates.map(d => d.getTime()).filter(ts => !isNaN(ts));
+  
+  if (timestamps.length === 0) return { min: null, max: null };
+  
+  const minTimestamp = Math.min(...timestamps);
+  const maxTimestamp = Math.max(...timestamps);
+  
+  // Validate timestamps before creating Date objects
+  if (isNaN(minTimestamp) || isNaN(maxTimestamp)) {
+    return { min: null, max: null };
+  }
+  
+  const min = new Date(minTimestamp);
+  const max = new Date(maxTimestamp);
   
   const totalRange = max.getTime() - min.getTime();
   
@@ -127,9 +140,17 @@ export function getDateRange(events) {
   // Add smaller padding at the end
   const endPadding = Math.max(totalRange * 0.02, 7 * 24 * 60 * 60 * 1000); // 2% or 7 days minimum
   
+  // Calculate padded dates and validate before calling toISOString
+  const minPadded = minTimestamp - startPadding;
+  const maxPadded = maxTimestamp + endPadding;
+  
+  if (isNaN(minPadded) || isNaN(maxPadded)) {
+    return { min: null, max: null };
+  }
+  
   return { 
-    min: new Date(min.getTime() - startPadding).toISOString().split('T')[0], 
-    max: new Date(max.getTime() + endPadding).toISOString().split('T')[0] 
+    min: new Date(minPadded).toISOString().split('T')[0], 
+    max: new Date(maxPadded).toISOString().split('T')[0] 
   };
 }
 

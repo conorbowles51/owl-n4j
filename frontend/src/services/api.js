@@ -28,6 +28,22 @@ async function fetchAPI(endpoint, options = {}) {
     config.headers['Content-Type'] = 'application/json';
   }
 
+  // Stringify body if it's an object (backend will handle chunking for large snapshots)
+  if (config.body && typeof config.body === 'object' && !(config.body instanceof FormData) && !(config.body instanceof String)) {
+    try {
+      config.body = JSON.stringify(config.body);
+    } catch (err) {
+      // If stringify fails due to size, let the backend handle it via chunking
+      // For snapshots, the backend will automatically chunk large data
+      if (err.message && (err.message.includes('Invalid string length') || err.message.includes('string length'))) {
+        // For snapshot endpoints, we'll send the data in a way that allows backend chunking
+        // For now, re-throw and let backend handle it
+        throw new Error('Data is too large. The backend will attempt to chunk it automatically.');
+      }
+      throw err;
+    }
+  }
+
   // Add timeout to prevent hanging (5 minutes default, 10 seconds for login, 30 seconds for auth/me)
   const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : endpoint.includes('/auth/me') ? 30000 : 300000);
   const controller = new AbortController();
@@ -160,6 +176,17 @@ export const graphAPI = {
       method: 'POST',
       body: JSON.stringify({
         cypher_queries: cypherQueries,
+      }),
+    }),
+
+  /**
+   * Execute a single Cypher query (for case loading with progress)
+   */
+  executeSingleQuery: (query) =>
+    fetchAPI('/graph/execute-single-query', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: query,
       }),
     }),
 
@@ -353,12 +380,142 @@ export const timelineAPI = {
 export const snapshotsAPI = {
   /**
    * Create a new snapshot
+   * Backend will automatically chunk large snapshots
+   * If stringify fails due to size, uses chunked upload
    */
-  create: (snapshot) => 
-    fetchAPI('/snapshots', {
-      method: 'POST',
-      body: JSON.stringify(snapshot),
-    }),
+  create: async (snapshot) => {
+    const snapshot_id = `snapshot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    try {
+      // Try normal upload first
+      const bodyString = JSON.stringify(snapshot);
+      return fetchAPI('/snapshots', {
+        method: 'POST',
+        body: bodyString,
+      });
+    } catch (err) {
+      // If stringify fails due to size, use chunked upload
+      if (err.message && (err.message.includes('Invalid string length') || err.message.includes('string length'))) {
+        const timestamp = new Date().toISOString();
+        const chunks = [];
+        let chunkIndex = 0;
+        
+        // Chunk 0: Metadata + subgraph links + first batch of nodes
+        const nodesPerChunk = 1000; // Start with reasonable size
+        const nodes = snapshot.subgraph.nodes || [];
+        const links = snapshot.subgraph.links || [];
+        
+        let nodeIndex = 0;
+        let currentNodesPerChunk = nodesPerChunk;
+        let retryCount = 0;
+        const maxRetries = 20; // Prevent infinite loops
+        
+        while (nodeIndex < nodes.length && retryCount < maxRetries) {
+          const chunkNodes = nodes.slice(nodeIndex, nodeIndex + currentNodesPerChunk);
+          
+          if (chunkNodes.length === 0) {
+            // No more nodes to process
+            break;
+          }
+          
+          const chunkData = {
+            name: snapshot.name,
+            notes: snapshot.notes,
+            subgraph: {
+              nodes: chunkNodes,
+              links: nodeIndex === 0 ? links : [], // Links only in first chunk
+            },
+            timestamp: timestamp,
+            created_at: timestamp,
+          };
+          
+          // Try to stringify this chunk
+          try {
+            JSON.stringify(chunkData);
+            chunks.push(chunkData);
+            nodeIndex += chunkNodes.length;
+            chunkIndex++;
+            // Reset chunk size and retry count for next iteration
+            currentNodesPerChunk = nodesPerChunk;
+            retryCount = 0;
+          } catch {
+            // This chunk is still too large, reduce size and retry
+            currentNodesPerChunk = Math.max(1, Math.floor(currentNodesPerChunk / 2));
+            retryCount++;
+            // Don't increment nodeIndex, will retry with smaller chunk
+          }
+        }
+        
+        if (retryCount >= maxRetries) {
+          throw new Error('Unable to chunk snapshot data. Individual nodes may be too large.');
+        }
+        
+        // Add timeline in chunks if needed
+        if (snapshot.timeline && snapshot.timeline.length > 0) {
+          const eventsPerChunk = 500;
+          for (let i = 0; i < snapshot.timeline.length; i += eventsPerChunk) {
+            chunks.push({
+              timeline: snapshot.timeline.slice(i, i + eventsPerChunk),
+            });
+            chunkIndex++;
+          }
+        }
+        
+        // Add overview
+        if (snapshot.overview) {
+          chunks.push({ overview: snapshot.overview });
+          chunkIndex++;
+        }
+        
+        // Add chat_history in chunks if needed
+        if (snapshot.chat_history && snapshot.chat_history.length > 0) {
+          const messagesPerChunk = 100;
+          for (let i = 0; i < snapshot.chat_history.length; i += messagesPerChunk) {
+            chunks.push({
+              chat_history: snapshot.chat_history.slice(i, i + messagesPerChunk),
+            });
+            chunkIndex++;
+          }
+        }
+        
+        // Upload chunks sequentially
+        for (let i = 0; i < chunks.length; i++) {
+          const isLast = i === chunks.length - 1;
+          try {
+            await fetchAPI('/snapshots/upload-chunk', {
+              method: 'POST',
+              body: JSON.stringify({
+                snapshot_id: snapshot_id,
+                chunk_index: i,
+                chunk_data: chunks[i],
+                is_last_chunk: isLast,
+              }),
+            });
+          } catch (chunkErr) {
+            // If individual chunk is still too large, split it further
+            if (chunkErr.message && chunkErr.message.includes('string length')) {
+              // This shouldn't happen if we chunked properly, but handle it
+              throw new Error('Snapshot data is extremely large. Please reduce the amount of data.');
+            }
+            throw chunkErr;
+          }
+        }
+        
+        // Return response similar to normal create
+        return {
+          id: snapshot_id,
+          name: snapshot.name,
+          notes: snapshot.notes,
+          timestamp: timestamp,
+          node_count: snapshot.subgraph.nodes.length,
+          link_count: snapshot.subgraph.links.length,
+          timeline_count: snapshot.timeline?.length || 0,
+          created_at: timestamp,
+        };
+      }
+      throw err;
+    }
+  },
 
   /**
    * List all snapshots

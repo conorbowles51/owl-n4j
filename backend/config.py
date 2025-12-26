@@ -36,7 +36,7 @@ AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "owlinvestigates")
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "supersecretchange")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
-AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "60"))
+AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours default
 
 # API Configuration
 API_HOST = os.getenv("API_HOST", "0.0.0.0")

@@ -48,6 +48,7 @@ import { parseSearchQuery, matchesQuery } from './utils/searchParser';
 import LoginPanel from './components/LoginPanel';
 import DocumentationViewer from './components/DocumentationViewer';
 import DocumentViewer from './components/DocumentViewer';
+import LoadCaseProgressDialog from './components/LoadCaseProgressDialog';
 import AddNodeModal from './components/AddNodeModal';
 import CreateRelationshipModal from './components/CreateRelationshipModal';
 import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
@@ -134,6 +135,15 @@ export default function App() {
     documentName: null,
     page: 1,
     highlightText: null,
+  });
+  
+  // Load case progress state
+  const [loadCaseProgress, setLoadCaseProgress] = useState({
+    isOpen: false,
+    current: 0,
+    total: 0,
+    caseName: null,
+    version: null,
   });
   
   const accountDropdownRef = useRef(null);
@@ -1432,7 +1442,7 @@ export default function App() {
         name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
         subgraph: subgraphData,
-        timeline: timelineData || [], // Ensure timeline is always an array
+        timeline: timelineData || [],
         overview: {
           nodes: selectedNodesDetails,
           nodeCount: subgraphData.nodes.length,
@@ -1444,9 +1454,12 @@ export default function App() {
       console.log('Saving snapshot:', {
         name: snapshot.name,
         timelineCount: snapshot.timeline.length,
-        timeline: snapshot.timeline
+        nodeCount: snapshot.subgraph.nodes.length,
+        linkCount: snapshot.subgraph.links.length,
+        chatHistoryCount: snapshot.chat_history.length,
       });
 
+      // Backend will automatically chunk large snapshots
       await snapshotsAPI.create(snapshot);
       setShowSnapshotModal(false);
       
@@ -1551,32 +1564,90 @@ export default function App() {
 
   // Load case version
   const handleLoadCase = useCallback(async (caseData, versionData) => {
+    // Execute Cypher queries to recreate the graph
+    const cypherQueries = versionData.cypher_queries;
+    
+    if (!cypherQueries) {
+      alert('No Cypher queries found in this case version');
+      return;
+    }
+    
+    // Split queries by double newlines
+    const queries = cypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
+    
+    if (queries.length === 0) {
+      alert('No valid Cypher queries found in this case version');
+      return;
+    }
+    
+    // Show progress dialog FIRST, before any async operations
+    // Use a function to ensure state is set correctly
+    setLoadCaseProgress(prev => ({
+      ...prev,
+      isOpen: true,
+      current: 0,
+      total: queries.length,
+      caseName: caseData.name,
+      version: versionData.version,
+    }));
+    
+    console.log('Progress dialog state set:', {
+      isOpen: true,
+      current: 0,
+      total: queries.length,
+      caseName: caseData.name,
+      version: versionData.version,
+    });
+    
+    // Force a re-render by using flushSync or waiting for React to process the state update
+    // Use setTimeout to ensure the dialog renders before starting async operations
+    // Give React time to render the dialog - increase delay to ensure it's visible
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
     try {
       setIsLoading(true);
-      // Execute Cypher queries to recreate the graph
-      const cypherQueries = versionData.cypher_queries;
       
-      if (!cypherQueries) {
-        alert('No Cypher queries found in this case version');
-        return;
-      }
-      
-      // Clear any existing graph first, then execute queries via the graph API
+      // Clear any existing graph first
       try {
         await graphAPI.clearGraph();
       } catch (err) {
         console.warn('Failed to clear existing graph before loading case:', err);
       }
-      const result = await graphAPI.loadCase(cypherQueries);
-
-      if (!result.success) {
-        console.error('Case load sanity check failed:', result.errors);
-        const details = (result.errors || []).join('\n');
+      
+      // Execute queries one at a time with progress updates
+      const errors = [];
+      for (let i = 0; i < queries.length; i++) {
+        try {
+          const result = await graphAPI.executeSingleQuery(queries[i]);
+          if (!result.success) {
+            errors.push(result.error || `Query ${i + 1} failed`);
+          }
+          
+          // Update progress
+          setLoadCaseProgress(prev => ({
+            ...prev,
+            current: i + 1,
+          }));
+        } catch (err) {
+          errors.push(`Query ${i + 1} failed: ${err.message}`);
+          // Update progress even on error
+          setLoadCaseProgress(prev => ({
+            ...prev,
+            current: i + 1,
+          }));
+        }
+      }
+      
+      // Close progress dialog
+      setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+      
+      if (errors.length > 0) {
+        console.error('Some queries failed during case load:', errors);
+        const details = errors.join('\n');
         alert(
-          `Failed to load case: one or more Cypher statements did not validate.\n\n` +
+          `Case loaded with ${errors.length} error(s) out of ${queries.length} queries.\n\n` +
           (details ? `Details:\n${details}` : '')
         );
-        return;
       }
 
       // Reload the graph
@@ -1630,12 +1701,22 @@ export default function App() {
       
       // Switch to graph view
       setAppView('graph');
-      alert(`Case loaded successfully! ${result.executed} queries executed.`);
+      
+      const successCount = queries.length - errors.length;
+      if (errors.length === 0) {
+        alert(`Case loaded successfully! ${successCount} queries executed.`);
+      } else {
+        alert(`Case loaded with ${errors.length} error(s). ${successCount} queries executed successfully.`);
+      }
     } catch (err) {
       console.error('Failed to load case:', err);
+      // Close progress dialog on error
+      setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
       alert(`Failed to load case: ${err.message}`);
     } finally {
       setIsLoading(false);
+      // Ensure dialog is closed
+      setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
     }
   }, [loadGraph]);
 
@@ -1668,63 +1749,80 @@ export default function App() {
   // Show case management view if appView is 'caseManagement'
   if (appView === 'caseManagement') {
     return (
-      <CaseManagementView
-        onLoadCase={handleLoadCase}
-        onCreateCase={handleCreateCase}
-        onLogout={handleLogout}
-        isAuthenticated={isAuthenticated}
-        authUsername={authUsername}
-        onGoToGraphView={() => setAppView('graph')}
-        onGoToEvidenceView={(caseData) => {
-          if (!caseData) return;
-          setCurrentCaseId(caseData.id);
-          setCurrentCaseName(caseData.name);
-          // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
-          setAppView('evidence');
-        }}
-        initialCaseToSelect={caseToSelect}
-        onCaseSelected={() => setCaseToSelect(null)}
-        onLoadLastGraph={async () => {
-          try {
-            // If we don't have lastGraphInfo in memory yet, fetch from backend
-            let info = lastGraphInfo;
-            if (!info || !info.cypher) {
-              info = await graphAPI.getLastGraph();
-              setLastGraphInfo(info);
-            }
+      <>
+        <CaseManagementView
+          onLoadCase={handleLoadCase}
+          onCreateCase={handleCreateCase}
+          onLogout={handleLogout}
+          isAuthenticated={isAuthenticated}
+          authUsername={authUsername}
+          onGoToGraphView={() => setAppView('graph')}
+          onGoToEvidenceView={(caseData) => {
+            if (!caseData) return;
+            setCurrentCaseId(caseData.id);
+            setCurrentCaseName(caseData.name);
+            // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
+            setAppView('evidence');
+          }}
+          initialCaseToSelect={caseToSelect}
+          onCaseSelected={() => setCaseToSelect(null)}
+          onLoadLastGraph={async () => {
+            try {
+              // If we don't have lastGraphInfo in memory yet, fetch from backend
+              let info = lastGraphInfo;
+              if (!info || !info.cypher) {
+                info = await graphAPI.getLastGraph();
+                setLastGraphInfo(info);
+              }
 
-            if (!info || !info.cypher) {
-              alert('No last graph is available to load.');
-              return;
-            }
+              if (!info || !info.cypher) {
+                alert('No last graph is available to load.');
+                return;
+              }
 
-            const result = await graphAPI.loadCase(info.cypher);
-            if (!result.success) {
-              console.error('Last graph load sanity check failed:', result.errors);
-              const details = (result.errors || []).join('\n');
-              alert(
-                `Failed to load last graph: one or more Cypher statements did not validate.\n\n` +
-                (details ? `Details:\n${details}` : '')
-              );
-              return;
+              const result = await graphAPI.loadCase(info.cypher);
+              if (!result.success) {
+                console.error('Last graph load sanity check failed:', result.errors);
+                const details = (result.errors || []).join('\n');
+                alert(
+                  `Failed to load last graph: one or more Cypher statements did not validate.\n\n` +
+                  (details ? `Details:\n${details}` : '')
+                );
+                return;
+              }
+              await loadGraph();
+              setAppView('graph');
+              alert('Last graph loaded successfully.');
+            } catch (err) {
+              console.error('Failed to load last graph:', err);
+              alert(`Failed to load last graph: ${err.message}`);
             }
-            await loadGraph();
-            setAppView('graph');
-            alert('Last graph loaded successfully.');
-          } catch (err) {
-            console.error('Failed to load last graph:', err);
-            alert(`Failed to load last graph: ${err.message}`);
-          }
-        }}
-        lastGraphInfo={lastGraphInfo}
-      />
+          }}
+          lastGraphInfo={lastGraphInfo}
+        />
+        {/* Load Case Progress Dialog - must be rendered in all views */}
+        <LoadCaseProgressDialog
+          isOpen={loadCaseProgress.isOpen}
+          onClose={() => {
+            // Only allow closing if loading is complete
+            if (loadCaseProgress.current >= loadCaseProgress.total) {
+              setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+            }
+          }}
+          current={loadCaseProgress.current}
+          total={loadCaseProgress.total}
+          caseName={loadCaseProgress.caseName}
+          version={loadCaseProgress.version}
+        />
+      </>
     );
   }
 
   // Evidence processing view for current case
   if (appView === 'evidence') {
     return (
-      <EvidenceProcessingView
+      <>
+        <EvidenceProcessingView
         caseId={currentCaseId}
         caseName={currentCaseName}
         onBackToCases={() => setAppView('caseManagement')}
@@ -1815,6 +1913,21 @@ export default function App() {
           }
         }}
       />
+        {/* Load Case Progress Dialog - must be rendered in all views */}
+        <LoadCaseProgressDialog
+          isOpen={loadCaseProgress.isOpen}
+          onClose={() => {
+            // Only allow closing if loading is complete
+            if (loadCaseProgress.current >= loadCaseProgress.total) {
+              setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+            }
+          }}
+          current={loadCaseProgress.current}
+          total={loadCaseProgress.total}
+          caseName={loadCaseProgress.caseName}
+          version={loadCaseProgress.version}
+        />
+      </>
     );
   }
 
@@ -2878,6 +2991,21 @@ export default function App() {
       <DocumentationViewer
         isOpen={showDocumentation}
         onClose={() => setShowDocumentation(false)}
+      />
+
+      {/* Load Case Progress Dialog */}
+      <LoadCaseProgressDialog
+        isOpen={loadCaseProgress.isOpen}
+        onClose={() => {
+          // Only allow closing if loading is complete
+          if (loadCaseProgress.current >= loadCaseProgress.total) {
+            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        current={loadCaseProgress.current}
+        total={loadCaseProgress.total}
+        caseName={loadCaseProgress.caseName}
+        version={loadCaseProgress.version}
       />
 
       {/* Add Node Modal */}

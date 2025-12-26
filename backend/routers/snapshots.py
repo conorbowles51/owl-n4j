@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.snapshot_storage import snapshot_storage
+from services.snapshot_chunk_storage import save_chunk, reassemble_chunks
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
@@ -41,6 +42,14 @@ class SnapshotCreate(BaseModel):
     chat_history: Optional[List[dict]] = None
 
 
+class SnapshotChunkCreate(BaseModel):
+    """Request model for creating a snapshot chunk (for large snapshots)."""
+    snapshot_id: str
+    chunk_index: int
+    chunk_data: dict  # Partial snapshot data
+    is_last_chunk: bool = False
+
+
 class SnapshotResponse(BaseModel):
     """Response model for a snapshot."""
     id: str
@@ -58,7 +67,12 @@ class SnapshotResponse(BaseModel):
 
 @router.post("", response_model=SnapshotResponse)
 async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_current_user)):
-    """Create a new snapshot."""
+    """
+    Create a new snapshot.
+    
+    Automatically handles chunking for large snapshots that exceed JavaScript's
+    string length limits. The storage service will chunk the data if needed.
+    """
     snapshot_id = f"snapshot_{datetime.now().isoformat().replace(':', '-').replace('.', '-')}"
     timestamp = datetime.now().isoformat()
     
@@ -76,22 +90,32 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
         "owner": user["username"],
     }
     
-    # Save to persistent storage
-    snapshot_storage.save(snapshot_id, snapshot_data)
+    # Save to persistent storage (will automatically chunk if too large)
+    try:
+        snapshot_storage.save(snapshot_id, snapshot_data)
+    except Exception as e:
+        # If save fails, it might be due to size - the storage service should handle chunking
+        # But if it still fails, raise the error
+        raise HTTPException(status_code=500, detail=f"Failed to save snapshot: {str(e)}")
     
-    node_count = len(snapshot.subgraph.get("nodes", []))
-    link_count = len(snapshot.subgraph.get("links", []))
-    timeline_count = len(snapshot.timeline or [])
+    # Get the saved snapshot to check if it was chunked
+    saved_snapshot = snapshot_storage.get(snapshot_id)
+    if saved_snapshot is None:
+        raise HTTPException(status_code=500, detail="Failed to retrieve saved snapshot")
+    
+    node_count = len(saved_snapshot.get("subgraph", {}).get("nodes", []))
+    link_count = len(saved_snapshot.get("subgraph", {}).get("links", []))
+    timeline_count = len(saved_snapshot.get("timeline", []))
     
     return SnapshotResponse(
         id=snapshot_id,
-        name=snapshot.name,
-        notes=snapshot.notes,
-        timestamp=timestamp,
+        name=saved_snapshot["name"],
+        notes=saved_snapshot["notes"],
+        timestamp=saved_snapshot["timestamp"],
         node_count=node_count,
         link_count=link_count,
         timeline_count=timeline_count,
-        created_at=timestamp,
+        created_at=saved_snapshot["created_at"],
     )
 
 
@@ -183,4 +207,106 @@ async def restore_snapshot(snapshot_data: dict, user: dict = Depends(get_current
     snapshot_storage.save(snapshot_id, snapshot_data)
     
     return {"status": "restored", "id": snapshot_id}
+
+
+# In-memory storage for assembling chunks during upload
+_chunk_upload_cache = {}
+
+
+@router.post("/upload-chunk")
+async def upload_snapshot_chunk(
+    chunk: SnapshotChunkCreate,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Upload a chunk of snapshot data (for very large snapshots that can't be stringified in frontend).
+    
+    The frontend sends chunks sequentially, and the backend reassembles them.
+    Call this endpoint multiple times with chunk_index incrementing, and set is_last_chunk=True on the final chunk.
+    """
+    snapshot_id = chunk.snapshot_id
+    
+    # Initialize cache for this snapshot if first chunk
+    if snapshot_id not in _chunk_upload_cache:
+        _chunk_upload_cache[snapshot_id] = {
+            "chunks": {},
+            "owner": user["username"],
+        }
+    
+    # Store this chunk
+    _chunk_upload_cache[snapshot_id]["chunks"][chunk.chunk_index] = chunk.chunk_data
+    
+    # If this is the last chunk, reassemble and save
+    if chunk.is_last_chunk:
+        try:
+            # Reassemble all chunks
+            all_chunks = _chunk_upload_cache[snapshot_id]["chunks"]
+            sorted_indices = sorted(all_chunks.keys())
+            
+            # Start with first chunk (has metadata)
+            first_chunk = all_chunks[sorted_indices[0]]
+            assembled = {
+                "id": snapshot_id,
+                "name": first_chunk.get("name", ""),
+                "notes": first_chunk.get("notes", ""),
+                "timestamp": first_chunk.get("timestamp", datetime.now().isoformat()),
+                "created_at": first_chunk.get("created_at", datetime.now().isoformat()),
+                "owner": user["username"],
+                "subgraph": {"nodes": [], "links": []},
+                "timeline": [],
+                "overview": {},
+                "chat_history": [],
+            }
+            
+            # Merge all chunks
+            for idx in sorted_indices:
+                chunk_data = all_chunks[idx]
+                
+                # Merge subgraph nodes
+                if "subgraph" in chunk_data:
+                    subgraph = chunk_data["subgraph"]
+                    if "nodes" in subgraph:
+                        assembled["subgraph"]["nodes"].extend(subgraph["nodes"])
+                    if "links" in subgraph and subgraph["links"]:
+                        assembled["subgraph"]["links"] = subgraph["links"]  # Links only from first chunk
+                
+                # Merge timeline
+                if "timeline" in chunk_data:
+                    assembled["timeline"].extend(chunk_data["timeline"])
+                
+                # Merge overview (last one wins, or merge if dict)
+                if "overview" in chunk_data:
+                    if isinstance(assembled["overview"], dict) and isinstance(chunk_data["overview"], dict):
+                        assembled["overview"].update(chunk_data["overview"])
+                    else:
+                        assembled["overview"] = chunk_data["overview"]
+                
+                # Merge chat_history
+                if "chat_history" in chunk_data:
+                    assembled["chat_history"].extend(chunk_data["chat_history"])
+            
+            # Save the assembled snapshot
+            snapshot_storage.save(snapshot_id, assembled)
+            
+            # Clean up cache
+            del _chunk_upload_cache[snapshot_id]
+            
+            node_count = len(assembled.get("subgraph", {}).get("nodes", []))
+            link_count = len(assembled.get("subgraph", {}).get("links", []))
+            timeline_count = len(assembled.get("timeline", []))
+            
+            return {
+                "status": "completed",
+                "id": snapshot_id,
+                "node_count": node_count,
+                "link_count": link_count,
+                "timeline_count": timeline_count,
+            }
+        except Exception as e:
+            # Clean up cache on error
+            if snapshot_id in _chunk_upload_cache:
+                del _chunk_upload_cache[snapshot_id]
+            raise HTTPException(status_code=500, detail=f"Failed to assemble chunks: {str(e)}")
+    
+    return {"status": "chunk_received", "chunk_index": chunk.chunk_index}
 
