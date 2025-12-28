@@ -182,6 +182,12 @@ export default function SnapshotList({ isOpen, onClose, onLoadSnapshot }) {
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-medium text-owl-blue-900 truncate">{snapshot.name}</h3>
+                        {snapshot.ai_overview && (
+                          <div className="mt-1 mb-1 p-1.5 bg-owl-blue-50 rounded border border-owl-blue-200">
+                            <p className="text-xs font-medium text-owl-blue-900 mb-0.5">AI Overview:</p>
+                            <p className="text-xs text-owl-blue-800 line-clamp-2">{snapshot.ai_overview}</p>
+                          </div>
+                        )}
                         <p className="text-xs text-light-600 mt-1 line-clamp-2">{snapshot.notes || 'No notes'}</p>
                         <div className="flex items-center gap-3 mt-2 text-xs text-light-600">
                           <span className="flex items-center gap-1">
@@ -221,6 +227,13 @@ export default function SnapshotList({ isOpen, onClose, onLoadSnapshot }) {
               <div className="space-y-4">
                 <div>
                   <h3 className="text-lg font-semibold text-owl-blue-900 mb-2">{selectedSnapshot.name}</h3>
+                  {/* AI Overview - At the top */}
+                  {selectedSnapshot.ai_overview && (
+                    <div className="mb-3 p-3 bg-owl-blue-50 rounded-lg border border-owl-blue-200">
+                      <p className="text-sm font-medium text-owl-blue-900 mb-1">AI Overview:</p>
+                      <p className="text-sm text-owl-blue-800">{selectedSnapshot.ai_overview}</p>
+                    </div>
+                  )}
                   <p className="text-sm text-light-700 whitespace-pre-wrap">{selectedSnapshot.notes || 'No notes'}</p>
                 </div>
 

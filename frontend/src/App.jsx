@@ -27,7 +27,9 @@ import {
   Focus,
   Camera
 } from 'lucide-react';
-import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI } from './services/api';
+import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
+import { compareCypherQueries } from './utils/cypherCompare';
+import { calculateCypherDelta, buildIncrementalQueries } from './utils/cypherDelta';
 import GraphView from './components/GraphView';
 import NodeDetails from './components/NodeDetails';
 import ChatPanel from './components/ChatPanel';
@@ -37,6 +39,7 @@ import GraphSearchFilter from './components/GraphSearchFilter';
 import TimelineView from './components/timeline/TimelineView';
 import MapView from './components/MapView';
 import SnapshotModal from './components/SnapshotModal';
+import SaveSnapshotProgressDialog from './components/SaveSnapshotProgressDialog';
 import CaseModal from './components/CaseModal';
 import DateRangeFilter from './components/DateRangeFilter';
 import FileManagementPanel from './components/FileManagementPanel';
@@ -95,6 +98,15 @@ export default function App() {
   // Snapshots state
   const [snapshots, setSnapshots] = useState([]);
   const [showSnapshotModal, setShowSnapshotModal] = useState(false);
+  const [saveSnapshotProgress, setSaveSnapshotProgress] = useState({
+    isOpen: false,
+    message: '',
+    stage: null,
+    stageProgress: 0,
+    stageTotal: 0,
+    current: 0,
+    total: 0,
+  });
   const mainGraphRef = useRef(null); // Ref to main GraphView for centering
   const subgraphGraphRef = useRef(null); // Ref to subgraph GraphView for PDF export
   
@@ -102,6 +114,7 @@ export default function App() {
   const [currentCaseId, setCurrentCaseId] = useState(null);
   const [currentCaseName, setCurrentCaseName] = useState(null);
   const [currentCaseVersion, setCurrentCaseVersion] = useState(0);
+  const [loadedCypherQueries, setLoadedCypherQueries] = useState(null); // Track loaded Cypher queries for comparison
   const [showCaseModal, setShowCaseModal] = useState(false);
   
   // File management panel state
@@ -778,10 +791,26 @@ export default function App() {
   }, [loadNodeDetails]);
 
   // Handle viewing a source document from a citation
-  const handleViewDocument = useCallback(async (sourceDoc, page = 1) => {
+  const handleViewDocument = useCallback(async (sourceDoc, page = 1, caseId = null) => {
     try {
+      // Use provided caseId or fall back to currentCaseId
+      const targetCaseId = caseId || currentCaseId;
+      
+      if (!targetCaseId) {
+        console.warn('No case ID available for viewing document:', sourceDoc);
+        // Still try to open the viewer, it might work without a case ID
+        setDocumentViewerState({
+          isOpen: true,
+          documentUrl: null,
+          documentName: sourceDoc,
+          page: page || 1,
+          highlightText: null,
+        });
+        return;
+      }
+      
       // First, find the evidence file by filename
-      const result = await evidenceAPI.findByFilename(sourceDoc, currentCaseId);
+      const result = await evidenceAPI.findByFilename(sourceDoc, targetCaseId);
       
       if (result.found && result.evidence_id) {
         // Get the file URL
@@ -1454,9 +1483,28 @@ export default function App() {
       return;
     }
 
+    // Show progress dialog
+    setSaveSnapshotProgress({
+      isOpen: true,
+      message: 'Preparing snapshot...',
+      stage: null,
+      stageProgress: 0,
+      stageTotal: 0,
+      current: 0,
+      total: 5, // Loading nodes, extracting citations, filtering chat, generating AI overview, saving
+    });
+
     try {
-      // Load full node details for all subgraph nodes to get citations
-      // Use the same batching logic as loadNodeDetails but return results directly
+      // Stage 1: Load full node details for all subgraph nodes to get citations
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stage: 'Loading node details',
+        stageProgress: 0,
+        stageTotal: subgraphNodeKeys.length,
+        current: 1,
+        message: `Loading details for ${subgraphNodeKeys.length} nodes...`,
+      }));
+
       const BATCH_SIZE = 10;
       const allSubgraphNodeDetails = [];
       
@@ -1466,15 +1514,30 @@ export default function App() {
         const batchResults = await Promise.all(batchPromises);
         allSubgraphNodeDetails.push(...batchResults);
         
+        setSaveSnapshotProgress(prev => ({
+          ...prev,
+          stageProgress: Math.min(i + BATCH_SIZE, subgraphNodeKeys.length),
+        }));
+        
         // Small delay between batches
         if (i + BATCH_SIZE < subgraphNodeKeys.length) {
           await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
       
-      // Extract citations from all subgraph nodes
+      // Stage 2: Extract citations from all subgraph nodes
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stage: 'Extracting citations',
+        stageProgress: 0,
+        stageTotal: allSubgraphNodeDetails.length,
+        current: 2,
+        message: 'Extracting source document citations...',
+      }));
+
       const citations = {};
-      for (const nodeDetail of allSubgraphNodeDetails) {
+      for (let idx = 0; idx < allSubgraphNodeDetails.length; idx++) {
+        const nodeDetail = allSubgraphNodeDetails[idx];
         if (!nodeDetail || !nodeDetail.key) continue;
         
         const nodeCitations = [];
@@ -1529,10 +1592,25 @@ export default function App() {
             citations: nodeCitations,
           };
         }
+
+        if (idx % 10 === 0) {
+          setSaveSnapshotProgress(prev => ({
+            ...prev,
+            stageProgress: idx + 1,
+          }));
+        }
       }
       
-      // Filter chat history to include both user questions and AI responses
-      // Find relevant conversation pairs (user question + AI response)
+      // Stage 3: Filter chat history
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stage: 'Processing chat history',
+        stageProgress: 0,
+        stageTotal: chatHistory.length,
+        current: 3,
+        message: 'Filtering relevant chat history...',
+      }));
+
       const relevantChatHistory = [];
       for (let i = 0; i < chatHistory.length; i++) {
         const msg = chatHistory[i];
@@ -1561,6 +1639,91 @@ export default function App() {
             }
           }
         }
+
+        if (i % 5 === 0) {
+          setSaveSnapshotProgress(prev => ({
+            ...prev,
+            stageProgress: i + 1,
+          }));
+        }
+      }
+
+      // Stage 4: Generate AI overview of the snapshot
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stage: 'Generating AI overview',
+        stageProgress: 0,
+        stageTotal: 1,
+        current: 4,
+        message: 'Generating AI overview...',
+      }));
+
+      let aiOverview = null;
+      try {
+        // Create a prompt for the AI to generate an overview
+        const nodeNames = allSubgraphNodeDetails
+          .slice(0, 20) // Limit to first 20 nodes to avoid token limits
+          .map(n => n.name || n.key)
+          .join(', ');
+        
+        const overviewPrompt = `Provide a brief, readable overview (2-3 sentences) of this investigation snapshot. The snapshot contains ${subgraphData.nodes.length} nodes and ${subgraphData.links.length} relationships. Key entities include: ${nodeNames}. Focus on the main connections and insights.`;
+        
+        console.log('Generating AI overview for snapshot:', {
+          nodeCount: subgraphData.nodes.length,
+          linkCount: subgraphData.links.length,
+          nodeNames: nodeNames.substring(0, 100) + '...',
+          promptLength: overviewPrompt.length
+        });
+        
+        const aiResponse = await chatAPI.ask(overviewPrompt, subgraphNodeKeys.slice(0, 10)); // Limit to 10 nodes for context
+        
+        console.log('Raw AI response:', aiResponse);
+        
+        // Extract answer from response - check multiple possible fields
+        aiOverview = aiResponse?.answer || aiResponse?.response || aiResponse?.content || null;
+        
+        // Clean up the answer if it exists
+        if (aiOverview && typeof aiOverview === 'string') {
+          aiOverview = aiOverview.trim();
+          // If empty after trimming, set to null
+          if (aiOverview.length === 0) {
+            aiOverview = null;
+          }
+        }
+        
+        console.log('AI overview generation result:', {
+          hasResponse: !!aiResponse,
+          responseType: typeof aiResponse,
+          responseKeys: aiResponse ? Object.keys(aiResponse) : [],
+          answer: aiResponse?.answer,
+          response: aiResponse?.response,
+          content: aiResponse?.content,
+          aiOverview: aiOverview,
+          success: !!aiOverview,
+          length: aiOverview?.length || 0,
+          preview: aiOverview?.substring(0, 100) || 'null'
+        });
+        
+        if (!aiOverview) {
+          console.warn('AI overview is null or empty. Full response:', JSON.stringify(aiResponse, null, 2));
+        }
+        
+        setSaveSnapshotProgress(prev => ({
+          ...prev,
+          stageProgress: 1,
+        }));
+      } catch (err) {
+        console.error('Failed to generate AI overview:', err);
+        console.error('Error details:', {
+          message: err.message,
+          stack: err.stack,
+          name: err.name
+        });
+        // Continue without AI overview if generation fails
+        setSaveSnapshotProgress(prev => ({
+          ...prev,
+          stageProgress: 1,
+        }));
       }
 
       const snapshot = {
@@ -1575,7 +1738,18 @@ export default function App() {
         },
         citations: citations, // Add citations structure
         chat_history: relevantChatHistory,
+        ai_overview: aiOverview, // AI-generated overview
       };
+
+      // Stage 5: Save snapshot
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stage: 'Saving snapshot',
+        stageProgress: 0,
+        stageTotal: 1,
+        current: 5,
+        message: 'Saving snapshot to database...',
+      }));
 
       console.log('Saving snapshot:', {
         name: snapshot.name,
@@ -1583,10 +1757,66 @@ export default function App() {
         nodeCount: snapshot.subgraph.nodes.length,
         linkCount: snapshot.subgraph.links.length,
         chatHistoryCount: snapshot.chat_history.length,
+        hasAIOverview: !!aiOverview,
       });
 
       // Backend will automatically chunk large snapshots
       const savedSnapshot = await snapshotsAPI.create(snapshot);
+      
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stageProgress: 1,
+      }));
+      
+      // Auto-save the case if there's a current case
+      if (currentCaseId && currentCaseName) {
+        setSaveSnapshotProgress(prev => ({
+          ...prev,
+          stage: 'Auto-saving case',
+          stageProgress: 0,
+          stageTotal: 1,
+          current: 5,
+          message: 'Auto-saving case...',
+        }));
+
+        try {
+          // Get full snapshot data for all current snapshots
+          const snapshotData = [];
+          for (const snap of snapshots) {
+            try {
+              const fullSnapshot = await snapshotsAPI.get(snap.id);
+              snapshotData.push(fullSnapshot);
+            } catch (err) {
+              console.warn(`Failed to load snapshot ${snap.id}:`, err);
+            }
+          }
+          // Add the newly saved snapshot
+          snapshotData.push(savedSnapshot);
+          
+          // Save case with updated snapshots
+          await casesAPI.save({
+            case_id: currentCaseId,
+            case_name: currentCaseName,
+            graph_data: fullGraphData,
+            snapshots: snapshotData,
+            save_notes: `Auto-saved after snapshot: ${snapshot.name}`,
+          });
+          
+          // Update case version
+          const updatedCase = await casesAPI.get(currentCaseId);
+          if (updatedCase.versions && updatedCase.versions.length > 0) {
+            setCurrentCaseVersion(updatedCase.versions[0].version);
+          }
+          
+          console.log('Case auto-saved after snapshot creation');
+        } catch (err) {
+          console.warn('Failed to auto-save case after snapshot:', err);
+          // Don't fail the snapshot save if case save fails
+        }
+      }
+      
+      // Close progress dialog and snapshot modal
+      setSaveSnapshotProgress(prev => ({ ...prev, isOpen: false }));
       setShowSnapshotModal(false);
       
       // Also save chat history separately for easy reloading
@@ -1613,9 +1843,10 @@ export default function App() {
       alert('Snapshot saved successfully!');
     } catch (err) {
       console.error('Failed to save snapshot:', err);
+      setSaveSnapshotProgress(prev => ({ ...prev, isOpen: false }));
       alert(`Failed to save snapshot: ${err.message}`);
     }
-  }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory]);
+  }, [subgraphNodeKeys, subgraphData, timelineData, selectedNodesDetails, chatHistory, currentCaseId, currentCaseName, currentCaseVersion, fullGraphData, snapshots]);
 
   const [lastGraphInfo, setLastGraphInfo] = useState(null);
 
@@ -1657,6 +1888,7 @@ export default function App() {
         setCurrentCaseId(result.case_id);
         setCurrentCaseName(caseName);
         setCurrentCaseVersion(result.version);
+        setLoadedCypherQueries(null); // Clear loaded Cypher queries for new case
 
         // Switch to evidence processing view for this new case
         setAppView('evidence');
@@ -1714,126 +1946,277 @@ export default function App() {
       return;
     }
     
-    // Execute Cypher queries to recreate the graph
-    const cypherQueries = versionData.cypher_queries;
+    // Get Cypher queries for the new version
+    const newCypherQueries = versionData.cypher_queries;
     
-    if (!cypherQueries) {
+    if (!newCypherQueries) {
       alert('No Cypher queries found in this case version');
       return;
     }
     
-    // Split queries by double newlines
-    const queries = cypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
+    // Quick diff: Compare with last loaded Cypher queries (regardless of case)
+    // If Cypher queries are identical, skip graph reload and just open graph view
+    const cypherQueriesAreSame = loadedCypherQueries && 
+                                  compareCypherQueries(loadedCypherQueries, newCypherQueries);
     
-    if (queries.length === 0) {
-      alert('No valid Cypher queries found in this case version');
-      return;
-    }
-    
-    // Show progress dialog FIRST, before any async operations
-    // Use a function to ensure state is set correctly
-    setLoadCaseProgress(prev => ({
-      ...prev,
-      isOpen: true,
-      current: 0,
-      total: queries.length,
-      caseName: caseData.name,
-      version: versionData.version,
-    }));
-    
-    console.log('Progress dialog state set:', {
-      isOpen: true,
-      current: 0,
-      total: queries.length,
-      caseName: caseData.name,
-      version: versionData.version,
-    });
-    
-    // Force a re-render by using flushSync or waiting for React to process the state update
-    // Use setTimeout to ensure the dialog renders before starting async operations
-    // Give React time to render the dialog - increase delay to ensure it's visible
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    try {
-      setIsLoading(true);
-      
-      // Only clear graph if switching to a different case/version
-      if (currentCaseId !== caseData.id || currentCaseVersion !== versionData.version) {
-        try {
-          await graphAPI.clearGraph();
-        } catch (err) {
-          console.warn('Failed to clear existing graph before loading case:', err);
-        }
-      }
-      
-      // Execute queries one at a time with progress updates
-      const errors = [];
-      for (let i = 0; i < queries.length; i++) {
-        try {
-          const result = await graphAPI.executeSingleQuery(queries[i]);
-          if (!result.success) {
-            errors.push(result.error || `Query ${i + 1} failed`);
-          }
-          
-          // Update progress
-          setLoadCaseProgress(prev => ({
-            ...prev,
-            current: i + 1,
-          }));
-        } catch (err) {
-          errors.push(`Query ${i + 1} failed: ${err.message}`);
-          // Update progress even on error
-          setLoadCaseProgress(prev => ({
-            ...prev,
-            current: i + 1,
-          }));
-        }
-      }
-      
-      // Close progress dialog
-      setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-      
-      if (errors.length > 0) {
-        console.error('Some queries failed during case load:', errors);
-        const details = errors.join('\n');
-        alert(
-          `Case loaded with ${errors.length} error(s) out of ${queries.length} queries.\n\n` +
-          (details ? `Details:\n${details}` : '')
-        );
-      }
-
-      // Reload the graph
-      await loadGraph();
-      
-      // Store previous case ID to check if we're switching cases
-      const previousCaseId = currentCaseId;
-      
-      // Set current case info
+    if (cypherQueriesAreSame) {
+      console.log('Cypher queries identical to last loaded version - skipping graph reload, opening graph view');
+      // Skip graph reload - just update case info and switch to graph view
       setCurrentCaseId(caseData.id);
       setCurrentCaseName(caseData.name);
       setCurrentCaseVersion(versionData.version);
+      
+      // Load snapshots and chats for this version (see below)
+      // This will be handled in the common section after the if/else
+    } else {
+      console.log('Cypher queries differ from last loaded version - calculating delta');
+      
+      // Calculate delta between old and new Cypher queries
+      const delta = calculateCypherDelta(loadedCypherQueries, newCypherQueries);
+      
+      console.log('Delta calculation:', {
+        toAdd: delta.toAdd.length,
+        toRemove: delta.toRemove.length,
+        deletes: delta.newDeletes?.length || 0,
+        isFullReload: delta.isFullReload
+      });
+      
+      // If we don't have old Cypher or delta calculation suggests full reload, do full reload
+      if (delta.isFullReload || (!delta.toAdd.length && !delta.toRemove.length && !delta.newDeletes?.length)) {
+        console.log('Performing full graph reload (no old Cypher or complex changes detected)');
+        
+        // Split queries by double newlines
+        const queries = newCypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
+        
+        if (queries.length === 0) {
+          alert('No valid Cypher queries found in this case version');
+          return;
+        }
+        
+        // Show progress dialog
+        setLoadCaseProgress(prev => ({
+          ...prev,
+          isOpen: true,
+          current: 0,
+          total: queries.length,
+          caseName: caseData.name,
+          version: versionData.version,
+        }));
+        
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        try {
+          setIsLoading(true);
+          
+          // Only clear graph if switching to a different case/version
+          if (currentCaseId !== caseData.id || currentCaseVersion !== versionData.version) {
+            try {
+              await graphAPI.clearGraph();
+              setLoadedCypherQueries(null);
+            } catch (err) {
+              console.warn('Failed to clear existing graph before loading case:', err);
+            }
+          }
+          
+          // For large query sets (>100), use batch execution for better performance
+          const errors = [];
+          if (queries.length > 100) {
+            console.log(`Using batch execution for ${queries.length} queries`);
+            const BATCH_SIZE = 50; // Execute 50 queries per batch
+            const numBatches = Math.ceil(queries.length / BATCH_SIZE);
+            
+            for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
+              const batchStart = batchIdx * BATCH_SIZE;
+              const batchEnd = Math.min(batchStart + BATCH_SIZE, queries.length);
+              const batch = queries.slice(batchStart, batchEnd);
+              
+              try {
+                const result = await graphAPI.executeBatchQueries(batch, BATCH_SIZE);
+                if (!result.success && result.errors) {
+                  errors.push(...result.errors);
+                }
+                
+                // Update progress after each batch
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: batchEnd,
+                }));
+              } catch (err) {
+                errors.push(`Batch ${batchIdx + 1} failed: ${err.message}`);
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: batchEnd,
+                }));
+              }
+            }
+          } else {
+            // For smaller query sets, execute one at a time for granular progress
+            console.log(`Using single-query execution for ${queries.length} queries`);
+            for (let i = 0; i < queries.length; i++) {
+              try {
+                const result = await graphAPI.executeSingleQuery(queries[i]);
+                if (!result.success) {
+                  errors.push(result.error || `Query ${i + 1} failed`);
+                }
+                
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: i + 1,
+                }));
+              } catch (err) {
+                errors.push(`Query ${i + 1} failed: ${err.message}`);
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: i + 1,
+                }));
+              }
+            }
+          }
+          
+          setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+          
+          if (errors.length > 0) {
+            console.error('Some queries failed during case load:', errors);
+            const details = errors.join('\n');
+            alert(
+              `Case loaded with ${errors.length} error(s) out of ${queries.length} queries.\n\n` +
+              (details ? `Details:\n${details}` : '')
+            );
+          }
+
+          await loadGraph();
+          setLoadedCypherQueries(newCypherQueries);
+          setCurrentCaseId(caseData.id);
+          setCurrentCaseName(caseData.name);
+          setCurrentCaseVersion(versionData.version);
+        } catch (err) {
+          console.error('Failed to load case:', err);
+          setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+          alert(`Failed to load case: ${err.message}`);
+          setIsLoading(false);
+          return;
+        } finally {
+          setIsLoading(false);
+          setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+        }
+      } else {
+        // Apply incremental updates (delta)
+        console.log('Applying incremental graph updates (delta):', {
+          toAdd: delta.toAdd.length,
+          toRemove: delta.toRemove.length,
+          deletes: delta.newDeletes?.length || 0
+        });
+        
+        const incrementalQueries = buildIncrementalQueries(delta);
+        
+        if (incrementalQueries.length === 0) {
+          console.log('No incremental changes to apply');
+          // Still update case info
+          setCurrentCaseId(caseData.id);
+          setCurrentCaseName(caseData.name);
+          setCurrentCaseVersion(versionData.version);
+        } else {
+          // Show progress dialog for incremental updates
+          setLoadCaseProgress(prev => ({
+            ...prev,
+            isOpen: true,
+            current: 0,
+            total: incrementalQueries.length,
+            caseName: caseData.name,
+            version: versionData.version,
+          }));
+          
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          try {
+            setIsLoading(true);
+            
+            // Execute incremental queries (additions first, then deletions)
+            const errors = [];
+            for (let i = 0; i < incrementalQueries.length; i++) {
+              try {
+                const result = await graphAPI.executeSingleQuery(incrementalQueries[i]);
+                if (!result.success) {
+                  errors.push(result.error || `Incremental query ${i + 1} failed`);
+                }
+                
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: i + 1,
+                }));
+              } catch (err) {
+                errors.push(`Incremental query ${i + 1} failed: ${err.message}`);
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: i + 1,
+                }));
+              }
+            }
+            
+            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+            
+            if (errors.length > 0) {
+              console.warn('Some incremental queries failed:', errors);
+              // Don't alert for incremental failures, just log
+            }
+            
+            // Reload graph to reflect changes
+            await loadGraph();
+            
+            // Store the loaded Cypher queries for future comparison
+            setLoadedCypherQueries(newCypherQueries);
+            
+            // Set current case info
+            setCurrentCaseId(caseData.id);
+            setCurrentCaseName(caseData.name);
+            setCurrentCaseVersion(versionData.version);
+          } catch (err) {
+            console.error('Failed to apply incremental updates:', err);
+            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+            // Fall back to full reload on error
+            console.log('Falling back to full reload due to incremental update error');
+            alert(`Failed to apply incremental updates: ${err.message}. Please try reloading the case.`);
+            setIsLoading(false);
+            return;
+          } finally {
+            setIsLoading(false);
+            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }
+      }
+    }
+    
+    // Common section: Update case info and load snapshots/chats (for both same and different Cypher cases)
+    try {
+      // Store previous case ID to check if we're switching cases
+      const previousCaseId = currentCaseId;
+      
+      // Case info is already set above (either in same-Cypher branch or after graph reload)
       
       // If switching to a different case, clear chat history and load case-specific history
       if (previousCaseId !== caseData.id) {
         // Clear current chat history when switching cases
         setChatHistory([]);
+      }
+      
+      // Load chat history for this case/version (always load, even if same case, to get version-specific chats)
+      try {
+        const allChatHistories = await chatHistoryAPI.list();
+        const caseChatHistories = allChatHistories
+          .filter(chat => chat.case_id === caseData.id && chat.case_version === versionData.version)
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         
-        // Load most recent chat history for this case/version
-        try {
-          const allChatHistories = await chatHistoryAPI.list();
-          const caseChatHistories = allChatHistories
-            .filter(chat => chat.case_id === caseData.id && chat.case_version === versionData.version)
-            .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-          
-          if (caseChatHistories.length > 0) {
-            // Use the most recent case-specific chat history
-            const latestChat = caseChatHistories[0];
-            setChatHistory(latestChat.messages);
-          }
-        } catch (err) {
-          console.warn('Failed to load case chat history:', err);
-          // Continue without chat history
+        if (caseChatHistories.length > 0) {
+          // Use the most recent case-specific chat history
+          const latestChat = caseChatHistories[0];
+          setChatHistory(latestChat.messages);
+        } else if (previousCaseId !== caseData.id) {
+          // If switching cases and no chat history found, clear it
+          setChatHistory([]);
         }
+      } catch (err) {
+        console.warn('Failed to load case chat history:', err);
+        // Continue without chat history
       }
       
       // Restore snapshots from the case version
@@ -1880,23 +2263,14 @@ export default function App() {
       // Switch to graph view
       setAppView('graph');
       
-      const successCount = queries.length - errors.length;
-      if (errors.length === 0) {
-        alert(`Case loaded successfully! ${successCount} queries executed.`);
-      } else {
-        alert(`Case loaded with ${errors.length} error(s). ${successCount} queries executed successfully.`);
+      if (cypherQueriesAreSame) {
+        console.log('Case version loaded (Cypher queries unchanged, graph not reloaded)');
       }
     } catch (err) {
-      console.error('Failed to load case:', err);
-      // Close progress dialog on error
-      setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-      alert(`Failed to load case: ${err.message}`);
-    } finally {
-      setIsLoading(false);
-      // Ensure dialog is closed
-      setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+      console.error('Failed to load case snapshots/chats:', err);
+      // Don't fail the entire load if snapshots/chats fail
     }
-  }, [loadGraph, currentCaseId, currentCaseVersion]);
+  }, [loadGraph, currentCaseId, currentCaseVersion, loadedCypherQueries]);
 
   // Handle date range change - memoized to prevent infinite loops
   const handleDateRangeChange = useCallback((range) => {
@@ -1943,6 +2317,7 @@ export default function App() {
             setAppView('evidence');
           }}
           initialCaseToSelect={caseToSelect}
+          onViewDocument={handleViewDocument}
           onCaseSelected={() => setCaseToSelect(null)}
           onLoadLastGraph={async () => {
             try {
@@ -1991,6 +2366,16 @@ export default function App() {
           total={loadCaseProgress.total}
           caseName={loadCaseProgress.caseName}
           version={loadCaseProgress.version}
+        />
+        
+        {/* Document Viewer Modal - must be rendered in all views */}
+        <DocumentViewer
+          isOpen={documentViewerState.isOpen}
+          onClose={handleCloseDocumentViewer}
+          documentUrl={documentViewerState.documentUrl}
+          documentName={documentViewerState.documentName}
+          initialPage={documentViewerState.page}
+          highlightText={documentViewerState.highlightText}
         />
       </>
     );
@@ -3259,6 +3644,12 @@ export default function App() {
         total={loadCaseProgress.total}
         caseName={loadCaseProgress.caseName}
         version={loadCaseProgress.version}
+      />
+
+      <SaveSnapshotProgressDialog
+        isOpen={saveSnapshotProgress.isOpen}
+        progress={saveSnapshotProgress}
+        onClose={null} // Don't allow closing during save
       />
 
       {/* Add Node Modal */}

@@ -133,3 +133,4 @@ For Ubuntu/Debian systems, you can use this one-liner:
 sudo apt-get update && sudo apt-get install -y ffmpeg && pip install openai-whisper striprtf
 ```
 
+

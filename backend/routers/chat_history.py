@@ -167,3 +167,4 @@ async def get_chat_histories_by_snapshot(snapshot_id: str, user: dict = Depends(
     result.sort(key=lambda x: x.created_at, reverse=True)
     return result
 
+

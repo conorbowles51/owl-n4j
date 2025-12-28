@@ -50,6 +50,12 @@ class SingleQueryRequest(BaseModel):
     query: str
 
 
+class BatchQueryRequest(BaseModel):
+    """Request model for executing multiple Cypher queries in batches (for faster case loading)."""
+    queries: List[str]
+    batch_size: int = 50  # Number of queries to execute per batch
+
+
 class LastGraphResponse(BaseModel):
     cypher: Optional[str] = None
     saved_at: Optional[str] = None
@@ -471,6 +477,97 @@ async def execute_single_query(request: SingleQueryRequest):
             "success": False,
             "error": f"{error_msg}\nQuery: {query_preview}",
         }
+
+
+@router.post("/execute-batch-queries")
+async def execute_batch_queries(request: BatchQueryRequest):
+    """
+    Execute multiple Cypher queries in batches for faster case loading.
+    
+    This endpoint executes queries in batches within a single transaction,
+    which is much faster than executing them one at a time. Use this for
+    loading large cases with >100 queries.
+    
+    Args:
+        request: Request with list of queries and batch size
+    """
+    if not request.queries or len(request.queries) == 0:
+        raise HTTPException(status_code=400, detail="Queries are required")
+    
+    if request.batch_size < 1 or request.batch_size > 200:
+        raise HTTPException(status_code=400, detail="batch_size must be between 1 and 200")
+
+    queries = [q.strip() for q in request.queries if q.strip()]
+    if not queries:
+        raise HTTPException(status_code=400, detail="No valid queries provided")
+
+    executed = 0
+    errors: List[str] = []
+    batch_size = request.batch_size
+    
+    # Separate node queries (MERGE nodes) from relationship queries (MATCH + MERGE relationships)
+    # Execute node queries first, then relationship queries
+    node_queries = []
+    rel_queries = []
+    
+    for q in queries:
+        q_upper = q.upper()
+        # Relationship queries start with MATCH and contain MERGE with a relationship pattern
+        if q_upper.startswith("MATCH") and "MERGE" in q_upper and ("-[r:" in q_upper or "-[:" in q_upper):
+            rel_queries.append(q)
+        else:
+            node_queries.append(q)
+    
+    # Execute node queries in batches
+    for batch_start in range(0, len(node_queries), batch_size):
+        batch = node_queries[batch_start:batch_start + batch_size]
+        try:
+            # Execute all queries in the batch within a single transaction
+            with neo4j_service._driver.session() as session:
+                def work(tx):
+                    for q in batch:
+                        tx.run(q, {})
+                session.execute_write(work)
+            executed += len(batch)
+        except Exception as e:
+            error_msg = str(e)
+            # If batch fails, try executing individually to identify the problematic query
+            for idx, q in enumerate(batch):
+                try:
+                    neo4j_service.run_cypher(q, {})
+                    executed += 1
+                except Exception as e2:
+                    query_preview = q[:100] + "..." if len(q) > 100 else q
+                    errors.append(f"Node query {batch_start + idx + 1} failed: {str(e2)}\nQuery: {query_preview}")
+    
+    # Execute relationship queries in batches
+    for batch_start in range(0, len(rel_queries), batch_size):
+        batch = rel_queries[batch_start:batch_start + batch_size]
+        try:
+            # Execute all queries in the batch within a single transaction
+            with neo4j_service._driver.session() as session:
+                def work(tx):
+                    for q in batch:
+                        tx.run(q, {})
+                session.execute_write(work)
+            executed += len(batch)
+        except Exception as e:
+            error_msg = str(e)
+            # If batch fails, try executing individually to identify the problematic query
+            for idx, q in enumerate(batch):
+                try:
+                    neo4j_service.run_cypher(q, {})
+                    executed += 1
+                except Exception as e2:
+                    query_preview = q[:100] + "..." if len(q) > 100 else q
+                    errors.append(f"Relationship query {batch_start + idx + 1} failed: {str(e2)}\nQuery: {query_preview}")
+    
+    return {
+        "success": len(errors) == 0,
+        "executed": executed,
+        "total": len(queries),
+        "errors": errors or None,
+    }
 
 
 @router.post("/clear-graph", response_model=LastGraphResponse)

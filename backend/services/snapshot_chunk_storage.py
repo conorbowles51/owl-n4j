@@ -93,6 +93,8 @@ def chunk_data(data: dict, max_chunk_size: int = 50 * 1024 * 1024) -> tuple[List
         "case_id": data.get("case_id"),
         "case_version": data.get("case_version"),
         "case_name": data.get("case_name"),
+        "ai_overview": data.get("ai_overview"),
+        "citations": data.get("citations", {}),
         "_chunked": True,
     }
     
@@ -113,6 +115,11 @@ def chunk_data(data: dict, max_chunk_size: int = 50 * 1024 * 1024) -> tuple[List
         chunk_metadata = metadata.copy()
         chunk_metadata["_chunk_index"] = chunk_index
         chunk_metadata["_chunk_type"] = "subgraph_nodes"
+        # Ensure ai_overview and citations are in the first chunk
+        if "ai_overview" not in chunk_metadata:
+            chunk_metadata["ai_overview"] = data.get("ai_overview")
+        if "citations" not in chunk_metadata:
+            chunk_metadata["citations"] = data.get("citations", {})
         
         # Try with current nodes_per_chunk
         chunk_nodes = nodes[node_index:node_index + nodes_per_chunk]
@@ -281,6 +288,8 @@ def reassemble_chunks(snapshot_id: str, num_chunks: int) -> dict:
                     "case_id": chunk.get("case_id"),
                     "case_version": chunk.get("case_version"),
                     "case_name": chunk.get("case_name"),
+                    "ai_overview": chunk.get("ai_overview"),
+                    "citations": chunk.get("citations", {}),
                 }
         elif chunk_type == "timeline":
             timeline_chunks.append(chunk)
@@ -346,6 +355,12 @@ def reassemble_chunks(snapshot_id: str, num_chunks: int) -> dict:
     for chunk in chat_history_chunks:
         all_chat_history.extend(chunk.get("chat_history", []))
     result["chat_history"] = all_chat_history
+    
+    # Ensure ai_overview and citations are included (from metadata or first chunk)
+    if "ai_overview" not in result:
+        result["ai_overview"] = metadata.get("ai_overview")
+    if "citations" not in result:
+        result["citations"] = metadata.get("citations", {})
     
     return result
 

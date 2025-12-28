@@ -25,6 +25,7 @@ class SnapshotData(BaseModel):
     overview: Optional[dict] = None
     citations: Optional[dict] = None  # Citations and references to source documents
     chat_history: Optional[List[dict]] = None  # Questions and responses
+    ai_overview: Optional[str] = None  # AI-generated overview of the snapshot
     notes: str
     timestamp: str
     created_at: str
@@ -42,6 +43,7 @@ class SnapshotCreate(BaseModel):
     overview: Optional[dict] = None
     citations: Optional[dict] = None  # Citations and references to source documents
     chat_history: Optional[List[dict]] = None
+    ai_overview: Optional[str] = None  # AI-generated overview of the snapshot
 
 
 class SnapshotChunkCreate(BaseModel):
@@ -62,6 +64,7 @@ class SnapshotResponse(BaseModel):
     link_count: int
     timeline_count: int
     created_at: str
+    ai_overview: Optional[str] = None  # AI-generated overview
     case_id: Optional[str] = None  # Associated case ID
     case_version: Optional[int] = None  # Associated case version
     case_name: Optional[str] = None  # Associated case name
@@ -88,9 +91,13 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
         "overview": snapshot.overview or {},
         "citations": snapshot.citations or {},
         "chat_history": snapshot.chat_history or [],
+        "ai_overview": snapshot.ai_overview,  # Include AI overview
         "timestamp": timestamp,
         "created_at": timestamp,
         "owner": user["username"],
+        "case_id": getattr(snapshot, "case_id", None),  # Include case info if provided
+        "case_version": getattr(snapshot, "case_version", None),
+        "case_name": getattr(snapshot, "case_name", None),
     }
     
     # Save to persistent storage (will automatically chunk if too large)
@@ -119,6 +126,10 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
         link_count=link_count,
         timeline_count=timeline_count,
         created_at=saved_snapshot["created_at"],
+        ai_overview=saved_snapshot.get("ai_overview"),  # Include AI overview
+        case_id=saved_snapshot.get("case_id"),
+        case_version=saved_snapshot.get("case_version"),
+        case_name=saved_snapshot.get("case_name"),
     )
 
 
@@ -146,6 +157,7 @@ async def list_snapshots(user: dict = Depends(get_current_user)):
             link_count=link_count,
             timeline_count=timeline_count,
             created_at=snapshot_data["created_at"],
+            ai_overview=snapshot_data.get("ai_overview"),
             case_id=snapshot_data.get("case_id"),
             case_version=snapshot_data.get("case_version"),
             case_name=snapshot_data.get("case_name"),
@@ -159,28 +171,38 @@ async def list_snapshots(user: dict = Depends(get_current_user)):
 @router.get("/{snapshot_id}", response_model=SnapshotData)
 async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Get a specific snapshot by ID."""
-    snapshot = snapshot_storage.get(snapshot_id)
-    
-    if snapshot is None:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    if snapshot.get("owner") != user["username"]:
-        raise HTTPException(status_code=404, detail="Snapshot not found")
-    
-    return SnapshotData(
-        id=snapshot["id"],
-        name=snapshot["name"],
-        subgraph=snapshot["subgraph"],
-        timeline=snapshot["timeline"],
-        overview=snapshot["overview"],
-        citations=snapshot.get("citations", {}),
-        chat_history=snapshot["chat_history"],
-        notes=snapshot["notes"],
-        timestamp=snapshot["timestamp"],
-        created_at=snapshot["created_at"],
-        case_id=snapshot.get("case_id"),
-        case_version=snapshot.get("case_version"),
-        case_name=snapshot.get("case_name"),
-    )
+    try:
+        snapshot = snapshot_storage.get(snapshot_id)
+        
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        if snapshot.get("owner") != user["username"]:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        # Ensure all required fields have defaults for backward compatibility
+        return SnapshotData(
+            id=snapshot.get("id", snapshot_id),
+            name=snapshot.get("name", "Unnamed Snapshot"),
+            subgraph=snapshot.get("subgraph", {"nodes": [], "links": []}),
+            timeline=snapshot.get("timeline", []),
+            overview=snapshot.get("overview", {}),
+            citations=snapshot.get("citations", {}),
+            chat_history=snapshot.get("chat_history", []),
+            ai_overview=snapshot.get("ai_overview"),
+            notes=snapshot.get("notes", ""),
+            timestamp=snapshot.get("timestamp", datetime.now().isoformat()),
+            created_at=snapshot.get("created_at", snapshot.get("timestamp", datetime.now().isoformat())),
+            case_id=snapshot.get("case_id"),
+            case_version=snapshot.get("case_version"),
+            case_name=snapshot.get("case_name"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error getting snapshot {snapshot_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve snapshot: {str(e)}")
 
 
 @router.delete("/{snapshot_id}")
@@ -260,6 +282,11 @@ async def upload_snapshot_chunk(
                 "timeline": [],
                 "overview": {},
                 "chat_history": [],
+                "ai_overview": first_chunk.get("ai_overview"),  # Include AI overview from first chunk
+                "citations": first_chunk.get("citations", {}),
+                "case_id": first_chunk.get("case_id"),  # Include case info from first chunk
+                "case_version": first_chunk.get("case_version"),
+                "case_name": first_chunk.get("case_name"),
             }
             
             # Merge all chunks

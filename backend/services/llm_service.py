@@ -42,24 +42,37 @@ class LLMService:
         Returns:
             Model response text
         """
-        kwargs = {
-            "model": OPENAI_MODEL,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": temperature,
-            "timeout": timeout,
-        }
+        try:
+            kwargs = {
+                "model": OPENAI_MODEL,
+                "messages": [
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": temperature,
+                "timeout": timeout,
+            }
 
-        # Force JSON response if requested
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
+            # Force JSON response if requested
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
 
-        print(prompt)
-        response = client.chat.completions.create(**kwargs)
+            print(f"[LLM] Calling model {OPENAI_MODEL} with prompt length {len(prompt)}")
+            response = client.chat.completions.create(**kwargs)
 
-        # Extract content
-        return response.choices[0].message.content
+            # Extract content
+            content = response.choices[0].message.content
+            if not content:
+                print("[LLM] WARNING: Empty response from LLM")
+                raise ValueError("LLM returned empty response")
+            
+            print(f"[LLM] Response length: {len(content)}")
+            return content
+        except Exception as e:
+            print(f"[LLM] ERROR calling LLM: {e}")
+            print(f"[LLM] Error type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            raise
 
     def parse_json_response(self, response_text: str) -> Dict:
         """
@@ -142,15 +155,15 @@ Return ONLY valid JSON with this structure:
         Returns:
             Answer text
         """
-
-        query_section = ""
-        if query_results:
-            query_section = f"""
+        try:
+            query_section = ""
+            if query_results:
+                query_section = f"""
 Query Results:
 {query_results}
 """
 
-        prompt = f"""{system_context}
+            prompt = f"""{system_context}
 
 You have access to the following information from the investigation graph:
 
@@ -172,7 +185,16 @@ Guidelines:
 
 Answer:"""
 
-        return self.call(prompt, temperature=0.3)
+            answer = self.call(prompt, temperature=0.3)
+            if not answer or not answer.strip():
+                print("[LLM] WARNING: answer_question returned empty answer")
+                raise ValueError("LLM returned empty answer")
+            return answer
+        except Exception as e:
+            print(f"[LLM] ERROR in answer_question: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 # Singleton instance

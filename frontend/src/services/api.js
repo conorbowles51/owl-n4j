@@ -191,6 +191,20 @@ export const graphAPI = {
     }),
 
   /**
+   * Execute multiple Cypher queries in batches (faster for large cases)
+   * @param {string[]} queries - Array of Cypher query strings
+   * @param {number} batchSize - Number of queries per batch (default: 50)
+   */
+  executeBatchQueries: (queries, batchSize = 50) =>
+    fetchAPI('/graph/execute-batch-queries', {
+      method: 'POST',
+      body: JSON.stringify({
+        queries: queries,
+        batch_size: batchSize,
+      }),
+    }),
+
+  /**
    * Clear the current graph, saving its Cypher as the "last graph"
    */
   clearGraph: () =>
@@ -428,6 +442,14 @@ export const snapshotsAPI = {
             },
             timestamp: timestamp,
             created_at: timestamp,
+            // Include metadata in first chunk only
+            ...(nodeIndex === 0 ? {
+              ai_overview: snapshot.ai_overview,
+              citations: snapshot.citations,
+              case_id: snapshot.case_id,
+              case_version: snapshot.case_version,
+              case_name: snapshot.case_name,
+            } : {}),
           };
           
           // Try to stringify this chunk
@@ -512,6 +534,10 @@ export const snapshotsAPI = {
           link_count: snapshot.subgraph.links.length,
           timeline_count: snapshot.timeline?.length || 0,
           created_at: timestamp,
+          ai_overview: snapshot.ai_overview, // Include AI overview
+          case_id: snapshot.case_id,
+          case_version: snapshot.case_version,
+          case_name: snapshot.case_name,
         };
       }
       throw err;

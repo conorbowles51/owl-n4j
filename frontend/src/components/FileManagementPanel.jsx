@@ -222,6 +222,21 @@ const FileManagementPanel = ({
                     <div className="space-y-2 max-h-96 overflow-y-auto">
                       {snapshots.map((snapshot) => {
                         const isExpanded = expandedSnapshotIds.has(snapshot.id);
+                        // Use loaded snapshot details if available, otherwise use snapshot from list
+                        const displaySnapshot = loadedSnapshotDetails[snapshot.id] || snapshot;
+                        
+                        // Pre-load snapshot details to get ai_overview
+                        if (!loadedSnapshotDetails[snapshot.id]) {
+                          snapshotsAPI.get(snapshot.id).then(fullSnapshot => {
+                            setLoadedSnapshotDetails(prev => ({
+                              ...prev,
+                              [snapshot.id]: fullSnapshot
+                            }));
+                          }).catch(err => {
+                            console.warn(`Failed to pre-load snapshot ${snapshot.id}:`, err);
+                          });
+                        }
+                        
                         return (
                           <div
                             key={snapshot.id}
@@ -269,11 +284,30 @@ const FileManagementPanel = ({
                                       )}
                                     </button>
                                   </div>
+                                  {/* AI Overview - Show in collapsed view if available */}
+                                  {displaySnapshot.ai_overview && (
+                                    <div className="mt-1 mb-1 p-1.5 bg-owl-blue-50 rounded border border-owl-blue-200">
+                                      <p className="text-xs font-medium text-owl-blue-900 mb-0.5">AI Overview:</p>
+                                      <p className="text-xs text-owl-blue-800 line-clamp-2">{displaySnapshot.ai_overview}</p>
+                                    </div>
+                                  )}
                                   <p className="text-xs text-light-600 mt-1 whitespace-pre-wrap">{snapshot.notes || 'No notes'}</p>
                                   <div className="flex items-center gap-2 mt-2 text-xs text-light-500">
-                                    <span>{snapshot.node_count} nodes</span>
+                                    <span>
+                                      {displaySnapshot.subgraph?.nodes?.length || 
+                                       displaySnapshot.overview?.nodeCount || 
+                                       displaySnapshot.node_count || 
+                                       snapshot.node_count || 
+                                       0} nodes
+                                    </span>
                                     <span>•</span>
-                                    <span>{snapshot.link_count} links</span>
+                                    <span>
+                                      {displaySnapshot.subgraph?.links?.length || 
+                                       displaySnapshot.overview?.linkCount || 
+                                       displaySnapshot.link_count || 
+                                       snapshot.link_count || 
+                                       0} links
+                                    </span>
                                     {snapshot.case_name && (
                                       <>
                                         <span>•</span>
@@ -287,8 +321,66 @@ const FileManagementPanel = ({
                               {/* Detailed Snapshot Information */}
                               {isExpanded && loadedSnapshotDetails[snapshot.id] && (() => {
                                 const fullSnapshot = loadedSnapshotDetails[snapshot.id];
+                                // Debug: log to see what we have
+                                if (fullSnapshot && !fullSnapshot.ai_overview) {
+                                  console.log('Snapshot loaded without ai_overview:', {
+                                    id: fullSnapshot.id,
+                                    name: fullSnapshot.name,
+                                    hasAiOverview: !!fullSnapshot.ai_overview,
+                                    keys: Object.keys(fullSnapshot)
+                                  });
+                                }
                                 return (
                                   <div className="mt-3 pt-3 border-t border-light-200 space-y-3">
+                                    {/* Snapshot Metadata */}
+                                    <div className="mb-3 p-2 bg-light-50 rounded border border-light-200">
+                                      <h6 className="text-xs font-semibold text-owl-blue-900 mb-1.5">Snapshot Information</h6>
+                                      <div className="space-y-0.5 text-xs">
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-light-600 w-20">Name:</span>
+                                          <span className="font-medium text-owl-blue-900 truncate">{fullSnapshot.name || snapshot.name}</span>
+                                        </div>
+                                        {(fullSnapshot.timestamp || fullSnapshot.created_at || snapshot.timestamp) && (
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-light-600 w-20">Created:</span>
+                                            <span className="text-light-700 text-xs">{new Date(fullSnapshot.timestamp || fullSnapshot.created_at || snapshot.timestamp).toLocaleString()}</span>
+                                          </div>
+                                        )}
+                                        {fullSnapshot.case_name && (
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-light-600 w-20">Case:</span>
+                                            <span className="text-light-700 truncate">{fullSnapshot.case_name}</span>
+                                          </div>
+                                        )}
+                                        {fullSnapshot.case_version && (
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-light-600 w-20">Version:</span>
+                                            <span className="text-light-700">{fullSnapshot.case_version}</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                    
+                                    {/* AI Overview - At the top */}
+                                    {fullSnapshot.ai_overview ? (
+                                      <div className="mb-3 p-2 bg-owl-blue-50 rounded border border-owl-blue-200">
+                                        <p className="text-xs font-medium text-owl-blue-900 mb-1">AI Overview:</p>
+                                        <p className="text-xs text-owl-blue-800">{fullSnapshot.ai_overview}</p>
+                                      </div>
+                                    ) : (
+                                      <div className="mb-3 p-2 bg-yellow-50 rounded border border-yellow-200">
+                                        <p className="text-xs text-yellow-800 italic">No AI overview available for this snapshot</p>
+                                      </div>
+                                    )}
+                                    
+                                    {/* Notes */}
+                                    {fullSnapshot.notes && (
+                                      <div className="mb-3 p-2 bg-light-50 rounded border border-light-200">
+                                        <p className="text-xs font-medium text-owl-blue-900 mb-1">Notes:</p>
+                                        <p className="text-xs text-light-700 whitespace-pre-wrap">{fullSnapshot.notes}</p>
+                                      </div>
+                                    )}
+                                    
                                     {/* Overview Nodes */}
                                     {fullSnapshot.overview && fullSnapshot.overview.nodes && fullSnapshot.overview.nodes.length > 0 && (
                                       <div>
@@ -447,30 +539,44 @@ const FileManagementPanel = ({
                                     )}
 
                                     {/* Subgraph Statistics */}
-                                    {fullSnapshot.subgraph && (
-                                      <div>
-                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
-                                          <FileText className="w-3 h-3" />
-                                          Subgraph Statistics
-                                        </h6>
-                                        <div className="bg-white rounded p-2 border border-light-200 text-xs">
-                                          <div className="grid grid-cols-2 gap-2">
-                                            <div>
-                                              <span className="text-light-600">Nodes:</span>
-                                              <span className="ml-2 font-medium text-owl-blue-900">
-                                                {fullSnapshot.subgraph.nodes?.length || 0}
-                                              </span>
-                                            </div>
-                                            <div>
-                                              <span className="text-light-600">Links:</span>
-                                              <span className="ml-2 font-medium text-owl-blue-900">
-                                                {fullSnapshot.subgraph.links?.length || 0}
-                                              </span>
-                                            </div>
+                                    <div>
+                                      <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                        <FileText className="w-3 h-3" />
+                                        Subgraph Statistics
+                                      </h6>
+                                      <div className="bg-white rounded p-2 border border-light-200 text-xs">
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div>
+                                            <span className="text-light-600">Nodes:</span>
+                                            <span className="ml-2 font-medium text-owl-blue-900">
+                                              {fullSnapshot.subgraph?.nodes?.length || fullSnapshot.overview?.nodeCount || fullSnapshot.node_count || snapshot.node_count || 0}
+                                            </span>
                                           </div>
+                                          <div>
+                                            <span className="text-light-600">Links:</span>
+                                            <span className="ml-2 font-medium text-owl-blue-900">
+                                              {fullSnapshot.subgraph?.links?.length || fullSnapshot.overview?.linkCount || fullSnapshot.link_count || snapshot.link_count || 0}
+                                            </span>
+                                          </div>
+                                          {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && (
+                                            <div>
+                                              <span className="text-light-600">Timeline:</span>
+                                              <span className="ml-2 font-medium text-owl-blue-900">
+                                                {fullSnapshot.timeline.length}
+                                              </span>
+                                            </div>
+                                          )}
+                                          {fullSnapshot.chat_history && Array.isArray(fullSnapshot.chat_history) && (
+                                            <div>
+                                              <span className="text-light-600">Chat:</span>
+                                              <span className="ml-2 font-medium text-owl-blue-900">
+                                                {fullSnapshot.chat_history.length}
+                                              </span>
+                                            </div>
+                                          )}
                                         </div>
                                       </div>
-                                    )}
+                                    </div>
                                   </div>
                                 );
                               })()}
