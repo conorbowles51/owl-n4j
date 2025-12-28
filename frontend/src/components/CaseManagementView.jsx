@@ -17,6 +17,7 @@ import {
   UploadCloud,
   Search,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { casesAPI, evidenceAPI, snapshotsAPI } from '../services/api';
 import CaseModal from './CaseModal';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
@@ -846,7 +847,9 @@ export default function CaseManagementView({
                                             {displaySnapshot.ai_overview && (
                                               <div className="mb-2 p-2 bg-owl-blue-50 rounded border border-owl-blue-200">
                                                 <p className="text-xs font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                                <p className="text-xs text-owl-blue-800 line-clamp-3">{displaySnapshot.ai_overview}</p>
+                                                <div className="text-xs text-owl-blue-800 line-clamp-3 prose prose-sm max-w-none">
+                                                  <ReactMarkdown>{displaySnapshot.ai_overview}</ReactMarkdown>
+                                                </div>
                                               </div>
                                             )}
                                             {snapshot.notes && (
@@ -934,7 +937,9 @@ export default function CaseManagementView({
                                                   {fullSnapshot.ai_overview ? (
                                                     <div className="mb-3 p-3 bg-owl-blue-50 rounded-lg border border-owl-blue-200">
                                                       <p className="text-sm font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                                      <p className="text-sm text-owl-blue-800">{fullSnapshot.ai_overview}</p>
+                                                      <div className="text-sm text-owl-blue-800 prose prose-sm max-w-none">
+                                                        <ReactMarkdown>{fullSnapshot.ai_overview}</ReactMarkdown>
+                                                      </div>
                                                     </div>
                                                   ) : (
                                                     <div className="mb-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
@@ -1807,7 +1812,9 @@ export default function CaseManagementView({
                                             {displaySnapshot.ai_overview && (
                                               <div className="mb-2 p-2 bg-owl-blue-50 rounded border border-owl-blue-200">
                                                 <p className="text-xs font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                                <p className="text-xs text-owl-blue-800 line-clamp-3">{displaySnapshot.ai_overview}</p>
+                                                <div className="text-xs text-owl-blue-800 line-clamp-3 prose prose-sm max-w-none">
+                                                  <ReactMarkdown>{displaySnapshot.ai_overview}</ReactMarkdown>
+                                                </div>
                                               </div>
                                             )}
                                             {snapshot.notes && (
@@ -1895,7 +1902,9 @@ export default function CaseManagementView({
                                                   {fullSnapshot.ai_overview ? (
                                                     <div className="mb-3 p-3 bg-owl-blue-50 rounded-lg border border-owl-blue-200">
                                                       <p className="text-sm font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                                      <p className="text-sm text-owl-blue-800">{fullSnapshot.ai_overview}</p>
+                                                      <div className="text-sm text-owl-blue-800 prose prose-sm max-w-none">
+                                                        <ReactMarkdown>{fullSnapshot.ai_overview}</ReactMarkdown>
+                                                      </div>
                                                     </div>
                                                   ) : (
                                                     <div className="mb-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">

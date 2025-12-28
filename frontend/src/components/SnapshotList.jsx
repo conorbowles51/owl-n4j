@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Archive, X, Trash2, Eye, Calendar, FileDown, Clock, DollarSign, FileText } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { snapshotsAPI } from '../services/api';
 import { exportSnapshotToPDF } from '../utils/pdfExport';
 
@@ -185,7 +186,9 @@ export default function SnapshotList({ isOpen, onClose, onLoadSnapshot }) {
                         {snapshot.ai_overview && (
                           <div className="mt-1 mb-1 p-1.5 bg-owl-blue-50 rounded border border-owl-blue-200">
                             <p className="text-xs font-medium text-owl-blue-900 mb-0.5">AI Overview:</p>
-                            <p className="text-xs text-owl-blue-800 line-clamp-2">{snapshot.ai_overview}</p>
+                            <div className="text-xs text-owl-blue-800 line-clamp-2 prose prose-sm max-w-none">
+                              <ReactMarkdown>{snapshot.ai_overview}</ReactMarkdown>
+                            </div>
                           </div>
                         )}
                         <p className="text-xs text-light-600 mt-1 line-clamp-2">{snapshot.notes || 'No notes'}</p>
@@ -231,7 +234,9 @@ export default function SnapshotList({ isOpen, onClose, onLoadSnapshot }) {
                   {selectedSnapshot.ai_overview && (
                     <div className="mb-3 p-3 bg-owl-blue-50 rounded-lg border border-owl-blue-200">
                       <p className="text-sm font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                      <p className="text-sm text-owl-blue-800">{selectedSnapshot.ai_overview}</p>
+                      <div className="text-sm text-owl-blue-800 prose prose-sm max-w-none">
+                        <ReactMarkdown>{selectedSnapshot.ai_overview}</ReactMarkdown>
+                      </div>
                     </div>
                   )}
                   <p className="text-sm text-light-700 whitespace-pre-wrap">{selectedSnapshot.notes || 'No notes'}</p>

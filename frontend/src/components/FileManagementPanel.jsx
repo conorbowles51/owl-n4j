@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 import { casesAPI, snapshotsAPI } from '../services/api';
 
 const FileManagementPanel = ({
@@ -288,7 +289,9 @@ const FileManagementPanel = ({
                                   {displaySnapshot.ai_overview && (
                                     <div className="mt-1 mb-1 p-1.5 bg-owl-blue-50 rounded border border-owl-blue-200">
                                       <p className="text-xs font-medium text-owl-blue-900 mb-0.5">AI Overview:</p>
-                                      <p className="text-xs text-owl-blue-800 line-clamp-2">{displaySnapshot.ai_overview}</p>
+                                      <div className="text-xs text-owl-blue-800 line-clamp-2 prose prose-sm max-w-none">
+                                        <ReactMarkdown>{displaySnapshot.ai_overview}</ReactMarkdown>
+                                      </div>
                                     </div>
                                   )}
                                   <p className="text-xs text-light-600 mt-1 whitespace-pre-wrap">{snapshot.notes || 'No notes'}</p>
@@ -365,7 +368,9 @@ const FileManagementPanel = ({
                                     {fullSnapshot.ai_overview ? (
                                       <div className="mb-3 p-2 bg-owl-blue-50 rounded border border-owl-blue-200">
                                         <p className="text-xs font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                        <p className="text-xs text-owl-blue-800">{fullSnapshot.ai_overview}</p>
+                                        <div className="text-xs text-owl-blue-800 prose prose-sm max-w-none">
+                                          <ReactMarkdown>{fullSnapshot.ai_overview}</ReactMarkdown>
+                                        </div>
                                       </div>
                                     ) : (
                                       <div className="mb-3 p-2 bg-yellow-50 rounded border border-yellow-200">
