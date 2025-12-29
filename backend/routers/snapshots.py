@@ -207,15 +207,130 @@ async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user))
 
 @router.delete("/{snapshot_id}")
 async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
-    """Delete a snapshot."""
-    snapshot = snapshot_storage.get(snapshot_id)
-    if snapshot is None or snapshot.get("owner") != user["username"]:
+    """Delete a snapshot and remove it from all case versions."""
+    from services.case_storage import case_storage
+    
+    # Reload storage to ensure we have latest data before checking
+    snapshot_storage.reload()
+    
+    # Check if snapshot exists in storage (by checking the in-memory dict after reload)
+    # This is more efficient than calling get() which would reload again
+    all_snapshots = snapshot_storage.get_all()
+    snapshot_data = None
+    for sid, data in all_snapshots.items():
+        if sid == snapshot_id:
+            snapshot_data = data
+            break
+    
+    # If not found by key, try to find by id field (for backwards compatibility)
+    if snapshot_data is None:
+        for sid, data in all_snapshots.items():
+            if data.get("id") == snapshot_id:
+                snapshot_data = data
+                snapshot_id = sid  # Use the storage key
+                break
+    
+    if snapshot_data is None or snapshot_data.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Snapshot not found")
     
+    # Get the snapshot ID for case cleanup (use the id field if available, otherwise the key)
+    snapshot_id_for_cases = snapshot_data.get("id") or snapshot_id
+    
+    # Delete from snapshot storage
     if not snapshot_storage.delete(snapshot_id):
         raise HTTPException(status_code=404, detail="Snapshot not found")
     
+    # Remove snapshot from all case versions
+    case_storage.reload()
+    all_cases = case_storage.get_all(owner=user["username"])
+    cases_updated = False
+    
+    for case_id, case_data in all_cases.items():
+        versions = case_data.get("versions", [])
+        version_updated = False
+        
+        for version in versions:
+            snapshots = version.get("snapshots", [])
+            original_count = len(snapshots)
+            # Filter out the deleted snapshot
+            updated_snapshots = [s for s in snapshots if s.get("id") != snapshot_id_for_cases and s.get("id") != snapshot_id]
+            
+            if len(updated_snapshots) != original_count:
+                version["snapshots"] = updated_snapshots
+                version_updated = True
+        
+        if version_updated:
+            # Update the case in memory
+            case_storage._cases[case_id] = case_data
+            cases_updated = True
+    
+    if cases_updated:
+        # Save all updated cases to disk
+        from services.case_storage import save_cases
+        save_cases(case_storage._cases)
+    
     return {"status": "deleted", "id": snapshot_id}
+
+
+@router.delete("")
+async def delete_all_snapshots(user: dict = Depends(get_current_user)):
+    """Delete all snapshots for the current user and remove them from all case versions."""
+    from services.case_storage import case_storage
+    
+    # Reload storage to ensure we have latest data
+    snapshot_storage.reload()
+    
+    # Get all snapshots owned by the user
+    all_snapshots = snapshot_storage.get_all()
+    user_snapshot_ids = []
+    
+    for snapshot_id, snapshot_data in all_snapshots.items():
+        if snapshot_data.get("owner") == user["username"]:
+            user_snapshot_ids.append(snapshot_id)
+            # Also get the id field if different
+            snapshot_id_field = snapshot_data.get("id")
+            if snapshot_id_field and snapshot_id_field != snapshot_id:
+                user_snapshot_ids.append(snapshot_id_field)
+    
+    # Delete all user snapshots
+    deleted_count = 0
+    for snapshot_id in user_snapshot_ids:
+        try:
+            if snapshot_storage.delete(snapshot_id):
+                deleted_count += 1
+        except Exception as e:
+            print(f"Error deleting snapshot {snapshot_id}: {e}")
+    
+    # Remove all snapshots from all case versions
+    case_storage.reload()
+    all_cases = case_storage.get_all(owner=user["username"])
+    cases_updated = False
+    
+    for case_id, case_data in all_cases.items():
+        versions = case_data.get("versions", [])
+        version_updated = False
+        
+        for version in versions:
+            snapshots = version.get("snapshots", [])
+            # Filter out all user snapshots
+            updated_snapshots = [
+                s for s in snapshots 
+                if s.get("id") not in user_snapshot_ids and s.get("owner") != user["username"]
+            ]
+            
+            if len(updated_snapshots) != len(snapshots):
+                version["snapshots"] = updated_snapshots
+                version_updated = True
+        
+        if version_updated:
+            case_storage._cases[case_id] = case_data
+            cases_updated = True
+    
+    if cases_updated:
+        from services.case_storage import save_cases
+        save_cases(case_storage._cases)
+    
+    return {"status": "deleted", "count": deleted_count}
 
 
 @router.post("/restore")

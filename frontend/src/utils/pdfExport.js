@@ -8,6 +8,67 @@ import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 /**
+ * Simple markdown to HTML converter
+ * Converts basic markdown syntax to HTML
+ */
+function markdownToHtml(markdown) {
+  if (!markdown) return '';
+  
+  let html = markdown;
+  
+  // Convert **bold** to <strong>bold</strong>
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  
+  // Convert *italic* to <em>italic</em>
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  
+  // Convert `code` to <code>code</code>
+  html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+  
+  // Convert ## Heading to <h2>Heading</h2>
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  
+  // Convert - list item to <li>list item</li>
+  html = html.replace(/^\- (.+)$/gm, '<li>$1</li>');
+  // Wrap consecutive <li> in <ul>
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => {
+    return '<ul>' + match + '</ul>';
+  });
+  
+  // Convert numbered list
+  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  // Wrap consecutive numbered <li> in <ol>
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => {
+    if (match.includes('<ul>')) return match; // Skip if already wrapped
+    return '<ol>' + match + '</ol>';
+  });
+  
+  // Convert line breaks
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br>');
+  
+  // Wrap in paragraph if not already wrapped
+  if (!html.startsWith('<')) {
+    html = '<p>' + html + '</p>';
+  }
+  
+  return html;
+}
+
+/**
+ * Strip HTML tags but preserve formatting for plain text rendering
+ * This is a fallback if HTML rendering doesn't work well
+ */
+function stripHtmlTags(html) {
+  if (!html) return '';
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+/**
  * Export snapshot to PDF
  * 
  * @param {Object} snapshot - The snapshot data
@@ -380,7 +441,8 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
 
     doc.setFontSize(11);
     
-    snapshot.chat_history.forEach((message, index) => {
+    // Process messages sequentially to handle async HTML rendering
+    for (const message of snapshot.chat_history) {
       checkPageBreak(35);
       
       // Message role with styling
@@ -392,17 +454,101 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
       doc.setTextColor(0, 0, 0); // Reset to black
       yPosition += 7;
       
-      // Message content
+      // Message content - convert markdown to HTML for AI responses
       doc.setFont(undefined, 'normal');
-      const contentHeight = addWrappedText(
-        message.content || '', 
-        margin + 5, 
-        yPosition, 
-        contentWidth - 5,
-        10,
-        5
-      );
-      yPosition += contentHeight + 3;
+      let content = message.content || '';
+      
+      // For AI assistant messages, convert markdown to HTML and render
+      if (message.role === 'assistant' || message.role === 'ai') {
+        const htmlContent = markdownToHtml(content);
+        
+        // Render HTML content using jsPDF's html method if available
+        // Otherwise, strip HTML tags and render as plain text
+        try {
+          // Create a temporary container for HTML rendering
+          const tempDiv = document.createElement('div');
+          tempDiv.style.position = 'absolute';
+          tempDiv.style.left = '-9999px';
+          tempDiv.style.width = `${(contentWidth - 5) * 3.779527559}px`; // Convert mm to px (1mm = 3.779527559px)
+          tempDiv.style.padding = '10px';
+          tempDiv.style.fontSize = '10pt';
+          tempDiv.style.fontFamily = 'helvetica, arial, sans-serif';
+          tempDiv.style.lineHeight = '1.5';
+          tempDiv.style.color = '#000000';
+          tempDiv.innerHTML = htmlContent;
+          document.body.appendChild(tempDiv);
+          
+          // Use html2canvas to render HTML to image (await for async processing)
+          try {
+            const canvas = await html2canvas(tempDiv, {
+              scale: 2,
+              useCORS: true,
+              logging: false,
+              backgroundColor: '#ffffff',
+              width: tempDiv.offsetWidth,
+              height: tempDiv.scrollHeight,
+              windowWidth: tempDiv.offsetWidth,
+              windowHeight: tempDiv.scrollHeight
+            });
+            
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = contentWidth - 5;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            
+            // Check if we need a new page
+            if (yPosition + imgHeight > pageHeight - margin) {
+              doc.addPage();
+              yPosition = margin;
+            }
+            
+            doc.addImage(imgData, 'PNG', margin + 5, yPosition, imgWidth, imgHeight);
+            yPosition += imgHeight + 3;
+            
+            // Clean up
+            document.body.removeChild(tempDiv);
+          } catch (err) {
+            console.warn('Failed to render HTML content, falling back to plain text:', err);
+            // Fallback to plain text
+            const plainText = stripHtmlTags(htmlContent);
+            const contentHeight = addWrappedText(
+              plainText, 
+              margin + 5, 
+              yPosition, 
+              contentWidth - 5,
+              10,
+              5
+            );
+            yPosition += contentHeight + 3;
+            if (document.body.contains(tempDiv)) {
+              document.body.removeChild(tempDiv);
+            }
+          }
+        } catch (err) {
+          console.warn('Error rendering HTML, using plain text:', err);
+          // Fallback to plain text if HTML rendering fails
+          const plainText = stripHtmlTags(markdownToHtml(content));
+          const contentHeight = addWrappedText(
+            plainText, 
+            margin + 5, 
+            yPosition, 
+            contentWidth - 5,
+            10,
+            5
+          );
+          yPosition += contentHeight + 3;
+        }
+      } else {
+        // For user messages, render as plain text
+        const contentHeight = addWrappedText(
+          content, 
+          margin + 5, 
+          yPosition, 
+          contentWidth - 5,
+          10,
+          5
+        );
+        yPosition += contentHeight + 3;
+      }
       
       // Additional context for AI responses
       if (message.role === 'assistant' && message.contextMode) {
@@ -416,7 +562,7 @@ export async function exportSnapshotToPDF(snapshot, graphCanvas = null) {
       }
       
       yPosition += 5; // Space between messages
-    });
+    }
   }
 
   // Save PDF

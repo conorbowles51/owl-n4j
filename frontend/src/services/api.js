@@ -563,6 +563,14 @@ export const snapshotsAPI = {
     }),
 
   /**
+   * Delete all snapshots for the current user
+   */
+  deleteAll: () =>
+    fetchAPI('/snapshots', {
+      method: 'DELETE',
+    }),
+
+  /**
    * Restore a snapshot from case data
    */
   restore: (snapshotData) =>

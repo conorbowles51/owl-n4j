@@ -33,6 +33,8 @@ const FileManagementPanel = ({
   onLoadCase,
   onReturnToCaseManagement,
 }) => {
+  // Use snapshots from parent (initialSnapshots prop) instead of loading independently
+  // This ensures we show the same snapshots as the parent (from current case version)
   const [snapshots, setSnapshots] = useState(initialSnapshots || []);
   const [cases, setCases] = useState([]);
   const [loadingCases, setLoadingCases] = useState(false);
@@ -44,15 +46,81 @@ const FileManagementPanel = ({
   const [expandedSnapshotIds, setExpandedSnapshotIds] = useState(new Set());
   const [loadedSnapshotDetails, setLoadedSnapshotDetails] = useState({}); // Store full snapshot data by ID
 
+  // Sync snapshots with parent prop when it changes
+  useEffect(() => {
+    // Always sync with parent's snapshots when they change
+    // This ensures we show the same snapshots as the parent (from current case version)
+    if (initialSnapshots && Array.isArray(initialSnapshots)) {
+      // Sort by timestamp (most recent first) to ensure consistent ordering
+      const sorted = [...initialSnapshots].sort((a, b) => {
+        const dateA = new Date(a.timestamp || a.created_at || 0);
+        const dateB = new Date(b.timestamp || b.created_at || 0);
+        return dateB - dateA;
+      });
+      setSnapshots(sorted);
+    } else if (initialSnapshots === null || initialSnapshots === undefined) {
+      // If parent explicitly sets to null/undefined, clear local state
+      setSnapshots([]);
+    }
+  }, [initialSnapshots]);
+
   useEffect(() => {
     if (isOpen) {
       loadCases();
-      loadSnapshots();
+      // Always sync with parent's snapshots first
+      if (initialSnapshots && Array.isArray(initialSnapshots) && initialSnapshots.length > 0) {
+        // Parent has snapshots, use them (already synced by the other useEffect)
+        return;
+      }
+      // Only load independently if parent doesn't have snapshots
+      if (!initialSnapshots || initialSnapshots.length === 0) {
+        loadSnapshots();
+      }
     }
   }, [isOpen]);
 
   const loadSnapshots = async () => {
     try {
+      // If we have a current case, try to load snapshots from the case version
+      if (currentCaseId && currentCaseVersion) {
+        try {
+          const caseData = await casesAPI.get(currentCaseId);
+          if (caseData.versions && caseData.versions.length > 0) {
+            const currentVersion = caseData.versions.find(v => v.version === currentCaseVersion) || caseData.versions[0];
+            if (currentVersion && currentVersion.snapshots && currentVersion.snapshots.length > 0) {
+              // Load full snapshot data for all snapshots in this version
+              const snapshotList = [];
+              for (const snap of currentVersion.snapshots) {
+                try {
+                  if (snap.subgraph || snap._chunked) {
+                    snapshotList.push(snap);
+                  } else if (snap.id) {
+                    const fullSnapshot = await snapshotsAPI.get(snap.id);
+                    snapshotList.push(fullSnapshot);
+                  }
+                } catch (err) {
+                  console.warn(`Failed to load snapshot ${snap.id}:`, err);
+                  if (snap.id) {
+                    snapshotList.push(snap);
+                  }
+                }
+              }
+              // Sort by timestamp (most recent first)
+              snapshotList.sort((a, b) => {
+                const dateA = new Date(a.timestamp || a.created_at || 0);
+                const dateB = new Date(b.timestamp || b.created_at || 0);
+                return dateB - dateA;
+              });
+              setSnapshots(snapshotList);
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load snapshots from case, falling back to global list:', err);
+        }
+      }
+      
+      // Fallback to global snapshot list
       const data = await snapshotsAPI.list();
       setSnapshots(data);
     } catch (err) {
@@ -387,14 +455,28 @@ const FileManagementPanel = ({
                                     )}
                                     
                                     {/* Overview Nodes */}
-                                    {fullSnapshot.overview && fullSnapshot.overview.nodes && fullSnapshot.overview.nodes.length > 0 && (
-                                      <div>
-                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
-                                          <FileText className="w-3 h-3" />
-                                          Node Overview ({fullSnapshot.overview.nodes.length} nodes)
-                                        </h6>
-                                        <div className="space-y-2 max-h-48 overflow-y-auto">
-                                          {fullSnapshot.overview.nodes.map((node, nodeIdx) => (
+                                    {/* Node Overview - Always show section */}
+                                    <div>
+                                      <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                        <FileText className="w-3 h-3" />
+                                        Node Overview
+                                        {(() => {
+                                          const nodes = fullSnapshot.overview?.nodes || fullSnapshot.subgraph?.nodes || [];
+                                          return nodes.length > 0 ? ` (${nodes.length} nodes)` : '';
+                                        })()}
+                                      </h6>
+                                      {(() => {
+                                        const nodes = fullSnapshot.overview?.nodes || fullSnapshot.subgraph?.nodes || [];
+                                        if (nodes.length === 0) {
+                                          return (
+                                            <p className="text-xs text-light-500 italic p-2 bg-light-50 rounded border border-light-200">
+                                              No node data available for this snapshot
+                                            </p>
+                                          );
+                                        }
+                                        return (
+                                          <div className="space-y-2 max-h-48 overflow-y-auto">
+                                            {nodes.map((node, nodeIdx) => (
                                             <div key={nodeIdx} className="bg-white rounded p-2 border border-light-200">
                                               <div className="flex items-start justify-between gap-2 mb-1">
                                                 <h7 className="font-medium text-owl-blue-900 text-xs">
@@ -417,18 +499,25 @@ const FileManagementPanel = ({
                                                 </p>
                                               )}
                                             </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
+                                            ))}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
 
-                                    {/* Citations */}
-                                    {fullSnapshot.citations && Object.keys(fullSnapshot.citations).length > 0 && (
-                                      <div>
-                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
-                                          <FileText className="w-3 h-3" />
-                                          Source Citations
-                                        </h6>
+                                    {/* Citations - Always show section */}
+                                    <div>
+                                      <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                        <FileText className="w-3 h-3" />
+                                        Source Citations
+                                        {fullSnapshot.citations && Object.keys(fullSnapshot.citations).length > 0 && 
+                                          ` (${Object.keys(fullSnapshot.citations).length} nodes)`}
+                                      </h6>
+                                      {!fullSnapshot.citations || Object.keys(fullSnapshot.citations).length === 0 ? (
+                                        <p className="text-xs text-light-500 italic p-2 bg-light-50 rounded border border-light-200">
+                                          No citations available for this snapshot
+                                        </p>
+                                      ) : (
                                         <div className="space-y-2 max-h-48 overflow-y-auto">
                                           {Object.values(fullSnapshot.citations).map((nodeCitation, idx) => (
                                             <div key={idx} className="bg-white rounded p-2 border border-light-200">
@@ -464,16 +553,22 @@ const FileManagementPanel = ({
                                             </div>
                                           ))}
                                         </div>
-                                      </div>
-                                    )}
+                                      )}
+                                    </div>
 
-                                    {/* Timeline Events */}
-                                    {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && fullSnapshot.timeline.length > 0 && (
-                                      <div>
-                                        <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
-                                          <Calendar className="w-3 h-3" />
-                                          Timeline Events ({fullSnapshot.timeline.length} events)
-                                        </h6>
+                                    {/* Timeline Events - Always show section */}
+                                    <div>
+                                      <h6 className="text-xs font-semibold text-owl-blue-900 mb-2 flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        Timeline Events
+                                        {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && fullSnapshot.timeline.length > 0 && 
+                                          ` (${fullSnapshot.timeline.length} events)`}
+                                      </h6>
+                                      {!fullSnapshot.timeline || !Array.isArray(fullSnapshot.timeline) || fullSnapshot.timeline.length === 0 ? (
+                                        <p className="text-xs text-light-500 italic p-2 bg-light-50 rounded border border-light-200">
+                                          No timeline events available for this snapshot
+                                        </p>
+                                      ) : (
                                         <div className="space-y-2 max-h-48 overflow-y-auto">
                                           {fullSnapshot.timeline.slice(0, 5).map((event, eventIdx) => (
                                             <div key={eventIdx} className="bg-white rounded p-2 border border-light-200">
@@ -506,8 +601,8 @@ const FileManagementPanel = ({
                                             </p>
                                           )}
                                         </div>
-                                      </div>
-                                    )}
+                                      )}
+                                    </div>
 
                                     {/* Chat History */}
                                     {fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0 && (

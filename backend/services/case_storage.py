@@ -153,16 +153,47 @@ class CaseStorage:
         existing_versions = case.get("versions", [])
         next_version = len(existing_versions) + 1
         
-        # Add case, version and owner metadata to each snapshot
-        snapshots_with_metadata = []
+        # Collect all snapshots from previous versions to preserve them
+        # Use a set to track snapshot IDs and avoid duplicates
+        all_snapshot_ids = set()
+        all_snapshots = []
+        
+        # First, add snapshots from previous versions
+        for version in existing_versions:
+            if version.get("snapshots"):
+                for snap in version["snapshots"]:
+                    snap_id = snap.get("id") if isinstance(snap, dict) else None
+                    if snap_id and snap_id not in all_snapshot_ids:
+                        all_snapshot_ids.add(snap_id)
+                        # Update metadata to point to the new version
+                        snap_copy = snap.copy() if isinstance(snap, dict) else {}
+                        snap_copy["case_version"] = next_version
+                        snap_copy["case_name"] = case_name
+                        all_snapshots.append(snap_copy)
+        
+        # Then, add new snapshots (avoid duplicates)
         for snapshot in snapshots:
-            snapshot_with_metadata = snapshot.copy()
-            snapshot_with_metadata["case_id"] = case_id
-            snapshot_with_metadata["case_version"] = next_version
-            snapshot_with_metadata["case_name"] = case_name
-            if case_owner:
-                snapshot_with_metadata["owner"] = case_owner
-            snapshots_with_metadata.append(snapshot_with_metadata)
+            snapshot_id = snapshot.get("id") if isinstance(snapshot, dict) else None
+            if snapshot_id and snapshot_id not in all_snapshot_ids:
+                all_snapshot_ids.add(snapshot_id)
+                snapshot_with_metadata = snapshot.copy()
+                snapshot_with_metadata["case_id"] = case_id
+                snapshot_with_metadata["case_version"] = next_version
+                snapshot_with_metadata["case_name"] = case_name
+                if case_owner:
+                    snapshot_with_metadata["owner"] = case_owner
+                all_snapshots.append(snapshot_with_metadata)
+            elif not snapshot_id:
+                # If snapshot doesn't have an ID, add it anyway (shouldn't happen, but be safe)
+                snapshot_with_metadata = snapshot.copy()
+                snapshot_with_metadata["case_id"] = case_id
+                snapshot_with_metadata["case_version"] = next_version
+                snapshot_with_metadata["case_name"] = case_name
+                if case_owner:
+                    snapshot_with_metadata["owner"] = case_owner
+                all_snapshots.append(snapshot_with_metadata)
+        
+        snapshots_with_metadata = all_snapshots
         
         # Create new version
         version_data = {

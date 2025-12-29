@@ -69,6 +69,7 @@ export default function CaseManagementView({
   const [expandedVersions, setExpandedVersions] = useState(new Set());
   const [expandedSnapshots, setExpandedSnapshots] = useState(new Set());
   const [loadedSnapshotDetails, setLoadedSnapshotDetails] = useState({}); // Store full snapshot data by ID
+  const [loadingSnapshotIds, setLoadingSnapshotIds] = useState(new Set()); // Track which snapshots are currently being loaded
   const [showPreviousVersions, setShowPreviousVersions] = useState(false); // Show/hide previous versions
   const [loadedCypherQueries, setLoadedCypherQueries] = useState({}); // Store loaded cypher queries by version
   const [loadingCypher, setLoadingCypher] = useState(false); // Loading state for cypher queries
@@ -298,16 +299,44 @@ export default function CaseManagementView({
         return next;
       });
       
-      // Reload the case to refresh snapshot list
+      // Reload the case from the server to get the updated state
+      // This ensures the snapshot is removed from case versions on the backend
       if (selectedCase) {
-        const caseData = await casesAPI.get(selectedCase.id);
-        setSelectedCase(caseData);
-        
-        // Update the selected version's snapshots
-        if (selectedVersion) {
-          const updatedVersion = caseData.versions.find(v => v.version === selectedVersion.version);
-          if (updatedVersion) {
-            setSelectedVersion(updatedVersion);
+        try {
+          const updatedCase = await casesAPI.get(selectedCase.id);
+          setSelectedCase(updatedCase);
+          
+          // Update the selected version if it exists
+          if (selectedVersion) {
+            const updatedVersion = updatedCase.versions?.find(v => v.version === selectedVersion.version);
+            if (updatedVersion) {
+              setSelectedVersion(updatedVersion);
+            }
+          }
+        } catch (err) {
+          console.error('Failed to reload case after snapshot deletion:', err);
+          // Fallback to local state update if reload fails
+          if (selectedVersion) {
+            const updatedVersions = selectedCase.versions.map(version => {
+              if (version.version === selectedVersion.version) {
+                const updatedSnapshots = (version.snapshots || []).filter(
+                  snapshot => snapshot.id !== snapshotId
+                );
+                return {
+                  ...version,
+                  snapshots: updatedSnapshots
+                };
+              }
+              return version;
+            });
+            setSelectedCase({
+              ...selectedCase,
+              versions: updatedVersions
+            });
+            const updatedVersion = updatedVersions.find(v => v.version === selectedVersion.version);
+            if (updatedVersion) {
+              setSelectedVersion(updatedVersion);
+            }
           }
         }
       }
@@ -714,25 +743,62 @@ export default function CaseManagementView({
                   <>
                     {/* Snapshots Section - Moved to top of case view */}
                     <div className="mb-6">
-                      <button
-                        onClick={() => setShowSnapshots(!showSnapshots)}
-                        className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Archive className="w-5 h-5 text-owl-blue-700" />
-                          <h3 className="text-md font-semibold text-owl-blue-900">
-                            Snapshots (Version {selectedVersion.version})
-                          </h3>
-                          <span className="text-xs text-light-600 bg-white px-2 py-0.5 rounded">
-                            {selectedVersion.snapshots?.length || 0}
-                          </span>
-                        </div>
-                        {showSnapshots ? (
-                          <ChevronDown className="w-4 h-4 text-light-600" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-light-600" />
+                      <div className="flex items-center gap-2 mb-2">
+                        <button
+                          onClick={() => setShowSnapshots(!showSnapshots)}
+                          className="flex-1 flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Archive className="w-5 h-5 text-owl-blue-700" />
+                            <h3 className="text-md font-semibold text-owl-blue-900">
+                              Snapshots (Version {selectedVersion.version})
+                            </h3>
+                            <span className="text-xs text-light-600 bg-white px-2 py-0.5 rounded">
+                              {selectedVersion.snapshots?.length || 0}
+                            </span>
+                          </div>
+                          {showSnapshots ? (
+                            <ChevronDown className="w-4 h-4 text-light-600" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-light-600" />
+                          )}
+                        </button>
+                        {showSnapshots && selectedVersion?.snapshots && selectedVersion.snapshots.length > 0 && (
+                          <button
+                            onClick={async () => {
+                              if (!confirm(`Are you sure you want to delete ALL ${selectedVersion.snapshots.length} snapshots? This action cannot be undone.`)) {
+                                return;
+                              }
+                              try {
+                                await snapshotsAPI.deleteAll();
+                                // Reload the case to reflect changes
+                                if (selectedCase) {
+                                  const updatedCase = await casesAPI.get(selectedCase.id);
+                                  setSelectedCase(updatedCase);
+                                  if (selectedVersion) {
+                                    const updatedVersion = updatedCase.versions?.find(v => v.version === selectedVersion.version);
+                                    if (updatedVersion) {
+                                      setSelectedVersion(updatedVersion);
+                                    }
+                                  }
+                                }
+                                // Clear loaded snapshot details
+                                setLoadedSnapshotDetails({});
+                                setExpandedSnapshots(new Set());
+                                alert('All snapshots deleted successfully');
+                              } catch (err) {
+                                console.error('Failed to delete all snapshots:', err);
+                                alert(`Failed to delete all snapshots: ${err.message}`);
+                              }
+                            }}
+                            className="px-3 py-2 text-sm text-red-600 hover:text-red-700 hover:bg-red-50 border border-red-300 rounded-lg transition-colors flex items-center gap-2"
+                            title="Delete all snapshots"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete All
+                          </button>
                         )}
-                      </button>
+                      </div>
                       {showSnapshots && (
                         <div className="ml-2">
                           {/* Filter Input */}
@@ -770,14 +836,29 @@ export default function CaseManagementView({
                                 const displaySnapshot = loadedSnapshotDetails[snapshot.id] || snapshot;
                                 
                                 // Pre-load snapshot details for visible snapshots to get ai_overview
-                                if (shouldShow && !loadedSnapshotDetails[snapshot.id]) {
+                                // Use useEffect pattern to avoid render loops - check if already loaded or loading
+                                if (shouldShow && !loadedSnapshotDetails[snapshot.id] && !loadingSnapshotIds.has(snapshot.id)) {
+                                  // Mark as loading to prevent duplicate requests
+                                  setLoadingSnapshotIds(prev => new Set(prev).add(snapshot.id));
                                   snapshotsAPI.get(snapshot.id).then(fullSnapshot => {
                                     setLoadedSnapshotDetails(prev => ({
                                       ...prev,
                                       [snapshot.id]: fullSnapshot
                                     }));
+                                    // Remove from loading set
+                                    setLoadingSnapshotIds(prev => {
+                                      const next = new Set(prev);
+                                      next.delete(snapshot.id);
+                                      return next;
+                                    });
                                   }).catch(err => {
                                     console.warn(`Failed to pre-load snapshot ${snapshot.id}:`, err);
+                                    // Remove from loading set on error
+                                    setLoadingSnapshotIds(prev => {
+                                      const next = new Set(prev);
+                                      next.delete(snapshot.id);
+                                      return next;
+                                    });
                                   });
                                 }
                                 
@@ -804,9 +885,11 @@ export default function CaseManagementView({
                                                 next.delete(snapshot.id);
                                               } else {
                                                 next.add(snapshot.id);
-                                                // Load full snapshot details if not already loaded
-                                                if (!loadedSnapshotDetails[snapshot.id]) {
+                                                // Load full snapshot details if not already loaded or loading
+                                                if (!loadedSnapshotDetails[snapshot.id] && !loadingSnapshotIds.has(snapshot.id)) {
                                                   try {
+                                                    // Mark as loading to prevent duplicate requests
+                                                    setLoadingSnapshotIds(prev => new Set(prev).add(snapshot.id));
                                                     const fullSnapshot = await snapshotsAPI.get(snapshot.id);
                                                     console.log('Loaded snapshot details:', {
                                                       id: fullSnapshot.id,
@@ -817,8 +900,20 @@ export default function CaseManagementView({
                                                       ...prev,
                                                       [snapshot.id]: fullSnapshot
                                                     }));
+                                                    // Remove from loading set
+                                                    setLoadingSnapshotIds(prev => {
+                                                      const next = new Set(prev);
+                                                      next.delete(snapshot.id);
+                                                      return next;
+                                                    });
                                                   } catch (err) {
                                                     console.error('Failed to load snapshot details:', err);
+                                                    // Remove from loading set on error
+                                                    setLoadingSnapshotIds(prev => {
+                                                      const next = new Set(prev);
+                                                      next.delete(snapshot.id);
+                                                      return next;
+                                                    });
                                                   }
                                                 }
                                               }
@@ -955,49 +1050,70 @@ export default function CaseManagementView({
                                                     </div>
                                                   )}
                                                   
-                                                  {/* Overview Nodes */}
-                                                  {fullSnapshot.overview && fullSnapshot.overview.nodes && fullSnapshot.overview.nodes.length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <FileText className="w-4 h-4" />
-                                                        Node Overview ({fullSnapshot.overview.nodes.length} nodes)
-                                                      </h5>
-                                                      <div className="space-y-3 max-h-64 overflow-y-auto">
-                                                        {fullSnapshot.overview.nodes.map((node, nodeIdx) => (
-                                                          <div key={nodeIdx} className="bg-light-50 rounded p-3 border border-light-200">
-                                                            <div className="flex items-start justify-between gap-2 mb-1">
-                                                              <h6 className="font-medium text-owl-blue-900 text-sm">
-                                                                {node.name || node.key}
-                                                              </h6>
-                                                              {node.type && (
-                                                                <span className="text-xs px-2 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
-                                                                  {node.type}
-                                                                </span>
-                                                              )}
-                                                            </div>
-                                                            {node.summary && (
-                                                              <p className="text-xs text-light-700 mt-1 line-clamp-3">
-                                                                {node.summary}
-                                                              </p>
-                                                            )}
-                                                            {node.notes && (
-                                                              <p className="text-xs text-light-600 mt-1 italic line-clamp-2">
-                                                                {node.notes}
-                                                              </p>
-                                                            )}
+                                                  {/* Overview Nodes - Always show section */}
+                                                  <div>
+                                                    {(() => {
+                                                      const nodes = fullSnapshot.overview?.nodes || fullSnapshot.subgraph?.nodes || [];
+                                                      return nodes.length > 0 ? (
+                                                        <>
+                                                          <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
+                                                            <FileText className="w-4 h-4" />
+                                                            Node Overview ({nodes.length} nodes)
+                                                          </h5>
+                                                          <div className="space-y-3 max-h-64 overflow-y-auto">
+                                                            {nodes.map((node, nodeIdx) => (
+                                                              <div key={nodeIdx} className="bg-light-50 rounded p-3 border border-light-200">
+                                                                <div className="flex items-start justify-between gap-2 mb-1">
+                                                                  <h6 className="font-medium text-owl-blue-900 text-sm">
+                                                                    {node.name || node.key}
+                                                                  </h6>
+                                                                  {node.type && (
+                                                                    <span className="text-xs px-2 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
+                                                                      {node.type}
+                                                                    </span>
+                                                                  )}
+                                                                </div>
+                                                                {node.summary && (
+                                                                  <p className="text-xs text-light-700 mt-1 line-clamp-3">
+                                                                    {node.summary}
+                                                                  </p>
+                                                                )}
+                                                                {node.notes && (
+                                                                  <p className="text-xs text-light-600 mt-1 italic line-clamp-2">
+                                                                    {node.notes}
+                                                                  </p>
+                                                                )}
+                                                              </div>
+                                                            ))}
                                                           </div>
-                                                        ))}
-                                                      </div>
-                                                    </div>
-                                                  )}
+                                                        </>
+                                                      ) : (
+                                                        <>
+                                                          <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
+                                                            <FileText className="w-4 h-4" />
+                                                            Node Overview
+                                                          </h5>
+                                                          <p className="text-xs text-light-500 italic p-2 bg-light-50 rounded border border-light-200">
+                                                            No node data available for this snapshot
+                                                          </p>
+                                                        </>
+                                                      );
+                                                    })()}
+                                                  </div>
 
-                                                  {/* Citations */}
-                                                  {fullSnapshot.citations && Object.keys(fullSnapshot.citations).length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <FileText className="w-4 h-4" />
-                                                        Source Citations
-                                                      </h5>
+                                                  {/* Citations - Always show section */}
+                                                  <div>
+                                                    <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
+                                                      <FileText className="w-4 h-4" />
+                                                      Source Citations
+                                                      {fullSnapshot.citations && Object.keys(fullSnapshot.citations).length > 0 && 
+                                                        ` (${Object.keys(fullSnapshot.citations).length} nodes)`}
+                                                    </h5>
+                                                    {!fullSnapshot.citations || Object.keys(fullSnapshot.citations).length === 0 ? (
+                                                      <p className="text-xs text-light-500 italic p-2 bg-light-50 rounded border border-light-200">
+                                                        No citations available for this snapshot
+                                                      </p>
+                                                    ) : (
                                                       <div className="space-y-3 max-h-64 overflow-y-auto">
                                                         {Object.values(fullSnapshot.citations).map((nodeCitation, idx) => (
                                                           <div key={idx} className="bg-light-50 rounded p-3 border border-light-200">
@@ -1063,16 +1179,22 @@ export default function CaseManagementView({
                                                           </div>
                                                         ))}
                                                       </div>
-                                                    </div>
-                                                  )}
-
-                                                  {/* Timeline Events */}
-                                                  {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && fullSnapshot.timeline.length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <Calendar className="w-4 h-4" />
-                                                        Timeline Events ({fullSnapshot.timeline.length} events)
-                                                      </h5>
+                                                    )}
+                                                  </div>
+                                                  
+                                                  {/* Timeline Events - Always show section */}
+                                                  <div>
+                                                    <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
+                                                      <Calendar className="w-4 h-4" />
+                                                      Timeline Events
+                                                      {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && fullSnapshot.timeline.length > 0 && 
+                                                        ` (${fullSnapshot.timeline.length} events)`}
+                                                    </h5>
+                                                    {!fullSnapshot.timeline || !Array.isArray(fullSnapshot.timeline) || fullSnapshot.timeline.length === 0 ? (
+                                                      <p className="text-xs text-light-500 italic p-2 bg-light-50 rounded border border-light-200">
+                                                        No timeline events available for this snapshot
+                                                      </p>
+                                                    ) : (
                                                       <div className="space-y-3 max-h-64 overflow-y-auto">
                                                         {fullSnapshot.timeline.map((event, eventIdx) => (
                                                           <div key={eventIdx} className="bg-light-50 rounded p-3 border border-light-200">
@@ -1100,9 +1222,9 @@ export default function CaseManagementView({
                                                           </div>
                                                         ))}
                                                       </div>
-                                                    </div>
-                                                  )}
-
+                                                    )}
+                                                  </div>
+                                                  
                                                   {/* Chat History */}
                                                   {fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0 && (
                                                     <div>
@@ -1163,8 +1285,8 @@ export default function CaseManagementView({
                                                 </div>
                                               );
                                             })()}
-                                          </>
-                                        )}
+                                      </>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1677,500 +1799,6 @@ export default function CaseManagementView({
                 {/* Selected Version Details */}
                 {selectedVersion && (
                   <>
-                    {/* Snapshots Section - Moved to top */}
-                    <div className="mb-6">
-                      <button
-                        onClick={() => setShowSnapshots(!showSnapshots)}
-                        className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Archive className="w-5 h-5 text-owl-blue-700" />
-                          <h3 className="text-md font-semibold text-owl-blue-900">
-                            Snapshots (Version {selectedVersion.version})
-                          </h3>
-                          <span className="text-xs text-light-600 bg-white px-2 py-0.5 rounded">
-                            {selectedVersion.snapshots?.length || 0}
-                          </span>
-                        </div>
-                        {showSnapshots ? (
-                          <ChevronDown className="w-4 h-4 text-light-600" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-light-600" />
-                        )}
-                      </button>
-                      {showSnapshots && (
-                        <div className="ml-2">
-                          {/* Filter Input */}
-                          <div className="mb-2 relative">
-                            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-light-400" />
-                            <input
-                              type="text"
-                              placeholder="Filter by name or notes..."
-                              value={snapshotsFilter}
-                              onChange={(e) => {
-                                setSnapshotsFilter(e.target.value);
-                                setSnapshotsPage(1); // Reset to first page when filter changes
-                              }}
-                              className="w-full pl-8 pr-3 py-1.5 text-sm border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            {selectedVersion.snapshots && selectedVersion.snapshots.length > 0 ? (() => {
-                              // Ensure snapshots are sorted by most recent first (by timestamp/created_at)
-                              const sortedSnapshots = [...selectedVersion.snapshots].sort((a, b) => {
-                                const dateA = new Date(a.timestamp || a.created_at || 0);
-                                const dateB = new Date(b.timestamp || b.created_at || 0);
-                                return dateB - dateA; // Most recent first
-                              });
-                              const filteredSnapshots = filterSnapshots(sortedSnapshots);
-                              const { paginatedItems, totalPages, currentPage } = paginate(filteredSnapshots, snapshotsPage, itemsPerPage);
-                              
-                              return (
-                                <>
-                                  {paginatedItems.map((snapshot, index) => {
-                                const isLatest = index === 0;
-                                const isExpanded = expandedSnapshots.has(snapshot.id);
-                                const shouldShow = isLatest || isExpanded;
-                                // Use loaded snapshot details if available, otherwise use snapshot from version
-                                const displaySnapshot = loadedSnapshotDetails[snapshot.id] || snapshot;
-                                
-                                // Pre-load snapshot details for visible snapshots to get ai_overview
-                                if (shouldShow && !loadedSnapshotDetails[snapshot.id]) {
-                                  snapshotsAPI.get(snapshot.id).then(fullSnapshot => {
-                                    setLoadedSnapshotDetails(prev => ({
-                                      ...prev,
-                                      [snapshot.id]: fullSnapshot
-                                    }));
-                                  }).catch(err => {
-                                    console.warn(`Failed to pre-load snapshot ${snapshot.id}:`, err);
-                                  });
-                                }
-                                
-                                return (
-                                  <div
-                                    key={snapshot.id}
-                                    className="p-4 bg-white rounded-lg border border-light-200"
-                                  >
-                                    <div className="flex items-start justify-between mb-2">
-                                      <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1">
-                                          <h4 className="font-medium text-owl-blue-900">
-                                            {snapshot.name}
-                                          </h4>
-                                          {isLatest && (
-                                            <span className="text-xs bg-owl-blue-100 text-owl-blue-700 px-2 py-0.5 rounded">
-                                              Latest
-                                            </span>
-                                          )}
-                                          <button
-                                            onClick={async () => {
-                                              const next = new Set(expandedSnapshots);
-                                              if (next.has(snapshot.id)) {
-                                                next.delete(snapshot.id);
-                                              } else {
-                                                next.add(snapshot.id);
-                                                // Load full snapshot details if not already loaded
-                                                if (!loadedSnapshotDetails[snapshot.id]) {
-                                                  try {
-                                                    const fullSnapshot = await snapshotsAPI.get(snapshot.id);
-                                                    console.log('Loaded snapshot details:', {
-                                                      id: fullSnapshot.id,
-                                                      hasAiOverview: !!fullSnapshot.ai_overview,
-                                                      aiOverview: fullSnapshot.ai_overview?.substring(0, 100) || 'null'
-                                                    });
-                                                    setLoadedSnapshotDetails(prev => ({
-                                                      ...prev,
-                                                      [snapshot.id]: fullSnapshot
-                                                    }));
-                                                  } catch (err) {
-                                                    console.error('Failed to load snapshot details:', err);
-                                                  }
-                                                }
-                                              }
-                                              setExpandedSnapshots(next);
-                                            }}
-                                            className="text-xs text-owl-blue-600 hover:text-owl-blue-700"
-                                          >
-                                            {isExpanded ? 'Collapse' : 'Expand'}
-                                          </button>
-                                        </div>
-                                      </div>
-                                      <button
-                                        onClick={(e) => handleDeleteSnapshot(snapshot.id, e)}
-                                        className="p-1 hover:bg-light-200 rounded transition-colors ml-2 flex-shrink-0"
-                                        title="Delete snapshot"
-                                      >
-                                        <Trash2 className="w-4 h-4 text-red-500" />
-                                      </button>
-                                    </div>
-                                    {shouldShow && (
-                                      <>
-                                        {/* Show summary info only when NOT expanded */}
-                                        {!isExpanded && (
-                                          <>
-                                            {/* AI Overview - Show in collapsed view if available */}
-                                            {displaySnapshot.ai_overview && (
-                                              <div className="mb-2 p-2 bg-owl-blue-50 rounded border border-owl-blue-200">
-                                                <p className="text-xs font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                                <div className="text-xs text-owl-blue-800 line-clamp-3 prose prose-sm max-w-none">
-                                                  <ReactMarkdown>{displaySnapshot.ai_overview}</ReactMarkdown>
-                                                </div>
-                                              </div>
-                                            )}
-                                            {snapshot.notes && (
-                                              <div className="mb-2 p-2 bg-light-50 rounded border border-light-200">
-                                                <p className="text-xs font-medium text-owl-blue-900 mb-1">Notes:</p>
-                                                <p className="text-xs text-light-700 line-clamp-2 whitespace-pre-wrap">{snapshot.notes}</p>
-                                              </div>
-                                            )}
-                                            <div className="flex items-center gap-4 text-xs text-light-600 mb-3">
-                                              <span>{snapshot.node_count || 0} nodes</span>
-                                              <span>•</span>
-                                              <span>{snapshot.link_count || 0} links</span>
-                                              <span>•</span>
-                                              <span>{formatDate(snapshot.timestamp)}</span>
-                                            </div>
-                                          </>
-                                        )}
-                                            
-                                            {/* Detailed Snapshot Information - Only show when expanded */}
-                                            {isExpanded && loadedSnapshotDetails[snapshot.id] && (() => {
-                                              const fullSnapshot = loadedSnapshotDetails[snapshot.id];
-                                              // Debug: log to see what we have
-                                              console.log('Expanded snapshot details:', {
-                                                id: fullSnapshot.id,
-                                                name: fullSnapshot.name,
-                                                hasAiOverview: !!fullSnapshot.ai_overview,
-                                                aiOverview: fullSnapshot.ai_overview?.substring(0, 50) || 'null',
-                                                hasSubgraph: !!fullSnapshot.subgraph,
-                                                subgraphNodes: fullSnapshot.subgraph?.nodes?.length || 0,
-                                                subgraphLinks: fullSnapshot.subgraph?.links?.length || 0,
-                                                hasOverview: !!fullSnapshot.overview,
-                                                overviewNodes: fullSnapshot.overview?.nodes?.length || 0,
-                                                hasCitations: !!fullSnapshot.citations,
-                                                citationsCount: fullSnapshot.citations ? Object.keys(fullSnapshot.citations).length : 0,
-                                                hasTimeline: !!fullSnapshot.timeline,
-                                                timelineCount: fullSnapshot.timeline?.length || 0,
-                                                nodeCount: fullSnapshot.node_count || snapshot.node_count,
-                                                linkCount: fullSnapshot.link_count || snapshot.link_count,
-                                                keys: Object.keys(fullSnapshot)
-                                              });
-                                              return (
-                                                <div className="mt-4 space-y-4 border-t border-light-200 pt-4">
-                                                  {/* Snapshot Metadata */}
-                                                  <div className="mb-3 p-3 bg-light-50 rounded-lg border border-light-200">
-                                                    <h5 className="text-sm font-semibold text-owl-blue-900 mb-2">Snapshot Information</h5>
-                                                    <div className="space-y-1 text-xs">
-                                                      <div className="flex items-center gap-2">
-                                                        <span className="text-light-600 w-24">Name:</span>
-                                                        <span className="font-medium text-owl-blue-900">{fullSnapshot.name || snapshot.name}</span>
-                                                      </div>
-                                                      {(fullSnapshot.timestamp || fullSnapshot.created_at || snapshot.timestamp) && (
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="text-light-600 w-24">Created:</span>
-                                                          <span className="text-light-700">{formatDate(fullSnapshot.timestamp || fullSnapshot.created_at || snapshot.timestamp)}</span>
-                                                        </div>
-                                                      )}
-                                                      {fullSnapshot.case_name && (
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="text-light-600 w-24">Case:</span>
-                                                          <span className="text-light-700">{fullSnapshot.case_name}</span>
-                                                        </div>
-                                                      )}
-                                                      {fullSnapshot.case_version && (
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="text-light-600 w-24">Version:</span>
-                                                          <span className="text-light-700">{fullSnapshot.case_version}</span>
-                                                        </div>
-                                                      )}
-                                                      {fullSnapshot.case_id && (
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="text-light-600 w-24">Case ID:</span>
-                                                          <span className="text-light-700 font-mono text-xs">{fullSnapshot.case_id}</span>
-                                                        </div>
-                                                      )}
-                                                      {fullSnapshot.owner && (
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="text-light-600 w-24">Owner:</span>
-                                                          <span className="text-light-700">{fullSnapshot.owner}</span>
-                                                        </div>
-                                                      )}
-                                                    </div>
-                                                  </div>
-                                                  
-                                                  {/* AI Overview - At the top */}
-                                                  {fullSnapshot.ai_overview ? (
-                                                    <div className="mb-3 p-3 bg-owl-blue-50 rounded-lg border border-owl-blue-200">
-                                                      <p className="text-sm font-medium text-owl-blue-900 mb-1">AI Overview:</p>
-                                                      <div className="text-sm text-owl-blue-800 prose prose-sm max-w-none">
-                                                        <ReactMarkdown>{fullSnapshot.ai_overview}</ReactMarkdown>
-                                                      </div>
-                                                    </div>
-                                                  ) : (
-                                                    <div className="mb-3 p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                                                      <p className="text-xs text-yellow-800 italic">No AI overview available for this snapshot</p>
-                                                    </div>
-                                                  )}
-                                                  
-                                                  {/* Notes */}
-                                                  {fullSnapshot.notes && (
-                                                    <div className="mb-3 p-3 bg-light-50 rounded-lg border border-light-200">
-                                                      <p className="text-sm font-medium text-owl-blue-900 mb-1">Notes:</p>
-                                                      <p className="text-sm text-light-700 whitespace-pre-wrap">{fullSnapshot.notes}</p>
-                                                    </div>
-                                                  )}
-                                                  
-                                                  {/* Overview Nodes */}
-                                                  {fullSnapshot.overview && fullSnapshot.overview.nodes && fullSnapshot.overview.nodes.length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <FileText className="w-4 h-4" />
-                                                        Node Overview ({fullSnapshot.overview.nodes.length} nodes)
-                                                      </h5>
-                                                      <div className="space-y-3 max-h-64 overflow-y-auto">
-                                                        {fullSnapshot.overview.nodes.map((node, nodeIdx) => (
-                                                          <div key={nodeIdx} className="bg-light-50 rounded p-3 border border-light-200">
-                                                            <div className="flex items-start justify-between gap-2 mb-1">
-                                                              <h6 className="font-medium text-owl-blue-900 text-sm">
-                                                                {node.name || node.key}
-                                                              </h6>
-                                                              {node.type && (
-                                                                <span className="text-xs px-2 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
-                                                                  {node.type}
-                                                                </span>
-                                                              )}
-                                                            </div>
-                                                            {node.summary && (
-                                                              <p className="text-xs text-light-700 mt-1 line-clamp-3">
-                                                                {node.summary}
-                                                              </p>
-                                                            )}
-                                                            {node.notes && (
-                                                              <p className="text-xs text-light-600 mt-1 italic line-clamp-2">
-                                                                {node.notes}
-                                                              </p>
-                                                            )}
-                                                          </div>
-                                                        ))}
-                                                      </div>
-                                                    </div>
-                                                  )}
-
-                                                  {/* Citations */}
-                                                  {fullSnapshot.citations && Object.keys(fullSnapshot.citations).length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <FileText className="w-4 h-4" />
-                                                        Source Citations
-                                                      </h5>
-                                                      <div className="space-y-3 max-h-64 overflow-y-auto">
-                                                        {Object.values(fullSnapshot.citations).map((nodeCitation, idx) => (
-                                                          <div key={idx} className="bg-light-50 rounded p-3 border border-light-200">
-                                                            <div className="font-medium text-owl-blue-900 text-sm mb-2">
-                                                              {nodeCitation.node_name} ({nodeCitation.node_type})
-                                                            </div>
-                                                            <div className="space-y-2">
-                                                              {nodeCitation.citations.map((citation, cIdx) => (
-                                                                <div key={cIdx} className="text-xs text-light-700 pl-2 border-l-2 border-owl-blue-300" onClick={(e) => e.stopPropagation()}>
-                                                                  <div className="flex items-center gap-2 flex-wrap">
-                                                                    <FileText className="w-3 h-3 text-owl-blue-600" />
-                                                                    {onViewDocument ? (
-                                                                      <span
-                                                                        onClick={(e) => {
-                                                                          e.preventDefault();
-                                                                          e.stopPropagation();
-                                                                          // Pass the selected case ID if available
-                                                                          const caseId = selectedCase?.id || fullSnapshot?.case_id || null;
-                                                                          if (onViewDocument && typeof onViewDocument === 'function') {
-                                                                            onViewDocument(citation.source_doc, citation.page, caseId);
-                                                                          }
-                                                                        }}
-                                                                        style={{ pointerEvents: 'auto', zIndex: 10, position: 'relative' }}
-                                                                        className="font-medium text-owl-blue-600 hover:text-owl-blue-800 hover:underline transition-colors cursor-pointer"
-                                                                        title={`View source: ${citation.source_doc}${citation.page ? `, page ${citation.page}` : ''}`}
-                                                                        role="button"
-                                                                        tabIndex={0}
-                                                                        onKeyDown={(e) => {
-                                                                          if (e.key === 'Enter' || e.key === ' ') {
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
-                                                                            const caseId = selectedCase?.id || fullSnapshot?.case_id || null;
-                                                                            onViewDocument(citation.source_doc, citation.page, caseId);
-                                                                          }
-                                                                        }}
-                                                                      >
-                                                                        {citation.source_doc}
-                                                                        {citation.page && `, page ${citation.page}`}
-                                                                      </span>
-                                                                    ) : (
-                                                                      <span className="font-medium">
-                                                                        {citation.source_doc}
-                                                                        {citation.page && `, page ${citation.page}`}
-                                                                      </span>
-                                                                    )}
-                                                                    <span className="text-light-500">
-                                                                      ({citation.type === 'verified_fact' ? 'Verified Fact' : citation.type === 'ai_insight' ? 'AI Insight' : 'Property'})
-                                                                    </span>
-                                                                  </div>
-                                                                  {citation.fact_text && (
-                                                                    <p className="text-light-600 mt-1 italic line-clamp-2">
-                                                                      {citation.fact_text}
-                                                                    </p>
-                                                                  )}
-                                                                  {citation.verified_by && (
-                                                                    <p className="text-light-500 text-xs mt-0.5">
-                                                                      Verified by: {citation.verified_by}
-                                                                    </p>
-                                                                  )}
-                                                                </div>
-                                                              ))}
-                                                            </div>
-                                                          </div>
-                                                        ))}
-                                                      </div>
-                                                    </div>
-                                                  )}
-
-                                                  {/* Timeline Events */}
-                                                  {fullSnapshot.timeline && Array.isArray(fullSnapshot.timeline) && fullSnapshot.timeline.length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <Calendar className="w-4 h-4" />
-                                                        Timeline Events ({fullSnapshot.timeline.length} events)
-                                                      </h5>
-                                                      <div className="space-y-3 max-h-64 overflow-y-auto">
-                                                        {fullSnapshot.timeline.map((event, eventIdx) => (
-                                                          <div key={eventIdx} className="bg-light-50 rounded p-3 border border-light-200">
-                                                            <div className="flex items-start justify-between gap-2 mb-1">
-                                                              <span className="font-medium text-owl-blue-900 text-sm">
-                                                                {event.name || event.key}
-                                                              </span>
-                                                              {event.type && (
-                                                                <span className="text-xs px-2 py-0.5 rounded bg-owl-purple-100 text-owl-purple-700 flex-shrink-0">
-                                                                  {event.type}
-                                                                </span>
-                                                              )}
-                                                            </div>
-                                                            {event.date && (
-                                                              <p className="text-xs text-light-600 mt-1">
-                                                                {formatDate(event.date)}
-                                                                {event.time && ` at ${event.time}`}
-                                                              </p>
-                                                            )}
-                                                            {event.summary && (
-                                                              <p className="text-xs text-light-700 mt-1 line-clamp-2">
-                                                                {event.summary}
-                                                              </p>
-                                                            )}
-                                                          </div>
-                                                        ))}
-                                                      </div>
-                                                    </div>
-                                                  )}
-
-                                                  {/* Chat History */}
-                                                  {fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0 && (
-                                                    <div>
-                                                      <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                        <FileText className="w-4 h-4" />
-                                                        Chat History ({fullSnapshot.chat_history.length} messages)
-                                                      </h5>
-                                                      <div className="space-y-2 max-h-64 overflow-y-auto">
-                                                        {fullSnapshot.chat_history.map((msg, msgIdx) => (
-                                                          <div key={msgIdx} className="bg-light-50 rounded p-2 border border-light-200">
-                                                            <div className="flex items-center gap-2 mb-1">
-                                                              <span className="text-xs font-medium text-owl-purple-600">
-                                                                {msg.role === 'user' ? 'User' : 'AI'}
-                                                              </span>
-                                                              {msg.timestamp && (
-                                                                <span className="text-xs text-light-500">
-                                                                  {formatDate(msg.timestamp)}
-                                                                </span>
-                                                              )}
-                                                            </div>
-                                                            <p className="text-xs text-light-700 whitespace-pre-wrap line-clamp-4">
-                                                              {msg.content}
-                                                            </p>
-                                                            {msg.cypherUsed && (
-                                                              <p className="text-xs text-light-500 mt-1 italic">
-                                                                Cypher query used
-                                                              </p>
-                                                            )}
-                                                          </div>
-                                                        ))}
-                                                      </div>
-                                                    </div>
-                                                  )}
-
-                                                  {/* Subgraph Statistics */}
-                                                  <div>
-                                                    <h5 className="text-sm font-semibold text-owl-blue-900 mb-2 flex items-center gap-2">
-                                                      <FileText className="w-4 h-4" />
-                                                      Subgraph Statistics
-                                                    </h5>
-                                                    <div className="bg-light-50 rounded p-3 border border-light-200 text-xs">
-                                                      <div className="grid grid-cols-2 gap-2">
-                                                        <div>
-                                                          <span className="text-light-600">Nodes:</span>
-                                                          <span className="ml-2 font-medium text-owl-blue-900">
-                                                            {fullSnapshot.subgraph?.nodes?.length || fullSnapshot.node_count || snapshot.node_count || 0}
-                                                          </span>
-                                                        </div>
-                                                        <div>
-                                                          <span className="text-light-600">Links:</span>
-                                                          <span className="ml-2 font-medium text-owl-blue-900">
-                                                            {fullSnapshot.subgraph?.links?.length || fullSnapshot.link_count || snapshot.link_count || 0}
-                                                          </span>
-                                                        </div>
-                                                      </div>
-                                                    </div>
-                                                  </div>
-                                                </div>
-                                              );
-                                            })()}
-                                          </>
-                                        )}
-                                  </div>
-                                );
-                              })}
-                              {totalPages > 1 && (
-                                    <div className="flex items-center justify-between mt-3 pt-3 border-t border-light-200">
-                                      <button
-                                        onClick={() => setSnapshotsPage(prev => Math.max(1, prev - 1))}
-                                        disabled={currentPage === 1}
-                                        className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
-                                      >
-                                        <ChevronLeft className="w-3 h-3" />
-                                        Previous
-                                      </button>
-                                      <span className="text-xs text-light-600">
-                                        Page {currentPage} of {totalPages} ({filteredSnapshots.length} total)
-                                      </span>
-                                      <button
-                                        onClick={() => setSnapshotsPage(prev => Math.min(totalPages, prev + 1))}
-                                        disabled={currentPage === totalPages}
-                                        className="px-3 py-1 text-xs text-owl-blue-600 hover:text-owl-blue-700 disabled:text-light-400 disabled:cursor-not-allowed flex items-center gap-1"
-                                      >
-                                        Next
-                                        <ChevronRight className="w-3 h-3" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </>
-                              );
-                            })() : (
-                              <p className="text-sm text-light-600 italic ml-4">No snapshots in this version</p>
-                            )}
-                            {filterSnapshots(selectedVersion.snapshots || []).length === 0 && selectedVersion.snapshots && selectedVersion.snapshots.length > 0 && (
-                              <p className="text-sm text-light-600 italic text-center py-2">
-                                No snapshots match the filter
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
                     {/* Version Notes */}
                     {selectedVersion.save_notes && (
                       <div className="mb-6">

@@ -52,6 +52,8 @@ import LoginPanel from './components/LoginPanel';
 import DocumentationViewer from './components/DocumentationViewer';
 import DocumentViewer from './components/DocumentViewer';
 import LoadCaseProgressDialog from './components/LoadCaseProgressDialog';
+import LoadSnapshotProgressDialog from './components/LoadSnapshotProgressDialog';
+import NodeSelectionProgressDialog from './components/NodeSelectionProgressDialog';
 import AddNodeModal from './components/AddNodeModal';
 import CreateRelationshipModal from './components/CreateRelationshipModal';
 import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
@@ -157,6 +159,24 @@ export default function App() {
     total: 0,
     caseName: null,
     version: null,
+  });
+  
+  // Load snapshot progress state
+  const [loadSnapshotProgress, setLoadSnapshotProgress] = useState({
+    isOpen: false,
+    current: 0,
+    total: 4, // Fetching snapshot, loading nodes, restoring chat, setting up timeline
+    snapshotName: null,
+    stage: null,
+    message: null,
+  });
+  
+  // Node selection progress state
+  const [nodeSelectionProgress, setNodeSelectionProgress] = useState({
+    isOpen: false,
+    current: 0,
+    total: 0,
+    message: null,
   });
   
   const accountDropdownRef = useRef(null);
@@ -343,7 +363,7 @@ export default function App() {
   const loadNodeDetailsTimerRef = useRef(null);
 
   // Load node details for multiple nodes with throttling and debouncing
-  const loadNodeDetails = useCallback(async (keys) => {
+  const loadNodeDetails = useCallback(async (keys, onProgress) => {
     if (!keys || keys.length === 0) {
       setSelectedNodesDetails([]);
       return;
@@ -354,7 +374,8 @@ export default function App() {
       clearTimeout(loadNodeDetailsTimerRef.current);
     }
 
-    // Debounce: wait 100ms for more updates before fetching
+    // Debounce: wait 100ms for more updates before fetching (unless progress callback is provided)
+    const debounceDelay = onProgress ? 0 : 100;
     loadNodeDetailsTimerRef.current = setTimeout(async () => {
       try {
         // Limit concurrent requests to avoid ERR_INSUFFICIENT_RESOURCES
@@ -366,6 +387,12 @@ export default function App() {
           const batchPromises = batch.map(key => graphAPI.getNodeDetails(key));
           const batchResults = await Promise.all(batchPromises);
           details.push(...batchResults);
+          
+          // Update progress if callback provided
+          if (onProgress) {
+            const current = Math.min(i + BATCH_SIZE, keys.length);
+            onProgress(current, keys.length);
+          }
           
           // Small delay between batches to avoid overwhelming the browser
           if (i + BATCH_SIZE < keys.length) {
@@ -379,7 +406,7 @@ export default function App() {
         // Set empty array on error to avoid stale data
         setSelectedNodesDetails([]);
       }
-    }, 100);
+    }, debounceDelay);
   }, []);
 
   // Handle bulk node selection (for drag selection)
@@ -438,8 +465,34 @@ export default function App() {
     
     const nodeKeys = subgraphNodes.map(n => n.key);
     setSelectedNodes(subgraphNodes);
-    loadNodeDetails(nodeKeys);
     setTimelineContextKeys(nodeKeys);
+    
+    // Show progress dialog if there are many nodes (>50)
+    const showProgress = nodeKeys.length > 50;
+    if (showProgress) {
+      setNodeSelectionProgress({
+        isOpen: true,
+        current: 0,
+        total: nodeKeys.length,
+        message: `Loading details for ${nodeKeys.length} nodes...`,
+      });
+    }
+    
+    // Load node details with progress tracking
+    loadNodeDetails(nodeKeys, showProgress ? (current, total) => {
+      setNodeSelectionProgress(prev => ({
+        ...prev,
+        current,
+        message: `Loading details for ${nodeKeys.length} nodes...`,
+      }));
+      
+      // Close dialog when complete
+      if (current >= total) {
+        setTimeout(() => {
+          setNodeSelectionProgress(prev => ({ ...prev, isOpen: false }));
+        }, 500);
+      }
+    } : undefined);
   }, [subgraphNodeKeys, fullGraphData, graphData, loadNodeDetails]);
 
   // Handle node click - support multi-select with Ctrl/Cmd
@@ -1370,10 +1423,53 @@ export default function App() {
     loadTimeline();
   }, [timelineContextKeys, dateRange]);
 
-  // Load snapshots on mount
+  // Load snapshots on mount and when case changes
   useEffect(() => {
     const loadSnapshots = async () => {
       try {
+        // If we have a current case, load snapshots from the case version
+        if (currentCaseId && currentCaseVersion) {
+          try {
+            const caseData = await casesAPI.get(currentCaseId);
+            if (caseData.versions && caseData.versions.length > 0) {
+              // Find the current version
+              const currentVersion = caseData.versions.find(v => v.version === currentCaseVersion) || caseData.versions[0];
+              if (currentVersion && currentVersion.snapshots && currentVersion.snapshots.length > 0) {
+                // Load full snapshot data for all snapshots in this version
+                const snapshotList = [];
+                for (const snap of currentVersion.snapshots) {
+                  try {
+                    // If it's already a full snapshot object, use it; otherwise fetch it
+                    if (snap.subgraph || snap._chunked) {
+                      snapshotList.push(snap);
+                    } else if (snap.id) {
+                      const fullSnapshot = await snapshotsAPI.get(snap.id);
+                      snapshotList.push(fullSnapshot);
+                    }
+                  } catch (err) {
+                    console.warn(`Failed to load snapshot ${snap.id}:`, err);
+                    // If we can't load it, try to use the metadata we have
+                    if (snap.id) {
+                      snapshotList.push(snap);
+                    }
+                  }
+                }
+                // Sort by timestamp (most recent first)
+                snapshotList.sort((a, b) => {
+                  const dateA = new Date(a.timestamp || a.created_at || 0);
+                  const dateB = new Date(b.timestamp || b.created_at || 0);
+                  return dateB - dateA;
+                });
+                setSnapshots(snapshotList);
+                return;
+              }
+            }
+          } catch (err) {
+            console.warn('Failed to load snapshots from case, falling back to global list:', err);
+          }
+        }
+        
+        // Fallback to global snapshot list
         const data = await snapshotsAPI.list();
         setSnapshots(data);
       } catch (err) {
@@ -1381,7 +1477,7 @@ export default function App() {
       }
     };
     loadSnapshots();
-  }, []);
+  }, [currentCaseId, currentCaseVersion]);
 
   // Export snapshot to PDF
   const handleExportPDF = useCallback(async (name, notes) => {
@@ -1726,19 +1822,21 @@ export default function App() {
         }));
       }
 
+      // Create a deep copy of all snapshot data to prevent reference issues
+      // This ensures that if the original state is modified later, it won't affect the saved snapshot
       const snapshot = {
         name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
-        subgraph: subgraphData,
-        timeline: timelineData || [],
+        subgraph: JSON.parse(JSON.stringify(subgraphData)), // Deep copy subgraph
+        timeline: JSON.parse(JSON.stringify(timelineData || [])), // Deep copy timeline
         overview: {
-          nodes: allSubgraphNodeDetails, // Use full details for all subgraph nodes
+          nodes: JSON.parse(JSON.stringify(allSubgraphNodeDetails)), // Deep copy node details
           nodeCount: subgraphData.nodes.length,
           linkCount: subgraphData.links.length,
         },
-        citations: citations, // Add citations structure
-        chat_history: relevantChatHistory,
-        ai_overview: aiOverview, // AI-generated overview
+        citations: JSON.parse(JSON.stringify(citations)), // Deep copy citations
+        chat_history: JSON.parse(JSON.stringify(relevantChatHistory)), // Deep copy chat history
+        ai_overview: aiOverview ? String(aiOverview) : null, // Ensure string, not reference
       };
 
       // Stage 5: Save snapshot
@@ -1780,18 +1878,42 @@ export default function App() {
         }));
 
         try {
-          // Get full snapshot data for all current snapshots
+          // Get the current case to find all existing snapshots from the current version
+          const currentCase = await casesAPI.get(currentCaseId);
           const snapshotData = [];
-          for (const snap of snapshots) {
-            try {
-              const fullSnapshot = await snapshotsAPI.get(snap.id);
-              snapshotData.push(fullSnapshot);
-            } catch (err) {
-              console.warn(`Failed to load snapshot ${snap.id}:`, err);
+          
+          // Get all snapshots from the current version (most recent version)
+          if (currentCase.versions && currentCase.versions.length > 0) {
+            const latestVersion = currentCase.versions[0];
+            if (latestVersion.snapshots && latestVersion.snapshots.length > 0) {
+              // Load full snapshot data for all existing snapshots in this version
+              for (const snap of latestVersion.snapshots) {
+                try {
+                  // If it's already a full snapshot object, use it; otherwise fetch it
+                  if (snap.subgraph || snap._chunked) {
+                    snapshotData.push(snap);
+                  } else {
+                    const fullSnapshot = await snapshotsAPI.get(snap.id);
+                    snapshotData.push(fullSnapshot);
+                  }
+                } catch (err) {
+                  console.warn(`Failed to load snapshot ${snap.id}:`, err);
+                  // If we can't load it, try to use the metadata we have
+                  if (snap.id) {
+                    snapshotData.push(snap);
+                  }
+                }
+              }
             }
           }
-          // Add the newly saved snapshot
-          snapshotData.push(savedSnapshot);
+          
+          // Add the newly saved snapshot (avoid duplicates)
+          const existingIds = new Set(snapshotData.map(s => s.id));
+          if (!existingIds.has(savedSnapshot.id)) {
+            snapshotData.push(savedSnapshot);
+          }
+          
+          console.log(`Auto-saving case with ${snapshotData.length} snapshots (including new one)`);
           
           // Save case with updated snapshots
           await casesAPI.save({
@@ -1836,7 +1958,47 @@ export default function App() {
         }
       }
       
-      // Reload snapshots list
+      // Reload snapshots list from current case version if available
+      if (currentCaseId && currentCaseVersion) {
+        try {
+          const caseData = await casesAPI.get(currentCaseId);
+          if (caseData.versions && caseData.versions.length > 0) {
+            const currentVersion = caseData.versions.find(v => v.version === currentCaseVersion) || caseData.versions[0];
+            if (currentVersion && currentVersion.snapshots && currentVersion.snapshots.length > 0) {
+              // Load full snapshot data for all snapshots in this version
+              const snapshotList = [];
+              for (const snap of currentVersion.snapshots) {
+                try {
+                  if (snap.subgraph || snap._chunked) {
+                    snapshotList.push(snap);
+                  } else if (snap.id) {
+                    const fullSnapshot = await snapshotsAPI.get(snap.id);
+                    snapshotList.push(fullSnapshot);
+                  }
+                } catch (err) {
+                  console.warn(`Failed to load snapshot ${snap.id}:`, err);
+                  if (snap.id) {
+                    snapshotList.push(snap);
+                  }
+                }
+              }
+              // Sort by timestamp (most recent first)
+              snapshotList.sort((a, b) => {
+                const dateA = new Date(a.timestamp || a.created_at || 0);
+                const dateB = new Date(b.timestamp || b.created_at || 0);
+                return dateB - dateA;
+              });
+              setSnapshots(snapshotList);
+              alert('Snapshot saved successfully!');
+              return;
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to load snapshots from case, falling back to global list:', err);
+        }
+      }
+      
+      // Fallback to global snapshot list
       const data = await snapshotsAPI.list();
       setSnapshots(data);
       
@@ -1903,15 +2065,52 @@ export default function App() {
   // Save case
   const handleSaveCase = useCallback(async (caseName, saveNotes) => {
     try {
-      // Get full snapshot data for all current snapshots
+      // Get full snapshot data for all snapshots
+      // First, try to get snapshots from the current case version if it exists
       const snapshotData = [];
-      for (const snapshot of snapshots) {
+      
+      if (currentCaseId) {
         try {
-          const fullSnapshot = await snapshotsAPI.get(snapshot.id);
-          snapshotData.push(fullSnapshot);
+          const currentCase = await casesAPI.get(currentCaseId);
+          if (currentCase.versions && currentCase.versions.length > 0) {
+            const latestVersion = currentCase.versions[0];
+            if (latestVersion.snapshots && latestVersion.snapshots.length > 0) {
+              // Load full snapshot data for all existing snapshots in this version
+              for (const snap of latestVersion.snapshots) {
+                try {
+                  // If it's already a full snapshot object, use it; otherwise fetch it
+                  if (snap.subgraph || snap._chunked) {
+                    snapshotData.push(snap);
+                  } else {
+                    const fullSnapshot = await snapshotsAPI.get(snap.id);
+                    snapshotData.push(fullSnapshot);
+                  }
+                } catch (err) {
+                  console.warn(`Failed to load snapshot ${snap.id}:`, err);
+                  // If we can't load it, try to use the metadata we have
+                  if (snap.id) {
+                    snapshotData.push(snap);
+                  }
+                }
+              }
+            }
+          }
         } catch (err) {
-          console.warn(`Failed to load snapshot ${snapshot.id}:`, err);
-          // Continue with other snapshots
+          console.warn('Failed to load current case for snapshots:', err);
+        }
+      }
+      
+      // Also include any snapshots from the snapshots state that aren't already included
+      const existingIds = new Set(snapshotData.map(s => s.id));
+      for (const snapshot of snapshots) {
+        if (!existingIds.has(snapshot.id)) {
+          try {
+            const fullSnapshot = await snapshotsAPI.get(snapshot.id);
+            snapshotData.push(fullSnapshot);
+          } catch (err) {
+            console.warn(`Failed to load snapshot ${snapshot.id}:`, err);
+            // Continue with other snapshots
+          }
         }
       }
       
@@ -1954,12 +2153,18 @@ export default function App() {
       return;
     }
     
-    // Quick diff: Compare with last loaded Cypher queries (regardless of case)
+    // Check if switching to a different case
+    const isSwitchingCase = currentCaseId !== caseData.id;
+    
+    // Check if switching to a different version (same case)
+    const isSwitchingVersion = !isSwitchingCase && currentCaseVersion !== versionData.version;
+    
+    // Quick diff: Compare with last loaded Cypher queries
     // If Cypher queries are identical, skip graph reload and just open graph view
     const cypherQueriesAreSame = loadedCypherQueries && 
                                   compareCypherQueries(loadedCypherQueries, newCypherQueries);
     
-    if (cypherQueriesAreSame) {
+    if (cypherQueriesAreSame && !isSwitchingCase && !isSwitchingVersion) {
       console.log('Cypher queries identical to last loaded version - skipping graph reload, opening graph view');
       // Skip graph reload - just update case info and switch to graph view
       setCurrentCaseId(caseData.id);
@@ -1968,8 +2173,129 @@ export default function App() {
       
       // Load snapshots and chats for this version (see below)
       // This will be handled in the common section after the if/else
-    } else {
-      console.log('Cypher queries differ from last loaded version - calculating delta');
+    } else if (isSwitchingCase) {
+      // ALWAYS do full reload when switching to a different case
+      console.log('Switching to different case - performing full graph reload');
+      
+      // Split queries by double newlines
+      const queries = newCypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
+      
+      if (queries.length === 0) {
+        alert('No valid Cypher queries found in this case version');
+        return;
+      }
+      
+      // Show progress dialog
+      setLoadCaseProgress(prev => ({
+        ...prev,
+        isOpen: true,
+        current: 0,
+        total: queries.length,
+        caseName: caseData.name,
+        version: versionData.version,
+      }));
+      
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      try {
+        setIsLoading(true);
+        
+        // Always clear graph when switching to different case
+        try {
+          await graphAPI.clearGraph();
+          setLoadedCypherQueries(null);
+        } catch (err) {
+          console.warn('Failed to clear existing graph before loading case:', err);
+        }
+        
+        // Execute queries with optimized batching strategy:
+        // - Under 50: one by one
+        // - 50-500: batches of 50
+        // - Over 500: batches of 200
+        const errors = [];
+        if (queries.length < 50) {
+          // Execute one at a time for small query sets
+          console.log(`Using single-query execution for ${queries.length} queries`);
+          for (let i = 0; i < queries.length; i++) {
+            try {
+              const result = await graphAPI.executeSingleQuery(queries[i]);
+              if (!result.success) {
+                errors.push(result.error || `Query ${i + 1} failed`);
+              }
+              
+              setLoadCaseProgress(prev => ({
+                ...prev,
+                current: i + 1,
+              }));
+            } catch (err) {
+              errors.push(`Query ${i + 1} failed: ${err.message}`);
+              setLoadCaseProgress(prev => ({
+                ...prev,
+                current: i + 1,
+              }));
+            }
+          }
+        } else {
+          // Use batch execution for larger query sets
+          const BATCH_SIZE = queries.length > 500 ? 200 : 50;
+          console.log(`Using batch execution for ${queries.length} queries with batch size ${BATCH_SIZE}`);
+          const numBatches = Math.ceil(queries.length / BATCH_SIZE);
+          
+          for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
+            const batchStart = batchIdx * BATCH_SIZE;
+            const batchEnd = Math.min(batchStart + BATCH_SIZE, queries.length);
+            const batch = queries.slice(batchStart, batchEnd);
+            
+            try {
+              const result = await graphAPI.executeBatchQueries(batch, BATCH_SIZE);
+              if (!result.success && result.errors) {
+                errors.push(...result.errors);
+              }
+              
+              // Update progress after each batch
+              setLoadCaseProgress(prev => ({
+                ...prev,
+                current: batchEnd,
+              }));
+            } catch (err) {
+              errors.push(`Batch ${batchIdx + 1} failed: ${err.message}`);
+              setLoadCaseProgress(prev => ({
+                ...prev,
+                current: batchEnd,
+              }));
+            }
+          }
+        }
+        
+        setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+        
+        if (errors.length > 0) {
+          console.error('Some queries failed during case load:', errors);
+          const details = errors.join('\n');
+          alert(
+            `Case loaded with ${errors.length} error(s) out of ${queries.length} queries.\n\n` +
+            (details ? `Details:\n${details}` : '')
+          );
+        }
+
+        await loadGraph();
+        setLoadedCypherQueries(newCypherQueries);
+        setCurrentCaseId(caseData.id);
+        setCurrentCaseName(caseData.name);
+        setCurrentCaseVersion(versionData.version);
+      } catch (err) {
+        console.error('Failed to load case:', err);
+        setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+        alert(`Failed to load case: ${err.message}`);
+        setIsLoading(false);
+        return;
+      } finally {
+        setIsLoading(false);
+        setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
+      }
+    } else if (isSwitchingVersion) {
+      // Same case, different version - use delta/incremental updates if Cypher differs
+      console.log('Switching to different version in same case - calculating delta for incremental updates');
       
       // Calculate delta between old and new Cypher queries
       const delta = calculateCypherDelta(loadedCypherQueries, newCypherQueries);
@@ -1981,9 +2307,9 @@ export default function App() {
         isFullReload: delta.isFullReload
       });
       
-      // If we don't have old Cypher or delta calculation suggests full reload, do full reload
+      // If delta suggests full reload or no changes, do full reload
       if (delta.isFullReload || (!delta.toAdd.length && !delta.toRemove.length && !delta.newDeletes?.length)) {
-        console.log('Performing full graph reload (no old Cypher or complex changes detected)');
+        console.log('Delta suggests full reload - performing full graph reload');
         
         // Split queries by double newlines
         const queries = newCypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
@@ -2008,49 +2334,9 @@ export default function App() {
         try {
           setIsLoading(true);
           
-          // Only clear graph if switching to a different case/version
-          if (currentCaseId !== caseData.id || currentCaseVersion !== versionData.version) {
-            try {
-              await graphAPI.clearGraph();
-              setLoadedCypherQueries(null);
-            } catch (err) {
-              console.warn('Failed to clear existing graph before loading case:', err);
-            }
-          }
-          
-          // For large query sets (>100), use batch execution for better performance
+          // Execute queries with optimized batching strategy
           const errors = [];
-          if (queries.length > 100) {
-            console.log(`Using batch execution for ${queries.length} queries`);
-            const BATCH_SIZE = 50; // Execute 50 queries per batch
-            const numBatches = Math.ceil(queries.length / BATCH_SIZE);
-            
-            for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
-              const batchStart = batchIdx * BATCH_SIZE;
-              const batchEnd = Math.min(batchStart + BATCH_SIZE, queries.length);
-              const batch = queries.slice(batchStart, batchEnd);
-              
-              try {
-                const result = await graphAPI.executeBatchQueries(batch, BATCH_SIZE);
-                if (!result.success && result.errors) {
-                  errors.push(...result.errors);
-                }
-                
-                // Update progress after each batch
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: batchEnd,
-                }));
-              } catch (err) {
-                errors.push(`Batch ${batchIdx + 1} failed: ${err.message}`);
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: batchEnd,
-                }));
-              }
-            }
-          } else {
-            // For smaller query sets, execute one at a time for granular progress
+          if (queries.length < 50) {
             console.log(`Using single-query execution for ${queries.length} queries`);
             for (let i = 0; i < queries.length; i++) {
               try {
@@ -2068,6 +2354,34 @@ export default function App() {
                 setLoadCaseProgress(prev => ({
                   ...prev,
                   current: i + 1,
+                }));
+              }
+            }
+          } else {
+            const BATCH_SIZE = queries.length > 500 ? 200 : 50;
+            console.log(`Using batch execution for ${queries.length} queries with batch size ${BATCH_SIZE}`);
+            const numBatches = Math.ceil(queries.length / BATCH_SIZE);
+            
+            for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
+              const batchStart = batchIdx * BATCH_SIZE;
+              const batchEnd = Math.min(batchStart + BATCH_SIZE, queries.length);
+              const batch = queries.slice(batchStart, batchEnd);
+              
+              try {
+                const result = await graphAPI.executeBatchQueries(batch, BATCH_SIZE);
+                if (!result.success && result.errors) {
+                  errors.push(...result.errors);
+                }
+                
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: batchEnd,
+                }));
+              } catch (err) {
+                errors.push(`Batch ${batchIdx + 1} failed: ${err.message}`);
+                setLoadCaseProgress(prev => ({
+                  ...prev,
+                  current: batchEnd,
                 }));
               }
             }
@@ -3486,7 +3800,25 @@ export default function App() {
         }}
         snapshots={snapshots}
         onLoadSnapshot={async (snapshot) => {
+          // Show progress dialog
+          setLoadSnapshotProgress({
+            isOpen: true,
+            current: 0,
+            total: 4,
+            snapshotName: snapshot.name || 'Snapshot',
+            stage: 'Fetching snapshot data...',
+            message: 'Loading snapshot...',
+          });
+
           try {
+            // Stage 1: Fetch snapshot data
+            setLoadSnapshotProgress(prev => ({
+              ...prev,
+              current: 1,
+              stage: 'Fetching snapshot data...',
+              message: 'Loading snapshot data...',
+            }));
+
             // Ensure we have full snapshot data (list() only returns summary)
             let fullSnapshot = snapshot;
             if (!fullSnapshot.subgraph || !fullSnapshot.subgraph.nodes) {
@@ -3494,6 +3826,7 @@ export default function App() {
             }
 
             if (!fullSnapshot.subgraph || !fullSnapshot.subgraph.nodes) {
+              setLoadSnapshotProgress(prev => ({ ...prev, isOpen: false }));
               alert('This snapshot has no subgraph data to load.');
               return;
             }
@@ -3510,8 +3843,24 @@ export default function App() {
             setSelectedNodes(snapshotNodes);
             setTimelineContextKeys(nodeKeys);
 
+            // Stage 2: Load node details
+            setLoadSnapshotProgress(prev => ({
+              ...prev,
+              current: 2,
+              stage: `Loading node details (${nodeKeys.length} nodes)...`,
+              message: 'Loading node details...',
+            }));
+
             // Load node details for the selected nodes (for the overview panel)
             await loadNodeDetails(nodeKeys);
+
+            // Stage 3: Restore chat history
+            setLoadSnapshotProgress(prev => ({
+              ...prev,
+              current: 3,
+              stage: 'Restoring chat history...',
+              message: 'Restoring chat history...',
+            }));
 
             // Restore chat history from snapshot
             // First try to load case-specific chat histories
@@ -3554,10 +3903,25 @@ export default function App() {
               }
             }
 
+            // Stage 4: Setting up timeline
+            setLoadSnapshotProgress(prev => ({
+              ...prev,
+              current: 4,
+              stage: 'Setting up timeline...',
+              message: 'Finalizing snapshot load...',
+            }));
+
             // Timeline will be loaded automatically by the useEffect when timelineContextKeys changes
+            // Small delay to ensure timeline starts loading
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             setShowFilePanel(false);
+
+            // Close progress dialog
+            setLoadSnapshotProgress(prev => ({ ...prev, isOpen: false }));
           } catch (err) {
             console.error('Failed to load snapshot:', err);
+            setLoadSnapshotProgress(prev => ({ ...prev, isOpen: false }));
             alert(`Failed to load snapshot: ${err.message}`);
           }
         }}
@@ -3650,6 +4014,34 @@ export default function App() {
         isOpen={saveSnapshotProgress.isOpen}
         progress={saveSnapshotProgress}
         onClose={null} // Don't allow closing during save
+      />
+
+      <LoadSnapshotProgressDialog
+        isOpen={loadSnapshotProgress.isOpen}
+        onClose={() => {
+          // Only allow closing if loading is complete
+          if (loadSnapshotProgress.current >= loadSnapshotProgress.total) {
+            setLoadSnapshotProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        current={loadSnapshotProgress.current}
+        total={loadSnapshotProgress.total}
+        snapshotName={loadSnapshotProgress.snapshotName}
+        stage={loadSnapshotProgress.stage}
+        message={loadSnapshotProgress.message}
+      />
+
+      <NodeSelectionProgressDialog
+        isOpen={nodeSelectionProgress.isOpen}
+        onClose={() => {
+          // Only allow closing if loading is complete
+          if (nodeSelectionProgress.current >= nodeSelectionProgress.total) {
+            setNodeSelectionProgress(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        current={nodeSelectionProgress.current}
+        total={nodeSelectionProgress.total}
+        message={nodeSelectionProgress.message}
       />
 
       {/* Add Node Modal */}
