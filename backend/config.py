@@ -25,6 +25,19 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 
+# Embedding Configuration
+EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai").lower()  # "openai" or "ollama"
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")  # OpenAI model or Ollama model name
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
+
+# Vector DB Configuration
+CHROMADB_PATH = os.getenv("CHROMADB_PATH", "data/chromadb")  # Relative to project root
+
+# RAG Configuration
+VECTOR_SEARCH_ENABLED = os.getenv("VECTOR_SEARCH_ENABLED", "true").lower() == "true"
+VECTOR_SEARCH_TOP_K = int(os.getenv("VECTOR_SEARCH_TOP_K", "10"))  # Number of documents to retrieve
+HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower() == "true"
+
 # Ingestion chunking configuration
 # Keep these in sync with ingestion/scripts/config.py so the ingestion
 # pipeline can safely import them from the shared `config` module.

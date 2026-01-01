@@ -362,6 +362,28 @@ class Neo4jClient:
             record = result.single()
             return record["id"] if record else doc_id
 
+    def update_document(
+        self,
+        doc_key: str,
+        updates: Dict,
+    ) -> None:
+        """
+        Update a Document node with additional properties.
+
+        Args:
+            doc_key: Normalised document key
+            updates: Dictionary of properties to update
+        """
+        with self.driver.session() as session:
+            session.run(
+                """
+                MATCH (d:Document {key: $key})
+                SET d += $updates
+                """,
+                key=doc_key,
+                updates=updates,
+            )
+
     # -------------------------------------------------------------------------
     # Relationship Operations
     # -------------------------------------------------------------------------

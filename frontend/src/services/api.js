@@ -340,6 +340,17 @@ export const chatAPI = {
         selected_keys: selectedKeys,
       }),
     }),
+
+  /**
+   * Extract node keys from an AI answer
+   */
+  extractNodesFromAnswer: (answer) =>
+    fetchAPI('/chat/extract-nodes', {
+      method: 'POST',
+      body: JSON.stringify({
+        answer: answer,
+      }),
+    }),
 };
 
 /**

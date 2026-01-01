@@ -155,6 +155,26 @@ Return ONLY valid JSON with this structure:
         Returns:
             Answer text
         """
+        answer, _ = self.answer_question_with_prompt(question, context, query_results)
+        return answer
+
+    def answer_question_with_prompt(
+        self,
+        question: str,
+        context: str,
+        query_results: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """
+        Answer a question based on graph context and return the prompt used.
+
+        Args:
+            question: User's question
+            context: Graph context (entities, relationships)
+            query_results: Optional results from a Cypher query
+
+        Returns:
+            Tuple of (answer text, prompt used)
+        """
         try:
             query_section = ""
             if query_results:
@@ -189,7 +209,7 @@ Answer:"""
             if not answer or not answer.strip():
                 print("[LLM] WARNING: answer_question returned empty answer")
                 raise ValueError("LLM returned empty answer")
-            return answer
+            return answer, prompt
         except Exception as e:
             print(f"[LLM] ERROR in answer_question: {e}")
             import traceback

@@ -420,6 +420,26 @@ export default function App() {
     // NOTE: This does NOT automatically add to subgraph - user must click "Add to subgraph"
   }, [loadNodeDetails]);
 
+  // Handle show nodes on graph from AI answer
+  const handleShowNodesOnGraph = useCallback((nodeKeys) => {
+    if (!nodeKeys || nodeKeys.length === 0) {
+      alert('No nodes found to show on graph');
+      return;
+    }
+    
+    // Set the subgraph node keys
+    setSubgraphNodeKeys(nodeKeys);
+    setPathSubgraphData(null); // Clear path subgraph data
+    
+    // Enable split view if not already enabled
+    if (paneViewMode !== 'split') {
+      setPaneViewMode('split');
+    }
+    
+    // Show a brief message
+    console.log(`Showing ${nodeKeys.length} nodes on graph from AI answer`);
+  }, [paneViewMode]);
+
   // Handle add selected nodes to subgraph
   const handleAddToSubgraph = useCallback(() => {
     if (selectedNodes.length === 0) return;
@@ -3707,6 +3727,7 @@ export default function App() {
             onClose={() => setIsChatOpen(false)}
             selectedNodes={selectedNodesDetails}
             onMessagesChange={setChatHistory}
+            onShowOnGraph={handleShowNodesOnGraph}
             initialMessages={chatHistory}
             onAutoSave={handleAutoSaveChat}
             currentCaseId={currentCaseId}

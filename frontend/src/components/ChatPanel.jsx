@@ -8,11 +8,302 @@ import {
   Sparkles,
   Target,
   Globe,
-  History
+  History,
+  Network
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { chatAPI } from '../services/api';
 import ChatHistoryList from './ChatHistoryList';
+
+/**
+ * Format debug log as markdown
+ */
+function formatDebugLogAsMarkdown(debugLog, question) {
+  const lines = [];
+  
+  // Header
+  lines.push('# AI Assistant Debug Log');
+  lines.push('');
+  
+  // Timestamp
+  const timestamp = debugLog.timestamp || new Date().toISOString();
+  lines.push(`**Timestamp:** ${timestamp}`);
+  lines.push('');
+  
+  // Question
+  lines.push('## Question');
+  lines.push(question);
+  lines.push('');
+  
+  // Selected Keys
+  if (debugLog.selected_keys && debugLog.selected_keys.length > 0) {
+    lines.push(`**Selected Node Keys:** ${debugLog.selected_keys.join(', ')}`);
+    lines.push('');
+  }
+  
+  // Graph Summary
+  if (debugLog.graph_summary) {
+    lines.push('## Graph Summary');
+    lines.push(`- **Total Nodes:** ${debugLog.graph_summary.total_nodes || 0}`);
+    lines.push(`- **Total Relationships:** ${debugLog.graph_summary.total_relationships || 0}`);
+    lines.push(`- **Entity Types:** ${(debugLog.graph_summary.entity_types || []).join(', ')}`);
+    lines.push(`- **Relationship Types:** ${(debugLog.graph_summary.relationship_types || []).join(', ')}`);
+    lines.push('');
+  }
+  
+  // Vector Search
+  if (debugLog.vector_search) {
+    lines.push('## Vector Search (Semantic Document Search)');
+    if (debugLog.vector_search.enabled) {
+      lines.push('- **Status:** Enabled');
+      lines.push(`- **Question:** ${debugLog.vector_search.question || 'N/A'}`);
+      lines.push(`- **Embedding Dimensions:** ${debugLog.vector_search.embedding_dimensions || 'N/A'}`);
+      lines.push(`- **Top K:** ${debugLog.vector_search.top_k || 'N/A'}`);
+      
+      const results = debugLog.vector_search.results || [];
+      if (results.length > 0) {
+        lines.push(`- **Documents Found:** ${results.length}`);
+        lines.push('');
+        lines.push('### Vector Search Results');
+        results.forEach((result, i) => {
+          lines.push(`\n#### Document ${i + 1}`);
+          lines.push(`- **Document ID:** \`${result.document_id || 'N/A'}\``);
+          lines.push(`- **Filename:** ${result.filename || 'N/A'}`);
+          lines.push(`- **Distance:** ${result.distance !== undefined ? result.distance.toFixed(4) : 'N/A'}`);
+          lines.push(`- **Text Preview:** ${result.text_preview || 'N/A'}`);
+        });
+      } else {
+        lines.push('- **Documents Found:** 0');
+      }
+    } else {
+      lines.push('- **Status:** Disabled');
+      lines.push(`- **Reason:** ${debugLog.vector_search.reason || 'Unknown'}`);
+    }
+    
+    if (debugLog.vector_search.error) {
+      lines.push(`- **Error:** ${debugLog.vector_search.error}`);
+    }
+    
+    lines.push('');
+  }
+  
+  // Neo4j Document Query
+  if (debugLog.neo4j_document_query) {
+    lines.push('## Neo4j Query: Nodes from Documents');
+    lines.push('');
+    lines.push('### Cypher Query');
+    lines.push('```cypher');
+    lines.push(debugLog.neo4j_document_query.cypher || 'N/A');
+    lines.push('```');
+    lines.push('');
+    
+    if (debugLog.neo4j_document_query.parameters) {
+      lines.push('### Parameters');
+      Object.entries(debugLog.neo4j_document_query.parameters).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          lines.push(`- **${key}:** \`${JSON.stringify(value)}\` (${value.length} items)`);
+        } else {
+          lines.push(`- **${key}:** \`${value}\``);
+        }
+      });
+      lines.push('');
+    }
+    
+    if (debugLog.neo4j_document_query.results) {
+      lines.push('### Query Results');
+      lines.push(`- **Nodes Found:** ${debugLog.neo4j_document_query.results.nodes_found || 0}`);
+      const nodes = debugLog.neo4j_document_query.results.nodes || [];
+      if (nodes.length > 0) {
+        lines.push('');
+        lines.push('#### Nodes');
+        nodes.slice(0, 20).forEach(node => {
+          lines.push(`- **${node.name || 'Unknown'}** (\`${node.key || 'N/A'}\`) - ${node.type || 'Unknown'}`);
+        });
+        if (nodes.length > 20) {
+          lines.push(`\n... and ${nodes.length - 20} more nodes`);
+        }
+      }
+    }
+    
+    if (debugLog.neo4j_document_query.error) {
+      lines.push(`**Error:** ${debugLog.neo4j_document_query.error}`);
+    }
+    
+    lines.push('');
+  }
+  
+  // Cypher Filter Query
+  if (debugLog.cypher_filter_query) {
+    lines.push('## Cypher Filter Query (LLM-Generated)');
+    lines.push('');
+    lines.push('### Generated Cypher Query');
+    lines.push('```cypher');
+    lines.push(debugLog.cypher_filter_query.generated_cypher || 'N/A');
+    lines.push('```');
+    lines.push('');
+    
+    if (debugLog.cypher_filter_query.results) {
+      if (typeof debugLog.cypher_filter_query.results === 'object') {
+        lines.push('### Query Results');
+        lines.push(`- **Nodes Found:** ${debugLog.cypher_filter_query.results.nodes_found || 0}`);
+        if (debugLog.cypher_filter_query.results.node_keys) {
+          lines.push(`- **Node Keys:** ${debugLog.cypher_filter_query.results.node_keys.join(', ')}`);
+        }
+      } else {
+        lines.push(`### Query Results: ${debugLog.cypher_filter_query.results}`);
+      }
+    }
+    
+    if (debugLog.cypher_filter_query.error) {
+      lines.push(`**Error:** ${debugLog.cypher_filter_query.error}`);
+    }
+    
+    lines.push('');
+  }
+  
+  // Cypher Answer Query
+  if (debugLog.cypher_answer_query) {
+    lines.push('## Cypher Answer Query (Direct Question Query)');
+    lines.push('');
+    lines.push('### Generated Cypher Query');
+    lines.push('```cypher');
+    lines.push(debugLog.cypher_answer_query.generated_cypher || 'N/A');
+    lines.push('```');
+    lines.push('');
+    
+    if (debugLog.cypher_answer_query.results) {
+      if (typeof debugLog.cypher_answer_query.results === 'object') {
+        lines.push('### Query Results');
+        lines.push(`- **Rows Returned:** ${debugLog.cypher_answer_query.results.rows_returned || 0}`);
+        const sample = debugLog.cypher_answer_query.results.sample_results || [];
+        if (sample.length > 0) {
+          lines.push('');
+          lines.push('#### Sample Results');
+          sample.slice(0, 10).forEach((row, i) => {
+            lines.push(`${i + 1}. ${JSON.stringify(row)}`);
+          });
+        }
+      } else {
+        lines.push(`### Query Results: ${debugLog.cypher_answer_query.results}`);
+      }
+    }
+    
+    lines.push('');
+  }
+  
+  // Focused Context Query
+  if (debugLog.focused_context_query) {
+    lines.push('## Focused Context Query (User-Selected Nodes)');
+    lines.push('');
+    lines.push('### Cypher Query');
+    lines.push('```cypher');
+    lines.push(debugLog.focused_context_query.cypher || 'N/A');
+    lines.push('```');
+    lines.push('');
+    if (debugLog.focused_context_query.parameters) {
+      lines.push('### Parameters');
+      Object.entries(debugLog.focused_context_query.parameters).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          lines.push(`- **${key}:** \`${JSON.stringify(value)}\` (${value.length} items)`);
+        } else {
+          lines.push(`- **${key}:** \`${value}\``);
+        }
+      });
+      lines.push('');
+    }
+    lines.push(`- **Selected Node Keys:** ${(debugLog.focused_context_query.selected_node_keys || []).join(', ')}`);
+    lines.push('');
+  }
+  
+  // Focused Context Results
+  if (debugLog.focused_context) {
+    lines.push('## Focused Context Results');
+    lines.push('');
+    lines.push(`- **Entities Count:** ${debugLog.focused_context.entities_count || 0}`);
+    const entities = debugLog.focused_context.entities || [];
+    if (entities.length > 0) {
+      lines.push('');
+      lines.push('### Selected Entities');
+      entities.forEach(entity => {
+        lines.push(`- **${entity.name || 'Unknown'}** (\`${entity.key || 'N/A'}\`) - ${entity.type || 'Unknown'}`);
+      });
+    }
+    lines.push('');
+  }
+  
+  // Hybrid Filtering
+  if (debugLog.hybrid_filtering) {
+    lines.push('## Hybrid Filtering Summary');
+    lines.push('');
+    lines.push(`- **Vector Document IDs:** ${JSON.stringify(debugLog.hybrid_filtering.vector_doc_ids || [])}`);
+    lines.push(`- **Vector Node Keys:** ${(debugLog.hybrid_filtering.vector_node_keys || []).length} nodes`);
+    lines.push(`- **Cypher Node Keys:** ${(debugLog.hybrid_filtering.cypher_node_keys || []).length} nodes`);
+    lines.push(`- **Combined Node Keys:** ${debugLog.hybrid_filtering.total_combined || 0} nodes`);
+    lines.push('');
+    const combined = debugLog.hybrid_filtering.combined_node_keys || [];
+    if (combined.length > 0) {
+      lines.push('### Combined Node Keys (First 50)');
+      lines.push(combined.join(', '));
+      lines.push('');
+    }
+  }
+  
+  // Context Mode
+  if (debugLog.context_mode) {
+    lines.push('## Context Mode');
+    lines.push(`**Mode:** \`${debugLog.context_mode}\``);
+    lines.push('');
+  }
+  
+  // Context Preview
+  if (debugLog.context_preview) {
+    lines.push('## Context Preview');
+    lines.push('');
+    lines.push('```');
+    lines.push(debugLog.context_preview);
+    lines.push('```');
+    lines.push('');
+  }
+  
+  // Final Prompt
+  if (debugLog.final_prompt) {
+    lines.push('## Final Prompt Sent to LLM');
+    lines.push('');
+    lines.push('```');
+    lines.push(debugLog.final_prompt);
+    lines.push('```');
+    lines.push('');
+  }
+  
+  return lines.join('\n');
+}
+
+/**
+ * Download debug log as markdown file
+ */
+function downloadDebugLog(debugLog, question) {
+  try {
+    const markdown = formatDebugLogAsMarkdown(debugLog, question);
+    
+    // Create filename with timestamp
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const questionSlug = question.slice(0, 50).replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filename = `ai-assistant-debug-${timestamp}-${questionSlug}.md`;
+    
+    // Create blob and download
+    const blob = new Blob([markdown], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Failed to download debug log:', err);
+  }
+}
 
 /**
  * ChatPanel Component
@@ -30,6 +321,7 @@ export default function ChatPanel({
   currentCaseId, // Current case ID for associating chat history
   currentCaseName, // Current case name
   currentCaseVersion, // Current case version
+  onShowOnGraph, // Callback to show nodes on graph (nodeKeys) => void
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
@@ -37,6 +329,7 @@ export default function ChatPanel({
   const [suggestions, setSuggestions] = useState([]);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [lastAutoSaveCount, setLastAutoSaveCount] = useState(0);
+  const [extractingNodes, setExtractingNodes] = useState(new Set()); // Track which messages are extracting nodes
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -101,6 +394,45 @@ export default function ChatPanel({
     try {
       const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null);
 
+      // Download debug log if available
+      if (response.debug_log) {
+        downloadDebugLog(response.debug_log, question);
+      }
+
+      // Extract node keys from response - try multiple sources
+      let nodeKeys = [];
+      if (response.used_node_keys && Array.isArray(response.used_node_keys) && response.used_node_keys.length > 0) {
+        nodeKeys = response.used_node_keys;
+        console.log(`[ChatPanel] Using ${nodeKeys.length} node keys from response.used_node_keys`);
+      } else if (response.debug_log) {
+        // Fallback: extract from debug log
+        const debugLog = response.debug_log;
+        console.log('[ChatPanel] Extracting node keys from debug log...');
+        
+        if (debugLog.hybrid_filtering) {
+          // Get all combined node keys from hybrid filtering
+          const vectorKeys = debugLog.hybrid_filtering.vector_node_keys || [];
+          const cypherKeys = debugLog.hybrid_filtering.cypher_node_keys || [];
+          nodeKeys = [...new Set([...vectorKeys, ...cypherKeys])];
+          console.log(`[ChatPanel] Found ${nodeKeys.length} node keys from hybrid_filtering (${vectorKeys.length} vector + ${cypherKeys.length} cypher)`);
+        }
+        
+        if (nodeKeys.length === 0 && debugLog.focused_context && debugLog.focused_context.selected_node_keys) {
+          nodeKeys = debugLog.focused_context.selected_node_keys;
+          console.log(`[ChatPanel] Found ${nodeKeys.length} node keys from focused_context`);
+        }
+        
+        if (nodeKeys.length === 0 && debugLog.cypher_filter_query && debugLog.cypher_filter_query.results) {
+          const results = debugLog.cypher_filter_query.results;
+          if (results.node_keys && Array.isArray(results.node_keys)) {
+            nodeKeys = results.node_keys;
+            console.log(`[ChatPanel] Found ${nodeKeys.length} node keys from cypher_filter_query`);
+          }
+        }
+      }
+      
+      console.log(`[ChatPanel] Final node keys count: ${nodeKeys.length}`);
+      
       // Add assistant message
       const assistantMessage = {
         id: Date.now() + 1,
@@ -109,6 +441,7 @@ export default function ChatPanel({
         contextMode: response.context_mode,
         contextDescription: response.context_description,
         cypherUsed: response.cypher_used,
+        usedNodeKeys: nodeKeys, // Store node keys used to generate answer (from multiple sources)
         timestamp: new Date().toISOString(),
       };
       setMessages(prev => {
@@ -269,19 +602,78 @@ export default function ChatPanel({
                 </div>
               )}
               
-              {/* Context badge for assistant messages */}
+              {/* Context badge and Show on Graph button for assistant messages */}
               {msg.role === 'assistant' && !msg.isError && (
-                <div className="mt-2 pt-2 border-t border-light-300 flex items-center gap-2 text-xs text-light-600">
-                  {msg.contextMode === 'focused' ? (
-                    <Target className="w-3 h-3" />
-                  ) : (
-                    <Globe className="w-3 h-3" />
-                  )}
-                  <span>{msg.contextDescription}</span>
-                  {msg.cypherUsed && (
-                    <span className="bg-owl-purple-100 text-owl-purple-700 px-1.5 py-0.5 rounded">
-                      Query
-                    </span>
+                <div className="mt-2 pt-2 border-t border-light-300">
+                  <div className="flex items-center gap-2 text-xs text-light-600 mb-2">
+                    {msg.contextMode === 'focused' ? (
+                      <Target className="w-3 h-3" />
+                    ) : (
+                      <Globe className="w-3 h-3" />
+                    )}
+                    <span>{msg.contextDescription}</span>
+                    {msg.cypherUsed && (
+                      <span className="bg-owl-purple-100 text-owl-purple-700 px-1.5 py-0.5 rounded">
+                        Query
+                      </span>
+                    )}
+                  </div>
+                  {onShowOnGraph && (
+                    <button
+                      onClick={() => {
+                        // Use stored node keys if available (from answer generation)
+                        // Otherwise fall back to extracting from answer text
+                        console.log('Show on Graph clicked, usedNodeKeys:', msg.usedNodeKeys);
+                        
+                        if (msg.usedNodeKeys && Array.isArray(msg.usedNodeKeys) && msg.usedNodeKeys.length > 0) {
+                          // Use the node keys that were actually used to generate the answer
+                          console.log(`Using ${msg.usedNodeKeys.length} stored node keys`);
+                          onShowOnGraph(msg.usedNodeKeys);
+                        } else {
+                          // Fallback: try to extract from answer text
+                          console.log('No stored node keys, extracting from answer text...');
+                          const messageId = msg.id;
+                          setExtractingNodes(prev => new Set(prev).add(messageId));
+                          
+                          chatAPI.extractNodesFromAnswer(msg.content)
+                            .then(result => {
+                              const nodeKeys = result.node_keys || [];
+                              console.log('Extracted node keys:', nodeKeys);
+                              if (nodeKeys.length > 0) {
+                                onShowOnGraph(nodeKeys);
+                              } else {
+                                alert('No nodes found in this answer. The answer may not mention specific entities from the graph.');
+                              }
+                            })
+                            .catch(err => {
+                              console.error('Failed to extract nodes:', err);
+                              alert(`Failed to extract nodes: ${err.message}`);
+                            })
+                            .finally(() => {
+                              setExtractingNodes(prev => {
+                                const next = new Set(prev);
+                                next.delete(messageId);
+                                return next;
+                              });
+                            });
+                        }
+                      }}
+                      disabled={extractingNodes.has(msg.id)}
+                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-600 hover:bg-owl-blue-700 hover:text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Show nodes used to generate this answer on the graph"
+                    >
+                      {extractingNodes.has(msg.id) ? (
+                        <>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Extracting...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Network className="w-3 h-3" />
+                          <span>Show on Graph</span>
+                        </>
+                      )}
+                    </button>
                   )}
                 </div>
               )}

@@ -14,6 +14,8 @@ from typing import Dict, List, Optional, Callable
 import time
 import threading
 import json
+import sys
+from pathlib import Path
 
 from neo4j_client import Neo4jClient
 from llm_client import (
@@ -26,6 +28,23 @@ from llm_client import (
 from entity_resolution import normalise_key, resolve_entity, merge_entity_data
 from chunking import chunk_document
 from geocoding import get_location_properties
+
+# Import vector DB and embedding services from backend
+# Add backend directory to path if not already there
+backend_dir = Path(__file__).parent.parent.parent / "backend"
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
+
+try:
+    from services.vector_db_service import vector_db_service
+    from services.embedding_service import embedding_service
+    VECTOR_DB_AVAILABLE = embedding_service is not None
+except (ImportError, ValueError) as e:
+    print(f"[Ingestion] Vector DB services not available: {e}")
+    print("[Ingestion] Document embeddings will be skipped")
+    VECTOR_DB_AVAILABLE = False
+    vector_db_service = None
+    embedding_service = None
 
 
 def merge_verified_facts(existing_facts: List[Dict], new_facts: List[Dict], doc_name: str) -> List[Dict]:
@@ -439,7 +458,7 @@ def ingest_document(
         metadata = dict(doc_metadata or {})
         metadata["source_type"] = metadata.get("source_type", "unknown")
 
-        db.ensure_document(
+        doc_id = db.ensure_document(
             doc_key=doc_key,
             doc_name=doc_name,
             metadata=metadata,
@@ -520,10 +539,49 @@ def ingest_document(
             if timer:
                 timer.cancel()
 
+        # Generate and store document embedding (after all chunks processed)
+        embedding_stored = False
+        if VECTOR_DB_AVAILABLE and text and text.strip():
+            try:
+                if log_callback:
+                    log_callback("Generating document embedding...")
+                print("[Embedding] Generating embedding for document...")
+                
+                # Generate embedding for full document text
+                embedding = embedding_service.generate_embedding(text)
+                
+                # Store in vector DB
+                vector_db_service.add_document(
+                    doc_id=doc_id,
+                    text=text[:10000],  # Limit text length for storage
+                    embedding=embedding,
+                    metadata={
+                        "filename": doc_name,
+                        "doc_key": doc_key,
+                        "case_id": metadata.get("case_id"),
+                        "source_type": metadata.get("source_type", "unknown"),
+                    }
+                )
+                
+                # Update Neo4j Document node with vector_db_id
+                db.update_document(doc_key, {"vector_db_id": doc_id})
+                
+                embedding_stored = True
+                print("[Embedding] Document embedding stored successfully")
+                if log_callback:
+                    log_callback("Document embedding stored successfully")
+            except Exception as e:
+                # Don't fail ingestion if embedding fails
+                print(f"[Embedding] Warning: Failed to generate/store embedding: {e}")
+                if log_callback:
+                    log_callback(f"Warning: Embedding generation failed: {e}")
+
     print(f"\n{'='*60}")
     print(f"Ingestion complete: {doc_name}")
     print(f"  Entities processed: {total_entities}")
     print(f"  Relationships processed: {total_relationships}")
+    if embedding_stored:
+        print(f"  Embedding: stored")
     print(f"{'='*60}\n")
 
     return {
@@ -532,4 +590,5 @@ def ingest_document(
         "chunks": len(chunks),
         "entities_processed": total_entities,
         "relationships_processed": total_relationships,
+        "embedding_stored": embedding_stored,
     }
