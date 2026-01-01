@@ -10,8 +10,9 @@ from openai import OpenAI
 
 from typing import Dict, Optional
 import json
+import requests
 
-from config import OPENAI_MODEL
+from config import OPENAI_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL
 from profile_loader import get_ingestion_config
 
 client = OpenAI()
@@ -35,23 +36,45 @@ def call_llm(
         The model's response text
     """
 
-    kwargs = {
-        "model": OPENAI_MODEL,
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": temperature,
-        "timeout": timeout,
+    url = f"{OLLAMA_BASE_URL}/api/chat"
+
+    payload: Dict = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "options": {
+            "temperature": temperature,
+        },
     }
 
-    # Force JSON response if requested
     if json_mode:
-        kwargs["response_format"] = {"type": "json_object"}
+        payload["format"] = "json"
 
-    response = client.chat.completions.create(**kwargs)
+    resp = requests.post(url, json=payload, timeout=timeout)
+    resp.raise_for_status()
 
-    # Extract content
-    return response.choices[0].message.content
+    data = resp.json()
+    # Ollama chat response shape: { message: { role: "...", content: "..." }, ... }
+    return (data.get("message") or {}).get("content", "") or ""
+
+    #------- OpenAI API --------#
+    # kwargs = {
+    #     "model": OPENAI_MODEL,
+    #     "messages": [
+    #         {"role": "user", "content": prompt}
+    #     ],
+    #     "temperature": temperature,
+    #     "timeout": timeout,
+    # }
+
+    # # Force JSON response if requested
+    # if json_mode:
+    #     kwargs["response_format"] = {"type": "json_object"}
+
+    # response = client.chat.completions.create(**kwargs)
+
+    # # Extract content
+    # return response.choices[0].message.content
 
 
 def parse_json_response(response_text: str) -> Dict:

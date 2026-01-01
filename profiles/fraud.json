@@ -1,9 +1,12 @@
 {
   "name": "fraud",
   "description": "Analyze fraud cases and suspicious financial activity",
-  
+  "case_type": "Fraud investigation",
+  "agent_description": "You are a fraud investigator helping extract important entities and relationships for a fraud case.",
+  "instructions": "Extract entites and relationships for this fraud case. Use example entities and relationships as guidelines but create your own types if they are more descriptive.",
+  "characteristics": null,
   "ingestion": {
-    "system_context": "You are an assistant helping with fraud investigations.",
+    "system_context": "You are an assistant helping with Case Type: Fraud investigation. Agent Description: You are a fraud investigator helping extract important entities and relationships for a fraud case.. Instructions: Extract entites and relationships for this fraud case. Use example entities and relationships as guidelines but create your own types if they are more descriptive..",
     "entity_types": [
       "Person",
       "Company",
@@ -37,28 +40,135 @@
       "Audit",
       "Other"
     ],
-    "relationship_types": [
-      "OWNS_ACCOUNT",
-      "OWNS_COMPANY",
-      "TRANSFERRED_TO",
-      "MENTIONED_IN",
-      "ASSOCIATED_WITH",
-      "RELATED_TO",
-      "PART_OF_CASE",
-      "CALLED",
-      "EMAILED",
-      "MET_WITH",
-      "ATTENDED",
-      "SIGNED",
-      "TRIGGERED",
-      "ISSUED_TO",
-      "RECEIVED_FROM",
-      "WORKS_FOR",
-      "DIRECTOR_OF",
-      "SHAREHOLDER_OF"
-    ]
+    "entity_definitions": {
+      "Person": {
+        "color": "#F97316",
+        "description": ""
+      },
+      "Company": {
+        "color": "#A855F7",
+        "description": ""
+      },
+      "Account": {
+        "color": "#EC4899",
+        "description": ""
+      },
+      "Organisation": {
+        "color": "#F97316",
+        "description": ""
+      },
+      "Bank": {
+        "color": "#EF4444",
+        "description": ""
+      },
+      "Location": {
+        "color": "#EF4444",
+        "description": ""
+      },
+      "Transaction": {
+        "color": "#84CC16",
+        "description": ""
+      },
+      "Payment": {
+        "color": "#14B8A6",
+        "description": ""
+      },
+      "Communication": {
+        "color": "#6B7280",
+        "description": ""
+      },
+      "Email": {
+        "color": "#EC4899",
+        "description": ""
+      },
+      "PhoneCall": {
+        "color": "#0EA5E9",
+        "description": ""
+      },
+      "Meeting": {
+        "color": "#EC4899",
+        "description": ""
+      },
+      "Login": {
+        "color": "#F59E0B",
+        "description": ""
+      },
+      "Withdrawal": {
+        "color": "#22C55E",
+        "description": ""
+      },
+      "Deposit": {
+        "color": "#06B6D4",
+        "description": ""
+      },
+      "Transfer": {
+        "color": "#3B82F6",
+        "description": ""
+      },
+      "Alert": {
+        "color": "#6366F1",
+        "description": ""
+      },
+      "Contract": {
+        "color": "#06B6D4",
+        "description": ""
+      },
+      "Invoice": {
+        "color": "#DC2626",
+        "description": ""
+      },
+      "AccountOpening": {
+        "color": "#DC2626",
+        "description": ""
+      },
+      "AccountClosure": {
+        "color": "#10B981",
+        "description": ""
+      },
+      "Investigation": {
+        "color": "#84CC16",
+        "description": ""
+      },
+      "Warrant": {
+        "color": "#9333EA",
+        "description": ""
+      },
+      "Subpoena": {
+        "color": "#14B8A6",
+        "description": ""
+      },
+      "CourtFiling": {
+        "color": "#06B6D4",
+        "description": ""
+      },
+      "PropertyTransaction": {
+        "color": "#A855F7",
+        "description": ""
+      },
+      "TravelEvent": {
+        "color": "#8B5CF6",
+        "description": ""
+      },
+      "CompanyRegistration": {
+        "color": "#EC4899",
+        "description": ""
+      },
+      "LicenseIssuance": {
+        "color": "#14B8A6",
+        "description": ""
+      },
+      "Audit": {
+        "color": "#DC2626",
+        "description": ""
+      },
+      "Other": {
+        "color": "#6B7280",
+        "description": ""
+      }
+    },
+    "relationship_examples": [],
+    "temperature": 0.2
   },
-  
   "chat": {
     "system_context": "You are an AI assistant helping fraud investigators analyze a case.",
     "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags."
