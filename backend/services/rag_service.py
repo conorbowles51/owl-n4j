@@ -73,8 +73,14 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 - Get entity type: MATCH (n {{key: 'some-key'}}) RETURN n.name, labels(n)[0] AS type
 """
 
-    def _build_full_context(self, graph_summary: Dict) -> str:
-        """Build context string from full graph summary."""
+    def _build_full_context(self, graph_summary: Dict, max_entities: int = 200) -> str:
+        """
+        Build context string from full graph summary.
+        
+        Args:
+            graph_summary: Graph summary dictionary
+            max_entities: Maximum number of entities to include (to prevent context bloat)
+        """
         lines = [
             "=== INVESTIGATION GRAPH OVERVIEW ===",
             f"Total Entities: {graph_summary.get('total_nodes', 0)}",
@@ -94,7 +100,27 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         lines.append("")
         lines.append("=== ENTITIES ===")
 
-        for entity in graph_summary.get("entities", []):
+        entities = graph_summary.get("entities", [])
+        total_entities = len(entities)
+        
+        # Limit entities to prevent context bloat
+        if total_entities > max_entities:
+            lines.append(f"Showing {max_entities} of {total_entities} entities (most relevant):")
+            # Prioritize entities with summaries and notes
+            entities_with_content = [e for e in entities if e.get("summary") or e.get("notes")]
+            entities_without_content = [e for e in entities if not (e.get("summary") or e.get("notes"))]
+            
+            # Take entities with content first, then fill remaining slots
+            entities_to_show = entities_with_content[:max_entities]
+            if len(entities_to_show) < max_entities:
+                remaining = max_entities - len(entities_to_show)
+                entities_to_show.extend(entities_without_content[:remaining])
+            
+            entities = entities_to_show
+        else:
+            entities = entities[:max_entities]
+
+        for entity in entities:
             lines.append(f"\n[{entity['type']}] {entity['name']} (key: {entity['key']})")
             if entity.get("summary"):
                 lines.append(f"  Summary: {entity['summary']}")
@@ -104,6 +130,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 if len(notes) > 500:
                     notes = notes[:500] + "..."
                 lines.append(f"  Notes: {notes}")
+
+        if total_entities > max_entities:
+            lines.append(f"\n... and {total_entities - max_entities} more entities (use specific questions or select nodes for focused context)")
 
         return "\n".join(lines)
 
@@ -187,6 +216,124 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"Cypher execution error: {e}")
             return None
 
+    def _generate_relevance_filter_query(
+        self,
+        question: str,
+        graph_summary: Dict,
+        max_nodes: int = 100,
+    ) -> Optional[List[str]]:
+        """
+        Generate a Cypher query to find nodes relevant to the question.
+        This reduces context size by filtering to only relevant entities.
+        
+        Args:
+            question: User's question
+            graph_summary: Graph summary for schema info
+            max_nodes: Maximum number of nodes to return
+            
+        Returns:
+            List of relevant node keys, or None if filtering not applicable
+        """
+        # Skip filtering if graph is small
+        total_nodes = graph_summary.get('total_nodes', 0)
+        if total_nodes < 50:
+            return None
+        
+        schema_info = self._build_schema_info(graph_summary)
+        
+        # Generate a Cypher query to find relevant nodes
+        prompt = f"""Based on this question: "{question}"
+
+Generate a Cypher query that finds nodes most relevant to answering this question.
+The query should:
+1. Match nodes that are likely to contain information needed to answer the question
+2. Use WHERE clauses to filter by:
+   - Node names containing relevant keywords
+   - Summaries containing relevant concepts
+   - Notes containing relevant information
+   - Entity types that are relevant to the question
+3. Return DISTINCT node keys
+4. Limit results to {max_nodes} nodes
+
+{schema_info}
+
+Return ONLY a Cypher query in this format:
+MATCH (n)
+WHERE [relevant conditions]
+RETURN DISTINCT n.key AS key
+LIMIT {max_nodes}
+
+Example for question "Who are the suspects?":
+MATCH (n)
+WHERE (n.name CONTAINS 'suspect' OR n.summary CONTAINS 'suspect' OR 
+       labels(n)[0] IN ['Person', 'Entity'] AND n.summary IS NOT NULL)
+RETURN DISTINCT n.key AS key
+LIMIT {max_nodes}
+"""
+        
+        try:
+            # Use LLM to generate the filtering query
+            # For filtering queries, we want a simpler, more focused approach
+            # Use a direct prompt instead of the full Cypher generation method
+            cypher = self.llm.call(
+                prompt=prompt,
+                temperature=0.2,  # Lower temperature for more consistent queries
+                json_mode=False,
+            )
+            
+            # Extract Cypher query from response (might be wrapped in markdown or text)
+            if not cypher:
+                return None
+            
+            # Clean up the response - remove markdown code blocks if present
+            cypher = cypher.strip()
+            if cypher.startswith("```"):
+                # Remove markdown code blocks
+                lines = cypher.split("\n")
+                cypher = "\n".join([l for l in lines if not l.strip().startswith("```")])
+            cypher = cypher.strip()
+            
+            # Basic validation - ensure it looks like a Cypher query
+            if not cypher.upper().startswith("MATCH"):
+                return None
+            
+            # Safety check - ensure it's a read-only query
+            cypher_upper = cypher.upper()
+            if any(
+                dangerous in cypher_upper
+                for dangerous in ["DELETE", "REMOVE", "SET", "CREATE", "MERGE", "DROP"]
+            ):
+                print(f"Blocked potentially dangerous relevance filter query: {cypher}")
+                return None
+            
+            # Execute the query to get relevant node keys
+            results = self.neo4j.run_cypher(cypher)
+            if not results:
+                return None
+            
+            # Extract node keys from results
+            node_keys = []
+            for row in results:
+                if isinstance(row, dict):
+                    key = row.get('key') or row.get('n.key')
+                else:
+                    # Handle tuple results
+                    key = row[0] if len(row) > 0 else None
+                
+                if key:
+                    node_keys.append(key)
+            
+            # Only use filtered results if they're significantly smaller than full graph
+            if len(node_keys) < total_nodes * 0.7 and len(node_keys) > 0:
+                print(f"[RAG] Filtered graph from {total_nodes} to {len(node_keys)} relevant nodes")
+                return node_keys[:max_nodes]
+            
+            return None
+            
+        except Exception as e:
+            print(f"[RAG] Error generating relevance filter: {e}")
+            return None
+
     def answer_question(
         self,
         question: str,
@@ -207,16 +354,27 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
         # Determine context mode
         if selected_keys and len(selected_keys) > 0:
-            # Focused context
+            # Focused context (user-selected nodes)
             context_mode = "focused"
             node_context = self.neo4j.get_context_for_nodes(selected_keys)
             context = self._build_focused_context(node_context)
             context_description = f"Focused on {len(selected_keys)} selected entity(ies)"
         else:
-            # Full graph context
-            context_mode = "full"
-            context = self._build_full_context(graph_summary)
-            context_description = f"Full graph ({graph_summary.get('total_nodes', 0)} entities)"
+            # Try to filter graph based on question relevance
+            # This reduces context size for large graphs
+            relevant_keys = self._generate_relevance_filter_query(question, graph_summary)
+            
+            if relevant_keys and len(relevant_keys) > 0:
+                # Use filtered context (question-relevant nodes)
+                context_mode = "question-filtered"
+                node_context = self.neo4j.get_context_for_nodes(relevant_keys)
+                context = self._build_focused_context(node_context)
+                context_description = f"Question-filtered graph ({len(relevant_keys)} relevant entities from {graph_summary.get('total_nodes', 0)} total)"
+            else:
+                # Fallback to full graph context
+                context_mode = "full"
+                context = self._build_full_context(graph_summary)
+                context_description = f"Full graph ({graph_summary.get('total_nodes', 0)} entities)"
 
         # Try Cypher query for specific questions
         query_results = self._try_cypher_query(question, graph_summary)
