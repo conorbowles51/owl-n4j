@@ -22,8 +22,10 @@ NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
 # LLM / Ollama / OpenAI Configuration
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:32b-instruct"
 
 # Ingestion chunking configuration
 # Keep these in sync with ingestion/scripts/config.py so the ingestion

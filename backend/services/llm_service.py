@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 import requests
 import json
 
-from config import OPENAI_MODEL
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OPENAI_MODEL
 from profile_loader import get_chat_config
 
 from openai import OpenAI
@@ -21,7 +21,7 @@ class LLMService:
     """Service for LLM interactions via llm."""
 
     def __init__(self):
-        self.model = OPENAI_MODEL
+        self.model = OLLAMA_MODEL
 
     def call(
         self,
@@ -43,30 +43,56 @@ class LLMService:
             Model response text
         """
         try:
-            kwargs = {
-                "model": OPENAI_MODEL,
+            url = f"{OLLAMA_BASE_URL}/api/chat"
+
+            payload: Dict = {
+                "model": self.model,
                 "messages": [
+                    {"role": "system", "content": system_context},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": temperature,
-                "timeout": timeout,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                },
             }
 
-            # Force JSON response if requested
             if json_mode:
-                kwargs["response_format"] = {"type": "json_object"}
+                payload["format"] = "json"
 
-            print(f"[LLM] Calling model {OPENAI_MODEL} with prompt length {len(prompt)}")
-            response = client.chat.completions.create(**kwargs)
+            resp = requests.post(url, json=payload, timeout=timeout)
+            resp.raise_for_status()
 
-            # Extract content
-            content = response.choices[0].message.content
-            if not content:
-                print("[LLM] WARNING: Empty response from LLM")
+            data = resp.json()
+            content = (data.get("message") or {}).get("content", "") or ""
+            if not content.strip():
                 raise ValueError("LLM returned empty response")
-            
-            print(f"[LLM] Response length: {len(content)}")
             return content
+            # --- OpenAI API --- #
+            # kwargs = {
+            #     "model": OPENAI_MODEL,
+            #     "messages": [
+            #         {"role": "user", "content": prompt}
+            #     ],
+            #     "temperature": temperature,
+            #     "timeout": timeout,
+            # }
+
+            # # Force JSON response if requested
+            # if json_mode:
+            #     kwargs["response_format"] = {"type": "json_object"}
+
+            # print(f"[LLM] Calling model {OPENAI_MODEL} with prompt length {len(prompt)}")
+            # response = client.chat.completions.create(**kwargs)
+
+            # # Extract content
+            # content = response.choices[0].message.content
+            # if not content:
+            #     print("[LLM] WARNING: Empty response from LLM")
+            #     raise ValueError("LLM returned empty response")
+            
+            # print(f"[LLM] Response length: {len(content)}")
+            # return content
         except Exception as e:
             print(f"[LLM] ERROR calling LLM: {e}")
             print(f"[LLM] Error type: {type(e).__name__}")
