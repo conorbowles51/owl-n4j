@@ -25,7 +25,9 @@ import {
   Link2,
   Edit,
   Focus,
-  Camera
+  Camera,
+  Database,
+  Settings
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
@@ -56,6 +58,8 @@ import LoadSnapshotProgressDialog from './components/LoadSnapshotProgressDialog'
 import NodeSelectionProgressDialog from './components/NodeSelectionProgressDialog';
 import AddNodeModal from './components/AddNodeModal';
 import CreateRelationshipModal from './components/CreateRelationshipModal';
+import SystemLogsPanel from './components/SystemLogsPanel';
+import DatabaseModal from './components/DatabaseModal';
 import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
 import EditNodeModal from './components/EditNodeModal';
 
@@ -123,12 +127,18 @@ export default function App() {
   const [showFilePanel, setShowFilePanel] = useState(false);
   // Background tasks panel state
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
+  // Settings dropdown state
+  const [isSettingsDropdownOpen, setIsSettingsDropdownOpen] = useState(false);
+  const settingsDropdownRef = useRef(null);
+  const settingsButtonRef = useRef(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUsername, setAuthUsername] = useState('');
   const [showLoginPanel, setShowLoginPanel] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
+  const [showSystemLogs, setShowSystemLogs] = useState(false);
+  const [showDatabaseModal, setShowDatabaseModal] = useState(false);
   const [caseToSelect, setCaseToSelect] = useState(null); // Case ID to select when navigating to case management
   
   // Relationship creation state
@@ -209,11 +219,20 @@ export default function App() {
       ) {
         setIsAccountDropdownOpen(false);
       }
+      if (
+        isSettingsDropdownOpen &&
+        settingsDropdownRef.current &&
+        settingsButtonRef.current &&
+        !settingsDropdownRef.current.contains(event.target) &&
+        !settingsButtonRef.current.contains(event.target)
+      ) {
+        setIsSettingsDropdownOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isAccountDropdownOpen]);
+  }, [isAccountDropdownOpen, isSettingsDropdownOpen]);
 
   const handleLoginSuccess = useCallback((token, username) => {
     localStorage.setItem('authToken', token);
@@ -2873,18 +2892,72 @@ export default function App() {
             <HardDrive className="w-5 h-5" />
           </button>
 
-          {/* Background Tasks Button */}
-          <button
-            onClick={() => setShowBackgroundTasksPanel(!showBackgroundTasksPanel)}
-            className={`p-2 rounded-lg transition-colors relative ${
-              showBackgroundTasksPanel
-                ? 'bg-owl-blue-500 text-white'
-                : 'hover:bg-light-100 text-light-600'
-            }`}
-            title="Background Tasks"
-          >
-            <Loader2 className="w-5 h-5" />
-          </button>
+          {/* Settings Dropdown */}
+          <div className="relative" ref={settingsDropdownRef}>
+            <button
+              ref={settingsButtonRef}
+              onClick={() => setIsSettingsDropdownOpen(!isSettingsDropdownOpen)}
+              className={`p-2 rounded-lg transition-colors relative ${
+                isSettingsDropdownOpen || showBackgroundTasksPanel || showSystemLogs || showDatabaseModal
+                  ? 'bg-owl-blue-500 text-white'
+                  : 'hover:bg-light-100 text-light-600'
+              }`}
+              title="Settings"
+            >
+              <Settings className="w-5 h-5" />
+            </button>
+
+            {isSettingsDropdownOpen && (
+              <div
+                className="absolute z-50 mt-2 w-48 rounded-lg bg-white shadow-lg border border-light-200 py-2 left-0"
+                style={{ top: '100%' }}
+              >
+                <button
+                  onClick={() => {
+                    setShowBackgroundTasksPanel(!showBackgroundTasksPanel);
+                    setIsSettingsDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 rounded transition-colors text-sm flex items-center gap-2 ${
+                    showBackgroundTasksPanel
+                      ? 'bg-owl-blue-50 text-owl-blue-700'
+                      : 'text-light-700 hover:bg-light-100'
+                  }`}
+                >
+                  <Loader2 className="w-4 h-4" />
+                  Background Tasks
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSystemLogs(!showSystemLogs);
+                    setIsSettingsDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 rounded transition-colors text-sm flex items-center gap-2 ${
+                    showSystemLogs
+                      ? 'bg-owl-blue-50 text-owl-blue-700'
+                      : 'text-light-700 hover:bg-light-100'
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  System Logs
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDatabaseModal(!showDatabaseModal);
+                    setIsSettingsDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-4 py-2 rounded transition-colors text-sm flex items-center gap-2 ${
+                    showDatabaseModal
+                      ? 'bg-owl-blue-50 text-owl-blue-700'
+                      : 'text-light-700 hover:bg-light-100'
+                  }`}
+                >
+                  <Database className="w-4 h-4" />
+                  Vector Database
+                </button>
+              </div>
+            )}
+          </div>
+
 
           <button
             ref={logoButtonRef}
@@ -4014,6 +4087,19 @@ export default function App() {
       <DocumentationViewer
         isOpen={showDocumentation}
         onClose={() => setShowDocumentation(false)}
+      />
+
+      {/* System Logs Panel */}
+      <SystemLogsPanel
+        isOpen={showSystemLogs}
+        onClose={() => setShowSystemLogs(false)}
+      />
+
+      {/* Database Modal */}
+      <DatabaseModal
+        isOpen={showDatabaseModal}
+        onClose={() => setShowDatabaseModal(false)}
+        currentUser={authUsername}
       />
 
       {/* Load Case Progress Dialog */}

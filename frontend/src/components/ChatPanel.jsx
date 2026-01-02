@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   MessageSquare, 
   Send, 
@@ -9,10 +9,14 @@ import {
   Target,
   Globe,
   History,
-  Network
+  Network,
+  Settings,
+  ChevronDown,
+  ChevronUp,
+  Info
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { chatAPI } from '../services/api';
+import { chatAPI, llmConfigAPI } from '../services/api';
 import ChatHistoryList from './ChatHistoryList';
 
 /**
@@ -278,32 +282,7 @@ function formatDebugLogAsMarkdown(debugLog, question) {
   return lines.join('\n');
 }
 
-/**
- * Download debug log as markdown file
- */
-function downloadDebugLog(debugLog, question) {
-  try {
-    const markdown = formatDebugLogAsMarkdown(debugLog, question);
-    
-    // Create filename with timestamp
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-    const questionSlug = question.slice(0, 50).replace(/[^a-z0-9]/gi, '_').toLowerCase();
-    const filename = `ai-assistant-debug-${timestamp}-${questionSlug}.md`;
-    
-    // Create blob and download
-    const blob = new Blob([markdown], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error('Failed to download debug log:', err);
-  }
-}
+// Debug logs are now stored in system logs (no need to download)
 
 /**
  * ChatPanel Component
@@ -330,6 +309,12 @@ export default function ChatPanel({
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [lastAutoSaveCount, setLastAutoSaveCount] = useState(0);
   const [extractingNodes, setExtractingNodes] = useState(new Set()); // Track which messages are extracting nodes
+  const [showModelSettings, setShowModelSettings] = useState(false);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [currentConfig, setCurrentConfig] = useState(null);
+  const [selectedProvider, setSelectedProvider] = useState('ollama');
+  const [selectedModelId, setSelectedModelId] = useState('qwen2.5:32b-instruct');
+  const [loadingConfig, setLoadingConfig] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -346,13 +331,35 @@ export default function ChatPanel({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Load model configuration
+  const loadModelConfig = useCallback(async () => {
+    try {
+      setLoadingConfig(true);
+      const [modelsData, configData] = await Promise.all([
+        llmConfigAPI.getModels(),
+        llmConfigAPI.getCurrentConfig(),
+      ]);
+      setAvailableModels(modelsData.models || []);
+      setCurrentConfig(configData);
+      if (configData) {
+        setSelectedProvider(configData.provider);
+        setSelectedModelId(configData.model_id);
+      }
+    } catch (err) {
+      console.error('Failed to load model config:', err);
+    } finally {
+      setLoadingConfig(false);
+    }
+  }, []);
+
   // Focus input when panel opens
   useEffect(() => {
     if (isOpen) {
       inputRef.current?.focus();
       loadSuggestions();
+      loadModelConfig();
     }
-  }, [isOpen, selectedNodes]);
+  }, [isOpen, selectedNodes, loadModelConfig]);
 
   // Load suggested questions
   const loadSuggestions = async () => {
@@ -394,10 +401,7 @@ export default function ChatPanel({
     try {
       const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null);
 
-      // Download debug log if available
-      if (response.debug_log) {
-        downloadDebugLog(response.debug_log, question);
-      }
+      // Debug log is now stored in system logs, no need to download
 
       // Extract node keys from response - try multiple sources
       let nodeKeys = [];
@@ -442,8 +446,14 @@ export default function ChatPanel({
         contextDescription: response.context_description,
         cypherUsed: response.cypher_used,
         usedNodeKeys: nodeKeys, // Store node keys used to generate answer (from multiple sources)
+        modelInfo: response.model_info, // Store model info
         timestamp: new Date().toISOString(),
       };
+      
+      // Update current config if provided
+      if (response.model_info) {
+        setCurrentConfig(response.model_info);
+      }
       setMessages(prev => {
         const newMessages = [...prev, assistantMessage];
         onMessagesChange?.(newMessages);
@@ -526,9 +536,23 @@ export default function ChatPanel({
       <div className="p-4 border-b border-light-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Sparkles className="w-5 h-5 text-owl-purple-500" />
-          <h2 className="font-semibold text-owl-blue-900">AI Assistant</h2>
+          <div>
+            <h2 className="font-semibold text-owl-blue-900">AI Assistant</h2>
+            {currentConfig && (
+              <p className="text-xs text-light-600">
+                {currentConfig.model_name} • {currentConfig.server}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowModelSettings(!showModelSettings)}
+            className="p-1 hover:bg-light-100 rounded transition-colors"
+            title="Model Settings"
+          >
+            <Settings className="w-5 h-5 text-light-600" />
+          </button>
           <button
             onClick={() => setShowChatHistory(true)}
             className="p-1 hover:bg-light-100 rounded transition-colors"
@@ -544,6 +568,134 @@ export default function ChatPanel({
           </button>
         </div>
       </div>
+
+      {/* Model Settings Panel */}
+      {showModelSettings && (
+        <div className="p-4 border-b border-light-200 bg-light-50 max-h-96 overflow-y-auto">
+          <div className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-light-700 mb-2">
+                Provider
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedProvider('ollama');
+                    // Set default model for provider
+                    const ollamaModels = availableModels.filter(m => m.provider === 'ollama');
+                    if (ollamaModels.length > 0) {
+                      const defaultModel = ollamaModels.find(m => m.id === 'qwen2.5:32b-instruct') || ollamaModels[0];
+                      setSelectedModelId(defaultModel.id);
+                    }
+                  }}
+                  className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                    selectedProvider === 'ollama'
+                      ? 'bg-owl-purple-500 text-white'
+                      : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
+                  }`}
+                >
+                  Ollama (Local)
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedProvider('openai');
+                    // Set default model for provider
+                    const openaiModels = availableModels.filter(m => m.provider === 'openai');
+                    if (openaiModels.length > 0) {
+                      const defaultModel = openaiModels.find(m => m.id === 'gpt-4o') || openaiModels[0];
+                      setSelectedModelId(defaultModel.id);
+                    }
+                  }}
+                  className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                    selectedProvider === 'openai'
+                      ? 'bg-owl-purple-500 text-white'
+                      : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
+                  }`}
+                >
+                  OpenAI (Remote)
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-light-700 mb-2">
+                Model
+              </label>
+              <select
+                value={selectedModelId}
+                onChange={(e) => setSelectedModelId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-light-300 rounded focus:outline-none focus:border-owl-purple-500 bg-white"
+              >
+                {availableModels
+                  .filter(m => m.provider === selectedProvider)
+                  .map(model => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            {/* Model Info */}
+            {(() => {
+              const selectedModel = availableModels.find(m => m.id === selectedModelId);
+              if (!selectedModel) return null;
+              
+              return (
+                <div className="p-3 bg-white rounded border border-light-200">
+                  <div className="flex items-start gap-2 mb-2">
+                    <Info className="w-4 h-4 text-owl-purple-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-xs text-light-700 mb-2">{selectedModel.description}</p>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div>
+                          <p className="font-medium text-light-900 mb-1">Pros:</p>
+                          <ul className="text-light-600 space-y-0.5">
+                            {selectedModel.pros.slice(0, 3).map((pro, i) => (
+                              <li key={i}>• {pro}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium text-light-900 mb-1">Cons:</p>
+                          <ul className="text-light-600 space-y-0.5">
+                            {selectedModel.cons.slice(0, 3).map((con, i) => (
+                              <li key={i}>• {con}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                      {selectedModel.context_window && (
+                        <p className="text-xs text-light-500 mt-2">
+                          Context Window: {selectedModel.context_window.toLocaleString()} tokens
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            <button
+              onClick={async () => {
+                try {
+                  await llmConfigAPI.setConfig({
+                    provider: selectedProvider,
+                    model_id: selectedModelId,
+                  });
+                  await loadModelConfig();
+                  setShowModelSettings(false);
+                } catch (err) {
+                  alert('Failed to update model configuration: ' + err.message);
+                }
+              }}
+              className="w-full px-4 py-2 bg-owl-purple-500 hover:bg-owl-purple-600 text-white rounded text-sm transition-colors"
+            >
+              Apply Configuration
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Context Indicator */}
       <div className="px-4 py-2 bg-light-50 border-b border-light-200 flex items-center gap-2">
@@ -597,15 +749,25 @@ export default function ChatPanel({
               {msg.role === 'user' ? (
                 <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
               ) : (
-                <div className="text-sm prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-owl-blue-700 prose-table:text-xs">
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
-                </div>
+                <>
+                  <div className="text-sm prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-owl-blue-700 prose-table:text-xs">
+                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  </div>
+                  {/* Processed By signature */}
+                  {msg.modelInfo && (
+                    <div className="mt-3 pt-2 border-t border-light-200">
+                      <p className="text-xs text-light-500 italic">
+                        Processed By: <span className="font-medium text-light-700">{msg.modelInfo.model_name}</span>
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
               
               {/* Context badge and Show on Graph button for assistant messages */}
               {msg.role === 'assistant' && !msg.isError && (
                 <div className="mt-2 pt-2 border-t border-light-300">
-                  <div className="flex items-center gap-2 text-xs text-light-600 mb-2">
+                  <div className="flex items-center gap-2 text-xs text-light-600 mb-2 flex-wrap">
                     {msg.contextMode === 'focused' ? (
                       <Target className="w-3 h-3" />
                     ) : (
@@ -615,6 +777,11 @@ export default function ChatPanel({
                     {msg.cypherUsed && (
                       <span className="bg-owl-purple-100 text-owl-purple-700 px-1.5 py-0.5 rounded">
                         Query
+                      </span>
+                    )}
+                    {msg.modelInfo && (
+                      <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">
+                        {msg.modelInfo.model_name} ({msg.modelInfo.server})
                       </span>
                     )}
                   </div>

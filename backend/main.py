@@ -22,6 +22,10 @@ from routers import (
     profiles_router,
     filesystem_router,
     chat_history_router,
+    system_logs_router,
+    backfill_router,
+    database_router,
+    llm_config_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -96,6 +100,10 @@ app.include_router(background_tasks_router)
 app.include_router(profiles_router)
 app.include_router(filesystem_router)
 app.include_router(chat_history_router)
+app.include_router(system_logs_router)
+app.include_router(backfill_router)
+app.include_router(database_router)
+app.include_router(llm_config_router)
 
 
 @app.get("/")

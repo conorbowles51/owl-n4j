@@ -328,6 +328,7 @@ export const chatAPI = {
         question,
         selected_keys: selectedKeys,
       }),
+      timeout: 600000, // 10 minutes for AI queries (large models may take time)
     }),
 
   /**
@@ -350,6 +351,7 @@ export const chatAPI = {
       body: JSON.stringify({
         answer: answer,
       }),
+      timeout: 300000, // 5 minutes for node extraction (uses LLM)
     }),
 };
 
@@ -946,5 +948,135 @@ export const backgroundTasksAPI = {
   delete: (taskId) =>
     fetchAPI(`/background-tasks/${encodeURIComponent(taskId)}`, {
       method: 'DELETE',
+    }),
+};
+
+/**
+ * System Logs API
+ */
+export const systemLogsAPI = {
+  /**
+   * Get system logs with filtering
+   * @param {Object} filters - Filter options
+   * @param {string} [filters.log_type] - Filter by log type
+   * @param {string} [filters.origin] - Filter by origin
+   * @param {string} [filters.start_time] - Start time (ISO format)
+   * @param {string} [filters.end_time] - End time (ISO format)
+   * @param {number} [filters.limit=100] - Maximum number of logs
+   * @param {number} [filters.offset=0] - Offset for pagination
+   * @param {string} [filters.user] - Filter by user
+   * @param {boolean} [filters.success_only] - Filter by success status
+   */
+  getLogs: (filters = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && value !== '') {
+        params.append(key, value.toString());
+      }
+    });
+    return fetchAPI(`/system-logs?${params.toString()}`);
+  },
+
+  /**
+   * Get log statistics
+   */
+  getStatistics: () => fetchAPI('/system-logs/statistics'),
+
+  /**
+   * Clear all logs
+   */
+  clearLogs: () =>
+    fetchAPI('/system-logs', {
+      method: 'DELETE',
+    }),
+};
+
+/**
+ * Backfill API
+ */
+export const backfillAPI = {
+  /**
+   * Backfill embeddings for documents
+   * @param {Object} options - Backfill options
+   * @param {string} [options.username] - Username to filter by (optional, defaults to current user)
+   * @param {string[]} [options.document_ids] - Specific document IDs to backfill
+   * @param {boolean} [options.skip_existing=true] - Skip documents that already have embeddings
+   * @param {boolean} [options.dry_run=false] - If true, only report what would be done
+   */
+  backfill: (options = {}) =>
+    fetchAPI('/backfill', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        username: options.username || null,
+        document_ids: options.document_ids || null,
+        skip_existing: options.skip_existing !== false,
+        dry_run: options.dry_run || false,
+      }),
+      timeout: 600000, // 10 minutes for backfill operations (can process many documents)
+    }),
+};
+
+/**
+ * Database API
+ */
+export const databaseAPI = {
+  /**
+   * List all documents in the vector database
+   */
+  listDocuments: () => fetchAPI('/database/documents'),
+
+  /**
+   * List all documents with their backfill status
+   */
+  listDocumentsStatus: () => fetchAPI('/database/documents/status'),
+
+  /**
+   * Get a specific document by ID
+   * @param {string} docId - Document ID
+   */
+  getDocument: (docId) => fetchAPI(`/database/documents/${encodeURIComponent(docId)}`),
+
+  /**
+   * Get retrieval history for a document
+   * @param {string} docId - Document ID
+   */
+  getRetrievalHistory: (docId) =>
+    fetchAPI(`/database/documents/${encodeURIComponent(docId)}/retrieval-history`),
+};
+
+/**
+ * LLM Configuration API
+ */
+export const llmConfigAPI = {
+  /**
+   * Get all available models
+   * @param {string} [provider] - Optional provider filter ("openai" or "ollama")
+   */
+  getModels: (provider) => {
+    const params = provider ? `?provider=${encodeURIComponent(provider)}` : '';
+    return fetchAPI(`/llm-config/models${params}`);
+  },
+
+  /**
+   * Get current LLM configuration
+   */
+  getCurrentConfig: () => fetchAPI('/llm-config/current'),
+
+  /**
+   * Set LLM configuration
+   * @param {Object} config - Configuration object
+   * @param {string} config.provider - Provider ("openai" or "ollama")
+   * @param {string} config.model_id - Model ID
+   */
+  setConfig: (config) =>
+    fetchAPI('/llm-config/set', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
     }),
 };

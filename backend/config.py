@@ -26,6 +26,10 @@ OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:32b-instruct"
 
+# LLM Provider Selection (can be overridden by user settings)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()  # "openai" or "ollama"
+LLM_MODEL = os.getenv("LLM_MODEL")  # If not set, uses default for provider
+
 # Embedding Configuration
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai").lower()  # "openai" or "ollama"
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")  # OpenAI model or Ollama model name

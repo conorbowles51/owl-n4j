@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
+from services.system_log_service import system_log_service, LogType, LogOrigin
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -71,8 +72,36 @@ async def save_case(case: CaseCreate, user: dict = Depends(get_current_user)):
             owner=username,
         )
         
+        # Log the operation
+        system_log_service.log(
+            log_type=LogType.CASE_MANAGEMENT,
+            origin=LogOrigin.FRONTEND,
+            action=f"Save Case: {case.case_name}",
+            details={
+                "case_id": result.case_id,
+                "case_name": case.case_name,
+                "version": result.version,
+                "is_new_case": case.case_id is None,
+            },
+            user=username,
+            success=True,
+        )
+        
         return result
     except Exception as e:
+        # Log the error
+        system_log_service.log(
+            log_type=LogType.CASE_MANAGEMENT,
+            origin=LogOrigin.FRONTEND,
+            action=f"Save Case Failed: {case.case_name}",
+            details={
+                "case_name": case.case_name,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
         raise HTTPException(status_code=500, detail=f"Failed to save case: {str(e)}")
 
 

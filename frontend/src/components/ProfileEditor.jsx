@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   X,
   Save,
@@ -7,8 +7,9 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
+  Info,
 } from 'lucide-react';
-import { profilesAPI } from '../services/api';
+import { profilesAPI, llmConfigAPI } from '../services/api';
 
 /**
  * ProfileEditor Component
@@ -35,6 +36,11 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
   const [chatSystemContext, setChatSystemContext] = useState('');
   const [chatAnalysisGuidance, setChatAnalysisGuidance] = useState('');
   const [temperature, setTemperature] = useState(1.0);
+  
+  // LLM Configuration
+  const [llmProvider, setLlmProvider] = useState('ollama');
+  const [llmModelId, setLlmModelId] = useState('qwen2.5:32b-instruct');
+  const [availableModels, setAvailableModels] = useState([]);
   
   // Entities list
   const [entities, setEntities] = useState([]);
@@ -66,38 +72,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
     { name: 'Other', color: generateRandomColor(), description: 'Other entities not fitting the above categories' },
   ];
 
-  // Load available profiles for cloning (only when creating new profile)
-  useEffect(() => {
-    if (isOpen && !profileName) {
-      loadAvailableProfiles();
-    }
-  }, [isOpen, profileName]);
-
-  // Load profile if editing or cloning
-  useEffect(() => {
-    if (isOpen && profileName) {
-      loadProfile();
-      setCloneFromProfile(''); // Clear clone selection when editing
-    } else if (isOpen && !profileName) {
-      // New profile - initialize with defaults (with random colors)
-      resetToDefaults();
-    } else if (!isOpen) {
-      // Reset when modal closes
-      resetToDefaults();
-    }
-  }, [isOpen, profileName]);
-
-  // Handle cloning when a profile is selected
-  useEffect(() => {
-    if (!isOpen || profileName) return; // Only for new profiles when modal is open
-    
-    if (cloneFromProfile) {
-      cloneProfile(cloneFromProfile);
-    }
-    // Note: We don't reset when cloneFromProfile is empty because that would
-    // interfere with the initial reset when the modal opens
-  }, [cloneFromProfile, isOpen, profileName]);
-
+  // Define functions before using them in useEffect
   const loadAvailableProfiles = async () => {
     setLoadingProfiles(true);
     try {
@@ -110,6 +85,55 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
     }
   };
 
+  const loadAvailableModels = useCallback(async () => {
+    try {
+      console.log('[ProfileEditor] Loading available models...');
+      const modelsData = await llmConfigAPI.getModels();
+      console.log('[ProfileEditor] Models data received:', modelsData);
+      const models = modelsData.models || modelsData || [];
+      console.log('[ProfileEditor] Setting models:', models.length, 'models');
+      setAvailableModels(models);
+    } catch (err) {
+      console.error('[ProfileEditor] Failed to load models:', err);
+      setAvailableModels([]);
+    }
+  }, []);
+
+  // Load available profiles for cloning (only when creating new profile)
+  useEffect(() => {
+    if (isOpen && !profileName) {
+      loadAvailableProfiles();
+    }
+  }, [isOpen, profileName]);
+
+  // Load models and profile when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      loadAvailableModels();
+      if (profileName) {
+        loadProfile();
+        setCloneFromProfile(''); // Clear clone selection when editing
+      } else {
+        // New profile - initialize with defaults (with random colors)
+        resetToDefaults();
+      }
+    } else if (!isOpen) {
+      // Reset when modal closes
+      resetToDefaults();
+    }
+  }, [isOpen, profileName, loadAvailableModels]);
+
+  // Handle cloning when a profile is selected
+  useEffect(() => {
+    if (!isOpen || profileName) return; // Only for new profiles when modal is open
+    
+    if (cloneFromProfile) {
+      cloneProfile(cloneFromProfile);
+    }
+    // Note: We don't reset when cloneFromProfile is empty because that would
+    // interfere with the initial reset when the modal opens
+  }, [cloneFromProfile, isOpen, profileName]);
+
   const resetToDefaults = () => {
     setName('');
     setDescription('');
@@ -120,6 +144,8 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
     setChatSystemContext('');
     setChatAnalysisGuidance('');
     setTemperature(1.0);
+    setLlmProvider('ollama');
+    setLlmModelId('qwen2.5:32b-instruct');
     setEntities(getDefaultEntities().map(e => ({ ...e })));
     setRelationshipExamples(['Person works for Organisation', 'Event occurred at Location']);
     setCloneFromProfile('');
@@ -189,6 +215,11 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
       setTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
+      
+      // Load LLM configuration
+      const llmConfig = profile.llm_config || {};
+      setLlmProvider(llmConfig.provider || 'ollama');
+      setLlmModelId(llmConfig.model_id || 'qwen2.5:32b-instruct');
       
       // Load entities
       const entityTypes = ingestion.entity_types || [];
@@ -275,6 +306,8 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
         chat_system_context: chatSystemContext.trim() || null,
         chat_analysis_guidance: chatAnalysisGuidance.trim() || null,
         temperature: temperature,
+        llm_provider: llmProvider,
+        llm_model_id: llmModelId,
       };
       
       await profilesAPI.save(profileData);
@@ -595,6 +628,136 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
                     Controls creativity: Lower (0.0-0.5) = more deterministic, Higher (1.0-2.0) = more creative. Default: 1.0
                   </p>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-light-700 mb-2">
+                    LLM Provider
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLlmProvider('ollama');
+                        // Set default model for provider
+                        const ollamaModels = availableModels.filter(m => m.provider === 'ollama');
+                        if (ollamaModels.length > 0) {
+                          const defaultModel = ollamaModels.find(m => m.id === 'qwen2.5:32b-instruct') || ollamaModels[0];
+                          setLlmModelId(defaultModel.id);
+                        }
+                      }}
+                      className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                        llmProvider === 'ollama'
+                          ? 'bg-owl-purple-500 text-white'
+                          : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
+                      }`}
+                    >
+                      Ollama (Local)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLlmProvider('openai');
+                        // Set default model for provider
+                        const openaiModels = availableModels.filter(m => m.provider === 'openai');
+                        if (openaiModels.length > 0) {
+                          const defaultModel = openaiModels.find(m => m.id === 'gpt-4o') || openaiModels[0];
+                          setLlmModelId(defaultModel.id);
+                        }
+                      }}
+                      className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                        llmProvider === 'openai'
+                          ? 'bg-owl-purple-500 text-white'
+                          : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
+                      }`}
+                    >
+                      OpenAI (Remote)
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-light-700 mb-2">
+                    Model
+                  </label>
+                  {availableModels.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-light-500 border border-light-300 rounded-lg bg-light-50">
+                      Loading models...
+                    </div>
+                  ) : (
+                    <select
+                      value={llmModelId}
+                      onChange={(e) => setLlmModelId(e.target.value)}
+                      className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 bg-white"
+                    >
+                      {availableModels
+                        .filter(m => m.provider === llmProvider)
+                        .map(model => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  {availableModels.filter(m => m.provider === llmProvider).length === 0 && availableModels.length > 0 && (
+                    <p className="text-xs text-red-600 mt-1">
+                      No models available for {llmProvider === 'ollama' ? 'Ollama' : 'OpenAI'}
+                    </p>
+                  )}
+                </div>
+
+                {/* Model Info */}
+                {availableModels.length > 0 && (() => {
+                  const selectedModel = availableModels.find(m => m.id === llmModelId);
+                  if (!selectedModel) {
+                    return (
+                      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                        <p className="text-xs text-yellow-800">
+                          Selected model "{llmModelId}" not found in available models. Please select a different model.
+                        </p>
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <div className="p-3 bg-light-50 rounded-lg border border-light-200">
+                      <div className="flex items-start gap-2 mb-2">
+                        <Info className="w-4 h-4 text-owl-purple-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-light-900 mb-2">{selectedModel.name}</p>
+                          <p className="text-xs text-light-700 mb-3">{selectedModel.description}</p>
+                          <div className="grid grid-cols-2 gap-3 text-xs">
+                            <div>
+                              <p className="font-medium text-light-900 mb-1">Pros:</p>
+                              <ul className="text-light-600 space-y-0.5">
+                                {selectedModel.pros.map((pro, i) => (
+                                  <li key={i}>• {pro}</li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <p className="font-medium text-light-900 mb-1">Cons:</p>
+                              <ul className="text-light-600 space-y-0.5">
+                                {selectedModel.cons.map((con, i) => (
+                                  <li key={i}>• {con}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          </div>
+                          {selectedModel.context_window && (
+                            <p className="text-xs text-light-500 mt-3 pt-2 border-t border-light-200">
+                              <span className="font-medium">Context Window:</span> {selectedModel.context_window.toLocaleString()} tokens
+                            </p>
+                          )}
+                          {selectedModel.parameters && selectedModel.parameters !== 'N/A' && (
+                            <p className="text-xs text-light-500 mt-1">
+                              <span className="font-medium">Parameters:</span> {selectedModel.parameters}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Chat Configuration */}

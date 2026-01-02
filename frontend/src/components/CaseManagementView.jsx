@@ -16,12 +16,16 @@ import {
   RefreshCw,
   UploadCloud,
   Search,
+  Database,
+  Upload,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { casesAPI, evidenceAPI, snapshotsAPI } from '../services/api';
 import CaseModal from './CaseModal';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
 import DocumentationViewer from './DocumentationViewer';
+import SystemLogsPanel from './SystemLogsPanel';
+import DatabaseModal from './DatabaseModal';
 
 /**
  * CaseManagementView Component
@@ -60,6 +64,8 @@ export default function CaseManagementView({
   const [logsLoading, setLogsLoading] = useState(false);
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
   const [showDocumentation, setShowDocumentation] = useState(false);
+  const [showSystemLogs, setShowSystemLogs] = useState(false);
+  const [showDatabaseModal, setShowDatabaseModal] = useState(false);
   // Filter states
   const [evidenceFilesFilter, setEvidenceFilesFilter] = useState('');
   const [selectedFileTypes, setSelectedFileTypes] = useState(new Set());
@@ -620,6 +626,35 @@ export default function CaseManagementView({
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar Flyout */}
+        <div className="w-16 bg-white border-r border-light-200 flex flex-col items-center py-4 gap-2 flex-shrink-0">
+          {/* System Logs Button */}
+          <button
+            onClick={() => setShowSystemLogs(!showSystemLogs)}
+            className={`p-3 rounded-lg transition-colors relative ${
+              showSystemLogs
+                ? 'bg-owl-blue-500 text-white'
+                : 'hover:bg-light-100 text-light-600'
+            }`}
+            title="System Logs"
+          >
+            <FileText className="w-5 h-5" />
+          </button>
+
+          {/* Database Button */}
+          <button
+            onClick={() => setShowDatabaseModal(!showDatabaseModal)}
+            className={`p-3 rounded-lg transition-colors relative ${
+              showDatabaseModal
+                ? 'bg-owl-blue-500 text-white'
+                : 'hover:bg-light-100 text-light-600'
+            }`}
+            title="Vector Database"
+          >
+            <Database className="w-5 h-5" />
+          </button>
+        </div>
+
         {/* Cases List - Left Panel */}
         <div className="w-1/3 border-r border-light-200 bg-white overflow-y-auto">
           <div className="p-4 border-b border-light-200">
@@ -1369,6 +1404,21 @@ export default function CaseManagementView({
                       )}
                     </div>
                   </button>
+                  {showEvidenceFiles && evidenceFiles.length > 0 && (
+                    <div className="mb-2 ml-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setShowDatabaseModal(true);
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
+                        title="Backfill documents to vector database"
+                      >
+                        <Database className="w-4 h-4" />
+                        <span>Backfill Database</span>
+                      </button>
+                    </div>
+                  )}
                   {showEvidenceFiles && (
                     <div className="ml-2">
                       {/* Filter Input */}
@@ -1975,6 +2025,19 @@ export default function CaseManagementView({
           </div>
         </div>
       )}
+
+      {/* System Logs Panel */}
+      <SystemLogsPanel
+        isOpen={showSystemLogs}
+        onClose={() => setShowSystemLogs(false)}
+      />
+
+      {/* Database Modal */}
+      <DatabaseModal
+        isOpen={showDatabaseModal}
+        onClose={() => setShowDatabaseModal(false)}
+        currentUser={authUsername}
+      />
     </div>
   );
 }

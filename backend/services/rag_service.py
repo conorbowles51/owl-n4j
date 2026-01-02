@@ -123,6 +123,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             entities_with_content = [e for e in entities if e.get("summary") or e.get("notes")]
             entities_without_content = [e for e in entities if not (e.get("summary") or e.get("notes"))]
             
+            # Prioritize entities with more detailed information (longer summaries/notes)
+            entities_with_content.sort(key=lambda e: len(e.get("summary", "") + e.get("notes", "")), reverse=True)
+            
             # Take entities with content first, then fill remaining slots
             entities_to_show = entities_with_content[:max_entities]
             if len(entities_to_show) < max_entities:
@@ -131,17 +134,23 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             
             entities = entities_to_show
         else:
+            # Even if under limit, prioritize entities with more content
+            entities.sort(key=lambda e: len(e.get("summary", "") + e.get("notes", "")), reverse=True)
             entities = entities[:max_entities]
 
         for entity in entities:
             lines.append(f"\n[{entity['type']}] {entity['name']} (key: {entity['key']})")
             if entity.get("summary"):
-                lines.append(f"  Summary: {entity['summary']}")
+                # Include full summary, but truncate if extremely long
+                summary = entity["summary"]
+                if len(summary) > 1000:
+                    summary = summary[:1000] + "..."
+                lines.append(f"  Summary: {summary}")
             if entity.get("notes"):
-                # Truncate notes if too long
+                # Include more notes content for better context
                 notes = entity["notes"]
-                if len(notes) > 500:
-                    notes = notes[:500] + "..."
+                if len(notes) > 800:
+                    notes = notes[:800] + "..."
                 lines.append(f"  Notes: {notes}")
 
         if total_entities > max_entities:
@@ -706,6 +715,27 @@ LIMIT {max_nodes}
         if debug_log is not None:
             debug_log["final_prompt"] = final_prompt
             debug_log["context_mode"] = context_mode
+
+        # Store debug log in system logs (instead of downloading)
+        try:
+            from services.system_log_service import system_log_service, LogType, LogOrigin
+            system_log_service.log(
+                log_type=LogType.AI_ASSISTANT,
+                origin=LogOrigin.BACKEND,
+                action="AI Assistant Response Generated",
+                details={
+                    "question": question,
+                    "context_mode": context_mode,
+                    "context_description": context_description,
+                    "cypher_used": query_results is not None,
+                    "answer_length": len(answer),
+                    "used_node_keys_count": len(used_node_keys),
+                    "debug_log": debug_log,  # Include full debug log in system logs
+                },
+                success=True,
+            )
+        except Exception as e:
+            print(f"[RAG] Failed to log to system logs: {e}")
 
         return {
             "answer": answer,

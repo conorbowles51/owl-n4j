@@ -3,11 +3,13 @@ Graph Router - endpoints for graph visualization data.
 """
 
 from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 
 from services.neo4j_service import neo4j_service
 from services.last_graph_storage import last_graph_storage
+from services.system_log_service import system_log_service, LogType, LogOrigin
+from routers.auth import get_current_user
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
@@ -155,6 +157,7 @@ async def get_entity_types():
 async def get_graph(
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
+    user: dict = Depends(get_current_user),
 ):
     """
     Get the full graph for visualization.
@@ -163,8 +166,41 @@ async def get_graph(
     Nodes included if they have a date in range or are connected to nodes with dates in range.
     """
     try:
-        return neo4j_service.get_full_graph(start_date=start_date, end_date=end_date)
+        result = neo4j_service.get_full_graph(start_date=start_date, end_date=end_date)
+        
+        # Log the filter operation if dates are provided
+        if start_date or end_date:
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action="Filter Graph by Date Range",
+                details={
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "nodes_count": len(result.get("nodes", [])) if isinstance(result, dict) else 0,
+                    "links_count": len(result.get("links", [])) if isinstance(result, dict) else 0,
+                },
+                user=user.get("username", "unknown"),
+                success=True,
+            )
+        
+        return result
     except Exception as e:
+        # Log the error
+        if start_date or end_date:
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action="Filter Graph Failed",
+                details={
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "error": str(e),
+                },
+                user=user.get("username", "unknown"),
+                success=False,
+                error=str(e),
+            )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -209,6 +245,7 @@ async def get_node_neighbours(
 async def search_nodes(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
+    user: dict = Depends(get_current_user),
 ):
     """
     Search nodes by name or key.
@@ -216,10 +253,41 @@ async def search_nodes(
     Args:
         q: Search query
         limit: Maximum results to return
+        user: Current authenticated user
     """
     try:
-        return neo4j_service.search_nodes(q, limit)
+        results = neo4j_service.search_nodes(q, limit)
+        
+        # Log the search operation
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Search Nodes: {q[:50]}",
+            details={
+                "query": q,
+                "limit": limit,
+                "results_count": len(results.get("nodes", [])) if isinstance(results, dict) else 0,
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
+        return results
     except Exception as e:
+        # Log the error
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Search Nodes Failed: {q[:50]}",
+            details={
+                "query": q,
+                "limit": limit,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -384,7 +452,7 @@ async def get_betweenness_centrality(request: BetweennessCentralityRequest):
 
 
 @router.post("/load-case")
-async def load_case(request: CaseLoadRequest):
+async def load_case(request: CaseLoadRequest, user: dict = Depends(get_current_user)):
     """
     Load a case by executing Cypher queries.
 
@@ -440,8 +508,25 @@ async def load_case(request: CaseLoadRequest):
             query_preview = q[:100] + "..." if len(q) > 100 else q
             errors.append(f"Relationship query {idx + 1} failed: {error_msg}\nQuery: {query_preview}")
 
+    success = len(errors) == 0
+    
+    # Log the operation
+    system_log_service.log(
+        log_type=LogType.CASE_MANAGEMENT,
+        origin=LogOrigin.FRONTEND,
+        action="Load Case",
+        details={
+            "queries_count": len(queries),
+            "executed": executed,
+            "errors_count": len(errors),
+        },
+        user=user.get("username", "unknown"),
+        success=success,
+        error=f"{len(errors)} errors" if errors else None,
+    )
+    
     return {
-        "success": len(errors) == 0,
+        "success": success,
         "executed": executed,
         "total": len(queries),
         "errors": errors or None,
@@ -606,7 +691,7 @@ async def get_last_graph():
 
 
 @router.post("/create-node", response_model=CreateNodeResponse)
-async def create_node(request: CreateNodeRequest):
+async def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_user)):
     """
     Create a new node in the graph with description and summary.
     
@@ -653,12 +738,41 @@ async def create_node(request: CreateNodeRequest):
         # Execute the Cypher query to create the node
         neo4j_service.run_cypher(node_cypher, {})
         
+        # Log the operation
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Create Node: {request.name}",
+            details={
+                "node_name": request.name,
+                "node_type": request.type,
+                "node_key": node_key,
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
         return CreateNodeResponse(
             success=True,
             node_key=node_key,
             cypher=node_cypher
         )
     except Exception as e:
+        # Log the error
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Create Node Failed: {request.name}",
+            details={
+                "node_name": request.name,
+                "node_type": request.type,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
+        
         return CreateNodeResponse(
             success=False,
             node_key="",
@@ -668,7 +782,7 @@ async def create_node(request: CreateNodeRequest):
 
 
 @router.post("/relationships", response_model=CreateRelationshipsResponse)
-async def create_relationships(request: CreateRelationshipsRequest):
+async def create_relationships(request: CreateRelationshipsRequest, user: dict = Depends(get_current_user)):
     """
     Create relationships between nodes.
     
@@ -718,6 +832,19 @@ async def create_relationships(request: CreateRelationshipsRequest):
                 # Execute each query separately in its own transaction
                 neo4j_service.run_cypher(query, {})
         
+        # Log the operation
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Create Relationships: {len(links_data)} relationships",
+            details={
+                "relationships_count": len(links_data),
+                "relationship_types": list(set([link.get("type") for link in links_data])),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
         return CreateRelationshipsResponse(
             success=True,
             cypher=cypher
@@ -725,6 +852,20 @@ async def create_relationships(request: CreateRelationshipsRequest):
     except HTTPException:
         raise
     except Exception as e:
+        # Log the error
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Create Relationships Failed",
+            details={
+                "relationships_count": len(request.relationships),
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
+        
         return CreateRelationshipsResponse(
             success=False,
             cypher="",
@@ -806,13 +947,14 @@ async def analyze_node_relationships(node_key: str):
 
 
 @router.put("/node/{node_key}", response_model=UpdateNodeResponse)
-async def update_node(node_key: str, request: UpdateNodeRequest):
+async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = Depends(get_current_user)):
     """
     Update properties of an existing node.
     
     Args:
         node_key: The key of the node to update
         request: Update request with optional summary and notes
+        user: Current authenticated user
         
     Returns:
         Response with success status and generated Cypher
@@ -825,21 +967,25 @@ async def update_node(node_key: str, request: UpdateNodeRequest):
         
         # Build SET clause for properties to update
         set_clauses = []
+        updated_fields = []
         
         if request.name is not None:
             # Escape single quotes in name
             escaped_name = request.name.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
             set_clauses.append(f"n.name = '{escaped_name}'")
+            updated_fields.append("name")
         
         if request.summary is not None:
             # Escape single quotes in summary
             escaped_summary = request.summary.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
             set_clauses.append(f"n.summary = '{escaped_summary}'")
+            updated_fields.append("summary")
         
         if request.notes is not None:
             # Escape single quotes in notes
             escaped_notes = request.notes.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
             set_clauses.append(f"n.notes = '{escaped_notes}'")
+            updated_fields.append("notes")
         
         if not set_clauses:
             raise HTTPException(status_code=400, detail="At least one field (name, summary, or notes) must be provided")
@@ -854,6 +1000,20 @@ async def update_node(node_key: str, request: UpdateNodeRequest):
         # Execute the update
         neo4j_service.run_cypher(cypher, {})
         
+        # Log the operation
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Update Node: {node_key}",
+            details={
+                "node_key": node_key,
+                "node_name": node_details.get("name", "unknown"),
+                "updated_fields": updated_fields,
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
         return UpdateNodeResponse(
             success=True,
             cypher=cypher
@@ -861,6 +1021,20 @@ async def update_node(node_key: str, request: UpdateNodeRequest):
     except HTTPException:
         raise
     except Exception as e:
+        # Log the error
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action=f"Update Node Failed: {node_key}",
+            details={
+                "node_key": node_key,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
+        
         return UpdateNodeResponse(
             success=False,
             cypher="",
