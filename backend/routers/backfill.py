@@ -13,25 +13,38 @@ from services.vector_db_service import vector_db_service
 from services.embedding_service import embedding_service
 from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
 from pathlib import Path
-import sys
-import importlib.util
 
-# Import pdf_ingestion from ingestion/scripts without modifying sys.path globally
-project_root = Path(__file__).parent.parent.parent
-pdf_ingestion_path = project_root / "ingestion" / "scripts" / "pdf_ingestion.py"
-
+# PDF extraction - use pypdf directly to avoid complex import dependencies
+# The pdf_ingestion module has dependencies on the full ingestion pipeline,
+# but we only need the text extraction functionality here
 PDF_EXTRACTION_AVAILABLE = False
 extract_text_from_pdf = None
 
-if pdf_ingestion_path.exists():
-    try:
-        spec = importlib.util.spec_from_file_location("pdf_ingestion", pdf_ingestion_path)
-        pdf_ingestion_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(pdf_ingestion_module)
-        extract_text_from_pdf = pdf_ingestion_module.extract_text_from_pdf
-        PDF_EXTRACTION_AVAILABLE = True
-    except Exception:
-        PDF_EXTRACTION_AVAILABLE = False
+try:
+    import pypdf
+    
+    def extract_text_from_pdf_simple(path: Path) -> str:
+        """Extract text from PDF using pypdf directly."""
+        reader = pypdf.PdfReader(str(path))
+        chunks = []
+        for i, page in enumerate(reader.pages):
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                chunks.append(f"--- Page {i + 1} ---\n{page_text}")
+        return "\n\n".join(chunks)
+    
+    extract_text_from_pdf = extract_text_from_pdf_simple
+    PDF_EXTRACTION_AVAILABLE = True
+    print(f"[Backfill] PDF extraction available (using pypdf)")
+except ImportError as e:
+    PDF_EXTRACTION_AVAILABLE = False
+    print(f"[Backfill] WARNING: pypdf not available: {e}")
+    print(f"[Backfill] PDF extraction will not be available. Install pypdf: pip install pypdf")
+except Exception as e:
+    PDF_EXTRACTION_AVAILABLE = False
+    print(f"[Backfill] WARNING: Failed to initialize PDF extraction: {e}")
+    import traceback
+    traceback.print_exc()
 
 router = APIRouter(prefix="/api/backfill", tags=["backfill"])
 

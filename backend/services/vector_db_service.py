@@ -51,6 +51,20 @@ class VectorDBService:
         metadata = metadata or {}
         metadata["doc_id"] = doc_id
         
+        # Filter out None values - ChromaDB only accepts str, int, float, bool
+        # Convert None values to empty strings to preserve keys
+        cleaned_metadata = {}
+        for k, v in metadata.items():
+            if v is None:
+                # Convert None to empty string for ChromaDB compatibility
+                cleaned_metadata[k] = ""
+            elif isinstance(v, (str, int, float, bool)):
+                # Keep valid types as-is
+                cleaned_metadata[k] = v
+            else:
+                # Convert other types to string
+                cleaned_metadata[k] = str(v)
+        
         # Truncate text to avoid storage issues (ChromaDB has limits)
         text_truncated = text[:10000] if len(text) > 10000 else text
         
@@ -58,7 +72,7 @@ class VectorDBService:
             ids=[doc_id],
             embeddings=[embedding],
             documents=[text_truncated],  # Store text for retrieval
-            metadatas=[metadata]
+            metadatas=[cleaned_metadata]
         )
     
     def search(

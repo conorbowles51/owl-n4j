@@ -1640,6 +1640,21 @@ export default function EvidenceProcessingView({
           setEditingProfileName(null);
         }}
         profileName={editingProfileName}
+        onProfileSaved={async (savedProfileName) => {
+          // Reload profiles list
+          try {
+            const data = await profilesAPI.list();
+            setProfiles(data || []);
+            // If we were editing a profile, keep it selected; otherwise select the newly saved one
+            if (editingProfileName) {
+              setSelectedProfile(editingProfileName);
+            } else if (savedProfileName) {
+              setSelectedProfile(savedProfileName);
+            }
+          } catch (err) {
+            console.error('Failed to reload profiles:', err);
+          }
+        }}
       />
     </div>
   );

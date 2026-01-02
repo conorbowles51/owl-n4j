@@ -78,9 +78,9 @@ async def save_case(case: CaseCreate, user: dict = Depends(get_current_user)):
             origin=LogOrigin.FRONTEND,
             action=f"Save Case: {case.case_name}",
             details={
-                "case_id": result.case_id,
+                "case_id": result["case_id"],
                 "case_name": case.case_name,
-                "version": result.version,
+                "version": result["version"],
                 "is_new_case": case.case_id is None,
             },
             user=username,

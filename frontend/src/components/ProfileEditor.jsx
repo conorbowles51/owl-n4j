@@ -16,7 +16,7 @@ import { profilesAPI, llmConfigAPI } from '../services/api';
  * 
  * Allows users to create or edit LLM profiles for evidence processing.
  */
-export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
+export default function ProfileEditor({ isOpen, onClose, profileName = null, onProfileSaved = null }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -312,9 +312,13 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null }) {
       
       await profilesAPI.save(profileData);
       alert('Profile saved successfully!');
+      
+      // Notify parent component to refresh profiles list
+      if (onProfileSaved) {
+        onProfileSaved(name.trim());
+      }
+      
       onClose();
-      // Reload window to refresh profile list
-      window.location.reload();
     } catch (err) {
       console.error('Failed to save profile:', err);
       setError(err.message || 'Failed to save profile');

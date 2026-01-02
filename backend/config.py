@@ -24,7 +24,7 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 # LLM / Ollama / OpenAI Configuration
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:32b-instruct"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:14b-instruct"
 
 # LLM Provider Selection (can be overridden by user settings)
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()  # "openai" or "ollama"

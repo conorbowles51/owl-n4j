@@ -21,7 +21,7 @@ def call_llm(
     prompt: str,
     temperature: float = 1,
     json_mode: bool = False,
-    timeout: int = 180,
+    timeout: int = 600,  # Increased to 10 minutes for large models
 ) -> str:
     """
     Call the local Ollama LLM endpoint.
@@ -50,8 +50,23 @@ def call_llm(
     if json_mode:
         payload["format"] = "json"
 
-    resp = requests.post(url, json=payload, timeout=timeout)
-    resp.raise_for_status()
+    # Use tuple format for timeout: (connect_timeout, read_timeout)
+    # Connect timeout: 10 seconds, Read timeout: as specified
+    try:
+        resp = requests.post(url, json=payload, timeout=(10, timeout))
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            # Model not found or endpoint issue
+            error_msg = f"Ollama API error (404): Model '{OLLAMA_MODEL}' may not be available. "
+            error_msg += f"Check that Ollama is running at {OLLAMA_BASE_URL} and the model is installed."
+            print(f"[LLM] {error_msg}")
+            raise Exception(error_msg) from e
+        raise
+    except requests.exceptions.RequestException as e:
+        error_msg = f"Failed to connect to Ollama at {OLLAMA_BASE_URL}: {str(e)}"
+        print(f"[LLM] {error_msg}")
+        raise Exception(error_msg) from e
 
     data = resp.json()
     # Ollama chat response shape: { message: { role: "...", content: "..." }, ... }

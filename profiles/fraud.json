@@ -167,10 +167,14 @@
       }
     },
     "relationship_examples": [],
-    "temperature": 0.2
+    "temperature": 1.5
   },
   "chat": {
     "system_context": "You are an AI assistant helping fraud investigators analyze a case.",
     "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags."
+  },
+  "llm_config": {
+    "provider": "ollama",
+    "model_id": "qwen2.5:14b-instruct"
   }
 }

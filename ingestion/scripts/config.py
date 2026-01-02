@@ -32,7 +32,7 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:32b-instruct"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:14b-instruct"
 # ---------------------------------------------------------------------------
 # Chunking Configuration
 # ---------------------------------------------------------------------------
