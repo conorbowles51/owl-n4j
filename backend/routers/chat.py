@@ -27,6 +27,8 @@ class ChatRequest(BaseModel):
 
     question: str
     selected_keys: Optional[List[str]] = None
+    provider: str
+    model: str
 
 
 class ChatResponse(BaseModel):
@@ -80,6 +82,12 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             user=username,
             success=True,
         )
+
+        provider = request.provider
+        model_id = request.model
+        model = get_model_by_id(model_id)
+
+        rag_service.llm.set_config(provider, model_id)
         
         result = rag_service.answer_question(
             question=question,
@@ -87,8 +95,7 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         )
         
         # Get current model info
-        provider, model_id = llm_service.get_current_config()
-        model = get_model_by_id(model_id)
+        
         server = "Ollama (local)" if provider == "ollama" else "OpenAI (remote)"
         result["model_info"] = {
             "provider": provider,

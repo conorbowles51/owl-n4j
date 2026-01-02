@@ -399,7 +399,7 @@ export default function ChatPanel({
     setIsLoading(true);
 
     try {
-      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null);
+      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null, selectedModelId, selectedProvider);
 
       // Debug log is now stored in system logs, no need to download
 
@@ -540,7 +540,7 @@ export default function ChatPanel({
             <h2 className="font-semibold text-owl-blue-900">AI Assistant</h2>
             {currentConfig && (
               <p className="text-xs text-light-600">
-                {currentConfig.model_name} • {currentConfig.server}
+                {selectedModelId} • {selectedProvider}
               </p>
             )}
           </div>

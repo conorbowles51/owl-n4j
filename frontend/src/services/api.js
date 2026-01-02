@@ -321,12 +321,14 @@ export const chatAPI = {
   /**
    * Send a question to the AI
    */
-  ask: (question, selectedKeys = null) => 
+  ask: (question, selectedKeys = null, model, provider) => 
     fetchAPI('/chat', {
       method: 'POST',
       body: JSON.stringify({
         question,
         selected_keys: selectedKeys,
+        model,
+        provider
       }),
       timeout: 600000, // 10 minutes for AI queries (large models may take time)
     }),
