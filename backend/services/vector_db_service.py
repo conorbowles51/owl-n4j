@@ -13,7 +13,7 @@ from config import BASE_DIR, CHROMADB_PATH
 
 
 class VectorDBService:
-    """Service for managing document embeddings in ChromaDB."""
+    """Service for managing document and entity embeddings in ChromaDB."""
     
     def __init__(self):
         # Store ChromaDB data in project data directory
@@ -30,6 +30,12 @@ class VectorDBService:
         self.collection = self.client.get_or_create_collection(
             name="documents",
             metadata={"description": "Document embeddings for semantic search"}
+        )
+        
+        # Get or create collection for entities
+        self.entity_collection = self.client.get_or_create_collection(
+            name="entities",
+            metadata={"description": "Entity embeddings for semantic search"}
         )
     
     def add_document(
@@ -145,6 +151,120 @@ class VectorDBService:
             return self.collection.count()
         except Exception as e:
             print(f"[VectorDB] Count error: {e}")
+            return 0
+    
+    # =====================
+    # Entity Methods
+    # =====================
+    
+    def add_entity(
+        self,
+        entity_key: str,
+        text: str,
+        embedding: List[float],
+        metadata: Optional[Dict] = None
+    ) -> None:
+        """
+        Add or update an entity embedding.
+        
+        Args:
+            entity_key: Unique entity key (human-readable identifier like 'john-smith')
+            text: Entity text content for retrieval (name + summary + verified_facts)
+            embedding: Vector embedding (list of floats)
+            metadata: Optional metadata (entity_type, name, etc.)
+        """
+        metadata = metadata or {}
+        metadata["entity_key"] = entity_key
+        
+        # Filter out None values - ChromaDB only accepts str, int, float, bool
+        cleaned_metadata = {}
+        for k, v in metadata.items():
+            if v is None:
+                cleaned_metadata[k] = ""
+            elif isinstance(v, (str, int, float, bool)):
+                cleaned_metadata[k] = v
+            else:
+                cleaned_metadata[k] = str(v)
+        
+        # Truncate text to avoid storage issues
+        text_truncated = text[:10000] if len(text) > 10000 else text
+        
+        self.entity_collection.upsert(
+            ids=[entity_key],
+            embeddings=[embedding],
+            documents=[text_truncated],
+            metadatas=[cleaned_metadata]
+        )
+    
+    def search_entities(
+        self,
+        query_embedding: List[float],
+        top_k: int = 10,
+        filter_metadata: Optional[Dict] = None
+    ) -> List[Dict]:
+        """
+        Search for similar entities.
+        
+        Args:
+            query_embedding: Query vector embedding
+            top_k: Number of results to return
+            filter_metadata: Optional metadata filters (e.g., {"entity_type": "Person"})
+            
+        Returns:
+            List of dicts with: id (entity_key), text, metadata, distance
+        """
+        where = filter_metadata if filter_metadata else None
+        
+        try:
+            results = self.entity_collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where
+            )
+            
+            formatted = []
+            if results["ids"] and len(results["ids"][0]) > 0:
+                for i in range(len(results["ids"][0])):
+                    formatted.append({
+                        "id": results["ids"][0][i],
+                        "text": results["documents"][0][i],
+                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                        "distance": results["distances"][0][i] if "distances" in results and results["distances"] else None
+                    })
+            
+            return formatted
+        except Exception as e:
+            print(f"[VectorDB] Entity search error: {e}")
+            return []
+    
+    def delete_entity(self, entity_key: str) -> None:
+        """Delete an entity embedding."""
+        try:
+            self.entity_collection.delete(ids=[entity_key])
+        except Exception as e:
+            print(f"[VectorDB] Entity delete error: {e}")
+    
+    def get_entity(self, entity_key: str) -> Optional[Dict]:
+        """Get an entity by key."""
+        try:
+            results = self.entity_collection.get(ids=[entity_key])
+            if results["ids"]:
+                return {
+                    "id": results["ids"][0],
+                    "text": results["documents"][0] if results["documents"] else "",
+                    "metadata": results["metadatas"][0] if results["metadatas"] else {}
+                }
+            return None
+        except Exception as e:
+            print(f"[VectorDB] Get entity error: {e}")
+            return None
+    
+    def count_entities(self) -> int:
+        """Get the total number of entities in the collection."""
+        try:
+            return self.entity_collection.count()
+        except Exception as e:
+            print(f"[VectorDB] Entity count error: {e}")
             return 0
 
 

@@ -11,8 +11,6 @@ This is the main logic that:
 """
 
 from typing import Dict, List, Optional, Callable
-import time
-import threading
 import json
 import sys
 from pathlib import Path
@@ -22,12 +20,32 @@ from llm_client import (
     extract_entities_and_relationships,
     generate_entity_summary,
     update_entity_notes,
-    get_processing_estimate,
-    get_processing_progress_update,
 )
 from entity_resolution import normalise_key, resolve_entity, merge_entity_data
 from chunking import chunk_document
 from geocoding import get_location_properties
+
+
+def log_progress(
+    message: str,
+    log_callback: Optional[Callable[[str], None]] = None,
+    prefix: str = "",
+) -> None:
+    """
+    Log a progress message to both console and the optional callback.
+    
+    This replaces individual print statements to ensure progress is
+    visible both in the console and sent to the frontend.
+    
+    Args:
+        message: The message to log
+        log_callback: Optional callback function to send message to frontend
+        prefix: Optional prefix for console output (e.g., "  " for indentation)
+    """
+    print(f"{prefix}{message}")
+    if log_callback:
+        log_callback(message)
+
 
 # Import vector DB and embedding services from backend
 # Add backend directory to path if not already there
@@ -41,10 +59,120 @@ try:
     VECTOR_DB_AVAILABLE = embedding_service is not None
 except (ImportError, ValueError) as e:
     print(f"[Ingestion] Vector DB services not available: {e}")
-    print("[Ingestion] Document embeddings will be skipped")
+    print("[Ingestion] Document and entity embeddings will be skipped")
     VECTOR_DB_AVAILABLE = False
     vector_db_service = None
     embedding_service = None
+
+
+def build_entity_embedding_text(
+    name: str,
+    entity_type: str,
+    summary: Optional[str] = None,
+    verified_facts: Optional[List[Dict]] = None,
+    ai_insights: Optional[List[Dict]] = None,
+) -> str:
+    """
+    Build text content for entity embedding.
+    
+    Combines entity name, type, summary, and verified facts into a single
+    searchable text representation for semantic search.
+    
+    Args:
+        name: Entity name (e.g., "John Smith")
+        entity_type: Entity type (e.g., "Person", "Organization")
+        summary: AI-generated entity summary
+        verified_facts: List of verified fact dicts with 'text' field
+        ai_insights: List of AI insight dicts with 'text' field
+        
+    Returns:
+        Combined text suitable for embedding
+    """
+    parts = []
+    
+    # Entity identifier
+    parts.append(f"{name} ({entity_type})")
+    
+    # Summary
+    if summary and summary.strip():
+        parts.append(f"Summary: {summary.strip()}")
+    
+    # Verified facts
+    if verified_facts:
+        fact_texts = [f.get("text", "").strip() for f in verified_facts if f.get("text")]
+        if fact_texts:
+            parts.append("Verified Facts: " + "; ".join(fact_texts))
+    
+    # AI insights (optional - include for richer context)
+    if ai_insights:
+        insight_texts = [i.get("text", "").strip() for i in ai_insights if i.get("text")]
+        if insight_texts:
+            parts.append("Insights: " + "; ".join(insight_texts))
+    
+    return "\n".join(parts)
+
+
+def store_entity_embedding(
+    entity_key: str,
+    name: str,
+    entity_type: str,
+    summary: Optional[str] = None,
+    verified_facts: Optional[List[Dict]] = None,
+    ai_insights: Optional[List[Dict]] = None,
+    log_callback: Optional[Callable[[str], None]] = None,
+) -> bool:
+    """
+    Generate and store embedding for an entity.
+    
+    Args:
+        entity_key: Unique entity key (e.g., 'john-smith')
+        name: Entity name
+        entity_type: Entity type
+        summary: Entity summary
+        verified_facts: List of verified facts
+        ai_insights: List of AI insights
+        log_callback: Optional callback for logging
+        
+    Returns:
+        True if embedding was stored successfully, False otherwise
+    """
+    if not VECTOR_DB_AVAILABLE:
+        return False
+    
+    try:
+        # Build embedding text
+        embedding_text = build_entity_embedding_text(
+            name=name,
+            entity_type=entity_type,
+            summary=summary,
+            verified_facts=verified_facts,
+            ai_insights=ai_insights,
+        )
+        
+        if not embedding_text.strip():
+            log_progress(f"Skipping entity embedding for {entity_key}: no text content", log_callback)
+            return False
+        
+        # Generate embedding
+        embedding = embedding_service.generate_embedding(embedding_text)
+        
+        # Store in vector DB
+        vector_db_service.add_entity(
+            entity_key=entity_key,
+            text=embedding_text,
+            embedding=embedding,
+            metadata={
+                "name": name,
+                "entity_type": entity_type,
+            }
+        )
+        
+        log_progress(f"Entity embedding stored: {entity_key}", log_callback)
+        
+        return True
+    except Exception as e:
+        log_progress(f"Warning: Entity embedding failed for {entity_key}: {e}", log_callback)
+        return False
 
 
 def merge_verified_facts(existing_facts: List[Dict], new_facts: List[Dict], doc_name: str) -> List[Dict]:
@@ -126,6 +254,7 @@ def process_chunk(
     existing_keys: List[str],
     page_start: Optional[int] = None,
     page_end: Optional[int] = None,
+    log_callback: Optional[Callable[[str], None]] = None,
 ) -> Dict:
     """
     Process a single text chunk: extract and resolve entities.
@@ -150,7 +279,7 @@ def process_chunk(
         else:
             page_info = f" (page {page_start})"
     
-    print(f"  Processing chunk {chunk_index + 1}/{total_chunks}{page_info}...")
+    log_progress(f"Processing chunk {chunk_index + 1}/{total_chunks}{page_info}...", log_callback, prefix="  ")
 
     # Extract entities and relationships from chunk with page context
     try:
@@ -162,13 +291,13 @@ def process_chunk(
             page_end=page_end,
         )
     except Exception as e:
-        print(f"  Error extracting from chunk: {e}")
+        log_progress(f"Error extracting from chunk: {e}", log_callback, prefix="  ")
         return {"entities_processed": 0, "relationships_processed": 0}
 
     entities = extraction.get("entities", [])
     relationships = extraction.get("relationships", [])
 
-    print(f"  Extracted {len(entities)} entities, {len(relationships)} relationships")
+    log_progress(f"Extracted {len(entities)} entities, {len(relationships)} relationships", log_callback, prefix="  ")
 
     entities_processed = 0
     relationships_processed = 0
@@ -183,29 +312,29 @@ def process_chunk(
         verified_facts = ent.get("verified_facts", [])
         ai_insights = ent.get("ai_insights", [])
         
-        # Build legacy notes from verified facts for backwards compatibility
-        notes_parts = [f.get("text", "") for f in verified_facts if f.get("text")]
-        notes = "; ".join(notes_parts) if notes_parts else ent.get("notes", "")
 
         if not raw_key or not name:
-            print(f"  Skipping entity with missing key/name: {ent}")
+            log_progress(f"Skipping entity with missing key/name: {ent}", log_callback, prefix="  ")
             continue
 
         # Normalise the key
         key = normalise_key(raw_key)
 
         if not key:
-            print(f"  Skipping entity with empty normalised key: {raw_key}")
+            log_progress(f"Skipping entity with empty normalised key: {raw_key}", log_callback, prefix="  ")
             continue
 
-        print(f"  Resolving entity: {name} ({entity_type})")
+        log_progress(f"Resolving entity: {name} ({entity_type})", log_callback, prefix="  ")
 
         # Resolve: find existing or create new
+        facts_str = "\n".join(
+            fact.get("text", "") for fact in verified_facts if fact.get("text")
+        )
         resolved_key, is_existing = resolve_entity(
             candidate_key=key,
             candidate_name=name,
             candidate_type=entity_type,
-            candidate_notes=notes,
+            candidate_facts=facts_str,
             db=db,
         )
 
@@ -213,18 +342,15 @@ def process_chunk(
             # Update existing entity
             existing = db.find_entity_by_key(resolved_key)
             if existing:
-                # Merge notes (legacy)
-                merged = merge_entity_data(existing, notes, doc_name)
-                updated_notes = merged["notes"]
-                
                 # Merge verified facts and AI insights
-                existing_facts_json = existing.get("verified_facts")
-                existing_facts = json.loads(existing_facts_json) if existing_facts_json else []
-                merged_facts = merge_verified_facts(existing_facts, verified_facts, doc_name)
-                
-                existing_insights_json = existing.get("ai_insights")
-                existing_insights = json.loads(existing_insights_json) if existing_insights_json else []
-                merged_insights = merge_ai_insights(existing_insights, ai_insights, doc_name)
+                merged = merge_entity_data(
+                    existing_entity=existing,
+                    new_verified_facts=verified_facts,
+                    new_ai_insights=ai_insights,
+                    doc_name=doc_name,
+                )
+                merged_facts = merged["verified_facts"]
+                merged_insights = merged["ai_insights"]
 
                 # Generate updated summary from verified facts
                 neighbours = db.get_entity_neighbours(resolved_key, limit=5)
@@ -237,7 +363,7 @@ def process_chunk(
                     entity_key=resolved_key,
                     entity_name=existing.get("name", name),
                     entity_type=existing.get("type", entity_type),
-                    all_notes=updated_notes,
+                    all_notes="",  # No longer using notes, verified_facts contains the data
                     related_entities=neighbour_descriptions,
                     verified_facts=merged_facts,
                 )
@@ -246,7 +372,7 @@ def process_chunk(
                 extra_props = {}
                 location = ent.get("location")
                 if location and not existing.get("latitude"):
-                    print(f"    Geocoding location for existing entity: {location}")
+                    log_progress(f"Geocoding location for existing entity: {location}", log_callback, prefix="    ")
                     location_props = get_location_properties(location)
                     if location_props.get("latitude"):
                         extra_props.update(location_props)
@@ -258,16 +384,23 @@ def process_chunk(
                 # Update in database
                 db.update_entity(
                     key=resolved_key,
-                    notes=updated_notes,
                     summary=new_summary,
-                    extra_props=extra_props if extra_props else None,
+                    extra_props=extra_props,
                 )
 
-                print(f"    Updated existing entity: {resolved_key}")
+                log_progress(f"Updated existing entity: {resolved_key}", log_callback, prefix="    ")
+                
+                # Update entity embedding (summary/facts changed)
+                store_entity_embedding(
+                    entity_key=resolved_key,
+                    name=existing.get("name", name),
+                    entity_type=existing.get("type", entity_type),
+                    summary=new_summary,
+                    verified_facts=merged_facts,
+                    ai_insights=merged_insights,
+                )
         else:
             # Create new entity
-            initial_notes = f"[{doc_name}]\n{notes}"
-            
             # Enrich verified facts with source document
             enriched_facts = []
             for fact in verified_facts:
@@ -287,7 +420,7 @@ def process_chunk(
                 entity_key=key,
                 entity_name=name,
                 entity_type=entity_type,
-                all_notes=initial_notes,
+                all_notes="",  # No longer using notes, verified_facts contains the data
                 related_entities=None,
                 verified_facts=enriched_facts,
             )
@@ -301,7 +434,7 @@ def process_chunk(
             location = ent.get("location")
             extra_props = {}
             if location:
-                print(f"    Geocoding location: {location}")
+                log_progress(f"Geocoding location: {location}", log_callback, prefix="    ")
                 location_props = get_location_properties(location)
                 extra_props.update(location_props)
             
@@ -313,18 +446,28 @@ def process_chunk(
                 key=key,
                 entity_type=entity_type,
                 name=name,
-                notes=initial_notes,
+                notes="",  # Deprecated - using verified_facts instead
                 summary=initial_summary,
                 date=date,
                 time=ent_time,
                 amount=amount,
-                extra_props=extra_props if extra_props else None,
+                extra_props=extra_props,
             )
 
             # Add to existing keys for subsequent chunks
             existing_keys.append(key)
 
-            print(f"    Created new entity: {key}")
+            log_progress(f"Created new entity: {key}", log_callback, prefix="    ")
+            
+            # Store entity embedding
+            store_entity_embedding(
+                entity_key=key,
+                name=name,
+                entity_type=entity_type,
+                summary=initial_summary,
+                verified_facts=enriched_facts,
+                ai_insights=enriched_insights,
+            )
 
         # Link entity to document
         doc_key = normalise_key(doc_name)
@@ -340,7 +483,7 @@ def process_chunk(
         rel_notes = rel.get("notes", "")
 
         if not from_key or not to_key:
-            print(f"  Skipping relationship with missing keys: {rel}")
+            log_progress(f"Skipping relationship with missing keys: {rel}", log_callback, prefix="  ")
             continue
 
         # Validate that both entities exist
@@ -348,11 +491,11 @@ def process_chunk(
         to_exists = db.find_entity_by_key(to_key) is not None
 
         if not from_exists:
-            print(f"  Skipping relationship: source entity '{from_key}' not found")
+            log_progress(f"Skipping relationship: source entity '{from_key}' not found", log_callback, prefix="  ")
             continue
 
         if not to_exists:
-            print(f"  Skipping relationship: target entity '{to_key}' not found")
+            log_progress(f"Skipping relationship: target entity '{to_key}' not found", log_callback, prefix="  ")
             continue
 
         db.create_relationship(
@@ -363,7 +506,7 @@ def process_chunk(
             notes=rel_notes,
         )
 
-        print(f"    Created relationship: {from_key} -[{rel_type}]-> {to_key}")
+        log_progress(f"Created relationship: {from_key} -[{rel_type}]-> {to_key}", log_callback, prefix="    ")
         relationships_processed += 1
 
     return {
@@ -392,65 +535,13 @@ def ingest_document(
     Returns:
         Dict with ingestion statistics
     """
-    print(f"\n{'='*60}")
-    print(f"Ingesting document: {doc_name}")
-    print(f"{'='*60}")
+    log_progress(f"{'='*60}", log_callback)
+    log_progress(f"Ingesting document: {doc_name}", log_callback)
+    log_progress(f"{'='*60}", log_callback)
 
     if not text or not text.strip():
-        print("Document is empty, skipping.")
-        if log_callback:
-            log_callback("Document is empty, skipping.")
+        log_progress("Document is empty, skipping.", log_callback)
         return {"status": "skipped", "reason": "empty"}
-
-    # Progress tracking state (shared between main thread and timer thread)
-    progress_state = {
-        "chunks_processed": 0,
-        "total_chunks": 0,
-        "entities_processed": 0,
-        "relationships_processed": 0,
-        "start_time": None,
-        "initial_estimate_seconds": None,
-        "timer_active": False,
-    }
-    timer = None
-
-    def get_progress_update():
-        """Get a progress update from the LLM and log it."""
-        if not progress_state["timer_active"]:
-            return
-        
-        elapsed = int(time.time() - progress_state["start_time"])
-        try:
-            update = get_processing_progress_update(
-                doc_name=doc_name,
-                chunks_processed=progress_state["chunks_processed"],
-                total_chunks=progress_state["total_chunks"],
-                entities_processed=progress_state["entities_processed"],
-                relationships_processed=progress_state["relationships_processed"],
-                elapsed_seconds=elapsed,
-                initial_estimate_seconds=progress_state["initial_estimate_seconds"],
-            )
-            
-            message = f"Progress Update: {update.get('work_completed', '')} "
-            message += f"Remaining: {update.get('remaining_work', '')} "
-            message += f"Estimated time remaining: {update.get('estimated_remaining_text', '')}"
-            if update.get('observations'):
-                message += f" {update.get('observations', '')}"
-            
-            print(f"[Progress] {message}")
-            if log_callback:
-                log_callback(message)
-        except Exception as e:
-            # Don't let progress update failures break ingestion
-            print(f"[Progress] Failed to get progress update: {e}")
-            if log_callback:
-                log_callback(f"Progress update error: {e}")
-        
-        # Schedule next update if still active
-        if progress_state["timer_active"]:
-            nonlocal timer
-            timer = threading.Timer(10.0, get_progress_update)
-            timer.start()
 
     with Neo4jClient() as db:
         # Ensure document node exists
@@ -467,85 +558,41 @@ def ingest_document(
         # Get existing entity keys for context
         existing_keys = db.get_all_entity_keys()
         existing_count = len(existing_keys)
-        print(f"Found {existing_count} existing entities in graph")
+        log_progress(f"Found {existing_count} existing entities in graph", log_callback)
 
         # Chunk the document
         chunks = chunk_document(text, doc_name)
         total_chunks = len(chunks)
-        print(f"Document split into {total_chunks} chunks")
-        
-        progress_state["total_chunks"] = total_chunks
-        progress_state["start_time"] = time.time()
-
-        # Get initial processing estimate
-        try:
-            text_preview = text[:2000] if len(text) > 2000 else text
-            estimate = get_processing_estimate(
-                doc_name=doc_name,
-                text_preview=text_preview,
-                total_chunks=total_chunks,
-                existing_entity_count=existing_count,
-            )
-            progress_state["initial_estimate_seconds"] = estimate["estimated_duration_seconds"]
-            
-            estimate_message = f"Processing estimate: {estimate['estimated_duration_text']}"
-            if estimate.get('reasoning'):
-                estimate_message += f" ({estimate['reasoning']})"
-            
-            print(f"[Estimate] {estimate_message}")
-            if log_callback:
-                log_callback(estimate_message)
-        except Exception as e:
-            # Don't let estimate failures break ingestion
-            print(f"[Estimate] Failed to get initial estimate: {e}")
-            if log_callback:
-                log_callback(f"Could not get initial estimate: {e}")
-
-        # Start progress tracking timer (updates every 10 seconds)
-        progress_state["timer_active"] = True
-        timer = threading.Timer(10.0, get_progress_update)
-        timer.start()
+        log_progress(f"Document split into {total_chunks} chunks", log_callback)
 
         # Process each chunk
         total_entities = 0
         total_relationships = 0
 
-        try:
-            for chunk_info in chunks:
-                result = process_chunk(
-                    chunk_text=chunk_info["text"],
-                    doc_name=doc_name,
-                    chunk_index=chunk_info["chunk_index"],
-                    total_chunks=chunk_info["total_chunks"],
-                    db=db,
-                    existing_keys=existing_keys,
-                    page_start=chunk_info.get("page_start"),
-                    page_end=chunk_info.get("page_end"),
-                )
+        for chunk_info in chunks:
+            result = process_chunk(
+                chunk_text=chunk_info["text"],
+                doc_name=doc_name,
+                chunk_index=chunk_info["chunk_index"],
+                total_chunks=chunk_info["total_chunks"],
+                db=db,
+                existing_keys=existing_keys,
+                page_start=chunk_info.get("page_start"),
+                page_end=chunk_info.get("page_end"),
+                log_callback=log_callback,
+            )
 
-                chunk_entities = result["entities_processed"]
-                chunk_relationships = result["relationships_processed"]
-                
-                total_entities += chunk_entities
-                total_relationships += chunk_relationships
-                
-                # Update progress state
-                progress_state["chunks_processed"] += 1
-                progress_state["entities_processed"] = total_entities
-                progress_state["relationships_processed"] = total_relationships
-        finally:
-            # Stop the timer
-            progress_state["timer_active"] = False
-            if timer:
-                timer.cancel()
+            chunk_entities = result["entities_processed"]
+            chunk_relationships = result["relationships_processed"]
+            
+            total_entities += chunk_entities
+            total_relationships += chunk_relationships
 
         # Generate and store document embedding (after all chunks processed)
         embedding_stored = False
         if VECTOR_DB_AVAILABLE and text and text.strip():
             try:
-                if log_callback:
-                    log_callback("Generating document embedding...")
-                print("[Embedding] Generating embedding for document...")
+                log_progress("Generating document embedding...", log_callback)
                 
                 # Generate embedding for full document text
                 embedding = embedding_service.generate_embedding(text)
@@ -567,22 +614,18 @@ def ingest_document(
                 db.update_document(doc_key, {"vector_db_id": doc_id})
                 
                 embedding_stored = True
-                print("[Embedding] Document embedding stored successfully")
-                if log_callback:
-                    log_callback("Document embedding stored successfully")
+                log_progress("Document embedding stored successfully", log_callback)
             except Exception as e:
                 # Don't fail ingestion if embedding fails
-                print(f"[Embedding] Warning: Failed to generate/store embedding: {e}")
-                if log_callback:
-                    log_callback(f"Warning: Embedding generation failed: {e}")
+                log_progress(f"Warning: Embedding generation failed: {e}", log_callback)
 
-    print(f"\n{'='*60}")
-    print(f"Ingestion complete: {doc_name}")
-    print(f"  Entities processed: {total_entities}")
-    print(f"  Relationships processed: {total_relationships}")
+    log_progress(f"{'='*60}", log_callback)
+    log_progress(f"Ingestion complete: {doc_name}", log_callback)
+    log_progress(f"  Entities processed: {total_entities}", log_callback)
+    log_progress(f"  Relationships processed: {total_relationships}", log_callback)
     if embedding_stored:
-        print(f"  Embedding: stored")
-    print(f"{'='*60}\n")
+        log_progress(f"  Embedding: stored", log_callback)
+    log_progress(f"{'='*60}", log_callback)
 
     return {
         "status": "complete",

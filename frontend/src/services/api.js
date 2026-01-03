@@ -1047,6 +1047,22 @@ export const databaseAPI = {
    */
   getRetrievalHistory: (docId) =>
     fetchAPI(`/database/documents/${encodeURIComponent(docId)}/retrieval-history`),
+
+  /**
+   * List all entities in the vector database
+   */
+  listEntities: () => fetchAPI('/database/entities'),
+
+  /**
+   * List all entities with their embedding status
+   */
+  listEntitiesStatus: () => fetchAPI('/database/entities/status'),
+
+  /**
+   * Get a specific entity by key
+   * @param {string} entityKey - Entity key
+   */
+  getEntity: (entityKey) => fetchAPI(`/database/entities/${encodeURIComponent(entityKey)}`),
 };
 
 /**

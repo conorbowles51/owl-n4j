@@ -1,0 +1,16 @@
+
+// Chat assistant
+1. Vectorise all entities and documents on ingesion
+2. Vec search question against all documents
+3. From the result set, ask the AI to provide summaries from the documents that are relevant to the question asked
+4. Vector compare the document summaries to the original vectorised entities
+5. Place entities on graph and write a multi-hop expansion cypher query
+
+// Ingestion
+1. Create document node manually
+2. Get all keys and chunk document
+3. For each chunk process_chunk
+
+
+AI can decide to use any relationship or entity type
+Specific or niche types will be provided to the LLM with definitions

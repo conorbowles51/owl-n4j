@@ -54,7 +54,7 @@ def resolve_entity(
     candidate_key: str,
     candidate_name: str,
     candidate_type: str,
-    candidate_notes: str,
+    candidate_facts: str,
     db: Neo4jClient,
 ) -> Tuple[str, bool]:
     """
@@ -108,7 +108,7 @@ def resolve_entity(
                 candidate_key=candidate_key,
                 candidate_name=candidate_name,
                 candidate_type=candidate_type,
-                candidate_notes=candidate_notes,
+                candidate_facts=candidate_facts,
                 existing_entity=match,
             )
 
@@ -128,49 +128,71 @@ def resolve_entity(
 
 def merge_entity_data(
     existing_entity: Dict,
-    new_notes: str,
+    new_verified_facts: list,
+    new_ai_insights: list,
     doc_name: str,
 ) -> Dict:
     """
-    Merge new document observations into existing entity data.
+    Merge new verified facts and AI insights into existing entity data.
 
     Args:
         existing_entity: Current entity data from database
-        new_notes: New observations from current document
-        doc_name: Name of the current document
+        new_verified_facts: List of new verified fact dicts from extraction
+        new_ai_insights: List of new AI insight dicts from extraction
+        doc_name: Name of the current document (for source attribution)
 
     Returns:
-        Dict with updated notes (ready for database update)
+        Dict with 'verified_facts' and 'ai_insights' lists (ready for database update)
     """
-    current_notes = existing_entity.get("notes", "") or ""
-
-    # Check if this document already has notes
-    doc_marker = f"[{doc_name}]"
-
-    if doc_marker in current_notes:
-        # Append to existing document section
-        # Find the section and append
-        parts = current_notes.split(doc_marker)
-        if len(parts) >= 2:
-            # Find end of this document's section (next doc marker or end)
-            rest = parts[1]
-            next_doc_start = rest.find("\n\n[")
-            if next_doc_start == -1:
-                # This is the last section, just append
-                updated_notes = current_notes + f"\n{new_notes}"
-            else:
-                # Insert before next document section
-                before_next = rest[:next_doc_start]
-                after_next = rest[next_doc_start:]
-                updated_notes = (
-                    parts[0] + doc_marker + before_next +
-                    f"\n{new_notes}" + after_next
-                )
-        else:
-            updated_notes = current_notes + f"\n{new_notes}"
-    else:
-        # New document section
-        new_section = f"\n\n[{doc_name}]\n{new_notes}"
-        updated_notes = current_notes.strip() + new_section if current_notes.strip() else f"[{doc_name}]\n{new_notes}"
-
-    return {"notes": updated_notes}
+    import json
+    
+    # Parse existing verified_facts from JSON string
+    existing_facts_json = existing_entity.get("verified_facts")
+    try:
+        existing_facts = json.loads(existing_facts_json) if existing_facts_json else []
+    except (json.JSONDecodeError, TypeError):
+        existing_facts = []
+    
+    # Parse existing ai_insights from JSON string
+    existing_insights_json = existing_entity.get("ai_insights")
+    try:
+        existing_insights = json.loads(existing_insights_json) if existing_insights_json else []
+    except (json.JSONDecodeError, TypeError):
+        existing_insights = []
+    
+    # Enrich new facts with source document
+    enriched_new_facts = []
+    for fact in (new_verified_facts or []):
+        enriched_fact = dict(fact)
+        enriched_fact["source_doc"] = doc_name
+        enriched_new_facts.append(enriched_fact)
+    
+    # Enrich new insights with source document
+    enriched_new_insights = []
+    for insight in (new_ai_insights or []):
+        enriched_insight = dict(insight)
+        enriched_insight["source_doc"] = doc_name
+        enriched_new_insights.append(enriched_insight)
+    
+    # Merge facts - dedupe by text
+    existing_fact_texts = {f.get("text", "").lower().strip() for f in existing_facts}
+    merged_facts = list(existing_facts)
+    for fact in enriched_new_facts:
+        fact_text = fact.get("text", "").lower().strip()
+        if fact_text and fact_text not in existing_fact_texts:
+            merged_facts.append(fact)
+            existing_fact_texts.add(fact_text)
+    
+    # Merge insights - dedupe by text
+    existing_insight_texts = {i.get("text", "").lower().strip() for i in existing_insights}
+    merged_insights = list(existing_insights)
+    for insight in enriched_new_insights:
+        insight_text = insight.get("text", "").lower().strip()
+        if insight_text and insight_text not in existing_insight_texts:
+            merged_insights.append(insight)
+            existing_insight_texts.add(insight_text)
+    
+    return {
+        "verified_facts": merged_facts,
+        "ai_insights": merged_insights,
+    }

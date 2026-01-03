@@ -19,6 +19,8 @@ from models.llm_models import LLMProvider, get_default_model, get_model_by_id
 
 from openai import OpenAI
 
+from utils.prompt_trace import log_section
+
 client = None
 if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -111,6 +113,21 @@ class LLMService:
             if json_mode:
                 payload["format"] = "json"
 
+            log_section(
+                source_file=__file__,
+                source_func="_call_ollama",
+                title="HTTP request: Ollama /api/chat payload",
+                content={
+                    "url": url,
+                    "model_id": self.model_id,
+                    "provider": self.provider,
+                    "json_mode": json_mode,
+                    "temperature": temperature,
+                    "payload": payload,
+                },
+                as_json=True,
+            )
+
             # Use tuple timeout: (connect_timeout, read_timeout)
             # Connect timeout: 10 seconds, Read timeout: as specified (for large models)
             resp = requests.post(url, json=payload, timeout=(10, timeout))
@@ -150,6 +167,20 @@ class LLMService:
             # Force JSON response if requested
             if json_mode:
                 kwargs["response_format"] = {"type": "json_object"}
+
+            log_section(
+                source_file=__file__,
+                source_func="_call_openai",
+                title="HTTP request: OpenAI chat.completions payload",
+                content={
+                    "model_id": self.model_id,
+                    "provider": self.provider,
+                    "json_mode": json_mode,
+                    "temperature": temperature,
+                    "payload": kwargs,
+                },
+                as_json=True,
+            )
 
             print(f"[LLM] Calling OpenAI model {self.model_id} with prompt length {len(prompt)}")
             response = client.chat.completions.create(**kwargs)

@@ -13,20 +13,24 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Users,
 } from 'lucide-react';
 import { databaseAPI, backfillAPI } from '../services/api';
 
 export default function DatabaseModal({ isOpen, onClose, currentUser }) {
   const [documents, setDocuments] = useState([]);
+  const [entities, setEntities] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedDocs, setExpandedDocs] = useState(new Set());
+  const [expandedEntities, setExpandedEntities] = useState(new Set());
   const [showBackfill, setShowBackfill] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillResult, setBackfillResult] = useState(null);
   const [retrievalHistory, setRetrievalHistory] = useState({}); // doc_id -> history array
   const [selectedDocs, setSelectedDocs] = useState(new Set()); // Selected document IDs for backfill
   const [viewMode, setViewMode] = useState('status'); // 'status' or 'vector' - status shows all docs, vector shows only backfilled
+  const [dataType, setDataType] = useState('documents'); // 'documents' or 'entities'
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -47,6 +51,33 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
     }
   }, [viewMode]);
 
+  const loadEntities = useCallback(async () => {
+    setLoading(true);
+    try {
+      if (viewMode === 'status') {
+        // Load entity status (all entities with embedding status)
+        const result = await databaseAPI.listEntitiesStatus();
+        setEntities(result.entities || []);
+      } else {
+        // Load only entities in vector DB
+        const result = await databaseAPI.listEntities();
+        setEntities(result.entities || []);
+      }
+    } catch (err) {
+      console.error('Failed to load entities:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [viewMode]);
+
+  const loadData = useCallback(async () => {
+    if (dataType === 'documents') {
+      await loadDocuments();
+    } else {
+      await loadEntities();
+    }
+  }, [dataType, loadDocuments, loadEntities]);
+
   const loadRetrievalHistory = useCallback(async (docId) => {
     try {
       const result = await databaseAPI.getRetrievalHistory(docId);
@@ -59,9 +90,9 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
 
   useEffect(() => {
     if (isOpen) {
-      loadDocuments();
+      loadData();
     }
-  }, [isOpen, loadDocuments, viewMode]);
+  }, [isOpen, loadData, viewMode, dataType]);
 
   const toggleExpand = (docId) => {
     setExpandedDocs(prev => {
@@ -91,6 +122,18 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
     });
   };
 
+  const toggleExpandEntity = (entityKey) => {
+    setExpandedEntities(prev => {
+      const next = new Set(prev);
+      if (next.has(entityKey)) {
+        next.delete(entityKey);
+      } else {
+        next.add(entityKey);
+      }
+      return next;
+    });
+  };
+
   const selectAllNotBackfilled = () => {
     const notBackfilled = documents
       .filter(doc => !doc.has_embedding)
@@ -113,6 +156,20 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
     );
   });
 
+  const filteredEntities = entities.filter(ent => {
+    if (!searchQuery) return true;
+    const query = searchQuery.toLowerCase();
+    const entName = viewMode === 'status' ? ent.name : (ent.metadata?.name || '');
+    const entKey = viewMode === 'status' ? ent.key : ent.id;
+    const entType = viewMode === 'status' ? ent.entity_type : (ent.metadata?.entity_type || '');
+    return (
+      entName.toLowerCase().includes(query) ||
+      entKey?.toLowerCase().includes(query) ||
+      entType?.toLowerCase().includes(query) ||
+      (viewMode === 'vector' && ent.text?.toLowerCase().includes(query))
+    );
+  });
+
   if (!isOpen) return null;
 
   return (
@@ -123,18 +180,55 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
           <div className="flex items-center gap-3">
             <Database className="w-5 h-5 text-blue-600" />
             <h2 className="text-xl font-semibold text-light-900">Vector Database</h2>
-            {viewMode === 'status' && documents.length > 0 && (
+            {dataType === 'documents' && viewMode === 'status' && documents.length > 0 && (
               <span className="text-sm text-light-600">
                 ({documents.filter(d => d.has_embedding).length} backfilled, {documents.filter(d => !d.has_embedding).length} not backfilled)
               </span>
             )}
-            {viewMode === 'vector' && (
+            {dataType === 'documents' && viewMode === 'vector' && (
               <span className="text-sm text-light-600">
                 ({documents.length} documents)
               </span>
             )}
+            {dataType === 'entities' && viewMode === 'status' && entities.length > 0 && (
+              <span className="text-sm text-light-600">
+                ({entities.filter(e => e.has_embedding).length} embedded, {entities.filter(e => !e.has_embedding).length} not embedded)
+              </span>
+            )}
+            {dataType === 'entities' && viewMode === 'vector' && (
+              <span className="text-sm text-light-600">
+                ({entities.length} entities)
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            {/* Data Type Toggle */}
+            <div className="flex items-center gap-1 border border-light-300 rounded-lg p-1">
+              <button
+                onClick={() => setDataType('documents')}
+                className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+                  dataType === 'documents'
+                    ? 'bg-blue-500 text-white'
+                    : 'text-light-600 hover:bg-light-100'
+                }`}
+                title="Documents"
+              >
+                <FileText className="w-3 h-3" />
+                Documents
+              </button>
+              <button
+                onClick={() => setDataType('entities')}
+                className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+                  dataType === 'entities'
+                    ? 'bg-blue-500 text-white'
+                    : 'text-light-600 hover:bg-light-100'
+                }`}
+                title="Entities"
+              >
+                <Users className="w-3 h-3" />
+                Entities
+              </button>
+            </div>
             {/* View Mode Toggle */}
             <div className="flex items-center gap-1 border border-light-300 rounded-lg p-1">
               <button
@@ -144,7 +238,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                     ? 'bg-blue-500 text-white'
                     : 'text-light-600 hover:bg-light-100'
                 }`}
-                title="Document Status View"
+                title="Status View"
               >
                 Status
               </button>
@@ -160,15 +254,17 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                 Vector DB
               </button>
             </div>
+            {dataType === 'documents' && (
+              <button
+                onClick={() => setShowBackfill(!showBackfill)}
+                className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
+              >
+                <Upload className="w-4 h-4" />
+                Backfill Documents
+              </button>
+            )}
             <button
-              onClick={() => setShowBackfill(!showBackfill)}
-              className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
-            >
-              <Upload className="w-4 h-4" />
-              Backfill Documents
-            </button>
-            <button
-              onClick={loadDocuments}
+              onClick={loadData}
               disabled={loading}
               className="p-2 hover:bg-light-100 rounded transition-colors disabled:opacity-50"
               title="Refresh"
@@ -184,8 +280,8 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
           </div>
         </div>
 
-        {/* Backfill Section */}
-        {showBackfill && (
+        {/* Backfill Section (Documents only) */}
+        {showBackfill && dataType === 'documents' && (
           <div className="p-4 border-b border-light-200 bg-light-50">
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -242,7 +338,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                       });
                       // Clear selection and reload documents after backfill
                       setSelectedDocs(new Set());
-                      await loadDocuments();
+                      await loadData();
                     } catch (err) {
                       setBackfillResult({
                         status: 'error',
@@ -280,7 +376,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search documents..."
+              placeholder={dataType === 'documents' ? 'Search documents...' : 'Search entities...'}
               className="w-full pl-10 pr-3 py-2 text-sm border border-light-300 rounded focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -288,15 +384,19 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
 
         {/* Documents List */}
         <div className="flex-1 overflow-y-auto p-4">
-          {loading && documents.length === 0 ? (
+          {loading && (dataType === 'documents' ? documents.length === 0 : entities.length === 0) ? (
             <div className="flex items-center justify-center h-full">
               <RefreshCw className="w-6 h-6 animate-spin text-blue-500" />
             </div>
-          ) : filteredDocuments.length === 0 ? (
+          ) : dataType === 'documents' && filteredDocuments.length === 0 ? (
             <div className="flex items-center justify-center h-full text-light-600">
               {searchQuery ? 'No documents match your search' : 'No documents found'}
             </div>
-          ) : (
+          ) : dataType === 'entities' && filteredEntities.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-light-600">
+              {searchQuery ? 'No entities match your search' : 'No entities found'}
+            </div>
+          ) : dataType === 'documents' ? (
             <div className="space-y-3">
               {filteredDocuments.map((doc) => {
                 const isExpanded = expandedDocs.has(doc.id);
@@ -443,6 +543,112 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                                 ) : (
                                   <p className="text-xs text-light-500">No retrieval history</p>
                                 )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Entities List */
+            <div className="space-y-3">
+              {filteredEntities.map((ent) => {
+                const entityKey = viewMode === 'status' ? ent.key : ent.id;
+                const isExpanded = expandedEntities.has(entityKey);
+                const entName = viewMode === 'status' ? ent.name : (ent.metadata?.name || entityKey);
+                const entType = viewMode === 'status' ? ent.entity_type : (ent.metadata?.entity_type || 'Unknown');
+                const hasEmbedding = viewMode === 'status' ? ent.has_embedding : true;
+                
+                return (
+                  <div
+                    key={entityKey}
+                    className="border rounded-lg p-4 hover:bg-light-50 transition-colors border-light-200"
+                  >
+                    <div className="flex items-start gap-3">
+                      <Users className="w-5 h-5 text-purple-600 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <span className="font-medium text-light-900">
+                            {entName}
+                          </span>
+                          <span className="text-xs text-purple-700 bg-purple-100 px-2 py-0.5 rounded font-medium">
+                            {entType}
+                          </span>
+                          {viewMode === 'status' && (
+                            <>
+                              {hasEmbedding ? (
+                                <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded font-medium">
+                                  ✓ Embedded
+                                </span>
+                              ) : (
+                                <span className="text-xs text-orange-700 bg-orange-100 px-2 py-0.5 rounded font-medium">
+                                  ⚠ Not Embedded
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                        {viewMode === 'status' && ent.summary && (
+                          <div className="text-sm text-light-600 mb-2 line-clamp-2">
+                            {ent.summary}
+                          </div>
+                        )}
+                        {viewMode === 'vector' && ent.text && (
+                          <div className="text-sm text-light-600 mb-2 line-clamp-2">
+                            {ent.text.substring(0, 200)}...
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => toggleExpandEntity(entityKey)}
+                            className="text-xs text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                          >
+                            {isExpanded ? (
+                              <>
+                                <ChevronUp className="w-3 h-3" />
+                                Hide Details
+                              </>
+                            ) : (
+                              <>
+                                <ChevronDown className="w-3 h-3" />
+                                Show Details
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        {isExpanded && (
+                          <div className="mt-3 space-y-3 pt-3 border-t border-light-200">
+                            {/* Entity Info */}
+                            <div>
+                              <h4 className="text-xs font-semibold text-light-700 mb-1">Entity Info</h4>
+                              <div className="p-3 bg-light-100 rounded text-xs space-y-1">
+                                <div><strong>Key:</strong> {entityKey}</div>
+                                <div><strong>Type:</strong> {entType}</div>
+                                {viewMode === 'status' && ent.summary && (
+                                  <div><strong>Summary:</strong> {ent.summary}</div>
+                                )}
+                              </div>
+                            </div>
+                            {/* Embedding Text (for vector view) */}
+                            {viewMode === 'vector' && ent.text && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-light-700 mb-1">Embedding Text</h4>
+                                <pre className="p-3 bg-light-100 rounded text-xs overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap">
+                                  {ent.text}
+                                </pre>
+                              </div>
+                            )}
+                            {/* Metadata */}
+                            {viewMode === 'vector' && ent.metadata && Object.keys(ent.metadata).length > 0 && (
+                              <div>
+                                <h4 className="text-xs font-semibold text-light-700 mb-1">Metadata</h4>
+                                <pre className="p-3 bg-light-100 rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(ent.metadata, null, 2)}
+                                </pre>
                               </div>
                             )}
                           </div>
