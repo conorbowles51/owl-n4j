@@ -36,13 +36,18 @@ def extract_text_from_pdf(path: Path) -> str:
     return "\n\n".join(chunks)
 
 
-def ingest_pdf_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> Dict:
+def ingest_pdf_file(
+    path: Path,
+    log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
+) -> Dict:
     """
     Ingest a single .pdf file into the knowledge graph.
 
     Args:
         path: Path to the .pdf file
         log_callback: Optional callback function(message: str) to log progress messages
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
@@ -73,4 +78,5 @@ def ingest_pdf_file(path: Path, log_callback: Optional[Callable[[str], None]] = 
         doc_name=doc_name,
         doc_metadata=doc_metadata,
         log_callback=log_callback,
+        profile_name=profile_name,
     )

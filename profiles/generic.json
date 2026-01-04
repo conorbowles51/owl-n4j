@@ -1,21 +1,17 @@
 {
   "name": "generic",
   "description": "General purpose knowledge extraction",
+  "case_type": "General Analysis",
   
   "ingestion": {
-    "system_context": "You are an assistant helping to extract structured information from documents.",
-    "entity_types": [
-      "Person", "Organisation", "Location", "Event", "Date",
-      "Document", "Concept", "Product", "Other"
-    ],
-    "relationship_types": [
-      "RELATED_TO", "ASSOCIATED_WITH", "PART_OF", "LOCATED_IN",
-      "WORKS_FOR", "CREATED_BY", "OCCURRED_ON"
-    ]
+    "system_context": "You are an expert analyst extracting entities and relationships from documents. Focus on identifying key people, organizations, locations, events, dates, and their connections. Capture relevant details that establish relationships between entities. Be thorough but precise in your extractions.",
+    "special_entity_types": [],
+    "temperature": 1.0
   },
   
   "chat": {
     "system_context": "You are an AI assistant helping to analyze and understand documents.",
-    "analysis_guidance": "Provide clear explanations and highlight important connections."
+    "analysis_guidance": "Provide clear explanations and highlight important connections.",
+    "temperature": 1.0
   }
 }

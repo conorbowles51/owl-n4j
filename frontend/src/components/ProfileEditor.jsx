@@ -5,16 +5,33 @@ import {
   Plus,
   Trash2,
   Settings,
-  ChevronDown,
-  ChevronUp,
   Info,
+  FileText,
+  MessageSquare,
 } from 'lucide-react';
-import { profilesAPI, llmConfigAPI } from '../services/api';
+import { profilesAPI } from '../services/api';
 
 /**
  * ProfileEditor Component
  * 
  * Allows users to create or edit LLM profiles for evidence processing.
+ * 
+ * Profile Structure:
+ * {
+ *   name: "profile_name",
+ *   description: "Profile description",
+ *   case_type: "Type of case",
+ *   ingestion: {
+ *     system_context: "System prompt for entity extraction",
+ *     special_entity_types: [{ name: "EntityType", description: "Description" }],
+ *     temperature: 1.0
+ *   },
+ *   chat: {
+ *     system_context: "System prompt for chat",
+ *     analysis_guidance: "Guidance for analysis",
+ *     temperature: 1.0
+ *   }
+ * }
  */
 export default function ProfileEditor({ isOpen, onClose, profileName = null, onProfileSaved = null }) {
   const [loading, setLoading] = useState(false);
@@ -26,53 +43,22 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
   const [cloneFromProfile, setCloneFromProfile] = useState('');
   const [loadingProfiles, setLoadingProfiles] = useState(false);
   
-  // Form fields
+  // Basic Information
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [caseType, setCaseType] = useState('');
-  const [agentDescription, setAgentDescription] = useState('');
-  const [instructions, setInstructions] = useState('');
-  const [characteristics, setCharacteristics] = useState('');
+  
+  // Ingestion Configuration
+  const [ingestionSystemContext, setIngestionSystemContext] = useState('');
+  const [specialEntityTypes, setSpecialEntityTypes] = useState([]);
+  const [ingestionTemperature, setIngestionTemperature] = useState(1.0);
+  
+  // Chat Configuration
   const [chatSystemContext, setChatSystemContext] = useState('');
   const [chatAnalysisGuidance, setChatAnalysisGuidance] = useState('');
-  const [temperature, setTemperature] = useState(1.0);
-  
-  // LLM Configuration
-  const [llmProvider, setLlmProvider] = useState('ollama');
-  const [llmModelId, setLlmModelId] = useState('qwen2.5:32b-instruct');
-  const [availableModels, setAvailableModels] = useState([]);
-  
-  // Entities list
-  const [entities, setEntities] = useState([]);
-  
-  // Relationship examples
-  const [relationshipExamples, setRelationshipExamples] = useState(['']);
-  
-  // Generate a random hex color
-  const generateRandomColor = () => {
-    const colors = [
-      '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
-      '#6366F1', '#EC4899', '#14B8A6', '#6B7280', '#F97316',
-      '#06B6D4', '#84CC16', '#A855F7', '#F43F5E', '#0EA5E9',
-      '#22C55E', '#EAB308', '#DC2626', '#9333EA', '#EC4899',
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  };
+  const [chatTemperature, setChatTemperature] = useState(1.0);
 
-  // Default entities from generic profile with random colors
-  const getDefaultEntities = () => [
-    { name: 'Person', color: generateRandomColor(), description: 'Individual people mentioned in documents' },
-    { name: 'Organisation', color: generateRandomColor(), description: 'Companies, institutions, or groups' },
-    { name: 'Location', color: generateRandomColor(), description: 'Geographic locations, addresses, places' },
-    { name: 'Event', color: generateRandomColor(), description: 'Occurrences, incidents, happenings' },
-    { name: 'Date', color: generateRandomColor(), description: 'Specific dates or time periods' },
-    { name: 'Document', color: generateRandomColor(), description: 'Documents, files, records' },
-    { name: 'Concept', color: generateRandomColor(), description: 'Abstract ideas, topics, themes' },
-    { name: 'Product', color: generateRandomColor(), description: 'Products, services, items' },
-    { name: 'Other', color: generateRandomColor(), description: 'Other entities not fitting the above categories' },
-  ];
-
-  // Define functions before using them in useEffect
+  // Load available profiles for cloning
   const loadAvailableProfiles = async () => {
     setLoadingProfiles(true);
     try {
@@ -85,20 +71,6 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     }
   };
 
-  const loadAvailableModels = useCallback(async () => {
-    try {
-      console.log('[ProfileEditor] Loading available models...');
-      const modelsData = await llmConfigAPI.getModels();
-      console.log('[ProfileEditor] Models data received:', modelsData);
-      const models = modelsData.models || modelsData || [];
-      console.log('[ProfileEditor] Setting models:', models.length, 'models');
-      setAvailableModels(models);
-    } catch (err) {
-      console.error('[ProfileEditor] Failed to load models:', err);
-      setAvailableModels([]);
-    }
-  }, []);
-
   // Load available profiles for cloning (only when creating new profile)
   useEffect(() => {
     if (isOpen && !profileName) {
@@ -106,49 +78,41 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     }
   }, [isOpen, profileName]);
 
-  // Load models and profile when modal opens
+  // Load profile when modal opens
   useEffect(() => {
     if (isOpen) {
-      loadAvailableModels();
       if (profileName) {
         loadProfile();
-        setCloneFromProfile(''); // Clear clone selection when editing
+        setCloneFromProfile('');
       } else {
-        // New profile - initialize with defaults (with random colors)
         resetToDefaults();
       }
-    } else if (!isOpen) {
-      // Reset when modal closes
+    } else {
       resetToDefaults();
     }
-  }, [isOpen, profileName, loadAvailableModels]);
+  }, [isOpen, profileName]);
 
   // Handle cloning when a profile is selected
   useEffect(() => {
-    if (!isOpen || profileName) return; // Only for new profiles when modal is open
+    if (!isOpen || profileName) return;
     
     if (cloneFromProfile) {
       cloneProfile(cloneFromProfile);
     }
-    // Note: We don't reset when cloneFromProfile is empty because that would
-    // interfere with the initial reset when the modal opens
   }, [cloneFromProfile, isOpen, profileName]);
 
   const resetToDefaults = () => {
     setName('');
     setDescription('');
     setCaseType('');
-    setAgentDescription('');
-    setInstructions('');
-    setCharacteristics('');
+    setIngestionSystemContext('');
+    setSpecialEntityTypes([]);
+    setIngestionTemperature(1.0);
     setChatSystemContext('');
     setChatAnalysisGuidance('');
-    setTemperature(1.0);
-    setLlmProvider('ollama');
-    setLlmModelId('qwen2.5:32b-instruct');
-    setEntities(getDefaultEntities().map(e => ({ ...e })));
-    setRelationshipExamples(['Person works for Organisation', 'Event occurred at Location']);
+    setChatTemperature(1.0);
     setCloneFromProfile('');
+    setError(null);
   };
 
   const cloneProfile = async (profileNameToClone) => {
@@ -162,30 +126,17 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       // Load all fields except name (user should set their own name)
       setDescription(profile.description || '');
       setCaseType(profile.case_type || '');
-      setAgentDescription(profile.agent_description || '');
-      setInstructions(profile.instructions || '');
-      setCharacteristics(profile.characteristics || '');
       
       const ingestion = profile.ingestion || {};
       const chat = profile.chat || {};
       
+      setIngestionSystemContext(ingestion.system_context || '');
+      setSpecialEntityTypes(ingestion.special_entity_types || []);
+      setIngestionTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
+      
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
-      setTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
-      
-      // Load entities
-      const entityTypes = ingestion.entity_types || [];
-      const entityDefs = ingestion.entity_definitions || {};
-      const loadedEntities = entityTypes.map(type => ({
-        name: type,
-        color: entityDefs[type]?.color || generateRandomColor(),
-        description: entityDefs[type]?.description || '',
-      }));
-      setEntities(loadedEntities.length > 0 ? loadedEntities : getDefaultEntities().map(e => ({ ...e })));
-      
-      // Load relationship examples
-      const examples = ingestion.relationship_examples || [];
-      setRelationshipExamples(examples.length > 0 ? examples : ['Person works for Organisation', 'Event occurred at Location']);
+      setChatTemperature(chat.temperature !== undefined ? chat.temperature : 1.0);
     } catch (err) {
       console.error('Failed to clone profile:', err);
       setError(err.message || 'Failed to clone profile');
@@ -205,35 +156,17 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       setName(profile.name || '');
       setDescription(profile.description || '');
       setCaseType(profile.case_type || '');
-      setAgentDescription(profile.agent_description || '');
-      setInstructions(profile.instructions || '');
-      setCharacteristics(profile.characteristics || '');
       
       const ingestion = profile.ingestion || {};
       const chat = profile.chat || {};
       
+      setIngestionSystemContext(ingestion.system_context || '');
+      setSpecialEntityTypes(ingestion.special_entity_types || []);
+      setIngestionTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
+      
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
-      setTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
-      
-      // Load LLM configuration
-      const llmConfig = profile.llm_config || {};
-      setLlmProvider(llmConfig.provider || 'ollama');
-      setLlmModelId(llmConfig.model_id || 'qwen2.5:32b-instruct');
-      
-      // Load entities
-      const entityTypes = ingestion.entity_types || [];
-      const entityDefs = ingestion.entity_definitions || {};
-      const loadedEntities = entityTypes.map(type => ({
-        name: type,
-        color: entityDefs[type]?.color || generateRandomColor(),
-        description: entityDefs[type]?.description || '',
-      }));
-      setEntities(loadedEntities.length > 0 ? loadedEntities : getDefaultEntities().map(e => ({ ...e })));
-      
-      // Load relationship examples
-      const examples = ingestion.relationship_examples || [];
-      setRelationshipExamples(examples.length > 0 ? examples : ['']);
+      setChatTemperature(chat.temperature !== undefined ? chat.temperature : 1.0);
     } catch (err) {
       console.error('Failed to load profile:', err);
       setError(err.message || 'Failed to load profile');
@@ -242,32 +175,19 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     }
   };
 
-  const handleAddEntity = () => {
-    setEntities([{ name: '', color: generateRandomColor(), description: '' }, ...entities]);
+  // Special Entity Type handlers
+  const handleAddSpecialEntityType = () => {
+    setSpecialEntityTypes([{ name: '', description: '' }, ...specialEntityTypes]);
   };
 
-  const handleRemoveEntity = (index) => {
-    setEntities(entities.filter((_, i) => i !== index));
+  const handleRemoveSpecialEntityType = (index) => {
+    setSpecialEntityTypes(specialEntityTypes.filter((_, i) => i !== index));
   };
 
-  const handleUpdateEntity = (index, field, value) => {
-    const updated = [...entities];
+  const handleUpdateSpecialEntityType = (index, field, value) => {
+    const updated = [...specialEntityTypes];
     updated[index] = { ...updated[index], [field]: value };
-    setEntities(updated);
-  };
-
-  const handleAddRelationshipExample = () => {
-    setRelationshipExamples([...relationshipExamples, '']);
-  };
-
-  const handleRemoveRelationshipExample = (index) => {
-    setRelationshipExamples(relationshipExamples.filter((_, i) => i !== index));
-  };
-
-  const handleUpdateRelationshipExample = (index, value) => {
-    const updated = [...relationshipExamples];
-    updated[index] = value;
-    setRelationshipExamples(updated);
+    setSpecialEntityTypes(updated);
   };
 
   const handleSave = async () => {
@@ -276,13 +196,14 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       return;
     }
     
-    if (entities.length === 0) {
-      setError('At least one entity type is required');
+    if (!description.trim()) {
+      setError('Profile description is required');
       return;
     }
     
-    if (entities.some(e => !e.name.trim())) {
-      setError('All entities must have a name');
+    // Validate special entity types - if any exist, they must have names
+    if (specialEntityTypes.some(e => e.name && !e.name.trim())) {
+      setError('All special entity types must have a name');
       return;
     }
     
@@ -294,26 +215,24 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
         name: name.trim(),
         description: description.trim(),
         case_type: caseType.trim() || null,
-        agent_description: agentDescription.trim() || null,
-        instructions: instructions.trim() || null,
-        characteristics: characteristics.trim() || null,
-        entities: entities.map(e => ({
-          name: e.name.trim(),
-          color: e.color,
-          description: e.description.trim() || null,
-        })),
-        relationship_examples: relationshipExamples.filter(e => e.trim()).map(e => e.trim()),
+        // Ingestion config
+        ingestion_system_context: ingestionSystemContext.trim() || null,
+        special_entity_types: specialEntityTypes
+          .filter(e => e.name && e.name.trim())
+          .map(e => ({
+            name: e.name.trim(),
+            description: e.description?.trim() || null,
+          })),
+        ingestion_temperature: ingestionTemperature,
+        // Chat config
         chat_system_context: chatSystemContext.trim() || null,
         chat_analysis_guidance: chatAnalysisGuidance.trim() || null,
-        temperature: temperature,
-        llm_provider: llmProvider,
-        llm_model_id: llmModelId,
+        chat_temperature: chatTemperature,
       };
       
       await profilesAPI.save(profileData);
       alert('Profile saved successfully!');
       
-      // Notify parent component to refresh profiles list
       if (onProfileSaved) {
         onProfileSaved(name.trim());
       }
@@ -337,7 +256,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
           <div className="flex items-center gap-2">
             <Settings className="w-5 h-5 text-owl-blue-700" />
             <h2 className="text-lg font-semibold text-owl-blue-900">
-              {profileName ? 'Edit LLM Profile' : 'Create LLM Profile'}
+              {profileName ? 'Edit Profile' : 'Create Profile'}
             </h2>
           </div>
           <button
@@ -364,10 +283,12 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
 
               {/* Basic Information */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide">
+                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide flex items-center gap-2">
+                  <Info className="w-4 h-4" />
                   Basic Information
                 </h3>
 
+                {/* Clone from existing profile (only for new profiles) */}
                 {!profileName && (
                   <div>
                     <label className="block text-sm font-medium text-light-700 mb-1">
@@ -379,12 +300,9 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                         const selected = e.target.value;
                         setCloneFromProfile(selected);
                         if (!selected) {
-                          // Reset to defaults if "Start from scratch" is selected
-                          const currentName = name; // Preserve name if user has typed it
+                          const currentName = name;
                           resetToDefaults();
-                          if (currentName) {
-                            setName(currentName); // Restore name
-                          }
+                          if (currentName) setName(currentName);
                         }
                       }}
                       className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 bg-white"
@@ -398,26 +316,41 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                       ))}
                     </select>
                     <p className="text-xs text-light-500 mt-1">
-                      Select a profile to clone its settings. You can modify all fields after cloning.
+                      Select a profile to clone its settings, then modify as needed.
                     </p>
                   </div>
                 )}
                 
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Profile Name *
-                  </label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    placeholder="e.g., fraud, money-laundering"
-                    disabled={!!profileName} // Can't change name when editing
-                  />
-                  <p className="text-xs text-light-500 mt-1">
-                    Use lowercase letters, numbers, hyphens, and underscores only
-                  </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-1">
+                      Profile Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                      placeholder="e.g., fraud, terrorism"
+                      disabled={!!profileName}
+                    />
+                    <p className="text-xs text-light-500 mt-1">
+                      Lowercase letters, numbers, hyphens, underscores only
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-1">
+                      Case Type
+                    </label>
+                    <input
+                      type="text"
+                      value={caseType}
+                      onChange={(e) => setCaseType(e.target.value)}
+                      className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                      placeholder="e.g., Fraud Investigation"
+                    />
+                  </div>
                 </div>
 
                 <div>
@@ -429,176 +362,95 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    placeholder="Brief description of this profile"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Case Type
-                  </label>
-                  <input
-                    type="text"
-                    value={caseType}
-                    onChange={(e) => setCaseType(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    placeholder="e.g., Fraud Investigation, Money Laundering Case"
+                    placeholder="Brief description of what this profile is for"
                   />
                 </div>
               </div>
 
-              {/* Agent Configuration */}
+              {/* Ingestion Configuration */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide">
-                  Agent Configuration
+                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Ingestion Configuration
                 </h3>
-
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Agent Description
-                  </label>
-                  <textarea
-                    value={agentDescription}
-                    onChange={(e) => setAgentDescription(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    rows={3}
-                    placeholder="Describe what kind of agent this is and its role"
-                  />
+                
+                <div className="bg-owl-blue-50 border border-owl-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-owl-blue-800">
+                    <strong>Tip:</strong> The ingestion system context tells the LLM how to extract entities and relationships from documents. 
+                    Be specific about what to look for and what entity types to create.
+                  </p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-light-700 mb-1">
-                    Instructions
+                    System Context *
                   </label>
                   <textarea
-                    value={instructions}
-                    onChange={(e) => setInstructions(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    rows={4}
-                    placeholder="Specific instructions on how the agent should behave and what to look for when processing documents"
+                    value={ingestionSystemContext}
+                    onChange={(e) => setIngestionSystemContext(e.target.value)}
+                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 font-mono text-sm"
+                    rows={6}
+                    placeholder="You are an expert analyst extracting entities and relationships from documents. Focus on identifying key people, organizations, locations, events, and their connections..."
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Characteristics
-                  </label>
-                  <textarea
-                    value={characteristics}
-                    onChange={(e) => setCharacteristics(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    rows={3}
-                    placeholder="Describe the characteristics the agent should have"
-                  />
-                </div>
-              </div>
-
-              {/* Entity Types */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide">
-                    Entity Types
-                  </h3>
-                  <button
-                    onClick={handleAddEntity}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-owl-blue-700 hover:bg-owl-blue-50 rounded-lg transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Entity
-                  </button>
-                </div>
-
+                {/* Special Entity Types */}
                 <div className="space-y-3">
-                  {entities.map((entity, index) => (
-                    <div
-                      key={index}
-                      className="flex items-start gap-3 p-4 border border-light-300 rounded-lg bg-light-50"
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="block text-sm font-medium text-light-700">
+                        Special Entity Types (Optional)
+                      </label>
+                      <p className="text-xs text-light-500">
+                        Define domain-specific entity types for the LLM to extract (e.g., ShellCompany, NomineeDirector)
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleAddSpecialEntityType}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm text-owl-blue-700 hover:bg-owl-blue-50 rounded-lg transition-colors"
                     >
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="color"
-                          value={entity.color}
-                          onChange={(e) => handleUpdateEntity(index, 'color', e.target.value)}
-                          className="w-12 h-10 border border-light-300 rounded cursor-pointer"
-                          title="Node color"
-                        />
-                      </div>
-                      <div className="flex-1 space-y-2">
-                        <input
-                          type="text"
-                          value={entity.name}
-                          onChange={(e) => handleUpdateEntity(index, 'name', e.target.value)}
-                          className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                          placeholder="Entity name (e.g., Person, Company)"
-                        />
-                        <textarea
-                          value={entity.description}
-                          onChange={(e) => handleUpdateEntity(index, 'description', e.target.value)}
-                          className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 text-sm"
-                          rows={2}
-                          placeholder="Instructions for the LLM on how to identify this entity type in documents"
-                        />
-                      </div>
-                      <button
-                        onClick={() => handleRemoveEntity(index)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Remove entity"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Relationship Examples */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide">
-                      Relationship Examples
-                    </h3>
-                    <p className="text-xs text-light-500 mt-1">
-                      Provide examples of relationships. The LLM will infer similar relationships from documents.
-                    </p>
+                      <Plus className="w-4 h-4" />
+                      Add Type
+                    </button>
                   </div>
-                  <button
-                    onClick={handleAddRelationshipExample}
-                    className="flex items-center gap-1 px-3 py-1.5 text-sm text-owl-blue-700 hover:bg-owl-blue-50 rounded-lg transition-colors"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Example
-                  </button>
-                </div>
 
-                <div className="space-y-2">
-                  {relationshipExamples.map((example, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={example}
-                        onChange={(e) => handleUpdateRelationshipExample(index, e.target.value)}
-                        className="flex-1 px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                        placeholder="e.g., Person works for Organisation, Event occurred at Location"
-                      />
-                      <button
-                        onClick={() => handleRemoveRelationshipExample(index)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Remove example"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                  {specialEntityTypes.length > 0 && (
+                    <div className="space-y-2">
+                      {specialEntityTypes.map((entity, index) => (
+                        <div
+                          key={index}
+                          className="flex items-start gap-3 p-3 border border-light-300 rounded-lg bg-light-50"
+                        >
+                          <div className="flex-1 grid grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              value={entity.name}
+                              onChange={(e) => handleUpdateSpecialEntityType(index, 'name', e.target.value)}
+                              className="px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                              placeholder="Entity name (e.g., ShellCompany)"
+                            />
+                            <input
+                              type="text"
+                              value={entity.description || ''}
+                              onChange={(e) => handleUpdateSpecialEntityType(index, 'description', e.target.value)}
+                              className="px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                              placeholder="Description (e.g., A company used to obscure ownership)"
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleRemoveSpecialEntityType(index)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Remove entity type"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
 
-              {/* LLM Configuration */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide">
-                  LLM Configuration
-                </h3>
-
+                {/* Ingestion Temperature */}
                 <div>
                   <label className="block text-sm font-medium text-light-700 mb-1">
                     Temperature
@@ -609,8 +461,8 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                       min="0"
                       max="2"
                       step="0.1"
-                      value={temperature}
-                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                      value={ingestionTemperature}
+                      onChange={(e) => setIngestionTemperature(parseFloat(e.target.value))}
                       className="flex-1"
                     />
                     <input
@@ -618,155 +470,26 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                       min="0"
                       max="2"
                       step="0.1"
-                      value={temperature}
+                      value={ingestionTemperature}
                       onChange={(e) => {
                         const val = parseFloat(e.target.value);
                         if (!isNaN(val) && val >= 0 && val <= 2) {
-                          setTemperature(val);
+                          setIngestionTemperature(val);
                         }
                       }}
                       className="w-20 px-2 py-1 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
                     />
                   </div>
                   <p className="text-xs text-light-500 mt-1">
-                    Controls creativity: Lower (0.0-0.5) = more deterministic, Higher (1.0-2.0) = more creative. Default: 1.0
+                    Lower (0.0-0.5) = more deterministic extraction. Higher (1.0-2.0) = more creative. Default: 1.0
                   </p>
                 </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-2">
-                    LLM Provider
-                  </label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLlmProvider('ollama');
-                        // Set default model for provider
-                        const ollamaModels = availableModels.filter(m => m.provider === 'ollama');
-                        if (ollamaModels.length > 0) {
-                          const defaultModel = ollamaModels.find(m => m.id === 'qwen2.5:32b-instruct') || ollamaModels[0];
-                          setLlmModelId(defaultModel.id);
-                        }
-                      }}
-                      className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
-                        llmProvider === 'ollama'
-                          ? 'bg-owl-purple-500 text-white'
-                          : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
-                      }`}
-                    >
-                      Ollama (Local)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLlmProvider('openai');
-                        // Set default model for provider
-                        const openaiModels = availableModels.filter(m => m.provider === 'openai');
-                        if (openaiModels.length > 0) {
-                          const defaultModel = openaiModels.find(m => m.id === 'gpt-4o') || openaiModels[0];
-                          setLlmModelId(defaultModel.id);
-                        }
-                      }}
-                      className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
-                        llmProvider === 'openai'
-                          ? 'bg-owl-purple-500 text-white'
-                          : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
-                      }`}
-                    >
-                      OpenAI (Remote)
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-2">
-                    Model
-                  </label>
-                  {availableModels.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-light-500 border border-light-300 rounded-lg bg-light-50">
-                      Loading models...
-                    </div>
-                  ) : (
-                    <select
-                      value={llmModelId}
-                      onChange={(e) => setLlmModelId(e.target.value)}
-                      className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 bg-white"
-                    >
-                      {availableModels
-                        .filter(m => m.provider === llmProvider)
-                        .map(model => (
-                          <option key={model.id} value={model.id}>
-                            {model.name}
-                          </option>
-                        ))}
-                    </select>
-                  )}
-                  {availableModels.filter(m => m.provider === llmProvider).length === 0 && availableModels.length > 0 && (
-                    <p className="text-xs text-red-600 mt-1">
-                      No models available for {llmProvider === 'ollama' ? 'Ollama' : 'OpenAI'}
-                    </p>
-                  )}
-                </div>
-
-                {/* Model Info */}
-                {availableModels.length > 0 && (() => {
-                  const selectedModel = availableModels.find(m => m.id === llmModelId);
-                  if (!selectedModel) {
-                    return (
-                      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                        <p className="text-xs text-yellow-800">
-                          Selected model "{llmModelId}" not found in available models. Please select a different model.
-                        </p>
-                      </div>
-                    );
-                  }
-                  
-                  return (
-                    <div className="p-3 bg-light-50 rounded-lg border border-light-200">
-                      <div className="flex items-start gap-2 mb-2">
-                        <Info className="w-4 h-4 text-owl-purple-600 mt-0.5 flex-shrink-0" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-light-900 mb-2">{selectedModel.name}</p>
-                          <p className="text-xs text-light-700 mb-3">{selectedModel.description}</p>
-                          <div className="grid grid-cols-2 gap-3 text-xs">
-                            <div>
-                              <p className="font-medium text-light-900 mb-1">Pros:</p>
-                              <ul className="text-light-600 space-y-0.5">
-                                {selectedModel.pros.map((pro, i) => (
-                                  <li key={i}>• {pro}</li>
-                                ))}
-                              </ul>
-                            </div>
-                            <div>
-                              <p className="font-medium text-light-900 mb-1">Cons:</p>
-                              <ul className="text-light-600 space-y-0.5">
-                                {selectedModel.cons.map((con, i) => (
-                                  <li key={i}>• {con}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          </div>
-                          {selectedModel.context_window && (
-                            <p className="text-xs text-light-500 mt-3 pt-2 border-t border-light-200">
-                              <span className="font-medium">Context Window:</span> {selectedModel.context_window.toLocaleString()} tokens
-                            </p>
-                          )}
-                          {selectedModel.parameters && selectedModel.parameters !== 'N/A' && (
-                            <p className="text-xs text-light-500 mt-1">
-                              <span className="font-medium">Parameters:</span> {selectedModel.parameters}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
               </div>
 
               {/* Chat Configuration */}
               <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide">
+                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
                   Chat Configuration
                 </h3>
 
@@ -779,7 +502,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                     onChange={(e) => setChatSystemContext(e.target.value)}
                     className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
                     rows={3}
-                    placeholder="System context for chat interactions"
+                    placeholder="You are an AI assistant helping investigators analyze case documents..."
                   />
                 </div>
 
@@ -792,8 +515,43 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                     onChange={(e) => setChatAnalysisGuidance(e.target.value)}
                     className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
                     rows={3}
-                    placeholder="Guidance for analysis and responses"
+                    placeholder="Identify suspicious patterns, highlight connections, and flag potential red flags..."
                   />
+                </div>
+
+                {/* Chat Temperature */}
+                <div>
+                  <label className="block text-sm font-medium text-light-700 mb-1">
+                    Temperature
+                  </label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={chatTemperature}
+                      onChange={(e) => setChatTemperature(parseFloat(e.target.value))}
+                      className="flex-1"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      max="2"
+                      step="0.1"
+                      value={chatTemperature}
+                      onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        if (!isNaN(val) && val >= 0 && val <= 2) {
+                          setChatTemperature(val);
+                        }
+                      }}
+                      className="w-20 px-2 py-1 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                    />
+                  </div>
+                  <p className="text-xs text-light-500 mt-1">
+                    Lower = more focused answers. Higher = more creative responses. Default: 1.0
+                  </p>
                 </div>
               </div>
             </>

@@ -255,6 +255,7 @@ def process_chunk(
     page_start: Optional[int] = None,
     page_end: Optional[int] = None,
     log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
 ) -> Dict:
     """
     Process a single text chunk: extract and resolve entities.
@@ -268,6 +269,7 @@ def process_chunk(
         existing_keys: List of existing entity keys (for LLM context)
         page_start: First page this chunk covers (for citations)
         page_end: Last page this chunk covers (for citations)
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Dict with 'entities_processed' and 'relationships_processed' counts
@@ -289,6 +291,7 @@ def process_chunk(
             existing_entity_keys=existing_keys,
             page_start=page_start,
             page_end=page_end,
+            profile_name=profile_name,
         )
     except Exception as e:
         log_progress(f"Error extracting from chunk: {e}", log_callback, prefix="  ")
@@ -520,6 +523,7 @@ def ingest_document(
     doc_name: str,
     doc_metadata: Optional[Dict] = None,
     log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
 ) -> Dict:
     """
     Ingest a complete document into the knowledge graph.
@@ -531,6 +535,7 @@ def ingest_document(
         doc_name: Document name/filename
         doc_metadata: Optional additional metadata
         log_callback: Optional callback function(message: str) to log progress messages
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Dict with ingestion statistics
@@ -580,6 +585,7 @@ def ingest_document(
                 page_start=chunk_info.get("page_start"),
                 page_end=chunk_info.get("page_end"),
                 log_callback=log_callback,
+                profile_name=profile_name,
             )
 
             chunk_entities = result["entities_processed"]

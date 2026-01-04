@@ -33,23 +33,29 @@ def find_data_dir() -> Path:
     return data_dir
 
 
-def ingest_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> dict:
+def ingest_file(
+    path: Path,
+    log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
+) -> dict:
     """
     Ingest a single file based on its extension.
 
     Args:
         path: Path to the file
         log_callback: Optional callback function(message: str) to log progress messages
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
     """
+    log_callback(f"Using LLM profile: {profile_name}")
     suffix = path.suffix.lower()
 
     if suffix == ".txt":
-        return ingest_text_file(path, log_callback=log_callback)
+        return ingest_text_file(path, log_callback=log_callback, profile_name=profile_name)
     elif suffix == ".pdf":
-        return ingest_pdf_file(path, log_callback=log_callback)
+        return ingest_pdf_file(path, log_callback=log_callback, profile_name=profile_name)
     else:
         print(f"Unsupported file type: {suffix}")
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}

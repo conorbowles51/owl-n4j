@@ -129,6 +129,7 @@ def extract_entities_and_relationships(
     temperature: Optional[float] = None,
     page_start: Optional[int] = None,
     page_end: Optional[int] = None,
+    profile_name: Optional[str] = None,
 ) -> Dict:
     """
     Extract entities and relationships from a text chunk.
@@ -141,13 +142,14 @@ def extract_entities_and_relationships(
         temperature: LLM temperature parameter
         page_start: First page number this chunk covers (for citation)
         page_end: Last page number this chunk covers (for citation)
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Dict with 'entities' and 'relationships' lists.
         Each entity includes 'verified_facts' and 'ai_insights' arrays.
     """
 
-    profile = get_ingestion_config()
+    profile = get_ingestion_config(profile_name)
     
     system_context = profile.get("system_context")
     special_entity_types = profile.get("special_entity_types", [])
