@@ -1061,39 +1061,32 @@ export default function EvidenceProcessingView({
                     <div className="bg-light-50 rounded p-3 space-y-2">
                       <div>
                         <p className="text-xs font-medium text-light-700 mb-1">System Context:</p>
-                        <p className="text-xs text-light-600 italic">
+                        <p className="text-xs text-light-600 italic line-clamp-3">
                           {profileDetails.ingestion?.system_context || 'N/A'}
                         </p>
                       </div>
-                      <div>
-                        <p className="text-xs font-medium text-light-700 mb-1">
-                          Entity Types ({profileDetails.ingestion?.entity_types?.length || 0}):
-                        </p>
-                        <div className="flex flex-wrap gap-1">
-                          {profileDetails.ingestion?.entity_types?.map((type, idx) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-0.5 bg-owl-blue-100 text-owl-blue-700 text-xs rounded"
-                            >
-                              {type}
-                            </span>
-                          ))}
+                      {profileDetails.ingestion?.special_entity_types?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-light-700 mb-1">
+                            Special Entity Types ({profileDetails.ingestion?.special_entity_types?.length || 0}):
+                          </p>
+                          <div className="flex flex-wrap gap-1">
+                            {profileDetails.ingestion?.special_entity_types?.map((entity, idx) => (
+                              <span
+                                key={idx}
+                                className="px-2 py-0.5 bg-owl-blue-100 text-owl-blue-700 text-xs rounded"
+                                title={entity.description || ''}
+                              >
+                                {entity.name}
+                              </span>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      )}
                       <div>
-                        <p className="text-xs font-medium text-light-700 mb-1">
-                          Relationship Types ({profileDetails.ingestion?.relationship_types?.length || 0}):
+                        <p className="text-xs font-medium text-light-700">
+                          Temperature: {profileDetails.ingestion?.temperature ?? 1.0}
                         </p>
-                        <div className="flex flex-wrap gap-1">
-                          {profileDetails.ingestion?.relationship_types?.map((type, idx) => (
-                            <span
-                              key={idx}
-                              className="px-2 py-0.5 bg-owl-purple-100 text-owl-purple-700 text-xs rounded"
-                            >
-                              {type}
-                            </span>
-                          ))}
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -1105,14 +1098,19 @@ export default function EvidenceProcessingView({
                     <div className="bg-light-50 rounded p-3 space-y-2">
                       <div>
                         <p className="text-xs font-medium text-light-700 mb-1">System Context:</p>
-                        <p className="text-xs text-light-600 italic">
+                        <p className="text-xs text-light-600 italic line-clamp-3">
                           {profileDetails.chat?.system_context || 'N/A'}
                         </p>
                       </div>
                       <div>
                         <p className="text-xs font-medium text-light-700 mb-1">Analysis Guidance:</p>
-                        <p className="text-xs text-light-600">
+                        <p className="text-xs text-light-600 line-clamp-2">
                           {profileDetails.chat?.analysis_guidance || 'N/A'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-light-700">
+                          Temperature: {profileDetails.chat?.temperature ?? 1.0}
                         </p>
                       </div>
                     </div>

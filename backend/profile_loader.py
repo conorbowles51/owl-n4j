@@ -14,43 +14,36 @@ PROFILE_NAME = os.getenv("PROFILE", "generic")
 PROFILES_DIR = Path(__file__).parent.parent / "profiles"
 
 
-def load_profile(profile_name: str = None) -> Dict[str, Any]:
+def load_profile(profile_name: str | None = None) -> dict[str, Any]:
     """
     Load a profile configuration by name.
     
     Args:
-        profile_name: Name of the profile (without .json extension).
-                      If None, uses PROFILE environment variable.
+        profile_name: Profile name (without .json). Defaults to 'generic'.
     
     Returns:
-        Profile configuration dictionary
+        Profile configuration dictionary.
     """
+    name = profile_name or "generic"
     
-    name = profile_name or PROFILE_NAME
+    
     profile_path = PROFILES_DIR / f"{name}.json"
     
     if not profile_path.exists():
-        print(f"Warning: Profile '{name}' not found, falling back to 'generic'")
         profile_path = PROFILES_DIR / "generic.json"
+        name = "generic"
     
-    with open(profile_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    with open(profile_path, "r", encoding="utf-8") as f:
+        profile = json.load(f)
+    
+    return profile
 
 
-# Load profile once at import time
-_profile = load_profile()
+def get_ingestion_config(profile_name: str | None = None) -> dict[str, Any]:
+    """Get the ingestion configuration section from a profile."""
+    return load_profile(profile_name).get("ingestion", {})
 
 
-def get_profile() -> Dict[str, Any]:
-    """Get the current loaded profile."""
-    return _profile
-
-
-def get_ingestion_config() -> Dict[str, Any]:
-    """Get ingestion-specific configuration."""
-    return _profile.get("ingestion", {})
-
-
-def get_chat_config() -> Dict[str, Any]:
-    """Get chat-specific configuration."""
-    return _profile.get("chat", {})
+def get_chat_config(profile_name: str | None = None) -> dict[str, Any]:
+    """Get the chat configuration section from a profile."""
+    return load_profile(profile_name).get("chat", {})

@@ -8,12 +8,13 @@ Provides functions for:
 """
 from openai import OpenAI
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable
 import json
 import requests
 
 from config import OPENAI_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL
 from profile_loader import get_ingestion_config
+from logging_utils import log_progress, log_error, log_warning
 
 client = OpenAI()
 
@@ -22,6 +23,8 @@ def call_llm(
     temperature: float = 1,
     json_mode: bool = False,
     timeout: int = 600,  # Increased to 10 minutes for large models
+    system_context: Optional[str] = "",
+    log_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
     Call the local Ollama LLM endpoint.
@@ -31,6 +34,8 @@ def call_llm(
         temperature: Sampling temperature (lower = more deterministic)
         json_mode: If True, request JSON-formatted output
         timeout: Request timeout in seconds
+        system_context: Optional system context for the LLM
+        log_callback: Optional callback for logging progress
 
     Returns:
         The model's response text
@@ -38,9 +43,13 @@ def call_llm(
 
     url = f"{OLLAMA_BASE_URL}/api/chat"
 
+    default_system_context = "You are an investigation assistant."
     payload: Dict = {
         "model": OLLAMA_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [
+            {"role": "system", "content": system_context if system_context else default_system_context},
+            {"role": "user", "content": prompt}
+        ],
         "stream": False,
         "options": {
             "temperature": temperature,
@@ -60,12 +69,12 @@ def call_llm(
             # Model not found or endpoint issue
             error_msg = f"Ollama API error (404): Model '{OLLAMA_MODEL}' may not be available. "
             error_msg += f"Check that Ollama is running at {OLLAMA_BASE_URL} and the model is installed."
-            print(f"[LLM] {error_msg}")
+            log_error(error_msg, log_callback, prefix="[LLM] ")
             raise Exception(error_msg) from e
         raise
     except requests.exceptions.RequestException as e:
         error_msg = f"Failed to connect to Ollama at {OLLAMA_BASE_URL}: {str(e)}"
-        print(f"[LLM] {error_msg}")
+        log_error(error_msg, log_callback, prefix="[LLM] ")
         raise Exception(error_msg) from e
 
     data = resp.json()
@@ -92,19 +101,29 @@ def call_llm(
     # return response.choices[0].message.content
 
 
-def parse_json_response(response_text: str) -> Dict:
+def parse_json_response(
+    response_text: str,
+    log_callback: Optional[Callable[[str], None]] = None,
+) -> Dict:
     """
     Parse LLM response as JSON.
 
     Handles cases where the model wraps JSON with extra text.
     Extracts the first valid JSON object from the response.
+    
+    Args:
+        response_text: The raw response text from the LLM
+        log_callback: Optional callback for logging errors
+        
+    Returns:
+        Parsed JSON as a dictionary
     """
     start = response_text.find("{")
     end = response_text.rfind("}")
 
     if start == -1 or end == -1 or end <= start:
-        print("Could not locate a JSON object in the LLM response.")
-        print("Raw response was:\n", response_text[:500])
+        log_error("Could not locate a JSON object in the LLM response.", log_callback)
+        log_error(f"Raw response was: {response_text[:500]}", log_callback)
         raise ValueError("No JSON object found in LLM response")
 
     json_str = response_text[start:end + 1]
@@ -112,8 +131,8 @@ def parse_json_response(response_text: str) -> Dict:
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
-        print(f"Failed to parse extracted JSON: {e}")
-        print("Extracted JSON was:\n", json_str[:500])
+        log_error(f"Failed to parse extracted JSON: {e}", log_callback)
+        log_error(f"Extracted JSON was: {json_str[:500]}", log_callback)
         raise
 
 
@@ -124,6 +143,8 @@ def extract_entities_and_relationships(
     temperature: Optional[float] = None,
     page_start: Optional[int] = None,
     page_end: Optional[int] = None,
+    profile_name: Optional[str] = None,
+    log_callback: Optional[Callable[[str], None]] = None,
 ) -> Dict:
     """
     Extract entities and relationships from a text chunk.
@@ -136,36 +157,29 @@ def extract_entities_and_relationships(
         temperature: LLM temperature parameter
         page_start: First page number this chunk covers (for citation)
         page_end: Last page number this chunk covers (for citation)
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
+        log_callback: Optional callback for logging progress
 
     Returns:
         Dict with 'entities' and 'relationships' lists.
         Each entity includes 'verified_facts' and 'ai_insights' arrays.
     """
 
-    config = get_ingestion_config()
+    profile = get_ingestion_config(profile_name)
     
-    system_context = config.get("system_context")
-    entity_types = config.get("entity_types", [])
-    entity_definitions = config.get("entity_definitions", {})
+    system_context = profile.get("system_context")
+    special_entity_types = profile.get("special_entity_types", [])
     
     # Get temperature from config or use provided/default
-    config_temperature = config.get("temperature")
+    profile_temperature = profile.get("temperature")
     if temperature is None:
-        temperature = config_temperature if config_temperature is not None else 1.0
+        temperature = profile_temperature if profile_temperature is not None else 1.0
     
-    # Support both new format (relationship_examples) and old format (relationship_types)
-    relationship_examples = config.get("relationship_examples")
-    relationship_types = config.get("relationship_types")
+    # Build sepcial entity type descriptions
+    special_entity_descriptions = ""
+    for entity in special_entity_types:
+        special_entity_descriptions += f"1. {entity.get("name")}: {entity.get("description")}.\n"
     
-    # Build entity type descriptions
-    entity_descriptions = []
-    for entity_type in entity_types:
-        entity_def = entity_definitions.get(entity_type, {})
-        description = entity_def.get("description", "")
-        if description:
-            entity_descriptions.append(f"- {entity_type}: {description}")
-        else:
-            entity_descriptions.append(f"- {entity_type}")
 
     existing_keys_hint = ""
     if existing_entity_keys:
@@ -175,8 +189,6 @@ The following entities already exist in the investigation graph (use these exact
 {', '.join(keys_sample)}
 {"... and more" if len(existing_entity_keys) > 50 else ""}
 """
-
-    entity_types_str = ", ".join(entity_types)
     
     # Page context for citations
     page_context = ""
@@ -187,26 +199,10 @@ The following entities already exist in the investigation graph (use these exact
             page_context = f"\nThis text is from page {page_start} of the document."
     
     # Build relationship guidance
-    if relationship_examples:
-        relationship_guidance = f"""
-For relationships, identify ALL connections between entities based on the context. Use descriptive relationship types that capture the nature of the connection. Examples of relationship types you might identify:
-{chr(10).join(f"- {example}" for example in relationship_examples)}
 
-You are not limited to these examples - use your judgment to create appropriate relationship types that accurately describe the connections you find in the document. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", "RECEIVED_FROM", "SENT_TO", etc.
-"""
-    elif relationship_types:
-        relationship_guidance = f"""
-For each relationship, provide:
-- from_key: The key of the source entity
-- to_key: The key of the target entity
-- type: A descriptive relationship type. You may use one of these: [{", ".join(relationship_types)}], but you are also encouraged to create new relationship types if they better describe the connection.
-- notes: Brief description of the relationship as evidenced in this document
-
-IMPORTANT: Create relationship types that accurately capture the connection. You are not limited to the predefined types.
-"""
-    else:
-        relationship_guidance = """
+    relationship_guidance = """
 For relationships, identify ALL connections between entities and use descriptive relationship types. Examples: "OWNS", "TRANSFERRED_TO", "MET_WITH", "EMAILED", "CALLED", "WORKS_FOR", "DIRECTOR_OF", "SIGNED", "AUTHORIZED", etc.
+IMPORTANT: Create relationship types that accurately capture the connection. You are not limited to the example types.
 """
 
     entity_guidance = f"""
@@ -214,9 +210,11 @@ For each entity, you MUST provide:
 
 BASIC INFORMATION:
 - key: A stable, lowercase, hyphenated identifier (e.g., "john-smith", "emerald-imports-ltd", "acc-001")
-- type: The entity type. Prefer: [{entity_types_str}]. Create new types if needed.
+- type: The entity type that best describes this entity. You may use any type that fits - common types include Person, Company, Organisation, Location, Document, Event, etc. However, be aware of these domain-specific types that may be more appropriate:
+{special_entity_descriptions}
+  Choose the most specific and accurate type for each entity. If none of the special types above fit well, use a general type or create an appropriate one.
 - name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
-- date: (REQUIRED for event types) The date in YYYY-MM-DD format if mentioned, otherwise null
+- date: (REQUIRED for event/temporal types like Transaction, Meeting, Communication, etc.) The date in YYYY-MM-DD format if mentioned, otherwise null
 - location: Geographic location if mentioned, otherwise null
 
 VERIFIED FACTS (REQUIRED) - Facts that are DIRECTLY stated in the document:
@@ -260,9 +258,6 @@ CRITICAL RULES:
 2. If you cannot find a direct quote for a fact, it belongs in ai_insights instead
 3. Always include page numbers for verified_facts
 4. Be conservative - when in doubt, put it in ai_insights
-
-Entity Type Guidelines:
-{chr(10).join(entity_descriptions)}
 """
 
     # Determine the page number to use in the output
@@ -326,16 +321,24 @@ IMPORTANT REMINDERS:
 3. Use page number {current_page} for facts from this chunk (or the specific page if you can identify it from page markers in the text).
 """
     
-    response = call_llm(prompt, json_mode=True, temperature=temperature)
-    return parse_json_response(response)
+    # Save prompt to file for debugging
+    from pathlib import Path
+    debug_dir = Path(__file__).parent.parent / "data"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    debug_file = debug_dir / "last_extraction_prompt.txt"
+    debug_file.write_text(prompt, encoding="utf-8")
+    
+    response = call_llm(prompt, json_mode=True, temperature=temperature, system_context=system_context, log_callback=log_callback)
+    return parse_json_response(response, log_callback=log_callback)
 
 
 def disambiguate_entity(
     candidate_key: str,
     candidate_name: str,
     candidate_type: str,
-    candidate_notes: str,
+    candidate_facts: str,
     existing_entity: Dict,
+    log_callback: Optional[Callable[[str], None]] = None,
 ) -> bool:
     """
     Ask the LLM whether a candidate entity matches an existing entity.
@@ -344,26 +347,40 @@ def disambiguate_entity(
         candidate_key: The key of the new candidate
         candidate_name: The name of the new candidate
         candidate_type: The type of the new candidate
-        candidate_notes: Notes about the candidate from the current document
+        candidate_facts: Facts about the candidate from the current document
         existing_entity: Dict with existing entity's key, name, type, summary, notes
+        log_callback: Optional callback for logging progress
 
     Returns:
         True if they are the same entity, False if different
+        
     """
+
+    # Flatten existing entity's verified_facts from JSON to string
+    existing_facts_json = existing_entity.get('verified_facts', '[]')
+    try:
+        existing_facts = json.loads(existing_facts_json) if existing_facts_json else []
+    except (json.JSONDecodeError, TypeError):
+        existing_facts = []
+    
+    existing_entity_facts_str = "\n".join(
+        fact.get("text", "") for fact in existing_facts if fact.get("text")
+    )[:500]  # Limit length for prompt
+
     prompt = f"""You are helping with entity disambiguation in a fraud investigation.
 
 I found a potential entity in a document:
 - Key: {candidate_key}
 - Name: {candidate_name}
 - Type: {candidate_type}
-- Context: {candidate_notes}
+- Facts about this entity: {candidate_facts}
 
 There is an existing entity in the database that might be the same:
 - Key: {existing_entity.get('key', 'unknown')}
 - Name: {existing_entity.get('name', 'unknown')}
 - Type: {existing_entity.get('type', 'unknown')}
 - Summary: {existing_entity.get('summary', 'No summary available')}
-- Previous notes: {existing_entity.get('notes', 'No notes')[:500]}
+- Facts about this entity: {existing_entity_facts_str or 'No facts available'}
 
 Are these the SAME entity (just referenced differently) or DIFFERENT entities?
 
@@ -380,8 +397,8 @@ Return ONLY valid JSON:
 }}
 """
 
-    response = call_llm(prompt, json_mode=True)
-    result = parse_json_response(response)
+    response = call_llm(prompt, json_mode=True, log_callback=log_callback)
+    result = parse_json_response(response, log_callback=log_callback)
     return result.get("same_entity", False)
 
 
@@ -392,6 +409,7 @@ def generate_entity_summary(
     all_notes: str,
     related_entities: Optional[list] = None,
     verified_facts: Optional[list] = None,
+    log_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
     Generate or update an entity's summary based on VERIFIED FACTS ONLY.
@@ -403,6 +421,7 @@ def generate_entity_summary(
         all_notes: All notes accumulated for this entity (legacy, used as fallback)
         related_entities: List of related entity names/descriptions
         verified_facts: List of verified fact objects with text, quote, page, source_doc
+        log_callback: Optional callback for logging progress
 
     Returns:
         A concise, factual summary paragraph
@@ -448,8 +467,7 @@ CRITICAL INSTRUCTIONS:
 
 Return ONLY the summary text, no JSON, no quotes, no preamble.
 """
-
-    response = call_llm(prompt, temperature=0.2)
+    response = call_llm(prompt, temperature=0.2, log_callback=log_callback)
     return response.strip()
 
 

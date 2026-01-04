@@ -546,20 +546,8 @@ class EvidenceService:
             # Capture console output from ingest_file so the UI can display it
             buf = io.StringIO()
             try:
-                # Set profile environment variable if provided
-                import os
-                original_profile = os.environ.get("PROFILE")
-                if profile:
-                    os.environ["PROFILE"] = profile
-                try:
-                    with contextlib.redirect_stdout(buf):
-                        self._ingest_file(path, log_callback=log_callback)
-                finally:
-                    # Restore original profile or remove it
-                    if original_profile is not None:
-                        os.environ["PROFILE"] = original_profile
-                    elif "PROFILE" in os.environ:
-                        del os.environ["PROFILE"]
+                with contextlib.redirect_stdout(buf):
+                    self._ingest_file(path, log_callback=log_callback, profile_name=profile)
 
                 ingest_output = buf.getvalue()
                 if case_id and ingest_output.strip():
@@ -805,21 +793,9 @@ class EvidenceService:
 
                     # Process the file
                     try:
-                        # Set profile environment variable if provided
-                        import os
-                        original_profile = os.environ.get("PROFILE")
-                        if task_profile:
-                            os.environ["PROFILE"] = task_profile
-                        try:
-                            buf = io.StringIO()
-                            with contextlib.redirect_stdout(buf):
-                                self._ingest_file(path, log_callback=log_callback)
-                        finally:
-                            # Restore original profile or remove it
-                            if original_profile is not None:
-                                os.environ["PROFILE"] = original_profile
-                            elif "PROFILE" in os.environ:
-                                del os.environ["PROFILE"]
+                        buf = io.StringIO()
+                        with contextlib.redirect_stdout(buf):
+                            self._ingest_file(path, log_callback=log_callback, profile_name=task_profile)
 
                         # Mark as processed
                         evidence_storage.mark_processed(
@@ -873,14 +849,15 @@ class EvidenceService:
                             owner=task_owner,  # Pass owner to ensure case version is saved with correct owner
                         )
 
-                        background_task_storage.update_task(
-                            task_id,
-                            metadata={
-                                **task["metadata"],
-                                "case_id": case_result.get("case_id"),
-                                "case_version": case_result.get("version"),
-                            },
-                        )
+                        # Commented this as metadata isn't handled in method - CB
+                        # background_task_storage.update_task(
+                        #     task_id,
+                        #     metadata={
+                        #         **task["metadata"],
+                        #         "case_id": case_result.get("case_id"),
+                        #         "case_version": case_result.get("version"),
+                        #     },
+                        # )
                     except Exception as e:
                         print(f"Warning: failed to save case version: {e}")
 

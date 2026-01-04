@@ -1,55 +1,57 @@
 """
 Profile configuration loader.
 
-Loads domain-specific prompts and settings from JSON profiles.
+Loads domain-specific prompts and settings from JSON profiles
+for use during document ingestion and chat interactions.
 """
 
 import json
-import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
-# Get profile from environment variable, default to 'generic'
-PROFILE_NAME = os.getenv("PROFILE", "generic")
+from logging_utils import log_progress, log_warning
+
 PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
 
+_cache: dict[str, dict[str, Any]] = {}
 
-def load_profile(profile_name: str = None) -> Dict[str, Any]:
+
+def load_profile(profile_name: str | None = None) -> dict[str, Any]:
     """
     Load a profile configuration by name.
     
     Args:
-        profile_name: Name of the profile (without .json extension).
-                      If None, uses PROFILE environment variable.
+        profile_name: Profile name (without .json). Defaults to 'generic'.
     
     Returns:
-        Profile configuration dictionary
+        Profile configuration dictionary.
     """
-    name = profile_name or PROFILE_NAME
+    name = profile_name or "generic"
+    
+    if name in _cache:
+        return _cache[name]
+    
     profile_path = PROFILES_DIR / f"{name}.json"
     
     if not profile_path.exists():
-        print(f"Warning: Profile '{name}' not found, falling back to 'generic'")
+        log_warning(f"[profile_loader] Profile '{name}' not found, using 'generic'")
         profile_path = PROFILES_DIR / "generic.json"
+        name = "generic"
     
-    with open(profile_path, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    with open(profile_path, "r", encoding="utf-8") as f:
+        profile = json.load(f)
+    
+    _cache[name] = profile
+    log_progress(f"[profile_loader] Loaded profile: {name}")
+    
+    return profile
 
 
-# Load profile once at import time
-_profile = load_profile()
+def get_ingestion_config(profile_name: str | None = None) -> dict[str, Any]:
+    """Get the ingestion configuration section from a profile."""
+    return load_profile(profile_name).get("ingestion", {})
 
 
-def get_profile() -> Dict[str, Any]:
-    """Get the current loaded profile."""
-    return _profile
-
-
-def get_ingestion_config() -> Dict[str, Any]:
-    """Get ingestion-specific configuration."""
-    return _profile.get("ingestion", {})
-
-
-def get_chat_config() -> Dict[str, Any]:
-    """Get chat-specific configuration."""
-    return _profile.get("chat", {})
+def get_chat_config(profile_name: str | None = None) -> dict[str, Any]:
+    """Get the chat configuration section from a profile."""
+    return load_profile(profile_name).get("chat", {})

@@ -18,6 +18,7 @@ from pathlib import Path
 from text_ingestion import ingest_text_file
 from pdf_ingestion import ingest_pdf_file
 from neo4j_client import Neo4jClient
+from logging_utils import log_progress, log_error, log_warning
 from typing import Optional, Callable
 
 
@@ -33,25 +34,31 @@ def find_data_dir() -> Path:
     return data_dir
 
 
-def ingest_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> dict:
+def ingest_file(
+    path: Path,
+    log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
+) -> dict:
     """
     Ingest a single file based on its extension.
 
     Args:
         path: Path to the file
         log_callback: Optional callback function(message: str) to log progress messages
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
     """
+    log_progress(f"Using LLM profile: {profile_name}", log_callback)
     suffix = path.suffix.lower()
 
     if suffix == ".txt":
-        return ingest_text_file(path, log_callback=log_callback)
+        return ingest_text_file(path, log_callback=log_callback, profile_name=profile_name)
     elif suffix == ".pdf":
-        return ingest_pdf_file(path, log_callback=log_callback)
+        return ingest_pdf_file(path, log_callback=log_callback, profile_name=profile_name)
     else:
-        print(f"Unsupported file type: {suffix}")
+        log_warning(f"Unsupported file type: {suffix}", log_callback)
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}
 
 
@@ -66,10 +73,10 @@ def ingest_all_in_data(data_dir: Path) -> dict:
         Summary dict with counts
     """
     if not data_dir.exists():
-        print(f"Data directory not found: {data_dir}")
+        log_error(f"Data directory not found: {data_dir}")
         return {"status": "error", "reason": "data_dir_not_found"}
 
-    print(f"Scanning data directory: {data_dir}")
+    log_progress(f"Scanning data directory: {data_dir}")
 
     # Collect files (non-recursive)
     text_files = sorted(data_dir.glob("*.txt"))
@@ -77,10 +84,10 @@ def ingest_all_in_data(data_dir: Path) -> dict:
 
     all_files = text_files + pdf_files
 
-    print(f"Found {len(text_files)} text file(s) and {len(pdf_files)} PDF file(s)")
+    log_progress(f"Found {len(text_files)} text file(s) and {len(pdf_files)} PDF file(s)")
 
     if not all_files:
-        print("No files to process.")
+        log_progress("No files to process.")
         return {"status": "complete", "files_processed": 0}
 
     results = []
@@ -90,10 +97,10 @@ def ingest_all_in_data(data_dir: Path) -> dict:
             result = ingest_file(path)
             results.append(result)
         except KeyboardInterrupt:
-            print("\nInterrupted by user.")
+            log_warning("Interrupted by user.")
             break
         except Exception as e:
-            print(f"Error processing {path}: {e}")
+            log_error(f"Error processing {path}: {e}")
             results.append({"status": "error", "reason": str(e), "file": str(path)})
 
     # Summary
@@ -101,13 +108,13 @@ def ingest_all_in_data(data_dir: Path) -> dict:
     skipped = sum(1 for r in results if r.get("status") == "skipped")
     errors = sum(1 for r in results if r.get("status") == "error")
 
-    print(f"\n{'='*60}")
-    print("INGESTION SUMMARY")
-    print(f"{'='*60}")
-    print(f"  Completed: {completed}")
-    print(f"  Skipped:   {skipped}")
-    print(f"  Errors:    {errors}")
-    print(f"{'='*60}\n")
+    log_progress(f"{'='*60}")
+    log_progress("INGESTION SUMMARY")
+    log_progress(f"{'='*60}")
+    log_progress(f"  Completed: {completed}")
+    log_progress(f"  Skipped:   {skipped}")
+    log_progress(f"  Errors:    {errors}")
+    log_progress(f"{'='*60}")
 
     return {
         "status": "complete",
@@ -122,12 +129,12 @@ def clear_database():
     """
     Clear all data from the Neo4j database.
     """
-    print("Clearing database...")
+    log_progress("Clearing database...")
 
     with Neo4jClient() as db:
         db.clear_database()
 
-    print("Database cleared.")
+    log_progress("Database cleared.")
 
 
 def main():
@@ -161,14 +168,14 @@ def main():
         if confirm.lower() == "y":
             clear_database()
         else:
-            print("Aborted.")
+            log_progress("Aborted.")
             return
 
     # Ingest specific file
     if args.file:
         path = Path(args.file)
         if not path.exists():
-            print(f"File not found: {path}")
+            log_error(f"File not found: {path}")
             sys.exit(1)
         ingest_file(path)
         return
@@ -186,5 +193,5 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nInterrupted by user, exiting.")
+        log_warning("Interrupted by user, exiting.")
         sys.exit(1)

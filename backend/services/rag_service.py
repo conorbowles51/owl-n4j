@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Any
 from services.neo4j_service import neo4j_service
 from services.llm_service import llm_service
 from config import VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K, HYBRID_FILTERING_ENABLED
+from utils.prompt_trace import log_section
 
 # Try to import vector DB services (optional)
 try:
@@ -448,6 +449,18 @@ WHERE (n.name CONTAINS 'suspect' OR n.summary CONTAINS 'suspect' OR
 RETURN DISTINCT n.key AS key
 LIMIT {max_nodes}
 """
+
+        log_section(
+            source_file=__file__,
+            source_func="_generate_relevance_filter_query",
+            title="Prompt: relevance filter (LLM-generated Cypher)",
+            content={
+                "question": question,
+                "max_nodes": max_nodes,
+                "prompt": prompt,
+            },
+            as_json=True,
+        )
         
         try:
             # Use LLM to generate the filtering query
@@ -590,6 +603,18 @@ LIMIT {max_nodes}
             node_context = self.neo4j.get_context_for_nodes(selected_keys)
             context = self._build_focused_context(node_context)
             context_description = f"Focused on {len(selected_keys)} selected entity(ies)"
+
+            log_section(
+                source_file=__file__,
+                source_func="answer_question",
+                title="Context: focused",
+                content={
+                    "selected_keys": selected_keys,
+                    "context_length": len(context),
+                    "context": context,
+                },
+                as_json=True,
+            )
             
             if debug_log is not None:
                 debug_log["context_mode"] = context_mode
@@ -695,6 +720,18 @@ LIMIT {max_nodes}
                 
                 context = self._build_full_context(graph_summary)
                 context_description = f"Full graph ({total_nodes} entities)"
+
+                log_section(
+                    source_file=__file__,
+                    source_func="answer_question",
+                    title="Context: full",
+                    content={
+                        "total_nodes": total_nodes,
+                        "context_length": len(context),
+                        "context": context,
+                    },
+                    as_json=True,
+                )
                 
                 if debug_log is not None:
                     debug_log["context_mode"] = context_mode
@@ -703,6 +740,17 @@ LIMIT {max_nodes}
         # Try Cypher query for specific questions
         query_results = self._try_cypher_query(question, graph_summary, debug_log=debug_log)
 
+        log_section(
+            source_file=__file__,
+            source_func="answer_question",
+            title="Query results (direct Cypher attempt)",
+            content={
+                "cypher_used": query_results is not None,
+                "query_results": query_results,
+            },
+            as_json=True,
+        )
+
         # Generate answer - capture the prompt
         # We need to get the prompt that will be sent to LLM
         # Let's modify the LLM service to return the prompt, or capture it here
@@ -710,6 +758,17 @@ LIMIT {max_nodes}
             question=question,
             context=context,
             query_results=query_results,
+        )
+
+        log_section(
+            source_file=__file__,
+            source_func="answer_question",
+            title="Prompt: final (answer synthesis)",
+            content={
+                "prompt": final_prompt,
+                "prompt_length": len(final_prompt),
+            },
+            as_json=True,
         )
         
         if debug_log is not None:
@@ -795,6 +854,17 @@ The query should return distinct node keys. Use patterns like:
 - Or combine multiple patterns with UNION
 
 Return ONLY the Cypher query, nothing else. Do not include markdown code blocks."""
+
+        log_section(
+            source_file=__file__,
+            source_func="extract_nodes_from_answer",
+            title="Prompt: extract nodes from answer",
+            content={
+                "answer_length": len(answer),
+                "prompt": prompt,
+            },
+            as_json=True,
+        )
 
         try:
             cypher = self.llm.call(

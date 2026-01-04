@@ -1,83 +1,21 @@
 {
   "name": "Terrorism",
   "description": "Analyze terrorism cases and suspicious activity",
-  "case_type": "Terrorism",
-  "agent_description": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans",
-  "instructions": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans",
-  "characteristics": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans",
+  "case_type": "Terrorism Investigation",
+  
   "ingestion": {
-    "system_context": "You are an assistant helping with Case Type: Terrorism. Agent Description: Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Instructions: Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Characteristics: Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans.",
-    "entity_types": [
-      "Person",
-      "Organisation",
-      "Location",
-      "Event",
-      "Date",
-      "Document",
-      "Concept",
-      "Product",
-      "Other",
-      "Digital Identity",
-      "Travel",
-      "Communication Platform"
+    "system_context": "You are an expert counter-terrorism analyst extracting entities and relationships from case documents. Focus on identifying suspects, organizations (including terrorist cells and front organizations), locations (meeting points, training camps, safe houses), events (attacks, meetings, communications), travel patterns, digital identities, and communication platforms. Pay special attention to: coordination patterns between individuals, encrypted communications, cross-border movements, financial flows, and recruitment activities. Flag suspicious patterns such as unusual travel, communications spikes, or connections to known extremist networks.",
+    "special_entity_types": [
+      {"name": "Digital Identity", "description": "Online aliases, usernames, encrypted messaging IDs, or social media accounts used by individuals"},
+      {"name": "Travel", "description": "Movement between locations - includes origin, destination, duration, and purpose (known/unknown). Important for detecting coordination or meetings."},
+      {"name": "Communication Platform", "description": "Medium through which information is exchanged - private forums, encrypted messaging apps, social media. Platform choice can indicate intent to conceal."}
     ],
-    "entity_definitions": {
-      "Person": {
-        "color": "#84CC16",
-        "description": "Individual people mentioned in documents"
-      },
-      "Organisation": {
-        "color": "#A855F7",
-        "description": "Companies, institutions, or groups"
-      },
-      "Location": {
-        "color": "#EAB308",
-        "description": "Geographic locations, addresses, places"
-      },
-      "Event": {
-        "color": "#0EA5E9",
-        "description": "Occurrences, incidents, happenings"
-      },
-      "Date": {
-        "color": "#9333EA",
-        "description": "Specific dates or time periods"
-      },
-      "Document": {
-        "color": "#6B7280",
-        "description": "Documents, files, records"
-      },
-      "Concept": {
-        "color": "#84CC16",
-        "description": "Abstract ideas, topics, themes"
-      },
-      "Product": {
-        "color": "#F59E0B",
-        "description": "Products, services, items"
-      },
-      "Other": {
-        "color": "#DC2626",
-        "description": "Other entities not fitting the above categories"
-      },
-      "Digital Identity": {
-        "color": "#EC4899",
-        "description": "Movement between locations, physical or inferred.\n\nExamples\n\t•\tSame-day Hamburg–Brussels trip\n\t•\tCross-border travel without clear justification\n\nTypical attributes\n\t•\tOrigin and destination\n\t•\tDuration\n\t•\tPurpose (known / unknown)\n\nWhy it’s modeled separately\n\t•\tTravel often links persons, locations, and events\n\t•\tEnables detection of coordination or meetings"
-      },
-      "Travel": {
-        "color": "#EC4899",
-        "description": "Movement between locations, physical or inferred.\n\nExamples\n\t•\tSame-day Hamburg–Brussels trip\n\t•\tCross-border travel without clear justification\n\nTypical attributes\n\t•\tOrigin and destination\n\t•\tDuration\n\t•\tPurpose (known / unknown)\n\nWhy it’s modeled separately\n\t•\tTravel often links persons, locations, and events\n\t•\tEnables detection of coordination or meetings"
-      },
-      "Communication Platform": {
-        "color": "#84CC16",
-        "description": "A medium through which information is exchanged.\n\nExamples\n\t•\tPrivate discussion forums\n\t•\tEncrypted messaging applications\n\t•\tSocial media aliases\n\nTypical attributes\n\t•\tPlatform type (forum, messaging app)\n\t•\tAccess pattern (spike, baseline, dormant)\n\t•\tAnonymity level\n\nWhy investigators model this\n\t•\tPlatform choice can indicate intent to conceal\n\t•\tTiming and frequency often correlate with other events"
-      }
-    },
-    "relationship_examples": [
-      "Person works for Organisation",
-      "Event occurred at Location"
-    ]
+    "temperature": 1.0
   },
+  
   "chat": {
     "system_context": "You are an AI assistant helping terrorism investigators analyze a case.",
-    "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans"
+    "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Focus on coordination patterns, communication networks, and operational security indicators.",
+    "temperature": 1.0
   }
 }

@@ -11,6 +11,7 @@ from typing import Dict, Optional, Callable
 from pypdf import PdfReader
 
 from ingestion import ingest_document
+from logging_utils import log_progress, log_error, log_warning
 
 
 def extract_text_from_pdf(path: Path) -> str:
@@ -36,29 +37,34 @@ def extract_text_from_pdf(path: Path) -> str:
     return "\n\n".join(chunks)
 
 
-def ingest_pdf_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> Dict:
+def ingest_pdf_file(
+    path: Path,
+    log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
+) -> Dict:
     """
     Ingest a single .pdf file into the knowledge graph.
 
     Args:
         path: Path to the .pdf file
         log_callback: Optional callback function(message: str) to log progress messages
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
     """
     doc_name = path.name
 
-    print(f"Extracting text from PDF: {path}")
+    log_progress(f"Extracting text from PDF: {path}", log_callback)
 
     try:
         text = extract_text_from_pdf(path)
     except Exception as e:
-        print(f"ERROR: Failed to extract text from PDF: {e}")
+        log_error(f"Failed to extract text from PDF: {e}", log_callback)
         return {"status": "error", "reason": str(e), "file": str(path)}
 
     if not text.strip():
-        print(f"WARNING: No text extracted from PDF, skipping: {path}")
+        log_warning(f"No text extracted from PDF, skipping: {path}", log_callback)
         return {"status": "skipped", "reason": "no_text", "file": str(path)}
 
     doc_metadata = {
@@ -73,4 +79,5 @@ def ingest_pdf_file(path: Path, log_callback: Optional[Callable[[str], None]] = 
         doc_name=doc_name,
         doc_metadata=doc_metadata,
         log_callback=log_callback,
+        profile_name=profile_name,
     )

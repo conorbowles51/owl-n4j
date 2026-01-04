@@ -2,6 +2,23 @@
 Profiles Router
 
 Handles listing, retrieving, creating, and updating LLM profile configurations.
+
+Profile Structure:
+{
+    "name": "profile_name",
+    "description": "Profile description",
+    "case_type": "Type of case",
+    "ingestion": {
+        "system_context": "System prompt for entity extraction",
+        "special_entity_types": [{"name": "EntityType", "description": "Description of entity"}],
+        "temperature": 1.0
+    },
+    "chat": {
+        "system_context": "System prompt for chat assistant",
+        "analysis_guidance": "Guidance for analysis",
+        "temperature": 1.0
+    }
+}
 """
 
 import json
@@ -18,11 +35,10 @@ router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
 
 
-class EntityDefinition(BaseModel):
-    """Definition of an entity type."""
+class SpecialEntityType(BaseModel):
+    """Definition of a special entity type for extraction."""
     name: str
-    color: str  # Hex color code
-    description: Optional[str] = None  # Instructions for LLM on how to identify
+    description: Optional[str] = None
 
 
 class ProfileSummary(BaseModel):
@@ -36,12 +52,8 @@ class ProfileDetail(BaseModel):
     name: str
     description: str
     case_type: Optional[str] = None
-    agent_description: Optional[str] = None
-    instructions: Optional[str] = None
-    characteristics: Optional[str] = None
     ingestion: Dict[str, Any]
     chat: Dict[str, Any]
-    llm_config: Optional[Dict[str, Any]] = None
 
 
 class ProfileCreate(BaseModel):
@@ -49,16 +61,14 @@ class ProfileCreate(BaseModel):
     name: str
     description: str
     case_type: Optional[str] = None
-    agent_description: Optional[str] = None
-    instructions: Optional[str] = None
-    characteristics: Optional[str] = None
-    entities: List[EntityDefinition]
-    relationship_examples: List[str]  # Example relationships instead of types
+    # Ingestion config
+    ingestion_system_context: Optional[str] = None
+    special_entity_types: Optional[List[SpecialEntityType]] = []
+    ingestion_temperature: Optional[float] = 1.0
+    # Chat config
     chat_system_context: Optional[str] = None
     chat_analysis_guidance: Optional[str] = None
-    temperature: Optional[float] = 1.0  # LLM temperature (0.0-2.0, default 1.0)
-    llm_provider: Optional[str] = "ollama"  # LLM provider: "ollama" or "openai"
-    llm_model_id: Optional[str] = "qwen2.5:32b-instruct"  # LLM model ID
+    chat_temperature: Optional[float] = 1.0
 
 
 @router.get("", response_model=List[ProfileSummary])
@@ -101,12 +111,8 @@ async def get_profile(profile_name: str):
                 name=data.get("name", profile_name),
                 description=data.get("description", ""),
                 case_type=data.get("case_type"),
-                agent_description=data.get("agent_description"),
-                instructions=data.get("instructions"),
-                characteristics=data.get("characteristics"),
                 ingestion=data.get("ingestion", {}),
-                chat=data.get("chat", {}),
-                llm_config=data.get("llm_config", {})
+                chat=data.get("chat", {})
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load profile: {str(e)}")
@@ -127,34 +133,26 @@ async def create_or_update_profile(profile: ProfileCreate):
     
     profile_path = PROFILES_DIR / f"{profile.name}.json"
     
-    # Build the profile structure
+    # Build the profile structure matching the new simplified format
+    # Convert special_entity_types to list of dicts for JSON serialization
+    special_entities = [
+        {"name": e.name, "description": e.description or ""}
+        for e in (profile.special_entity_types or [])
+    ]
+    
     profile_data = {
         "name": profile.name,
         "description": profile.description,
         "case_type": profile.case_type,
-        "agent_description": profile.agent_description,
-        "instructions": profile.instructions,
-        "characteristics": profile.characteristics,
         "ingestion": {
-            "system_context": _build_system_context(profile),
-            "entity_types": [e.name for e in profile.entities],
-            "entity_definitions": {
-                e.name: {
-                    "color": e.color,
-                    "description": e.description or ""
-                }
-                for e in profile.entities
-            },
-            "relationship_examples": profile.relationship_examples,
-            "temperature": profile.temperature if profile.temperature is not None else 1.0,
+            "system_context": profile.ingestion_system_context or _build_default_ingestion_context(profile),
+            "special_entity_types": special_entities,
+            "temperature": profile.ingestion_temperature if profile.ingestion_temperature is not None else 1.0
         },
         "chat": {
-            "system_context": profile.chat_system_context or f"You are an AI assistant helping to analyze {profile.case_type or 'documents'}.",
-            "analysis_guidance": profile.chat_analysis_guidance or "Provide clear explanations and highlight important connections."
-        },
-        "llm_config": {
-            "provider": profile.llm_provider or "ollama",
-            "model_id": profile.llm_model_id or "qwen2.5:32b-instruct"
+            "system_context": profile.chat_system_context or f"You are an AI assistant helping to analyze {profile.case_type or 'case documents'}.",
+            "analysis_guidance": profile.chat_analysis_guidance or "Identify patterns, highlight connections, and provide clear explanations.",
+            "temperature": profile.chat_temperature if profile.chat_temperature is not None else 1.0
         }
     }
     
@@ -167,12 +165,8 @@ async def create_or_update_profile(profile: ProfileCreate):
             name=profile_data["name"],
             description=profile_data["description"],
             case_type=profile_data["case_type"],
-            agent_description=profile_data["agent_description"],
-            instructions=profile_data["instructions"],
-            characteristics=profile_data["characteristics"],
             ingestion=profile_data["ingestion"],
-            chat=profile_data["chat"],
-            llm_config=profile_data.get("llm_config", {})
+            chat=profile_data["chat"]
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save profile: {str(e)}")
@@ -197,24 +191,8 @@ async def delete_profile(profile_name: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete profile: {str(e)}")
 
 
-def _build_system_context(profile: ProfileCreate) -> str:
-    """Build the system context prompt from profile configuration."""
-    parts = []
-    
-    if profile.case_type:
-        parts.append(f"Case Type: {profile.case_type}")
-    
-    if profile.agent_description:
-        parts.append(f"Agent Description: {profile.agent_description}")
-    
-    if profile.instructions:
-        parts.append(f"Instructions: {profile.instructions}")
-    
-    if profile.characteristics:
-        parts.append(f"Characteristics: {profile.characteristics}")
-    
-    if parts:
-        return "You are an assistant helping with " + ". ".join(parts) + "."
-    else:
-        return "You are an assistant helping to extract structured information from documents."
+def _build_default_ingestion_context(profile: ProfileCreate) -> str:
+    """Build a default ingestion system context from profile configuration."""
+    case_type = profile.case_type or "document analysis"
+    return f"You are an expert analyst extracting entities and relationships from {case_type} documents. Focus on identifying key people, organizations, locations, events, and their connections. Capture dates for events and relevant details that establish relationships between entities."
 

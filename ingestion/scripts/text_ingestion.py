@@ -9,22 +9,28 @@ from pathlib import Path
 from typing import Dict, Optional, Callable
 
 from ingestion import ingest_document
+from logging_utils import log_progress, log_warning
 
 
-def ingest_text_file(path: Path, log_callback: Optional[Callable[[str], None]] = None) -> Dict:
+def ingest_text_file(
+    path: Path,
+    log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
+) -> Dict:
     """
     Ingest a single .txt file into the knowledge graph.
 
     Args:
         path: Path to the .txt file
         log_callback: Optional callback function(message: str) to log progress messages
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
     """
     doc_name = path.name
 
-    print(f"Reading text file: {path}")
+    log_progress(f"Reading text file: {path}", log_callback)
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -33,7 +39,7 @@ def ingest_text_file(path: Path, log_callback: Optional[Callable[[str], None]] =
         text = path.read_text(encoding="latin-1")
 
     if not text.strip():
-        print(f"WARNING: Text file is empty, skipping: {path}")
+        log_warning(f"Text file is empty, skipping: {path}", log_callback)
         return {"status": "skipped", "reason": "empty", "file": str(path)}
 
     doc_metadata = {
@@ -47,4 +53,5 @@ def ingest_text_file(path: Path, log_callback: Optional[Callable[[str], None]] =
         doc_name=doc_name,
         doc_metadata=doc_metadata,
         log_callback=log_callback,
+        profile_name=profile_name,
     )

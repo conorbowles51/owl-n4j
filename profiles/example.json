@@ -1,0 +1,40 @@
+{
+  "name": "profile-name",
+  "description": "Human-readable description of this profile's purpose",
+  "version": "1.0",
+  
+  "ingestion": {
+    "system_context": "Sets the LLM's role/persona during document processing. This is prepended to all extraction prompts.",
+    
+    "special_entity_types": [
+      {
+        "name": "EntityTypeName",
+        "description": "When to use this type (optional but recommended)"
+      }
+    ],
+    
+    "date_formats": "Hint about expected date formats in documents (optional)",
+    
+    "domain_terminology": {
+      "term": "definition"
+    },
+
+    "temperature": 1
+  },
+  
+  "chat": {
+    "system_context": "Sets the LLM's role/persona during Q&A. This is prepended to all chat prompts.",
+    
+    "analysis_guidance": "Instructions for HOW to analyze and present findings. Inserted into answer generation.",
+    
+    "response_style": "Tone and format preferences (optional)",
+    
+    "focus_areas": ["List of things to pay special attention to"],
+    
+    "red_flags": ["Patterns or items that should always be highlighted as concerning"],
+    
+    "domain_context": "Background information about the domain that helps with analysis (optional)",
+
+    "temperature": 1
+  }
+}

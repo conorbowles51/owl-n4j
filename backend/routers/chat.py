@@ -18,6 +18,7 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from models.llm_models import get_model_by_id
+from utils.prompt_trace import start_trace, log_section
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -27,6 +28,8 @@ class ChatRequest(BaseModel):
 
     question: str
     selected_keys: Optional[List[str]] = None
+    provider: str
+    model: str
 
 
 class ChatResponse(BaseModel):
@@ -67,6 +70,31 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
     username = user.get("username", "unknown")
     
     try:
+        trace_cm = start_trace(
+            meta={
+                "endpoint": "/api/chat",
+                "user": username,
+                "provider": request.provider,
+                "model": request.model,
+                "question": question,
+                "selected_keys": request.selected_keys,
+            }
+        )
+        trace_cm.__enter__()
+        log_section(
+            source_file=__file__,
+            source_func="chat",
+            title="Incoming request",
+            content={
+                "question": question,
+                "selected_keys": request.selected_keys,
+                "provider": request.provider,
+                "model": request.model,
+                "question_length": len(question),
+            },
+            as_json=True,
+        )
+
         # Log the AI assistant query
         system_log_service.log(
             log_type=LogType.AI_ASSISTANT,
@@ -80,6 +108,12 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             user=username,
             success=True,
         )
+
+        provider = request.provider
+        model_id = request.model
+        model = get_model_by_id(model_id)
+
+        rag_service.llm.set_config(provider, model_id)
         
         result = rag_service.answer_question(
             question=question,
@@ -87,8 +121,7 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         )
         
         # Get current model info
-        provider, model_id = llm_service.get_current_config()
-        model = get_model_by_id(model_id)
+        
         server = "Ollama (local)" if provider == "ollama" else "OpenAI (remote)"
         result["model_info"] = {
             "provider": provider,
@@ -131,6 +164,12 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             error=str(e),
         )
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        try:
+            trace_cm.__exit__(None, None, None)
+        except Exception:
+            # Tracing must never break the request.
+            pass
 
 
 @router.post("/suggestions")

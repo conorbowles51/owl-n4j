@@ -1,17 +1,15 @@
 {
-  "name": "fraud",
+  "name": "Test-Profile",
   "description": "Analyze fraud cases and suspicious financial activity",
   "case_type": "Fraud investigation",
-  
   "ingestion": {
     "system_context": "You are an expert fraud investigator extracting entities and relationships from case documents. Focus on people (suspects, directors, beneficial owners), corporate structures (companies, shell companies, ownership chains), money flows (accounts, transactions, transfers), and communications (emails, calls, meetings). Use specific entity types that reflect the fraud context - prefer precise types like 'ShellCompany' or 'NomineeDirector' over generic ones. Capture dates for all events and amounts for financial transactions. Flag suspicious patterns: threshold structuring, layered transactions, obscured ownership, or timing anomalies.",
     "special_entity_types": [],
-    "temperature": 1
+    "temperature": 1.0
   },
-  
   "chat": {
     "system_context": "You are an AI assistant helping fraud investigators analyze a case.",
     "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags.",
-    "temperature": 1
+    "temperature": 1.0
   }
 }

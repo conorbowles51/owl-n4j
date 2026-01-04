@@ -321,12 +321,14 @@ export const chatAPI = {
   /**
    * Send a question to the AI
    */
-  ask: (question, selectedKeys = null) => 
+  ask: (question, selectedKeys = null, model, provider) => 
     fetchAPI('/chat', {
       method: 'POST',
       body: JSON.stringify({
         question,
         selected_keys: selectedKeys,
+        model,
+        provider
       }),
       timeout: 600000, // 10 minutes for AI queries (large models may take time)
     }),
@@ -1045,6 +1047,22 @@ export const databaseAPI = {
    */
   getRetrievalHistory: (docId) =>
     fetchAPI(`/database/documents/${encodeURIComponent(docId)}/retrieval-history`),
+
+  /**
+   * List all entities in the vector database
+   */
+  listEntities: () => fetchAPI('/database/entities'),
+
+  /**
+   * List all entities with their embedding status
+   */
+  listEntitiesStatus: () => fetchAPI('/database/entities/status'),
+
+  /**
+   * Get a specific entity by key
+   * @param {string} entityKey - Entity key
+   */
+  getEntity: (entityKey) => fetchAPI(`/database/entities/${encodeURIComponent(entityKey)}`),
 };
 
 /**
