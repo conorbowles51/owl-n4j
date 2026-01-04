@@ -71,6 +71,7 @@ export default function EvidenceProcessingView({
   const [showIngestionLog, setShowIngestionLog] = useState(true); // Expanded by default
   const [selectedFileId, setSelectedFileId] = useState(null);
   const [selectedFilePath, setSelectedFilePath] = useState(null);
+  const [selectedFilePaths, setSelectedFilePaths] = useState(new Set()); // Multi-select file paths
   const [selectedFolderInfo, setSelectedFolderInfo] = useState(null);
   const [selectedFolderPaths, setSelectedFolderPaths] = useState(new Set()); // Multi-select folder paths
   const [selectedFoldersInfo, setSelectedFoldersInfo] = useState([]); // Info for all selected folders
@@ -605,6 +606,56 @@ export default function EvidenceProcessingView({
     });
   };
 
+  const handleFileNavigatorMultiSelect = (filePath, event) => {
+    setSelectedFilePaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(filePath)) {
+        next.delete(filePath);
+      } else {
+        next.add(filePath);
+      }
+      return next;
+    });
+    
+    // Also sync with selectedIds for processing
+    // Normalize the file path from navigator (relative to case root)
+    const normalizedFilePath = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    
+    // Find matching file in the files list
+    const matchingFile = files.find(f => {
+      if (!f.stored_path) return false;
+      
+      // Normalize stored_path (remove ingestion/data/ and case_id prefixes)
+      let normalizedStoredPath = f.stored_path.replace(/\\/g, '/');
+      normalizedStoredPath = normalizedStoredPath.replace(/^ingestion\/data\//, '');
+      if (caseId) {
+        const casePrefix = `${caseId}/`;
+        if (normalizedStoredPath.startsWith(casePrefix)) {
+          normalizedStoredPath = normalizedStoredPath.substring(casePrefix.length);
+        }
+      }
+      normalizedStoredPath = normalizedStoredPath.replace(/^\/+|\/+$/g, '');
+      
+      // Match by exact path or by filename if paths match
+      return normalizedStoredPath === normalizedFilePath || 
+             normalizedStoredPath.endsWith('/' + normalizedFilePath) ||
+             normalizedFilePath.endsWith('/' + normalizedStoredPath);
+    });
+    
+    if (matchingFile) {
+      // Sync with selectedIds
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(matchingFile.id)) {
+          next.delete(matchingFile.id);
+        } else {
+          next.add(matchingFile.id);
+        }
+        return next;
+      });
+    }
+  };
+
   // Load info for all selected folders
   useEffect(() => {
     const loadSelectedFoldersInfo = async () => {
@@ -727,15 +778,58 @@ export default function EvidenceProcessingView({
 
   const clearSelection = () => {
     setSelectedIds(new Set());
+    setSelectedFilePaths(new Set()); // Also clear FileNavigator selections
   };
 
+  // Convert file paths to file IDs
+  const getFileIdsFromPaths = useCallback((filePaths) => {
+    const fileIds = new Set();
+    filePaths.forEach(filePath => {
+      // Normalize the file path from navigator (relative to case root)
+      const normalizedFilePath = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      
+      // Find matching file in the files list
+      const matchingFile = files.find(f => {
+        if (!f.stored_path) return false;
+        
+        // Normalize stored_path (remove ingestion/data/ and case_id prefixes)
+        let normalizedStoredPath = f.stored_path.replace(/\\/g, '/');
+        normalizedStoredPath = normalizedStoredPath.replace(/^ingestion\/data\//, '');
+        if (caseId) {
+          const casePrefix = `${caseId}/`;
+          if (normalizedStoredPath.startsWith(casePrefix)) {
+            normalizedStoredPath = normalizedStoredPath.substring(casePrefix.length);
+          }
+        }
+        normalizedStoredPath = normalizedStoredPath.replace(/^\/+|\/+$/g, '');
+        
+        // Match by exact path or by filename if paths match
+        return normalizedStoredPath === normalizedFilePath || 
+               normalizedStoredPath.endsWith('/' + normalizedFilePath) ||
+               normalizedFilePath.endsWith('/' + normalizedStoredPath);
+      });
+      
+      if (matchingFile) {
+        fileIds.add(matchingFile.id);
+      }
+    });
+    return Array.from(fileIds);
+  }, [files, caseId]);
+
   const handleProcessSelected = async () => {
-    if (selectedIds.size === 0) {
+    // Combine selectedIds and selectedFilePaths
+    const allSelectedIds = new Set(selectedIds);
+    
+    // Add file IDs from FileNavigator selections
+    const navigatorFileIds = getFileIdsFromPaths(selectedFilePaths);
+    navigatorFileIds.forEach(id => allSelectedIds.add(id));
+    
+    if (allSelectedIds.size === 0) {
       alert('Please select one or more files to process.');
       return;
     }
     
-    const fileIds = Array.from(selectedIds);
+    const fileIds = Array.from(allSelectedIds);
     
     // Always use background processing - ingestion with AI extraction can take a long time
     try {
@@ -1142,7 +1236,9 @@ export default function EvidenceProcessingView({
                     caseId={caseId}
                     onFileSelect={handleFileNavigatorSelect}
                     selectedFilePath={selectedFilePath}
+                    selectedFilePaths={selectedFilePaths}
                     selectedFolderPaths={selectedFolderPaths}
+                    onFileMultiSelect={handleFileNavigatorMultiSelect}
                     onFolderSelect={handleFolderNavigatorSelect}
                     onInfoClick={handleFileNavigatorInfo}
                     wiretapProcessedFolders={wiretapProcessedFolders}
@@ -1262,15 +1358,21 @@ export default function EvidenceProcessingView({
             </div>
             <button
               onClick={handleProcessSelected}
-              disabled={processing || selectedIds.size === 0}
+              disabled={processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white transition-colors ${
-                processing || selectedIds.size === 0
+                processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)
                   ? 'bg-light-300 cursor-not-allowed'
                   : 'bg-owl-blue-600 hover:bg-owl-blue-700'
               }`}
             >
               <PlayCircle className="w-4 h-4" />
-              {processing ? 'Processing…' : `Process ${selectedIds.size} file(s)`}
+              {processing ? 'Processing…' : (() => {
+                // Calculate total selected files (from both sources)
+                const navigatorFileIds = getFileIdsFromPaths(selectedFilePaths);
+                const allSelectedIds = new Set([...selectedIds, ...navigatorFileIds]);
+                const totalCount = allSelectedIds.size;
+                return `Process ${totalCount} file(s)`;
+              })()}
             </button>
           </div>
 
@@ -1303,7 +1405,7 @@ export default function EvidenceProcessingView({
                   <button
                     onClick={clearSelection}
                     className="px-2 py-1 border border-light-300 rounded-md hover:bg-light-100"
-                    disabled={selectedIds.size === 0}
+                    disabled={selectedIds.size === 0 && selectedFilePaths.size === 0}
                   >
                     Clear
                   </button>

@@ -72,9 +72,13 @@ OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-4o  # or gpt-4-turbo, gpt-3.5-turbo
 
 # Embedding Configuration
-EMBEDDING_PROVIDER=openai  # or "ollama"
-EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_API_KEY=your_openai_api_key  # Required if using OpenAI embeddings
+# Note: If EMBEDDING_PROVIDER is not set, it automatically matches LLM_PROVIDER
+# If EMBEDDING_MODEL is not set, defaults are:
+#   - OpenAI: text-embedding-3-small
+#   - Ollama: nomic-embed-text
+EMBEDDING_PROVIDER=openai  # Optional: "openai" or "ollama" (defaults to LLM_PROVIDER)
+EMBEDDING_MODEL=text-embedding-3-small  # Optional: defaults based on provider
+OPENAI_API_KEY=your_openai_api_key  # Required if using OpenAI (for LLM or embeddings)
 
 # Vector DB Configuration
 CHROMADB_PATH=data/chromadb

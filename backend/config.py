@@ -31,8 +31,25 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()  # "openai" or "ollam
 LLM_MODEL = os.getenv("LLM_MODEL")  # If not set, uses default for provider
 
 # Embedding Configuration
-EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "openai").lower()  # "openai" or "ollama"
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")  # OpenAI model or Ollama model name
+# Automatically match embedding provider to LLM provider if not explicitly set
+_EMBEDDING_PROVIDER_ENV = os.getenv("EMBEDDING_PROVIDER")
+if _EMBEDDING_PROVIDER_ENV:
+    EMBEDDING_PROVIDER = _EMBEDDING_PROVIDER_ENV.lower()
+else:
+    # Default to same provider as LLM
+    EMBEDDING_PROVIDER = LLM_PROVIDER
+
+# Set default embedding model based on provider
+_EMBEDDING_MODEL_ENV = os.getenv("EMBEDDING_MODEL")
+if _EMBEDDING_MODEL_ENV:
+    EMBEDDING_MODEL = _EMBEDDING_MODEL_ENV
+else:
+    # Default models based on provider
+    if EMBEDDING_PROVIDER == "openai":
+        EMBEDDING_MODEL = "text-embedding-3-small"
+    else:  # ollama
+        EMBEDDING_MODEL = "nomic-embed-text"  # Common Ollama embedding model
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
 
 # Vector DB Configuration

@@ -24,20 +24,23 @@ import { filesystemAPI } from '../services/api';
  * Props:
  *  - caseId: string (required) - Case ID to browse files for
  *  - onFileSelect: (filePath: string, event?: Event) => void - Called when a file is clicked
- *  - selectedFilePath: string | null - Currently selected file path
+ *  - selectedFilePath: string | null - Currently selected file path (single select)
+ *  - selectedFilePaths: Set<string> - Set of selected file paths (for multi-select)
  *  - selectedFolderPaths: Set<string> - Set of selected folder paths (for multi-select)
+ *  - onFileMultiSelect: (filePath: string, event?: Event) => void - Called when a file is multi-selected (Ctrl/Cmd+click)
  *  - onFolderSelect: (folderPath: string, event?: Event) => void - Called when a folder is clicked (for selection, not navigation)
  *  - onInfoClick: (item: {path: string, name: string, type: 'file' | 'directory', size?: number}) => void - Called when info icon is clicked
  *  - wiretapProcessedFolders: Set<string> - Set of folder paths that have been processed as wiretaps
  *  - evidenceFiles: Array<{id: string, stored_path: string, status: string, ...}> - List of evidence files to check processed status
  */
-export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, selectedFolderPaths = new Set(), onFolderSelect, onInfoClick, wiretapProcessedFolders = new Set(), evidenceFiles = [] }) {
+export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, selectedFilePaths = new Set(), selectedFolderPaths = new Set(), onFileMultiSelect, onFolderSelect, onInfoClick, wiretapProcessedFolders = new Set(), evidenceFiles = [] }) {
   const [currentPath, setCurrentPath] = useState('');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandedFolders, setExpandedFolders] = useState(new Set());
   const [filterProcessed, setFilterProcessed] = useState(null); // null = all, true = processed only, false = unprocessed only
+  const [filterFileType, setFilterFileType] = useState(null); // null = all, or file extension like 'pdf', 'txt', etc.
   const [processedMapVersion, setProcessedMapVersion] = useState(0); // Force re-render when processedFilesMap changes
 
   const loadDirectory = useCallback(async (path = '') => {
@@ -221,26 +224,61 @@ export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, 
     return processedFilesMap.get(normalizedPath) || false;
   }, [processedFilesMap]);
 
-  // Filter items based on processed status
-  const filterItems = useCallback((items) => {
-    if (filterProcessed === null) {
-      return items;
-    }
-    return items.filter(item => {
-      if (item.type === 'directory') {
-        const processed = isFolderProcessed(item.path);
-        return filterProcessed ? processed : !processed;
-      } else {
-        const processed = isFileProcessed(item.path);
-        return filterProcessed ? processed : !processed;
-      }
-    });
-  }, [filterProcessed, isFolderProcessed, isFileProcessed]);
+  // Get file extension from filename
+  const getFileExtension = useCallback((filename) => {
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
+  }, []);
 
-  // Separate directories and files, then filter
+  // Separate directories and files
   const allDirectories = items.filter(item => item.type === 'directory');
   const allFiles = items.filter(item => item.type === 'file');
+
+  // Get unique file types from current files
+  const availableFileTypes = useMemo(() => {
+    const types = new Set();
+    allFiles.forEach(file => {
+      const ext = getFileExtension(file.name);
+      if (ext) {
+        types.add(ext);
+      }
+    });
+    return Array.from(types).sort();
+  }, [allFiles, getFileExtension]);
+
+  // Filter items based on processed status and file type
+  const filterItems = useCallback((items) => {
+    let filtered = items;
+    
+    // Filter by processed status
+    if (filterProcessed !== null) {
+      filtered = filtered.filter(item => {
+        if (item.type === 'directory') {
+          const processed = isFolderProcessed(item.path);
+          return filterProcessed ? processed : !processed;
+        } else {
+          const processed = isFileProcessed(item.path);
+          return filterProcessed ? processed : !processed;
+        }
+      });
+    }
+    
+    // Filter by file type (only applies to files, not directories)
+    if (filterFileType !== null) {
+      filtered = filtered.filter(item => {
+        if (item.type === 'directory') {
+          return true; // Always show directories
+        } else {
+          const ext = getFileExtension(item.name);
+          return ext === filterFileType;
+        }
+      });
+    }
+    
+    return filtered;
+  }, [filterProcessed, filterFileType, isFolderProcessed, isFileProcessed, getFileExtension]);
   
+  // Filter directories and files separately
   const directories = filterItems(allDirectories);
   const files = filterItems(allFiles);
 
@@ -295,40 +333,73 @@ export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, 
           </div>
         </div>
         
-        {/* Filter Toggle */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-3.5 h-3.5 text-light-600" />
-          <span className="text-xs text-light-600">Filter:</span>
-          <button
-            onClick={() => setFilterProcessed(null)}
-            className={`px-2 py-0.5 text-xs rounded transition-colors ${
-              filterProcessed === null
-                ? 'bg-owl-blue-600 text-white'
-                : 'bg-light-200 text-light-700 hover:bg-light-300'
-            }`}
-          >
-            All
-          </button>
-          <button
-            onClick={() => setFilterProcessed(true)}
-            className={`px-2 py-0.5 text-xs rounded transition-colors ${
-              filterProcessed === true
-                ? 'bg-green-600 text-white'
-                : 'bg-light-200 text-light-700 hover:bg-light-300'
-            }`}
-          >
-            Processed
-          </button>
-          <button
-            onClick={() => setFilterProcessed(false)}
-            className={`px-2 py-0.5 text-xs rounded transition-colors ${
-              filterProcessed === false
-                ? 'bg-orange-600 text-white'
-                : 'bg-light-200 text-light-700 hover:bg-light-300'
-            }`}
-          >
-            Unprocessed
-          </button>
+        {/* Filter Toggles */}
+        <div className="flex flex-col gap-2">
+          {/* Processed Status Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-3.5 h-3.5 text-light-600" />
+            <span className="text-xs text-light-600">Status:</span>
+            <button
+              onClick={() => setFilterProcessed(null)}
+              className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                filterProcessed === null
+                  ? 'bg-owl-blue-600 text-white'
+                  : 'bg-light-200 text-light-700 hover:bg-light-300'
+              }`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setFilterProcessed(true)}
+              className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                filterProcessed === true
+                  ? 'bg-green-600 text-white'
+                  : 'bg-light-200 text-light-700 hover:bg-light-300'
+              }`}
+            >
+              Processed
+            </button>
+            <button
+              onClick={() => setFilterProcessed(false)}
+              className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                filterProcessed === false
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-light-200 text-light-700 hover:bg-light-300'
+              }`}
+            >
+              Unprocessed
+            </button>
+          </div>
+          
+          {/* File Type Filter */}
+          {allFiles.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-light-600">Type:</span>
+              <button
+                onClick={() => setFilterFileType(null)}
+                className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                  filterFileType === null
+                    ? 'bg-owl-blue-600 text-white'
+                    : 'bg-light-200 text-light-700 hover:bg-light-300'
+                }`}
+              >
+                All
+              </button>
+              {availableFileTypes.map(ext => (
+                <button
+                  key={ext}
+                  onClick={() => setFilterFileType(ext)}
+                  className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                    filterFileType === ext
+                      ? 'bg-owl-blue-600 text-white'
+                      : 'bg-light-200 text-light-700 hover:bg-light-300'
+                  }`}
+                >
+                  .{ext}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -426,19 +497,38 @@ export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, 
             {/* Files */}
             {files.map((file) => {
               const isSelected = selectedFilePath === file.path;
+              const isMultiSelected = selectedFilePaths.has(file.path);
               // Always recalculate processed status on every render
               const isProcessed = isFileProcessed(file.path);
               return (
                 <div
                   key={`${file.path}-processed-${isProcessed}-v${processedMapVersion}`}
                   className={`flex items-center gap-2 px-2 py-1.5 hover:bg-light-100 cursor-pointer rounded group ${
+                    isMultiSelected ? 'bg-owl-blue-100 border-2 border-owl-blue-500' :
                     isSelected ? 'bg-owl-blue-50 border border-owl-blue-300' : 
                     isProcessed ? 'bg-blue-50 border border-blue-200' : ''
                   }`}
-                  onClick={(e) => handleFileClick(file.path, e)}
+                  onClick={(e) => {
+                    // Multi-select: Ctrl/Cmd+click to toggle selection
+                    if (e.ctrlKey || e.metaKey) {
+                      e.stopPropagation();
+                      if (onFileMultiSelect) {
+                        onFileMultiSelect(file.path, e);
+                      }
+                    } else {
+                      // Single click: normal selection
+                      handleFileClick(file.path, e);
+                    }
+                  }}
                 >
+                  {isMultiSelected && (
+                    <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-owl-blue-600" title="Selected" />
+                  )}
                   <FileText className={`w-4 h-4 flex-shrink-0 ${isProcessed ? 'text-green-600' : 'text-owl-blue-700'}`} />
-                  <span className={`text-sm flex-1 truncate ${isSelected ? 'font-semibold text-owl-blue-900' : 'text-light-900'}`}>
+                  <span className={`text-sm flex-1 truncate ${
+                    isMultiSelected ? 'font-semibold text-owl-blue-900' :
+                    isSelected ? 'font-semibold text-owl-blue-900' : 'text-light-900'
+                  }`}>
                     {file.name}
                   </span>
                   {isProcessed && (

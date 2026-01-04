@@ -21,15 +21,23 @@ try:
 except ImportError:
     OLLAMA_AVAILABLE = False
 
-from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY
+from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY, LLM_PROVIDER
 
 
 class EmbeddingService:
     """Service for generating text embeddings."""
     
     def __init__(self):
-        self.provider = EMBEDDING_PROVIDER.lower()
+        # Use embedding provider from config, or fall back to LLM provider
+        self.provider = (EMBEDDING_PROVIDER or LLM_PROVIDER or "ollama").lower()
         self.model = EMBEDDING_MODEL
+        
+        # If no explicit embedding model set, use defaults based on provider
+        if not self.model:
+            if self.provider == "ollama":
+                self.model = "nomic-embed-text"  # Common Ollama embedding model
+            elif self.provider == "openai":
+                self.model = "text-embedding-3-small"
         
         if self.provider == "openai":
             if not OPENAI_AVAILABLE:

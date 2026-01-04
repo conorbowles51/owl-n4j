@@ -112,6 +112,23 @@ async def list_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/duplicates/{sha256}", response_model=EvidenceListResponse)
+async def find_duplicates(
+    sha256: str,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Find all files with the same SHA256 hash (duplicates).
+    """
+    try:
+        files = evidence_service.find_duplicates(sha256)
+        # Filter by owner to only show user's files
+        files = [f for f in files if f.get("owner") == user["username"]]
+        return {"files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_evidence(
     case_id: str = Form(..., description="Associated case ID"),
