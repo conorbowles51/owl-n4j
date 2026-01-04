@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from logging_utils import log_progress, log_warning
+
 PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
 
 _cache: dict[str, dict[str, Any]] = {}
@@ -32,7 +34,7 @@ def load_profile(profile_name: str | None = None) -> dict[str, Any]:
     profile_path = PROFILES_DIR / f"{name}.json"
     
     if not profile_path.exists():
-        print(f"[profile_loader] Warning: '{name}' not found, using 'generic'")
+        log_warning(f"[profile_loader] Profile '{name}' not found, using 'generic'")
         profile_path = PROFILES_DIR / "generic.json"
         name = "generic"
     
@@ -40,7 +42,7 @@ def load_profile(profile_name: str | None = None) -> dict[str, Any]:
         profile = json.load(f)
     
     _cache[name] = profile
-    print(f"[profile_loader] Loaded profile: {name}")
+    log_progress(f"[profile_loader] Loaded profile: {name}")
     
     return profile
 

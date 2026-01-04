@@ -849,14 +849,15 @@ class EvidenceService:
                             owner=task_owner,  # Pass owner to ensure case version is saved with correct owner
                         )
 
-                        background_task_storage.update_task(
-                            task_id,
-                            metadata={
-                                **task["metadata"],
-                                "case_id": case_result.get("case_id"),
-                                "case_version": case_result.get("version"),
-                            },
-                        )
+                        # Commented this as metadata isn't handled in method - CB
+                        # background_task_storage.update_task(
+                        #     task_id,
+                        #     metadata={
+                        #         **task["metadata"],
+                        #         "case_id": case_result.get("case_id"),
+                        #         "case_version": case_result.get("version"),
+                        #     },
+                        # )
                     except Exception as e:
                         print(f"Warning: failed to save case version: {e}")
 

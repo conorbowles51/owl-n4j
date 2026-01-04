@@ -11,6 +11,7 @@ from typing import Dict, Optional, Callable
 from pypdf import PdfReader
 
 from ingestion import ingest_document
+from logging_utils import log_progress, log_error, log_warning
 
 
 def extract_text_from_pdf(path: Path) -> str:
@@ -54,16 +55,16 @@ def ingest_pdf_file(
     """
     doc_name = path.name
 
-    print(f"Extracting text from PDF: {path}")
+    log_progress(f"Extracting text from PDF: {path}", log_callback)
 
     try:
         text = extract_text_from_pdf(path)
     except Exception as e:
-        print(f"ERROR: Failed to extract text from PDF: {e}")
+        log_error(f"Failed to extract text from PDF: {e}", log_callback)
         return {"status": "error", "reason": str(e), "file": str(path)}
 
     if not text.strip():
-        print(f"WARNING: No text extracted from PDF, skipping: {path}")
+        log_warning(f"No text extracted from PDF, skipping: {path}", log_callback)
         return {"status": "skipped", "reason": "no_text", "file": str(path)}
 
     doc_metadata = {

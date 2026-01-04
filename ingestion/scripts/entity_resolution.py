@@ -8,10 +8,11 @@ Provides functions for:
 """
 
 import re
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Callable
 
 from neo4j_client import Neo4jClient
 from llm_client import disambiguate_entity
+from logging_utils import log_progress, log_error
 
 
 def normalise_key(raw: Optional[str]) -> str:
@@ -56,6 +57,7 @@ def resolve_entity(
     candidate_type: str,
     candidate_facts: str,
     db: Neo4jClient,
+    log_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[str, bool]:
     """
     Resolve a candidate entity to an existing entity or confirm it's new.
@@ -69,8 +71,9 @@ def resolve_entity(
         candidate_key: Normalised key for the candidate
         candidate_name: Name of the candidate entity
         candidate_type: Type of the candidate entity
-        candidate_notes: Notes about the candidate from current document
+        candidate_facts: Facts about the candidate from current document
         db: Neo4j client instance
+        log_callback: Optional callback for logging progress
 
     Returns:
         Tuple of (resolved_key, is_existing)
@@ -80,7 +83,7 @@ def resolve_entity(
     # Step 1: Exact key match
     existing = db.find_entity_by_key(candidate_key)
     if existing:
-        print(f"  → Exact match found for '{candidate_key}'")
+        log_progress(f"Exact match found for '{candidate_key}'", log_callback, prefix="    → ")
         return candidate_key, True
 
     # Step 2: Fuzzy search
@@ -92,11 +95,11 @@ def resolve_entity(
 
     if not fuzzy_matches:
         # No matches at all - this is a new entity
-        print(f"  → No matches found for '{candidate_name}', creating new entity")
+        log_progress(f"No matches found for '{candidate_name}', creating new entity", log_callback, prefix="    → ")
         return candidate_key, False
 
     # Step 3: LLM disambiguation for each fuzzy match
-    print(f"  → Found {len(fuzzy_matches)} fuzzy match(es), disambiguating...")
+    log_progress(f"Found {len(fuzzy_matches)} fuzzy match(es), disambiguating...", log_callback, prefix="    → ")
 
     for match in fuzzy_matches:
         # Skip if it's the same key (shouldn't happen but safety check)
@@ -110,19 +113,20 @@ def resolve_entity(
                 candidate_type=candidate_type,
                 candidate_facts=candidate_facts,
                 existing_entity=match,
+                log_callback=log_callback,
             )
 
             if is_same:
                 matched_key = match.get("key", candidate_key)
-                print(f"  → LLM confirmed match: '{candidate_name}' = '{match.get('name')}'")
+                log_progress(f"LLM confirmed match: '{candidate_name}' = '{match.get('name')}'", log_callback, prefix="    → ")
                 return matched_key, True
 
         except Exception as e:
-            print(f"  → Disambiguation error for {match.get('name')}: {e}")
+            log_error(f"Disambiguation error for {match.get('name')}: {e}", log_callback, prefix="    → ")
             continue
 
     # No matches confirmed - this is a new entity
-    print(f"  → No confirmed matches, creating new entity for '{candidate_name}'")
+    log_progress(f"No confirmed matches, creating new entity for '{candidate_name}'", log_callback, prefix="    → ")
     return candidate_key, False
 
 

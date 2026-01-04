@@ -24,27 +24,7 @@ from llm_client import (
 from entity_resolution import normalise_key, resolve_entity, merge_entity_data
 from chunking import chunk_document
 from geocoding import get_location_properties
-
-
-def log_progress(
-    message: str,
-    log_callback: Optional[Callable[[str], None]] = None,
-    prefix: str = "",
-) -> None:
-    """
-    Log a progress message to both console and the optional callback.
-    
-    This replaces individual print statements to ensure progress is
-    visible both in the console and sent to the frontend.
-    
-    Args:
-        message: The message to log
-        log_callback: Optional callback function to send message to frontend
-        prefix: Optional prefix for console output (e.g., "  " for indentation)
-    """
-    print(f"{prefix}{message}")
-    if log_callback:
-        log_callback(message)
+from logging_utils import log_progress, log_error, log_warning
 
 
 # Import vector DB and embedding services from backend
@@ -58,8 +38,9 @@ try:
     from services.embedding_service import embedding_service
     VECTOR_DB_AVAILABLE = embedding_service is not None
 except (ImportError, ValueError) as e:
-    print(f"[Ingestion] Vector DB services not available: {e}")
-    print("[Ingestion] Document and entity embeddings will be skipped")
+    # Note: can't use log_warning here as it's module-level initialization
+    print(f"[WARNING] [Ingestion] Vector DB services not available: {e}")
+    print("[WARNING] [Ingestion] Document and entity embeddings will be skipped")
     VECTOR_DB_AVAILABLE = False
     vector_db_service = None
     embedding_service = None
@@ -150,7 +131,7 @@ def store_entity_embedding(
         )
         
         if not embedding_text.strip():
-            log_progress(f"Skipping entity embedding for {entity_key}: no text content", log_callback)
+            log_warning(f"Skipping entity embedding for {entity_key}: no text content", log_callback)
             return False
         
         # Generate embedding
@@ -171,7 +152,7 @@ def store_entity_embedding(
         
         return True
     except Exception as e:
-        log_progress(f"Warning: Entity embedding failed for {entity_key}: {e}", log_callback)
+        log_warning(f"Entity embedding failed for {entity_key}: {e}", log_callback)
         return False
 
 
@@ -292,9 +273,10 @@ def process_chunk(
             page_start=page_start,
             page_end=page_end,
             profile_name=profile_name,
+            log_callback=log_callback,
         )
     except Exception as e:
-        log_progress(f"Error extracting from chunk: {e}", log_callback, prefix="  ")
+        log_error(f"Error extracting from chunk: {e}", log_callback, prefix="  ")
         return {"entities_processed": 0, "relationships_processed": 0}
 
     entities = extraction.get("entities", [])
@@ -317,14 +299,14 @@ def process_chunk(
         
 
         if not raw_key or not name:
-            log_progress(f"Skipping entity with missing key/name: {ent}", log_callback, prefix="  ")
+            log_warning(f"Skipping entity with missing key/name: {ent}", log_callback, prefix="  ")
             continue
 
         # Normalise the key
         key = normalise_key(raw_key)
 
         if not key:
-            log_progress(f"Skipping entity with empty normalised key: {raw_key}", log_callback, prefix="  ")
+            log_warning(f"Skipping entity with empty normalised key: {raw_key}", log_callback, prefix="  ")
             continue
 
         log_progress(f"Resolving entity: {name} ({entity_type})", log_callback, prefix="  ")
@@ -339,6 +321,7 @@ def process_chunk(
             candidate_type=entity_type,
             candidate_facts=facts_str,
             db=db,
+            log_callback=log_callback,
         )
 
         if is_existing:
@@ -369,6 +352,7 @@ def process_chunk(
                     all_notes="",  # No longer using notes, verified_facts contains the data
                     related_entities=neighbour_descriptions,
                     verified_facts=merged_facts,
+                    log_callback=log_callback,
                 )
 
                 # Check if we should add location data (if not already present)
@@ -426,6 +410,7 @@ def process_chunk(
                 all_notes="",  # No longer using notes, verified_facts contains the data
                 related_entities=None,
                 verified_facts=enriched_facts,
+                log_callback=log_callback,
             )
 
             # Extract event properties (date, time, amount)
@@ -486,7 +471,7 @@ def process_chunk(
         rel_notes = rel.get("notes", "")
 
         if not from_key or not to_key:
-            log_progress(f"Skipping relationship with missing keys: {rel}", log_callback, prefix="  ")
+            log_warning(f"Skipping relationship with missing keys: {rel}", log_callback, prefix="  ")
             continue
 
         # Validate that both entities exist
@@ -494,11 +479,11 @@ def process_chunk(
         to_exists = db.find_entity_by_key(to_key) is not None
 
         if not from_exists:
-            log_progress(f"Skipping relationship: source entity '{from_key}' not found", log_callback, prefix="  ")
+            log_warning(f"Skipping relationship: source entity '{from_key}' not found", log_callback, prefix="  ")
             continue
 
         if not to_exists:
-            log_progress(f"Skipping relationship: target entity '{to_key}' not found", log_callback, prefix="  ")
+            log_warning(f"Skipping relationship: target entity '{to_key}' not found", log_callback, prefix="  ")
             continue
 
         db.create_relationship(
@@ -623,7 +608,7 @@ def ingest_document(
                 log_progress("Document embedding stored successfully", log_callback)
             except Exception as e:
                 # Don't fail ingestion if embedding fails
-                log_progress(f"Warning: Embedding generation failed: {e}", log_callback)
+                log_warning(f"Embedding generation failed: {e}", log_callback)
 
     log_progress(f"{'='*60}", log_callback)
     log_progress(f"Ingestion complete: {doc_name}", log_callback)
