@@ -9,7 +9,7 @@ import {
   FileText,
   MessageSquare,
 } from 'lucide-react';
-import { profilesAPI } from '../services/api';
+import { profilesAPI, llmConfigAPI } from '../services/api';
 
 /**
  * ProfileEditor Component
@@ -52,6 +52,10 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
   const [ingestionSystemContext, setIngestionSystemContext] = useState('');
   const [specialEntityTypes, setSpecialEntityTypes] = useState([]);
   const [ingestionTemperature, setIngestionTemperature] = useState(1.0);
+  const [ingestionLLMProvider, setIngestionLLMProvider] = useState('ollama');
+  const [ingestionLLMModelId, setIngestionLLMModelId] = useState('');
+  const [availableModels, setAvailableModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
   
   // Chat Configuration
   const [chatSystemContext, setChatSystemContext] = useState('');
@@ -71,12 +75,43 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     }
   };
 
+  // Load available LLM models
+  const loadAvailableModels = useCallback(async (isNewProfile = false) => {
+    setLoadingModels(true);
+    try {
+      const modelsData = await llmConfigAPI.getModels();
+      setAvailableModels(modelsData.models || []);
+      
+      // Only set default model if creating a new profile and no model is set
+      if (isNewProfile && !ingestionLLMModelId && modelsData.models && modelsData.models.length > 0) {
+        const ollamaModels = modelsData.models.filter(m => m.provider === 'ollama');
+        if (ollamaModels.length > 0) {
+          const defaultModel = ollamaModels.find(m => m.id === 'qwen2.5:7b-instruct') || ollamaModels[0];
+          setIngestionLLMModelId(defaultModel.id);
+          setIngestionLLMProvider('ollama');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load models:', err);
+    } finally {
+      setLoadingModels(false);
+    }
+  }, [ingestionLLMModelId]);
+
   // Load available profiles for cloning (only when creating new profile)
   useEffect(() => {
     if (isOpen && !profileName) {
       loadAvailableProfiles();
     }
   }, [isOpen, profileName]);
+
+  // Load available models when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      // Only set defaults if creating a new profile (no profileName)
+      loadAvailableModels(!profileName);
+    }
+  }, [isOpen, profileName, loadAvailableModels]);
 
   // Load profile when modal opens
   useEffect(() => {
@@ -108,6 +143,8 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     setIngestionSystemContext('');
     setSpecialEntityTypes([]);
     setIngestionTemperature(1.0);
+    setIngestionLLMProvider('ollama');
+    setIngestionLLMModelId('');
     setChatSystemContext('');
     setChatAnalysisGuidance('');
     setChatTemperature(1.0);
@@ -133,6 +170,19 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       setIngestionSystemContext(ingestion.system_context || '');
       setSpecialEntityTypes(ingestion.special_entity_types || []);
       setIngestionTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
+      
+      // Load LLM config from profile
+      const llmConfig = profile.llm_config || {};
+      if (llmConfig.provider) {
+        setIngestionLLMProvider(llmConfig.provider);
+      } else {
+        setIngestionLLMProvider('ollama');
+      }
+      if (llmConfig.model_id) {
+        setIngestionLLMModelId(llmConfig.model_id);
+      } else {
+        setIngestionLLMModelId('');
+      }
       
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
@@ -163,6 +213,19 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       setIngestionSystemContext(ingestion.system_context || '');
       setSpecialEntityTypes(ingestion.special_entity_types || []);
       setIngestionTemperature(ingestion.temperature !== undefined ? ingestion.temperature : 1.0);
+      
+      // Load LLM config from profile
+      const llmConfig = profile.llm_config || {};
+      if (llmConfig.provider) {
+        setIngestionLLMProvider(llmConfig.provider);
+      } else {
+        setIngestionLLMProvider('ollama');
+      }
+      if (llmConfig.model_id) {
+        setIngestionLLMModelId(llmConfig.model_id);
+      } else {
+        setIngestionLLMModelId('');
+      }
       
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
@@ -224,6 +287,8 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
             description: e.description?.trim() || null,
           })),
         ingestion_temperature: ingestionTemperature,
+        llm_provider: ingestionLLMProvider,
+        llm_model_id: ingestionLLMModelId,
         // Chat config
         chat_system_context: chatSystemContext.trim() || null,
         chat_analysis_guidance: chatAnalysisGuidance.trim() || null,
@@ -450,10 +515,130 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                   )}
                 </div>
 
+                {/* LLM Provider and Model Selection */}
+                <div className="space-y-3">
+                  <label className="block text-sm font-medium text-light-700">
+                    LLM Provider & Model
+                  </label>
+                  <p className="text-xs text-light-500">
+                    Select the LLM provider and model to use for entity extraction during document ingestion.
+                  </p>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-light-700 mb-2">
+                      Provider
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIngestionLLMProvider('ollama');
+                          // Set default model for provider
+                          const ollamaModels = availableModels.filter(m => m.provider === 'ollama');
+                          if (ollamaModels.length > 0) {
+                            const defaultModel = ollamaModels.find(m => m.id === 'qwen2.5:7b-instruct') || ollamaModels[0];
+                            setIngestionLLMModelId(defaultModel.id);
+                          }
+                        }}
+                        className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                          ingestionLLMProvider === 'ollama'
+                            ? 'bg-owl-blue-600 text-white'
+                            : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
+                        }`}
+                      >
+                        Ollama (Local)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIngestionLLMProvider('openai');
+                          // Set default model for provider
+                          const openaiModels = availableModels.filter(m => m.provider === 'openai');
+                          if (openaiModels.length > 0) {
+                            const defaultModel = openaiModels.find(m => m.id === 'gpt-4o') || openaiModels[0];
+                            setIngestionLLMModelId(defaultModel.id);
+                          }
+                        }}
+                        className={`flex-1 px-3 py-2 text-sm rounded transition-colors ${
+                          ingestionLLMProvider === 'openai'
+                            ? 'bg-owl-blue-600 text-white'
+                            : 'bg-white border border-light-300 text-light-700 hover:bg-light-100'
+                        }`}
+                      >
+                        OpenAI (Remote)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-light-700 mb-2">
+                      Model
+                    </label>
+                    {loadingModels ? (
+                      <div className="text-xs text-light-500">Loading models...</div>
+                    ) : (
+                      <select
+                        value={ingestionLLMModelId}
+                        onChange={(e) => setIngestionLLMModelId(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 bg-white"
+                      >
+                        <option value="">-- Select a model --</option>
+                        {availableModels
+                          .filter(m => m.provider === ingestionLLMProvider)
+                          .map(model => (
+                            <option key={model.id} value={model.id}>
+                              {model.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+
+                  {/* Model Info */}
+                  {(() => {
+                    const selectedModel = availableModels.find(m => m.id === ingestionLLMModelId);
+                    if (!selectedModel) return null;
+                    
+                    return (
+                      <div className="p-3 bg-light-50 rounded border border-light-200">
+                        <div className="flex items-start gap-2">
+                          <Info className="w-4 h-4 text-owl-blue-600 mt-0.5 flex-shrink-0" />
+                          <div className="flex-1">
+                            <p className="text-xs text-light-700 mb-2">{selectedModel.description}</p>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <p className="font-medium text-light-900 mb-1">Pros:</p>
+                                <ul className="text-light-600 space-y-0.5">
+                                  {selectedModel.pros.slice(0, 3).map((pro, i) => (
+                                    <li key={i}>• {pro}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                              <div>
+                                <p className="font-medium text-light-900 mb-1">Cons:</p>
+                                <ul className="text-light-600 space-y-0.5">
+                                  {selectedModel.cons.slice(0, 3).map((con, i) => (
+                                    <li key={i}>• {con}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+                            {selectedModel.context_window && (
+                              <p className="text-xs text-light-500 mt-2">
+                                Context Window: {selectedModel.context_window.toLocaleString()} tokens
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
                 {/* Ingestion Temperature */}
                 <div>
                   <label className="block text-sm font-medium text-light-700 mb-1">
-                    Temperature
+                    Temperature (Ingestion)
                   </label>
                   <div className="flex items-center gap-3">
                     <input
@@ -522,7 +707,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                 {/* Chat Temperature */}
                 <div>
                   <label className="block text-sm font-medium text-light-700 mb-1">
-                    Temperature
+                    Temperature (Chat)
                   </label>
                   <div className="flex items-center gap-3">
                     <input

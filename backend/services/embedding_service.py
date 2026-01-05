@@ -181,8 +181,15 @@ class EmbeddingService:
                 return 1536
         elif self.provider == "ollama":
             # Ollama embedding dimensions vary by model
-            # Common: nomic-embed-text (768), mxbai-embed-large (1024)
-            return 768  # Default, may vary
+            if "qwen3-embedding:4b" in self.model or "qwen3-embedding" in self.model:
+                return 2560
+            elif "nomic-embed-text" in self.model:
+                return 768
+            elif "mxbai-embed-large" in self.model:
+                return 1024
+            else:
+                # Default for unknown Ollama models
+                return 768
         else:
             return 1536  # Safe default
 

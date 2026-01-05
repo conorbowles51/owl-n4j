@@ -2,16 +2,23 @@
   "name": "fraud",
   "description": "Analyze fraud cases and suspicious financial activity",
   "case_type": "Fraud investigation",
-  
   "ingestion": {
-    "system_context": "You are an expert fraud investigator extracting entities and relationships from case documents. Focus on people (suspects, directors, beneficial owners), corporate structures (companies, shell companies, ownership chains), money flows (accounts, transactions, transfers), and communications (emails, calls, meetings). Use specific entity types that reflect the fraud context - prefer precise types like 'ShellCompany' or 'NomineeDirector' over generic ones. Capture dates for all events and amounts for financial transactions. Flag suspicious patterns: threshold structuring, layered transactions, obscured ownership, or timing anomalies.",
-    "special_entity_types": [],
-    "temperature": 1
+    "system_context": "You are an expert fraud investigator extracting entities and relationships from case documents. Focus on people (suspects, directors, beneficial owners), corporate structures (companies, shell companies, ownership chains), money flows (accounts, transactions, transfers), and communications (emails, calls, meetings). Use specific entity types that reflect the fraud context - prefer precise types like 'ShellCompany' or 'NomineeDirector' over generic ones. Capture dates for all events and amounts for financial transactions. Flag suspicious patterns: threshold structuring, layered transactions, obscured ownership, or timing anomalies. All entities should be prefixed with Dolphin to signify that the dolphin model extracted them",
+    "special_entity_types": [
+      {
+        "name": "bitcoin wallet",
+        "description": "Bitcoin wallet with format 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2"
+      }
+    ],
+    "temperature": 2.0
   },
-  
   "chat": {
     "system_context": "You are an AI assistant helping fraud investigators analyze a case.",
     "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags.",
-    "temperature": 1
+    "temperature": 2.0
+  },
+  "llm_config": {
+    "provider": "ollama",
+    "model_id": "mannix/dolphin-2.9-llama3-8b"
   }
 }

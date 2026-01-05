@@ -30,15 +30,16 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
 # LLM Configuration (OpenAI)
 # ---------------------------------------------------------------------------
 
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:14b-instruct"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 # ---------------------------------------------------------------------------
 # Chunking Configuration
 # ---------------------------------------------------------------------------
 
 # Characters per chunk (suitable for local Ollama with ~8K context)
-CHUNK_SIZE = 2500
+CHUNK_SIZE = 1000
 
 # Overlap between chunks to maintain context continuity
 CHUNK_OVERLAP = 200

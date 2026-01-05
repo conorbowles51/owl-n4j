@@ -146,6 +146,26 @@ AVAILABLE_MODELS = [
         context_window=8192,
         parameters="8B",
     ),
+    LLMModel(
+        id="mannix/dolphin-2.9-llama3-8b",
+        name="Dolphin 2.9 Llama 3 8B",
+        provider=LLMProvider.OLLAMA,
+        description="Fine-tuned version of Llama 3 8B optimized for instruction following and conversation.",
+        pros=[
+            "Excellent instruction following",
+            "Optimized for conversational tasks",
+            "Good balance of capability and speed",
+            "Lower memory requirements (8GB+ recommended)",
+            "Fast inference",
+            "Runs locally via Ollama",
+        ],
+        cons=[
+            "Less capable than larger models for complex reasoning",
+            "Based on 8B model, so limitations of base model apply",
+        ],
+        context_window=8192,
+        parameters="8B",
+    ),
     
     # OpenAI Models
     LLMModel(

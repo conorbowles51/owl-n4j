@@ -54,6 +54,7 @@ class ProfileDetail(BaseModel):
     case_type: Optional[str] = None
     ingestion: Dict[str, Any]
     chat: Dict[str, Any]
+    llm_config: Optional[Dict[str, Any]] = None
 
 
 class ProfileCreate(BaseModel):
@@ -65,6 +66,9 @@ class ProfileCreate(BaseModel):
     ingestion_system_context: Optional[str] = None
     special_entity_types: Optional[List[SpecialEntityType]] = []
     ingestion_temperature: Optional[float] = 1.0
+    # LLM config for ingestion
+    llm_provider: Optional[str] = None  # "ollama" or "openai"
+    llm_model_id: Optional[str] = None  # Model ID (e.g., "qwen2.5:7b-instruct")
     # Chat config
     chat_system_context: Optional[str] = None
     chat_analysis_guidance: Optional[str] = None
@@ -112,7 +116,8 @@ async def get_profile(profile_name: str):
                 description=data.get("description", ""),
                 case_type=data.get("case_type"),
                 ingestion=data.get("ingestion", {}),
-                chat=data.get("chat", {})
+                chat=data.get("chat", {}),
+                llm_config=data.get("llm_config")
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load profile: {str(e)}")
@@ -156,6 +161,13 @@ async def create_or_update_profile(profile: ProfileCreate):
         }
     }
     
+    # Add LLM config if provided
+    if profile.llm_provider or profile.llm_model_id:
+        profile_data["llm_config"] = {
+            "provider": profile.llm_provider or "ollama",
+            "model_id": profile.llm_model_id or ""
+        }
+    
     try:
         # Write the profile file
         with open(profile_path, 'w', encoding='utf-8') as f:
@@ -166,7 +178,8 @@ async def create_or_update_profile(profile: ProfileCreate):
             description=profile_data["description"],
             case_type=profile_data["case_type"],
             ingestion=profile_data["ingestion"],
-            chat=profile_data["chat"]
+            chat=profile_data["chat"],
+            llm_config=profile_data.get("llm_config")
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save profile: {str(e)}")

@@ -57,6 +57,7 @@ def resolve_entity(
     candidate_type: str,
     candidate_facts: str,
     db: Neo4jClient,
+    profile_name: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[str, bool]:
     """
@@ -113,6 +114,7 @@ def resolve_entity(
                 candidate_type=candidate_type,
                 candidate_facts=candidate_facts,
                 existing_entity=match,
+                profile_name=profile_name,
                 log_callback=log_callback,
             )
 

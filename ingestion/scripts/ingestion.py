@@ -13,7 +13,19 @@ This is the main logic that:
 from typing import Dict, List, Optional, Callable
 import json
 import sys
+import importlib.util
 from pathlib import Path
+
+# Import profile_loader from the same directory (ingestion/scripts)
+# IMPORTANT: This must happen BEFORE any sys.path manipulation that adds backend/
+# Use importlib to explicitly load from the correct path to avoid conflicts
+# with backend/profile_loader.py when backend is added to sys.path
+_scripts_dir = Path(__file__).resolve().parent
+_profile_loader_path = _scripts_dir / "profile_loader.py"
+_profile_loader_spec = importlib.util.spec_from_file_location("ingestion_profile_loader_ingestion", _profile_loader_path)
+_profile_loader_module_ingestion = importlib.util.module_from_spec(_profile_loader_spec)
+_profile_loader_spec.loader.exec_module(_profile_loader_module_ingestion)
+get_llm_config = _profile_loader_module_ingestion.get_llm_config
 
 from neo4j_client import Neo4jClient
 from llm_client import (
@@ -265,7 +277,9 @@ def process_chunk(
     log_progress(f"Processing chunk {chunk_index + 1}/{total_chunks}{page_info}...", log_callback, prefix="  ")
 
     # Extract entities and relationships from chunk with page context
+    chunk_num = chunk_index + 1
     try:
+        log_progress(f"  [6.{chunk_num}.1] Entity extraction: Calling LLM to extract entities and relationships from chunk...", log_callback)
         extraction = extract_entities_and_relationships(
             text=chunk_text,
             doc_name=doc_name,
@@ -275,14 +289,15 @@ def process_chunk(
             profile_name=profile_name,
             log_callback=log_callback,
         )
+        log_progress(f"  [6.{chunk_num}.1] Entity extraction: LLM extraction completed", log_callback)
     except Exception as e:
-        log_error(f"Error extracting from chunk: {e}", log_callback, prefix="  ")
+        log_error(f"  [6.{chunk_num}.1] Entity extraction: FAILED - {e}", log_callback)
         return {"entities_processed": 0, "relationships_processed": 0}
 
     entities = extraction.get("entities", [])
     relationships = extraction.get("relationships", [])
 
-    log_progress(f"Extracted {len(entities)} entities, {len(relationships)} relationships", log_callback, prefix="  ")
+    log_progress(f"  [6.{chunk_num}.1] Entity extraction: Extracted {len(entities)} entities, {len(relationships)} relationships", log_callback)
 
     entities_processed = 0
     relationships_processed = 0
@@ -309,7 +324,8 @@ def process_chunk(
             log_warning(f"Skipping entity with empty normalised key: {raw_key}", log_callback, prefix="  ")
             continue
 
-        log_progress(f"Resolving entity: {name} ({entity_type})", log_callback, prefix="  ")
+        entity_num = entities.index(ent) + 1 if ent in entities else 0
+        log_progress(f"  [6.{chunk_index + 1}.2] Entity resolution: Resolving entity {entity_num}/{len(entities)}: {name} ({entity_type})", log_callback)
 
         # Resolve: find existing or create new
         facts_str = "\n".join(
@@ -321,10 +337,12 @@ def process_chunk(
             candidate_type=entity_type,
             candidate_facts=facts_str,
             db=db,
+            profile_name=profile_name,
             log_callback=log_callback,
         )
 
         if is_existing:
+            log_progress(f"  [6.{chunk_index + 1}.2] Entity resolution: Entity '{name}' matched existing entity (key: {resolved_key})", log_callback)
             # Update existing entity
             existing = db.find_entity_by_key(resolved_key)
             if existing:
@@ -352,6 +370,7 @@ def process_chunk(
                     all_notes="",  # No longer using notes, verified_facts contains the data
                     related_entities=neighbour_descriptions,
                     verified_facts=merged_facts,
+                    profile_name=profile_name,
                     log_callback=log_callback,
                 )
 
@@ -388,6 +407,7 @@ def process_chunk(
                 )
         else:
             # Create new entity
+            log_progress(f"  [6.{chunk_index + 1}.3] Entity creation: Creating new entity '{name}' (key: {key})", log_callback)
             # Enrich verified facts with source document
             enriched_facts = []
             for fact in verified_facts:
@@ -410,6 +430,7 @@ def process_chunk(
                 all_notes="",  # No longer using notes, verified_facts contains the data
                 related_entities=None,
                 verified_facts=enriched_facts,
+                profile_name=profile_name,
                 log_callback=log_callback,
             )
 
@@ -529,37 +550,82 @@ def ingest_document(
     log_progress(f"Ingesting document: {doc_name}", log_callback)
     log_progress(f"{'='*60}", log_callback)
 
+    # Log LLM configuration from profile
+    from config import OLLAMA_BASE_URL
+    llm_config = get_llm_config(profile_name)
+    
+    if llm_config and llm_config.get("provider") and llm_config.get("model_id"):
+        # Use profile's LLM config
+        llm_provider = llm_config.get("provider")
+        llm_model = llm_config.get("model_id")
+        log_progress(f"[Configuration] LLM Provider: {llm_provider.capitalize()}", log_callback)
+        log_progress(f"[Configuration] LLM Model: {llm_model}", log_callback)
+        if llm_provider == "ollama":
+            log_progress(f"[Configuration] LLM Server: {OLLAMA_BASE_URL}", log_callback)
+        else:
+            log_progress(f"[Configuration] LLM Server: OpenAI (Remote)", log_callback)
+    else:
+        # Fallback to global config
+        from config import OLLAMA_MODEL
+        log_progress(f"[Configuration] LLM Provider: Ollama (default)", log_callback)
+        log_progress(f"[Configuration] LLM Model: {OLLAMA_MODEL}", log_callback)
+        log_progress(f"[Configuration] LLM Server: {OLLAMA_BASE_URL}", log_callback)
+    
+    # Log Embedding configuration
+    if VECTOR_DB_AVAILABLE and embedding_service:
+        log_progress(f"[Configuration] Embedding Provider: {embedding_service.provider}", log_callback)
+        log_progress(f"[Configuration] Embedding Model: {embedding_service.model}", log_callback)
+        log_progress(f"[Configuration] Vector DB: Enabled (ChromaDB)", log_callback)
+    else:
+        log_progress(f"[Configuration] Vector DB: Disabled", log_callback)
+        log_progress(f"[Configuration] Embedding: Not available", log_callback)
+    
+    log_progress(f"{'='*60}", log_callback)
+
     if not text or not text.strip():
-        log_progress("Document is empty, skipping.", log_callback)
+        log_progress("[Step 1] Document validation: Document is empty, skipping.", log_callback)
         return {"status": "skipped", "reason": "empty"}
+    
+    log_progress(f"[Step 1] Document validation: Document has {len(text)} characters", log_callback)
 
     with Neo4jClient() as db:
+        log_progress(f"[Step 2] Neo4j connection: Connected successfully", log_callback)
+        
         # Ensure document node exists
         doc_key = normalise_key(doc_name)
         metadata = dict(doc_metadata or {})
         metadata["source_type"] = metadata.get("source_type", "unknown")
 
+        log_progress(f"[Step 3] Document node: Creating/updating document node (key: {doc_key})", log_callback)
         doc_id = db.ensure_document(
             doc_key=doc_key,
             doc_name=doc_name,
             metadata=metadata,
         )
+        log_progress(f"[Step 3] Document node: Created/updated successfully (ID: {doc_id})", log_callback)
 
         # Get existing entity keys for context
+        log_progress(f"[Step 4] Graph context: Loading existing entities from graph", log_callback)
         existing_keys = db.get_all_entity_keys()
         existing_count = len(existing_keys)
-        log_progress(f"Found {existing_count} existing entities in graph", log_callback)
+        log_progress(f"[Step 4] Graph context: Found {existing_count} existing entities in graph", log_callback)
 
         # Chunk the document
+        log_progress(f"[Step 5] Document chunking: Splitting document into chunks", log_callback)
         chunks = chunk_document(text, doc_name)
         total_chunks = len(chunks)
-        log_progress(f"Document split into {total_chunks} chunks", log_callback)
+        log_progress(f"[Step 5] Document chunking: Document split into {total_chunks} chunks", log_callback)
 
         # Process each chunk
+        log_progress(f"[Step 6] Chunk processing: Starting to process {total_chunks} chunks", log_callback)
         total_entities = 0
         total_relationships = 0
 
         for chunk_info in chunks:
+            chunk_idx = chunk_info["chunk_index"]
+            chunk_num = chunk_idx + 1
+            log_progress(f"[Step 6.{chunk_num}] Processing chunk {chunk_num}/{total_chunks}...", log_callback)
+            
             result = process_chunk(
                 chunk_text=chunk_info["text"],
                 doc_name=doc_name,
@@ -576,19 +642,27 @@ def ingest_document(
             chunk_entities = result["entities_processed"]
             chunk_relationships = result["relationships_processed"]
             
+            log_progress(f"[Step 6.{chunk_num}] Chunk {chunk_num} complete: {chunk_entities} entities, {chunk_relationships} relationships", log_callback)
+            
             total_entities += chunk_entities
             total_relationships += chunk_relationships
+        
+        log_progress(f"[Step 6] Chunk processing: All chunks processed. Total: {total_entities} entities, {total_relationships} relationships", log_callback)
 
         # Generate and store document embedding (after all chunks processed)
         embedding_stored = False
+        log_progress(f"[Step 7] Document embedding: Starting embedding generation", log_callback)
         if VECTOR_DB_AVAILABLE and text and text.strip():
             try:
-                log_progress("Generating document embedding...", log_callback)
+                log_progress(f"[Step 7] Document embedding: Using {embedding_service.provider} provider with model '{embedding_service.model}'", log_callback)
+                log_progress(f"[Step 7] Document embedding: Generating embedding for document text ({len(text)} characters)", log_callback)
                 
                 # Generate embedding for full document text
                 embedding = embedding_service.generate_embedding(text)
+                log_progress(f"[Step 7] Document embedding: Embedding generated successfully (dimension: {len(embedding)})", log_callback)
                 
                 # Store in vector DB
+                log_progress(f"[Step 7] Document embedding: Storing embedding in vector database", log_callback)
                 vector_db_service.add_document(
                     doc_id=doc_id,
                     text=text[:10000],  # Limit text length for storage
@@ -600,22 +674,31 @@ def ingest_document(
                         "source_type": metadata.get("source_type", "unknown"),
                     }
                 )
+                log_progress(f"[Step 7] Document embedding: Embedding stored in vector database", log_callback)
                 
                 # Update Neo4j Document node with vector_db_id
+                log_progress(f"[Step 7] Document embedding: Linking document node to vector database (vector_db_id: {doc_id})", log_callback)
                 db.update_document(doc_key, {"vector_db_id": doc_id})
                 
                 embedding_stored = True
-                log_progress("Document embedding stored successfully", log_callback)
+                log_progress(f"[Step 7] Document embedding: Completed successfully", log_callback)
             except Exception as e:
                 # Don't fail ingestion if embedding fails
-                log_warning(f"Embedding generation failed: {e}", log_callback)
+                log_warning(f"[Step 7] Document embedding: FAILED - {e}", log_callback)
+        else:
+            if not VECTOR_DB_AVAILABLE:
+                log_progress(f"[Step 7] Document embedding: Skipped (Vector DB not available)", log_callback)
+            else:
+                log_progress(f"[Step 7] Document embedding: Skipped (Document text is empty)", log_callback)
 
     log_progress(f"{'='*60}", log_callback)
-    log_progress(f"Ingestion complete: {doc_name}", log_callback)
-    log_progress(f"  Entities processed: {total_entities}", log_callback)
-    log_progress(f"  Relationships processed: {total_relationships}", log_callback)
+    log_progress(f"[Final] Ingestion complete: {doc_name}", log_callback)
+    log_progress(f"[Final] Summary: Entities processed: {total_entities}", log_callback)
+    log_progress(f"[Final] Summary: Relationships processed: {total_relationships}", log_callback)
     if embedding_stored:
-        log_progress(f"  Embedding: stored", log_callback)
+        log_progress(f"[Final] Summary: Document embedding: Stored successfully", log_callback)
+    else:
+        log_progress(f"[Final] Summary: Document embedding: Not stored", log_callback)
     log_progress(f"{'='*60}", log_callback)
 
     return {

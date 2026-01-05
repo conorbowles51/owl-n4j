@@ -6,17 +6,47 @@ Provides functions for:
 - Entity disambiguation (fuzzy matching decisions)
 - Summary generation/updates
 """
-from openai import OpenAI
 
 from typing import Dict, Optional, Callable
 import json
 import requests
+import os
+import importlib.util
+from pathlib import Path
 
-from config import OPENAI_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL
-from profile_loader import get_ingestion_config
+# Import profile_loader from the same directory (ingestion/scripts)
+# IMPORTANT: This must happen BEFORE any sys.path manipulation that adds backend/
+# Use importlib to explicitly load from the correct path to avoid conflicts
+# with backend/profile_loader.py when backend is added to sys.path
+_scripts_dir = Path(__file__).resolve().parent
+_profile_loader_path = _scripts_dir / "profile_loader.py"
+
+if not _profile_loader_path.exists():
+    raise ImportError(f"Could not find profile_loader.py at {_profile_loader_path}")
+
+_profile_loader_spec = importlib.util.spec_from_file_location("ingestion_profile_loader", _profile_loader_path)
+_profile_loader_module = importlib.util.module_from_spec(_profile_loader_spec)
+_profile_loader_spec.loader.exec_module(_profile_loader_module)
+
+# Verify the functions exist
+if not hasattr(_profile_loader_module, 'get_ingestion_config'):
+    raise ImportError(f"profile_loader module does not have get_ingestion_config function")
+if not hasattr(_profile_loader_module, 'get_llm_config'):
+    raise ImportError(f"profile_loader module does not have get_llm_config function")
+
+get_ingestion_config = _profile_loader_module.get_ingestion_config
+get_llm_config = _profile_loader_module.get_llm_config
+
+from config import OPENAI_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL, OPENAI_API_KEY
 from logging_utils import log_progress, log_error, log_warning
 
-client = OpenAI()
+# Try to import OpenAI client
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OPENAI_AVAILABLE = False
+    OpenAI = None
 
 def call_llm(
     prompt: str,
@@ -25,9 +55,11 @@ def call_llm(
     timeout: int = 600,  # Increased to 10 minutes for large models
     system_context: Optional[str] = "",
     log_callback: Optional[Callable[[str], None]] = None,
+    llm_provider: Optional[str] = None,  # "ollama" or "openai"
+    llm_model_id: Optional[str] = None,  # Model ID to use (overrides default)
 ) -> str:
     """
-    Call the local Ollama LLM endpoint.
+    Call the LLM endpoint (Ollama or OpenAI).
 
     Args:
         prompt: The prompt to send
@@ -36,16 +68,62 @@ def call_llm(
         timeout: Request timeout in seconds
         system_context: Optional system context for the LLM
         log_callback: Optional callback for logging progress
+        llm_provider: LLM provider to use ("ollama" or "openai"). If None, uses default from config.
+        llm_model_id: Model ID to use. If None, uses default for the provider.
 
     Returns:
         The model's response text
     """
+    # Determine provider and model
+    provider = (llm_provider or "ollama").lower()
+    model_id = llm_model_id
+    
+    # Set default model if not provided
+    if not model_id:
+        if provider == "openai":
+            model_id = OPENAI_MODEL or "gpt-4o"
+        else:  # ollama
+            model_id = OLLAMA_MODEL or "qwen2.5:7b"
+    
+    log_progress(f"[LLM] Using provider: {provider}, model: {model_id}", log_callback, prefix="")
+    
+    if provider == "openai":
+        return _call_openai(
+            prompt=prompt,
+            model_id=model_id,
+            temperature=temperature,
+            json_mode=json_mode,
+            timeout=timeout,
+            system_context=system_context,
+            log_callback=log_callback,
+        )
+    else:  # ollama
+        return _call_ollama(
+            prompt=prompt,
+            model_id=model_id,
+            temperature=temperature,
+            json_mode=json_mode,
+            timeout=timeout,
+            system_context=system_context,
+            log_callback=log_callback,
+        )
 
+
+def _call_ollama(
+    prompt: str,
+    model_id: str,
+    temperature: float,
+    json_mode: bool,
+    timeout: int,
+    system_context: Optional[str],
+    log_callback: Optional[Callable[[str], None]],
+) -> str:
+    """Call Ollama LLM endpoint."""
     url = f"{OLLAMA_BASE_URL}/api/chat"
 
     default_system_context = "You are an investigation assistant."
     payload: Dict = {
-        "model": OLLAMA_MODEL,
+        "model": model_id,
         "messages": [
             {"role": "system", "content": system_context if system_context else default_system_context},
             {"role": "user", "content": prompt}
@@ -67,7 +145,7 @@ def call_llm(
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
             # Model not found or endpoint issue
-            error_msg = f"Ollama API error (404): Model '{OLLAMA_MODEL}' may not be available. "
+            error_msg = f"Ollama API error (404): Model '{model_id}' may not be available. "
             error_msg += f"Check that Ollama is running at {OLLAMA_BASE_URL} and the model is installed."
             log_error(error_msg, log_callback, prefix="[LLM] ")
             raise Exception(error_msg) from e
@@ -81,24 +159,54 @@ def call_llm(
     # Ollama chat response shape: { message: { role: "...", content: "..." }, ... }
     return (data.get("message") or {}).get("content", "") or ""
 
-    #------- OpenAI API --------#
-    # kwargs = {
-    #     "model": OPENAI_MODEL,
-    #     "messages": [
-    #         {"role": "user", "content": prompt}
-    #     ],
-    #     "temperature": temperature,
-    #     "timeout": timeout,
-    # }
 
-    # # Force JSON response if requested
-    # if json_mode:
-    #     kwargs["response_format"] = {"type": "json_object"}
-
-    # response = client.chat.completions.create(**kwargs)
-
-    # # Extract content
-    # return response.choices[0].message.content
+def _call_openai(
+    prompt: str,
+    model_id: str,
+    temperature: float,
+    json_mode: bool,
+    timeout: int,
+    system_context: Optional[str],
+    log_callback: Optional[Callable[[str], None]],
+) -> str:
+    """Call OpenAI LLM endpoint."""
+    if not OPENAI_AVAILABLE:
+        error_msg = "OpenAI package not installed. Install with: pip install openai"
+        log_error(error_msg, log_callback, prefix="[LLM] ")
+        raise ImportError(error_msg)
+    
+    if not OPENAI_API_KEY:
+        error_msg = "OPENAI_API_KEY not set in environment variables"
+        log_error(error_msg, log_callback, prefix="[LLM] ")
+        raise ValueError(error_msg)
+    
+    try:
+        client = OpenAI(api_key=OPENAI_API_KEY)
+        
+        messages = []
+        if system_context:
+            messages.append({"role": "system", "content": system_context})
+        messages.append({"role": "user", "content": prompt})
+        
+        kwargs = {
+            "model": model_id,
+            "messages": messages,
+            "temperature": temperature,
+            "timeout": timeout,
+        }
+        
+        # Force JSON response if requested
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+        
+        response = client.chat.completions.create(**kwargs)
+        
+        # Extract content
+        return response.choices[0].message.content or ""
+    except Exception as e:
+        error_msg = f"OpenAI API error: {str(e)}"
+        log_error(error_msg, log_callback, prefix="[LLM] ")
+        raise Exception(error_msg) from e
 
 
 def parse_json_response(
@@ -164,8 +272,26 @@ def extract_entities_and_relationships(
         Dict with 'entities' and 'relationships' lists.
         Each entity includes 'verified_facts' and 'ai_insights' arrays.
     """
-
     profile = get_ingestion_config(profile_name)
+    
+    # Get LLM config from profile
+    llm_config = get_llm_config(profile_name)
+    llm_provider = None
+    llm_model_id = None
+    
+    # Debug logging
+    if log_callback:
+        log_progress(f"[LLM Config] Profile name: '{profile_name}'", log_callback, prefix="")
+        log_progress(f"[LLM Config] LLM config retrieved: {llm_config}", log_callback, prefix="")
+    
+    if llm_config:
+        llm_provider = llm_config.get("provider")
+        llm_model_id = llm_config.get("model_id")
+        if log_callback:
+            log_progress(f"[LLM Config] Using profile config: provider={llm_provider}, model={llm_model_id}", log_callback, prefix="")
+    else:
+        if log_callback:
+            log_progress(f"[LLM Config] No LLM config found in profile '{profile_name}', using defaults", log_callback, prefix="")
     
     system_context = profile.get("system_context")
     special_entity_types = profile.get("special_entity_types", [])
@@ -328,7 +454,43 @@ IMPORTANT REMINDERS:
     debug_file = debug_dir / "last_extraction_prompt.txt"
     debug_file.write_text(prompt, encoding="utf-8")
     
-    response = call_llm(prompt, json_mode=True, temperature=temperature, system_context=system_context, log_callback=log_callback)
+    # Log the prompt to console/logs
+    if log_callback:
+        log_progress("=" * 80, log_callback)
+        log_progress("EXTRACTION PROMPT:", log_callback)
+        log_progress("=" * 80, log_callback)
+        # Split prompt into lines and log each (with reasonable truncation for very long prompts)
+        prompt_lines = prompt.split('\n')
+        # Log first 100 lines, then show truncation message, then last 20 lines
+        if len(prompt_lines) > 120:
+            for line in prompt_lines[:100]:
+                log_progress(line, log_callback)
+            log_progress(f"... [TRUNCATED {len(prompt_lines) - 120} lines] ...", log_callback)
+            for line in prompt_lines[-20:]:
+                log_progress(line, log_callback)
+        else:
+            for line in prompt_lines:
+                log_progress(line, log_callback)
+        log_progress("=" * 80, log_callback)
+        log_progress(f"Full prompt also saved to: {debug_file}", log_callback)
+    else:
+        # If no log_callback, at least print to console
+        print("\n" + "=" * 80)
+        print("EXTRACTION PROMPT:")
+        print("=" * 80)
+        print(prompt[:2000] + ("..." if len(prompt) > 2000 else ""))
+        print("=" * 80)
+        print(f"Full prompt saved to: {debug_file}\n")
+    
+    response = call_llm(
+        prompt, 
+        json_mode=True, 
+        temperature=temperature, 
+        system_context=system_context, 
+        log_callback=log_callback,
+        llm_provider=llm_provider,
+        llm_model_id=llm_model_id,
+    )
     return parse_json_response(response, log_callback=log_callback)
 
 
@@ -338,6 +500,7 @@ def disambiguate_entity(
     candidate_type: str,
     candidate_facts: str,
     existing_entity: Dict,
+    profile_name: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> bool:
     """
@@ -397,7 +560,18 @@ Return ONLY valid JSON:
 }}
 """
 
-    response = call_llm(prompt, json_mode=True, log_callback=log_callback)
+    # Get LLM config from profile
+    llm_config = get_llm_config(profile_name)
+    llm_provider = llm_config.get("provider") if llm_config else None
+    llm_model_id = llm_config.get("model_id") if llm_config else None
+    
+    response = call_llm(
+        prompt, 
+        json_mode=True, 
+        log_callback=log_callback,
+        llm_provider=llm_provider,
+        llm_model_id=llm_model_id,
+    )
     result = parse_json_response(response, log_callback=log_callback)
     return result.get("same_entity", False)
 
@@ -409,6 +583,7 @@ def generate_entity_summary(
     all_notes: str,
     related_entities: Optional[list] = None,
     verified_facts: Optional[list] = None,
+    profile_name: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> str:
     """
@@ -467,7 +642,18 @@ CRITICAL INSTRUCTIONS:
 
 Return ONLY the summary text, no JSON, no quotes, no preamble.
 """
-    response = call_llm(prompt, temperature=0.2, log_callback=log_callback)
+    # Get LLM config from profile
+    llm_config = get_llm_config(profile_name)
+    llm_provider = llm_config.get("provider") if llm_config else None
+    llm_model_id = llm_config.get("model_id") if llm_config else None
+    
+    response = call_llm(
+        prompt, 
+        temperature=0.2, 
+        log_callback=log_callback,
+        llm_provider=llm_provider,
+        llm_model_id=llm_model_id,
+    )
     return response.strip()
 
 
@@ -503,6 +689,7 @@ def get_processing_estimate(
     text_preview: str,
     total_chunks: int,
     existing_entity_count: int,
+    profile_name: Optional[str] = None,
 ) -> Dict:
     """
     Get an estimate of processing duration from the LLM.
@@ -541,10 +728,20 @@ Return ONLY valid JSON:
   "estimated_duration_seconds": <number>,
   "estimated_duration_text": "<human-readable estimate>",
   "reasoning": "<brief explanation of the estimate>"
-}}
+    }}
 """
+    # Get LLM config from profile
+    llm_config = get_llm_config(profile_name)
+    llm_provider = llm_config.get("provider") if llm_config else None
+    llm_model_id = llm_config.get("model_id") if llm_config else None
     
-    response = call_llm(prompt, json_mode=True, temperature=0.3)
+    response = call_llm(
+        prompt, 
+        json_mode=True, 
+        temperature=0.3,
+        llm_provider=llm_provider,
+        llm_model_id=llm_model_id,
+    )
     result = parse_json_response(response)
     
     return {
@@ -562,6 +759,7 @@ def get_processing_progress_update(
     relationships_processed: int,
     elapsed_seconds: int,
     initial_estimate_seconds: Optional[int] = None,
+    profile_name: Optional[str] = None,
 ) -> Dict:
     """
     Get a progress update from the LLM about work done and remaining.
@@ -621,7 +819,18 @@ Return ONLY valid JSON:
 }}
 """
     
-    response = call_llm(prompt, json_mode=True, temperature=0.3)
+    # Get LLM config from profile
+    llm_config = get_llm_config(profile_name)
+    llm_provider = llm_config.get("provider") if llm_config else None
+    llm_model_id = llm_config.get("model_id") if llm_config else None
+    
+    response = call_llm(
+        prompt, 
+        json_mode=True, 
+        temperature=0.3,
+        llm_provider=llm_provider,
+        llm_model_id=llm_model_id,
+    )
     result = parse_json_response(response)
     
     return {

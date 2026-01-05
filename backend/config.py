@@ -24,7 +24,7 @@ NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 # LLM / Ollama / OpenAI Configuration
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:14b-instruct"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 
 # LLM Provider Selection (can be overridden by user settings)
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "ollama").lower()  # "openai" or "ollama"
@@ -48,7 +48,7 @@ else:
     if EMBEDDING_PROVIDER == "openai":
         EMBEDDING_MODEL = "text-embedding-3-small"
     else:  # ollama
-        EMBEDDING_MODEL = "nomic-embed-text"  # Common Ollama embedding model
+        EMBEDDING_MODEL = "qwen3-embedding:4b"  # Common Ollama embedding model
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
 
@@ -63,7 +63,7 @@ HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower()
 # Ingestion chunking configuration
 # Keep these in sync with ingestion/scripts/config.py so the ingestion
 # pipeline can safely import them from the shared `config` module.
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "2500"))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
 
 # Authentication configuration

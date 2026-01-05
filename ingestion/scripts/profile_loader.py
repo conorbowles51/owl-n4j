@@ -55,3 +55,9 @@ def get_ingestion_config(profile_name: str | None = None) -> dict[str, Any]:
 def get_chat_config(profile_name: str | None = None) -> dict[str, Any]:
     """Get the chat configuration section from a profile."""
     return load_profile(profile_name).get("chat", {})
+
+
+def get_llm_config(profile_name: str | None = None) -> dict[str, Any] | None:
+    """Get the LLM configuration from a profile."""
+    profile = load_profile(profile_name)
+    return profile.get("llm_config")
