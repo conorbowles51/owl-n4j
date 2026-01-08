@@ -304,7 +304,7 @@ def extract_entities_and_relationships(
     # Build sepcial entity type descriptions
     special_entity_descriptions = ""
     for entity in special_entity_types:
-        special_entity_descriptions += f"1. {entity.get("name")}: {entity.get("description")}.\n"
+        special_entity_descriptions += f"1. {entity.get('name')}: {entity.get('description')}.\n"
     
 
     existing_keys_hint = ""
