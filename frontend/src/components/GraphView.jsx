@@ -230,7 +230,8 @@ const GraphView = forwardRef(function GraphView({
       centerGraph();
       return;
     }
-    
+  
+
     // Calculate center point
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
