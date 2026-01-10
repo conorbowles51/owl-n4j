@@ -169,6 +169,27 @@ AVAILABLE_MODELS = [
     
     # OpenAI Models
     LLMModel(
+        id="gpt-5",
+        name="GPT-5",
+        provider=LLMProvider.OPENAI,
+        description="Next-generation OpenAI model with enhanced reasoning, multimodal capabilities, and massive context window.",
+        pros=[
+            "State-of-the-art reasoning and generation",
+            "Multimodal input/output (text, image, audio)",
+            "Massive context window (256K tokens)",
+            "Improved speed and efficiency",
+            "Best-in-class instruction following",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "Higher API costs",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
         id="gpt-4o",
         name="GPT-4o",
         provider=LLMProvider.OPENAI,

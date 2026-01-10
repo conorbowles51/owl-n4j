@@ -191,7 +191,7 @@ def _call_openai(
         kwargs = {
             "model": model_id,
             "messages": messages,
-            "temperature": temperature,
+            "temperature": temperature if model_id != "gpt-5" else 1,
             "timeout": timeout,
         }
         
@@ -335,13 +335,28 @@ IMPORTANT: Create relationship types that accurately capture the connection. You
 For each entity, you MUST provide:
 
 BASIC INFORMATION:
-- key: A stable, lowercase, hyphenated identifier (e.g., "john-smith", "emerald-imports-ltd", "acc-001")
+- key: A stable, lowercase, hyphenated identifier (e.g., "john-smith", "emerald-imports-ltd", "acc-001", "payment-2023-03-15-125000")
 - type: The entity type that best describes this entity. You may use any type that fits - common types include Person, Company, Organisation, Location, Document, Event, etc. However, be aware of these domain-specific types that may be more appropriate:
 {special_entity_descriptions}
   Choose the most specific and accurate type for each entity. If none of the special types above fit well, use a general type or create an appropriate one.
-- name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd")
-- date: (REQUIRED for event/temporal types like Transaction, Meeting, Communication, etc.) The date in YYYY-MM-DD format if mentioned, otherwise null
+- name: Human-readable name (e.g., "John Smith", "Emerald Imports Ltd", "Payment to Nexus Trading - Mar 15, 2023")
 - location: Geographic location if mentioned, otherwise null
+
+DATE EXTRACTION (CRITICAL):
+- date: REQUIRED for ALL event/temporal types (Transaction, Payment, Meeting, Communication, Transfer, Invoice, etc.)
+- CONVERT dates to YYYY-MM-DD format. Examples:
+  * "March 15, 2023" → "2023-03-15"
+  * "15/03/2023" → "2023-03-15"  
+  * "03-15-2023" → "2023-03-15"
+  * "Jan 2024" → "2024-01-01" (use first of month if day unknown)
+- If a date is mentioned ANYWHERE in the text for an event, you MUST extract it
+- For tables of transactions/payments, EACH ROW is a separate entity with its own date
+
+TABULAR DATA (IMPORTANT):
+When you see tables of transactions, payments, or events:
+- Extract EACH ROW as a SEPARATE entity of type "Transaction" or "Payment"
+- Each entity must have its own date, amount, and description
+- Use descriptive keys like "payment-nexus-2023-03-15" or "transaction-125000-mar-2023"
 
 VERIFIED FACTS (REQUIRED) - Facts that are DIRECTLY stated in the document:
 For each entity, provide an array of "verified_facts". Each fact MUST:
@@ -443,8 +458,10 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
 
 IMPORTANT REMINDERS:
 1. verified_facts must have direct quotes from the document. If you can't quote it, it's an ai_insight.
-2. For event-type entities, dates are REQUIRED if present in the text.
-3. Use page number {current_page} for facts from this chunk (or the specific page if you can identify it from page markers in the text).
+2. For event-type entities (Transaction, Payment, Meeting, etc.), dates are REQUIRED - convert any date format to YYYY-MM-DD.
+3. Extract EACH transaction/payment in a table as a SEPARATE entity with its own date and amount.
+4. Use page number {current_page} for facts from this chunk (or the specific page if you can identify it from page markers in the text).
+5. Do NOT skip dates - if you see "March 15, 2023", extract it as "2023-03-15".
 """
     
     # Save prompt to file for debugging
@@ -491,7 +508,24 @@ IMPORTANT REMINDERS:
         llm_provider=llm_provider,
         llm_model_id=llm_model_id,
     )
-    return parse_json_response(response, log_callback=log_callback)
+    
+    # Debug: Log raw LLM response
+    debug_response_file = debug_dir / "last_extraction_response.txt"
+    debug_response_file.write_text(response, encoding="utf-8")
+    log_progress(f"[DEBUG] Raw LLM response saved to: {debug_response_file}", log_callback)
+    
+    # Log a preview of entities extracted (check for dates)
+    try:
+        preview = parse_json_response(response, log_callback=log_callback)
+        entities = preview.get("entities", [])
+        log_progress(f"[DEBUG] Extracted {len(entities)} entities:", log_callback)
+        for ent in entities[:10]:  # Show first 10
+            date_val = ent.get("date", "NOT SET")
+            log_progress(f"  - {ent.get('name', 'unnamed')} (type={ent.get('type')}, date={date_val})", log_callback)
+        return preview
+    except Exception as e:
+        log_error(f"[DEBUG] Failed to parse response: {e}", log_callback)
+        raise
 
 
 def disambiguate_entity(
