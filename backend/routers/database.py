@@ -275,14 +275,27 @@ async def get_retrieval_history(
             limit=1000,  # Get more logs to find relevant ones
         )
         
+        # Safety check: ensure logs is a dict
+        if not logs or not isinstance(logs, dict):
+            return {"history": []}
+        
         history = []
         for log in logs.get("logs", []):
+            if not isinstance(log, dict):
+                continue
             details = log.get("details", {})
+            if not isinstance(details, dict):
+                continue
             debug_log = details.get("debug_log", {})
+            if not isinstance(debug_log, dict):
+                continue
             
             # Check if this document was retrieved in this query
             # Look in hybrid_filtering, vector_search results, etc.
-            vector_results = debug_log.get("vector_search", {}).get("results", [])
+            vector_search = debug_log.get("vector_search", {})
+            if not isinstance(vector_search, dict):
+                continue
+            vector_results = vector_search.get("results", [])
             for result in vector_results:
                 if result.get("id") == doc_id:
                     history.append({

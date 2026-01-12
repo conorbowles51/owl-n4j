@@ -189,6 +189,271 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                         lines.append(f"       Summary: {conn['summary'][:200]}")
 
         return "\n".join(lines)
+    
+    def _build_document_context(self, doc_results: List[Dict]) -> str:
+        """
+        Build context string from document search results.
+        
+        Args:
+            doc_results: List of document results from vector search
+                Each result has: id, text, metadata, distance
+        
+        Returns:
+            Formatted context string with full document texts
+        """
+        if not doc_results:
+            return "No relevant documents found."
+        
+        lines = [
+            "=== RELEVANT DOCUMENTS ===",
+            f"Found {len(doc_results)} relevant document(s) via vector search:",
+            ""
+        ]
+        
+        for i, doc in enumerate(doc_results, 1):
+            doc_id = doc.get("id", "Unknown")
+            metadata = doc.get("metadata", {})
+            filename = metadata.get("filename", doc_id)
+            distance = doc.get("distance")
+            text = doc.get("text", "")
+            
+            lines.append(f"--- Document {i}: {filename} ---")
+            if distance is not None:
+                lines.append(f"Relevance Score: {1 - distance:.4f} (distance: {distance:.4f})")
+            lines.append(f"Document ID: {doc_id}")
+            lines.append("")
+            lines.append("Full Text:")
+            lines.append(text)
+            lines.append("")
+        
+        return "\n".join(lines)
+    
+    def _format_document_summary(self, doc_results: List[Dict]) -> str:
+        """
+        Format a summary of document search results for display in the answer.
+        
+        Args:
+            doc_results: List of document results from vector search
+        
+        Returns:
+            Formatted summary string
+        """
+        if not doc_results:
+            return ""
+        
+        lines = [
+            "**📄 Relevant Documents Found:**",
+            ""
+        ]
+        
+        for i, doc in enumerate(doc_results, 1):
+            metadata = doc.get("metadata", {})
+            filename = metadata.get("filename", doc.get("id", "Unknown"))
+            distance = doc.get("distance")
+            
+            relevance_score = (1 - distance) * 100 if distance is not None else None
+            
+            line = f"{i}. **{filename}**"
+            if relevance_score is not None:
+                line += f" (Relevance: {relevance_score:.1f}%)"
+            lines.append(line)
+        
+        lines.append("")
+        lines.append("These documents were found via vector search and their full text has been analyzed to answer your question.")
+        lines.append("")
+        
+        return "\n".join(lines)
+    
+    def _build_result_graph(
+        self,
+        doc_results: List[Dict],
+        answer_text: str,
+        top_k_entities: int = 20,
+    ) -> Dict[str, List]:
+        """
+        Build a result graph containing documents and relevant entities.
+        
+        Args:
+            doc_results: List of document results from vector search
+                Each result has: id (vector_db_id), metadata, distance
+            answer_text: The AI assistant's answer text
+            top_k_entities: Number of entities to retrieve via vector search
+            
+        Returns:
+            Dict with 'nodes' and 'links' arrays for graph visualization
+        """
+        nodes = []
+        node_keys = set()
+        links = []
+        
+        if not VECTOR_DB_AVAILABLE:
+            return {"nodes": nodes, "links": links}
+        
+        try:
+            # Step 1: Get document nodes from Neo4j
+            doc_ids = [r["id"] for r in doc_results if r.get("id")]
+            if doc_ids:
+                doc_nodes = self._get_document_nodes_from_neo4j(doc_ids)
+                for node in doc_nodes:
+                    if node["key"] and node["key"] not in node_keys:
+                        node_keys.add(node["key"])
+                        nodes.append(node)
+            
+            # Step 2: Find relevant entities via vector search on answer text
+            if answer_text and answer_text.strip():
+                # Generate embedding for answer text
+                answer_embedding = embedding_service.generate_embedding(answer_text)
+                
+                # Search for similar entities
+                entity_results = vector_db_service.search_entities(
+                    query_embedding=answer_embedding,
+                    top_k=top_k_entities
+                )
+                
+                # Extract entity keys from search results
+                entity_keys = [r["id"] for r in entity_results if r.get("id")]
+                
+                if entity_keys:
+                    # Step 3: Get entity nodes from Neo4j
+                    entity_nodes = self._get_entity_nodes_from_neo4j(entity_keys)
+                    for node in entity_nodes:
+                        if node["key"] and node["key"] not in node_keys:
+                            node_keys.add(node["key"])
+                            nodes.append(node)
+                    
+                    # Step 4: Get relationships between entities
+                    if len(node_keys) > 1:
+                        all_keys = list(node_keys)
+                        entity_links = self._get_relationships_between_nodes(all_keys)
+                        links.extend(entity_links)
+            
+        except Exception as e:
+            print(f"[RAG] Error building result graph: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return {"nodes": nodes, "links": links}
+    
+    def _get_document_nodes_from_neo4j(self, doc_ids: List[str]) -> List[Dict]:
+        """Get Document nodes from Neo4j by vector_db_id."""
+        if not doc_ids:
+            return []
+        
+        try:
+            cypher = """
+            MATCH (d:Document)
+            WHERE d.vector_db_id IN $doc_ids
+            RETURN 
+                id(d) AS neo4j_id,
+                d.id AS id,
+                d.key AS key,
+                d.name AS name,
+                labels(d)[0] AS type,
+                d.summary AS summary,
+                d.notes AS notes,
+                properties(d) AS properties
+            """
+            results = self.neo4j.run_cypher(cypher, params={"doc_ids": doc_ids})
+            
+            nodes = []
+            for record in results:
+                props = record.get("properties") or {}
+                node = {
+                    "neo4j_id": record.get("neo4j_id"),
+                    "id": record.get("id") or record.get("key"),
+                    "key": record.get("key"),
+                    "name": record.get("name") or record.get("key"),
+                    "type": record.get("type") or "Document",
+                    "summary": record.get("summary"),
+                    "notes": record.get("notes"),
+                    "properties": props,
+                }
+                nodes.append(node)
+            
+            return nodes
+        except Exception as e:
+            print(f"[RAG] Error getting document nodes: {e}")
+            return []
+    
+    def _get_entity_nodes_from_neo4j(self, entity_keys: List[str]) -> List[Dict]:
+        """Get entity nodes from Neo4j by keys."""
+        if not entity_keys:
+            return []
+        
+        try:
+            # Use the existing get_subgraph method pattern
+            with self.neo4j._driver.session() as session:
+                query = """
+                MATCH (n)
+                WHERE n.key IN $keys AND NOT n:Document
+                RETURN 
+                    id(n) AS neo4j_id,
+                    n.id AS id,
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.summary AS summary,
+                    n.notes AS notes,
+                    properties(n) AS properties
+                """
+                results = session.run(query, keys=entity_keys)
+                
+                nodes = []
+                # Import parse_json_field from neo4j_service
+                from services.neo4j_service import parse_json_field
+                for record in results:
+                    props = record.get("properties") or {}
+                    node = {
+                        "neo4j_id": record.get("neo4j_id"),
+                        "id": record.get("id") or record.get("key"),
+                        "key": record.get("key"),
+                        "name": record.get("name") or record.get("key"),
+                        "type": record.get("type"),
+                        "summary": record.get("summary"),
+                        "notes": record.get("notes"),
+                        "verified_facts": parse_json_field(props.get("verified_facts")),
+                        "ai_insights": parse_json_field(props.get("ai_insights")),
+                        "properties": props,
+                    }
+                    nodes.append(node)
+                
+                return nodes
+        except Exception as e:
+            print(f"[RAG] Error getting entity nodes: {e}")
+            return []
+    
+    def _get_relationships_between_nodes(self, node_keys: List[str]) -> List[Dict]:
+        """Get relationships between given nodes."""
+        if not node_keys or len(node_keys) < 2:
+            return []
+        
+        try:
+            with self.neo4j._driver.session() as session:
+                query = """
+                MATCH (a)-[r]->(b)
+                WHERE a.key IN $keys AND b.key IN $keys
+                RETURN 
+                    a.key AS source,
+                    b.key AS target,
+                    type(r) AS type,
+                    properties(r) AS properties
+                """
+                results = session.run(query, keys=node_keys)
+                
+                links = []
+                for record in results:
+                    link = {
+                        "source": record["source"],
+                        "target": record["target"],
+                        "type": record["type"],
+                        "properties": record.get("properties") or {},
+                    }
+                    links.append(link)
+                
+                return links
+        except Exception as e:
+            print(f"[RAG] Error getting relationships: {e}")
+            return []
 
     def _try_cypher_query(
         self,
@@ -225,7 +490,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 debug_log["cypher_answer_query"] = {
                     "generated_cypher": cypher,
                 }
-            
+
             results = self.neo4j.run_cypher(cypher)
 
             if not results:
@@ -574,44 +839,110 @@ LIMIT {max_nodes}
         from datetime import datetime
         debug_log["timestamp"] = datetime.now().isoformat()
         
-        # Get graph summary (needed for schema info regardless)
-        graph_summary = self.neo4j.get_graph_summary()
-        debug_log["graph_summary"] = {
-            "total_nodes": graph_summary.get('total_nodes', 0),
-            "total_relationships": graph_summary.get('total_relationships', 0),
-            "entity_types": list(graph_summary.get('entity_types', {}).keys()),
-            "relationship_types": list(graph_summary.get('relationship_types', {}).keys()),
-        }
+        # Graph summary no longer needed - using vector search only
 
         # Track which node keys were actually used to generate the answer
         used_node_keys = []
         
+        # Store document results for focused-documents mode
+        doc_results = []
+
         # Determine context mode
         if selected_keys and len(selected_keys) > 0:
-            # Focused context (user-selected nodes)
-            context_mode = "focused"
-            used_node_keys = selected_keys.copy()
+            # Focused context: Use vector search to find relevant documents
+            context_mode = "focused-documents"
+            used_node_keys = []
             
-            if debug_log is not None:
-                # Document the query pattern used (actual query is in neo4j_service)
-                debug_log["focused_context_query"] = {
-                    "cypher": f"MATCH (n) WHERE n.key IN $keys OPTIONAL MATCH (n)-[r]-(connected) RETURN n.key, n.name, labels(n)[0] AS type, n.summary, n.notes, collect(DISTINCT {{key: connected.key, name: connected.name, type: labels(connected)[0], summary: connected.summary, relationship: type(r), direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END}}) AS connections",
-                    "parameters": {"keys": selected_keys},
-                    "selected_node_keys": selected_keys,
-                }
+            # Use vector search to find relevant documents based on the question
+            if VECTOR_DB_AVAILABLE:
+                try:
+                    # Check if vector DB has any documents
+                    doc_count = vector_db_service.count_documents()
+                    print(f"[RAG] Vector DB contains {doc_count} documents")
+                    
+                    if doc_count == 0:
+                        print(f"[RAG] WARNING: Vector database is empty. No documents have been embedded.")
+                        context = "Vector database is empty. No documents have been embedded yet."
+                        context_description = "Vector database empty - no documents found"
+                        doc_results = []
+                        if debug_log is not None:
+                            debug_log["vector_search"] = {
+                                "enabled": True,
+                                "question": question,
+                                "documents_in_db": 0,
+                                "error": "Vector database is empty",
+                            }
+                    else:
+                        # Perform vector search on the question
+                        query_embedding = embedding_service.generate_embedding(question)
+                        print(f"[RAG] Generated query embedding with {len(query_embedding)} dimensions")
+                        doc_results = vector_db_service.search(
+                            query_embedding=query_embedding,
+                            top_k=VECTOR_SEARCH_TOP_K
+                        )
+                        print(f"[RAG] Vector search returned {len(doc_results)} documents")
+                        
+                        if debug_log is not None:
+                            debug_log["vector_search"] = {
+                                "enabled": True,
+                                "question": question,
+                                "documents_in_db": doc_count,
+                                "embedding_dimensions": len(query_embedding),
+                                "top_k": VECTOR_SEARCH_TOP_K,
+                                "results": [
+                                    {
+                                        "document_id": r["id"],
+                                        "filename": r.get("metadata", {}).get("filename", "Unknown"),
+                                        "distance": r.get("distance"),
+                                        "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
+                                    }
+                                    for r in doc_results
+                                ],
+                                "documents_found": len(doc_results),
+                            }
+                        
+                        # Build context from full document texts
+                        context = self._build_document_context(doc_results)
+                        context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
+                    
+                except Exception as e:
+                    print(f"[RAG] Vector search error in focused mode: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Fallback to empty context
+                    context = "No relevant documents found."
+                    context_description = "Vector search unavailable"
+                    doc_results = []
+                    if debug_log is not None:
+                        debug_log["vector_search"] = {
+                            "enabled": True,
+                            "error": str(e),
+                        }
+            else:
+                context = "Vector database not available."
+                context_description = "Vector search unavailable"
+                if debug_log is not None:
+                    debug_log["vector_search"] = {
+                        "enabled": False,
+                        "reason": "Vector DB not available",
+                    }
             
-            node_context = self.neo4j.get_context_for_nodes(selected_keys)
-            context = self._build_focused_context(node_context)
-            context_description = f"Focused on {len(selected_keys)} selected entity(ies)"
-
             log_section(
                 source_file=__file__,
                 source_func="answer_question",
-                title="Context: focused",
+                title="Context: focused (vector search)",
                 content={
                     "selected_keys": selected_keys,
+                    "documents_found": len(doc_results),
                     "context_length": len(context),
-                    "context": context,
+                    "documents": [
+                        {
+                            "id": r["id"],
+                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
+                            "distance": r.get("distance"),
+                        }
+                        for r in doc_results
+                    ],
                 },
                 as_json=True,
             )
@@ -621,144 +952,143 @@ LIMIT {max_nodes}
                 debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
                 debug_log["focused_context"] = {
                     "selected_node_keys": selected_keys,
-                    "entities_count": len(node_context.get("selected_entities", [])),
-                    "entities": [
+                    "documents_count": len(doc_results),
+                    "documents": [
                         {
-                            "key": e.get("key"),
-                            "name": e.get("name"),
-                            "type": e.get("type"),
+                            "id": r["id"],
+                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
+                            "distance": r.get("distance"),
                         }
-                        for e in node_context.get("selected_entities", [])[:20]
+                        for r in doc_results
                     ],
                 }
         else:
-            # Hybrid filtering: Vector search + Cypher filtering
-            all_relevant_keys = set()
-            doc_ids = []
-            cypher_node_keys = []
+            # No nodes selected: Use vector search to find relevant documents
+            context_mode = "vector-search-documents"
+            used_node_keys = []
             
-            # 1. Vector search for relevant documents (if enabled)
-            if VECTOR_DB_AVAILABLE and HYBRID_FILTERING_ENABLED:
+            # Use vector search to find relevant documents based on the question
+            if VECTOR_DB_AVAILABLE:
                 try:
-                    doc_ids = self._find_relevant_documents(question, debug_log=debug_log)
-                    if doc_ids:
-                        doc_node_keys = self._get_nodes_from_documents(doc_ids, debug_log=debug_log)
-                        all_relevant_keys.update(doc_node_keys)
-                        print(f"[RAG] Vector search found {len(doc_ids)} documents, {len(doc_node_keys)} related nodes")
+                    # Check if vector DB has any documents
+                    doc_count = vector_db_service.count_documents()
+                    print(f"[RAG] Vector DB contains {doc_count} documents")
+                    
+                    if doc_count == 0:
+                        print(f"[RAG] WARNING: Vector database is empty. No documents have been embedded.")
+                        context = "Vector database is empty. No documents have been embedded yet."
+                        context_description = "Vector database empty - no documents found"
+                        doc_results = []
+                        if debug_log is not None:
+                            debug_log["vector_search"] = {
+                                "enabled": True,
+                                "question": question,
+                                "documents_in_db": 0,
+                                "error": "Vector database is empty",
+                            }
+                    else:
+                        # Perform vector search on the question
+                        query_embedding = embedding_service.generate_embedding(question)
+                        print(f"[RAG] Generated query embedding with {len(query_embedding)} dimensions")
+                        doc_results = vector_db_service.search(
+                            query_embedding=query_embedding,
+                            top_k=VECTOR_SEARCH_TOP_K
+                        )
+                        print(f"[RAG] Vector search returned {len(doc_results)} documents")
+                        
+                        if debug_log is not None:
+                            debug_log["vector_search"] = {
+                                "enabled": True,
+                                "question": question,
+                                "documents_in_db": doc_count,
+                                "embedding_dimensions": len(query_embedding),
+                                "top_k": VECTOR_SEARCH_TOP_K,
+                                "results": [
+                                    {
+                                        "document_id": r["id"],
+                                        "filename": r.get("metadata", {}).get("filename", "Unknown"),
+                                        "distance": r.get("distance"),
+                                        "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
+                                    }
+                                    for r in doc_results
+                                ],
+                                "documents_found": len(doc_results),
+                            }
+                        
+                        # Build context from full document texts
+                        context = self._build_document_context(doc_results)
+                        context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
+                    
                 except Exception as e:
-                    print(f"[RAG] Vector search failed, continuing with Cypher filtering: {e}")
+                    print(f"[RAG] Vector search error: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Fallback to empty context
+                    context = "No relevant documents found."
+                    context_description = "Vector search unavailable"
+                    doc_results = []
                     if debug_log is not None:
-                        debug_log["vector_search"] = {"error": str(e)}
-            
-            # 2. LLM-generated Cypher filtering (existing)
-            try:
-                cypher_node_keys = self._generate_relevance_filter_query(question, graph_summary, debug_log=debug_log) or []
-                all_relevant_keys.update(cypher_node_keys)
-            except Exception as e:
-                print(f"[RAG] Cypher filtering failed: {e}")
-                if debug_log is not None:
-                    debug_log["cypher_filter_query"] = {"error": str(e)}
-            
-            # 3. Determine which context to use
-            total_nodes = graph_summary.get('total_nodes', 0)
-            relevant_keys_list = list(all_relevant_keys)
-            
-            if relevant_keys_list and len(relevant_keys_list) < total_nodes * 0.7:
-                # Use hybrid filtered context
-                context_mode = "hybrid-filtered"
-                used_node_keys = relevant_keys_list.copy()
-                node_context = self.neo4j.get_context_for_nodes(relevant_keys_list)
-                context = self._build_focused_context(node_context)
-                
-                # Build description
-                desc_parts = [f"{len(relevant_keys_list)} relevant entities from {total_nodes} total"]
-                if doc_ids:
-                    desc_parts.append(f"{len(doc_ids)} documents matched")
-                if cypher_node_keys:
-                    desc_parts.append(f"{len(cypher_node_keys)} from Cypher filter")
-                
-                context_description = f"Hybrid-filtered graph ({', '.join(desc_parts)})"
-                
-                # Store context info in debug log
-                if debug_log is not None:
-                    debug_log["context_mode"] = context_mode
-                    debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
-                    debug_log["hybrid_filtering"] = {
-                        "vector_doc_ids": doc_ids,
-                        "vector_node_keys": list(set(doc_node_keys)) if doc_ids else [],
-                        "cypher_node_keys": cypher_node_keys,
-                        "combined_node_keys": relevant_keys_list[:50],  # First 50 for readability
-                        "total_combined": len(relevant_keys_list),
-                    }
-            elif relevant_keys_list:
-                # We have relevant keys but they're >= 70% of total nodes
-                # Still use them for used_node_keys, but use full context for answer
-                context_mode = "question-filtered"
-                used_node_keys = relevant_keys_list.copy()
-                # Use full context but track which nodes were filtered
-                context = self._build_full_context(graph_summary)
-                context_description = f"Question-filtered graph ({len(relevant_keys_list)} of {total_nodes} entities)"
-                
-                if debug_log is not None:
-                    debug_log["context_mode"] = context_mode
-                    debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
-                    debug_log["hybrid_filtering"] = {
-                        "vector_doc_ids": doc_ids,
-                        "vector_node_keys": list(set(doc_node_keys)) if doc_ids else [],
-                        "cypher_node_keys": cypher_node_keys,
-                        "combined_node_keys": relevant_keys_list[:50],
-                        "total_combined": len(relevant_keys_list),
-                        "note": "Filtered nodes >= 70% of total, using full context but tracking filtered nodes",
-                    }
+                        debug_log["vector_search"] = {
+                            "enabled": True,
+                            "error": str(e),
+                        }
             else:
-                # Fallback to full graph context - no filtering worked
-                context_mode = "full"
-                # For full graph, we don't track specific nodes (too many)
-                # The answer is based on the entire graph, so we leave used_node_keys empty
-                # Users can still use "Show on Graph" but it will fall back to text extraction
-                used_node_keys = []
-                
-                context = self._build_full_context(graph_summary)
-                context_description = f"Full graph ({total_nodes} entities)"
-
-                log_section(
-                    source_file=__file__,
-                    source_func="answer_question",
-                    title="Context: full",
-                    content={
-                        "total_nodes": total_nodes,
-                        "context_length": len(context),
-                        "context": context,
-                    },
-                    as_json=True,
-                )
-                
+                context = "Vector database not available."
+                context_description = "Vector search unavailable"
+                doc_results = []
                 if debug_log is not None:
-                    debug_log["context_mode"] = context_mode
-                    debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
-
-        # Try Cypher query for specific questions
-        query_results = self._try_cypher_query(question, graph_summary, debug_log=debug_log)
-
-        log_section(
-            source_file=__file__,
-            source_func="answer_question",
-            title="Query results (direct Cypher attempt)",
-            content={
-                "cypher_used": query_results is not None,
-                "query_results": query_results,
-            },
-            as_json=True,
-        )
+                    debug_log["vector_search"] = {
+                        "enabled": False,
+                        "reason": "Vector DB not available",
+                    }
+            
+            log_section(
+                source_file=__file__,
+                source_func="answer_question",
+                title="Context: vector search (no nodes selected)",
+                content={
+                    "documents_found": len(doc_results),
+                    "context_length": len(context),
+                    "documents": [
+                        {
+                            "id": r["id"],
+                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
+                            "distance": r.get("distance"),
+                        }
+                        for r in doc_results
+                    ],
+                },
+                as_json=True,
+            )
+            
+            if debug_log is not None:
+                debug_log["context_mode"] = context_mode
+                debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
+                debug_log["vector_search_context"] = {
+                    "documents_count": len(doc_results),
+                    "documents": [
+                        {
+                            "id": r["id"],
+                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
+                            "distance": r.get("distance"),
+                        }
+                        for r in doc_results
+                    ],
+                }
 
         # Generate answer - capture the prompt
-        # We need to get the prompt that will be sent to LLM
-        # Let's modify the LLM service to return the prompt, or capture it here
         answer, final_prompt = self.llm.answer_question_with_prompt(
             question=question,
             context=context,
-            query_results=query_results,
         )
+        
+        # Store clean answer text for entity search (before prepending document summary)
+        clean_answer_text = answer
+        
+        # If using document-based context modes, prepend document summary to answer
+        if context_mode in ["focused-documents", "vector-search-documents"] and doc_results:
+            doc_summary = self._format_document_summary(doc_results)
+            answer = doc_summary + "\n\n" + answer
 
         log_section(
             source_file=__file__,
@@ -786,7 +1116,7 @@ LIMIT {max_nodes}
                     "question": question,
                     "context_mode": context_mode,
                     "context_description": context_description,
-                    "cypher_used": query_results is not None,
+                    "cypher_used": False,
                     "answer_length": len(answer),
                     "used_node_keys_count": len(used_node_keys),
                     "debug_log": debug_log,  # Include full debug log in system logs
@@ -796,13 +1126,29 @@ LIMIT {max_nodes}
         except Exception as e:
             print(f"[RAG] Failed to log to system logs: {e}")
 
+        # Build result graph with documents and relevant entities
+        result_graph = {"nodes": [], "links": []}
+        if doc_results and clean_answer_text:
+            try:
+                result_graph = self._build_result_graph(
+                    doc_results=doc_results,
+                    answer_text=clean_answer_text,
+                    top_k_entities=20,
+                )
+                print(f"[RAG] Result graph built: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
+            except Exception as e:
+                print(f"[RAG] Error building result graph: {e}")
+                import traceback
+                traceback.print_exc()
+
         return {
             "answer": answer,
             "context_mode": context_mode,
             "context_description": context_description,
-            "cypher_used": query_results is not None,
+            "cypher_used": False,
             "debug_log": debug_log,
             "used_node_keys": used_node_keys,  # Node keys actually used to generate the answer
+            "result_graph": result_graph,  # Graph with documents and relevant entities
         }
 
     def extract_nodes_from_answer(

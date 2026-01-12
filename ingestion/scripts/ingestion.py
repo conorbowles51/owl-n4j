@@ -47,15 +47,16 @@ if str(backend_dir) not in sys.path:
 
 try:
     from services.vector_db_service import vector_db_service
-    from services.embedding_service import embedding_service
-    VECTOR_DB_AVAILABLE = embedding_service is not None
+    from services.embedding_service import EmbeddingService
+    # Don't create a global instance - we'll create it based on profile config
+    VECTOR_DB_AVAILABLE = True
 except (ImportError, ValueError) as e:
     # Note: can't use log_warning here as it's module-level initialization
     print(f"[WARNING] [Ingestion] Vector DB services not available: {e}")
     print("[WARNING] [Ingestion] Document and entity embeddings will be skipped")
     VECTOR_DB_AVAILABLE = False
     vector_db_service = None
-    embedding_service = None
+    EmbeddingService = None
 
 
 def build_entity_embedding_text(
@@ -113,6 +114,7 @@ def store_entity_embedding(
     verified_facts: Optional[List[Dict]] = None,
     ai_insights: Optional[List[Dict]] = None,
     log_callback: Optional[Callable[[str], None]] = None,
+    profile_name: Optional[str] = None,
 ) -> bool:
     """
     Generate and store embedding for an entity.
@@ -129,7 +131,7 @@ def store_entity_embedding(
     Returns:
         True if embedding was stored successfully, False otherwise
     """
-    if not VECTOR_DB_AVAILABLE:
+    if not VECTOR_DB_AVAILABLE or not EmbeddingService:
         return False
     
     try:
@@ -146,8 +148,53 @@ def store_entity_embedding(
             log_warning(f"Skipping entity embedding for {entity_key}: no text content", log_callback)
             return False
         
+        # Determine embedding provider from profile's LLM config
+        embedding_provider = None
+        embedding_model = None
+        llm_config = get_llm_config(profile_name)
+        if llm_config and llm_config.get("provider"):
+            embedding_provider = llm_config.get("provider").lower()
+            if embedding_provider == "openai":
+                embedding_model = "text-embedding-3-small"
+            elif embedding_provider == "ollama":
+                embedding_model = "qwen3-embedding:4b"
+        
+        # Create embedding service instance based on profile's LLM config
+        profile_embedding_service = None
+        if embedding_provider:
+            try:
+                profile_embedding_service = EmbeddingService(
+                    provider=embedding_provider,
+                    model=embedding_model
+                )
+            except ValueError as e:
+                # Handle missing API key or configuration errors
+                error_msg = str(e)
+                if "OPENAI_API_KEY" in error_msg:
+                    log_warning(
+                        f"Entity embedding: Cannot use OpenAI embedding - OPENAI_API_KEY not set. "
+                        f"Please set OPENAI_API_KEY in your .env file or switch to Ollama provider in the profile.",
+                        log_callback
+                    )
+                else:
+                    log_warning(f"Entity embedding: Configuration error - {error_msg}", log_callback)
+                return False
+            except Exception as e:
+                log_warning(f"Entity embedding: Failed to initialize embedding service - {e}", log_callback)
+                return False
+        else:
+            # Fall back to default embedding service
+            try:
+                profile_embedding_service = EmbeddingService()
+            except Exception as e:
+                log_warning(f"Entity embedding: Failed to initialize default embedding service - {e}", log_callback)
+                return False
+        
+        if not profile_embedding_service:
+            return False
+        
         # Generate embedding
-        embedding = embedding_service.generate_embedding(embedding_text)
+        embedding = profile_embedding_service.generate_embedding(embedding_text)
         
         # Store in vector DB
         vector_db_service.add_entity(
@@ -404,6 +451,8 @@ def process_chunk(
                     summary=new_summary,
                     verified_facts=merged_facts,
                     ai_insights=merged_insights,
+                    log_callback=log_callback,
+                    profile_name=profile_name,
                 )
         else:
             # Create new entity
@@ -476,6 +525,8 @@ def process_chunk(
                 summary=initial_summary,
                 verified_facts=enriched_facts,
                 ai_insights=enriched_insights,
+                log_callback=log_callback,
+                profile_name=profile_name,
             )
 
         # Link entity to document
@@ -571,10 +622,26 @@ def ingest_document(
         log_progress(f"[Configuration] LLM Model: {OLLAMA_MODEL}", log_callback)
         log_progress(f"[Configuration] LLM Server: {OLLAMA_BASE_URL}", log_callback)
     
+    # Determine embedding provider and model from profile's LLM config
+    embedding_provider = None
+    embedding_model = None
+    
+    if llm_config and llm_config.get("provider"):
+        # Match embedding provider to LLM provider from profile
+        embedding_provider = llm_config.get("provider").lower()
+        # Use default embedding models based on provider
+        if embedding_provider == "openai":
+            embedding_model = "text-embedding-3-small"
+        elif embedding_provider == "ollama":
+            embedding_model = "qwen3-embedding:4b"  # Default Ollama embedding model
+    
     # Log Embedding configuration
-    if VECTOR_DB_AVAILABLE and embedding_service:
-        log_progress(f"[Configuration] Embedding Provider: {embedding_service.provider}", log_callback)
-        log_progress(f"[Configuration] Embedding Model: {embedding_service.model}", log_callback)
+    if VECTOR_DB_AVAILABLE and EmbeddingService:
+        if embedding_provider:
+            log_progress(f"[Configuration] Embedding Provider: {embedding_provider.capitalize()} (matched to LLM provider)", log_callback)
+            log_progress(f"[Configuration] Embedding Model: {embedding_model}", log_callback)
+        else:
+            log_progress(f"[Configuration] Embedding Provider: Using default from config", log_callback)
         log_progress(f"[Configuration] Vector DB: Enabled (ChromaDB)", log_callback)
     else:
         log_progress(f"[Configuration] Vector DB: Disabled", log_callback)
@@ -585,7 +652,7 @@ def ingest_document(
     if not text or not text.strip():
         log_progress("[Step 1] Document validation: Document is empty, skipping.", log_callback)
         return {"status": "skipped", "reason": "empty"}
-    
+
     log_progress(f"[Step 1] Document validation: Document has {len(text)} characters", log_callback)
 
     with Neo4jClient() as db:
@@ -643,7 +710,7 @@ def ingest_document(
             chunk_relationships = result["relationships_processed"]
             
             log_progress(f"[Step 6.{chunk_num}] Chunk {chunk_num} complete: {chunk_entities} entities, {chunk_relationships} relationships", log_callback)
-            
+                
             total_entities += chunk_entities
             total_relationships += chunk_relationships
         
@@ -652,13 +719,47 @@ def ingest_document(
         # Generate and store document embedding (after all chunks processed)
         embedding_stored = False
         log_progress(f"[Step 7] Document embedding: Starting embedding generation", log_callback)
-        if VECTOR_DB_AVAILABLE and text and text.strip():
+        if VECTOR_DB_AVAILABLE and text and text.strip() and EmbeddingService:
             try:
-                log_progress(f"[Step 7] Document embedding: Using {embedding_service.provider} provider with model '{embedding_service.model}'", log_callback)
-                log_progress(f"[Step 7] Document embedding: Generating embedding for document text ({len(text)} characters)", log_callback)
+                # Create embedding service instance based on profile's LLM config
+                # This ensures embedding provider matches LLM provider
+                if embedding_provider:
+                    try:
+                        profile_embedding_service = EmbeddingService(
+                            provider=embedding_provider,
+                            model=embedding_model
+                        )
+                    except ValueError as e:
+                        # Handle missing API key or configuration errors
+                        error_msg = str(e)
+                        if "OPENAI_API_KEY" in error_msg:
+                            log_warning(
+                                f"[Step 7] Document embedding: Cannot use OpenAI embedding - OPENAI_API_KEY not set in environment variables. "
+                                f"Please set OPENAI_API_KEY in your .env file or switch to Ollama provider in the profile.",
+                                log_callback
+                            )
+                        else:
+                            log_warning(f"[Step 7] Document embedding: Configuration error - {error_msg}", log_callback)
+                        profile_embedding_service = None
+                    except Exception as e:
+                        log_warning(f"[Step 7] Document embedding: Failed to initialize embedding service - {e}", log_callback)
+                        profile_embedding_service = None
+                else:
+                    # Fall back to default embedding service
+                    try:
+                        profile_embedding_service = EmbeddingService()
+                    except Exception as e:
+                        log_warning(f"[Step 7] Document embedding: Failed to initialize default embedding service - {e}", log_callback)
+                        profile_embedding_service = None
                 
-                # Generate embedding for full document text
-                embedding = embedding_service.generate_embedding(text)
+                if not profile_embedding_service:
+                    log_progress(f"[Step 7] Document embedding: Skipped (embedding service not available)", log_callback)
+                else:
+                    log_progress(f"[Step 7] Document embedding: Using {profile_embedding_service.provider} provider with model '{profile_embedding_service.model}'", log_callback)
+                    log_progress(f"[Step 7] Document embedding: Generating embedding for document text ({len(text)} characters)", log_callback)
+                    
+                    # Generate embedding for full document text
+                    embedding = profile_embedding_service.generate_embedding(text)
                 log_progress(f"[Step 7] Document embedding: Embedding generated successfully (dimension: {len(embedding)})", log_callback)
                 
                 # Store in vector DB

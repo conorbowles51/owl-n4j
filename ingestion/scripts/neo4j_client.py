@@ -9,9 +9,11 @@ Provides functions for:
 """
 
 import uuid
+import time
 from typing import Dict, List, Optional, Any
 
 from neo4j import GraphDatabase
+from neo4j.exceptions import TransientError, ServiceUnavailable
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 
@@ -39,6 +41,64 @@ class Neo4jClient:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+    
+    def _execute_with_retry(self, func, max_retries=3, initial_delay=1.0):
+        """
+        Execute a Neo4j operation with retry logic for transient errors.
+        
+        Args:
+            func: Function to execute (should be a lambda or callable that takes session)
+            max_retries: Maximum number of retry attempts
+            initial_delay: Initial delay in seconds before retry (exponential backoff)
+        
+        Returns:
+            Result from the function
+        """
+        last_exception = None
+        delay = initial_delay
+        
+        for attempt in range(max_retries + 1):
+            try:
+                return func()
+            except (TransientError, ServiceUnavailable) as e:
+                last_exception = e
+                error_code = getattr(e, 'code', '')
+                error_message = str(e)
+                
+                # Check if it's a transaction log error
+                if 'TransactionLogError' in error_message or 'Transaction' in error_code:
+                    if attempt < max_retries:
+                        # Exponential backoff with jitter
+                        wait_time = delay * (2 ** attempt) + (time.time() % 1)
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise RuntimeError(
+                            f"Neo4j transaction log error after {max_retries + 1} attempts. "
+                            f"This may indicate:\n"
+                            f"1. Disk space issues on the Neo4j server\n"
+                            f"2. Transaction log corruption\n"
+                            f"3. Too many concurrent transactions\n"
+                            f"4. Neo4j configuration issues\n\n"
+                            f"Original error: {error_message}\n"
+                            f"Error code: {error_code}\n\n"
+                            f"Please check Neo4j server logs and ensure:\n"
+                            f"- Sufficient disk space is available\n"
+                            f"- Neo4j transaction log is not corrupted\n"
+                            f"- Neo4j server is properly configured"
+                        ) from e
+                else:
+                    # For other transient errors, retry with backoff
+                    if attempt < max_retries:
+                        wait_time = delay * (2 ** attempt) + (time.time() % 1)
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        raise
+        
+        # If we get here, all retries failed
+        if last_exception:
+            raise last_exception
 
     # -------------------------------------------------------------------------
     # Entity Operations
@@ -258,14 +318,16 @@ class Neo4jClient:
         if not sanitized_type:
             sanitized_type = "Other"
 
-        with self.driver.session() as session:
-            session.run(
-                f"""
-                CREATE (e:`{sanitized_type}` $props)
-                """,
-                props=props,
-            )
-
+        def _create():
+            with self.driver.session() as session:
+                session.run(
+                    f"""
+                    CREATE (e:`{sanitized_type}` $props)
+                    """,
+                    props=props,
+                )
+        
+        self._execute_with_retry(_create)
         return entity_id
 
     def update_entity(
@@ -306,14 +368,17 @@ class Neo4jClient:
 
         set_clause = ", ".join(updates)
 
-        with self.driver.session() as session:
-            session.run(
-                f"""
-                MATCH (e {{key: $key}})
-                SET {set_clause}
-                """,
-                **params,
-            )
+        def _update():
+            with self.driver.session() as session:
+                session.run(
+                    f"""
+                    MATCH (e {{key: $key}})
+                    SET {set_clause}
+                    """,
+                    **params,
+                )
+        
+        self._execute_with_retry(_update)
 
     # -------------------------------------------------------------------------
     # Document Operations
@@ -347,20 +412,23 @@ class Neo4jClient:
         if metadata:
             props.update(metadata)
 
-        with self.driver.session() as session:
-            result = session.run(
-                """
-                MERGE (d:Document {key: $key})
-                ON CREATE SET d = $props
-                ON MATCH SET d.name = $name
-                RETURN d.id AS id
-                """,
-                key=doc_key,
-                props=props,
-                name=doc_name,
-            )
-            record = result.single()
-            return record["id"] if record else doc_id
+        def _ensure():
+            with self.driver.session() as session:
+                result = session.run(
+                    """
+                    MERGE (d:Document {key: $key})
+                    ON CREATE SET d = $props
+                    ON MATCH SET d.name = $name
+                    RETURN d.id AS id
+                    """,
+                    key=doc_key,
+                    props=props,
+                    name=doc_name,
+                )
+                record = result.single()
+                return record["id"] if record else doc_id
+        
+        return self._execute_with_retry(_ensure)
 
     def update_document(
         self,
@@ -374,15 +442,18 @@ class Neo4jClient:
             doc_key: Normalised document key
             updates: Dictionary of properties to update
         """
-        with self.driver.session() as session:
-            session.run(
-                """
-                MATCH (d:Document {key: $key})
-                SET d += $updates
-                """,
-                key=doc_key,
-                updates=updates,
-            )
+        def _update_doc():
+            with self.driver.session() as session:
+                session.run(
+                    """
+                    MATCH (d:Document {key: $key})
+                    SET d += $updates
+                    """,
+                    key=doc_key,
+                    updates=updates,
+                )
+        
+        self._execute_with_retry(_update_doc)
 
     # -------------------------------------------------------------------------
     # Relationship Operations
@@ -420,30 +491,33 @@ class Neo4jClient:
         if not sanitized_rel_type:
             sanitized_rel_type = "RELATED_TO"
         
-        with self.driver.session() as session:
-            # First, create/merge the relationship
-            session.run(
-                f"""
-                MATCH (from {{key: $from_key}})
-                MATCH (to {{key: $to_key}})
-                MERGE (from)-[r:`{sanitized_rel_type}`]->(to)
-                """,
-                from_key=from_key,
-                to_key=to_key,
-            )
-
-            # If we have doc_refs to add, update them
-            if doc_name and notes:
-                doc_ref_entry = f"\n\n[{doc_name}]\n{notes}"
+        def _create_rel():
+            with self.driver.session() as session:
+                # First, create/merge the relationship
                 session.run(
                     f"""
-                    MATCH (from {{key: $from_key}})-[r:`{sanitized_rel_type}`]->(to {{key: $to_key}})
-                    SET r.doc_refs = COALESCE(r.doc_refs, '') + $doc_ref
+                    MATCH (from {{key: $from_key}})
+                    MATCH (to {{key: $to_key}})
+                    MERGE (from)-[r:`{sanitized_rel_type}`]->(to)
                     """,
                     from_key=from_key,
                     to_key=to_key,
-                    doc_ref=doc_ref_entry,
                 )
+
+                # If we have doc_refs to add, update them
+                if doc_name and notes:
+                    doc_ref_entry = f"\n\n[{doc_name}]\n{notes}"
+                    session.run(
+                        f"""
+                        MATCH (from {{key: $from_key}})-[r:`{sanitized_rel_type}`]->(to {{key: $to_key}})
+                        SET r.doc_refs = COALESCE(r.doc_refs, '') + $doc_ref
+                        """,
+                        from_key=from_key,
+                        to_key=to_key,
+                        doc_ref=doc_ref_entry,
+                    )
+        
+        self._execute_with_retry(_create_rel)
 
     def link_entity_to_document(self, entity_key: str, doc_key: str):
         """
@@ -453,16 +527,19 @@ class Neo4jClient:
             entity_key: The entity key
             doc_key: The document key
         """
-        with self.driver.session() as session:
-            session.run(
-                """
-                MATCH (e {key: $entity_key})
-                MATCH (d:Document {key: $doc_key})
-                MERGE (e)-[:MENTIONED_IN]->(d)
-                """,
-                entity_key=entity_key,
-                doc_key=doc_key,
-            )
+        def _link():
+            with self.driver.session() as session:
+                session.run(
+                    """
+                    MATCH (e {key: $entity_key})
+                    MATCH (d:Document {key: $doc_key})
+                    MERGE (e)-[:MENTIONED_IN]->(d)
+                    """,
+                    entity_key=entity_key,
+                    doc_key=doc_key,
+                )
+        
+        self._execute_with_retry(_link)
 
     # -------------------------------------------------------------------------
     # Utility Operations

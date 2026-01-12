@@ -76,4 +76,3 @@ export default function LoadSnapshotProgressDialog({ isOpen, onClose, current, t
   );
 }
 
-

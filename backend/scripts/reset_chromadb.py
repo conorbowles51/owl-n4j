@@ -54,4 +54,3 @@ def reset_chromadb():
 
 if __name__ == "__main__":
     reset_chromadb()
-

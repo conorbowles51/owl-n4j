@@ -263,6 +263,91 @@ class Neo4jService:
 
         return {"nodes": nodes, "links": links}
 
+    def expand_nodes(self, node_keys: List[str], depth: int = 1) -> Dict[str, List]:
+        """
+        Expand multiple nodes by N hops and return all nodes and relationships found.
+
+        Args:
+            node_keys: List of node keys to expand from
+            depth: How many hops to traverse (default 1)
+
+        Returns:
+            Dict with 'nodes' and 'links' arrays containing all expanded nodes and relationships
+        """
+        if not node_keys:
+            return {"nodes": [], "links": []}
+
+        with self._driver.session() as session:
+            # Get all nodes reachable within depth hops from any of the starting nodes
+            # Use a UNION approach to get all paths from all starting nodes
+            all_node_keys = set(node_keys)
+            
+            # For each starting node, get all nodes within depth hops
+            for start_key in node_keys:
+                result = session.run(
+                    f"""
+                    MATCH path = (start {{key: $start_key}})-[*1..{depth}]-(neighbour)
+                    RETURN DISTINCT neighbour.key AS key
+                    """,
+                    start_key=start_key,
+                )
+                for record in result:
+                    if record["key"]:
+                        all_node_keys.add(record["key"])
+
+            # Get full node details for all expanded nodes
+            if not all_node_keys:
+                return {"nodes": [], "links": []}
+
+            nodes_query = """
+                MATCH (n)
+                WHERE n.key IN $keys
+                RETURN 
+                    id(n) AS neo4j_id,
+                    n.id AS id,
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.summary AS summary,
+                    n.notes AS notes,
+                    properties(n) AS properties
+            """
+            nodes_result = session.run(nodes_query, keys=list(all_node_keys))
+            nodes = []
+            for record in nodes_result:
+                nodes.append({
+                    "id": record["id"],
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "summary": record["summary"],
+                    "notes": record["notes"],
+                    "properties": record["properties"] or {}
+                })
+
+            # Get all relationships between these nodes
+            rels_query = """
+                MATCH (a)-[r]->(b)
+                WHERE a.key IN $keys AND b.key IN $keys
+                RETURN 
+                    a.key AS source,
+                    b.key AS target,
+                    type(r) AS type,
+                    properties(r) AS properties
+            """
+            rels_result = session.run(rels_query, keys=list(all_node_keys))
+            links = [
+                {
+                    "source": r["source"],
+                    "target": r["target"],
+                    "type": r["type"],
+                    "properties": r["properties"] or {},
+                }
+                for r in rels_result
+            ]
+
+        return {"nodes": nodes, "links": links}
+
     def get_node_details(self, key: str) -> Optional[Dict]:
         """
         Get detailed information about a single node.
@@ -1569,6 +1654,403 @@ class Neo4jService:
             return {
                 "verified_facts": verified_facts,
                 "ai_insights": ai_insights,
+            }
+
+    def find_similar_entities(
+        self,
+        entity_types: Optional[List[str]] = None,
+        name_similarity_threshold: float = 0.7,
+        max_results: int = 50,
+    ) -> List[Dict]:
+        """
+        Find entities that might be duplicates based on name similarity and type.
+        
+        Args:
+            entity_types: Optional list of entity types to filter by
+            name_similarity_threshold: Minimum similarity score (0-1) for name matching
+            max_results: Maximum number of pairs to return
+            
+        Returns:
+            List of dicts with 'entity1' and 'entity2' entries, each containing node info
+        """
+        from difflib import SequenceMatcher
+        
+        with self._driver.session() as session:
+            # Build type filter
+            type_filter = ""
+            params = {}
+            if entity_types:
+                type_filter = "AND labels(n)[0] IN $types"
+                params["types"] = entity_types
+            
+            # Get all entities (excluding Documents)
+            query = f"""
+                MATCH (n)
+                WHERE n.key IS NOT NULL
+                  AND n.name IS NOT NULL
+                  AND NOT n:Document
+                  {type_filter}
+                RETURN 
+                    n.key AS key,
+                    n.id AS id,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    n.summary AS summary,
+                    n.notes AS notes,
+                    properties(n) AS properties
+                ORDER BY n.name
+            """
+            
+            result = session.run(query, **params)
+            entities = [dict(record) for record in result]
+            
+            # Compare entities pairwise
+            similar_pairs = []
+            for i, e1 in enumerate(entities):
+                for e2 in entities[i+1:]:
+                    # Same type required
+                    if e1["type"] != e2["type"]:
+                        continue
+                    
+                    # Calculate name similarity
+                    name1 = (e1["name"] or "").lower().strip()
+                    name2 = (e2["name"] or "").lower().strip()
+                    
+                    if not name1 or not name2:
+                        continue
+                    
+                    similarity = SequenceMatcher(None, name1, name2).ratio()
+                    
+                    if similarity >= name_similarity_threshold:
+                        similar_pairs.append({
+                            "entity1": {
+                                "key": e1["key"],
+                                "id": e1["id"],
+                                "name": e1["name"],
+                                "type": e1["type"],
+                                "summary": e1["summary"],
+                                "notes": e1["notes"],
+                                "properties": e1["properties"] or {},
+                            },
+                            "entity2": {
+                                "key": e2["key"],
+                                "id": e2["id"],
+                                "name": e2["name"],
+                                "type": e2["type"],
+                                "summary": e2["summary"],
+                                "notes": e2["notes"],
+                                "properties": e2["properties"] or {},
+                            },
+                            "similarity": similarity,
+                        })
+            
+            # Sort by similarity (highest first) and limit results
+            similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
+            return similar_pairs[:max_results]
+
+    def merge_entities(
+        self,
+        source_key: str,
+        target_key: str,
+        merged_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Merge two entities into one.
+        
+        Args:
+            source_key: Key of the source entity (will be deleted)
+            target_key: Key of the target entity (will be kept and updated)
+            merged_data: Dict with merged properties:
+                - name: Merged name
+                - summary: Merged summary (can be None to keep existing)
+                - notes: Merged notes (can be None to keep existing)
+                - type: Merged type (label)
+                - properties: Dict of additional properties to set
+                
+        Returns:
+            Dict with result info including merged_node and relationships_updated count
+        """
+        import re
+        
+        with self._driver.session() as session:
+            # Get both entities
+            source_result = session.run(
+                """
+                MATCH (s {key: $key})
+                RETURN 
+                    id(s) AS neo4j_id,
+                    s.id AS id,
+                    s.key AS key,
+                    s.name AS name,
+                    labels(s)[0] AS type,
+                    s.summary AS summary,
+                    s.notes AS notes,
+                    properties(s) AS properties
+                """,
+                key=source_key,
+            )
+            source_record = source_result.single()
+            if not source_record:
+                raise ValueError(f"Source entity not found: {source_key}")
+            
+            target_result = session.run(
+                """
+                MATCH (t {key: $key})
+                RETURN 
+                    id(t) AS neo4j_id,
+                    t.id AS id,
+                    t.key AS key,
+                    t.name AS name,
+                    labels(t)[0] AS type,
+                    t.summary AS summary,
+                    t.notes AS notes,
+                    properties(t) AS properties
+                """,
+                key=target_key,
+            )
+            target_record = target_result.single()
+            if not target_record:
+                raise ValueError(f"Target entity not found: {target_key}")
+            
+            # Get all relationships from source
+            source_rels_result = session.run(
+                """
+                MATCH (s {key: $key})-[r]->(target)
+                RETURN 
+                    type(r) AS rel_type,
+                    target.key AS other_key,
+                    properties(r) AS rel_properties,
+                    'outgoing' AS direction
+                UNION
+                MATCH (source)-[r]->(s {key: $key})
+                RETURN 
+                    type(r) AS rel_type,
+                    source.key AS other_key,
+                    properties(r) AS rel_properties,
+                    'incoming' AS direction
+                """,
+                key=source_key,
+            )
+            source_rels = [dict(record) for record in source_rels_result]
+            
+            # Update target entity with merged data
+            # Build SET clause for properties
+            set_clauses = []
+            params = {"target_key": target_key}
+            
+            if "name" in merged_data:
+                set_clauses.append("t.name = $merged_name")
+                params["merged_name"] = merged_data["name"]
+            
+            if "summary" in merged_data and merged_data["summary"] is not None:
+                set_clauses.append("t.summary = $merged_summary")
+                params["merged_summary"] = merged_data["summary"]
+            
+            if "notes" in merged_data and merged_data["notes"] is not None:
+                # Merge notes (append if target has notes)
+                set_clauses.append("""
+                    t.notes = CASE 
+                        WHEN t.notes IS NOT NULL AND t.notes <> '' 
+                        THEN t.notes + '\n\n' + $merged_notes 
+                        ELSE $merged_notes 
+                    END
+                """)
+                params["merged_notes"] = merged_data["notes"]
+            
+            # Handle type (label) change if needed
+            new_type = merged_data.get("type")
+            if new_type:
+                # Remove old label and add new one
+                old_type = target_record["type"]
+                if old_type != new_type:
+                    # Sanitize type for Cypher label
+                    sanitized_new_type = re.sub(r'[^a-zA-Z0-9_]', '_', new_type.strip())
+                    sanitized_new_type = re.sub(r'_+', '_', sanitized_new_type).strip('_')
+                    if not sanitized_new_type:
+                        sanitized_new_type = "Other"
+                    
+                    session.run(
+                        f"""
+                        MATCH (t {{key: $target_key}})
+                        REMOVE t:`{old_type}`
+                        SET t:`{sanitized_new_type}`
+                        """,
+                        target_key=target_key,
+                    )
+            
+            # Add additional properties
+            if "properties" in merged_data:
+                for prop_key, prop_val in merged_data["properties"].items():
+                    param_name = f"prop_{prop_key}"
+                    set_clauses.append(f"t.{prop_key} = ${param_name}")
+                    params[param_name] = prop_val
+            
+            # Update target entity
+            if set_clauses:
+                set_clause = ", ".join(set_clauses)
+                session.run(
+                    f"""
+                    MATCH (t {{key: $target_key}})
+                    SET {set_clause}
+                    """,
+                    **params,
+                )
+            
+            # Migrate relationships from source to target
+            relationships_updated = 0
+            for rel in source_rels:
+                rel_type = rel["rel_type"]
+                rel_props = rel["rel_properties"] or {}
+                direction = rel["direction"]
+                other_key = rel["other_key"]  # Use the unified column name from UNION
+                
+                # Don't create self-loops
+                if other_key == target_key:
+                    continue
+                
+                if direction == "outgoing":
+                    # Create relationship from target to other
+                    if rel_props:
+                        session.run(
+                            f"""
+                            MATCH (t {{key: $target_key}}), (o {{key: $other_key}})
+                            MERGE (t)-[r:`{rel_type}`]->(o)
+                            SET r += $rel_props
+                            """,
+                            target_key=target_key,
+                            other_key=other_key,
+                            rel_props=rel_props,
+                        )
+                    else:
+                        session.run(
+                            f"""
+                            MATCH (t {{key: $target_key}}), (o {{key: $other_key}})
+                            MERGE (t)-[r:`{rel_type}`]->(o)
+                            """,
+                            target_key=target_key,
+                            other_key=other_key,
+                        )
+                    relationships_updated += 1
+                else:  # incoming
+                    # Create relationship from other to target
+                    if rel_props:
+                        session.run(
+                            f"""
+                            MATCH (o {{key: $other_key}}), (t {{key: $target_key}})
+                            MERGE (o)-[r:`{rel_type}`]->(t)
+                            SET r += $rel_props
+                            """,
+                            target_key=target_key,
+                            other_key=other_key,
+                            rel_props=rel_props,
+                        )
+                    else:
+                        session.run(
+                            f"""
+                            MATCH (o {{key: $other_key}}), (t {{key: $target_key}})
+                            MERGE (o)-[r:`{rel_type}`]->(t)
+                            """,
+                            target_key=target_key,
+                            other_key=other_key,
+                        )
+                    relationships_updated += 1
+            
+            # Delete source entity
+            session.run(
+                """
+                MATCH (s {key: $key})
+                DETACH DELETE s
+                """,
+                key=source_key,
+            )
+            
+    def delete_node(self, node_key: str) -> Dict[str, Any]:
+        """
+        Delete a node and all its relationships.
+        
+        Args:
+            node_key: Key of the node to delete
+            
+        Returns:
+            Dict with success status and deleted node info
+        """
+        with self._driver.session() as session:
+            # First get node info before deletion for return value
+            node_result = session.run(
+                """
+                MATCH (n {key: $key})
+                RETURN 
+                    n.key AS key,
+                    n.name AS name,
+                    labels(n)[0] AS type,
+                    id(n) AS neo4j_id
+                """,
+                key=node_key,
+            )
+            node_record = node_result.single()
+            
+            if not node_record:
+                raise ValueError(f"Node not found: {node_key}")
+            
+            # Count relationships before deletion
+            rel_count_result = session.run(
+                """
+                MATCH (n {key: $key})-[r]-()
+                RETURN count(r) AS count
+                """,
+                key=node_key,
+            )
+            rel_count = rel_count_result.single()["count"]
+            
+            # Delete the node and all its relationships
+            session.run(
+                """
+                MATCH (n {key: $key})
+                DETACH DELETE n
+                """,
+                key=node_key,
+            )
+            
+            return {
+                "success": True,
+                "deleted_node": {
+                    "key": node_record["key"],
+                    "name": node_record["name"],
+                    "type": node_record["type"],
+                },
+                "relationships_deleted": rel_count,
+            }
+            
+            # Get the merged entity (continuation of merge_entities method)
+            merged_result = session.run(
+                """
+                MATCH (t {key: $key})
+                RETURN 
+                    id(t) AS neo4j_id,
+                    t.id AS id,
+                    t.key AS key,
+                    t.name AS name,
+                    labels(t)[0] AS type,
+                    t.summary AS summary,
+                    t.notes AS notes,
+                    properties(t) AS properties
+                """,
+                key=target_key,
+            )
+            merged_record = merged_result.single()
+            
+            return {
+                "merged_node": {
+                    "key": merged_record["key"],
+                    "id": merged_record["id"],
+                    "name": merged_record["name"],
+                    "type": merged_record["type"],
+                    "summary": merged_record["summary"],
+                    "notes": merged_record["notes"],
+                    "properties": merged_record["properties"] or {},
+                },
+                "relationships_updated": relationships_updated,
+                "source_deleted": True,
             }
 
 

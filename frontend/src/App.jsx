@@ -27,7 +27,14 @@ import {
   Focus,
   Camera,
   Database,
-  Settings
+  Settings,
+  Maximize2,
+  Copy,
+  ChevronLeft,
+  ChevronRight,
+  Merge,
+  Search,
+  ArrowRight
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
@@ -62,6 +69,8 @@ import SystemLogsPanel from './components/SystemLogsPanel';
 import DatabaseModal from './components/DatabaseModal';
 import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
 import EditNodeModal from './components/EditNodeModal';
+import ExpandGraphModal from './components/ExpandGraphModal';
+import MergeEntitiesModal from './components/MergeEntitiesModal';
 
 /**
  * Main App Component
@@ -90,6 +99,84 @@ export default function App() {
   const [subgraphAnalysis, setSubgraphAnalysis] = useState(null); // Analysis text for PageRank/Louvain
   const [subgraphCommunityData, setSubgraphCommunityData] = useState(null); // Community data for Louvain analysis
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false); // Whether analysis panel is expanded
+  
+  // Query Focus Graph history (breadcrumb navigation)
+  const [queryFocusHistory, setQueryFocusHistory] = useState([{
+    subgraphNodeKeys: [],
+    selectedNodes: [],
+    timestamp: Date.now()
+  }]);
+  const [queryFocusHistoryIndex, setQueryFocusHistoryIndex] = useState(0);
+  const [isNavigatingHistory, setIsNavigatingHistory] = useState(false); // Flag to prevent history entry during navigation
+  
+  // Add history entry when Query Focus Graph changes
+  const addQueryFocusHistoryEntry = useCallback((newNodeKeys, newSelectedNodes) => {
+    if (isNavigatingHistory) return; // Don't add history during navigation
+    
+    const newEntry = {
+      subgraphNodeKeys: [...newNodeKeys],
+      selectedNodes: newSelectedNodes.map(n => ({ // Store minimal node info
+        key: n.key,
+        id: n.id || n.key,
+        name: n.name,
+        type: n.type,
+      })),
+      timestamp: Date.now()
+    };
+    
+    // Check if this is the same as current entry (avoid duplicates)
+    const currentEntry = queryFocusHistory[queryFocusHistoryIndex];
+    if (currentEntry) {
+      const currentKeysStr = JSON.stringify(currentEntry.subgraphNodeKeys.sort());
+      const newKeysStr = JSON.stringify(newNodeKeys.sort());
+      if (currentKeysStr === newKeysStr) {
+        // Same state, don't add history
+        return;
+      }
+    }
+    
+    // Remove any history entries after current index (when user navigated back and then made changes)
+    const newHistory = queryFocusHistory.slice(0, queryFocusHistoryIndex + 1);
+    newHistory.push(newEntry);
+    
+    // Limit history to 50 entries to prevent memory issues
+    if (newHistory.length > 50) {
+      newHistory.shift(); // Remove oldest entry
+      setQueryFocusHistoryIndex(queryFocusHistoryIndex); // Keep same relative position
+    } else {
+      setQueryFocusHistoryIndex(newHistory.length - 1);
+    }
+    
+    setQueryFocusHistory(newHistory);
+  }, [isNavigatingHistory, queryFocusHistory, queryFocusHistoryIndex]);
+  
+  // Ref to track previous subgraphNodeKeys for history tracking
+  const prevSubgraphNodeKeysRef = useRef([]);
+  
+  // Track Query Focus Graph changes and add to history
+  // Only track subgraphNodeKeys changes (not selectedNodes) to avoid too many entries
+  useEffect(() => {
+    if (isNavigatingHistory) {
+      // Update ref even during navigation so we don't miss the new state
+      prevSubgraphNodeKeysRef.current = subgraphNodeKeys;
+      return; // Don't add history during navigation
+    }
+    
+    // Check if subgraphNodeKeys actually changed
+    const prevKeysStr = JSON.stringify(prevSubgraphNodeKeysRef.current.sort());
+    const currentKeysStr = JSON.stringify(subgraphNodeKeys.sort());
+    
+    if (prevKeysStr === currentKeysStr) {
+      // No change, don't add history
+      return;
+    }
+    
+    // Update ref
+    prevSubgraphNodeKeysRef.current = [...subgraphNodeKeys];
+    
+    // Add history entry (only if Query Focus Graph actually changed)
+    addQueryFocusHistoryEntry(subgraphNodeKeys, selectedNodes);
+  }, [subgraphNodeKeys, selectedNodes, isNavigatingHistory, addQueryFocusHistoryEntry]);
   
   // Timeline context - separate from selection so inspecting events doesn't filter timeline
   const [timelineContextKeys, setTimelineContextKeys] = useState([]); // Keys that define what events show on timeline
@@ -152,6 +239,21 @@ export default function App() {
   
   // Edit node modal state
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
+  
+  // Expand graph modal state
+  const [showExpandGraphModal, setShowExpandGraphModal] = useState(false);
+  const [expandGraphContext, setExpandGraphContext] = useState(null); // 'subgraph', 'result', 'selected', 'all'
+  
+  // Merge entities modal state
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [mergeEntity1, setMergeEntity1] = useState(null);
+  const [mergeEntity2, setMergeEntity2] = useState(null);
+  const [mergeSimilarity, setMergeSimilarity] = useState(null);
+  
+  // Similar entities scan state
+  const [similarEntitiesPairs, setSimilarEntitiesPairs] = useState([]);
+  const [showSimilarEntitiesList, setShowSimilarEntitiesList] = useState(false);
+  const [isScanningSimilar, setIsScanningSimilar] = useState(false);
   
   // Document viewer state
   const [documentViewerState, setDocumentViewerState] = useState({
@@ -263,6 +365,40 @@ export default function App() {
   
   // Path-based subgraph state (for shortest paths feature)
   const [pathSubgraphData, setPathSubgraphData] = useState(null);
+  
+  // Result graph state (from AI assistant responses)
+  const [resultGraphData, setResultGraphData] = useState(null);
+  const [activeSubgraphTab, setActiveSubgraphTab] = useState('subgraph'); // 'subgraph' or 'result'
+  
+  // Update result graph when chat messages change
+  useEffect(() => {
+    // Find the most recent assistant message with a result graph
+    const lastMessageWithResultGraph = [...chatHistory]
+      .reverse()
+      .find(msg => msg.role === 'assistant' && msg.resultGraph && msg.resultGraph.nodes && msg.resultGraph.nodes.length > 0);
+    
+    if (lastMessageWithResultGraph && lastMessageWithResultGraph.resultGraph) {
+      setResultGraphData(lastMessageWithResultGraph.resultGraph);
+    } else if (chatHistory.length === 0) {
+      // Clear result graph if chat is cleared
+      setResultGraphData(null);
+    }
+  }, [chatHistory]);
+  
+  // Auto-open subgraph when AI assistant opens, showing result graph tab (but NOT overwriting Query Focus Graph)
+  useEffect(() => {
+    if (isChatOpen && resultGraphData && resultGraphData.nodes && resultGraphData.nodes.length > 0) {
+      // Switch to result graph tab (but keep Query Focus Graph separate)
+      setActiveSubgraphTab('result');
+      
+      // Enable split view if not already enabled
+      if (paneViewMode !== 'split') {
+        setPaneViewMode('split');
+      }
+      
+      console.log(`Auto-opened Result Graph tab with ${resultGraphData.nodes.length} nodes from AI assistant result`);
+    }
+  }, [isChatOpen, resultGraphData, paneViewMode]);
 
   // Dimensions
   const [dimensions, setDimensions] = useState({
@@ -427,6 +563,62 @@ export default function App() {
       }
     }, debounceDelay);
   }, []);
+
+  // Navigate back in Query Focus Graph history
+  const navigateQueryFocusHistoryBack = useCallback(() => {
+    if (queryFocusHistoryIndex > 0) {
+      setIsNavigatingHistory(true);
+      const prevEntry = queryFocusHistory[queryFocusHistoryIndex - 1];
+      const prevNodeKeys = prevEntry.subgraphNodeKeys || [];
+      const prevSelectedNodes = prevEntry.selectedNodes || [];
+      
+      setSubgraphNodeKeys(prevNodeKeys);
+      setSelectedNodes(prevSelectedNodes);
+      setTimelineContextKeys(prevNodeKeys);
+      setPathSubgraphData(null); // Clear path subgraph data
+      
+      // Load node details for restored nodes
+      if (prevNodeKeys.length > 0) {
+        loadNodeDetails(prevNodeKeys);
+      } else {
+        setSelectedNodesDetails([]);
+      }
+      
+      // Update ref to prevent duplicate history entry
+      prevSubgraphNodeKeysRef.current = [...prevNodeKeys];
+      
+      setQueryFocusHistoryIndex(queryFocusHistoryIndex - 1);
+      setTimeout(() => setIsNavigatingHistory(false), 100); // Reset flag after state updates
+    }
+  }, [queryFocusHistory, queryFocusHistoryIndex, loadNodeDetails]);
+  
+  // Navigate forward in Query Focus Graph history
+  const navigateQueryFocusHistoryForward = useCallback(() => {
+    if (queryFocusHistoryIndex < queryFocusHistory.length - 1) {
+      setIsNavigatingHistory(true);
+      const nextEntry = queryFocusHistory[queryFocusHistoryIndex + 1];
+      const nextNodeKeys = nextEntry.subgraphNodeKeys || [];
+      const nextSelectedNodes = nextEntry.selectedNodes || [];
+      
+      setSubgraphNodeKeys(nextNodeKeys);
+      setSelectedNodes(nextSelectedNodes);
+      setTimelineContextKeys(nextNodeKeys);
+      setPathSubgraphData(null); // Clear path subgraph data
+      
+      // Load node details for restored nodes
+      if (nextNodeKeys.length > 0) {
+        loadNodeDetails(nextNodeKeys);
+      } else {
+        setSelectedNodesDetails([]);
+      }
+      
+      // Update ref to prevent duplicate history entry
+      prevSubgraphNodeKeysRef.current = [...nextNodeKeys];
+      
+      setQueryFocusHistoryIndex(queryFocusHistoryIndex + 1);
+      setTimeout(() => setIsNavigatingHistory(false), 100); // Reset flag after state updates
+    }
+  }, [queryFocusHistory, queryFocusHistoryIndex, loadNodeDetails]);
 
   // Handle bulk node selection (for drag selection)
   const handleBulkNodeSelect = useCallback((nodes) => {
@@ -632,6 +824,45 @@ export default function App() {
     });
   }, []);
 
+  // Handle node deletion
+  const handleDeleteNode = useCallback(async (node) => {
+    if (!node || !node.key) {
+      return;
+    }
+
+    // Confirm deletion
+    const nodeName = node.name || node.key;
+    const confirmMessage = `Are you sure you want to delete "${nodeName}"?\n\nThis will permanently delete the node and all its relationships. This action cannot be undone.`;
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      await graphAPI.deleteNode(node.key);
+      
+      // Remove from selected nodes if selected
+      setSelectedNodes(prev => prev.filter(n => n.key !== node.key));
+      
+      // Remove from subgraph if present
+      setSubgraphNodeKeys(prev => prev.filter(key => key !== node.key));
+      
+      // Remove from timeline context if present
+      setTimelineContextKeys(prev => prev.filter(key => key !== node.key));
+      
+      // Reload graph to reflect deletion
+      await loadGraph();
+      
+      // Close context menu
+      setContextMenu(null);
+      
+      alert(`Node "${nodeName}" deleted successfully.`);
+    } catch (err) {
+      console.error('Failed to delete node:', err);
+      alert(`Failed to delete node: ${err.message}`);
+    }
+  }, [loadGraph]);
+
   // Handle node double-click - open edit modal for name editing
   const handleNodeDoubleClick = useCallback(async (node, event) => {
     // Load node details if not already loaded
@@ -732,6 +963,80 @@ export default function App() {
     setShowRelationshipAnalysisModal(false);
     setNodeForAnalysis(null);
   }, [loadGraph]);
+
+  // Handle merge entities (from manual selection or similar entities scan)
+  const handleMergeEntities = useCallback(async (sourceKey, targetKey, mergedData) => {
+    try {
+      setIsLoading(true);
+      const result = await graphAPI.mergeEntities(sourceKey, targetKey, mergedData);
+      
+      // Refresh graph to show merged entity
+      await loadGraph();
+      
+      // Clear selection if merged entities were selected
+      setSelectedNodes(prev => prev.filter(n => n.key !== sourceKey && n.key !== targetKey));
+      
+      // Add merged node to selection
+      if (result.merged_node) {
+        setSelectedNodes([{
+          key: result.merged_node.key,
+          id: result.merged_node.id,
+          name: result.merged_node.name,
+          type: result.merged_node.type,
+        }]);
+        await loadNodeDetails([result.merged_node.key]);
+      }
+      
+      alert(`Successfully merged entities. ${result.relationships_updated || 0} relationships migrated.`);
+    } catch (err) {
+      console.error('Failed to merge entities:', err);
+      alert(`Failed to merge entities: ${err.message}`);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [loadGraph, loadNodeDetails]);
+
+  // Handle merge selected nodes
+  const handleMergeSelected = useCallback(() => {
+    if (selectedNodes.length < 2) {
+      alert('Please select at least 2 nodes to merge');
+      return;
+    }
+    
+    // Use first node as source, second as target (user can change in modal)
+    const entity1 = selectedNodes[0];
+    const entity2 = selectedNodes[1];
+    
+    setMergeEntity1(entity1);
+    setMergeEntity2(entity2);
+    setMergeSimilarity(null);
+    setShowMergeModal(true);
+  }, [selectedNodes]);
+
+  // Handle find similar entities
+  const handleFindSimilarEntities = useCallback(async () => {
+    setIsScanningSimilar(true);
+    try {
+      const result = await graphAPI.findSimilarEntities(null, 0.7, 50);
+      setSimilarEntitiesPairs(result.similar_pairs || []);
+      setShowSimilarEntitiesList(true);
+    } catch (err) {
+      console.error('Failed to find similar entities:', err);
+      alert(`Failed to find similar entities: ${err.message}`);
+    } finally {
+      setIsScanningSimilar(false);
+    }
+  }, []);
+
+  // Handle open merge modal for a similar pair
+  const handleMergeSimilarPair = useCallback((pair) => {
+    setMergeEntity1(pair.entity1);
+    setMergeEntity2(pair.entity2);
+    setMergeSimilarity(pair.similarity);
+    setShowMergeModal(true);
+    setShowSimilarEntitiesList(false);
+  }, []);
 
   // Handle updating node information
   const handleUpdateNode = useCallback(async (nodeKey, updates) => {
@@ -845,7 +1150,7 @@ export default function App() {
     setTimelineContextKeys([node.key]);
   }, [loadNodeDetails]);
 
-  // Handle expand from context menu
+  // Handle expand from context menu (main graph only - old behavior)
   const handleExpand = useCallback(async (node) => {
     try {
       const expandedData = await graphAPI.getNodeNeighbours(node.key, 1);
@@ -881,6 +1186,109 @@ export default function App() {
       console.error('Failed to expand node:', err);
     }
   }, [loadNodeDetails]);
+
+  // Handle graph expansion (for subgraph and result graph)
+  const handleExpandGraph = useCallback((context, nodeKeys = null) => {
+    // context: 'subgraph', 'result', 'selected', 'all'
+    setExpandGraphContext(context);
+    setShowExpandGraphModal(true);
+  }, []);
+
+  // Execute graph expansion
+  const executeGraphExpansion = useCallback(async (depth) => {
+    if (!expandGraphContext) return;
+
+    try {
+      setIsLoading(true);
+      let nodeKeysToExpand = [];
+
+      if (expandGraphContext === 'selected') {
+        // Expand selected nodes
+        nodeKeysToExpand = selectedNodes.map(n => n.key);
+        if (nodeKeysToExpand.length === 0) {
+          alert('Please select nodes to expand');
+          setIsLoading(false);
+          return;
+        }
+      } else if (expandGraphContext === 'subgraph') {
+        // Expand all nodes in query focus graph
+        nodeKeysToExpand = subgraphNodeKeys;
+        if (nodeKeysToExpand.length === 0) {
+          alert('Query Focus Graph is empty. Please add nodes first.');
+          setIsLoading(false);
+          return;
+        }
+      } else if (expandGraphContext === 'result') {
+        // Expand all nodes in result graph
+        if (!resultGraphData || !resultGraphData.nodes || resultGraphData.nodes.length === 0) {
+          alert('Result Graph is empty.');
+          setIsLoading(false);
+          return;
+        }
+        nodeKeysToExpand = resultGraphData.nodes.map(n => n.key).filter(key => key);
+      } else {
+        // 'all' - expand all nodes in current subgraph (shouldn't happen, but handle it)
+        nodeKeysToExpand = subgraphNodeKeys;
+      }
+
+      if (nodeKeysToExpand.length === 0) {
+        setIsLoading(false);
+        return;
+      }
+
+      // Call expansion API
+      const expandedData = await graphAPI.expandNodes(nodeKeysToExpand, depth);
+
+      if (expandGraphContext === 'subgraph') {
+        // For query focus graph: add expanded nodes to subgraphNodeKeys
+        const existingKeys = new Set(subgraphNodeKeys);
+        const newKeys = expandedData.nodes
+          .map(n => n.key)
+          .filter(key => key && !existingKeys.has(key));
+        
+        if (newKeys.length > 0) {
+          setSubgraphNodeKeys(prev => [...prev, ...newKeys]);
+        }
+      } else if (expandGraphContext === 'result') {
+        // For result graph: merge expanded nodes into resultGraphData
+        const existingKeys = new Set(resultGraphData.nodes.map(n => n.key));
+        const newNodes = expandedData.nodes.filter(n => n.key && !existingKeys.has(n.key));
+        
+        const existingLinks = new Set(
+          resultGraphData.links.map(l => `${l.source}-${l.target}-${l.type}`)
+        );
+        const newLinks = expandedData.links.filter(
+          l => !existingLinks.has(`${l.source}-${l.target}-${l.type}`)
+        );
+
+        setResultGraphData(prev => ({
+          nodes: [...prev.nodes, ...newNodes],
+          links: [...prev.links, ...newLinks],
+        }));
+      } else if (expandGraphContext === 'selected') {
+        // For selected nodes: add to subgraph if in subgraph view, otherwise add to main graph
+        // This is a bit ambiguous, so we'll add to the current active subgraph
+        const existingKeys = new Set(subgraphNodeKeys);
+        const newKeys = expandedData.nodes
+          .map(n => n.key)
+          .filter(key => key && !existingKeys.has(key));
+        
+        if (newKeys.length > 0) {
+          setSubgraphNodeKeys(prev => [...prev, ...newKeys]);
+        }
+      }
+
+      // Reload graph to show new nodes
+      await loadGraph();
+    } catch (err) {
+      console.error('Failed to expand graph:', err);
+      alert(`Failed to expand graph: ${err.message}`);
+    } finally {
+      setIsLoading(false);
+      setShowExpandGraphModal(false);
+      setExpandGraphContext(null);
+    }
+  }, [expandGraphContext, selectedNodes, subgraphNodeKeys, resultGraphData, loadGraph]);
 
   // Handle viewing a source document from a citation
   const handleViewDocument = useCallback(async (sourceDoc, page = 1, caseId = null) => {
@@ -1353,7 +1761,12 @@ export default function App() {
   
   // Build subgraph for subgraph node keys
   // Use path-based subgraph if available, otherwise build from subgraph node keys
-  const subgraphData = pathSubgraphData || buildSubgraph(subgraphNodeKeys);
+  const regularSubgraphData = pathSubgraphData || buildSubgraph(subgraphNodeKeys);
+  
+  // Use result graph if result tab is active, otherwise use regular subgraph
+  const subgraphData = activeSubgraphTab === 'result' && resultGraphData 
+    ? resultGraphData 
+    : regularSubgraphData;
 
   // Load timeline - from subgraph when nodes are selected, from main graph when not
   const [timelineData, setTimelineData] = useState([]);
@@ -3049,10 +3462,10 @@ export default function App() {
                     ? 'bg-owl-blue-100 text-owl-blue-900'
                     : 'text-light-600 hover:text-light-800 hover:bg-light-100'
                 }`}
-                title="Subgraph options"
+                title="Query Focus Graph options"
               >
                 <GitBranch className="w-4 h-4" />
-                Subgraph
+                Query Focus Graph
                 <ChevronDown className={`w-4 h-4 transition-transform ${isSubgraphMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -3145,6 +3558,23 @@ export default function App() {
                         : selectedNodeKeys.length > 0 
                         ? `Find bridges in ${selectedNodeKeys.length} selected nodes`
                         : 'Find bridges in full graph'}
+                    </div>
+                  </button>
+                  
+                  <div className="border-t border-light-200 my-1"></div>
+
+                  <button
+                    onClick={handleFindSimilarEntities}
+                    disabled={isScanningSimilar}
+                    className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                      isScanningSimilar
+                        ? 'text-light-400 cursor-not-allowed opacity-50'
+                        : 'text-light-800 hover:bg-light-50 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Search className="w-4 h-4" />
+                      <span>{isScanningSimilar ? 'Scanning...' : 'Find Similar Entities'}</span>
                     </div>
                   </button>
                   
@@ -3243,6 +3673,21 @@ export default function App() {
           >
             <RefreshCw className={`w-5 h-5 text-light-600 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
+
+          {viewMode === 'graph' && (
+            <button
+              onClick={handleFindSimilarEntities}
+              disabled={isScanningSimilar || isLoading}
+              className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                isScanningSimilar
+                  ? 'bg-light-200 text-light-400 cursor-not-allowed'
+                  : 'hover:bg-light-100 text-light-600'
+              }`}
+              title="Find Similar Entities"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+          )}
 
           <button
             onClick={() => setIsChatOpen(!isChatOpen)}
@@ -3379,6 +3824,8 @@ export default function App() {
                     onRemoveFromSubgraph={handleRemoveFromSubgraph}
                     subgraphNodeKeys={subgraphNodeKeys}
                     onAddNode={() => setShowAddNodeModal(true)}
+                    onFindSimilarEntities={handleFindSimilarEntities}
+                    isScanningSimilar={isScanningSimilar}
                   />
                 </div>
                 
@@ -3388,30 +3835,135 @@ export default function App() {
                     // Show subgraph of selected nodes
                     <>
                       <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-2">
-                        {/* Subgraph Header */}
-                        <div className="flex items-center justify-between bg-white/90 backdrop-blur-sm rounded-lg p-2 px-3 shadow-sm border border-light-200">
-                          <div className="flex items-center gap-2">
-                            <Network className="w-4 h-4 text-owl-blue-700" />
-                            <h3 className="text-sm font-semibold text-owl-blue-900">
-                              Subgraph ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
-                            </h3>
+                        {/* Subgraph Header with Tabs */}
+                        <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-sm border border-light-200 overflow-hidden">
+                          {/* Tabs */}
+                          <div className="flex border-b border-light-200">
+                            <button
+                              onClick={() => setActiveSubgraphTab('subgraph')}
+                              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                                activeSubgraphTab === 'subgraph'
+                                  ? 'bg-owl-blue-500 text-white'
+                                  : 'bg-white text-light-700 hover:bg-light-100'
+                              }`}
+                            >
+                              Query Focus Graph ({regularSubgraphData.nodes.length} nodes)
+                            </button>
+                            <button
+                              onClick={() => setActiveSubgraphTab('result')}
+                              className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                                activeSubgraphTab === 'result'
+                                  ? 'bg-owl-blue-500 text-white'
+                                  : 'bg-white text-light-700 hover:bg-light-100'
+                              }`}
+                              disabled={!resultGraphData || !resultGraphData.nodes || resultGraphData.nodes.length === 0}
+                            >
+                              Result Graph ({resultGraphData?.nodes?.length || 0} nodes)
+                            </button>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={handleSelectAllSubgraphNodes}
-                              className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
-                              title="Select all subgraph nodes"
-                            >
-                              <CheckSquare className="w-3.5 h-3.5" />
-                              Select All
-                            </button>
-                            <button
-                              onClick={handleCloseDetails}
-                              className="p-1 hover:bg-light-100 rounded transition-colors"
-                              title="Clear selection"
-                            >
-                              <X className="w-4 h-4 text-light-600" />
-                            </button>
+                          
+                          {/* Header Actions */}
+                          <div className="flex items-center justify-between p-2 px-3">
+                            <div className="flex items-center gap-2">
+                              <Network className="w-4 h-4 text-owl-blue-700" />
+                              <h3 className="text-sm font-semibold text-owl-blue-900">
+                                {activeSubgraphTab === 'result' ? 'Result Graph' : 'Query Focus Graph'} ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
+                              </h3>
+                              {activeSubgraphTab === 'subgraph' && queryFocusHistory.length > 1 && (
+                                <span className="text-xs text-light-500 ml-1">
+                                  ({queryFocusHistoryIndex + 1}/{queryFocusHistory.length})
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {activeSubgraphTab === 'subgraph' && (
+                                <>
+                                  {/* History Navigation */}
+                                  {queryFocusHistory.length > 1 && (
+                                    <div className="flex items-center gap-1 border-r border-light-200 pr-2 mr-1">
+                                      <button
+                                        onClick={navigateQueryFocusHistoryBack}
+                                        disabled={queryFocusHistoryIndex <= 0}
+                                        className="p-1 hover:bg-light-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={`Navigate back (${queryFocusHistoryIndex + 1}/${queryFocusHistory.length})`}
+                                      >
+                                        <ChevronLeft className="w-4 h-4 text-light-600" />
+                                      </button>
+                                      <button
+                                        onClick={navigateQueryFocusHistoryForward}
+                                        disabled={queryFocusHistoryIndex >= queryFocusHistory.length - 1}
+                                        className="p-1 hover:bg-light-100 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                        title={`Navigate forward (${queryFocusHistoryIndex + 1}/${queryFocusHistory.length})`}
+                                      >
+                                        <ChevronRight className="w-4 h-4 text-light-600" />
+                                      </button>
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={handleSelectAllSubgraphNodes}
+                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
+                                    title="Select all subgraph nodes"
+                                  >
+                                    <CheckSquare className="w-3.5 h-3.5" />
+                                    Select All
+                                  </button>
+                                  <button
+                                    onClick={() => handleExpandGraph('subgraph')}
+                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
+                                    title="Expand all nodes in Query Focus Graph"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                    Expand Graph
+                                  </button>
+                                </>
+                              )}
+                              {activeSubgraphTab === 'result' && (
+                                <>
+                                  <button
+                                    onClick={() => handleExpandGraph('result')}
+                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
+                                    title="Expand all nodes in Result Graph"
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                    Expand Graph
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      // Overwrite Query Focus Graph with Result Graph
+                                      if (resultGraphData && resultGraphData.nodes && resultGraphData.nodes.length > 0) {
+                                        const resultNodeKeys = resultGraphData.nodes.map(node => node.key).filter(key => key);
+                                        setSubgraphNodeKeys(resultNodeKeys);
+                                        setPathSubgraphData(null); // Clear path subgraph data
+                                        setActiveSubgraphTab('subgraph'); // Switch back to Query Focus Graph tab
+                                        alert(`Query Focus Graph updated with ${resultNodeKeys.length} node${resultNodeKeys.length > 1 ? 's' : ''} from Result Graph`);
+                                      }
+                                    }}
+                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
+                                    title="Copy Result Graph to Query Focus Graph"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                    Use as Query Focus
+                                  </button>
+                                </>
+                              )}
+                              {selectedNodes.length > 0 && (
+                                <button
+                                  onClick={() => handleExpandGraph('selected')}
+                                  className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
+                                  title={`Expand ${selectedNodes.length} selected node${selectedNodes.length > 1 ? 's' : ''}`}
+                                >
+                                  <Maximize2 className="w-3.5 h-3.5" />
+                                  Expand Selected
+                                </button>
+                              )}
+                              <button
+                                onClick={handleCloseDetails}
+                                className="p-1 hover:bg-light-100 rounded transition-colors"
+                                title="Clear selection"
+                              >
+                                <X className="w-4 h-4 text-light-600" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                         
@@ -3650,10 +4202,10 @@ export default function App() {
                         <Network className="w-12 h-12 text-owl-blue-300" />
                         <div>
                           <h3 className="text-md font-medium text-light-700 mb-2">
-                            Subgraph View
+                            Query Focus Graph View
                           </h3>
                           <p className="text-light-600 text-sm">
-                            Select nodes in the main graph to view their subgraph here.
+                            Select nodes in the main graph to view their query focus graph here.
                           </p>
                         </div>
                         <div className="mt-4 p-4 bg-light-100 rounded-lg text-left w-full">
@@ -3687,6 +4239,8 @@ export default function App() {
                 onRemoveFromSubgraph={handleRemoveFromSubgraph}
                 subgraphNodeKeys={subgraphNodeKeys}
                 onAddNode={() => setShowAddNodeModal(true)}
+                onFindSimilarEntities={handleFindSimilarEntities}
+                isScanningSimilar={isScanningSimilar}
               />
             )}
             </>
@@ -3823,6 +4377,15 @@ export default function App() {
           onAnalyzeRelationships={handleAnalyzeRelationships}
           isRelationshipMode={isRelationshipMode}
           selectedNodes={selectedNodes}
+          onExpandGraph={(context, nodeKeys) => {
+            if (nodeKeys && nodeKeys.length > 0) {
+              setExpandGraphContext(context);
+              setShowExpandGraphModal(true);
+            }
+          }}
+          isSubgraph={paneViewMode === 'split'}
+          onMerge={handleMergeSelected}
+          onDelete={handleDeleteNode}
         />
       )}
 
@@ -4170,6 +4733,94 @@ export default function App() {
         initialPage={documentViewerState.page}
         highlightText={documentViewerState.highlightText}
       />
+
+      {/* Expand Graph Modal */}
+      <ExpandGraphModal
+        isOpen={showExpandGraphModal}
+        onClose={() => {
+          setShowExpandGraphModal(false);
+          setExpandGraphContext(null);
+        }}
+        onExpand={executeGraphExpansion}
+        nodeCount={
+          expandGraphContext === 'selected' ? selectedNodes.length :
+          expandGraphContext === 'subgraph' ? subgraphNodeKeys.length :
+          expandGraphContext === 'result' ? (resultGraphData?.nodes?.length || 0) :
+          0
+        }
+      />
+
+      {/* Merge Entities Modal */}
+      <MergeEntitiesModal
+        isOpen={showMergeModal}
+        onClose={() => {
+          setShowMergeModal(false);
+          setMergeEntity1(null);
+          setMergeEntity2(null);
+          setMergeSimilarity(null);
+        }}
+        entity1={mergeEntity1}
+        entity2={mergeEntity2}
+        similarity={mergeSimilarity}
+        onMerge={handleMergeEntities}
+      />
+
+      {/* Similar Entities List Modal */}
+      {showSimilarEntitiesList && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" 
+          onClick={() => setShowSimilarEntitiesList(false)}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col" 
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-light-200 bg-owl-blue-50">
+              <h2 className="text-lg font-semibold text-owl-blue-900">
+                Similar Entities Found ({similarEntitiesPairs.length})
+              </h2>
+              <button 
+                onClick={() => setShowSimilarEntitiesList(false)} 
+                className="p-1 hover:bg-light-100 rounded"
+              >
+                <X className="w-5 h-5 text-light-600" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              {similarEntitiesPairs.length === 0 ? (
+                <p className="text-light-600 text-center py-8">No similar entities found.</p>
+              ) : (
+                <div className="space-y-3">
+                  {similarEntitiesPairs.map((pair, idx) => (
+                    <div key={idx} className="border border-light-200 rounded-lg p-4 hover:bg-light-50 transition-colors">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-medium text-owl-blue-900">{pair.entity1.name}</span>
+                          <ArrowRight className="w-4 h-4 text-light-400" />
+                          <span className="text-sm font-medium text-owl-blue-900">{pair.entity2.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-light-600">{Math.round(pair.similarity * 100)}% similar</span>
+                          <button
+                            onClick={() => handleMergeSimilarPair(pair)}
+                            className="px-3 py-1 text-xs bg-owl-blue-500 text-white rounded hover:bg-owl-blue-600 transition-colors flex items-center gap-1"
+                          >
+                            <Merge className="w-3 h-3" />
+                            Merge
+                          </button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-light-600">
+                        Type: {pair.entity1.type} • Similarity: {pair.similarity.toFixed(3)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

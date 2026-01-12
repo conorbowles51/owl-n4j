@@ -218,4 +218,3 @@ def format_debug_log_as_markdown(debug_log: Dict[str, Any]) -> str:
         lines.append("")
     
     return "\n".join(lines)
-

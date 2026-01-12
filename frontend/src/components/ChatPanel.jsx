@@ -312,8 +312,8 @@ export default function ChatPanel({
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [currentConfig, setCurrentConfig] = useState(null);
-  const [selectedProvider, setSelectedProvider] = useState('ollama');
-  const [selectedModelId, setSelectedModelId] = useState('qwen2.5:32b-instruct');
+  const [selectedProvider, setSelectedProvider] = useState('openai');
+  const [selectedModelId, setSelectedModelId] = useState('gpt-5');
   const [loadingConfig, setLoadingConfig] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -447,6 +447,7 @@ export default function ChatPanel({
         cypherUsed: response.cypher_used,
         usedNodeKeys: nodeKeys, // Store node keys used to generate answer (from multiple sources)
         modelInfo: response.model_info, // Store model info
+        resultGraph: response.result_graph || null, // Store result graph with documents and entities
         timestamp: new Date().toISOString(),
       };
       
@@ -602,7 +603,7 @@ export default function ChatPanel({
                     // Set default model for provider
                     const openaiModels = availableModels.filter(m => m.provider === 'openai');
                     if (openaiModels.length > 0) {
-                      const defaultModel = openaiModels.find(m => m.id === 'gpt-4o') || openaiModels[0];
+                      const defaultModel = openaiModels.find(m => m.id === 'gpt-5') || openaiModels[0];
                       setSelectedModelId(defaultModel.id);
                     }
                   }}

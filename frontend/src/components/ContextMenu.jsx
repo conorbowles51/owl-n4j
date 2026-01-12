@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Eye, Maximize2, Link2, Sparkles } from 'lucide-react';
+import { Eye, Maximize2, Link2, Sparkles, Merge, Trash2 } from 'lucide-react';
 
 /**
  * ContextMenu Component
@@ -17,6 +17,10 @@ export default function ContextMenu({
   onAnalyzeRelationships,
   isRelationshipMode,
   selectedNodes,
+  onExpandGraph, // New prop for graph expansion in subgraph/result graph
+  isSubgraph = false, // Whether this is in a subgraph view
+  onMerge, // New prop for merging entities
+  onDelete, // New prop for deleting a node
 }) {
   const menuRef = useRef(null);
 
@@ -102,16 +106,29 @@ export default function ContextMenu({
               <Eye className="w-4 h-4 text-owl-blue-600" />
               Show Details
             </button>
-            <button
-              onClick={() => {
-                onExpand(node);
-                onClose();
-              }}
-              className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
-            >
-              <Maximize2 className="w-4 h-4 text-owl-blue-600" />
-              Expand Connections
-            </button>
+            {isSubgraph && onExpandGraph ? (
+              <button
+                onClick={() => {
+                  onExpandGraph('selected', [node.key]);
+                  onClose();
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+              >
+                <Maximize2 className="w-4 h-4 text-owl-blue-600" />
+                Expand Node
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  onExpand(node);
+                  onClose();
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors"
+              >
+                <Maximize2 className="w-4 h-4 text-owl-blue-600" />
+                Expand Connections
+              </button>
+            )}
             <button
               onClick={() => {
                 onAnalyzeRelationships && onAnalyzeRelationships();
@@ -132,6 +149,30 @@ export default function ContextMenu({
               <Link2 className="w-4 h-4 text-owl-blue-600" />
               Add a Relationship
             </button>
+            {selectedNodes && selectedNodes.length >= 2 && selectedNodes.some(n => n.key === node.key) && (
+              <button
+                onClick={() => {
+                  onMerge && onMerge();
+                  onClose();
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-light-800 hover:bg-light-50 flex items-center gap-2 transition-colors border-t border-light-200 mt-1 pt-2"
+              >
+                <Merge className="w-4 h-4 text-owl-orange-600" />
+                Merge Selected Entities
+              </button>
+            )}
+            {onDelete && (
+              <button
+                onClick={() => {
+                  onDelete(node);
+                  onClose();
+                }}
+                className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors border-t border-light-200 mt-1 pt-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Node
+              </button>
+            )}
           </>
         )}
       </div>

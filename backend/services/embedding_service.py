@@ -27,10 +27,25 @@ from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY, LLM_PROV
 class EmbeddingService:
     """Service for generating text embeddings."""
     
-    def __init__(self):
-        # Use embedding provider from config, or fall back to LLM provider
-        self.provider = (EMBEDDING_PROVIDER or LLM_PROVIDER or "ollama").lower()
-        self.model = EMBEDDING_MODEL
+    def __init__(self, provider: Optional[str] = None, model: Optional[str] = None):
+        """
+        Initialize the embedding service.
+        
+        Args:
+            provider: Embedding provider ("openai" or "ollama"). If None, uses config.
+            model: Embedding model ID. If None, uses config or defaults.
+        """
+        # Use provided provider, or embedding provider from config, or fall back to LLM provider
+        if provider:
+            self.provider = provider.lower()
+        else:
+            self.provider = (EMBEDDING_PROVIDER or LLM_PROVIDER or "ollama").lower()
+        
+        # Use provided model, or embedding model from config
+        if model:
+            self.model = model
+        else:
+            self.model = EMBEDDING_MODEL
         
         # If no explicit embedding model set, use defaults based on provider
         if not self.model:

@@ -2,7 +2,7 @@
 Graph Router - endpoints for graph visualization data.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 
@@ -18,6 +18,12 @@ class ShortestPathsRequest(BaseModel):
     """Request model for shortest paths endpoint."""
     node_keys: List[str]
     max_depth: int = 10
+
+
+class ExpandNodesRequest(BaseModel):
+    """Request model for expanding nodes endpoint."""
+    node_keys: List[str]
+    depth: int = 1
 
 
 class PageRankRequest(BaseModel):
@@ -40,6 +46,25 @@ class BetweennessCentralityRequest(BaseModel):
     node_keys: Optional[List[str]] = None  # If None, runs on full graph
     top_n: int = 20  # Number of top nodes by betweenness centrality to return
     normalized: bool = True  # Whether to normalize the scores
+
+
+class DeleteNodeRequest(BaseModel):
+    """Request model for deleting a node."""
+    node_key: str
+
+
+class FindSimilarEntitiesRequest(BaseModel):
+    """Request model for finding similar entities."""
+    entity_types: Optional[List[str]] = None
+    name_similarity_threshold: float = 0.7
+    max_results: int = 50
+
+
+class MergeEntitiesRequest(BaseModel):
+    """Request model for merging entities."""
+    source_key: str
+    target_key: str
+    merged_data: Dict[str, Any]  # name, summary, notes, type, properties
 
 
 class CaseLoadRequest(BaseModel):
@@ -238,6 +263,60 @@ async def get_node_neighbours(
     try:
         return neo4j_service.get_node_with_neighbours(key, depth)
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/expand-nodes")
+async def expand_nodes(
+    request: ExpandNodesRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Expand multiple nodes by N hops.
+
+    Args:
+        request: Request with node_keys list and depth (number of hops)
+    """
+    if not request.node_keys:
+        raise HTTPException(status_code=400, detail="No node keys provided")
+    
+    if request.depth < 1 or request.depth > 5:
+        raise HTTPException(status_code=400, detail="Depth must be between 1 and 5")
+
+    try:
+        result = neo4j_service.expand_nodes(request.node_keys, request.depth)
+        
+        # Log the expansion operation
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Expand Nodes",
+            details={
+                "node_keys": request.node_keys,
+                "depth": request.depth,
+                "nodes_found": len(result.get("nodes", [])),
+                "links_found": len(result.get("links", [])),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
+        return result
+    except Exception as e:
+        # Log the error
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Expand Nodes Failed",
+            details={
+                "node_keys": request.node_keys,
+                "depth": request.depth,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1098,4 +1177,169 @@ async def verify_insight(node_key: str, request: VerifyInsightRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class FindSimilarEntitiesRequest(BaseModel):
+    """Request model for finding similar entities."""
+    entity_types: Optional[List[str]] = None
+    name_similarity_threshold: float = 0.7
+    max_results: int = 50
+
+
+class MergeEntitiesRequest(BaseModel):
+    """Request model for merging entities."""
+    source_key: str
+    target_key: str
+    merged_data: Dict[str, Any]  # name, summary, notes, type, properties
+
+
+@router.post("/find-similar-entities")
+async def find_similar_entities(
+    request: FindSimilarEntitiesRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Find entities that might be duplicates based on name similarity.
+    """
+    try:
+        result = neo4j_service.find_similar_entities(
+            entity_types=request.entity_types,
+            name_similarity_threshold=request.name_similarity_threshold,
+            max_results=request.max_results,
+        )
+        
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Find Similar Entities",
+            details={
+                "entity_types": request.entity_types,
+                "similarity_threshold": request.name_similarity_threshold,
+                "pairs_found": len(result),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
+        return {"similar_pairs": result}
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Find Similar Entities Failed",
+            details={"error": str(e)},
+            user=user.get("username", "unknown"),
+            success=False,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/merge-entities")
+async def merge_entities(
+    request: MergeEntitiesRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Merge two entities into one.
+    """
+    try:
+        result = neo4j_service.merge_entities(
+            source_key=request.source_key,
+            target_key=request.target_key,
+            merged_data=request.merged_data,
+        )
+        
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Merge Entities",
+            details={
+                "source_key": request.source_key,
+                "target_key": request.target_key,
+                "relationships_updated": result.get("relationships_updated", 0),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
+        return result
+    except ValueError as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Merge Entities Failed",
+            details={
+                "source_key": request.source_key,
+                "target_key": request.target_key,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Merge Entities Failed",
+            details={
+                "source_key": request.source_key,
+                "target_key": request.target_key,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/node/{node_key}")
+async def delete_node(
+    node_key: str,
+    user: dict = Depends(get_current_user)
+):
+    """
+    Delete a node and all its relationships from the graph.
+    
+    Args:
+        node_key: Key of the node to delete
+        user: Current authenticated user
+        
+    Returns:
+        Dict with success status and deletion info
+    """
+    try:
+        result = neo4j_service.delete_node(node_key)
+        
+        # Log the deletion
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Node Deleted",
+            details={
+                "node_key": node_key,
+                "node_name": result.get("deleted_node", {}).get("name"),
+                "node_type": result.get("deleted_node", {}).get("type"),
+                "relationships_deleted": result.get("relationships_deleted", 0),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Node Deletion Failed",
+            details={
+                "node_key": node_key,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
         raise HTTPException(status_code=500, detail=str(e))

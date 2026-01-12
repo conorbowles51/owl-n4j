@@ -74,7 +74,7 @@ const FileManagementPanel = ({
       }
       // Only load independently if parent doesn't have snapshots
       if (!initialSnapshots || initialSnapshots.length === 0) {
-        loadSnapshots();
+      loadSnapshots();
       }
     }
   }, [isOpen]);
@@ -307,15 +307,15 @@ const FileManagementPanel = ({
                         }
                         
                         return (
-                          <div
-                            key={snapshot.id}
+                        <div
+                          key={snapshot.id}
                             className="bg-light-50 rounded-lg border border-light-200 hover:border-owl-blue-300 transition-colors"
-                          >
+                        >
                             <div className="p-3">
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 mb-2">
+                            <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <h5 className="font-medium text-owl-blue-900 truncate text-sm">{snapshot.name}</h5>
+                              <h5 className="font-medium text-owl-blue-900 truncate text-sm">{snapshot.name}</h5>
                                     <button
                                       onClick={async () => {
                                         const next = new Set(expandedSnapshotIds);
@@ -363,7 +363,7 @@ const FileManagementPanel = ({
                                     </div>
                                   )}
                                   <p className="text-xs text-light-600 mt-1 whitespace-pre-wrap">{snapshot.notes || 'No notes'}</p>
-                                  <div className="flex items-center gap-2 mt-2 text-xs text-light-500">
+                              <div className="flex items-center gap-2 mt-2 text-xs text-light-500">
                                     <span>
                                       {displaySnapshot.subgraph?.nodes?.length || 
                                        displaySnapshot.overview?.nodeCount || 
@@ -371,7 +371,7 @@ const FileManagementPanel = ({
                                        snapshot.node_count || 
                                        0} nodes
                                     </span>
-                                    <span>•</span>
+                                <span>•</span>
                                     <span>
                                       {displaySnapshot.subgraph?.links?.length || 
                                        displaySnapshot.overview?.linkCount || 
@@ -379,15 +379,15 @@ const FileManagementPanel = ({
                                        snapshot.link_count || 
                                        0} links
                                     </span>
-                                    {snapshot.case_name && (
-                                      <>
-                                        <span>•</span>
-                                        <span className="text-owl-blue-600">{snapshot.case_name}</span>
-                                      </>
-                                    )}
-                                  </div>
-                                </div>
+                                {snapshot.case_name && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-owl-blue-600">{snapshot.case_name}</span>
+                                  </>
+                                )}
                               </div>
+                            </div>
+                          </div>
                               
                               {/* Detailed Snapshot Information */}
                               {isExpanded && loadedSnapshotDetails[snapshot.id] && (() => {
@@ -682,29 +682,29 @@ const FileManagementPanel = ({
                               })()}
                               
                               <div className="flex items-center gap-2 mt-3">
-                                <button
-                                  onClick={() => onLoadSnapshot(snapshot)}
-                                  className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded text-xs transition-colors"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  Load
-                                </button>
-                                <button
-                                  onClick={() => onExportPDF(snapshot)}
-                                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-light-100 hover:bg-light-200 text-light-700 rounded text-xs transition-colors"
-                                  title="Export to PDF"
-                                >
-                                  <FileDown className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteSnapshot(snapshot.id)}
-                                  className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs transition-colors"
-                                  title="Delete snapshot"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
+                            <button
+                              onClick={() => onLoadSnapshot(snapshot)}
+                              className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded text-xs transition-colors"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              Load
+                            </button>
+                            <button
+                              onClick={() => onExportPDF(snapshot)}
+                              className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-light-100 hover:bg-light-200 text-light-700 rounded text-xs transition-colors"
+                              title="Export to PDF"
+                            >
+                              <FileDown className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSnapshot(snapshot.id)}
+                              className="flex items-center justify-center gap-1.5 px-2 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded text-xs transition-colors"
+                              title="Delete snapshot"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
                           </div>
                         );
                       })}

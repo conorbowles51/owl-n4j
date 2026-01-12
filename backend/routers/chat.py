@@ -42,6 +42,7 @@ class ChatResponse(BaseModel):
     debug_log: Optional[Dict] = None
     used_node_keys: Optional[List[str]] = None  # Node keys actually used to generate the answer
     model_info: Optional[Dict] = None  # Current model and server information
+    result_graph: Optional[Dict] = None  # Graph with documents and relevant entities
 
 
 class SuggestionsRequest(BaseModel):

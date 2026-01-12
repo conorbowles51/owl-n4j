@@ -891,4 +891,3 @@ ollama pull nomic-embed-text
 - [Ollama Embeddings](https://github.com/ollama/ollama)
 - Existing code: `backend/services/rag_service.py`, `ingestion/scripts/ingestion.py`
 
-

@@ -1,0 +1,57 @@
+Add graph expansion, entity resolution, merge, and delete features
+
+Major Features:
+- Graph expansion: Added ability to expand nodes by N hops in Query Focus Graph and Result Graph
+  - Backend: Added expand_nodes() method to Neo4jService with configurable depth
+  - Frontend: Added ExpandGraphModal for user input, expansion buttons, and context menu option
+  - Supports expanding all nodes, selected nodes, or specific node sets
+
+- Entity resolution and merging: Added comprehensive entity resolution system
+  - Backend: Added find_similar_entities() and merge_entities() methods
+  - Frontend: Added MergeEntitiesModal with side-by-side comparison and "Use Both" option
+  - Find Similar Entities button in graph controls and Query Focus Graph menu
+  - Merge selected entities from context menu
+  - Supports merging properties from both entities with user control
+
+- Node deletion: Added ability to delete nodes from graph
+  - Backend: Added delete_node() method with relationship deletion
+  - Frontend: Added Delete Node option in context menu with confirmation dialog
+  - Automatic cleanup from selected nodes, subgraph, and timeline context
+
+UI/UX Improvements:
+- Fixed button spacing in graph controls (top-left floating buttons) with consistent 2px gaps
+- Renamed "Subgraph" to "Query Focus Graph" throughout UI for clarity
+- Added Result Graph tab toggle in subgraph panel
+- Auto-open subgraph panel when AI assistant is opened
+- Added Query Focus Graph history navigation (back/forward buttons)
+- Improved merge dialog with "Use Both" option for Name and Summary fields
+
+Bug Fixes:
+- Fixed Neo4j UNION query syntax error in merge_entities() (column name mismatch)
+- Fixed indentation errors in ingestion.py
+- Fixed ReferenceError in App.jsx (useState/useEffect ordering)
+- Added defensive checks in get_retrieval_history to handle malformed log entries
+- Fixed initialization order issues preventing state variable access
+
+Configuration:
+- Updated chunk size to 8000 characters with 1600 character overlap for ingestion
+- Default LLM provider changed to OpenAI with GPT-5 as default model
+- Improved error handling for missing API keys and embedding dimension mismatches
+
+Documentation:
+- Added AI_ASSISTANT_PROMPT_EXPLANATION.md
+- Added NEO4J_TRANSACTION_LOG_TROUBLESHOOTING.md
+- Updated various configuration guides
+
+Backend Changes:
+- Enhanced Neo4jService with graph expansion, similarity detection, merge, and delete operations
+- Added retry logic with exponential backoff for Neo4j transaction errors
+- Improved logging for all graph operations
+- Added defensive error handling throughout
+
+Frontend Changes:
+- Added ExpandGraphModal component
+- Added MergeEntitiesModal component
+- Enhanced ContextMenu with expand, merge, and delete options
+- Updated GraphView with floating controls and improved spacing
+- Enhanced App.jsx with history management and new feature integrations

@@ -38,11 +38,11 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 # Chunking Configuration
 # ---------------------------------------------------------------------------
 
-# Characters per chunk (suitable for local Ollama with ~8K context)
-CHUNK_SIZE = 2000
+# Characters per chunk (optimized for faster ingestion with larger context windows)
+CHUNK_SIZE = 8000
 
 # Overlap between chunks to maintain context continuity
-CHUNK_OVERLAP = 400
+CHUNK_OVERLAP = 1600
 
 # ---------------------------------------------------------------------------
 # Entity Types (from schema)

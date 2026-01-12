@@ -271,5 +271,5 @@ def get_default_model(provider: LLMProvider) -> LLMModel:
     if provider == LLMProvider.OLLAMA:
         return get_model_by_id("qwen2.5:32b-instruct") or AVAILABLE_MODELS[0]
     else:
-        return get_model_by_id("gpt-4o") or AVAILABLE_MODELS[-1]
+        return get_model_by_id("gpt-5") or AVAILABLE_MODELS[-1]
 

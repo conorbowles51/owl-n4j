@@ -60,4 +60,3 @@ LLM_MODEL=qwen2.5:14b-instruct
 
 **Ingestion:** `qwen2.5:14b-instruct` (in `ingestion/scripts/config.py`)
 **Chat/Assistant:** `openai` → `gpt-4o` (in `backend/config.py`, or set via UI)
-

@@ -129,6 +129,52 @@ export const graphAPI = {
     }),
 
   /**
+   * Expand multiple nodes by N hops
+   */
+  expandNodes: (nodeKeys, depth = 1) =>
+    fetchAPI('/graph/expand-nodes', {
+      method: 'POST',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        depth: depth,
+      }),
+    }),
+
+  /**
+   * Find similar entities for resolution
+   */
+  findSimilarEntities: (entityTypes = null, similarityThreshold = 0.7, maxResults = 50) =>
+    fetchAPI('/graph/find-similar-entities', {
+      method: 'POST',
+      body: JSON.stringify({
+        entity_types: entityTypes,
+        name_similarity_threshold: similarityThreshold,
+        max_results: maxResults,
+      }),
+    }),
+
+  /**
+   * Merge two entities
+   */
+  mergeEntities: (sourceKey, targetKey, mergedData) =>
+    fetchAPI('/graph/merge-entities', {
+      method: 'POST',
+      body: JSON.stringify({
+        source_key: sourceKey,
+        target_key: targetKey,
+        merged_data: mergedData,
+      }),
+    }),
+
+  /**
+   * Delete a node and all its relationships
+   */
+  deleteNode: (nodeKey) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}`, {
+      method: 'DELETE',
+    }),
+
+  /**
    * Get influential nodes using PageRank algorithm
    */
   getPageRank: (nodeKeys = null, topN = 20, iterations = 20, dampingFactor = 0.85) =>

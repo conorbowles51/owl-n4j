@@ -34,7 +34,7 @@ class LLMService:
 
     def __init__(self):
         # Initialize with config defaults
-        self.provider = LLM_PROVIDER or "ollama"
+        self.provider = LLM_PROVIDER or "openai"
         self.model_id = LLM_MODEL
         
         # Set default model if not specified
@@ -154,15 +154,30 @@ class LLMService:
             raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
         
         try:
+            # Some OpenAI models (like o1, o3, gpt-5) don't support custom temperature
+            # They only support the default value of 1.0
+            # Check if the model doesn't support custom temperature
+            models_without_temperature_support = ["o1", "o3", "gpt-5"]
+            supports_custom_temperature = not any(
+                self.model_id.startswith(prefix) for prefix in models_without_temperature_support
+            )
+            
             kwargs = {
                 "model": self.model_id,
                 "messages": [
                     {"role": "system", "content": system_context},
                     {"role": "user", "content": prompt}
                 ],
-                "temperature": temperature,
                 "timeout": timeout,
             }
+            
+            # Only add temperature if the model supports custom temperature values
+            # Some models (like o1, o3, gpt-5) only support the default temperature (1.0)
+            # and will error if any temperature parameter is provided
+            if supports_custom_temperature:
+                kwargs["temperature"] = temperature
+            # For models that don't support custom temperature, omit the parameter
+            # OpenAI will use the default value (1.0) automatically
 
             # Force JSON response if requested
             if json_mode:
@@ -296,67 +311,55 @@ Return ONLY valid JSON with this structure:
         self,
         question: str,
         context: str,
-        query_results: Optional[str] = None,
     ) -> str:
         """
-        Answer a question based on graph context.
+        Answer a question based on document context.
 
         Args:
             question: User's question
-            context: Graph context (entities, relationships)
-            query_results: Optional results from a Cypher query
+            context: Document context from vector search
 
         Returns:
             Answer text
         """
-        answer, _ = self.answer_question_with_prompt(question, context, query_results)
+        answer, _ = self.answer_question_with_prompt(question, context)
         return answer
 
     def answer_question_with_prompt(
         self,
         question: str,
         context: str,
-        query_results: Optional[str] = None,
     ) -> tuple[str, str]:
         """
-        Answer a question based on graph context and return the prompt used.
+        Answer a question based on document context and return the prompt used.
 
         Args:
             question: User's question
-            context: Graph context (entities, relationships)
-            query_results: Optional results from a Cypher query
+            context: Document context from vector search
 
         Returns:
             Tuple of (answer text, prompt used)
         """
         try:
-            query_section = ""
-            if query_results:
-                query_section = f"""
-Query Results:
-{query_results}
-"""
-
             prompt = f"""{system_context}
 
-You have access to the following information from the investigation graph:
+You have access to the following documents:
 
 {context}
-{query_section}
 
-Based on this information, please answer the investigator's question:
+Based on these documents, please answer the question:
 "{question}"
 
 Guidelines:
 - {analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
-- Be specific and cite entity names when relevant
-- If you identify suspicious patterns, explain them
-- Use ALL available information from the context above - extract and synthesize details from summaries, notes, and relationships
-- If specific details (like exact dates, amounts, or names) are mentioned in the context, include them in your answer
-- Only say "insufficient information" if the context truly contains NO relevant information about the question
-- If the context has related information (even if incomplete), provide what you can find and note what additional details would be helpful
+- Be specific and cite document names when relevant
+- If you identify patterns or important information, explain them
+- Use ALL available information from the documents above - extract and synthesize details
+- If specific details (like exact dates, amounts, or names) are mentioned in the documents, include them in your answer
+- Only say "insufficient information" if the documents truly contain NO relevant information about the question
+- If the documents have related information (even if incomplete), provide what you can find and note what additional details would be helpful
 - Keep your response focused and professional
 - Highlight any connections or patterns you notice
 

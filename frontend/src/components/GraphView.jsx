@@ -1,6 +1,6 @@
 import React, { useRef, useCallback, useEffect, useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight, Plus, ChevronDown, ChevronUp, Target } from "lucide-react";
+import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight, Plus, ChevronDown, ChevronUp, Target, Search } from "lucide-react";
 import { graphAPI, profilesAPI } from '../services/api';
 /**
  * Color palette for entity types
@@ -115,6 +115,8 @@ const GraphView = forwardRef(function GraphView({
   onRemoveFromSubgraph, // Callback to remove selected nodes from subgraph
   subgraphNodeKeys = [], // Keys of nodes currently in the subgraph
   onAddNode, // Callback to open Add Node modal
+  onFindSimilarEntities, // Callback to find similar entities
+  isScanningSimilar = false, // Whether similar entities scan is in progress
 }, ref) {
   const graphRef = useRef();
   const containerRef = useRef();
@@ -1105,20 +1107,20 @@ const GraphView = forwardRef(function GraphView({
                       onClick={onAddToSubgraph}
                       disabled={selectedNodes.every(n => subgraphNodeKeys.includes(n.key))}
                       className="w-full px-3 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
-                      title="Add selected nodes to subgraph"
+                      title="Add selected nodes to Query Focus Graph"
                     >
-                      Add to subgraph
+                      Add to Query Focus Graph
                     </button>
                   )}
-                  {/* Remove from subgraph - show in both main graph and subgraph */}
+                  {/* Remove from Query Focus Graph - show in both main graph and Query Focus Graph */}
                   {onRemoveFromSubgraph && (
                     <button
                       onClick={onRemoveFromSubgraph}
                       disabled={!selectedNodes.some(n => subgraphNodeKeys.includes(n.key))}
                       className="w-full px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
-                      title="Remove selected nodes from subgraph"
+                      title="Remove selected nodes from Query Focus Graph"
                     >
-                      Remove from subgraph
+                      Remove from Query Focus Graph
                     </button>
                   )}
                 </>
@@ -1152,7 +1154,7 @@ const GraphView = forwardRef(function GraphView({
       {!isSubgraph && onAddNode && (
         <button
           onClick={onAddNode}
-          className="absolute top-14 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
+          className="absolute top-[54px] left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
           title="Add Node to Graph"
         >
           <Plus className="w-5 h-5 text-light-600" />
@@ -1162,7 +1164,7 @@ const GraphView = forwardRef(function GraphView({
       {/* Selection Mode Toggle */}
       <button
         onClick={() => setSelectionMode(selectionMode === 'click' ? 'drag' : 'click')}
-        className={`absolute ${!isSubgraph && onAddNode ? 'top-24' : 'top-14'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
+        className={`absolute ${!isSubgraph && onAddNode ? 'top-[92px]' : 'top-[54px]'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
           selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
         }`}
         title={selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
@@ -1174,10 +1176,22 @@ const GraphView = forwardRef(function GraphView({
         )}
       </button>
 
+      {/* Find Similar Entities Button - Only show in main graph, not subgraph */}
+      {!isSubgraph && onFindSimilarEntities && (
+        <button
+          onClick={onFindSimilarEntities}
+          disabled={isScanningSimilar}
+          className={`absolute ${!isSubgraph && onAddNode ? 'top-[130px]' : 'top-[92px]'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 disabled:opacity-50 disabled:cursor-not-allowed`}
+          title="Find Similar Entities"
+        >
+          <Search className={`w-5 h-5 ${isScanningSimilar ? 'text-light-400' : 'text-light-600'}`} />
+        </button>
+      )}
+
       {/* Force Controls Toggle */}
       <button
         onClick={() => setShowControls(!showControls)}
-        className={`absolute ${!isSubgraph && onAddNode ? 'top-32' : 'top-24'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
+        className={`absolute ${!isSubgraph && onAddNode ? (onFindSimilarEntities ? 'top-[168px]' : 'top-[130px]') : (onFindSimilarEntities ? 'top-[130px]' : 'top-[92px]')} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
         title="Graph Settings"
       >
         <Settings className={`w-5 h-5 ${showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />

@@ -193,4 +193,3 @@ Your investigation console relies heavily on:
 
 **Add Vector DB** to enhance semantic search and reduce LLM context size.
 
-

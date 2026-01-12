@@ -72,4 +72,3 @@ print("\nTo test through your application:")
 print("1. Start your backend server")
 print("2. Ask a question through the chat interface")
 print("3. Check the response - it should use qwen2.5:32b-instruct")
-

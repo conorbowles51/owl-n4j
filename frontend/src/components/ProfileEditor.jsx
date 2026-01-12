@@ -84,11 +84,11 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       
       // Only set default model if creating a new profile and no model is set
       if (isNewProfile && !ingestionLLMModelId && modelsData.models && modelsData.models.length > 0) {
-        const ollamaModels = modelsData.models.filter(m => m.provider === 'ollama');
-        if (ollamaModels.length > 0) {
-          const defaultModel = ollamaModels.find(m => m.id === 'qwen2.5:7b-instruct') || ollamaModels[0];
+        const openaiModels = modelsData.models.filter(m => m.provider === 'openai');
+        if (openaiModels.length > 0) {
+          const defaultModel = openaiModels.find(m => m.id === 'gpt-5') || openaiModels[0];
           setIngestionLLMModelId(defaultModel.id);
-          setIngestionLLMProvider('ollama');
+          setIngestionLLMProvider('openai');
         }
       }
     } catch (err) {
@@ -143,8 +143,8 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     setIngestionSystemContext('');
     setSpecialEntityTypes([]);
     setIngestionTemperature(1.0);
-    setIngestionLLMProvider('ollama');
-    setIngestionLLMModelId('');
+    setIngestionLLMProvider('openai');
+    setIngestionLLMModelId('gpt-5');
     setChatSystemContext('');
     setChatAnalysisGuidance('');
     setChatTemperature(1.0);
@@ -555,7 +555,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                           // Set default model for provider
                           const openaiModels = availableModels.filter(m => m.provider === 'openai');
                           if (openaiModels.length > 0) {
-                            const defaultModel = openaiModels.find(m => m.id === 'gpt-4o') || openaiModels[0];
+                            const defaultModel = openaiModels.find(m => m.id === 'gpt-5') || openaiModels[0];
                             setIngestionLLMModelId(defaultModel.id);
                           }
                         }}
