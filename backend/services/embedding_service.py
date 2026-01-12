@@ -122,6 +122,16 @@ class EmbeddingService:
                 raise ValueError(f"Unsupported provider: {self.provider}")
         
         except Exception as e:
+            error_msg = str(e)
+            # Provide more helpful error messages
+            if "Failed to connect" in error_msg or "Connection refused" in error_msg or "ollama" in error_msg.lower():
+                if self.provider == "ollama":
+                    raise ConnectionError(
+                        f"Failed to connect to Ollama. Please check that Ollama is running and accessible at the configured URL. "
+                        f"Error: {error_msg}. "
+                        f"To fix: 1) Start Ollama (docker run -d -p 11434:11434 ollama/ollama or 'ollama serve'), "
+                        f"2) Or switch to OpenAI embeddings by setting EMBEDDING_PROVIDER=openai and OPENAI_API_KEY in your .env file"
+                    )
             print(f"[Embedding] Error generating embedding: {e}")
             raise
     

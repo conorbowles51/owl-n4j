@@ -282,11 +282,12 @@ class EvidenceService:
                         completed_at=datetime.now().isoformat(),
                     )
             
-            # Start the background thread for this folder
+            # Start the background thread for this folder (non-daemon so it continues even if request ends)
             thread = threading.Thread(
                 target=upload_folder_task,
                 args=(folder_files, task_id),
-                daemon=True,
+                daemon=False,
+                name=f"folder-upload-{task_id}",
             )
             thread.start()
         
@@ -425,8 +426,8 @@ class EvidenceService:
                     completed_at=datetime.now().isoformat(),
                 )
 
-        # Start background thread
-        thread = threading.Thread(target=upload_task, daemon=True)
+        # Start background thread (non-daemon so it continues even if request ends)
+        thread = threading.Thread(target=upload_task, daemon=False, name=f"file-upload-{task_id}")
         thread.start()
 
         return task_id
@@ -868,15 +869,21 @@ class EvidenceService:
                     completed_at=datetime.now().isoformat(),
                 )
             except Exception as e:
-                # Mark task as failed
+                # Mark task as failed and log the error with full traceback
+                import traceback
+                error_traceback = traceback.format_exc()
+                error_msg = f"{str(e)}\n\nTraceback:\n{error_traceback}"
+                print(f"Error in background evidence processing task {task_id}: {error_msg}")
                 background_task_storage.update_task(
                     task_id,
                     status=TaskStatus.FAILED.value,
-                    error=str(e),
+                    error=error_msg,
                     completed_at=datetime.now().isoformat(),
                 )
 
-        thread = threading.Thread(target=process_task, daemon=True)
+        # Use non-daemon thread so it continues running even if the request ends
+        # This allows users to navigate away from the page while processing continues
+        thread = threading.Thread(target=process_task, daemon=False, name=f"evidence-process-{task_id}")
         thread.start()
 
         return task_id

@@ -3682,21 +3682,6 @@ export default function App() {
             <RefreshCw className={`w-5 h-5 text-light-600 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
 
-          {viewMode === 'graph' && (
-            <button
-              onClick={handleFindSimilarEntities}
-              disabled={isScanningSimilar || isLoading}
-              className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
-                isScanningSimilar
-                  ? 'bg-light-200 text-light-400 cursor-not-allowed'
-                  : 'hover:bg-light-100 text-light-600'
-              }`}
-              title="Find Similar Entities"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-          )}
-
           <button
             onClick={() => setIsChatOpen(!isChatOpen)}
             className={`p-2 rounded-lg transition-colors ${

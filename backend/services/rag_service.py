@@ -906,17 +906,23 @@ LIMIT {max_nodes}
                         context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
                     
                 except Exception as e:
+                    error_msg = str(e)
                     print(f"[RAG] Vector search error in focused mode: {e}")
                     import traceback
                     traceback.print_exc()
                     # Fallback to empty context
                     context = "No relevant documents found."
-                    context_description = "Vector search unavailable"
+                    # Provide more specific error message
+                    if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
+                        context_description = f"Vector search unavailable: Ollama connection failed. Please start Ollama or switch to OpenAI embeddings."
+                    else:
+                        context_description = f"Vector search unavailable: {error_msg}"
                     doc_results = []
                     if debug_log is not None:
                         debug_log["vector_search"] = {
                             "enabled": True,
-                            "error": str(e),
+                            "error": error_msg,
+                            "error_type": type(e).__name__,
                         }
             else:
                 context = "Vector database not available."
@@ -1020,17 +1026,23 @@ LIMIT {max_nodes}
                         context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
                     
                 except Exception as e:
+                    error_msg = str(e)
                     print(f"[RAG] Vector search error: {e}")
                     import traceback
                     traceback.print_exc()
                     # Fallback to empty context
                     context = "No relevant documents found."
-                    context_description = "Vector search unavailable"
+                    # Provide more specific error message
+                    if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
+                        context_description = f"Vector search unavailable: Ollama connection failed. Please start Ollama or switch to OpenAI embeddings."
+                    else:
+                        context_description = f"Vector search unavailable: {error_msg}"
                     doc_results = []
                     if debug_log is not None:
                         debug_log["vector_search"] = {
                             "enabled": True,
-                            "error": str(e),
+                            "error": error_msg,
+                            "error_type": type(e).__name__,
                         }
             else:
                 context = "Vector database not available."

@@ -63,8 +63,8 @@ HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower()
 # Ingestion chunking configuration
 # Keep these in sync with ingestion/scripts/config.py so the ingestion
 # pipeline can safely import them from the shared `config` module.
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "1000"))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "8000"))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 
 # Authentication configuration
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
