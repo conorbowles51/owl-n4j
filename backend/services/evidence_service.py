@@ -10,8 +10,10 @@ from datetime import datetime
 import sys
 import io
 import contextlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
-from config import BASE_DIR
+from config import BASE_DIR, MAX_INGESTION_WORKERS
 from .evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
 from .evidence_log_storage import evidence_log_storage
 from .background_task_storage import background_task_storage, TaskStatus
@@ -656,6 +658,7 @@ class EvidenceService:
         case_id: Optional[str] = None,
         owner: Optional[str] = None,
         profile: Optional[str] = None,
+        max_workers: Optional[int] = None,
     ) -> str:
         """
         Process files in the background, returning a task ID immediately.
@@ -664,6 +667,8 @@ class EvidenceService:
             evidence_ids: List of evidence IDs to process
             case_id: Optional case ID
             owner: Optional owner username
+            profile: Optional LLM profile name
+            max_workers: Maximum number of files to process in parallel
 
         Returns:
             Task ID string
@@ -705,9 +710,10 @@ class EvidenceService:
         # Start background processing (this will run in a separate thread)
         import threading
 
-        # Store owner and profile in closure for use in background thread
+        # Store owner, profile, and max_workers in closure for use in background thread
         task_owner = owner
         task_profile = profile
+        task_max_workers = max_workers if max_workers else MAX_INGESTION_WORKERS
 
         def process_task():
             """Background task function."""
@@ -737,20 +743,22 @@ class EvidenceService:
                     progress_failed=0,
                 )
 
+                # Thread-safe counters
+                counter_lock = Lock()
                 processed_count = 0
                 failed_count = 0
 
                 # Ensure ingest function is available
                 self._ensure_ingest()
 
-                # Process each file
-                for sha, recs in by_hash.items():
+                def process_single_file(sha: str, recs: List[dict]) -> dict:
+                    """Process a single file (group of records with same hash)."""
                     primary = recs[0]
                     path_str = primary.get("stored_path")
                     evidence_id = primary.get("id")
                     filename = primary.get("original_filename")
 
-                    # Update file status to running
+                    # Update file status to processing
                     background_task_storage.update_task(
                         task_id,
                         file_status={
@@ -761,33 +769,28 @@ class EvidenceService:
                     )
 
                     if not path_str:
-                        failed_count += len(recs)
-                        background_task_storage.update_task(
-                            task_id,
-                            file_status={
-                                "file_id": evidence_id,
-                                "filename": filename,
-                                "status": "failed",
-                                "error": "Missing stored_path",
-                            },
-                            progress_failed=failed_count,
-                        )
                         evidence_storage.mark_processed(
                             [r["id"] for r in recs],
                             error="Missing stored_path",
                         )
-                        continue
+                        return {
+                            "status": "error",
+                            "error": "Missing stored_path",
+                            "recs": recs,
+                            "evidence_id": evidence_id,
+                            "filename": filename,
+                        }
 
                     path = Path(path_str)
 
-                    # Create log callback that also updates task
-                    def log_callback(message: str) -> None:
+                    # Create log callback for this specific file (captures evidence_id and filename)
+                    def log_callback(message: str, eid=evidence_id, fname=filename) -> None:
                         """Callback to log progress messages."""
                         if case_id:
                             evidence_log_storage.add_log(
                                 case_id=case_id,
-                                evidence_id=evidence_id,
-                                filename=filename,
+                                evidence_id=eid,
+                                filename=fname,
                                 level="info",
                                 message=message,
                             )
@@ -803,35 +806,61 @@ class EvidenceService:
                             [r["id"] for r in recs],
                             error=None,
                         )
-                        processed_count += len(recs)
-
-                        # Update file status to completed
-                        background_task_storage.update_task(
-                            task_id,
-                            file_status={
-                                "file_id": evidence_id,
-                                "filename": filename,
-                                "status": "completed",
-                            },
-                            progress_completed=processed_count,
-                        )
+                        return {
+                            "status": "success",
+                            "recs": recs,
+                            "evidence_id": evidence_id,
+                            "filename": filename,
+                        }
                     except Exception as e:
-                        failed_count += len(recs)
                         error_msg = str(e)
                         evidence_storage.mark_processed(
                             [r["id"] for r in recs],
                             error=error_msg,
                         )
-                        background_task_storage.update_task(
-                            task_id,
-                            file_status={
-                                "file_id": evidence_id,
-                                "filename": filename,
-                                "status": "failed",
-                                "error": error_msg,
-                            },
-                            progress_failed=failed_count,
-                        )
+                        return {
+                            "status": "error",
+                            "error": error_msg,
+                            "recs": recs,
+                            "evidence_id": evidence_id,
+                            "filename": filename,
+                        }
+
+                # Process files in parallel using ThreadPoolExecutor
+                with ThreadPoolExecutor(max_workers=task_max_workers) as executor:
+                    future_to_sha = {
+                        executor.submit(process_single_file, sha, recs): sha
+                        for sha, recs in by_hash.items()
+                    }
+
+                    for future in as_completed(future_to_sha):
+                        result = future.result()
+                        recs = result["recs"]
+
+                        with counter_lock:
+                            if result["status"] == "success":
+                                processed_count += len(recs)
+                                background_task_storage.update_task(
+                                    task_id,
+                                    file_status={
+                                        "file_id": result["evidence_id"],
+                                        "filename": result["filename"],
+                                        "status": "completed",
+                                    },
+                                    progress_completed=processed_count,
+                                )
+                            else:
+                                failed_count += len(recs)
+                                background_task_storage.update_task(
+                                    task_id,
+                                    file_status={
+                                        "file_id": result["evidence_id"],
+                                        "filename": result["filename"],
+                                        "status": "failed",
+                                        "error": result.get("error", "Unknown error"),
+                                    },
+                                    progress_failed=failed_count,
+                                )
 
                 # Save case version if applicable
                 if case_id and processed_count > 0:

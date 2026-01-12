@@ -66,6 +66,9 @@ HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower()
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "8000"))
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 
+# Parallel Processing Configuration
+MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
+
 # Authentication configuration
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "owlinvestigates")

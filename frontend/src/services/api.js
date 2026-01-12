@@ -832,14 +832,16 @@ export const evidenceAPI = {
    * @param {string} caseId - Case ID
    * @param {string[]} fileIds - Array of file IDs to process
    * @param {string} [profile] - Optional LLM profile name (e.g., "fraud", "generic")
+   * @param {number} [maxWorkers] - Maximum parallel files to process (default: 4)
    */
-  processBackground: (caseId, fileIds, profile = null) =>
+  processBackground: (caseId, fileIds, profile = null, maxWorkers = 4) =>
     fetchAPI('/evidence/process/background', {
       method: 'POST',
       body: JSON.stringify({
         case_id: caseId,
         file_ids: fileIds,
         profile: profile,
+        max_workers: maxWorkers,
       }),
     }),
 
