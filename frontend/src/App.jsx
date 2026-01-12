@@ -100,7 +100,7 @@ export default function App() {
   const [subgraphCommunityData, setSubgraphCommunityData] = useState(null); // Community data for Louvain analysis
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false); // Whether analysis panel is expanded
   
-  // Query Focus Graph history (breadcrumb navigation)
+  // Spotlight Graph history (breadcrumb navigation)
   const [queryFocusHistory, setQueryFocusHistory] = useState([{
     subgraphNodeKeys: [],
     selectedNodes: [],
@@ -109,7 +109,7 @@ export default function App() {
   const [queryFocusHistoryIndex, setQueryFocusHistoryIndex] = useState(0);
   const [isNavigatingHistory, setIsNavigatingHistory] = useState(false); // Flag to prevent history entry during navigation
   
-  // Add history entry when Query Focus Graph changes
+  // Add history entry when Spotlight Graph changes
   const addQueryFocusHistoryEntry = useCallback((newNodeKeys, newSelectedNodes) => {
     if (isNavigatingHistory) return; // Don't add history during navigation
     
@@ -153,7 +153,7 @@ export default function App() {
   // Ref to track previous subgraphNodeKeys for history tracking
   const prevSubgraphNodeKeysRef = useRef([]);
   
-  // Track Query Focus Graph changes and add to history
+  // Track Spotlight Graph changes and add to history
   // Only track subgraphNodeKeys changes (not selectedNodes) to avoid too many entries
   useEffect(() => {
     if (isNavigatingHistory) {
@@ -174,7 +174,7 @@ export default function App() {
     // Update ref
     prevSubgraphNodeKeysRef.current = [...subgraphNodeKeys];
     
-    // Add history entry (only if Query Focus Graph actually changed)
+    // Add history entry (only if Spotlight Graph actually changed)
     addQueryFocusHistoryEntry(subgraphNodeKeys, selectedNodes);
   }, [subgraphNodeKeys, selectedNodes, isNavigatingHistory, addQueryFocusHistoryEntry]);
   
@@ -385,20 +385,28 @@ export default function App() {
     }
   }, [chatHistory]);
   
-  // Auto-open subgraph when AI assistant opens, showing result graph tab (but NOT overwriting Query Focus Graph)
+  // Auto-open Spotlight Graph when AI assistant opens
   useEffect(() => {
-    if (isChatOpen && resultGraphData && resultGraphData.nodes && resultGraphData.nodes.length > 0) {
-      // Switch to result graph tab (but keep Query Focus Graph separate)
-      setActiveSubgraphTab('result');
+    if (isChatOpen) {
+      // If no nodes are selected and Spotlight Graph is empty, populate with all nodes
+      if (selectedNodes.length === 0 && subgraphNodeKeys.length === 0 && graphData.nodes.length > 0) {
+        const allNodeKeys = graphData.nodes.map(node => node.key).filter(key => key);
+        setSubgraphNodeKeys(allNodeKeys);
+        setTimelineContextKeys(allNodeKeys);
+        console.log(`Auto-populated Spotlight Graph with ${allNodeKeys.length} nodes from graph`);
+      }
+      
+      // If result graph exists, switch to result graph tab
+      if (resultGraphData && resultGraphData.nodes && resultGraphData.nodes.length > 0) {
+        setActiveSubgraphTab('result');
+      }
       
       // Enable split view if not already enabled
       if (paneViewMode !== 'split') {
         setPaneViewMode('split');
       }
-      
-      console.log(`Auto-opened Result Graph tab with ${resultGraphData.nodes.length} nodes from AI assistant result`);
     }
-  }, [isChatOpen, resultGraphData, paneViewMode]);
+  }, [isChatOpen, selectedNodes.length, subgraphNodeKeys.length, graphData.nodes, resultGraphData, paneViewMode]);
 
   // Dimensions
   const [dimensions, setDimensions] = useState({
@@ -564,7 +572,7 @@ export default function App() {
     }, debounceDelay);
   }, []);
 
-  // Navigate back in Query Focus Graph history
+  // Navigate back in Spotlight Graph history
   const navigateQueryFocusHistoryBack = useCallback(() => {
     if (queryFocusHistoryIndex > 0) {
       setIsNavigatingHistory(true);
@@ -592,7 +600,7 @@ export default function App() {
     }
   }, [queryFocusHistory, queryFocusHistoryIndex, loadNodeDetails]);
   
-  // Navigate forward in Query Focus Graph history
+  // Navigate forward in Spotlight Graph history
   const navigateQueryFocusHistoryForward = useCallback(() => {
     if (queryFocusHistoryIndex < queryFocusHistory.length - 1) {
       setIsNavigatingHistory(true);
@@ -1211,10 +1219,10 @@ export default function App() {
           return;
         }
       } else if (expandGraphContext === 'subgraph') {
-        // Expand all nodes in query focus graph
+        // Expand all nodes in spotlight graph
         nodeKeysToExpand = subgraphNodeKeys;
         if (nodeKeysToExpand.length === 0) {
-          alert('Query Focus Graph is empty. Please add nodes first.');
+          alert('Spotlight Graph is empty. Please add nodes first.');
           setIsLoading(false);
           return;
         }
@@ -1240,7 +1248,7 @@ export default function App() {
       const expandedData = await graphAPI.expandNodes(nodeKeysToExpand, depth);
 
       if (expandGraphContext === 'subgraph') {
-        // For query focus graph: add expanded nodes to subgraphNodeKeys
+        // For spotlight graph: add expanded nodes to subgraphNodeKeys
         const existingKeys = new Set(subgraphNodeKeys);
         const newKeys = expandedData.nodes
           .map(n => n.key)
@@ -3462,10 +3470,10 @@ export default function App() {
                     ? 'bg-owl-blue-100 text-owl-blue-900'
                     : 'text-light-600 hover:text-light-800 hover:bg-light-100'
                 }`}
-                title="Query Focus Graph options"
+                title="Spotlight Graph options"
               >
                 <GitBranch className="w-4 h-4" />
-                Query Focus Graph
+                Spotlight Graph
                 <ChevronDown className={`w-4 h-4 transition-transform ${isSubgraphMenuOpen ? 'rotate-180' : ''}`} />
               </button>
 
@@ -3847,7 +3855,7 @@ export default function App() {
                                   : 'bg-white text-light-700 hover:bg-light-100'
                               }`}
                             >
-                              Query Focus Graph ({regularSubgraphData.nodes.length} nodes)
+                              Spotlight Graph ({regularSubgraphData.nodes.length} nodes)
                             </button>
                             <button
                               onClick={() => setActiveSubgraphTab('result')}
@@ -3867,7 +3875,7 @@ export default function App() {
                             <div className="flex items-center gap-2">
                               <Network className="w-4 h-4 text-owl-blue-700" />
                               <h3 className="text-sm font-semibold text-owl-blue-900">
-                                {activeSubgraphTab === 'result' ? 'Result Graph' : 'Query Focus Graph'} ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
+                                {activeSubgraphTab === 'result' ? 'Result Graph' : 'Spotlight Graph'} ({subgraphData.nodes.length} nodes, {subgraphData.links.length} links)
                               </h3>
                               {activeSubgraphTab === 'subgraph' && queryFocusHistory.length > 1 && (
                                 <span className="text-xs text-light-500 ml-1">
@@ -3910,7 +3918,7 @@ export default function App() {
                                   <button
                                     onClick={() => handleExpandGraph('subgraph')}
                                     className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
-                                    title="Expand all nodes in Query Focus Graph"
+                                    title="Expand all nodes in Spotlight Graph"
                                   >
                                     <Maximize2 className="w-3.5 h-3.5" />
                                     Expand Graph
@@ -3929,17 +3937,17 @@ export default function App() {
                                   </button>
                                   <button
                                     onClick={() => {
-                                      // Overwrite Query Focus Graph with Result Graph
+                                      // Overwrite Spotlight Graph with Result Graph
                                       if (resultGraphData && resultGraphData.nodes && resultGraphData.nodes.length > 0) {
                                         const resultNodeKeys = resultGraphData.nodes.map(node => node.key).filter(key => key);
                                         setSubgraphNodeKeys(resultNodeKeys);
                                         setPathSubgraphData(null); // Clear path subgraph data
-                                        setActiveSubgraphTab('subgraph'); // Switch back to Query Focus Graph tab
-                                        alert(`Query Focus Graph updated with ${resultNodeKeys.length} node${resultNodeKeys.length > 1 ? 's' : ''} from Result Graph`);
+                                        setActiveSubgraphTab('subgraph'); // Switch back to Spotlight Graph tab
+                                        alert(`Spotlight Graph updated with ${resultNodeKeys.length} node${resultNodeKeys.length > 1 ? 's' : ''} from Result Graph`);
                                       }
                                     }}
                                     className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
-                                    title="Copy Result Graph to Query Focus Graph"
+                                    title="Copy Result Graph to Spotlight Graph"
                                   >
                                     <Copy className="w-3.5 h-3.5" />
                                     Use as Query Focus
@@ -4202,10 +4210,10 @@ export default function App() {
                         <Network className="w-12 h-12 text-owl-blue-300" />
                         <div>
                           <h3 className="text-md font-medium text-light-700 mb-2">
-                            Query Focus Graph View
+                            Spotlight Graph View
                           </h3>
                           <p className="text-light-600 text-sm">
-                            Select nodes in the main graph to view their query focus graph here.
+                            Select nodes in the main graph to view their spotlight graph here.
                           </p>
                         </div>
                         <div className="mt-4 p-4 bg-light-100 rounded-lg text-left w-full">

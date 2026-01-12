@@ -1107,20 +1107,20 @@ const GraphView = forwardRef(function GraphView({
                       onClick={onAddToSubgraph}
                       disabled={selectedNodes.every(n => subgraphNodeKeys.includes(n.key))}
                       className="w-full px-3 py-1.5 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
-                      title="Add selected nodes to Query Focus Graph"
-                    >
-                      Add to Query Focus Graph
+                      title="Add selected nodes to Spotlight Graph"
+                      >
+                      Add to Spotlight Graph
                     </button>
                   )}
-                  {/* Remove from Query Focus Graph - show in both main graph and Query Focus Graph */}
+                  {/* Remove from Spotlight Graph - show in both main graph and Spotlight Graph */}
                   {onRemoveFromSubgraph && (
                     <button
                       onClick={onRemoveFromSubgraph}
                       disabled={!selectedNodes.some(n => subgraphNodeKeys.includes(n.key))}
                       className="w-full px-3 py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed rounded text-xs text-white transition-colors"
-                      title="Remove selected nodes from Query Focus Graph"
-                    >
-                      Remove from Query Focus Graph
+                      title="Remove selected nodes from Spotlight Graph"
+                      >
+                      Remove from Spotlight Graph
                     </button>
                   )}
                 </>
