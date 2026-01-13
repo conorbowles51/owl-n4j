@@ -167,3 +167,61 @@ async def set_llm_config(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class ConfidenceThresholdResponse(BaseModel):
+    """Response model for confidence threshold."""
+    threshold: float
+
+
+class SetConfidenceThresholdRequest(BaseModel):
+    """Request model for setting confidence threshold."""
+    threshold: float
+
+
+@router.get("/confidence-threshold", response_model=ConfidenceThresholdResponse)
+async def get_confidence_threshold(
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get the current confidence threshold for vector search.
+    
+    Args:
+        user: Current authenticated user
+    """
+    try:
+        from config import VECTOR_SEARCH_CONFIDENCE_THRESHOLD
+        return ConfidenceThresholdResponse(threshold=VECTOR_SEARCH_CONFIDENCE_THRESHOLD)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/confidence-threshold", response_model=ConfidenceThresholdResponse)
+async def set_confidence_threshold(
+    request: SetConfidenceThresholdRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Set the confidence threshold for vector search.
+    
+    Args:
+        request: Request with threshold value (0.0-1.0)
+        user: Current authenticated user
+    """
+    try:
+        if not (0.0 <= request.threshold <= 5.0):
+            raise HTTPException(status_code=400, detail="Confidence threshold must be between 0.0 and 5.0")
+        
+        # Update the environment variable for future requests
+        import os
+        os.environ["VECTOR_SEARCH_CONFIDENCE_THRESHOLD"] = str(request.threshold)
+        
+        # Update the config module directly for immediate effect
+        import config
+        config.VECTOR_SEARCH_CONFIDENCE_THRESHOLD = request.threshold
+        
+        return ConfidenceThresholdResponse(threshold=request.threshold)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+

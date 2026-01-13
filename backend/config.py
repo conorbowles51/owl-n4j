@@ -58,6 +58,7 @@ CHROMADB_PATH = os.getenv("CHROMADB_PATH", "data/chromadb")  # Relative to proje
 # RAG Configuration
 VECTOR_SEARCH_ENABLED = os.getenv("VECTOR_SEARCH_ENABLED", "true").lower() == "true"
 VECTOR_SEARCH_TOP_K = int(os.getenv("VECTOR_SEARCH_TOP_K", "10"))  # Number of documents to retrieve
+VECTOR_SEARCH_CONFIDENCE_THRESHOLD = float(os.getenv("VECTOR_SEARCH_CONFIDENCE_THRESHOLD", "2.0"))  # Maximum distance for L2 metric (lower = more strict, typical range 0.0-3.0)
 HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower() == "true"
 
 # Ingestion chunking configuration

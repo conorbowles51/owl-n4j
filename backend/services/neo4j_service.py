@@ -1772,6 +1772,12 @@ class Neo4jService:
         """
         import re
         
+        # Validate merged_data
+        if merged_data is None:
+            raise ValueError("merged_data cannot be None")
+        if not isinstance(merged_data, dict):
+            raise ValueError(f"merged_data must be a dict, got {type(merged_data)}")
+        
         with self._driver.session() as session:
             # Get both entities
             source_result = session.run(
@@ -1859,7 +1865,7 @@ class Neo4jService:
             
             # Handle type (label) change if needed
             new_type = merged_data.get("type")
-            if new_type:
+            if new_type and isinstance(new_type, str) and new_type.strip():
                 # Remove old label and add new one
                 old_type = target_record["type"]
                 if old_type != new_type:
@@ -1879,11 +1885,13 @@ class Neo4jService:
                     )
             
             # Add additional properties
-            if "properties" in merged_data:
-                for prop_key, prop_val in merged_data["properties"].items():
-                    param_name = f"prop_{prop_key}"
-                    set_clauses.append(f"t.{prop_key} = ${param_name}")
-                    params[param_name] = prop_val
+            if "properties" in merged_data and merged_data["properties"] is not None:
+                properties = merged_data["properties"]
+                if isinstance(properties, dict):
+                    for prop_key, prop_val in properties.items():
+                        param_name = f"prop_{prop_key}"
+                        set_clauses.append(f"t.{prop_key} = ${param_name}")
+                        params[param_name] = prop_val
             
             # Update target entity
             if set_clauses:
@@ -1963,6 +1971,27 @@ class Neo4jService:
                 """,
                 key=source_key,
             )
+            
+            # Get the merged node (target node after merge) for return value
+            merged_node_result = session.run(
+                """
+                MATCH (t {key: $key})
+                RETURN 
+                    t.id AS id,
+                    t.key AS key,
+                    t.name AS name,
+                    labels(t)[0] AS type
+                """,
+                key=target_key,
+            )
+            merged_node_record = merged_node_result.single()
+            merged_node = dict(merged_node_record) if merged_node_record else None
+            
+            # Return result
+            return {
+                "merged_node": merged_node,
+                "relationships_updated": relationships_updated,
+            }
             
     def delete_node(self, node_key: str) -> Dict[str, Any]:
         """

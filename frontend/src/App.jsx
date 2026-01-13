@@ -34,7 +34,10 @@ import {
   ChevronRight,
   Merge,
   Search,
-  ArrowRight
+  ArrowRight,
+  Minimize2,
+  Square,
+  MousePointer
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
@@ -255,6 +258,30 @@ export default function App() {
   const [showSimilarEntitiesList, setShowSimilarEntitiesList] = useState(false);
   const [isScanningSimilar, setIsScanningSimilar] = useState(false);
   
+  // Close and clear spotlight confirmation popup state
+  const [showClearSpotlightConfirm, setShowClearSpotlightConfirm] = useState(false);
+  const clearSpotlightButtonRef = useRef(null);
+  const clearSpotlightPopupRef = useRef(null);
+  
+  // Close confirmation popup when clicking outside
+  useEffect(() => {
+    if (!showClearSpotlightConfirm) return;
+    
+    const handleClickOutside = (e) => {
+      if (
+        clearSpotlightButtonRef.current &&
+        clearSpotlightPopupRef.current &&
+        !clearSpotlightButtonRef.current.contains(e.target) &&
+        !clearSpotlightPopupRef.current.contains(e.target)
+      ) {
+        setShowClearSpotlightConfirm(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showClearSpotlightConfirm]);
+  
   // Document viewer state
   const [documentViewerState, setDocumentViewerState] = useState({
     isOpen: false,
@@ -356,8 +383,8 @@ export default function App() {
   }, []);
 
 
-  // Pane view state (single or split)
-  const [paneViewMode, setPaneViewMode] = useState('single'); // 'single' or 'split'
+  // Pane view state (single, split, full, or minimized)
+  const [paneViewMode, setPaneViewMode] = useState('single'); // 'single', 'split', 'full', or 'minimized'
   
   // Subgraph menu state
   const [isSubgraphMenuOpen, setIsSubgraphMenuOpen] = useState(false);
@@ -370,6 +397,9 @@ export default function App() {
   const [resultGraphData, setResultGraphData] = useState(null);
   const [activeSubgraphTab, setActiveSubgraphTab] = useState('subgraph'); // 'subgraph' or 'result'
   
+  // Track previous result graph to detect when a new one arrives
+  const prevResultGraphRef = useRef(null);
+  
   // Update result graph when chat messages change
   useEffect(() => {
     // Find the most recent assistant message with a result graph
@@ -378,15 +408,39 @@ export default function App() {
       .find(msg => msg.role === 'assistant' && msg.resultGraph && msg.resultGraph.nodes && msg.resultGraph.nodes.length > 0);
     
     if (lastMessageWithResultGraph && lastMessageWithResultGraph.resultGraph) {
-      setResultGraphData(lastMessageWithResultGraph.resultGraph);
+      const newResultGraph = lastMessageWithResultGraph.resultGraph;
+      
+      // Check if this is a new result graph (different from previous)
+      const isNewResultGraph = !prevResultGraphRef.current || 
+        prevResultGraphRef.current.nodes.length !== newResultGraph.nodes.length ||
+        prevResultGraphRef.current.nodes.some((n, i) => n.key !== newResultGraph.nodes[i]?.key);
+      
+      if (isNewResultGraph) {
+        setResultGraphData(newResultGraph);
+        prevResultGraphRef.current = newResultGraph;
+        
+        // Switch to result graph tab only when a new result graph arrives
+        // This happens when AI assistant returns an answer with a result graph
+        setActiveSubgraphTab(prev => {
+          // Only switch if we're on subgraph tab (user hasn't manually switched)
+          return prev === 'subgraph' ? 'result' : prev;
+        });
+      }
     } else if (chatHistory.length === 0) {
       // Clear result graph if chat is cleared
       setResultGraphData(null);
+      prevResultGraphRef.current = null;
     }
   }, [chatHistory]);
   
+  // Track previous chat open state to detect when chat is first opened
+  const prevChatOpenRef = useRef(false);
+  
   // Auto-open Spotlight Graph when AI assistant opens
   useEffect(() => {
+    const chatJustOpened = isChatOpen && !prevChatOpenRef.current;
+    prevChatOpenRef.current = isChatOpen;
+    
     if (isChatOpen) {
       // If no nodes are selected and Spotlight Graph is empty, populate with all nodes
       if (selectedNodes.length === 0 && subgraphNodeKeys.length === 0 && graphData.nodes.length > 0) {
@@ -396,17 +450,13 @@ export default function App() {
         console.log(`Auto-populated Spotlight Graph with ${allNodeKeys.length} nodes from graph`);
       }
       
-      // If result graph exists, switch to result graph tab
-      if (resultGraphData && resultGraphData.nodes && resultGraphData.nodes.length > 0) {
-        setActiveSubgraphTab('result');
-      }
-      
-      // Enable split view if not already enabled
-      if (paneViewMode !== 'split') {
+      // Don't force split view - let user control the pane view mode
+      // Only enable split view if no pane is currently visible (single mode)
+      if (paneViewMode === 'single' && subgraphNodeKeys.length > 0) {
         setPaneViewMode('split');
       }
     }
-  }, [isChatOpen, selectedNodes.length, subgraphNodeKeys.length, graphData.nodes, resultGraphData, paneViewMode]);
+  }, [isChatOpen, selectedNodes.length, subgraphNodeKeys.length, graphData.nodes, paneViewMode]);
 
   // Dimensions
   const [dimensions, setDimensions] = useState({
@@ -638,26 +688,6 @@ export default function App() {
     setContextMenu(null);
     // NOTE: This does NOT automatically add to subgraph - user must click "Add to subgraph"
   }, [loadNodeDetails]);
-
-  // Handle show nodes on graph from AI answer
-  const handleShowNodesOnGraph = useCallback((nodeKeys) => {
-    if (!nodeKeys || nodeKeys.length === 0) {
-      alert('No nodes found to show on graph');
-      return;
-    }
-    
-    // Set the subgraph node keys
-    setSubgraphNodeKeys(nodeKeys);
-    setPathSubgraphData(null); // Clear path subgraph data
-    
-    // Enable split view if not already enabled
-    if (paneViewMode !== 'split') {
-      setPaneViewMode('split');
-    }
-    
-    // Show a brief message
-    console.log(`Showing ${nodeKeys.length} nodes on graph from AI answer`);
-  }, [paneViewMode]);
 
   // Handle add selected nodes to subgraph
   const handleAddToSubgraph = useCallback(() => {
@@ -1247,35 +1277,35 @@ export default function App() {
       // Call expansion API
       const expandedData = await graphAPI.expandNodes(nodeKeysToExpand, depth);
 
-      if (expandGraphContext === 'subgraph') {
-        // For spotlight graph: add expanded nodes to subgraphNodeKeys
-        const existingKeys = new Set(subgraphNodeKeys);
-        const newKeys = expandedData.nodes
-          .map(n => n.key)
-          .filter(key => key && !existingKeys.has(key));
-        
-        if (newKeys.length > 0) {
-          setSubgraphNodeKeys(prev => [...prev, ...newKeys]);
-        }
-      } else if (expandGraphContext === 'result') {
-        // For result graph: merge expanded nodes into resultGraphData
-        const existingKeys = new Set(resultGraphData.nodes.map(n => n.key));
-        const newNodes = expandedData.nodes.filter(n => n.key && !existingKeys.has(n.key));
-        
-        const existingLinks = new Set(
-          resultGraphData.links.map(l => `${l.source}-${l.target}-${l.type}`)
+      // Merge expanded nodes into main graph data so they're available for subgraph
+      // This ensures expanded nodes show up in the Spotlight Graph without reloading the entire graph
+      setFullGraphData(prev => {
+        const existingNodeKeys = new Set(prev.nodes.map(n => n.key));
+        const existingLinkKeys = new Set(
+          prev.links.map(l => {
+            const sourceKey = typeof l.source === 'object' ? l.source.key : l.source;
+            const targetKey = typeof l.target === 'object' ? l.target.key : l.target;
+            return `${sourceKey}-${targetKey}-${l.type}`;
+          })
         );
-        const newLinks = expandedData.links.filter(
-          l => !existingLinks.has(`${l.source}-${l.target}-${l.type}`)
-        );
-
-        setResultGraphData(prev => ({
+        
+        const newNodes = expandedData.nodes.filter(n => n.key && !existingNodeKeys.has(n.key));
+        const newLinks = expandedData.links.filter(l => {
+          const sourceKey = typeof l.source === 'object' ? l.source.key : l.source;
+          const targetKey = typeof l.target === 'object' ? l.target.key : l.target;
+          const linkKey = `${sourceKey}-${targetKey}-${l.type}`;
+          return !existingLinkKeys.has(linkKey);
+        });
+        
+        return {
           nodes: [...prev.nodes, ...newNodes],
           links: [...prev.links, ...newLinks],
-        }));
-      } else if (expandGraphContext === 'selected') {
-        // For selected nodes: add to subgraph if in subgraph view, otherwise add to main graph
-        // This is a bit ambiguous, so we'll add to the current active subgraph
+        };
+      });
+
+      if (expandGraphContext === 'subgraph') {
+        // For spotlight graph: add expanded nodes to subgraphNodeKeys
+        // Stay on Spotlight Graph tab (don't switch)
         const existingKeys = new Set(subgraphNodeKeys);
         const newKeys = expandedData.nodes
           .map(n => n.key)
@@ -1284,10 +1314,44 @@ export default function App() {
         if (newKeys.length > 0) {
           setSubgraphNodeKeys(prev => [...prev, ...newKeys]);
         }
+        // Ensure we're on the Spotlight Graph tab
+        setActiveSubgraphTab('subgraph');
+      } else if (expandGraphContext === 'result') {
+        // For result graph: push result graph to Spotlight Graph, then expand there
+        // First, copy all result graph nodes to Spotlight Graph
+        const resultNodeKeys = resultGraphData.nodes.map(n => n.key).filter(key => key);
+        setSubgraphNodeKeys(resultNodeKeys);
+        setPathSubgraphData(null); // Clear path subgraph data
+        
+        // Now expand those nodes (which are now in Spotlight Graph)
+        const existingKeys = new Set(resultNodeKeys);
+        const newKeys = expandedData.nodes
+          .map(n => n.key)
+          .filter(key => key && !existingKeys.has(key));
+        
+        if (newKeys.length > 0) {
+          setSubgraphNodeKeys(prev => [...prev, ...newKeys]);
+        }
+        
+        // Switch to Spotlight Graph tab to show the expansion
+        setActiveSubgraphTab('subgraph');
+      } else if (expandGraphContext === 'selected') {
+        // For selected nodes: add to spotlight graph (subgraph)
+        // Only operate on the Spotlight Graph, not the main graph
+        const existingKeys = new Set(subgraphNodeKeys);
+        const newKeys = expandedData.nodes
+          .map(n => n.key)
+          .filter(key => key && !existingKeys.has(key));
+        
+        if (newKeys.length > 0) {
+          setSubgraphNodeKeys(prev => [...prev, ...newKeys]);
+        }
+        // Ensure we're on the Spotlight Graph tab
+        setActiveSubgraphTab('subgraph');
       }
 
-      // Reload graph to show new nodes
-      await loadGraph();
+      // Don't reload the entire graph - we've already merged the expanded nodes
+      // The subgraph will automatically update because it's built from subgraphNodeKeys
     } catch (err) {
       console.error('Failed to expand graph:', err);
       alert(`Failed to expand graph: ${err.message}`);
@@ -1415,7 +1479,11 @@ export default function App() {
   const sidebarWidth = selectedNodesDetails.length > 0 ? 320 : 0;
   const chatWidth = isChatOpen ? 384 : 0;
   const availableWidth = dimensions.width - sidebarWidth - chatWidth;
-  const graphWidth = paneViewMode === 'split' ? availableWidth / 2 : availableWidth;
+  // Calculate graph width based on pane view mode
+  const graphWidth = paneViewMode === 'split' ? availableWidth / 2 : 
+                     paneViewMode === 'full' ? 0 : // Main graph hidden in full mode
+                     paneViewMode === 'minimized' ? availableWidth : // Main graph full width when minimized
+                     availableWidth; // single mode
   const graphHeight = dimensions.height - 64; // Subtract header height
 
   // Memoize selected node keys to prevent infinite loops
@@ -3796,38 +3864,157 @@ export default function App() {
                   </div>
                 </div>
               )
-            ) : paneViewMode === 'split' ? (
-              // Split panel graph view
-              <div className="absolute inset-0 flex">
-                {/* Left Panel - Graph */}
-                <div className="flex-1 relative border-r border-light-200">
-                  <GraphView
-                    graphData={graphData}
-                    selectedNodes={selectedNodes}
-                    onNodeClick={handleNodeClick}
-                    onBulkNodeSelect={handleBulkNodeSelect}
-                    onNodeRightClick={handleNodeRightClick}
-                    onNodeDoubleClick={handleNodeDoubleClick}
-                    onBackgroundClick={handleBackgroundClick}
-                    width={graphWidth}
-                    height={graphHeight}
-                    paneViewMode={paneViewMode}
-                    onPaneViewModeChange={setPaneViewMode}
-                    onAddToSubgraph={handleAddToSubgraph}
-                    onRemoveFromSubgraph={handleRemoveFromSubgraph}
-                    subgraphNodeKeys={subgraphNodeKeys}
-                    onAddNode={() => setShowAddNodeModal(true)}
-                    onFindSimilarEntities={handleFindSimilarEntities}
-                    isScanningSimilar={isScanningSimilar}
-                  />
+            ) : paneViewMode === 'full' || paneViewMode === 'split' || paneViewMode === 'minimized' ? (
+              // Full, Split, or Minimized panel graph view
+              <div className="absolute inset-0 flex relative">
+                {/* Main Graph Panel - Hidden in full mode, visible in split/minimized */}
+                <div 
+                  className={`relative bg-light-50 transition-all duration-300 ease-in-out ${
+                    paneViewMode === 'full' ? 'w-0 overflow-hidden' :
+                    paneViewMode === 'minimized' ? 'flex-1' :
+                    'flex-1 border-r border-light-200'
+                  }`}
+                >
+                  {paneViewMode !== 'full' && (
+                    <GraphView
+                      graphData={graphData}
+                      selectedNodes={selectedNodes}
+                      onNodeClick={handleNodeClick}
+                      onBulkNodeSelect={handleBulkNodeSelect}
+                      onNodeRightClick={handleNodeRightClick}
+                      onNodeDoubleClick={handleNodeDoubleClick}
+                      onBackgroundClick={handleBackgroundClick}
+                      width={paneViewMode === 'minimized' ? availableWidth : availableWidth / 2}
+                      height={graphHeight}
+                      paneViewMode={paneViewMode}
+                      onPaneViewModeChange={setPaneViewMode}
+                      onAddToSubgraph={handleAddToSubgraph}
+                      onRemoveFromSubgraph={handleRemoveFromSubgraph}
+                      subgraphNodeKeys={subgraphNodeKeys}
+                      onAddNode={() => setShowAddNodeModal(true)}
+                      onFindSimilarEntities={handleFindSimilarEntities}
+                      isScanningSimilar={isScanningSimilar}
+                    />
+                  )}
                 </div>
                 
-                {/* Right Panel - Subgraph View */}
-                <div className="flex-1 relative bg-light-50 overflow-hidden" data-subgraph-container>
-                  {subgraphNodeKeys.length > 0 ? (
+                {/* Spotlight/Result Graph Panel */}
+                <div 
+                  className={`relative bg-light-50 overflow-hidden transition-all duration-300 ease-in-out ${
+                    paneViewMode === 'full' ? 'flex-1' :
+                    paneViewMode === 'minimized' ? 'w-0 overflow-hidden' :
+                    'flex-1'
+                  }`}
+                  data-subgraph-container
+                >
+                  {/* Window Controls - Always on leftmost border */}
+                  {paneViewMode !== 'minimized' && (
+                    <div className="absolute left-0 top-0 bottom-0 w-10 bg-white/90 backdrop-blur-sm border-r border-light-200 shadow-lg flex flex-col items-center py-2 z-20 gap-2">
+                      {paneViewMode === 'split' ? (
+                        // Middle state: show one left and one right
+                        <>
+                          <button
+                            onClick={() => setPaneViewMode('minimized')}
+                            className="p-2 hover:bg-light-100 rounded transition-colors mb-2"
+                            title="Minimize"
+                          >
+                            <ChevronRight className="w-4 h-4 text-light-600" />
+                          </button>
+                          <button
+                            onClick={() => setPaneViewMode('full')}
+                            className="p-2 hover:bg-light-100 rounded transition-colors"
+                            title="Maximize to Full View"
+                          >
+                            <ChevronLeft className="w-4 h-4 text-light-600" />
+                          </button>
+                        </>
+                      ) : paneViewMode === 'full' ? (
+                        // Maximized state: show one right to go to middle, two right to minimize
+                        <>
+                          <button
+                            onClick={() => setPaneViewMode('minimized')}
+                            className="p-2 hover:bg-light-100 rounded transition-colors mb-2"
+                            title="Minimize"
+                          >
+                            <div className="flex items-center gap-0.5">
+                              <ChevronRight className="w-4 h-4 text-light-600" />
+                              <ChevronRight className="w-4 h-4 text-light-600" />
+                            </div>
+                          </button>
+                          <button
+                            onClick={() => setPaneViewMode('split')}
+                            className="p-2 hover:bg-light-100 rounded transition-colors"
+                            title="Restore to Split View"
+                          >
+                            <ChevronRight className="w-4 h-4 text-light-600" />
+                          </button>
+                        </>
+                      ) : null}
+                      
+                      {/* Graph Control Icons - Only show in spotlight/result graph */}
+                      {subgraphGraphRef.current && (
+                        <>
+                          {/* Center Button */}
+                          <button
+                            onClick={() => {
+                              if (subgraphGraphRef.current) {
+                                if (selectedNodes && selectedNodes.length > 0) {
+                                  const selectedKeys = selectedNodes.map(n => n.key);
+                                  subgraphGraphRef.current.centerOnNodes(selectedKeys);
+                                } else {
+                                  subgraphGraphRef.current.centerGraph();
+                                }
+                              }
+                            }}
+                            className="p-2 hover:bg-light-100 rounded transition-colors"
+                            title={selectedNodes && selectedNodes.length > 0 ? "Center on selected nodes" : "Center and fit graph"}
+                          >
+                            <Target className="w-4 h-4 text-light-600" />
+                          </button>
+                          
+                          {/* Selection Mode Toggle */}
+                          <button
+                            onClick={() => {
+                              if (subgraphGraphRef.current) {
+                                const newMode = subgraphGraphRef.current.selectionMode === 'click' ? 'drag' : 'click';
+                                subgraphGraphRef.current.setSelectionMode(newMode);
+                              }
+                            }}
+                            className={`p-2 hover:bg-light-100 rounded transition-colors ${
+                              subgraphGraphRef.current?.selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
+                            }`}
+                            title={subgraphGraphRef.current?.selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
+                          >
+                            {subgraphGraphRef.current?.selectionMode === 'click' ? (
+                              <Square className="w-4 h-4 text-light-600" />
+                            ) : (
+                              <MousePointer className="w-4 h-4 text-owl-blue-600" />
+                            )}
+                          </button>
+                          
+                          {/* Settings Button */}
+                          <button
+                            onClick={() => {
+                              if (subgraphGraphRef.current) {
+                                subgraphGraphRef.current.setShowControls(!subgraphGraphRef.current.showControls);
+                              }
+                            }}
+                            className={`p-2 hover:bg-light-100 rounded transition-colors ${
+                              subgraphGraphRef.current?.showControls ? 'bg-owl-blue-100' : ''
+                            }`}
+                            title="Graph Settings"
+                          >
+                            <Settings className={`w-4 h-4 ${subgraphGraphRef.current?.showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                  {paneViewMode !== 'minimized' && (
+                    subgraphNodeKeys.length > 0 ? (
                     // Show subgraph of selected nodes
                     <>
-                      <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-2">
+                      <div className="absolute top-4 left-[44px] right-4 z-10 flex flex-col gap-2">
                         {/* Subgraph Header with Tabs */}
                         <div className="bg-white/90 backdrop-blur-sm rounded-lg shadow-sm border border-light-200 overflow-hidden">
                           {/* Tabs */}
@@ -3900,26 +4087,10 @@ export default function App() {
                                     <CheckSquare className="w-3.5 h-3.5" />
                                     Select All
                                   </button>
-                                  <button
-                                    onClick={() => handleExpandGraph('subgraph')}
-                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
-                                    title="Expand all nodes in Spotlight Graph"
-                                  >
-                                    <Maximize2 className="w-3.5 h-3.5" />
-                                    Expand Graph
-                                  </button>
                                 </>
                               )}
                               {activeSubgraphTab === 'result' && (
                                 <>
-                                  <button
-                                    onClick={() => handleExpandGraph('result')}
-                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
-                                    title="Expand all nodes in Result Graph"
-                                  >
-                                    <Maximize2 className="w-3.5 h-3.5" />
-                                    Expand Graph
-                                  </button>
                                   <button
                                     onClick={() => {
                                       // Overwrite Spotlight Graph with Result Graph
@@ -3927,27 +4098,89 @@ export default function App() {
                                         const resultNodeKeys = resultGraphData.nodes.map(node => node.key).filter(key => key);
                                         setSubgraphNodeKeys(resultNodeKeys);
                                         setPathSubgraphData(null); // Clear path subgraph data
-                                        setActiveSubgraphTab('subgraph'); // Switch back to Spotlight Graph tab
+                                        // Show alert first, then switch tab after user clicks OK
                                         alert(`Spotlight Graph updated with ${resultNodeKeys.length} node${resultNodeKeys.length > 1 ? 's' : ''} from Result Graph`);
+                                        // Switch to Spotlight Graph tab after alert is dismissed
+                                        setActiveSubgraphTab('subgraph');
                                       }
                                     }}
                                     className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
                                     title="Copy Result Graph to Spotlight Graph"
                                   >
                                     <Copy className="w-3.5 h-3.5" />
-                                    Use as Query Focus
+                                    Use in Spotlight
                                   </button>
                                 </>
                               )}
-                              {selectedNodes.length > 0 && (
-                                <button
-                                  onClick={() => handleExpandGraph('selected')}
-                                  className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
-                                  title={`Expand ${selectedNodes.length} selected node${selectedNodes.length > 1 ? 's' : ''}`}
-                                >
-                                  <Maximize2 className="w-3.5 h-3.5" />
-                                  Expand Selected
-                                </button>
+                              {activeSubgraphTab === 'subgraph' && selectedNodes.length > 0 && (
+                                <>
+                                  <button
+                                    onClick={() => handleExpandGraph('selected')}
+                                    className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded transition-colors"
+                                    title={`Expand ${selectedNodes.length} selected node${selectedNodes.length > 1 ? 's' : ''}`}
+                                  >
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                    Expand Selected
+                                  </button>
+                                  <div className="relative">
+                                    <button
+                                      ref={clearSpotlightButtonRef}
+                                      onClick={() => setShowClearSpotlightConfirm(true)}
+                                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                                      title="Clear Spotlight Graph and selected nodes"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                      Clear Graph
+                                    </button>
+                                    {/* Confirmation Popup */}
+                                    {showClearSpotlightConfirm && (
+                                      <div
+                                        ref={clearSpotlightPopupRef}
+                                        className="absolute bottom-full right-0 mb-2 bg-white border border-light-200 rounded-lg shadow-xl p-3 z-[9999] min-w-[200px]"
+                                        style={{
+                                          transform: 'translateX(-20px)',
+                                        }}
+                                      >
+                                        <p className="text-sm text-light-800 mb-3">
+                                          Clear Spotlight Graph and selected nodes?
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => {
+                                              // Clear spotlight graph
+                                              setSubgraphNodeKeys([]);
+                                              setPathSubgraphData(null);
+                                              // Clear selected nodes
+                                              setSelectedNodes([]);
+                                              setSelectedNodesDetails([]);
+                                              setTimelineContextKeys([]);
+                                              // Reset history
+                                              setQueryFocusHistory([{
+                                                subgraphNodeKeys: [],
+                                                selectedNodes: [],
+                                                timestamp: Date.now()
+                                              }]);
+                                              setQueryFocusHistoryIndex(0);
+                                              // Close spotlight pane
+                                              setPaneViewMode('single');
+                                              // Close confirmation
+                                              setShowClearSpotlightConfirm(false);
+                                            }}
+                                            className="flex-1 px-3 py-1.5 text-xs bg-red-500 hover:bg-red-600 text-white rounded transition-colors"
+                                          >
+                                            Confirm
+                                          </button>
+                                          <button
+                                            onClick={() => setShowClearSpotlightConfirm(false)}
+                                            className="flex-1 px-3 py-1.5 text-xs bg-light-100 hover:bg-light-200 text-light-700 rounded transition-colors"
+                                          >
+                                            Cancel
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
                               )}
                               <button
                                 onClick={handleCloseDetails}
@@ -4179,7 +4412,7 @@ export default function App() {
                         onNodeRightClick={handleNodeRightClick}
                     onNodeDoubleClick={handleNodeDoubleClick}
                         onBackgroundClick={handleSubgraphBackgroundClick}
-                        width={graphWidth}
+                        width={paneViewMode === 'full' ? availableWidth : availableWidth / 2}
                         height={graphHeight}
                         paneViewMode={paneViewMode}
                         onPaneViewModeChange={setPaneViewMode}
@@ -4211,8 +4444,37 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+                  )
                   )}
                 </div>
+                
+                {/* Minimized Panel - Slides in from right when minimized */}
+                {paneViewMode === 'minimized' && subgraphNodeKeys.length > 0 && (
+                  <div className="absolute right-0 top-0 bottom-0 w-[10px] bg-white/90 backdrop-blur-sm border-l border-light-200 shadow-lg flex flex-col items-center py-2 z-20 transition-all duration-300 ease-in-out">
+                    <button
+                      onClick={() => setPaneViewMode('full')}
+                      className="p-2 hover:bg-light-100 rounded transition-colors mb-2"
+                      title="Maximize to Full View"
+                    >
+                      <div className="flex items-center gap-0.5">
+                        <ChevronLeft className="w-4 h-4 text-light-600" />
+                        <ChevronLeft className="w-4 h-4 text-light-600" />
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => setPaneViewMode('split')}
+                      className="p-2 hover:bg-light-100 rounded transition-colors mb-2"
+                      title="Restore to Split View"
+                    >
+                      <ChevronLeft className="w-4 h-4 text-light-600" />
+                    </button>
+                    <div className="flex-1 flex items-center">
+                      <div className="writing-vertical-rl text-xs font-semibold text-owl-blue-900 transform rotate-180">
+                        {activeSubgraphTab === 'result' ? 'Result' : 'Spotlight'}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               // Single pane graph view
@@ -4347,7 +4609,6 @@ export default function App() {
             onClose={() => setIsChatOpen(false)}
             selectedNodes={selectedNodesDetails}
             onMessagesChange={setChatHistory}
-            onShowOnGraph={handleShowNodesOnGraph}
             initialMessages={chatHistory}
             onAutoSave={handleAutoSaveChat}
             currentCaseId={currentCaseId}

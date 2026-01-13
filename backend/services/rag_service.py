@@ -13,7 +13,7 @@ from typing import Dict, List, Optional, Any
 
 from services.neo4j_service import neo4j_service
 from services.llm_service import llm_service
-from config import VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K, HYBRID_FILTERING_ENABLED
+from config import VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K, VECTOR_SEARCH_CONFIDENCE_THRESHOLD, HYBRID_FILTERING_ENABLED
 from utils.prompt_trace import log_section
 
 # Try to import vector DB services (optional)
@@ -268,19 +268,25 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         self,
         doc_results: List[Dict],
         answer_text: str,
-        top_k_entities: int = 20,
+        top_k_entities: int = 50,
+        top_k_documents: int = 50,
     ) -> Dict[str, List]:
         """
-        Build a result graph containing documents and relevant entities.
+        Build a result graph containing only semantically relevant entities (not documents).
+        Searches the answer text against entities, gets all results, and includes relevance scores.
+        Documents are used for context in the prompt but not added to the graph to reduce noise.
         
         Args:
-            doc_results: List of document results from vector search
+            doc_results: List of document results from original query search (for backward compatibility, not used in graph)
                 Each result has: id (vector_db_id), metadata, distance
-            answer_text: The AI assistant's answer text
-            top_k_entities: Number of entities to retrieve via vector search
+            answer_text: The AI assistant's answer text (used for semantic search)
+            top_k_entities: Number of entities to retrieve via vector search (no threshold filtering)
+            top_k_documents: Number of documents to retrieve via vector search (not used in graph, kept for compatibility)
             
         Returns:
             Dict with 'nodes' and 'links' arrays for graph visualization
+            Nodes include 'confidence' property (relevance score: 1 - distance)
+            Only entities are included, not documents
         """
         nodes = []
         node_keys = set()
@@ -290,42 +296,48 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return {"nodes": nodes, "links": links}
         
         try:
-            # Step 1: Get document nodes from Neo4j
-            doc_ids = [r["id"] for r in doc_results if r.get("id")]
-            if doc_ids:
-                doc_nodes = self._get_document_nodes_from_neo4j(doc_ids)
-                for node in doc_nodes:
-                    if node["key"] and node["key"] not in node_keys:
-                        node_keys.add(node["key"])
-                        nodes.append(node)
+            if not answer_text or not answer_text.strip():
+                return {"nodes": nodes, "links": links}
             
-            # Step 2: Find relevant entities via vector search on answer text
-            if answer_text and answer_text.strip():
-                # Generate embedding for answer text
-                answer_embedding = embedding_service.generate_embedding(answer_text)
-                
-                # Search for similar entities
-                entity_results = vector_db_service.search_entities(
+            # Generate embedding for answer text
+            answer_embedding = embedding_service.generate_embedding(answer_text)
+            print(f"[RAG] Building result graph from answer text ({len(answer_text)} chars) - entities only (no documents)")
+            
+            # Search entities using answer text (no threshold filtering - get all results)
+            all_entity_results = []
+            try:
+                all_entity_results = vector_db_service.search_entities(
                     query_embedding=answer_embedding,
                     top_k=top_k_entities
                 )
-                
-                # Extract entity keys from search results
-                entity_keys = [r["id"] for r in entity_results if r.get("id")]
-                
-                if entity_keys:
-                    # Step 3: Get entity nodes from Neo4j
-                    entity_nodes = self._get_entity_nodes_from_neo4j(entity_keys)
-                    for node in entity_nodes:
-                        if node["key"] and node["key"] not in node_keys:
-                            node_keys.add(node["key"])
-                            nodes.append(node)
-                    
-                    # Step 4: Get relationships between entities
-                    if len(node_keys) > 1:
-                        all_keys = list(node_keys)
-                        entity_links = self._get_relationships_between_nodes(all_keys)
-                        links.extend(entity_links)
+                print(f"[RAG] Found {len(all_entity_results)} entities via answer text search")
+            except Exception as e:
+                print(f"[RAG] Error searching entities: {e}")
+            
+            # Create a mapping of entity keys to distances
+            entity_distance_map = {r["id"]: r.get("distance", 1.0) for r in all_entity_results if r.get("id")}
+            
+            # Get entity nodes from Neo4j and add confidence scores
+            entity_keys = list(entity_distance_map.keys())
+            if entity_keys:
+                entity_nodes = self._get_entity_nodes_from_neo4j(entity_keys)
+                for node in entity_nodes:
+                    if node["key"] and node["key"] not in node_keys:
+                        node_keys.add(node["key"])
+                        # Add confidence score (relevance: 1 - distance, higher is better)
+                        distance = entity_distance_map.get(node.get("key"), 1.0)
+                        confidence = 1.0 - distance if distance is not None else 0.0
+                        node["confidence"] = max(0.0, min(1.0, confidence))  # Clamp to 0-1
+                        node["distance"] = distance
+                        nodes.append(node)
+            
+            # Get relationships between entities
+            if len(node_keys) > 1:
+                all_keys = list(node_keys)
+                entity_links = self._get_relationships_between_nodes(all_keys)
+                links.extend(entity_links)
+            
+            print(f"[RAG] Result graph built: {len(nodes)} entities (with confidence scores), {len(links)} links (documents excluded to reduce noise)")
             
         except Exception as e:
             print(f"[RAG] Error building result graph: {e}")
@@ -810,6 +822,7 @@ LIMIT {max_nodes}
         self,
         question: str,
         selected_keys: Optional[List[str]] = None,
+        confidence_threshold: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         Answer a question using the appropriate context.
@@ -839,6 +852,9 @@ LIMIT {max_nodes}
         from datetime import datetime
         debug_log["timestamp"] = datetime.now().isoformat()
         
+        # Use confidence threshold from request, or fall back to config default
+        threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
+        
         # Graph summary no longer needed - using vector search only
 
         # Track which node keys were actually used to generate the answer
@@ -852,6 +868,26 @@ LIMIT {max_nodes}
             # Focused context: Use vector search to find relevant documents
             context_mode = "focused-documents"
             used_node_keys = []
+            
+            # Get node details (including summaries and notes) for selected nodes
+            selected_node_context = None
+            node_context_str = None
+            selected_entities = []
+            try:
+                selected_entities = self._get_entity_nodes_from_neo4j(selected_keys)
+                if selected_entities:
+                    selected_node_context = {
+                        "selected_entities": selected_entities
+                    }
+                    # Build focused context from selected nodes (includes summaries and notes)
+                    node_context_str = self._build_focused_context(selected_node_context)
+                    print(f"[RAG] Built focused context from {len(selected_entities)} selected nodes")
+            except Exception as e:
+                print(f"[RAG] Error getting selected node details: {e}")
+                import traceback
+                traceback.print_exc()
+                selected_node_context = None
+                node_context_str = None
             
             # Use vector search to find relevant documents based on the question
             if VECTOR_DB_AVAILABLE:
@@ -876,11 +912,28 @@ LIMIT {max_nodes}
                         # Perform vector search on the question
                         query_embedding = embedding_service.generate_embedding(question)
                         print(f"[RAG] Generated query embedding with {len(query_embedding)} dimensions")
-                        doc_results = vector_db_service.search(
+                        all_doc_results = vector_db_service.search(
                             query_embedding=query_embedding,
                             top_k=VECTOR_SEARCH_TOP_K
                         )
-                        print(f"[RAG] Vector search returned {len(doc_results)} documents")
+                        
+                        # Filter results by confidence threshold (distance must be <= threshold)
+                        # Handle cases where distance might be None or missing
+                        doc_results = []
+                        for r in all_doc_results:
+                            distance = r.get("distance")
+                            if distance is not None and distance <= threshold:
+                                doc_results.append(r)
+                            elif distance is None:
+                                # If distance is missing, include the result (could be a bug in vector_db_service)
+                                print(f"[RAG] WARNING: Document {r.get('id', 'unknown')} has no distance value, including anyway")
+                                doc_results.append(r)
+                        print(f"[RAG] Vector search returned {len(all_doc_results)} documents, {len(doc_results)} above confidence threshold (distance <= {threshold})")
+                        if len(all_doc_results) > 0 and len(doc_results) == 0:
+                            # Log distances for debugging
+                            distances = [r.get("distance") for r in all_doc_results if r.get("distance") is not None]
+                            if distances:
+                                print(f"[RAG] DEBUG: All {len(all_doc_results)} results filtered out. Distance range: min={min(distances):.4f}, max={max(distances):.4f}, threshold={threshold}")
                         
                         if debug_log is not None:
                             debug_log["vector_search"] = {
@@ -889,6 +942,9 @@ LIMIT {max_nodes}
                                 "documents_in_db": doc_count,
                                 "embedding_dimensions": len(query_embedding),
                                 "top_k": VECTOR_SEARCH_TOP_K,
+                                "confidence_threshold": threshold,
+                                "total_results": len(all_doc_results),
+                                "filtered_results": len(doc_results),
                                 "results": [
                                     {
                                         "document_id": r["id"],
@@ -902,21 +958,36 @@ LIMIT {max_nodes}
                             }
                         
                         # Build context from full document texts
-                        context = self._build_document_context(doc_results)
-                        context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
+                        doc_context = self._build_document_context(doc_results)
+                        
+                        # Combine document context with selected node context (summaries and notes)
+                        if selected_node_context and node_context_str:
+                            context = node_context_str + "\n\n" + doc_context
+                            context_description = f"Found {len(doc_results)} relevant document(s) via vector search, plus {len(selected_entities)} selected entities with summaries and notes"
+                        else:
+                            context = doc_context
+                            context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
                     
                 except Exception as e:
                     error_msg = str(e)
                     print(f"[RAG] Vector search error in focused mode: {e}")
                     import traceback
                     traceback.print_exc()
-                    # Fallback to empty context
-                    context = "No relevant documents found."
-                    # Provide more specific error message
-                    if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
-                        context_description = f"Vector search unavailable: Ollama connection failed. Please start Ollama or switch to OpenAI embeddings."
+                    # Fallback to empty context, but include selected node context if available
+                    if selected_node_context and node_context_str:
+                        context = node_context_str + "\n\nNo relevant documents found."
+                        # Provide more specific error message
+                        if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
+                            context_description = f"Vector search unavailable: Ollama connection failed. Using {len(selected_entities)} selected entities with summaries and notes."
+                        else:
+                            context_description = f"Vector search unavailable: {error_msg}. Using {len(selected_entities)} selected entities with summaries and notes."
                     else:
-                        context_description = f"Vector search unavailable: {error_msg}"
+                        context = "No relevant documents found."
+                        # Provide more specific error message
+                        if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
+                            context_description = f"Vector search unavailable: Ollama connection failed. Please start Ollama or switch to OpenAI embeddings."
+                        else:
+                            context_description = f"Vector search unavailable: {error_msg}"
                     doc_results = []
                     if debug_log is not None:
                         debug_log["vector_search"] = {
@@ -925,8 +996,13 @@ LIMIT {max_nodes}
                             "error_type": type(e).__name__,
                         }
             else:
-                context = "Vector database not available."
-                context_description = "Vector search unavailable"
+                # Vector DB not available, but include selected node context if available
+                if selected_node_context and node_context_str:
+                    context = node_context_str + "\n\nVector database not available."
+                    context_description = f"Vector search unavailable, but using {len(selected_entities)} selected entities with summaries and notes"
+                else:
+                    context = "Vector database not available."
+                    context_description = "Vector search unavailable"
                 if debug_log is not None:
                     debug_log["vector_search"] = {
                         "enabled": False,
@@ -996,11 +1072,28 @@ LIMIT {max_nodes}
                         # Perform vector search on the question
                         query_embedding = embedding_service.generate_embedding(question)
                         print(f"[RAG] Generated query embedding with {len(query_embedding)} dimensions")
-                        doc_results = vector_db_service.search(
+                        all_doc_results = vector_db_service.search(
                             query_embedding=query_embedding,
                             top_k=VECTOR_SEARCH_TOP_K
                         )
-                        print(f"[RAG] Vector search returned {len(doc_results)} documents")
+                        
+                        # Filter results by confidence threshold (distance must be <= threshold)
+                        # Handle cases where distance might be None or missing
+                        doc_results = []
+                        for r in all_doc_results:
+                            distance = r.get("distance")
+                            if distance is not None and distance <= threshold:
+                                doc_results.append(r)
+                            elif distance is None:
+                                # If distance is missing, include the result (could be a bug in vector_db_service)
+                                print(f"[RAG] WARNING: Document {r.get('id', 'unknown')} has no distance value, including anyway")
+                                doc_results.append(r)
+                        print(f"[RAG] Vector search returned {len(all_doc_results)} documents, {len(doc_results)} above confidence threshold (distance <= {threshold})")
+                        if len(all_doc_results) > 0 and len(doc_results) == 0:
+                            # Log distances for debugging
+                            distances = [r.get("distance") for r in all_doc_results if r.get("distance") is not None]
+                            if distances:
+                                print(f"[RAG] DEBUG: All {len(all_doc_results)} results filtered out. Distance range: min={min(distances):.4f}, max={max(distances):.4f}, threshold={threshold}")
                         
                         if debug_log is not None:
                             debug_log["vector_search"] = {
@@ -1009,6 +1102,9 @@ LIMIT {max_nodes}
                                 "documents_in_db": doc_count,
                                 "embedding_dimensions": len(query_embedding),
                                 "top_k": VECTOR_SEARCH_TOP_K,
+                                "confidence_threshold": threshold,
+                                "total_results": len(all_doc_results),
+                                "filtered_results": len(doc_results),
                                 "results": [
                                     {
                                         "document_id": r["id"],
@@ -1139,13 +1235,15 @@ LIMIT {max_nodes}
             print(f"[RAG] Failed to log to system logs: {e}")
 
         # Build result graph with documents and relevant entities
+        # Search answer text against both documents and entities (no threshold filtering)
         result_graph = {"nodes": [], "links": []}
-        if doc_results and clean_answer_text:
+        if clean_answer_text:
             try:
                 result_graph = self._build_result_graph(
-                    doc_results=doc_results,
+                    doc_results=[],  # Not used - we search based on answer text
                     answer_text=clean_answer_text,
-                    top_k_entities=20,
+                    top_k_entities=50,  # Get more results
+                    top_k_documents=50,  # Get more results
                 )
                 print(f"[RAG] Result graph built: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
             except Exception as e:
