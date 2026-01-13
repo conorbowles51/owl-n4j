@@ -86,6 +86,9 @@ export default function EvidenceProcessingView({
   const [processedFilter, setProcessedFilter] = useState('');
   const [processedTypeFilter, setProcessedTypeFilter] = useState(null);
 
+  // Parallel processing configuration
+  const [maxWorkers, setMaxWorkers] = useState(4);
+
   // Simple polling for ingestion logs while on this screen
   const loadLogs = useCallback(async () => {
     if (!caseId) return;
@@ -833,8 +836,8 @@ export default function EvidenceProcessingView({
     
     // Always use background processing - ingestion with AI extraction can take a long time
     try {
-      const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile);
-      alert(`Processing ${fileIds.length} file(s) in the background. Check the Background Tasks panel for progress.`);
+      const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile, maxWorkers);
+      alert(`Processing ${fileIds.length} file(s) in the background with ${maxWorkers} parallel worker(s). Check the Background Tasks panel for progress.`);
       clearSelection();
       await loadFiles();
     } catch (err) {
@@ -1354,24 +1357,40 @@ export default function EvidenceProcessingView({
                 </div>
               )}
             </div>
-            <button
-              onClick={handleProcessSelected}
-              disabled={processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white transition-colors ${
-                processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)
-                  ? 'bg-light-300 cursor-not-allowed'
-                  : 'bg-owl-blue-600 hover:bg-owl-blue-700'
-              }`}
-            >
-              <PlayCircle className="w-4 h-4" />
-              {processing ? 'Processing…' : (() => {
-                // Calculate total selected files (from both sources)
-                const navigatorFileIds = getFileIdsFromPaths(selectedFilePaths);
-                const allSelectedIds = new Set([...selectedIds, ...navigatorFileIds]);
-                const totalCount = allSelectedIds.size;
-                return `Process ${totalCount} file(s)`;
-              })()}
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Parallel files selector */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-light-600 whitespace-nowrap">Parallel:</label>
+                <select
+                  value={maxWorkers}
+                  onChange={(e) => setMaxWorkers(parseInt(e.target.value))}
+                  className="px-2 py-1 border border-light-300 rounded text-sm bg-white focus:outline-none focus:border-owl-blue-500"
+                >
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="4">4</option>
+                  <option value="8">8</option>
+                </select>
+              </div>
+              <button
+                onClick={handleProcessSelected}
+                disabled={processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white transition-colors ${
+                  processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)
+                    ? 'bg-light-300 cursor-not-allowed'
+                    : 'bg-owl-blue-600 hover:bg-owl-blue-700'
+                }`}
+              >
+                <PlayCircle className="w-4 h-4" />
+                {processing ? 'Processing…' : (() => {
+                  // Calculate total selected files (from both sources)
+                  const navigatorFileIds = getFileIdsFromPaths(selectedFilePaths);
+                  const allSelectedIds = new Set([...selectedIds, ...navigatorFileIds]);
+                  const totalCount = allSelectedIds.size;
+                  return `Process ${totalCount} file(s)`;
+                })()}
+              </button>
+            </div>
           </div>
 
           {/* Error banner */}

@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 from typing import List, Optional, Dict
 from datetime import datetime
+from threading import RLock
 
 from config import BASE_DIR
 
@@ -49,14 +50,16 @@ def _save_logs(logs: List[Dict]) -> None:
 
 
 class EvidenceLogStorage:
-    """Simple JSON-file backed storage for evidence ingestion logs."""
+    """Simple JSON-file backed storage for evidence ingestion logs. Thread-safe."""
 
     def __init__(self) -> None:
         self._logs: List[Dict] = _load_logs()
+        self._lock = RLock()  # Reentrant lock for thread-safe operations
 
     def reload(self) -> None:
         """Reload logs from disk."""
-        self._logs = _load_logs()
+        with self._lock:
+            self._logs = _load_logs()
 
     def _persist(self) -> None:
         _save_logs(self._logs)
@@ -82,29 +85,30 @@ class EvidenceLogStorage:
             level: Log level ('info', 'debug', 'error', etc.)
             message: Log message (may contain newlines)
         """
-        timestamp = datetime.now().isoformat()
-        entry = {
-            "id": f"log_{int(datetime.now().timestamp() * 1000)}_{len(self._logs)}",
-            "case_id": case_id,
-            "evidence_id": evidence_id,
-            "filename": filename,
-            "level": level,
-            "message": message,
-            "timestamp": timestamp,
-        }
+        with self._lock:
+            timestamp = datetime.now().isoformat()
+            entry = {
+                "id": f"log_{int(datetime.now().timestamp() * 1000)}_{len(self._logs)}",
+                "case_id": case_id,
+                "evidence_id": evidence_id,
+                "filename": filename,
+                "level": level,
+                "message": message,
+                "timestamp": timestamp,
+            }
 
-        if progress_current is not None and progress_total is not None:
-            entry["progress_current"] = progress_current
-            entry["progress_total"] = progress_total
+            if progress_current is not None and progress_total is not None:
+                entry["progress_current"] = progress_current
+                entry["progress_total"] = progress_total
 
-        self._logs.append(entry)
+            self._logs.append(entry)
 
-        # Trim to last MAX_LOG_ENTRIES
-        if len(self._logs) > MAX_LOG_ENTRIES:
-            self._logs = self._logs[-MAX_LOG_ENTRIES :]
+            # Trim to last MAX_LOG_ENTRIES
+            if len(self._logs) > MAX_LOG_ENTRIES:
+                self._logs = self._logs[-MAX_LOG_ENTRIES :]
 
-        self._persist()
-        return entry
+            self._persist()
+            return entry
 
     def list_logs(
         self,
@@ -119,13 +123,15 @@ class EvidenceLogStorage:
             case_id: If provided, only return logs for this case.
             limit: Max number of entries to return (most recent first).
         """
-        logs = self._logs
-        if case_id:
-            logs = [l for l in logs if l.get("case_id") == case_id]
+        with self._lock:
+            logs = self._logs.copy()  # Copy to avoid modification during iteration
 
-        # Return most recent first, up to limit
-        logs = sorted(logs, key=lambda l: l.get("timestamp", ""), reverse=True)
-        return logs[:limit]
+            if case_id:
+                logs = [l for l in logs if l.get("case_id") == case_id]
+
+            # Return most recent first, up to limit
+            logs = sorted(logs, key=lambda l: l.get("timestamp", ""), reverse=True)
+            return logs[:limit]
 
 
 # Singleton instance

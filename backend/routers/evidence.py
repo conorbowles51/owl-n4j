@@ -59,6 +59,7 @@ class ProcessRequest(BaseModel):
     case_id: Optional[str] = None
     file_ids: List[str]
     profile: Optional[str] = None  # LLM profile name (e.g., "fraud", "generic")
+    max_workers: Optional[int] = None  # Maximum parallel files to process
 
 
 class ProcessResponse(BaseModel):
@@ -249,6 +250,7 @@ async def process_evidence_background(
             case_id=request.case_id,
             owner=user["username"],
             profile=request.profile,
+            max_workers=request.max_workers,
         )
         return {"task_id": task_id, "message": "Processing started in background"}
     except Exception as e:

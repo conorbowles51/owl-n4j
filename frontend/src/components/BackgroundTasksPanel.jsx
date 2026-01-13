@@ -280,6 +280,17 @@ function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgress
         </div>
       )}
 
+      {/* Parallel Processing Indicator */}
+      {task.status === 'running' && task.files && (() => {
+        const processingCount = task.files.filter(f => f.status === 'processing').length;
+        return processingCount > 1 ? (
+          <div className="mb-3 flex items-center gap-2 text-xs text-owl-blue-600">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span>Processing {processingCount} files in parallel</span>
+          </div>
+        ) : null;
+      })()}
+
       {/* Error Message */}
       {task.error && (
         <div className="mb-3 p-2 bg-red-50 border border-red-200 rounded text-sm text-red-700">

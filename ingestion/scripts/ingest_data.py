@@ -14,11 +14,14 @@ Usage:
 import argparse
 import sys
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 from text_ingestion import ingest_text_file
 from pdf_ingestion import ingest_pdf_file
 from neo4j_client import Neo4jClient
 from logging_utils import log_progress, log_error, log_warning
+from config import MAX_INGESTION_WORKERS
 from typing import Optional, Callable
 
 
@@ -62,12 +65,18 @@ def ingest_file(
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}
 
 
-def ingest_all_in_data(data_dir: Path) -> dict:
+def ingest_all_in_data(
+    data_dir: Path,
+    max_workers: int = MAX_INGESTION_WORKERS,
+    profile_name: Optional[str] = None,
+) -> dict:
     """
-    Ingest all supported files in the data directory.
+    Ingest all supported files in the data directory using parallel processing.
 
     Args:
         data_dir: Path to the data directory
+        max_workers: Maximum number of files to process concurrently
+        profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Summary dict with counts
@@ -85,23 +94,47 @@ def ingest_all_in_data(data_dir: Path) -> dict:
     all_files = text_files + pdf_files
 
     log_progress(f"Found {len(text_files)} text file(s) and {len(pdf_files)} PDF file(s)")
+    log_progress(f"Processing with max_workers={max_workers}")
 
     if not all_files:
         log_progress("No files to process.")
         return {"status": "complete", "files_processed": 0}
 
     results = []
+    results_lock = Lock()
 
-    for path in all_files:
+    def process_single_file(path: Path) -> dict:
+        """Process a single file and return result."""
         try:
-            result = ingest_file(path)
-            results.append(result)
-        except KeyboardInterrupt:
-            log_warning("Interrupted by user.")
-            break
+            result = ingest_file(path, profile_name=profile_name)
+            return result
         except Exception as e:
             log_error(f"Error processing {path}: {e}")
-            results.append({"status": "error", "reason": str(e), "file": str(path)})
+            return {"status": "error", "reason": str(e), "file": str(path)}
+
+    # Use ThreadPoolExecutor for parallel file processing
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all files
+        future_to_path = {
+            executor.submit(process_single_file, path): path
+            for path in all_files
+        }
+
+        try:
+            for future in as_completed(future_to_path):
+                path = future_to_path[future]
+                try:
+                    result = future.result()
+                    with results_lock:
+                        results.append(result)
+                    log_progress(f"Completed: {path.name} - {result.get('status', 'unknown')}")
+                except Exception as e:
+                    log_error(f"Exception processing {path}: {e}")
+                    with results_lock:
+                        results.append({"status": "error", "reason": str(e), "file": str(path)})
+        except KeyboardInterrupt:
+            log_warning("Interrupted by user. Cancelling remaining tasks...")
+            executor.shutdown(wait=False, cancel_futures=True)
 
     # Summary
     completed = sum(1 for r in results if r.get("status") == "complete")
@@ -160,6 +193,20 @@ def main():
         help="Clear the database before ingesting",
     )
 
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=None,
+        help=f"Maximum number of files to process in parallel (default: {MAX_INGESTION_WORKERS})",
+    )
+
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default=None,
+        help="Name of the LLM profile to use (e.g., 'fraud', 'generic')",
+    )
+
     args = parser.parse_args()
 
     # Clear database if requested
@@ -171,13 +218,16 @@ def main():
             log_progress("Aborted.")
             return
 
+    # Determine max_workers (CLI arg overrides config)
+    max_workers = args.max_workers if args.max_workers else MAX_INGESTION_WORKERS
+
     # Ingest specific file
     if args.file:
         path = Path(args.file)
         if not path.exists():
             log_error(f"File not found: {path}")
             sys.exit(1)
-        ingest_file(path)
+        ingest_file(path, profile_name=args.profile)
         return
 
     # Ingest all files in data directory
@@ -186,7 +236,7 @@ def main():
     else:
         data_dir = find_data_dir()
 
-    ingest_all_in_data(data_dir)
+    ingest_all_in_data(data_dir, max_workers=max_workers, profile_name=args.profile)
 
 
 if __name__ == "__main__":

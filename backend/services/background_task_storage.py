@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional, Dict
 from datetime import datetime
 from enum import Enum
+from threading import RLock
 
 from config import BASE_DIR
 
@@ -59,14 +60,16 @@ def _save_tasks(tasks: List[Dict]) -> None:
 
 
 class BackgroundTaskStorage:
-    """Simple JSON-file backed storage for background tasks."""
+    """Simple JSON-file backed storage for background tasks. Thread-safe."""
 
     def __init__(self) -> None:
         self._tasks: List[Dict] = _load_tasks()
+        self._lock = RLock()  # Reentrant lock for thread-safe operations
 
     def reload(self) -> None:
         """Reload tasks from disk."""
-        self._tasks = _load_tasks()
+        with self._lock:
+            self._tasks = _load_tasks()
 
     def _persist(self) -> None:
         _save_tasks(self._tasks)
@@ -93,45 +96,47 @@ class BackgroundTaskStorage:
         Returns:
             Task dict with id, status, etc.
         """
-        task_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
-        
-        task = {
-            "id": task_id,
-            "task_type": task_type,
-            "task_name": task_name,
-            "owner": owner,
-            "case_id": case_id,
-            "status": TaskStatus.PENDING.value,
-            "created_at": timestamp,
-            "updated_at": timestamp,
-            "started_at": None,
-            "completed_at": None,
-            "progress": {
-                "total": 0,
-                "completed": 0,
-                "failed": 0,
-            },
-            "files": [],  # List of file processing statuses
-            "error": None,
-            "metadata": metadata or {},
-        }
+        with self._lock:
+            task_id = str(uuid.uuid4())
+            timestamp = datetime.now().isoformat()
 
-        self._tasks.append(task)
+            task = {
+                "id": task_id,
+                "task_type": task_type,
+                "task_name": task_name,
+                "owner": owner,
+                "case_id": case_id,
+                "status": TaskStatus.PENDING.value,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+                "started_at": None,
+                "completed_at": None,
+                "progress": {
+                    "total": 0,
+                    "completed": 0,
+                    "failed": 0,
+                },
+                "files": [],  # List of file processing statuses
+                "error": None,
+                "metadata": metadata or {},
+            }
 
-        # Trim to last MAX_TASK_ENTRIES
-        if len(self._tasks) > MAX_TASK_ENTRIES:
-            self._tasks = self._tasks[-MAX_TASK_ENTRIES :]
+            self._tasks.append(task)
 
-        self._persist()
-        return task
+            # Trim to last MAX_TASK_ENTRIES
+            if len(self._tasks) > MAX_TASK_ENTRIES:
+                self._tasks = self._tasks[-MAX_TASK_ENTRIES :]
+
+            self._persist()
+            return task
 
     def get_task(self, task_id: str) -> Optional[Dict]:
         """Get a task by ID."""
-        for task in self._tasks:
-            if task.get("id") == task_id:
-                return task
-        return None
+        with self._lock:
+            for task in self._tasks:
+                if task.get("id") == task_id:
+                    return task
+            return None
 
     def update_task(
         self,
@@ -163,59 +168,65 @@ class BackgroundTaskStorage:
         Returns:
             Updated task dict or None if not found
         """
-        task = self.get_task(task_id)
-        if not task:
-            return None
+        with self._lock:
+            # Find task directly instead of calling get_task to avoid double-locking
+            task = None
+            for t in self._tasks:
+                if t.get("id") == task_id:
+                    task = t
+                    break
+            if not task:
+                return None
 
-        updated = False
+            updated = False
 
-        if status is not None:
-            task["status"] = status
-            updated = True
-
-        if progress_total is not None:
-            task["progress"]["total"] = progress_total
-            updated = True
-
-        if progress_completed is not None:
-            task["progress"]["completed"] = progress_completed
-            updated = True
-
-        if progress_failed is not None:
-            task["progress"]["failed"] = progress_failed
-            updated = True
-
-        if file_status is not None:
-            # Update or add file status
-            file_id = file_status.get("file_id")
-            if file_id:
-                existing_file = next(
-                    (f for f in task["files"] if f.get("file_id") == file_id),
-                    None,
-                )
-                if existing_file:
-                    existing_file.update(file_status)
-                else:
-                    task["files"].append(file_status)
+            if status is not None:
+                task["status"] = status
                 updated = True
 
-        if error is not None:
-            task["error"] = error
-            updated = True
+            if progress_total is not None:
+                task["progress"]["total"] = progress_total
+                updated = True
 
-        if started_at is not None:
-            task["started_at"] = started_at
-            updated = True
+            if progress_completed is not None:
+                task["progress"]["completed"] = progress_completed
+                updated = True
 
-        if completed_at is not None:
-            task["completed_at"] = completed_at
-            updated = True
+            if progress_failed is not None:
+                task["progress"]["failed"] = progress_failed
+                updated = True
 
-        if updated:
-            task["updated_at"] = datetime.now().isoformat()
-            self._persist()
+            if file_status is not None:
+                # Update or add file status
+                file_id = file_status.get("file_id")
+                if file_id:
+                    existing_file = next(
+                        (f for f in task["files"] if f.get("file_id") == file_id),
+                        None,
+                    )
+                    if existing_file:
+                        existing_file.update(file_status)
+                    else:
+                        task["files"].append(file_status)
+                    updated = True
 
-        return task
+            if error is not None:
+                task["error"] = error
+                updated = True
+
+            if started_at is not None:
+                task["started_at"] = started_at
+                updated = True
+
+            if completed_at is not None:
+                task["completed_at"] = completed_at
+                updated = True
+
+            if updated:
+                task["updated_at"] = datetime.now().isoformat()
+                self._persist()
+
+            return task
 
     def list_tasks(
         self,
@@ -237,20 +248,21 @@ class BackgroundTaskStorage:
         Returns:
             List of task dicts
         """
-        tasks = self._tasks
+        with self._lock:
+            tasks = self._tasks.copy()  # Copy to avoid modification during iteration
 
-        if owner:
-            tasks = [t for t in tasks if t.get("owner") == owner]
+            if owner:
+                tasks = [t for t in tasks if t.get("owner") == owner]
 
-        if case_id:
-            tasks = [t for t in tasks if t.get("case_id") == case_id]
+            if case_id:
+                tasks = [t for t in tasks if t.get("case_id") == case_id]
 
-        if status:
-            tasks = [t for t in tasks if t.get("status") == status]
+            if status:
+                tasks = [t for t in tasks if t.get("status") == status]
 
-        # Return most recent first, up to limit
-        tasks = sorted(tasks, key=lambda t: t.get("created_at", ""), reverse=True)
-        return tasks[:limit]
+            # Return most recent first, up to limit
+            tasks = sorted(tasks, key=lambda t: t.get("created_at", ""), reverse=True)
+            return tasks[:limit]
 
     def delete_task(self, task_id: str) -> bool:
         """
@@ -262,13 +274,19 @@ class BackgroundTaskStorage:
         Returns:
             True if deleted, False if not found
         """
-        task = self.get_task(task_id)
-        if not task:
-            return False
+        with self._lock:
+            # Find task directly instead of calling get_task to avoid double-locking
+            task = None
+            for t in self._tasks:
+                if t.get("id") == task_id:
+                    task = t
+                    break
+            if not task:
+                return False
 
-        self._tasks.remove(task)
-        self._persist()
-        return True
+            self._tasks.remove(task)
+            self._persist()
+            return True
 
 
 # Singleton instance

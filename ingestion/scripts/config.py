@@ -35,6 +35,13 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 # ---------------------------------------------------------------------------
+# Parallel Processing Configuration
+# ---------------------------------------------------------------------------
+
+# Maximum number of files to process in parallel during ingestion
+MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
+
+# ---------------------------------------------------------------------------
 # Chunking Configuration
 # ---------------------------------------------------------------------------
 

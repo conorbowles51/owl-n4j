@@ -9,6 +9,7 @@ import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
+from threading import RLock
 
 from config import BASE_DIR
 
@@ -58,27 +59,31 @@ def _compute_sha256(data: bytes) -> str:
 
 
 class EvidenceStorage:
-    """Service for managing evidence file metadata and status."""
+    """Service for managing evidence file metadata and status. Thread-safe."""
 
     def __init__(self) -> None:
         self._records: Dict[str, dict] = _load_evidence()
+        self._lock = RLock()  # Reentrant lock for thread-safe operations
 
     # ------------- Basic accessors -------------
 
     def reload(self) -> None:
         """Reload evidence records from disk."""
-        self._records = _load_evidence()
+        with self._lock:
+            self._records = _load_evidence()
 
     def _persist(self) -> None:
         _save_evidence(self._records)
 
     def get_all(self) -> List[dict]:
         """Return all evidence records as a list."""
-        return list(self._records.values())
+        with self._lock:
+            return list(self._records.values())
 
     def get(self, evidence_id: str) -> Optional[dict]:
         """Get a single evidence record by id."""
-        return self._records.get(evidence_id)
+        with self._lock:
+            return self._records.get(evidence_id)
 
     # ------------- Query helpers -------------
 
@@ -89,33 +94,36 @@ class EvidenceStorage:
         owner: Optional[str] = None,
     ) -> List[dict]:
         """List evidence files, optionally filtered by case_id, status, and owner."""
-        results = []
-        for rec in self._records.values():
-            if case_id and rec.get("case_id") != case_id:
-                continue
-            if status and rec.get("status") != status:
-                continue
-            if owner and rec.get("owner") != owner:
-                continue
-            results.append(rec)
-        # Sort newest first
-        results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
-        return results
+        with self._lock:
+            results = []
+            for rec in self._records.values():
+                if case_id and rec.get("case_id") != case_id:
+                    continue
+                if status and rec.get("status") != status:
+                    continue
+                if owner and rec.get("owner") != owner:
+                    continue
+                results.append(rec)
+            # Sort newest first
+            results.sort(key=lambda r: r.get("created_at", ""), reverse=True)
+            return results
 
     def find_by_hash(self, sha256: str) -> Optional[dict]:
         """Find first record matching a given hash."""
-        for rec in self._records.values():
-            if rec.get("sha256") == sha256:
-                return rec
-        return None
+        with self._lock:
+            for rec in self._records.values():
+                if rec.get("sha256") == sha256:
+                    return rec
+            return None
 
     def find_all_by_hash(self, sha256: str) -> List[dict]:
         """Find all records matching a given hash."""
-        results = []
-        for rec in self._records.values():
-            if rec.get("sha256") == sha256:
-                results.append(rec)
-        return results
+        with self._lock:
+            results = []
+            for rec in self._records.values():
+                if rec.get("sha256") == sha256:
+                    results.append(rec)
+            return results
 
     # ------------- Mutating operations -------------
 
@@ -141,66 +149,73 @@ class EvidenceStorage:
         Returns:
             List of evidence records that were created.
         """
-        ensure_dirs()
-        created_records: List[dict] = []
-        now = datetime.now().isoformat()
+        with self._lock:
+            ensure_dirs()
+            created_records: List[dict] = []
+            now = datetime.now().isoformat()
 
-        for file_info in files:
-            original_filename = file_info["original_filename"]
-            stored_path: Path = file_info["stored_path"]
-            content: bytes = file_info["content"]
-            size: int = file_info["size"]
+            for file_info in files:
+                original_filename = file_info["original_filename"]
+                stored_path: Path = file_info["stored_path"]
+                content: bytes = file_info["content"]
+                size: int = file_info["size"]
 
-            sha256 = _compute_sha256(content)
-            duplicate_rec = self.find_by_hash(sha256)
+                sha256 = _compute_sha256(content)
+                # Find duplicate directly to avoid double-locking
+                duplicate_rec = None
+                for rec in self._records.values():
+                    if rec.get("sha256") == sha256:
+                        duplicate_rec = rec
+                        break
 
-            evidence_id = f"ev_{sha256[:16]}"
-            # Ensure uniqueness even if same hash used for id in multiple cases
-            suffix = 1
-            while evidence_id in self._records:
-                evidence_id = f"ev_{sha256[:12]}_{suffix}"
-                suffix += 1
+                evidence_id = f"ev_{sha256[:16]}"
+                # Ensure uniqueness even if same hash used for id in multiple cases
+                suffix = 1
+                while evidence_id in self._records:
+                    evidence_id = f"ev_{sha256[:12]}_{suffix}"
+                    suffix += 1
 
-            status = "unprocessed"
-            duplicate_of = None
-            if duplicate_rec:
-                status = "duplicate"
-                duplicate_of = duplicate_rec.get("id")
+                status = "unprocessed"
+                duplicate_of = None
+                if duplicate_rec:
+                    status = "duplicate"
+                    duplicate_of = duplicate_rec.get("id")
 
-            record = {
-                "id": evidence_id,
-                "case_id": case_id,
-                "owner": owner,
-                "original_filename": original_filename,
-                "stored_path": str(stored_path),
-                "size": size,
-                "sha256": sha256,
-                "status": status,  # unprocessed | processing | processed | duplicate | failed
-                "duplicate_of": duplicate_of,
-                "created_at": now,
-                "processed_at": None,
-                "last_error": None,
-            }
+                record = {
+                    "id": evidence_id,
+                    "case_id": case_id,
+                    "owner": owner,
+                    "original_filename": original_filename,
+                    "stored_path": str(stored_path),
+                    "size": size,
+                    "sha256": sha256,
+                    "status": status,  # unprocessed | processing | processed | duplicate | failed
+                    "duplicate_of": duplicate_of,
+                    "created_at": now,
+                    "processed_at": None,
+                    "last_error": None,
+                }
 
-            self._records[evidence_id] = record
-            created_records.append(record)
+                self._records[evidence_id] = record
+                created_records.append(record)
 
-        self._persist()
-        return created_records
+            self._persist()
+            return created_records
 
     def mark_processing(self, evidence_ids: List[str]) -> None:
         """Mark selected evidence as 'processing'."""
-        now = datetime.now().isoformat()
-        for evid in evidence_ids:
-            rec = self._records.get(evid)
-            if not rec:
-                continue
-            if rec.get("status") in ("processed", "processing"):
-                continue
-            rec["status"] = "processing"
-            rec["last_error"] = None
-            rec["processed_at"] = None
-        self._persist()
+        with self._lock:
+            now = datetime.now().isoformat()
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if not rec:
+                    continue
+                if rec.get("status") in ("processed", "processing"):
+                    continue
+                rec["status"] = "processing"
+                rec["last_error"] = None
+                rec["processed_at"] = None
+            self._persist()
 
     def mark_processed(
         self,
@@ -208,23 +223,24 @@ class EvidenceStorage:
         error: Optional[str] = None,
     ) -> None:
         """Mark selected evidence as processed or failed."""
-        now = datetime.now().isoformat()
-        for evid in evidence_ids:
-            rec = self._records.get(evid)
-            if not rec:
-                continue
-            if error:
-                rec["status"] = "failed"
-                rec["last_error"] = error
-            else:
-                # Preserve 'duplicate' label for duplicate records so the UI
-                # continues to show them as duplicates even after processing.
-                # Non-duplicate records are marked as 'processed'.
-                if rec.get("status") != "duplicate":
-                    rec["status"] = "processed"
-                rec["last_error"] = None
-            rec["processed_at"] = now
-        self._persist()
+        with self._lock:
+            now = datetime.now().isoformat()
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if not rec:
+                    continue
+                if error:
+                    rec["status"] = "failed"
+                    rec["last_error"] = error
+                else:
+                    # Preserve 'duplicate' label for duplicate records so the UI
+                    # continues to show them as duplicates even after processing.
+                    # Non-duplicate records are marked as 'processed'.
+                    if rec.get("status") != "duplicate":
+                        rec["status"] = "processed"
+                    rec["last_error"] = None
+                rec["processed_at"] = now
+            self._persist()
 
 
 # Singleton instance
