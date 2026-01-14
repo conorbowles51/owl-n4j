@@ -8,7 +8,6 @@ import {
   Calendar,
   FileText,
   Archive,
-  Code,
   ChevronDown,
   ChevronRight,
   ChevronLeft,
@@ -52,7 +51,6 @@ export default function CaseManagementView({
   const [selectedCase, setSelectedCase] = useState(null);
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [showCaseModal, setShowCaseModal] = useState(false);
-  const [showCypher, setShowCypher] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(true);
   const [showVersions, setShowVersions] = useState(true);
   const [showEvidenceFiles, setShowEvidenceFiles] = useState(true);
@@ -77,8 +75,6 @@ export default function CaseManagementView({
   const [loadedSnapshotDetails, setLoadedSnapshotDetails] = useState({}); // Store full snapshot data by ID
   const [loadingSnapshotIds, setLoadingSnapshotIds] = useState(new Set()); // Track which snapshots are currently being loaded
   const [showPreviousVersions, setShowPreviousVersions] = useState(false); // Show/hide previous versions
-  const [loadedCypherQueries, setLoadedCypherQueries] = useState({}); // Store loaded cypher queries by version
-  const [loadingCypher, setLoadingCypher] = useState(false); // Loading state for cypher queries
   // Case opening progress
   const [caseOpeningProgress, setCaseOpeningProgress] = useState({
     isOpen: false,
@@ -204,10 +200,6 @@ export default function CaseManagementView({
           if (version.snapshots && version.snapshots.length > 0) {
             version.snapshots.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           }
-          // Strip cypher_queries to improve loading performance - will be loaded on demand
-          if (version.cypher_queries) {
-            version.cypher_queries = null; // Remove from version data
-          }
         });
       }
       
@@ -252,8 +244,7 @@ export default function CaseManagementView({
       setVersionsFilter('');
       setSnapshotsFilter('');
       setShowPreviousVersions(false);
-      setLoadedCypherQueries({});
-      
+
       // Close progress dialog
       setCaseOpeningProgress(prev => ({ ...prev, isOpen: false }));
     } catch (err) {
@@ -358,9 +349,9 @@ export default function CaseManagementView({
     }
 
     try {
-      // Fetch the full version data including cypher_queries before loading
+      // Fetch the full version data (for snapshots metadata) before loading
       const fullVersionData = await casesAPI.getVersion(selectedCase.id, selectedVersion.version);
-      // Pass the full version data with cypher_queries to onLoadCase
+      // Pass the version data to onLoadCase - graph data is loaded via case_id filter
       onLoadCase(selectedCase, fullVersionData);
     } catch (err) {
       console.error('Failed to load version data:', err);
@@ -764,7 +755,7 @@ export default function CaseManagementView({
                         className="flex items-center gap-2 px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-lg transition-colors text-sm"
                       >
                         <Eye className="w-4 h-4" />
-                        Load Version {selectedVersion.version}
+                        Open Case
                       </button>
                     )}
                   </div>
@@ -1861,62 +1852,6 @@ export default function CaseManagementView({
                       </div>
                     )}
 
-                    {/* Cypher Queries Section - Moved to bottom, loaded on demand */}
-                    <div className="mb-6">
-                      <button
-                        onClick={async () => {
-                          if (!showCypher) {
-                            // Load cypher queries if not already loaded
-                            if (!loadedCypherQueries[selectedVersion.version]) {
-                              setLoadingCypher(true);
-                              try {
-                                const versionData = await casesAPI.getVersion(selectedCase.id, selectedVersion.version);
-                                setLoadedCypherQueries(prev => ({
-                                  ...prev,
-                                  [selectedVersion.version]: versionData.cypher_queries || ''
-                                }));
-                              } catch (err) {
-                                console.error('Failed to load cypher queries:', err);
-                                setLoadedCypherQueries(prev => ({
-                                  ...prev,
-                                  [selectedVersion.version]: 'Error loading Cypher queries'
-                                }));
-                              } finally {
-                                setLoadingCypher(false);
-                              }
-                            }
-                          }
-                          setShowCypher(!showCypher);
-                        }}
-                        className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
-                      >
-                        <div className="flex items-center gap-2">
-                          <Code className="w-5 h-5 text-owl-blue-700" />
-                          <h3 className="text-md font-semibold text-owl-blue-900">
-                            Cypher Queries (Version {selectedVersion.version})
-                          </h3>
-                          {!loadedCypherQueries[selectedVersion.version] && !showCypher && (
-                            <span className="text-xs text-light-500 italic">Click to inspect</span>
-                          )}
-                        </div>
-                        {showCypher ? (
-                          <ChevronDown className="w-4 h-4 text-light-600" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-light-600" />
-                        )}
-                      </button>
-                      {showCypher && (
-                        <div className="ml-2 bg-dark-900 rounded-lg p-4 overflow-x-auto">
-                          {loadingCypher ? (
-                            <div className="text-center text-light-200 py-4">Loading Cypher queries...</div>
-                          ) : (
-                            <pre className="text-xs text-light-200 font-mono whitespace-pre-wrap">
-                              {loadedCypherQueries[selectedVersion.version] || 'No Cypher queries available'}
-                            </pre>
-                          )}
-                        </div>
-                      )}
-                    </div>
                   </>
                 )}
               </div>
@@ -1927,7 +1862,7 @@ export default function CaseManagementView({
                 <FolderOpen className="w-16 h-16 mx-auto mb-4 text-light-400" />
                 <p className="text-light-700 font-medium mb-2">Select a case to view details</p>
                 <p className="text-sm text-light-600">
-                  Choose a case from the list to see its versions, Cypher queries, and snapshots
+                  Choose a case from the list to see its versions and snapshots
                 </p>
               </div>
             </div>

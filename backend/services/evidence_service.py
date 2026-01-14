@@ -19,7 +19,6 @@ from .evidence_log_storage import evidence_log_storage
 from .background_task_storage import background_task_storage, TaskStatus
 from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
-from services.cypher_generator import generate_cypher_from_graph
 
 
 def _import_ingest_file():
@@ -550,7 +549,7 @@ class EvidenceService:
             buf = io.StringIO()
             try:
                 with contextlib.redirect_stdout(buf):
-                    self._ingest_file(path, log_callback=log_callback, profile_name=profile)
+                    self._ingest_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile)
 
                 ingest_output = buf.getvalue()
                 if case_id and ingest_output.strip():
@@ -602,26 +601,20 @@ class EvidenceService:
         }
 
         # If we have an associated case and at least one file was processed,
-        # capture the current graph as Cypher and append it as a new case version.
+        # save a new case version with metadata (data already persists in Neo4j with case_id)
         if case_id and processed > 0:
             try:
-                # Get current full graph (nodes + links)
-                graph_data = neo4j_service.get_full_graph()
-
-                # Generate Cypher to recreate this graph
-                cypher_queries = generate_cypher_from_graph(graph_data)
-
                 # Look up case name (fallback to case_id if not found)
                 case = case_storage.get_case(case_id)
                 case_name = case["name"] if case and case.get("name") else case_id
 
-                # Save as a new version on this case
+                # Save as a new version on this case (no cypher needed - data persists in Neo4j)
                 case_result = case_storage.save_case_version(
                     case_id=case_id,
                     case_name=case_name,
-                    cypher_queries=cypher_queries,
                     snapshots=[],
                     save_notes=f"Auto-save after processing {processed} evidence file(s).",
+                    owner=owner,
                 )
 
                 summary["case_id"] = case_result.get("case_id")
@@ -641,7 +634,7 @@ class EvidenceService:
                 )
             except Exception as e:  # pragma: no cover - defensive
                 # Do not fail evidence processing if case saving fails; just log.
-                print(f"Warning: failed to attach graph Cypher to case {case_id}: {e}")
+                print(f"Warning: failed to save case version for {case_id}: {e}")
                 evidence_log_storage.add_log(
                     case_id=case_id,
                     evidence_id=None,
@@ -799,7 +792,7 @@ class EvidenceService:
                     try:
                         buf = io.StringIO()
                         with contextlib.redirect_stdout(buf):
-                            self._ingest_file(path, log_callback=log_callback, profile_name=task_profile)
+                            self._ingest_file(path, case_id=case_id, log_callback=log_callback, profile_name=task_profile)
 
                         # Mark as processed
                         evidence_storage.mark_processed(
@@ -862,21 +855,18 @@ class EvidenceService:
                                     progress_failed=failed_count,
                                 )
 
-                # Save case version if applicable
+                # Save case version if applicable (no cypher needed - data persists in Neo4j)
                 if case_id and processed_count > 0:
                     try:
-                        graph_data = neo4j_service.get_full_graph()
-                        cypher_queries = generate_cypher_from_graph(graph_data)
                         case = case_storage.get_case(case_id)
                         case_name = case["name"] if case and case.get("name") else case_id
 
                         case_result = case_storage.save_case_version(
                             case_id=case_id,
                             case_name=case_name,
-                            cypher_queries=cypher_queries,
                             snapshots=[],
                             save_notes=f"Auto-save after processing {processed_count} evidence file(s).",
-                            owner=task_owner,  # Pass owner to ensure case version is saved with correct owner
+                            owner=task_owner,
                         )
 
                         # Commented this as metadata isn't handled in method - CB

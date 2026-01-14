@@ -45,6 +45,16 @@ class Neo4jService:
                 NEO4J_URI,
                 auth=(NEO4J_USER, NEO4J_PASSWORD),
             )
+            self._ensure_case_id_index()
+
+    def _ensure_case_id_index(self):
+        """Create index on case_id for performance."""
+        try:
+            with self._driver.session() as session:
+                session.run("CREATE INDEX node_case_id IF NOT EXISTS FOR (n) ON (n.case_id)")
+        except Exception:
+            # Index may already exist or Neo4j version doesn't support this syntax
+            pass
 
     def close(self):
         if self._driver:
@@ -57,13 +67,15 @@ class Neo4jService:
 
     def get_full_graph(
         self,
+        case_id: Optional[str] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> Dict[str, List]:
         """
         Get all nodes and relationships for visualization.
-        
+
         Args:
+            case_id: Filter to only include nodes/relationships belonging to this case
             start_date: Filter to include nodes with date >= start_date (YYYY-MM-DD) or connected to such nodes
             end_date: Filter to include nodes with date <= end_date (YYYY-MM-DD) or connected to such nodes
 
@@ -71,39 +83,46 @@ class Neo4jService:
             Dict with 'nodes' and 'links' arrays
         """
         with self._driver.session() as session:
+            # Build case_id filter
+            case_filter = ""
+            params = {}
+            if case_id:
+                case_filter = "n.case_id = $case_id AND "
+                params["case_id"] = case_id
+
             # Build date filter query
             if start_date or end_date:
                 # Find nodes in date range and all nodes connected to them
                 date_conditions = []
-                params = {}
-                
+
                 if start_date:
                     date_conditions.append("n.date >= $start_date")
                     params["start_date"] = start_date
                 if end_date:
                     date_conditions.append("n.date <= $end_date")
                     params["end_date"] = end_date
-                
+
                 date_filter = " AND " + " AND ".join(date_conditions)
-                
+
                 # Get nodes in date range and all nodes connected to them (directly or indirectly)
                 query = f"""
                     // Find nodes with dates in range
                     MATCH (n)
-                    WHERE n.date IS NOT NULL
+                    WHERE {case_filter}n.date IS NOT NULL
                     {date_filter}
-                    
+
                     // Collect all nodes in range and their connections (up to 2 hops)
                     WITH collect(DISTINCT n) AS nodes_in_range
                     UNWIND nodes_in_range AS start_node
-                    
+
                     // Find all nodes connected to nodes in range (up to 2 hops)
                     MATCH path = (start_node)-[*0..2]-(connected)
+                    {"WHERE connected.case_id = $case_id" if case_id else ""}
                     WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
                     UNWIND all_nodes AS node
-                    
+
                     WITH DISTINCT node
-                    RETURN 
+                    RETURN
                         id(node) AS neo4j_id,
                         node.id AS id,
                         node.key AS key,
@@ -114,20 +133,34 @@ class Neo4jService:
                         properties(node) AS properties
                 """
             else:
-                # No date filter - get all nodes
-                query = """
-                    MATCH (n)
-                    RETURN 
-                        id(n) AS neo4j_id,
-                        n.id AS id,
-                        n.key AS key,
-                        n.name AS name,
-                        labels(n)[0] AS type,
-                        n.summary AS summary,
-                        n.notes AS notes,
-                        properties(n) AS properties
-                """
-                params = {}
+                # No date filter - get all nodes (filtered by case_id if provided)
+                if case_id:
+                    query = """
+                        MATCH (n)
+                        WHERE n.case_id = $case_id
+                        RETURN
+                            id(n) AS neo4j_id,
+                            n.id AS id,
+                            n.key AS key,
+                            n.name AS name,
+                            labels(n)[0] AS type,
+                            n.summary AS summary,
+                            n.notes AS notes,
+                            properties(n) AS properties
+                    """
+                else:
+                    query = """
+                        MATCH (n)
+                        RETURN
+                            id(n) AS neo4j_id,
+                            n.id AS id,
+                            n.key AS key,
+                            n.name AS name,
+                            labels(n)[0] AS type,
+                            n.summary AS summary,
+                            n.notes AS notes,
+                            properties(n) AS properties
+                    """
             
             nodes_result = session.run(query, **params)
             nodes = []
@@ -156,16 +189,29 @@ class Neo4jService:
             if node_keys and len(node_keys) > 0:
                 # Build parameter list for IN clause
                 keys_list = list(node_keys)
-                rels_query = """
-                    MATCH (a)-[r]->(b)
-                    WHERE a.key IN $node_keys AND b.key IN $node_keys
-                    RETURN 
-                        a.key AS source,
-                        b.key AS target,
-                        type(r) AS type,
-                        properties(r) AS properties
-                """
-                rels_result = session.run(rels_query, node_keys=keys_list)
+                if case_id:
+                    rels_query = """
+                        MATCH (a)-[r]->(b)
+                        WHERE a.key IN $node_keys AND b.key IN $node_keys
+                          AND r.case_id = $case_id
+                        RETURN
+                            a.key AS source,
+                            b.key AS target,
+                            type(r) AS type,
+                            properties(r) AS properties
+                    """
+                    rels_result = session.run(rels_query, node_keys=keys_list, case_id=case_id)
+                else:
+                    rels_query = """
+                        MATCH (a)-[r]->(b)
+                        WHERE a.key IN $node_keys AND b.key IN $node_keys
+                        RETURN
+                            a.key AS source,
+                            b.key AS target,
+                            type(r) AS type,
+                            properties(r) AS properties
+                    """
+                    rels_result = session.run(rels_query, node_keys=keys_list)
             else:
                 # No nodes, so no relationships
                 rels_result = []
@@ -182,26 +228,34 @@ class Neo4jService:
 
         return {"nodes": nodes, "links": links}
 
-    def get_node_with_neighbours(self, key: str, depth: int = 1) -> Dict[str, List]:
+    def get_node_with_neighbours(self, key: str, depth: int = 1, case_id: Optional[str] = None) -> Dict[str, List]:
         """
         Get a node and its neighbours up to specified depth.
 
         Args:
             key: The node key
             depth: How many hops to traverse (default 1)
+            case_id: Filter to only include nodes/relationships belonging to this case
 
         Returns:
             Dict with 'nodes' and 'links' arrays
         """
         with self._driver.session() as session:
+            # Build case filter for neighbours
+            case_filter = "AND neighbour.case_id = $case_id" if case_id else ""
+            params = {"key": key}
+            if case_id:
+                params["case_id"] = case_id
+
             # Get the central node and neighbours
             result = session.run(
                 f"""
                 MATCH path = (center {{key: $key}})-[*1..{depth}]-(neighbour)
+                WHERE 1=1 {case_filter}
                 WITH center, neighbour, relationships(path) AS rels
                 UNWIND rels AS r
                 WITH center, neighbour, collect(DISTINCT r) AS relationships
-                RETURN 
+                RETURN
                     collect(DISTINCT {{
                         neo4j_id: id(center),
                         id: center.id,
@@ -222,7 +276,7 @@ class Neo4jService:
                         properties: properties(neighbour)
                     }}) AS nodes
                 """,
-                key=key,
+                **params,
             )
 
             # Get nodes
@@ -237,18 +291,34 @@ class Neo4jService:
 
             # Get relationships between these nodes
             if seen_keys:
-                rels_result = session.run(
-                    """
-                    MATCH (a)-[r]->(b)
-                    WHERE a.key IN $keys AND b.key IN $keys
-                    RETURN 
-                        a.key AS source,
-                        b.key AS target,
-                        type(r) AS type,
-                        properties(r) AS properties
-                    """,
-                    keys=list(seen_keys),
-                )
+                if case_id:
+                    rels_result = session.run(
+                        """
+                        MATCH (a)-[r]->(b)
+                        WHERE a.key IN $keys AND b.key IN $keys
+                          AND r.case_id = $case_id
+                        RETURN
+                            a.key AS source,
+                            b.key AS target,
+                            type(r) AS type,
+                            properties(r) AS properties
+                        """,
+                        keys=list(seen_keys),
+                        case_id=case_id,
+                    )
+                else:
+                    rels_result = session.run(
+                        """
+                        MATCH (a)-[r]->(b)
+                        WHERE a.key IN $keys AND b.key IN $keys
+                        RETURN
+                            a.key AS source,
+                            b.key AS target,
+                            type(r) AS type,
+                            properties(r) AS properties
+                        """,
+                        keys=list(seen_keys),
+                    )
                 links = [
                     {
                         "source": r["source"],
@@ -263,13 +333,14 @@ class Neo4jService:
 
         return {"nodes": nodes, "links": links}
 
-    def expand_nodes(self, node_keys: List[str], depth: int = 1) -> Dict[str, List]:
+    def expand_nodes(self, node_keys: List[str], depth: int = 1, case_id: Optional[str] = None) -> Dict[str, List]:
         """
         Expand multiple nodes by N hops and return all nodes and relationships found.
 
         Args:
             node_keys: List of node keys to expand from
             depth: How many hops to traverse (default 1)
+            case_id: Filter to only include nodes/relationships belonging to this case
 
         Returns:
             Dict with 'nodes' and 'links' arrays containing all expanded nodes and relationships
@@ -281,15 +352,22 @@ class Neo4jService:
             # Get all nodes reachable within depth hops from any of the starting nodes
             # Use a UNION approach to get all paths from all starting nodes
             all_node_keys = set(node_keys)
-            
+
+            # Build case filter for neighbours
+            case_filter = "AND neighbour.case_id = $case_id" if case_id else ""
+
             # For each starting node, get all nodes within depth hops
             for start_key in node_keys:
+                params = {"start_key": start_key}
+                if case_id:
+                    params["case_id"] = case_id
                 result = session.run(
                     f"""
                     MATCH path = (start {{key: $start_key}})-[*1..{depth}]-(neighbour)
+                    WHERE 1=1 {case_filter}
                     RETURN DISTINCT neighbour.key AS key
                     """,
-                    start_key=start_key,
+                    **params,
                 )
                 for record in result:
                     if record["key"]:
@@ -299,20 +377,36 @@ class Neo4jService:
             if not all_node_keys:
                 return {"nodes": [], "links": []}
 
-            nodes_query = """
-                MATCH (n)
-                WHERE n.key IN $keys
-                RETURN 
-                    id(n) AS neo4j_id,
-                    n.id AS id,
-                    n.key AS key,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes,
-                    properties(n) AS properties
-            """
-            nodes_result = session.run(nodes_query, keys=list(all_node_keys))
+            if case_id:
+                nodes_query = """
+                    MATCH (n)
+                    WHERE n.key IN $keys AND n.case_id = $case_id
+                    RETURN
+                        id(n) AS neo4j_id,
+                        n.id AS id,
+                        n.key AS key,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.summary AS summary,
+                        n.notes AS notes,
+                        properties(n) AS properties
+                """
+                nodes_result = session.run(nodes_query, keys=list(all_node_keys), case_id=case_id)
+            else:
+                nodes_query = """
+                    MATCH (n)
+                    WHERE n.key IN $keys
+                    RETURN
+                        id(n) AS neo4j_id,
+                        n.id AS id,
+                        n.key AS key,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.summary AS summary,
+                        n.notes AS notes,
+                        properties(n) AS properties
+                """
+                nodes_result = session.run(nodes_query, keys=list(all_node_keys))
             nodes = []
             for record in nodes_result:
                 nodes.append({
@@ -326,16 +420,29 @@ class Neo4jService:
                 })
 
             # Get all relationships between these nodes
-            rels_query = """
-                MATCH (a)-[r]->(b)
-                WHERE a.key IN $keys AND b.key IN $keys
-                RETURN 
-                    a.key AS source,
-                    b.key AS target,
-                    type(r) AS type,
-                    properties(r) AS properties
-            """
-            rels_result = session.run(rels_query, keys=list(all_node_keys))
+            if case_id:
+                rels_query = """
+                    MATCH (a)-[r]->(b)
+                    WHERE a.key IN $keys AND b.key IN $keys
+                      AND r.case_id = $case_id
+                    RETURN
+                        a.key AS source,
+                        b.key AS target,
+                        type(r) AS type,
+                        properties(r) AS properties
+                """
+                rels_result = session.run(rels_query, keys=list(all_node_keys), case_id=case_id)
+            else:
+                rels_query = """
+                    MATCH (a)-[r]->(b)
+                    WHERE a.key IN $keys AND b.key IN $keys
+                    RETURN
+                        a.key AS source,
+                        b.key AS target,
+                        type(r) AS type,
+                        properties(r) AS properties
+                """
+                rels_result = session.run(rels_query, keys=list(all_node_keys))
             links = [
                 {
                     "source": r["source"],
@@ -348,22 +455,30 @@ class Neo4jService:
 
         return {"nodes": nodes, "links": links}
 
-    def get_node_details(self, key: str) -> Optional[Dict]:
+    def get_node_details(self, key: str, case_id: Optional[str] = None) -> Optional[Dict]:
         """
         Get detailed information about a single node.
 
         Args:
             key: The node key
+            case_id: Filter to only include nodes/relationships belonging to this case
 
         Returns:
             Node details dict or None, including parsed verified_facts and ai_insights
         """
         with self._driver.session() as session:
+            # Build case filter for connected nodes
+            case_filter = "AND connected.case_id = $case_id" if case_id else ""
+            params = {"key": key}
+            if case_id:
+                params["case_id"] = case_id
+
             result = session.run(
-                """
-                MATCH (n {key: $key})
+                f"""
+                MATCH (n {{key: $key}})
                 OPTIONAL MATCH (n)-[r]-(connected)
-                RETURN 
+                WHERE 1=1 {case_filter}
+                RETURN
                     n.id AS id,
                     n.key AS key,
                     n.name AS name,
@@ -373,22 +488,22 @@ class Neo4jService:
                     n.verified_facts AS verified_facts,
                     n.ai_insights AS ai_insights,
                     properties(n) AS properties,
-                    collect(DISTINCT {
+                    collect(DISTINCT {{
                         key: connected.key,
                         name: connected.name,
                         type: labels(connected)[0],
                         relationship: type(r),
                         direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
-                    }) AS connections
+                    }}) AS connections
                 """,
-                key=key,
+                **params,
             )
             record = result.single()
             if record:
                 # Parse JSON fields for verified_facts and ai_insights
                 verified_facts = parse_json_field(record["verified_facts"])
                 ai_insights = parse_json_field(record["ai_insights"])
-                
+
                 return {
                     "id": record["id"],
                     "key": record["key"],
@@ -407,13 +522,14 @@ class Neo4jService:
     # Search
     # -------------------------------------------------------------------------
 
-    def search_nodes(self, query: str, limit: int = 20) -> List[Dict]:
+    def search_nodes(self, query: str, limit: int = 20, case_id: Optional[str] = None) -> List[Dict]:
         """
         Search nodes by name, key, summary, or notes.
 
         Args:
             query: Search string
             limit: Max results
+            case_id: Filter to only include nodes belonging to this case
 
         Returns:
             List of matching nodes
@@ -422,8 +538,13 @@ class Neo4jService:
             # Use a more robust search that handles null values and text normalization
             # Normalize the search term to lowercase for case-insensitive matching
             search_lower = query.lower().strip()
+            case_filter = "AND n.case_id = $case_id" if case_id else ""
+            params = {"search_lower": search_lower, "limit": limit}
+            if case_id:
+                params["case_id"] = case_id
+
             result = session.run(
-                """
+                f"""
                 MATCH (n)
                 WHERE (
                     (n.name IS NOT NULL AND toLower(n.name) CONTAINS $search_lower)
@@ -431,7 +552,8 @@ class Neo4jService:
                     OR (n.summary IS NOT NULL AND toLower(n.summary) CONTAINS $search_lower)
                     OR (n.notes IS NOT NULL AND size(n.notes) > 0 AND toLower(n.notes) CONTAINS $search_lower)
                 )
-                RETURN 
+                {case_filter}
+                RETURN
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
@@ -439,8 +561,7 @@ class Neo4jService:
                     n.notes AS notes
                 LIMIT $limit
                 """,
-                search_lower=search_lower,
-                limit=limit,
+                **params,
             )
             return [dict(r) for r in result]
 
@@ -448,48 +569,91 @@ class Neo4jService:
     # Context for AI
     # -------------------------------------------------------------------------
 
-    def get_graph_summary(self) -> Dict:
+    def get_graph_summary(self, case_id: Optional[str] = None) -> Dict:
         """
         Get a summary of the entire graph for AI context.
+
+        Args:
+            case_id: Filter to only include nodes/relationships belonging to this case
 
         Returns:
             Dict with entity counts, types, and key entities
         """
         with self._driver.session() as session:
+            params = {"case_id": case_id} if case_id else {}
+
             # Count by type
-            type_counts = session.run(
-                """
-                MATCH (n)
-                RETURN labels(n)[0] AS type, count(*) AS count
-                ORDER BY count DESC
-                """
-            )
+            if case_id:
+                type_counts = session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.case_id = $case_id
+                    RETURN labels(n)[0] AS type, count(*) AS count
+                    ORDER BY count DESC
+                    """,
+                    **params,
+                )
+            else:
+                type_counts = session.run(
+                    """
+                    MATCH (n)
+                    RETURN labels(n)[0] AS type, count(*) AS count
+                    ORDER BY count DESC
+                    """
+                )
             types = {r["type"]: r["count"] for r in type_counts}
 
             # Get all entities with summaries or notes (for AI context)
-            entities_result = session.run(
-                """
-                MATCH (n)
-                WHERE n.summary IS NOT NULL OR n.notes IS NOT NULL
-                RETURN 
-                    n.key AS key,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes
-                ORDER BY n.name
-                """
-            )
+            if case_id:
+                entities_result = session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.case_id = $case_id AND (n.summary IS NOT NULL OR n.notes IS NOT NULL)
+                    RETURN
+                        n.key AS key,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.summary AS summary,
+                        n.notes AS notes
+                    ORDER BY n.name
+                    """,
+                    **params,
+                )
+            else:
+                entities_result = session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.summary IS NOT NULL OR n.notes IS NOT NULL
+                    RETURN
+                        n.key AS key,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.summary AS summary,
+                        n.notes AS notes
+                    ORDER BY n.name
+                    """
+                )
             entities = [dict(r) for r in entities_result]
 
             # Get relationship summary
-            rel_counts = session.run(
-                """
-                MATCH ()-[r]->()
-                RETURN type(r) AS type, count(*) AS count
-                ORDER BY count DESC
-                """
-            )
+            if case_id:
+                rel_counts = session.run(
+                    """
+                    MATCH ()-[r]->()
+                    WHERE r.case_id = $case_id
+                    RETURN type(r) AS type, count(*) AS count
+                    ORDER BY count DESC
+                    """,
+                    **params,
+                )
+            else:
+                rel_counts = session.run(
+                    """
+                    MATCH ()-[r]->()
+                    RETURN type(r) AS type, count(*) AS count
+                    ORDER BY count DESC
+                    """
+                )
             relationships = {r["type"]: r["count"] for r in rel_counts}
 
         return {
@@ -643,32 +807,42 @@ class Neo4jService:
     def get_entities_with_locations(
         self,
         entity_types: Optional[List[str]] = None,
+        case_id: Optional[str] = None,
     ) -> List[Dict]:
         """
         Get all entities that have geocoded locations.
-        
+
         Args:
             entity_types: Optional filter for specific entity types
-            
+            case_id: Filter to only include nodes belonging to this case
+
         Returns:
             List of entities with lat/lng coordinates
         """
         with self._driver.session() as session:
             type_filter = ""
+            case_filter = ""
+            connected_case_filter = ""
             params = {}
-            
+
             if entity_types:
                 type_filter = "AND labels(n)[0] IN $types"
                 params["types"] = entity_types
-            
+
+            if case_id:
+                case_filter = "AND n.case_id = $case_id"
+                connected_case_filter = "AND connected.case_id = $case_id"
+                params["case_id"] = case_id
+
             query = f"""
                 MATCH (n)
-                WHERE n.latitude IS NOT NULL 
+                WHERE n.latitude IS NOT NULL
                   AND n.longitude IS NOT NULL
                   AND NOT n:Document
                   {type_filter}
+                  {case_filter}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE NOT connected:Document
+                WHERE NOT connected:Document {connected_case_filter}
                 WITH n, collect(DISTINCT {{
                     key: connected.key,
                     name: connected.name,
@@ -676,7 +850,7 @@ class Neo4jService:
                     relationship: type(r),
                     direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
                 }}) AS connections
-                RETURN 
+                RETURN
                     n.id AS id,
                     n.key AS key,
                     n.name AS name,
@@ -690,9 +864,9 @@ class Neo4jService:
                     n.date AS date,
                     connections
             """
-            
+
             result = session.run(query, **params)
-            
+
             entities = []
             for record in result:
                 entity = {
@@ -710,7 +884,7 @@ class Neo4jService:
                     "connections": [c for c in record["connections"] if c["key"]],
                 }
                 entities.append(entity)
-            
+
             return entities
 
     def get_timeline_events(
@@ -718,16 +892,18 @@ class Neo4jService:
         event_types: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        case_id: Optional[str] = None,
     ) -> List[Dict]:
         """
         Get all nodes that have dates, sorted chronologically.
-        
+
         Args:
             event_types: Filter by specific types (e.g., ['Transaction', 'Payment']).
                         If None, returns ALL entities with dates (not just event types).
             start_date: Filter events on or after this date (YYYY-MM-DD)
             end_date: Filter events on or before this date (YYYY-MM-DD)
-        
+            case_id: Filter to only include nodes belonging to this case
+
         Returns:
             List of nodes with their connected entities, sorted by date
         """
@@ -735,29 +911,38 @@ class Neo4jService:
             # Build date filter conditions
             date_conditions = []
             params = {}
-            
+
             if start_date:
                 date_conditions.append("n.date >= $start_date")
                 params["start_date"] = start_date
             if end_date:
                 date_conditions.append("n.date <= $end_date")
                 params["end_date"] = end_date
-            
+
             date_filter = " AND " + " AND ".join(date_conditions) if date_conditions else ""
-            
+
             # Build type filter condition
             type_filter = ""
             if event_types:
                 type_filter = "AND labels(n)[0] IN $types"
                 params["types"] = event_types
-            
+
+            # Build case filter condition
+            case_filter = ""
+            connected_case_filter = ""
+            if case_id:
+                case_filter = "AND n.case_id = $case_id"
+                connected_case_filter = "AND connected.case_id = $case_id"
+                params["case_id"] = case_id
+
             query = f"""
                 MATCH (n)
                 WHERE n.date IS NOT NULL
                 {type_filter}
                 {date_filter}
+                {case_filter}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE NOT connected:Document AND NOT connected:Case
+                WHERE NOT connected:Document AND NOT connected:Case {connected_case_filter}
                 WITH n, collect(DISTINCT {{
                     key: connected.key,
                     name: connected.name,
@@ -765,7 +950,7 @@ class Neo4jService:
                     relationship: type(r),
                     direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
                 }}) AS connections
-                RETURN 
+                RETURN
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
@@ -777,9 +962,9 @@ class Neo4jService:
                     connections
                 ORDER BY n.date ASC, n.time ASC
             """
-            
+
             result = session.run(query, **params)
-            
+
             events = []
             for record in result:
                 event = {
@@ -794,7 +979,7 @@ class Neo4jService:
                     "connections": [c for c in record["connections"] if c["key"]],
                 }
                 events.append(event)
-            
+
             return events
             
     def get_shortest_paths_subgraph(self, node_keys: List[str], max_depth: int = 10) -> Dict[str, List]:
@@ -2051,6 +2236,51 @@ class Neo4jService:
                 },
                 "relationships_updated": relationships_updated,
                 "source_deleted": True,
+            }
+
+    # -------------------------------------------------------------------------
+    # Case Management
+    # -------------------------------------------------------------------------
+
+    def delete_case_data(self, case_id: str) -> Dict[str, Any]:
+        """
+        Delete all nodes and relationships belonging to a specific case.
+
+        Args:
+            case_id: The case ID whose data should be deleted
+
+        Returns:
+            Dict with counts of deleted nodes and relationships
+        """
+        with self._driver.session() as session:
+            # Count nodes and relationships before deletion
+            node_count_result = session.run(
+                "MATCH (n {case_id: $case_id}) RETURN count(n) AS count",
+                case_id=case_id,
+            )
+            node_count = node_count_result.single()["count"]
+
+            rel_count_result = session.run(
+                "MATCH ()-[r {case_id: $case_id}]-() RETURN count(r) AS count",
+                case_id=case_id,
+            )
+            rel_count = rel_count_result.single()["count"]
+
+            # Delete relationships first (with case_id), then nodes
+            session.run(
+                "MATCH ()-[r {case_id: $case_id}]-() DELETE r",
+                case_id=case_id,
+            )
+            session.run(
+                "MATCH (n {case_id: $case_id}) DELETE n",
+                case_id=case_id,
+            )
+
+            return {
+                "success": True,
+                "case_id": case_id,
+                "nodes_deleted": node_count,
+                "relationships_deleted": rel_count,
             }
 
 

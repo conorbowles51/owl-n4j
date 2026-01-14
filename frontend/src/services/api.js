@@ -84,59 +84,93 @@ export const graphAPI = {
    * @param {Object} options - Filter options
    * @param {string} options.start_date - Filter start date (YYYY-MM-DD)
    * @param {string} options.end_date - Filter end date (YYYY-MM-DD)
+   * @param {string} options.case_id - Filter by case ID (required for case-specific graphs)
    */
-  getGraph: ({ start_date, end_date } = {}) => {
+  getGraph: ({ start_date, end_date, case_id } = {}) => {
     const params = new URLSearchParams();
+    if (case_id) params.append('case_id', case_id);
     if (start_date) params.append('start_date', start_date);
     if (end_date) params.append('end_date', end_date);
-    
+
     const queryString = params.toString();
     return fetchAPI(`/graph${queryString ? `?${queryString}` : ''}`);
   },
 
   /**
    * Get details for a specific node
+   * @param {string} key - Node key
+   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  getNodeDetails: (key) => fetchAPI(`/graph/node/${encodeURIComponent(key)}`),
+  getNodeDetails: (key, caseId = null) => {
+    const params = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
+    return fetchAPI(`/graph/node/${encodeURIComponent(key)}${params}`);
+  },
 
   /**
    * Get a node and its neighbours
+   * @param {string} key - Node key
+   * @param {number} [depth=1] - Depth of neighbourhood
+   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  getNodeNeighbours: (key, depth = 1) => 
-    fetchAPI(`/graph/node/${encodeURIComponent(key)}/neighbours?depth=${depth}`),
+  getNodeNeighbours: (key, depth = 1, caseId = null) => {
+    const params = new URLSearchParams();
+    params.append('depth', depth);
+    if (caseId) params.append('case_id', caseId);
+    return fetchAPI(`/graph/node/${encodeURIComponent(key)}/neighbours?${params.toString()}`);
+  },
 
   /**
    * Search nodes
+   * @param {string} query - Search query
+   * @param {number} [limit=20] - Max results
+   * @param {string} [caseId] - Optional case ID for case-specific search
    */
-  search: (query, limit = 20) => 
-    fetchAPI(`/graph/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+  search: (query, limit = 20, caseId = null) => {
+    const params = new URLSearchParams();
+    params.append('q', query);
+    params.append('limit', limit);
+    if (caseId) params.append('case_id', caseId);
+    return fetchAPI(`/graph/search?${params.toString()}`);
+  },
 
   /**
    * Get graph summary
+   * @param {string} [caseId] - Optional case ID for case-specific summary
    */
-  getSummary: () => fetchAPI('/graph/summary'),
+  getSummary: (caseId = null) => {
+    const params = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
+    return fetchAPI(`/graph/summary${params}`);
+  },
 
   /**
    * Get subgraph with shortest paths between selected nodes
+   * @param {string[]} nodeKeys - Array of node keys
+   * @param {number} [maxDepth=10] - Maximum path depth
+   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  getShortestPaths: (nodeKeys, maxDepth = 10) =>
+  getShortestPaths: (nodeKeys, maxDepth = 10, caseId = null) =>
     fetchAPI('/graph/shortest-paths', {
       method: 'POST',
       body: JSON.stringify({
         node_keys: nodeKeys,
         max_depth: maxDepth,
+        case_id: caseId,
       }),
     }),
 
   /**
    * Expand multiple nodes by N hops
+   * @param {string[]} nodeKeys - Array of node keys
+   * @param {number} [depth=1] - Depth to expand
+   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  expandNodes: (nodeKeys, depth = 1) =>
+  expandNodes: (nodeKeys, depth = 1, caseId = null) =>
     fetchAPI('/graph/expand-nodes', {
       method: 'POST',
       body: JSON.stringify({
         node_keys: nodeKeys,
         depth: depth,
+        case_id: caseId,
       }),
     }),
 
@@ -214,64 +248,25 @@ export const graphAPI = {
       }),
     }),
 
-  /**
-   * Load a case by executing Cypher queries
-   */
-  loadCase: (cypherQueries) =>
-    fetchAPI('/graph/load-case', {
-      method: 'POST',
-      body: JSON.stringify({
-        cypher_queries: cypherQueries,
-      }),
-    }),
-
-  /**
-   * Execute a single Cypher query (for case loading with progress)
-   */
-  executeSingleQuery: (query) =>
-    fetchAPI('/graph/execute-single-query', {
-      method: 'POST',
-      body: JSON.stringify({
-        query: query,
-      }),
-    }),
-
-  /**
-   * Execute multiple Cypher queries in batches (faster for large cases)
-   * @param {string[]} queries - Array of Cypher query strings
-   * @param {number} batchSize - Number of queries per batch (default: 50)
-   */
-  executeBatchQueries: (queries, batchSize = 50) =>
-    fetchAPI('/graph/execute-batch-queries', {
-      method: 'POST',
-      body: JSON.stringify({
-        queries: queries,
-        batch_size: batchSize,
-      }),
-    }),
-
-  /**
-   * Clear the current graph, saving its Cypher as the "last graph"
-   */
-  clearGraph: () =>
-    fetchAPI('/graph/clear-graph', {
-      method: 'POST',
-    }),
-
-  /**
-   * Get the last-cleared graph's Cypher (if any)
-   */
-  getLastGraph: () => fetchAPI('/graph/last-graph'),
+  // NOTE: loadCase, executeSingleQuery, executeBatchQueries, clearGraph, getLastGraph
+  // have been removed as they're no longer needed with case_id-based graph isolation.
+  // Data persists in Neo4j and is filtered by case_id instead of being cleared and reloaded.
 
   /**
    * Get all entity types in the graph with their counts
+   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  getEntityTypes: () => fetchAPI('/graph/entity-types'),
+  getEntityTypes: (caseId = null) => {
+    const params = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
+    return fetchAPI(`/graph/entity-types${params}`);
+  },
 
   /**
    * Create a new node in the graph
+   * @param {Object} nodeData - Node data including name, type, description, summary
+   * @param {string} caseId - REQUIRED: Case ID to associate with the node
    */
-  createNode: (nodeData) =>
+  createNode: (nodeData, caseId) =>
     fetchAPI('/graph/create-node', {
       method: 'POST',
       body: JSON.stringify({
@@ -279,16 +274,19 @@ export const graphAPI = {
         type: nodeData.type,
         description: nodeData.description,
         summary: nodeData.summary,
+        case_id: caseId,
       }),
     }),
 
   /**
    * Create relationships between nodes
+   * @param {Array} relationships - Array of relationship data
+   * @param {string} caseId - REQUIRED: Case ID to associate with the relationships
    */
-  createRelationships: (relationships) =>
+  createRelationships: (relationships, caseId) =>
     fetchAPI('/graph/relationships', {
       method: 'POST',
-      body: JSON.stringify({ relationships }),
+      body: JSON.stringify({ relationships, case_id: caseId }),
     }),
 
   /**

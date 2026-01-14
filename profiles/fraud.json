@@ -14,6 +14,6 @@
   },
   "llm_config": {
     "provider": "openai",
-    "model_id": "gpt-5"
+    "model_id": "gpt-4-turbo"
   }
 }

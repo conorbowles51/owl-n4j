@@ -39,6 +39,7 @@ def find_data_dir() -> Path:
 
 def ingest_file(
     path: Path,
+    case_id: str,
     log_callback: Optional[Callable[[str], None]] = None,
     profile_name: Optional[str] = None,
 ) -> dict:
@@ -47,19 +48,27 @@ def ingest_file(
 
     Args:
         path: Path to the file
+        case_id: REQUIRED - The case ID to associate with all created entities/relationships
         log_callback: Optional callback function(message: str) to log progress messages
         profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
+
+    Raises:
+        ValueError: If case_id is not provided
     """
+    if not case_id:
+        raise ValueError("case_id is required for file ingestion")
+
     log_progress(f"Using LLM profile: {profile_name}", log_callback)
+    log_progress(f"Case ID: {case_id}", log_callback)
     suffix = path.suffix.lower()
 
     if suffix == ".txt":
-        return ingest_text_file(path, log_callback=log_callback, profile_name=profile_name)
+        return ingest_text_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix == ".pdf":
-        return ingest_pdf_file(path, log_callback=log_callback, profile_name=profile_name)
+        return ingest_pdf_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     else:
         log_warning(f"Unsupported file type: {suffix}", log_callback)
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}

@@ -24,6 +24,7 @@ class ExpandNodesRequest(BaseModel):
     """Request model for expanding nodes endpoint."""
     node_keys: List[str]
     depth: int = 1
+    case_id: Optional[str] = None
 
 
 class PageRankRequest(BaseModel):
@@ -92,6 +93,7 @@ class CreateNodeRequest(BaseModel):
     """Request model for creating a node."""
     name: str
     type: str
+    case_id: str  # REQUIRED: Associate node with case
     description: Optional[str] = None
     summary: Optional[str] = None
 
@@ -143,6 +145,7 @@ class RelationshipRequest(BaseModel):
 class CreateRelationshipsRequest(BaseModel):
     """Request model for creating multiple relationships."""
     relationships: List[RelationshipRequest]
+    case_id: str  # REQUIRED: Associate relationships with case
 
 
 class CreateRelationshipsResponse(BaseModel):
@@ -180,6 +183,7 @@ async def get_entity_types():
 
 @router.get("")
 async def get_graph(
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
     user: dict = Depends(get_current_user),
@@ -187,11 +191,11 @@ async def get_graph(
     """
     Get the full graph for visualization.
 
-    Returns all nodes and relationships. Optionally filter by date range.
+    Returns all nodes and relationships. Optionally filter by case_id and date range.
     Nodes included if they have a date in range or are connected to nodes with dates in range.
     """
     try:
-        result = neo4j_service.get_full_graph(start_date=start_date, end_date=end_date)
+        result = neo4j_service.get_full_graph(case_id=case_id, start_date=start_date, end_date=end_date)
         
         # Log the filter operation if dates are provided
         if start_date or end_date:
@@ -230,15 +234,19 @@ async def get_graph(
 
 
 @router.get("/node/{key}")
-async def get_node_details(key: str):
+async def get_node_details(
+    key: str,
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+):
     """
     Get detailed information about a specific node.
 
     Args:
         key: The node's unique key
+        case_id: Filter to case-specific connections
     """
     try:
-        node = neo4j_service.get_node_details(key)
+        node = neo4j_service.get_node_details(key, case_id=case_id)
         if not node:
             raise HTTPException(status_code=404, detail=f"Node not found: {key}")
         return node
@@ -252,6 +260,7 @@ async def get_node_details(key: str):
 async def get_node_neighbours(
     key: str,
     depth: int = Query(default=1, ge=1, le=3),
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
 ):
     """
     Get a node and its neighbours for expansion.
@@ -259,9 +268,10 @@ async def get_node_neighbours(
     Args:
         key: The node's unique key
         depth: How many hops to traverse (1-3)
+        case_id: Filter to case-specific neighbours
     """
     try:
-        return neo4j_service.get_node_with_neighbours(key, depth)
+        return neo4j_service.get_node_with_neighbours(key, depth, case_id=case_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -275,16 +285,16 @@ async def expand_nodes(
     Expand multiple nodes by N hops.
 
     Args:
-        request: Request with node_keys list and depth (number of hops)
+        request: Request with node_keys list, depth (number of hops), and optional case_id
     """
     if not request.node_keys:
         raise HTTPException(status_code=400, detail="No node keys provided")
-    
+
     if request.depth < 1 or request.depth > 5:
         raise HTTPException(status_code=400, detail="Depth must be between 1 and 5")
 
     try:
-        result = neo4j_service.expand_nodes(request.node_keys, request.depth)
+        result = neo4j_service.expand_nodes(request.node_keys, request.depth, case_id=request.case_id)
         
         # Log the expansion operation
         system_log_service.log(
@@ -324,6 +334,7 @@ async def expand_nodes(
 async def search_nodes(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -332,10 +343,11 @@ async def search_nodes(
     Args:
         q: Search query
         limit: Maximum results to return
+        case_id: Filter to case-specific nodes
         user: Current authenticated user
     """
     try:
-        results = neo4j_service.search_nodes(q, limit)
+        results = neo4j_service.search_nodes(q, limit, case_id=case_id)
         
         # Log the search operation
         system_log_service.log(
@@ -371,12 +383,14 @@ async def search_nodes(
 
 
 @router.get("/summary")
-async def get_graph_summary():
+async def get_graph_summary(
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+):
     """
     Get a summary of the graph (counts, types).
     """
     try:
-        return neo4j_service.get_graph_summary()
+        return neo4j_service.get_graph_summary(case_id=case_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -384,17 +398,18 @@ async def get_graph_summary():
 @router.get("/locations")
 async def get_entities_with_locations(
     types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
 ):
     """
     Get all entities that have geocoded locations for map display.
-    
+
     Returns entities with latitude, longitude, and connection information.
     """
     try:
         entity_types = None
         if types:
             entity_types = [t.strip() for t in types.split(",")]
-        return neo4j_service.get_entities_with_locations(entity_types)
+        return neo4j_service.get_entities_with_locations(entity_types, case_id=case_id)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -773,27 +788,30 @@ async def get_last_graph():
 async def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_user)):
     """
     Create a new node in the graph with description and summary.
-    
+
     Generates Cypher query and executes it to add the node to Neo4j.
-    
+
     Args:
-        request: Node creation request with name, type, description, and summary
+        request: Node creation request with name, type, case_id (required), description, and summary
     """
     if not request.name or not request.name.strip():
         raise HTTPException(status_code=400, detail="Node name is required")
-    
+
     if not request.type or not request.type.strip():
         raise HTTPException(status_code=400, detail="Node type is required")
-    
+
+    if not request.case_id or not request.case_id.strip():
+        raise HTTPException(status_code=400, detail="case_id is required")
+
     try:
         # Generate a unique key from the name
         import re
         node_key = re.sub(r'[^a-z0-9]+', '-', request.name.strip().lower()).strip('-')
-        
+
         # Ensure key is not empty
         if not node_key:
             node_key = f"node-{abs(hash(request.name)) % 1000000}"
-        
+
         # Create node data structure
         node_data = {
             "key": node_key,
@@ -803,16 +821,16 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
             "summary": request.summary.strip() if request.summary else None,
             "notes": request.description.strip() if request.description else None,
         }
-        
-        # Generate Cypher using the cypher generator
+
+        # Generate Cypher using the cypher generator (with case_id)
         from services.cypher_generator import generate_cypher_from_graph
-        
+
         graph_data = {
             "nodes": [node_data],
             "links": []
         }
-        
-        node_cypher = generate_cypher_from_graph(graph_data)
+
+        node_cypher = generate_cypher_from_graph(graph_data, case_id=request.case_id)
         
         # Execute the Cypher query to create the node
         neo4j_service.run_cypher(node_cypher, {})
@@ -864,44 +882,47 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
 async def create_relationships(request: CreateRelationshipsRequest, user: dict = Depends(get_current_user)):
     """
     Create relationships between nodes.
-    
+
     Args:
-        request: Request containing list of relationships to create
+        request: Request containing list of relationships to create and case_id
     """
     if not request.relationships or len(request.relationships) == 0:
         raise HTTPException(status_code=400, detail="At least one relationship is required")
-    
+
+    if not request.case_id or not request.case_id.strip():
+        raise HTTPException(status_code=400, detail="case_id is required")
+
     try:
         from services.cypher_generator import generate_cypher_from_graph
-        
+
         # Build links data for Cypher generation
         links_data = []
         for rel in request.relationships:
             if not rel.from_key or not rel.to_key or not rel.type:
                 continue  # Skip invalid relationships
-            
+
             link = {
                 "source": rel.from_key,
                 "target": rel.to_key,
                 "type": rel.type,
                 "properties": {}
             }
-            
+
             if rel.notes:
                 link["properties"]["notes"] = rel.notes
-            
+
             links_data.append(link)
-        
+
         if not links_data:
             raise HTTPException(status_code=400, detail="No valid relationships provided")
-        
-        # Generate Cypher for relationships
+
+        # Generate Cypher for relationships (with case_id)
         relationship_graph_data = {
             "nodes": [],  # No new nodes, just relationships
             "links": links_data
         }
-        
-        cypher = generate_cypher_from_graph(relationship_graph_data)
+
+        cypher = generate_cypher_from_graph(relationship_graph_data, case_id=request.case_id)
         
         # Execute the Cypher queries (split by double newline and execute separately)
         # This avoids issues with WITH clauses between MERGE and MATCH

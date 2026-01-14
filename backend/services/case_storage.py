@@ -106,21 +106,23 @@ class CaseStorage:
         self,
         case_id: Optional[str],
         case_name: str,
-        cypher_queries: str,
         snapshots: List[Dict],
         save_notes: str = "",
         owner: Optional[str] = None,
     ) -> Dict:
         """
         Save a new version of a case.
-        
+
+        Note: With case_id-based graph isolation, graph data persists in Neo4j
+        and is filtered by case_id. This method now only saves metadata.
+        Cypher queries are no longer stored.
+
         Args:
             case_id: Existing case ID (None to create new case)
             case_name: Name of the case
-            cypher_queries: Cypher queries to recreate the graph
             snapshots: List of full snapshot data dictionaries
             save_notes: Notes for this save
-            
+
         Returns:
             Dict with case_id, version, and timestamp
         """
@@ -194,11 +196,10 @@ class CaseStorage:
                 all_snapshots.append(snapshot_with_metadata)
         
         snapshots_with_metadata = all_snapshots
-        
-        # Create new version
+
+        # Create new version (no longer storing cypher_queries - data persists in Neo4j)
         version_data = {
             "version": next_version,
-            "cypher_queries": cypher_queries,
             "snapshots": snapshots_with_metadata,  # Store full snapshot data with case/version metadata
             "save_notes": save_notes,
             "timestamp": datetime.now().isoformat(),

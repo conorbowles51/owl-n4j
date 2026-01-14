@@ -2,6 +2,10 @@
 Cases Router
 
 Handles saving and retrieving investigation cases with versioning.
+
+Note: With case_id-based graph isolation, graph data persists in Neo4j
+and is filtered by case_id. Cases now just store metadata (name, snapshots, notes).
+Cypher queries are no longer stored since data persists in the database.
 """
 
 from datetime import datetime
@@ -10,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.case_storage import case_storage
-from services.cypher_generator import generate_cypher_from_graph
+from services.neo4j_service import neo4j_service
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from .auth import get_current_user
 
@@ -21,7 +25,6 @@ class CaseCreate(BaseModel):
     """Request model for creating/saving a case version."""
     case_id: Optional[str] = None  # None to create new case
     case_name: str
-    graph_data: dict  # {nodes: [], links: []}
     snapshots: List[dict] = []  # Full snapshot data, not just IDs
     save_notes: str = ""
 
@@ -29,7 +32,6 @@ class CaseCreate(BaseModel):
 class CaseVersionData(BaseModel):
     """Data structure for a case version."""
     version: int
-    cypher_queries: str
     snapshots: List[dict]  # Full snapshot data
     save_notes: str
     timestamp: str
@@ -56,17 +58,19 @@ class CaseResponse(BaseModel):
 
 @router.post("", response_model=dict)
 async def save_case(case: CaseCreate, user: dict = Depends(get_current_user)):
-    """Save a new version of a case."""
+    """
+    Save a new version of a case.
+
+    Note: Graph data persists in Neo4j with case_id property.
+    This endpoint just saves case metadata (name, snapshots, notes).
+    """
     try:
         username = user["username"]
-        # Generate Cypher queries from graph data
-        cypher_queries = generate_cypher_from_graph(case.graph_data)
-        
-        # Save case version
+
+        # Save case version (no longer storing Cypher - data persists in Neo4j)
         result = case_storage.save_case_version(
             case_id=case.case_id,
             case_name=case.case_name,
-            cypher_queries=cypher_queries,
             snapshots=case.snapshots,
             save_notes=case.save_notes,
             owner=username,
@@ -145,25 +149,24 @@ async def list_cases(user: dict = Depends(get_current_user)):
 async def get_case(case_id: str, user: dict = Depends(get_current_user)):
     """Get a specific case with all versions."""
     case = case_storage.get_case(case_id)
-    
+
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     # Enforce ownership
     if case.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Case not found")
-    
-    # Convert versions to CaseVersionData
+
+    # Convert versions to CaseVersionData (no longer includes cypher_queries)
     versions = [
         CaseVersionData(
             version=v.get("version", 0),
-            cypher_queries=v.get("cypher_queries", ""),
             snapshots=v.get("snapshots", []),  # Full snapshot data
             save_notes=v.get("save_notes", ""),
             timestamp=v.get("timestamp", ""),
         )
         for v in case.get("versions", [])
     ]
-    
+
     return CaseData(
         id=case["id"],
         name=case["name"],
@@ -177,22 +180,21 @@ async def get_case(case_id: str, user: dict = Depends(get_current_user)):
 async def get_case_version(case_id: str, version: int, user: dict = Depends(get_current_user)):
     """Get a specific version of a case."""
     case = case_storage.get_case(case_id)
-    
+
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
     # Enforce ownership
     if case.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Case not found")
-    
+
     versions = case.get("versions", [])
     version_data = next((v for v in versions if v.get("version") == version), None)
-    
+
     if version_data is None:
         raise HTTPException(status_code=404, detail=f"Version {version} not found")
-    
+
     return CaseVersionData(
         version=version_data.get("version", 0),
-        cypher_queries=version_data.get("cypher_queries", ""),
         snapshots=version_data.get("snapshots", []),  # Full snapshot data
         save_notes=version_data.get("save_notes", ""),
         timestamp=version_data.get("timestamp", ""),
@@ -201,13 +203,57 @@ async def get_case_version(case_id: str, version: int, user: dict = Depends(get_
 
 @router.delete("/{case_id}")
 async def delete_case(case_id: str, user: dict = Depends(get_current_user)):
-    """Delete a case."""
+    """
+    Delete a case and all its associated graph data from Neo4j.
+    """
     case = case_storage.get_case(case_id)
     if case is None or case.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Case not found")
-    
+
+    case_name = case.get("name", "Unknown")
+
+    # Delete case data from Neo4j first
+    try:
+        deletion_result = neo4j_service.delete_case_data(case_id)
+        nodes_deleted = deletion_result.get("nodes_deleted", 0)
+        relationships_deleted = deletion_result.get("relationships_deleted", 0)
+    except Exception as e:
+        # Log error but continue with case metadata deletion
+        system_log_service.log(
+            log_type=LogType.CASE_MANAGEMENT,
+            origin=LogOrigin.FRONTEND,
+            action=f"Delete Case Neo4j Data Failed: {case_name}",
+            details={"case_id": case_id, "error": str(e)},
+            user=user.get("username", "unknown"),
+            success=False,
+            error=str(e),
+        )
+        nodes_deleted = 0
+        relationships_deleted = 0
+
+    # Delete case metadata from storage
     if not case_storage.delete_case(case_id):
         raise HTTPException(status_code=404, detail="Case not found")
-    
-    return {"status": "deleted", "id": case_id}
+
+    # Log successful deletion
+    system_log_service.log(
+        log_type=LogType.CASE_MANAGEMENT,
+        origin=LogOrigin.FRONTEND,
+        action=f"Delete Case: {case_name}",
+        details={
+            "case_id": case_id,
+            "case_name": case_name,
+            "nodes_deleted": nodes_deleted,
+            "relationships_deleted": relationships_deleted,
+        },
+        user=user.get("username", "unknown"),
+        success=True,
+    )
+
+    return {
+        "status": "deleted",
+        "id": case_id,
+        "nodes_deleted": nodes_deleted,
+        "relationships_deleted": relationships_deleted,
+    }
 

@@ -442,11 +442,14 @@ export default function App() {
   }, []);
 
   // Load graph data
-  const loadGraph = useCallback(async () => {
+  const loadGraph = useCallback(async (caseIdOverride = null) => {
     setIsLoading(true);
     setError(null);
     try {
+      // Use caseIdOverride if provided, otherwise use currentCaseId
+      const caseId = caseIdOverride !== null ? caseIdOverride : currentCaseId;
       const data = await graphAPI.getGraph({
+        case_id: caseId,
         start_date: dateRange.start_date,
         end_date: dateRange.end_date,
       });
@@ -458,7 +461,7 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [dateRange, graphSearchTerm, applyGraphFilter]);
+  }, [currentCaseId, dateRange, graphSearchTerm, applyGraphFilter]);
 
   // Initial load - only reload when date range changes
   useEffect(() => {
@@ -2596,7 +2599,8 @@ export default function App() {
     }
   }, [fullGraphData, snapshots, currentCaseId]);
 
-  // Load case version
+  // Load case version - simplified with case_id-based graph isolation
+  // Graph data persists in Neo4j filtered by case_id, no more Cypher query execution
   const handleLoadCase = useCallback(async (caseData, versionData) => {
     // Check if this case/version is already loaded - if so, just switch to graph view
     if (currentCaseId === caseData.id && currentCaseVersion === versionData.version) {
@@ -2604,371 +2608,28 @@ export default function App() {
       setAppView('graph');
       return;
     }
-    
-    // Get Cypher queries for the new version
-    const newCypherQueries = versionData.cypher_queries;
-    
-    if (!newCypherQueries) {
-      alert('No Cypher queries found in this case version');
-      return;
-    }
-    
-    // Check if switching to a different case
-    const isSwitchingCase = currentCaseId !== caseData.id;
-    
-    // Check if switching to a different version (same case)
-    const isSwitchingVersion = !isSwitchingCase && currentCaseVersion !== versionData.version;
-    
-    // Quick diff: Compare with last loaded Cypher queries
-    // If Cypher queries are identical, skip graph reload and just open graph view
-    const cypherQueriesAreSame = loadedCypherQueries && 
-                                  compareCypherQueries(loadedCypherQueries, newCypherQueries);
-    
-    if (cypherQueriesAreSame && !isSwitchingCase && !isSwitchingVersion) {
-      console.log('Cypher queries identical to last loaded version - skipping graph reload, opening graph view');
-      // Skip graph reload - just update case info and switch to graph view
+
+    // Store previous case ID to check if we're switching cases
+    const previousCaseId = currentCaseId;
+    const isSwitchingCase = previousCaseId !== caseData.id;
+
+    try {
+      setIsLoading(true);
+
+      // With case_id-based isolation, just load the graph filtered by case_id
+      // No need to clear or execute Cypher queries - data persists in Neo4j
+      console.log(`Loading case ${caseData.id} (version ${versionData.version}) with case_id filter`);
+
+      // Set case info first
       setCurrentCaseId(caseData.id);
       setCurrentCaseName(caseData.name);
       setCurrentCaseVersion(versionData.version);
-      
-      // Load snapshots and chats for this version (see below)
-      // This will be handled in the common section after the if/else
-    } else if (isSwitchingCase) {
-      // ALWAYS do full reload when switching to a different case
-      console.log('Switching to different case - performing full graph reload');
-      
-      // Split queries by double newlines
-      const queries = newCypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
-      
-      if (queries.length === 0) {
-        alert('No valid Cypher queries found in this case version');
-        return;
-      }
-      
-      // Show progress dialog
-      setLoadCaseProgress(prev => ({
-        ...prev,
-        isOpen: true,
-        current: 0,
-        total: queries.length,
-        caseName: caseData.name,
-        version: versionData.version,
-      }));
-      
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      try {
-        setIsLoading(true);
-        
-        // Always clear graph when switching to different case
-        try {
-          await graphAPI.clearGraph();
-          setLoadedCypherQueries(null);
-        } catch (err) {
-          console.warn('Failed to clear existing graph before loading case:', err);
-        }
-        
-        // Execute queries with optimized batching strategy:
-        // - Under 50: one by one
-        // - 50-500: batches of 50
-        // - Over 500: batches of 200
-        const errors = [];
-        if (queries.length < 50) {
-          // Execute one at a time for small query sets
-          console.log(`Using single-query execution for ${queries.length} queries`);
-          for (let i = 0; i < queries.length; i++) {
-            try {
-              const result = await graphAPI.executeSingleQuery(queries[i]);
-              if (!result.success) {
-                errors.push(result.error || `Query ${i + 1} failed`);
-              }
-              
-              setLoadCaseProgress(prev => ({
-                ...prev,
-                current: i + 1,
-              }));
-            } catch (err) {
-              errors.push(`Query ${i + 1} failed: ${err.message}`);
-              setLoadCaseProgress(prev => ({
-                ...prev,
-                current: i + 1,
-              }));
-            }
-          }
-        } else {
-          // Use batch execution for larger query sets
-          const BATCH_SIZE = queries.length > 500 ? 200 : 50;
-          console.log(`Using batch execution for ${queries.length} queries with batch size ${BATCH_SIZE}`);
-          const numBatches = Math.ceil(queries.length / BATCH_SIZE);
-          
-          for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
-            const batchStart = batchIdx * BATCH_SIZE;
-            const batchEnd = Math.min(batchStart + BATCH_SIZE, queries.length);
-            const batch = queries.slice(batchStart, batchEnd);
-            
-            try {
-              const result = await graphAPI.executeBatchQueries(batch, BATCH_SIZE);
-              if (!result.success && result.errors) {
-                errors.push(...result.errors);
-              }
-              
-              // Update progress after each batch
-              setLoadCaseProgress(prev => ({
-                ...prev,
-                current: batchEnd,
-              }));
-            } catch (err) {
-              errors.push(`Batch ${batchIdx + 1} failed: ${err.message}`);
-              setLoadCaseProgress(prev => ({
-                ...prev,
-                current: batchEnd,
-              }));
-            }
-          }
-        }
-        
-        setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-        
-        if (errors.length > 0) {
-          console.error('Some queries failed during case load:', errors);
-          const details = errors.join('\n');
-          alert(
-            `Case loaded with ${errors.length} error(s) out of ${queries.length} queries.\n\n` +
-            (details ? `Details:\n${details}` : '')
-          );
-        }
 
-        await loadGraph();
-        setLoadedCypherQueries(newCypherQueries);
-        setCurrentCaseId(caseData.id);
-        setCurrentCaseName(caseData.name);
-        setCurrentCaseVersion(versionData.version);
-      } catch (err) {
-        console.error('Failed to load case:', err);
-        setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-        alert(`Failed to load case: ${err.message}`);
-        setIsLoading(false);
-        return;
-      } finally {
-        setIsLoading(false);
-        setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-      }
-    } else if (isSwitchingVersion) {
-      // Same case, different version - use delta/incremental updates if Cypher differs
-      console.log('Switching to different version in same case - calculating delta for incremental updates');
-      
-      // Calculate delta between old and new Cypher queries
-      const delta = calculateCypherDelta(loadedCypherQueries, newCypherQueries);
-      
-      console.log('Delta calculation:', {
-        toAdd: delta.toAdd.length,
-        toRemove: delta.toRemove.length,
-        deletes: delta.newDeletes?.length || 0,
-        isFullReload: delta.isFullReload
-      });
-      
-      // If delta suggests full reload or no changes, do full reload
-      if (delta.isFullReload || (!delta.toAdd.length && !delta.toRemove.length && !delta.newDeletes?.length)) {
-        console.log('Delta suggests full reload - performing full graph reload');
-        
-        // Split queries by double newlines
-        const queries = newCypherQueries.split('\n\n').map(q => q.trim()).filter(q => q);
-        
-        if (queries.length === 0) {
-          alert('No valid Cypher queries found in this case version');
-          return;
-        }
-        
-        // Show progress dialog
-        setLoadCaseProgress(prev => ({
-          ...prev,
-          isOpen: true,
-          current: 0,
-          total: queries.length,
-          caseName: caseData.name,
-          version: versionData.version,
-        }));
-        
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        try {
-          setIsLoading(true);
-          
-          // Execute queries with optimized batching strategy
-          const errors = [];
-          if (queries.length < 50) {
-            console.log(`Using single-query execution for ${queries.length} queries`);
-            for (let i = 0; i < queries.length; i++) {
-              try {
-                const result = await graphAPI.executeSingleQuery(queries[i]);
-                if (!result.success) {
-                  errors.push(result.error || `Query ${i + 1} failed`);
-                }
-                
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: i + 1,
-                }));
-              } catch (err) {
-                errors.push(`Query ${i + 1} failed: ${err.message}`);
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: i + 1,
-                }));
-              }
-            }
-          } else {
-            const BATCH_SIZE = queries.length > 500 ? 200 : 50;
-            console.log(`Using batch execution for ${queries.length} queries with batch size ${BATCH_SIZE}`);
-            const numBatches = Math.ceil(queries.length / BATCH_SIZE);
-            
-            for (let batchIdx = 0; batchIdx < numBatches; batchIdx++) {
-              const batchStart = batchIdx * BATCH_SIZE;
-              const batchEnd = Math.min(batchStart + BATCH_SIZE, queries.length);
-              const batch = queries.slice(batchStart, batchEnd);
-              
-              try {
-                const result = await graphAPI.executeBatchQueries(batch, BATCH_SIZE);
-                if (!result.success && result.errors) {
-                  errors.push(...result.errors);
-                }
-                
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: batchEnd,
-                }));
-              } catch (err) {
-                errors.push(`Batch ${batchIdx + 1} failed: ${err.message}`);
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: batchEnd,
-                }));
-              }
-            }
-          }
-          
-          setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-          
-          if (errors.length > 0) {
-            console.error('Some queries failed during case load:', errors);
-            const details = errors.join('\n');
-            alert(
-              `Case loaded with ${errors.length} error(s) out of ${queries.length} queries.\n\n` +
-              (details ? `Details:\n${details}` : '')
-            );
-          }
+      // Load the graph filtered by case_id
+      await loadGraph(caseData.id);
 
-          await loadGraph();
-          setLoadedCypherQueries(newCypherQueries);
-          setCurrentCaseId(caseData.id);
-          setCurrentCaseName(caseData.name);
-          setCurrentCaseVersion(versionData.version);
-        } catch (err) {
-          console.error('Failed to load case:', err);
-          setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-          alert(`Failed to load case: ${err.message}`);
-          setIsLoading(false);
-          return;
-        } finally {
-          setIsLoading(false);
-          setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-        }
-      } else {
-        // Apply incremental updates (delta)
-        console.log('Applying incremental graph updates (delta):', {
-          toAdd: delta.toAdd.length,
-          toRemove: delta.toRemove.length,
-          deletes: delta.newDeletes?.length || 0
-        });
-        
-        const incrementalQueries = buildIncrementalQueries(delta);
-        
-        if (incrementalQueries.length === 0) {
-          console.log('No incremental changes to apply');
-          // Still update case info
-          setCurrentCaseId(caseData.id);
-          setCurrentCaseName(caseData.name);
-          setCurrentCaseVersion(versionData.version);
-        } else {
-          // Show progress dialog for incremental updates
-          setLoadCaseProgress(prev => ({
-            ...prev,
-            isOpen: true,
-            current: 0,
-            total: incrementalQueries.length,
-            caseName: caseData.name,
-            version: versionData.version,
-          }));
-          
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          try {
-            setIsLoading(true);
-            
-            // Execute incremental queries (additions first, then deletions)
-            const errors = [];
-            for (let i = 0; i < incrementalQueries.length; i++) {
-              try {
-                const result = await graphAPI.executeSingleQuery(incrementalQueries[i]);
-                if (!result.success) {
-                  errors.push(result.error || `Incremental query ${i + 1} failed`);
-                }
-                
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: i + 1,
-                }));
-              } catch (err) {
-                errors.push(`Incremental query ${i + 1} failed: ${err.message}`);
-                setLoadCaseProgress(prev => ({
-                  ...prev,
-                  current: i + 1,
-                }));
-              }
-            }
-            
-            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-            
-            if (errors.length > 0) {
-              console.warn('Some incremental queries failed:', errors);
-              // Don't alert for incremental failures, just log
-            }
-            
-            // Reload graph to reflect changes
-            await loadGraph();
-            
-            // Store the loaded Cypher queries for future comparison
-            setLoadedCypherQueries(newCypherQueries);
-            
-            // Set current case info
-            setCurrentCaseId(caseData.id);
-            setCurrentCaseName(caseData.name);
-            setCurrentCaseVersion(versionData.version);
-          } catch (err) {
-            console.error('Failed to apply incremental updates:', err);
-            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-            // Fall back to full reload on error
-            console.log('Falling back to full reload due to incremental update error');
-            alert(`Failed to apply incremental updates: ${err.message}. Please try reloading the case.`);
-            setIsLoading(false);
-            return;
-          } finally {
-            setIsLoading(false);
-            setLoadCaseProgress(prev => ({ ...prev, isOpen: false }));
-          }
-        }
-      }
-    }
-    
-    // Common section: Update case info and load snapshots/chats (for both same and different Cypher cases)
-    try {
-      // Store previous case ID to check if we're switching cases
-      const previousCaseId = currentCaseId;
-      
-      // Case info is already set above (either in same-Cypher branch or after graph reload)
-      
       // If switching to a different case, clear chat history and load case-specific history
-      if (previousCaseId !== caseData.id) {
+      if (isSwitchingCase) {
         // Clear current chat history when switching cases
         setChatHistory([]);
       }
@@ -3036,15 +2697,15 @@ export default function App() {
       
       // Switch to graph view
       setAppView('graph');
-      
-      if (cypherQueriesAreSame) {
-        console.log('Case version loaded (Cypher queries unchanged, graph not reloaded)');
-      }
+
+      console.log(`Case ${caseData.name} loaded successfully`);
     } catch (err) {
-      console.error('Failed to load case snapshots/chats:', err);
-      // Don't fail the entire load if snapshots/chats fail
+      console.error('Failed to load case:', err);
+      alert('Failed to load case: ' + err.message);
+    } finally {
+      setIsLoading(false);
     }
-  }, [loadGraph, currentCaseId, currentCaseVersion, loadedCypherQueries]);
+  }, [loadGraph, currentCaseId, currentCaseVersion]);
 
   // Handle date range change - memoized to prevent infinite loops
   const handleDateRangeChange = useCallback((range) => {
@@ -3170,65 +2831,31 @@ export default function App() {
         }}
         onGoToGraph={async () => {
           try {
+            // With case_id-based graph isolation, we simply load the graph filtered by case_id
+            // No need to clear or reload cypher - data already persists in Neo4j
             if (!currentCaseId) {
-              // No case yet: ensure we show an empty graph
-              await graphAPI.clearGraph().catch(() => {});
+              // No case yet: show an empty graph
               setGraphData({ nodes: [], links: [] });
               setFullGraphData({ nodes: [], links: [] });
-              await loadGraph();
               setAppView('graph');
               return;
             }
 
-            // Load the latest case version's Cypher, if any
-            const caseData = await casesAPI.get(currentCaseId);
-            const versions = caseData.versions || [];
-            if (versions.length > 0) {
-              const sorted = [...versions].sort((a, b) => b.version - a.version);
-              const latest = sorted[0];
-              
-              // Check if this case/version is already loaded
-              if (currentCaseId === caseData.id && currentCaseVersion === latest.version) {
-                // Already loaded, just switch to graph view
-                console.log('Case/version already loaded, switching to graph view');
-                setAppView('graph');
-                return;
+            // Load the graph for this case (data persists in Neo4j with case_id property)
+            await loadGraph(currentCaseId);
+
+            // Get latest version number for display
+            try {
+              const caseData = await casesAPI.get(currentCaseId);
+              const versions = caseData.versions || [];
+              if (versions.length > 0) {
+                const sorted = [...versions].sort((a, b) => b.version - a.version);
+                setCurrentCaseVersion(sorted[0].version);
               }
-              
-              if (latest.cypher_queries && latest.cypher_queries.trim()) {
-                // Only clear if switching to a different case/version
-                if (currentCaseId !== caseData.id || currentCaseVersion !== latest.version) {
-                  await graphAPI.clearGraph().catch((err) => {
-                    console.warn('Failed to clear existing graph before opening case in graph:', err);
-                  });
-                }
-                const result = await graphAPI.loadCase(latest.cypher_queries);
-                if (!result.success) {
-                  console.error('Case load (from Evidence view) sanity check failed:', result.errors);
-                  const details = (result.errors || []).join('\n');
-                  alert(
-                    `Failed to load case graph: one or more Cypher statements did not validate.\n\n` +
-                    (details ? `Details:\n${details}` : '')
-                  );
-                  return;
-                }
-                await loadGraph();
-                setCurrentCaseId(caseData.id);
-                setCurrentCaseName(caseData.name);
-                setCurrentCaseVersion(latest.version);
-                setAppView('graph');
-                return;
-              }
+            } catch {
+              // Ignore errors getting version info
             }
 
-            // No Cypher exists for this case yet: show an empty graph
-            // Only clear if we don't already have this case loaded
-            if (currentCaseId !== caseData.id) {
-              await graphAPI.clearGraph().catch(() => {});
-              setGraphData({ nodes: [], links: [] });
-              setFullGraphData({ nodes: [], links: [] });
-            }
-            await loadGraph();
             setAppView('graph');
           } catch (err) {
             console.error('Failed to open case in graph:', err);
@@ -3237,40 +2864,12 @@ export default function App() {
         }}
         onLoadProcessedGraph={async (caseId, version) => {
           try {
-            // Check if this case/version is already loaded
-            if (currentCaseId === caseId && currentCaseVersion === version) {
-              console.log('Case/version already loaded, switching to graph view');
-              setAppView('graph');
-              return;
-            }
-            
-            const versionData = await casesAPI.getVersion(caseId, version);
-            if (!versionData || !versionData.cypher_queries) {
-              alert('No Cypher queries found for the processed case version.');
-              return;
-            }
-            
-            // Only clear if switching to a different case/version
-            if (currentCaseId !== caseId || currentCaseVersion !== version) {
-              await graphAPI.clearGraph().catch(() => {});
-            }
-            
-            const result = await graphAPI.loadCase(versionData.cypher_queries);
-            if (!result.success) {
-              console.error('Processed graph load sanity check failed:', result.errors);
-              const details = (result.errors || []).join('\n');
-              alert(
-                `Failed to load processed graph: one or more Cypher statements did not validate.\n\n` +
-                (details ? `Details:\n${details}` : '')
-              );
-              return;
-            }
-            await loadGraph();
+            // With case_id-based graph isolation, we simply switch to the case
+            // The graph data persists in Neo4j with case_id property
             setCurrentCaseId(caseId);
-            setCurrentCaseName(currentCaseName || '');
             setCurrentCaseVersion(version);
+            await loadGraph(caseId);
             setAppView('graph');
-            alert('Processed graph loaded successfully.');
           } catch (err) {
             console.error('Failed to load processed graph:', err);
             alert(`Failed to load processed graph: ${err.message}`);
