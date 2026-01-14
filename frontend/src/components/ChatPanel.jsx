@@ -300,7 +300,6 @@ export default function ChatPanel({
   currentCaseId, // Current case ID for associating chat history
   currentCaseName, // Current case name
   currentCaseVersion, // Current case version
-  onShowOnGraph, // Callback to show nodes on graph (nodeKeys) => void
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
@@ -308,12 +307,13 @@ export default function ChatPanel({
   const [suggestions, setSuggestions] = useState([]);
   const [showChatHistory, setShowChatHistory] = useState(false);
   const [lastAutoSaveCount, setLastAutoSaveCount] = useState(0);
-  const [extractingNodes, setExtractingNodes] = useState(new Set()); // Track which messages are extracting nodes
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [availableModels, setAvailableModels] = useState([]);
   const [currentConfig, setCurrentConfig] = useState(null);
   const [selectedProvider, setSelectedProvider] = useState('openai');
   const [selectedModelId, setSelectedModelId] = useState('gpt-5');
+  const [confidenceThreshold, setConfidenceThreshold] = useState(2.0);
+  const [includeGraphNodes, setIncludeGraphNodes] = useState(true); // Toggle for including graph nodes
   const [loadingConfig, setLoadingConfig] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -335,15 +335,19 @@ export default function ChatPanel({
   const loadModelConfig = useCallback(async () => {
     try {
       setLoadingConfig(true);
-      const [modelsData, configData] = await Promise.all([
+      const [modelsData, configData, thresholdData] = await Promise.all([
         llmConfigAPI.getModels(),
         llmConfigAPI.getCurrentConfig(),
+        llmConfigAPI.getConfidenceThreshold().catch(() => ({ threshold: 2.0 })), // Default to 2.0 if not available
       ]);
       setAvailableModels(modelsData.models || []);
       setCurrentConfig(configData);
       if (configData) {
         setSelectedProvider(configData.provider);
         setSelectedModelId(configData.model_id);
+      }
+      if (thresholdData && thresholdData.threshold !== undefined) {
+        setConfidenceThreshold(thresholdData.threshold);
       }
     } catch (err) {
       console.error('Failed to load model config:', err);
@@ -393,13 +397,13 @@ export default function ChatPanel({
       return newMessages;
     });
 
-    // Get selected node keys
-    const selectedKeys = selectedNodes.map(n => n.key);
+    // Get selected node keys (only if includeGraphNodes is enabled)
+    const selectedKeys = includeGraphNodes ? selectedNodes.map(n => n.key) : [];
 
     setIsLoading(true);
 
     try {
-      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null, selectedModelId, selectedProvider);
+      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null, selectedModelId, selectedProvider, confidenceThreshold);
 
       // Debug log is now stored in system logs, no need to download
 
@@ -637,6 +641,38 @@ export default function ChatPanel({
               </select>
             </div>
 
+            <div>
+              <label className="block text-xs font-medium text-light-700 mb-2">
+                Vector Search Confidence Threshold
+              </label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs text-light-600">
+                  <span>Strict (0.0)</span>
+                  <span className="font-medium">{confidenceThreshold.toFixed(1)}</span>
+                  <span>Lenient (3.0)</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="3"
+                  step="0.1"
+                  value={confidenceThreshold}
+                  onChange={(e) => {
+                    const newThreshold = parseFloat(e.target.value);
+                    setConfidenceThreshold(newThreshold);
+                    // Save threshold immediately
+                    llmConfigAPI.setConfidenceThreshold(newThreshold).catch(err => {
+                      console.error('Failed to save confidence threshold:', err);
+                    });
+                  }}
+                  className="w-full accent-owl-purple-500"
+                />
+                <p className="text-xs text-light-500">
+                  Only documents with similarity distance ≤ {confidenceThreshold.toFixed(1)} will be included. Lower values = stricter filtering. (L2 distance range: 0.0-3.0)
+                </p>
+              </div>
+            </div>
+
             {/* Model Info */}
             {(() => {
               const selectedModel = availableModels.find(m => m.id === selectedModelId);
@@ -786,63 +822,6 @@ export default function ChatPanel({
                       </span>
                     )}
                   </div>
-                  {onShowOnGraph && (
-                    <button
-                      onClick={() => {
-                        // Use stored node keys if available (from answer generation)
-                        // Otherwise fall back to extracting from answer text
-                        console.log('Show on Graph clicked, usedNodeKeys:', msg.usedNodeKeys);
-                        
-                        if (msg.usedNodeKeys && Array.isArray(msg.usedNodeKeys) && msg.usedNodeKeys.length > 0) {
-                          // Use the node keys that were actually used to generate the answer
-                          console.log(`Using ${msg.usedNodeKeys.length} stored node keys`);
-                          onShowOnGraph(msg.usedNodeKeys);
-                        } else {
-                          // Fallback: try to extract from answer text
-                          console.log('No stored node keys, extracting from answer text...');
-                          const messageId = msg.id;
-                          setExtractingNodes(prev => new Set(prev).add(messageId));
-                          
-                          chatAPI.extractNodesFromAnswer(msg.content)
-                            .then(result => {
-                              const nodeKeys = result.node_keys || [];
-                              console.log('Extracted node keys:', nodeKeys);
-                              if (nodeKeys.length > 0) {
-                                onShowOnGraph(nodeKeys);
-                              } else {
-                                alert('No nodes found in this answer. The answer may not mention specific entities from the graph.');
-                              }
-                            })
-                            .catch(err => {
-                              console.error('Failed to extract nodes:', err);
-                              alert(`Failed to extract nodes: ${err.message}`);
-                            })
-                            .finally(() => {
-                              setExtractingNodes(prev => {
-                                const next = new Set(prev);
-                                next.delete(messageId);
-                                return next;
-                              });
-                            });
-                        }
-                      }}
-                      disabled={extractingNodes.has(msg.id)}
-                      className="flex items-center gap-1.5 px-2 py-1 text-xs bg-owl-blue-600 hover:bg-owl-blue-700 hover:text-white rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Show nodes used to generate this answer on the graph"
-                    >
-                      {extractingNodes.has(msg.id) ? (
-                        <>
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Extracting...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Network className="w-3 h-3" />
-                          <span>Show on Graph</span>
-                        </>
-                      )}
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -874,6 +853,18 @@ export default function ChatPanel({
             rows={1}
             disabled={isLoading}
           />
+          <button
+            onClick={() => setIncludeGraphNodes(!includeGraphNodes)}
+            disabled={isLoading}
+            className={`p-2 rounded-lg transition-colors border ${
+              includeGraphNodes
+                ? 'bg-owl-purple-100 border-owl-purple-300 text-owl-purple-700 hover:bg-owl-purple-200'
+                : 'bg-white border-light-300 text-light-600 hover:bg-light-50'
+            }`}
+            title={includeGraphNodes ? 'Including graph nodes - Click to use document search only' : 'Document search only - Click to include graph nodes'}
+          >
+            <Network className="w-5 h-5" />
+          </button>
           <button
             onClick={handleSend}
             disabled={!input.trim() || isLoading}

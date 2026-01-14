@@ -30,6 +30,7 @@ class ChatRequest(BaseModel):
     selected_keys: Optional[List[str]] = None
     provider: str
     model: str
+    confidence_threshold: Optional[float] = None  # Optional confidence threshold for vector search (0.0-1.0)
 
 
 class ChatResponse(BaseModel):
@@ -119,6 +120,7 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
         result = rag_service.answer_question(
             question=question,
             selected_keys=request.selected_keys,
+            confidence_threshold=request.confidence_threshold,
         )
         
         # Get current model info

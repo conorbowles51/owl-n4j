@@ -365,14 +365,15 @@ export const chatAPI = {
   /**
    * Send a question to the AI
    */
-  ask: (question, selectedKeys = null, model, provider) => 
+  ask: (question, selectedKeys = null, model, provider, confidenceThreshold = null) => 
     fetchAPI('/chat', {
       method: 'POST',
       body: JSON.stringify({
         question,
         selected_keys: selectedKeys,
         model,
-        provider
+        provider,
+        confidence_threshold: confidenceThreshold
       }),
       timeout: 600000, // 10 minutes for AI queries (large models may take time)
     }),
@@ -1142,5 +1143,23 @@ export const llmConfigAPI = {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(config),
+    }),
+
+  /**
+   * Get confidence threshold for vector search
+   */
+  getConfidenceThreshold: () => fetchAPI('/llm-config/confidence-threshold'),
+
+  /**
+   * Set confidence threshold for vector search
+   * @param {number} threshold - Confidence threshold (0.0-1.0)
+   */
+  setConfidenceThreshold: (threshold) =>
+    fetchAPI('/llm-config/confidence-threshold', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ threshold }),
     }),
 };

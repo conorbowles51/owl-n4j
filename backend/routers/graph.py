@@ -1264,6 +1264,12 @@ async def merge_entities(
     Merge two entities into one.
     """
     try:
+        # Validate merged_data is not None
+        if request.merged_data is None:
+            raise HTTPException(status_code=400, detail="merged_data cannot be None")
+        if not isinstance(request.merged_data, dict):
+            raise HTTPException(status_code=400, detail=f"merged_data must be a dict, got {type(request.merged_data)}")
+        
         result = neo4j_service.merge_entities(
             source_key=request.source_key,
             target_key=request.target_key,

@@ -126,7 +126,7 @@ const GraphView = forwardRef(function GraphView({
   const [selectedEntityTypes, setSelectedEntityTypes] = useState(new Set()); // Track selected entity types
   const [allEntityTypes, setAllEntityTypes] = useState([]); // All entity types from database
   const [profileColors, setProfileColors] = useState({}); // Entity type colors from profile
-  const [isLegendMinimized, setIsLegendMinimized] = useState(false); // Track if legend is minimized
+  const [isLegendMinimized, setIsLegendMinimized] = useState(isSubgraph); // Track if legend is minimized - default to minimized for subgraphs
 
   // Selection mode: 'click' or 'drag'
   const [selectionMode, setSelectionMode] = useState('click');
@@ -138,13 +138,17 @@ const GraphView = forwardRef(function GraphView({
   const [fixedSelectionBox, setFixedSelectionBox] = useState(null); // Selection box that stays after mouseUp
 
   // Force simulation controls
+  // Use tighter clustering for subgraphs (Spotlight and Result graphs)
   const [showControls, setShowControls] = useState(false);
-  const [linkDistance, setLinkDistance] = useState(200);
-  const [chargeStrength, setChargeStrength] = useState(-500);
-  const [centerStrength, setCenterStrength] = useState(0.05);
+  const [linkDistance, setLinkDistance] = useState(isSubgraph ? 120 : 200);
+  // Reduce repulsion for main graph to nearly nothing so clusters stay close together
+  const [chargeStrength, setChargeStrength] = useState(isSubgraph ? -800 : -50);
+  // Stronger center force for main graph to bring disconnected clusters closer together
+  const [centerStrength, setCenterStrength] = useState(isSubgraph ? 0.15 : 0.4);
 
   // Relationship labels toggle (independent per graph instance)
-  const [showRelationshipLabels, setShowRelationshipLabels] = useState(false);
+  // Default to ON for spotlight and result graphs
+  const [showRelationshipLabels, setShowRelationshipLabels] = useState(isSubgraph ? true : false);
 
   // Track modifier keys (Ctrl/Cmd)
   useEffect(() => {
@@ -202,7 +206,12 @@ const GraphView = forwardRef(function GraphView({
   // Center graph function
   const centerGraph = useCallback(() => {
     if (graphRef.current && graphData.nodes.length > 0) {
-      graphRef.current.zoomToFit(400, 50);
+      // Wait a bit for the simulation to settle, then center
+      setTimeout(() => {
+        if (graphRef.current) {
+          graphRef.current.zoomToFit(400, 50);
+        }
+      }, 100);
     }
   }, [graphData]);
 
@@ -214,44 +223,17 @@ const GraphView = forwardRef(function GraphView({
     const nodesToCenter = graphData.nodes.filter(node => nodeKeys.includes(node.key));
     if (nodesToCenter.length === 0) return;
     
-    // Calculate bounding box of selected nodes
-    let minX = Infinity, maxX = -Infinity;
-    let minY = Infinity, maxY = -Infinity;
-    
-    nodesToCenter.forEach(node => {
-      if (node.x !== undefined && node.y !== undefined) {
-        minX = Math.min(minX, node.x);
-        maxX = Math.max(maxX, node.x);
-        minY = Math.min(minY, node.y);
-        maxY = Math.max(maxY, node.y);
-      }
-    });
-    
-    // If no valid coordinates, use zoomToFit on all nodes
-    if (minX === Infinity) {
-      centerGraph();
-      return;
-    }
-  
-
-    // Calculate center point
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
-    
-    // Calculate dimensions
-    const nodeWidth = Math.max(maxX - minX, 100);
-    const nodeHeight = Math.max(maxY - minY, 100);
-    
-    // Calculate zoom level to fit nodes with padding
-    const padding = 100;
-    const zoomX = (width - padding * 2) / nodeWidth;
-    const zoomY = (height - padding * 2) / nodeHeight;
-    const zoom = Math.min(zoomX, zoomY, 2); // Cap zoom at 2x
-    
-    // Center on the nodes
-    graphRef.current.centerAt(centerX, centerY, 1000); // 1000ms animation
-    graphRef.current.zoom(zoom, 1000); // 1000ms animation
-  }, [graphData, width, height, centerGraph]);
+    // Wait a bit for the simulation to settle, then use zoomToFit with a filter
+    setTimeout(() => {
+      if (!graphRef.current) return;
+      
+      // Use zoomToFit with a custom filter to only fit the selected nodes
+      // This properly centers and fits the nodes in the viewport
+      graphRef.current.zoomToFit(400, 50, (node) => {
+        return nodeKeys.includes(node.key);
+      });
+    }, 100);
+  }, [graphData]);
 
   // Handle center button click - center on selected nodes if any, otherwise center whole graph
   const handleCenterClick = useCallback(() => {
@@ -273,12 +255,16 @@ const GraphView = forwardRef(function GraphView({
     return null;
   }, []);
 
-  // Expose centerGraph, centerOnNodes, and getGraphCanvas methods via ref
+  // Expose centerGraph, centerOnNodes, getGraphCanvas, and control methods via ref
   useImperativeHandle(ref, () => ({
     centerGraph,
     centerOnNodes,
     getGraphCanvas,
-  }), [centerGraph, centerOnNodes, getGraphCanvas]);
+    setSelectionMode,
+    selectionMode,
+    setShowControls,
+    showControls,
+  }), [centerGraph, centerOnNodes, getGraphCanvas, setSelectionMode, selectionMode, setShowControls, showControls]);
 
   // Center graph on mount
   useEffect(() => {
@@ -312,8 +298,21 @@ const GraphView = forwardRef(function GraphView({
     const label = node.name || node.key;
     const fontSize = Math.max(12 / globalScale, 4);
     const isSelected = selectedNodes.some(n => n.key === node.key);
-    const nodeRadius = isSelected ? 8 : 6;
     const isHovered = node === hoveredNode;
+
+    // Base node radius
+    let baseRadius = isSelected ? 8 : 6;
+    
+    // Adjust node size based on confidence score (for result graph nodes)
+    // Higher confidence = larger node
+    // Range: baseRadius * 0.75 (low confidence) to baseRadius * 2.0 (high confidence)
+    if (node.confidence !== undefined && node.confidence !== null) {
+      // Confidence ranges from 0.0 to 1.0 (1.0 = highest confidence)
+      const confidenceMultiplier = 0.75 + (node.confidence * 1.25); // 0.75 to 2.0
+      baseRadius = baseRadius * confidenceMultiplier;
+    }
+    
+    const nodeRadius = baseRadius;
 
     // Get color - prioritize community_id if present (from Louvain), otherwise use entity type
     let nodeColor;
@@ -370,12 +369,30 @@ const GraphView = forwardRef(function GraphView({
 
     if (dist === 0) return; // Avoid division by zero
 
+    // Base link width
+    let linkWidth = 1.5;
+    
+    // Adjust link width based on confidence scores of connected nodes
+    // Use average confidence of both nodes
+    const startConfidence = start.confidence !== undefined && start.confidence !== null ? start.confidence : null;
+    const endConfidence = end.confidence !== undefined && end.confidence !== null ? end.confidence : null;
+    
+    if (startConfidence !== null || endConfidence !== null) {
+      // Calculate average confidence
+      const confidences = [startConfidence, endConfidence].filter(c => c !== null);
+      if (confidences.length > 0) {
+        const avgConfidence = confidences.reduce((sum, c) => sum + c, 0) / confidences.length;
+        // Link width ranges from 1.0 (low confidence) to 4.0 (high confidence)
+        linkWidth = 1.0 + (avgConfidence * 3.0); // 1.0 to 4.0
+      }
+    }
+
     // Draw the link line
     ctx.beginPath();
     ctx.moveTo(start.x, start.y);
     ctx.lineTo(end.x, end.y);
     ctx.strokeStyle = '#9ca3af'; // light-400 - lighter gray for light background
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = linkWidth;
     ctx.stroke();
 
     // Draw arrow
@@ -1001,14 +1018,16 @@ const GraphView = forwardRef(function GraphView({
         enablePanInteraction={selectionMode !== 'drag'}
         onBackgroundClick={handleBackgroundClick}
         onNodeHover={setHoveredNode}
-        cooldownTicks={100}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
+        cooldownTicks={isSubgraph ? 150 : 100}
+        d3AlphaDecay={isSubgraph ? 0.05 : 0.02}
+        d3VelocityDecay={isSubgraph ? 0.4 : 0.3}
         backgroundColor="transparent"
       />
       
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200">
+      <div className={`absolute bottom-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200 ${
+        isSubgraph ? 'left-[44px]' : 'left-4'
+      }`}>
         {/* Relationship Labels Toggle - Only show in subgraph */}
         {isSubgraph && (
           <div className={`${isLegendMinimized ? 'mb-0 pb-0' : 'mb-3 pb-3 border-b border-light-200'}`}>
@@ -1130,8 +1149,8 @@ const GraphView = forwardRef(function GraphView({
         )}
       </div>
 
-      {/* Center Graph Button */}
-      {showCenterButton && (
+      {/* Center Graph Button - Only show in main graph, not subgraph */}
+      {showCenterButton && !isSubgraph && (
         <button
           onClick={centerGraph}
           className="absolute top-4 right-4 z-20 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors text-light-700 hover:text-owl-blue-900 shadow-sm border border-light-200"
@@ -1141,14 +1160,16 @@ const GraphView = forwardRef(function GraphView({
         </button>
       )}
 
-      {/* Center Graph Button */}
-      <button
-        onClick={handleCenterClick}
-        className="absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
-        title={selectedNodes && selectedNodes.length > 0 ? "Center on selected nodes" : "Center and fit graph"}
-      >
-        <Target className="w-5 h-5 text-light-600" />
-      </button>
+      {/* Center Graph Button - Only show in main graph, not subgraph */}
+      {!isSubgraph && (
+        <button
+          onClick={handleCenterClick}
+          className="absolute top-4 left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10"
+          title={selectedNodes && selectedNodes.length > 0 ? "Center on selected nodes" : "Center and fit graph"}
+        >
+          <Target className="w-5 h-5 text-light-600" />
+        </button>
+      )}
 
       {/* Add Node Button - Only show in main graph, not subgraph */}
       {!isSubgraph && onAddNode && (
@@ -1161,20 +1182,22 @@ const GraphView = forwardRef(function GraphView({
         </button>
       )}
 
-      {/* Selection Mode Toggle */}
-      <button
-        onClick={() => setSelectionMode(selectionMode === 'click' ? 'drag' : 'click')}
-        className={`absolute ${!isSubgraph && onAddNode ? 'top-[92px]' : 'top-[54px]'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
-          selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
-        }`}
-        title={selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
-      >
-        {selectionMode === 'click' ? (
-          <Square className="w-5 h-5 text-light-600" />
-        ) : (
-          <MousePointer className="w-5 h-5 text-owl-blue-600" />
-        )}
-      </button>
+      {/* Selection Mode Toggle - Only show in main graph, not subgraph */}
+      {!isSubgraph && (
+        <button
+          onClick={() => setSelectionMode(selectionMode === 'click' ? 'drag' : 'click')}
+          className={`absolute ${onAddNode ? 'top-[92px]' : 'top-[54px]'} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10 ${
+            selectionMode === 'drag' ? 'bg-owl-blue-100' : ''
+          }`}
+          title={selectionMode === 'click' ? 'Switch to drag selection' : 'Switch to click selection'}
+        >
+          {selectionMode === 'click' ? (
+            <Square className="w-5 h-5 text-light-600" />
+          ) : (
+            <MousePointer className="w-5 h-5 text-owl-blue-600" />
+          )}
+        </button>
+      )}
 
       {/* Find Similar Entities Button - Only show in main graph, not subgraph */}
       {!isSubgraph && onFindSimilarEntities && (
@@ -1188,14 +1211,16 @@ const GraphView = forwardRef(function GraphView({
         </button>
       )}
 
-      {/* Force Controls Toggle */}
-      <button
-        onClick={() => setShowControls(!showControls)}
-        className={`absolute ${!isSubgraph && onAddNode ? (onFindSimilarEntities ? 'top-[168px]' : 'top-[130px]') : (onFindSimilarEntities ? 'top-[130px]' : 'top-[92px]')} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
-        title="Graph Settings"
-      >
-        <Settings className={`w-5 h-5 ${showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />
-      </button>
+      {/* Force Controls Toggle - Only show in main graph, not subgraph */}
+      {!isSubgraph && (
+        <button
+          onClick={() => setShowControls(!showControls)}
+          className={`absolute ${onAddNode ? (onFindSimilarEntities ? 'top-[168px]' : 'top-[130px]') : (onFindSimilarEntities ? 'top-[130px]' : 'top-[92px]')} left-4 p-2 bg-white/90 backdrop-blur-sm hover:bg-white rounded-lg transition-colors shadow-sm border border-light-200 z-10`}
+          title="Graph Settings"
+        >
+          <Settings className={`w-5 h-5 ${showControls ? 'text-owl-blue-600' : 'text-light-600'}`} />
+        </button>
+      )}
 
       {/* Selection Box Overlay */}
       {selectionBox && selectionBox.width > 0 && selectionBox.height > 0 && (
@@ -1222,7 +1247,9 @@ const GraphView = forwardRef(function GraphView({
 
       {/* Force Controls Panel */}
       {showControls && (
-        <div className="absolute top-14 left-4 bg-white/95 backdrop-blur-sm rounded-lg p-4 text-sm w-64 space-y-4 shadow-lg border border-light-200">
+        <div className={`absolute top-14 bg-white/95 backdrop-blur-sm rounded-lg p-4 text-sm w-64 space-y-4 shadow-lg border border-light-200 ${
+          isSubgraph ? 'left-[12px]' : 'left-4'
+        }`}>
           <div className="font-medium text-owl-blue-900 border-b border-light-200 pb-2">
             Graph Layout
           </div>
