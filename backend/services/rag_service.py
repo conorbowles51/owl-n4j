@@ -1409,12 +1409,14 @@ Return ONLY the Cypher query, nothing else. Do not include markdown code blocks.
 
     def get_suggested_questions(
         self,
+        case_id: str,
         selected_keys: Optional[List[str]] = None,
     ) -> List[str]:
         """
         Generate suggested questions based on current context.
 
         Args:
+            case_id: The case ID to scope the query to
             selected_keys: Optional selected node keys
 
         Returns:
@@ -1422,7 +1424,7 @@ Return ONLY the Cypher query, nothing else. Do not include markdown code blocks.
         """
         if selected_keys and len(selected_keys) > 0:
             # Get details for selected nodes
-            node_context = self.neo4j.get_context_for_nodes(selected_keys)
+            node_context = self.neo4j.get_context_for_nodes(selected_keys, case_id)
             entities = node_context.get("selected_entities", [])
 
             if entities:

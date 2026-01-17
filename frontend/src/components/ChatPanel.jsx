@@ -367,9 +367,10 @@ export default function ChatPanel({
 
   // Load suggested questions
   const loadSuggestions = async () => {
+    if (!currentCaseId) return;
     try {
       const selectedKeys = selectedNodes.map(n => n.key);
-      const data = await chatAPI.getSuggestions(selectedKeys.length > 0 ? selectedKeys : null);
+      const data = await chatAPI.getSuggestions(currentCaseId, selectedKeys.length > 0 ? selectedKeys : null);
       setSuggestions(data.suggestions || []);
     } catch (err) {
       console.error('Failed to load suggestions:', err);

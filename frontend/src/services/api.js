@@ -177,10 +177,11 @@ export const graphAPI = {
   /**
    * Find similar entities for resolution
    */
-  findSimilarEntities: (entityTypes = null, similarityThreshold = 0.7, maxResults = 50) =>
+  findSimilarEntities: (caseId, entityTypes = null, similarityThreshold = 0.7, maxResults = 50) =>
     fetchAPI('/graph/find-similar-entities', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         entity_types: entityTypes,
         name_similarity_threshold: similarityThreshold,
         max_results: maxResults,
@@ -381,10 +382,11 @@ export const chatAPI = {
   /**
    * Get suggested questions
    */
-  getSuggestions: (selectedKeys = null) => 
+  getSuggestions: (caseId, selectedKeys = null) =>
     fetchAPI('/chat/suggestions', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         selected_keys: selectedKeys,
       }),
     }),

@@ -56,6 +56,7 @@ class DeleteNodeRequest(BaseModel):
 
 class FindSimilarEntitiesRequest(BaseModel):
     """Request model for finding similar entities."""
+    case_id: str
     entity_types: Optional[List[str]] = None
     name_similarity_threshold: float = 0.7
     max_results: int = 50
@@ -1202,6 +1203,7 @@ async def verify_insight(node_key: str, request: VerifyInsightRequest):
 
 class FindSimilarEntitiesRequest(BaseModel):
     """Request model for finding similar entities."""
+    case_id: str
     entity_types: Optional[List[str]] = None
     name_similarity_threshold: float = 0.7
     max_results: int = 50
@@ -1224,6 +1226,7 @@ async def find_similar_entities(
     """
     try:
         result = neo4j_service.find_similar_entities(
+            case_id=request.case_id,
             entity_types=request.entity_types,
             name_similarity_threshold=request.name_similarity_threshold,
             max_results=request.max_results,

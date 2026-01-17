@@ -57,6 +57,7 @@ def resolve_entity(
     candidate_type: str,
     candidate_facts: str,
     db: Neo4jClient,
+    case_id: str,
     profile_name: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
 ) -> Tuple[str, bool]:
@@ -74,6 +75,7 @@ def resolve_entity(
         candidate_type: Type of the candidate entity
         candidate_facts: Facts about the candidate from current document
         db: Neo4j client instance
+        case_id: The case ID to scope the search to
         log_callback: Optional callback for logging progress
 
     Returns:
@@ -82,7 +84,7 @@ def resolve_entity(
         - is_existing: True if matched to existing entity
     """
     # Step 1: Exact key match
-    existing = db.find_entity_by_key(candidate_key)
+    existing = db.find_entity_by_key(candidate_key, case_id)
     if existing:
         log_progress(f"Exact match found for '{candidate_key}'", log_callback, prefix="    → ")
         return candidate_key, True
@@ -90,6 +92,7 @@ def resolve_entity(
     # Step 2: Fuzzy search
     fuzzy_matches = db.fuzzy_search_entities(
         name=candidate_name,
+        case_id=case_id,
         entity_type=candidate_type,
         limit=5,
     )

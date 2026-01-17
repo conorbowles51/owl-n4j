@@ -391,6 +391,7 @@ def process_chunk(
             candidate_type=entity_type,
             candidate_facts=facts_str,
             db=db,
+            case_id=case_id,
             profile_name=profile_name,
             log_callback=log_callback,
         )
@@ -398,7 +399,7 @@ def process_chunk(
         if is_existing:
             log_progress(f"  [6.{chunk_index + 1}.2] Entity resolution: Entity '{name}' matched existing entity (key: {resolved_key})", log_callback)
             # Update existing entity
-            existing = db.find_entity_by_key(resolved_key)
+            existing = db.find_entity_by_key(resolved_key, case_id)
             if existing:
                 # Merge verified facts and AI insights
                 merged = merge_entity_data(
@@ -411,7 +412,7 @@ def process_chunk(
                 merged_insights = merged["ai_insights"]
 
                 # Generate updated summary from verified facts
-                neighbours = db.get_entity_neighbours(resolved_key, limit=5)
+                neighbours = db.get_entity_neighbours(resolved_key, case_id, limit=5)
                 neighbour_descriptions = [
                     f"{n['name']} ({n['type']}) - {n['relationship']}"
                     for n in neighbours
@@ -555,9 +556,9 @@ def process_chunk(
             log_warning(f"Skipping relationship with missing keys: {rel}", log_callback, prefix="  ")
             continue
 
-        # Validate that both entities exist
-        from_exists = db.find_entity_by_key(from_key) is not None
-        to_exists = db.find_entity_by_key(to_key) is not None
+        # Validate that both entities exist in this case
+        from_exists = db.find_entity_by_key(from_key, case_id) is not None
+        to_exists = db.find_entity_by_key(to_key, case_id) is not None
 
         if not from_exists:
             log_warning(f"Skipping relationship: source entity '{from_key}' not found", log_callback, prefix="  ")
@@ -689,9 +690,9 @@ def ingest_document(
         )
         log_progress(f"[Step 3] Document node: Created/updated successfully (ID: {doc_id})", log_callback)
 
-        # Get existing entity keys for context
+        # Get existing entity keys for context (scoped to this case)
         log_progress(f"[Step 4] Graph context: Loading existing entities from graph", log_callback)
-        existing_keys = db.get_all_entity_keys()
+        existing_keys = db.get_all_entity_keys(case_id)
         existing_count = len(existing_keys)
         log_progress(f"[Step 4] Graph context: Found {existing_count} existing entities in graph", log_callback)
 

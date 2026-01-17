@@ -49,6 +49,7 @@ class ChatResponse(BaseModel):
 class SuggestionsRequest(BaseModel):
     """Request model for suggestions endpoint."""
 
+    case_id: str
     selected_keys: Optional[List[str]] = None
 
 
@@ -181,10 +182,10 @@ async def get_suggestions(request: SuggestionsRequest):
     Get suggested questions based on current context.
 
     Args:
-        request: Request with optional selected node keys
+        request: Request with case_id and optional selected node keys
     """
     try:
-        suggestions = rag_service.get_suggested_questions(request.selected_keys)
+        suggestions = rag_service.get_suggested_questions(request.case_id, request.selected_keys)
         return {"suggestions": suggestions}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

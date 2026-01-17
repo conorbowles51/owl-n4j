@@ -104,9 +104,12 @@ class Neo4jClient:
     # Entity Operations
     # -------------------------------------------------------------------------
 
-    def get_all_entity_keys(self) -> List[str]:
+    def get_all_entity_keys(self, case_id: str) -> List[str]:
         """
-        Get all entity keys currently in the database.
+        Get all entity keys for a specific case.
+
+        Args:
+            case_id: The case ID to filter by
 
         Returns:
             List of entity key strings
@@ -117,17 +120,20 @@ class Neo4jClient:
                 MATCH (e)
                 WHERE e.key IS NOT NULL
                   AND NOT e:Document
+                  AND e.case_id = $case_id
                 RETURN e.key AS key
-                """
+                """,
+                case_id=case_id,
             )
             return [record["key"] for record in result]
 
-    def find_entity_by_key(self, key: str) -> Optional[Dict]:
+    def find_entity_by_key(self, key: str, case_id: str) -> Optional[Dict]:
         """
-        Find an entity by exact key match.
+        Find an entity by exact key match within a specific case.
 
         Args:
             key: The normalised entity key
+            case_id: The case ID to filter by
 
         Returns:
             Entity dict if found, None otherwise
@@ -135,7 +141,7 @@ class Neo4jClient:
         with self.driver.session() as session:
             result = session.run(
                 """
-                MATCH (e {key: $key})
+                MATCH (e {key: $key, case_id: $case_id})
                 WHERE NOT e:Document
                 RETURN e.id AS id,
                        e.key AS key,
@@ -150,6 +156,7 @@ class Neo4jClient:
                        e.ai_insights AS ai_insights
                 """,
                 key=key,
+                case_id=case_id,
             )
             record = result.single()
             if record:
@@ -159,16 +166,18 @@ class Neo4jClient:
     def fuzzy_search_entities(
         self,
         name: str,
+        case_id: str,
         entity_type: Optional[str] = None,
         limit: int = 5,
     ) -> List[Dict]:
         """
-        Search for entities with similar names (fuzzy match).
+        Search for entities with similar names (fuzzy match) within a specific case.
 
         Uses case-insensitive CONTAINS matching on name.
 
         Args:
             name: The name to search for
+            case_id: The case ID to filter by
             entity_type: Optional type filter
             limit: Maximum results to return
 
@@ -194,6 +203,7 @@ class Neo4jClient:
                 query = f"""
                 MATCH (e:`{sanitized_type}`)
                 WHERE e.name IS NOT NULL
+                  AND e.case_id = $case_id
                   AND any(term IN $terms WHERE toLower(e.name) CONTAINS term)
                 RETURN e.id AS id,
                        e.key AS key,
@@ -208,6 +218,7 @@ class Neo4jClient:
                 MATCH (e)
                 WHERE e.name IS NOT NULL
                   AND NOT e:Document
+                  AND e.case_id = $case_id
                   AND any(term IN $terms WHERE toLower(e.name) CONTAINS term)
                 RETURN e.id AS id,
                        e.key AS key,
@@ -218,19 +229,21 @@ class Neo4jClient:
                 LIMIT $limit
                 """
 
-            result = session.run(query, terms=search_terms, limit=limit)
+            result = session.run(query, terms=search_terms, case_id=case_id, limit=limit)
             return [dict(record) for record in result]
 
     def get_entity_neighbours(
         self,
         key: str,
+        case_id: str,
         limit: int = 10,
     ) -> List[Dict]:
         """
-        Get entities related to a given entity.
+        Get entities related to a given entity within a specific case.
 
         Args:
             key: The entity key
+            case_id: The case ID to filter by
             limit: Maximum neighbours to return
 
         Returns:
@@ -239,8 +252,9 @@ class Neo4jClient:
         with self.driver.session() as session:
             result = session.run(
                 """
-                MATCH (e {key: $key})-[r]-(neighbour)
+                MATCH (e {key: $key, case_id: $case_id})-[r]-(neighbour)
                 WHERE NOT neighbour:Document
+                  AND neighbour.case_id = $case_id
                 RETURN neighbour.key AS key,
                        neighbour.name AS name,
                        labels(neighbour)[0] AS type,
@@ -248,6 +262,7 @@ class Neo4jClient:
                 LIMIT $limit
                 """,
                 key=key,
+                case_id=case_id,
                 limit=limit,
             )
             return [dict(record) for record in result]

@@ -664,24 +664,27 @@ class Neo4jService:
             "entities": entities,
         }
 
-    def get_context_for_nodes(self, keys: List[str]) -> Dict:
+    def get_context_for_nodes(self, keys: List[str], case_id: str) -> Dict:
         """
         Get detailed context for specific nodes (for focused AI queries).
 
         Args:
             keys: List of node keys to get context for
+            case_id: The case ID to filter by
 
         Returns:
             Dict with detailed information about selected nodes
         """
         with self._driver.session() as session:
-            # Get selected nodes with their connections
+            # Get selected nodes with their connections (scoped to case)
             result = session.run(
                 """
                 MATCH (n)
                 WHERE n.key IN $keys
+                  AND n.case_id = $case_id
                 OPTIONAL MATCH (n)-[r]-(connected)
-                RETURN 
+                WHERE connected.case_id = $case_id
+                RETURN
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
@@ -697,6 +700,7 @@ class Neo4jService:
                     }) AS connections
                 """,
                 keys=keys,
+                case_id=case_id,
             )
 
             entities = []
@@ -1843,39 +1847,42 @@ class Neo4jService:
 
     def find_similar_entities(
         self,
+        case_id: str,
         entity_types: Optional[List[str]] = None,
         name_similarity_threshold: float = 0.7,
         max_results: int = 50,
     ) -> List[Dict]:
         """
         Find entities that might be duplicates based on name similarity and type.
-        
+
         Args:
+            case_id: The case ID to filter by
             entity_types: Optional list of entity types to filter by
             name_similarity_threshold: Minimum similarity score (0-1) for name matching
             max_results: Maximum number of pairs to return
-            
+
         Returns:
             List of dicts with 'entity1' and 'entity2' entries, each containing node info
         """
         from difflib import SequenceMatcher
-        
+
         with self._driver.session() as session:
             # Build type filter
             type_filter = ""
-            params = {}
+            params = {"case_id": case_id}
             if entity_types:
                 type_filter = "AND labels(n)[0] IN $types"
                 params["types"] = entity_types
-            
-            # Get all entities (excluding Documents)
+
+            # Get all entities (excluding Documents) for this case
             query = f"""
                 MATCH (n)
                 WHERE n.key IS NOT NULL
                   AND n.name IS NOT NULL
                   AND NOT n:Document
+                  AND n.case_id = $case_id
                   {type_filter}
-                RETURN 
+                RETURN
                     n.key AS key,
                     n.id AS id,
                     n.name AS name,
@@ -1885,7 +1892,7 @@ class Neo4jService:
                     properties(n) AS properties
                 ORDER BY n.name
             """
-            
+
             result = session.run(query, **params)
             entities = [dict(record) for record in result]
             

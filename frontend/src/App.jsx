@@ -1057,9 +1057,13 @@ export default function App() {
 
   // Handle find similar entities
   const handleFindSimilarEntities = useCallback(async () => {
+    if (!currentCaseId) {
+      alert('Please select a case first');
+      return;
+    }
     setIsScanningSimilar(true);
     try {
-      const result = await graphAPI.findSimilarEntities(null, 0.7, 50);
+      const result = await graphAPI.findSimilarEntities(currentCaseId, null, 0.7, 50);
       setSimilarEntitiesPairs(result.similar_pairs || []);
       setShowSimilarEntitiesList(true);
     } catch (err) {
@@ -1068,7 +1072,7 @@ export default function App() {
     } finally {
       setIsScanningSimilar(false);
     }
-  }, []);
+  }, [currentCaseId]);
 
   // Handle open merge modal for a similar pair
   const handleMergeSimilarPair = useCallback((pair) => {
