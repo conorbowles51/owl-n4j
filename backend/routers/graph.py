@@ -1255,6 +1255,12 @@ async def merge_entities(
             merged_data=request.merged_data,
         )
         
+        # Validate result is not None
+        if result is None:
+            raise HTTPException(status_code=500, detail="Merge operation returned None")
+        if not isinstance(result, dict):
+            raise HTTPException(status_code=500, detail=f"Merge operation returned invalid type: {type(result)}")
+        
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
