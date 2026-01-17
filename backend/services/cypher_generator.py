@@ -4,19 +4,26 @@ Cypher Generator Service
 Generates Cypher queries to recreate a graph from node and relationship data.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
-def generate_cypher_from_graph(graph_data: Dict) -> str:
+def generate_cypher_from_graph(graph_data: Dict, case_id: str) -> str:
     """
     Generate Cypher queries to recreate a graph.
-    
+
     Args:
         graph_data: Dict with 'nodes' and 'links' arrays
-        
+        case_id: REQUIRED - The case ID to associate with all nodes and relationships
+
     Returns:
         String containing Cypher queries
+
+    Raises:
+        ValueError: If case_id is not provided
     """
+    if not case_id:
+        raise ValueError("case_id is required for generating Cypher queries")
+
     nodes = graph_data.get("nodes", [])
     links = graph_data.get("links", [])
     
@@ -63,7 +70,8 @@ def generate_cypher_from_graph(graph_data: Dict) -> str:
             properties["key"] = node_key
             properties["id"] = node_id
             properties["name"] = node_name
-            
+            properties["case_id"] = case_id  # MANDATORY: Associate node with case
+
             # Add optional properties if they exist
             if node.get("summary"):
                 properties["summary"] = node.get("summary")
@@ -119,25 +127,26 @@ def generate_cypher_from_graph(graph_data: Dict) -> str:
             properties = node.get("properties", {})
             if not isinstance(properties, dict):
                 properties = {}
-            
+
             properties["key"] = node_key
             properties["id"] = node_id
             properties["name"] = node_name
-            
+            properties["case_id"] = case_id  # MANDATORY: Associate node with case
+
             if node.get("summary"):
                 properties["summary"] = node.get("summary")
             if node.get("notes"):
                 properties["notes"] = node.get("notes")
-            
+
             props_str = format_properties(properties)
             escaped_type = node_type.replace("`", "``") if isinstance(node_type, str) and "`" in node_type else node_type
             escaped_key = node_key.replace("\\", "\\\\").replace("'", "\\'") if isinstance(node_key, str) else str(node_key).replace("\\", "\\\\").replace("'", "\\'")
-            
+
             node_queries.append(
                 f"MERGE (n:`{escaped_type}` {{key: '{escaped_key}'}})\n"
                 f"SET n = {props_str}"
             )
-        
+
         # Then create relationships with WITH clause
         rel_queries = []
         for link in links:
@@ -168,24 +177,21 @@ def generate_cypher_from_graph(graph_data: Dict) -> str:
             rel_properties = link.get("properties", {})
             if not isinstance(rel_properties, dict):
                 rel_properties = {}
-            
+
+            # MANDATORY: Associate relationship with case
+            rel_properties["case_id"] = case_id
+
             escaped_rel_type = rel_type.replace("`", "``") if isinstance(rel_type, str) and "`" in rel_type else rel_type
             escaped_source_key = source_key.replace("\\", "\\\\").replace("'", "\\'") if isinstance(source_key, str) else str(source_key).replace("\\", "\\\\").replace("'", "\\'")
             escaped_target_key = target_key.replace("\\", "\\\\").replace("'", "\\'") if isinstance(target_key, str) else str(target_key).replace("\\", "\\\\").replace("'", "\\'")
-            
-            if rel_properties:
-                props_str = format_properties(rel_properties)
-                rel_queries.append(
-                    f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
-                    f"MERGE (a)-[r:`{escaped_rel_type}`]->(b)\n"
-                    f"SET r += {props_str}"
-                )
-            else:
-                rel_queries.append(
-                    f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
-                    f"MERGE (a)-[:`{escaped_rel_type}`]->(b)"
-                )
-        
+
+            props_str = format_properties(rel_properties)
+            rel_queries.append(
+                f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
+                f"MERGE (a)-[r:`{escaped_rel_type}`]->(b)\n"
+                f"SET r += {props_str}"
+            )
+
         # Combine: nodes first, then relationships (separate queries)
         cypher_queries.extend(node_queries)
         cypher_queries.extend(rel_queries)
@@ -195,16 +201,16 @@ def generate_cypher_from_graph(graph_data: Dict) -> str:
             source_key = link.get("source")
             target_key = link.get("target")
             rel_type = link.get("type", "RELATED_TO")
-            
+
             if not source_key or not target_key:
                 continue
-            
+
             # Extract the key if source/target is a node object (dict)
             if isinstance(source_key, dict):
                 source_key = source_key.get("key") or source_key.get("id") or ""
             if isinstance(target_key, dict):
                 target_key = target_key.get("key") or target_key.get("id") or ""
-            
+
             # Ensure keys and type are strings
             if not isinstance(source_key, str):
                 source_key = str(source_key) if source_key else ""
@@ -212,31 +218,28 @@ def generate_cypher_from_graph(graph_data: Dict) -> str:
                 target_key = str(target_key) if target_key else ""
             if not isinstance(rel_type, str):
                 rel_type = str(rel_type) if rel_type else "RELATED_TO"
-            
+
             if not source_key or not target_key:
                 continue
-            
+
             rel_properties = link.get("properties", {})
             if not isinstance(rel_properties, dict):
                 rel_properties = {}
-            
+
+            # MANDATORY: Associate relationship with case
+            rel_properties["case_id"] = case_id
+
             escaped_rel_type = rel_type.replace("`", "``") if isinstance(rel_type, str) and "`" in rel_type else rel_type
             escaped_source_key = source_key.replace("\\", "\\\\").replace("'", "\\'") if isinstance(source_key, str) else str(source_key).replace("\\", "\\\\").replace("'", "\\'")
             escaped_target_key = target_key.replace("\\", "\\\\").replace("'", "\\'") if isinstance(target_key, str) else str(target_key).replace("\\", "\\\\").replace("'", "\\'")
-            
-            if rel_properties:
-                props_str = format_properties(rel_properties)
-                cypher_queries.append(
-                    f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
-                    f"MERGE (a)-[r:`{escaped_rel_type}`]->(b)\n"
-                    f"SET r += {props_str}"
-                )
-            else:
-                cypher_queries.append(
-                    f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
-                    f"MERGE (a)-[:`{escaped_rel_type}`]->(b)"
-                )
-    
+
+            props_str = format_properties(rel_properties)
+            cypher_queries.append(
+                f"MATCH (a {{key: '{escaped_source_key}'}}), (b {{key: '{escaped_target_key}'}})\n"
+                f"MERGE (a)-[r:`{escaped_rel_type}`]->(b)\n"
+                f"SET r += {props_str}"
+            )
+
     return "\n\n".join(cypher_queries)
 
 

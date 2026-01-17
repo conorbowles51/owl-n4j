@@ -104,9 +104,12 @@ class Neo4jClient:
     # Entity Operations
     # -------------------------------------------------------------------------
 
-    def get_all_entity_keys(self) -> List[str]:
+    def get_all_entity_keys(self, case_id: str) -> List[str]:
         """
-        Get all entity keys currently in the database.
+        Get all entity keys for a specific case.
+
+        Args:
+            case_id: The case ID to filter by
 
         Returns:
             List of entity key strings
@@ -117,17 +120,20 @@ class Neo4jClient:
                 MATCH (e)
                 WHERE e.key IS NOT NULL
                   AND NOT e:Document
+                  AND e.case_id = $case_id
                 RETURN e.key AS key
-                """
+                """,
+                case_id=case_id,
             )
             return [record["key"] for record in result]
 
-    def find_entity_by_key(self, key: str) -> Optional[Dict]:
+    def find_entity_by_key(self, key: str, case_id: str) -> Optional[Dict]:
         """
-        Find an entity by exact key match.
+        Find an entity by exact key match within a specific case.
 
         Args:
             key: The normalised entity key
+            case_id: The case ID to filter by
 
         Returns:
             Entity dict if found, None otherwise
@@ -135,7 +141,7 @@ class Neo4jClient:
         with self.driver.session() as session:
             result = session.run(
                 """
-                MATCH (e {key: $key})
+                MATCH (e {key: $key, case_id: $case_id})
                 WHERE NOT e:Document
                 RETURN e.id AS id,
                        e.key AS key,
@@ -150,6 +156,7 @@ class Neo4jClient:
                        e.ai_insights AS ai_insights
                 """,
                 key=key,
+                case_id=case_id,
             )
             record = result.single()
             if record:
@@ -159,16 +166,18 @@ class Neo4jClient:
     def fuzzy_search_entities(
         self,
         name: str,
+        case_id: str,
         entity_type: Optional[str] = None,
         limit: int = 5,
     ) -> List[Dict]:
         """
-        Search for entities with similar names (fuzzy match).
+        Search for entities with similar names (fuzzy match) within a specific case.
 
         Uses case-insensitive CONTAINS matching on name.
 
         Args:
             name: The name to search for
+            case_id: The case ID to filter by
             entity_type: Optional type filter
             limit: Maximum results to return
 
@@ -194,6 +203,7 @@ class Neo4jClient:
                 query = f"""
                 MATCH (e:`{sanitized_type}`)
                 WHERE e.name IS NOT NULL
+                  AND e.case_id = $case_id
                   AND any(term IN $terms WHERE toLower(e.name) CONTAINS term)
                 RETURN e.id AS id,
                        e.key AS key,
@@ -208,6 +218,7 @@ class Neo4jClient:
                 MATCH (e)
                 WHERE e.name IS NOT NULL
                   AND NOT e:Document
+                  AND e.case_id = $case_id
                   AND any(term IN $terms WHERE toLower(e.name) CONTAINS term)
                 RETURN e.id AS id,
                        e.key AS key,
@@ -218,19 +229,21 @@ class Neo4jClient:
                 LIMIT $limit
                 """
 
-            result = session.run(query, terms=search_terms, limit=limit)
+            result = session.run(query, terms=search_terms, case_id=case_id, limit=limit)
             return [dict(record) for record in result]
 
     def get_entity_neighbours(
         self,
         key: str,
+        case_id: str,
         limit: int = 10,
     ) -> List[Dict]:
         """
-        Get entities related to a given entity.
+        Get entities related to a given entity within a specific case.
 
         Args:
             key: The entity key
+            case_id: The case ID to filter by
             limit: Maximum neighbours to return
 
         Returns:
@@ -239,8 +252,9 @@ class Neo4jClient:
         with self.driver.session() as session:
             result = session.run(
                 """
-                MATCH (e {key: $key})-[r]-(neighbour)
+                MATCH (e {key: $key, case_id: $case_id})-[r]-(neighbour)
                 WHERE NOT neighbour:Document
+                  AND neighbour.case_id = $case_id
                 RETURN neighbour.key AS key,
                        neighbour.name AS name,
                        labels(neighbour)[0] AS type,
@@ -248,6 +262,7 @@ class Neo4jClient:
                 LIMIT $limit
                 """,
                 key=key,
+                case_id=case_id,
                 limit=limit,
             )
             return [dict(record) for record in result]
@@ -258,6 +273,7 @@ class Neo4jClient:
         entity_type: str,
         name: str,
         notes: str,
+        case_id: str,
         summary: Optional[str] = None,
         date: Optional[str] = None,
         time: Optional[str] = None,
@@ -272,6 +288,7 @@ class Neo4jClient:
             entity_type: The entity type (used as label)
             name: Human-readable name
             notes: Initial notes text
+            case_id: REQUIRED - The case ID to associate with this entity
             summary: Initial summary
             date: Event date (YYYY-MM-DD) for event-type entities
             time: Event time (HH:MM) for event-type entities
@@ -280,7 +297,13 @@ class Neo4jClient:
 
         Returns:
             The generated UUID for the entity
+
+        Raises:
+            ValueError: If case_id is not provided
         """
+        if not case_id:
+            raise ValueError("case_id is required for creating entities")
+
         entity_id = str(uuid.uuid4())
 
         props = {
@@ -288,6 +311,7 @@ class Neo4jClient:
             "key": key,
             "name": name,
             "notes": notes,
+            "case_id": case_id,  # MANDATORY: Associate entity with case
         }
 
         # Add optional properties if provided
@@ -333,6 +357,7 @@ class Neo4jClient:
     def update_entity(
         self,
         key: str,
+        case_id: str,
         notes: Optional[str] = None,
         summary: Optional[str] = None,
         extra_props: Optional[Dict] = None,
@@ -342,12 +367,19 @@ class Neo4jClient:
 
         Args:
             key: The entity key
+            case_id: REQUIRED - The case ID (used to verify entity belongs to case)
             notes: New notes text (replaces existing)
             summary: New summary text
             extra_props: Additional properties to update
+
+        Raises:
+            ValueError: If case_id is not provided
         """
+        if not case_id:
+            raise ValueError("case_id is required for updating entities")
+
         updates = []
-        params = {"key": key}
+        params = {"key": key, "case_id": case_id}
 
         if notes is not None:
             updates.append("e.notes = $notes")
@@ -372,12 +404,12 @@ class Neo4jClient:
             with self.driver.session() as session:
                 session.run(
                     f"""
-                    MATCH (e {{key: $key}})
+                    MATCH (e {{key: $key, case_id: $case_id}})
                     SET {set_clause}
                     """,
                     **params,
                 )
-        
+
         self._execute_with_retry(_update)
 
     # -------------------------------------------------------------------------
@@ -388,6 +420,7 @@ class Neo4jClient:
         self,
         doc_key: str,
         doc_name: str,
+        case_id: str,
         metadata: Optional[Dict] = None,
     ) -> str:
         """
@@ -396,17 +429,25 @@ class Neo4jClient:
         Args:
             doc_key: Normalised document key
             doc_name: Document filename/name
+            case_id: REQUIRED - The case ID to associate with this document
             metadata: Additional document properties
 
         Returns:
             The document's UUID
+
+        Raises:
+            ValueError: If case_id is not provided
         """
+        if not case_id:
+            raise ValueError("case_id is required for creating documents")
+
         doc_id = str(uuid.uuid4())
 
         props = {
             "id": doc_id,
             "key": doc_key,
             "name": doc_name,
+            "case_id": case_id,  # MANDATORY: Associate document with case
         }
 
         if metadata:
@@ -416,23 +457,25 @@ class Neo4jClient:
             with self.driver.session() as session:
                 result = session.run(
                     """
-                    MERGE (d:Document {key: $key})
+                    MERGE (d:Document {key: $key, case_id: $case_id})
                     ON CREATE SET d = $props
                     ON MATCH SET d.name = $name
                     RETURN d.id AS id
                     """,
                     key=doc_key,
+                    case_id=case_id,
                     props=props,
                     name=doc_name,
                 )
                 record = result.single()
                 return record["id"] if record else doc_id
-        
+
         return self._execute_with_retry(_ensure)
 
     def update_document(
         self,
         doc_key: str,
+        case_id: str,
         updates: Dict,
     ) -> None:
         """
@@ -440,19 +483,27 @@ class Neo4jClient:
 
         Args:
             doc_key: Normalised document key
+            case_id: REQUIRED - The case ID (used to verify document belongs to case)
             updates: Dictionary of properties to update
+
+        Raises:
+            ValueError: If case_id is not provided
         """
+        if not case_id:
+            raise ValueError("case_id is required for updating documents")
+
         def _update_doc():
             with self.driver.session() as session:
                 session.run(
                     """
-                    MATCH (d:Document {key: $key})
+                    MATCH (d:Document {key: $key, case_id: $case_id})
                     SET d += $updates
                     """,
                     key=doc_key,
+                    case_id=case_id,
                     updates=updates,
                 )
-        
+
         self._execute_with_retry(_update_doc)
 
     # -------------------------------------------------------------------------
@@ -464,6 +515,7 @@ class Neo4jClient:
         from_key: str,
         to_key: str,
         rel_type: str,
+        case_id: str,
         doc_name: Optional[str] = None,
         notes: Optional[str] = None,
     ):
@@ -474,9 +526,16 @@ class Neo4jClient:
             from_key: Source entity key
             to_key: Target entity key
             rel_type: Relationship type (will be sanitized for Cypher)
+            case_id: REQUIRED - The case ID to associate with this relationship
             doc_name: Document where this relationship was found
             notes: Notes about this relationship
+
+        Raises:
+            ValueError: If case_id is not provided
         """
+        if not case_id:
+            raise ValueError("case_id is required for creating relationships")
+
         # Sanitize relationship type for use as Cypher relationship type
         # Relationship types can contain alphanumeric and underscores, but we'll sanitize special chars
         import re
@@ -490,18 +549,19 @@ class Neo4jClient:
         # Fallback to "RELATED_TO" if empty after sanitization
         if not sanitized_rel_type:
             sanitized_rel_type = "RELATED_TO"
-        
+
         def _create_rel():
             with self.driver.session() as session:
-                # First, create/merge the relationship
+                # First, create/merge the relationship with case_id
                 session.run(
                     f"""
-                    MATCH (from {{key: $from_key}})
-                    MATCH (to {{key: $to_key}})
-                    MERGE (from)-[r:`{sanitized_rel_type}`]->(to)
+                    MATCH (from {{key: $from_key, case_id: $case_id}})
+                    MATCH (to {{key: $to_key, case_id: $case_id}})
+                    MERGE (from)-[r:`{sanitized_rel_type}` {{case_id: $case_id}}]->(to)
                     """,
                     from_key=from_key,
                     to_key=to_key,
+                    case_id=case_id,
                 )
 
                 # If we have doc_refs to add, update them
@@ -509,36 +569,45 @@ class Neo4jClient:
                     doc_ref_entry = f"\n\n[{doc_name}]\n{notes}"
                     session.run(
                         f"""
-                        MATCH (from {{key: $from_key}})-[r:`{sanitized_rel_type}`]->(to {{key: $to_key}})
+                        MATCH (from {{key: $from_key, case_id: $case_id}})-[r:`{sanitized_rel_type}` {{case_id: $case_id}}]->(to {{key: $to_key, case_id: $case_id}})
                         SET r.doc_refs = COALESCE(r.doc_refs, '') + $doc_ref
                         """,
                         from_key=from_key,
                         to_key=to_key,
+                        case_id=case_id,
                         doc_ref=doc_ref_entry,
                     )
-        
+
         self._execute_with_retry(_create_rel)
 
-    def link_entity_to_document(self, entity_key: str, doc_key: str):
+    def link_entity_to_document(self, entity_key: str, doc_key: str, case_id: str):
         """
         Create MENTIONED_IN relationship between entity and document.
 
         Args:
             entity_key: The entity key
             doc_key: The document key
+            case_id: REQUIRED - The case ID to associate with this relationship
+
+        Raises:
+            ValueError: If case_id is not provided
         """
+        if not case_id:
+            raise ValueError("case_id is required for linking entities to documents")
+
         def _link():
             with self.driver.session() as session:
                 session.run(
                     """
-                    MATCH (e {key: $entity_key})
-                    MATCH (d:Document {key: $doc_key})
-                    MERGE (e)-[:MENTIONED_IN]->(d)
+                    MATCH (e {key: $entity_key, case_id: $case_id})
+                    MATCH (d:Document {key: $doc_key, case_id: $case_id})
+                    MERGE (e)-[r:MENTIONED_IN {case_id: $case_id}]->(d)
                     """,
                     entity_key=entity_key,
                     doc_key=doc_key,
+                    case_id=case_id,
                 )
-        
+
         self._execute_with_retry(_link)
 
     # -------------------------------------------------------------------------

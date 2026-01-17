@@ -14,6 +14,7 @@ from logging_utils import log_progress, log_warning
 
 def ingest_text_file(
     path: Path,
+    case_id: str,
     log_callback: Optional[Callable[[str], None]] = None,
     profile_name: Optional[str] = None,
 ) -> Dict:
@@ -22,12 +23,19 @@ def ingest_text_file(
 
     Args:
         path: Path to the .txt file
+        case_id: REQUIRED - The case ID to associate with all created entities/relationships
         log_callback: Optional callback function(message: str) to log progress messages
         profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Ingestion result dict
+
+    Raises:
+        ValueError: If case_id is not provided
     """
+    if not case_id:
+        raise ValueError("case_id is required for text file ingestion")
+
     doc_name = path.name
 
     log_progress(f"Reading text file: {path}", log_callback)
@@ -51,6 +59,7 @@ def ingest_text_file(
     return ingest_document(
         text=text,
         doc_name=doc_name,
+        case_id=case_id,
         doc_metadata=doc_metadata,
         log_callback=log_callback,
         profile_name=profile_name,

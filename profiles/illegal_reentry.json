@@ -1,0 +1,120 @@
+{
+  "name": "illegal_reentry",
+  "description": "Analyze illegal re-entry cases (8 U.S.C. § 1326) and related immigration/criminal history signals",
+  "case_type": "Immigration / Illegal Re-Entry (Deported Alien)",
+  "ingestion": {
+    "system_context": "You are an expert federal case analyst focused on illegal re-entry (8 U.S.C. § 1326) matters. Extract entities, events, and relationships from case documents with emphasis on: identity and nationality; immigration history (entries, encounters, removals, deportations, orders of removal, warnings/conditions not to reenter, permission to reenter); criminal history (prior convictions, sentences, custody status); locations (border points, counties, courts, detention facilities); and any alleged gang affiliation or in-custody misconduct that may affect sentencing arguments under 18 U.S.C. § 3553(a). Capture dates precisely for every key event (encounters, arrests, removals, reentries, convictions, sentencing dates) and include statute references. If guidelines calculations appear, extract offense level, criminal history category, and guideline range, along with any statutory maximum. Flag sentencing aggravators such as repeated reentries after removal, reentry after prior §1326 conviction, suspected gang membership, violence or intimidation while in custody, and disregard of removal orders.",
+    "special_entity_types": [
+      {
+        "name": "Defendant",
+        "description": "The individual charged with or convicted of illegal re-entry, including identity and nationality details"
+      },
+      {
+        "name": "ImmigrationEncounter",
+        "description": "Any documented interaction between the defendant and immigration authorities (e.g., apprehensions, border encounters)"
+      },
+      {
+        "name": "OrderOfRemoval",
+        "description": "A formal administrative or judicial order directing the defendant’s removal from the United States"
+      },
+      {
+        "name": "RemovalDeportation",
+        "description": "An executed removal or deportation event, including date and destination"
+      },
+      {
+        "name": "IllegalReentryEvent",
+        "description": "An instance where the defendant unlawfully re-entered the United States after removal"
+      },
+      {
+        "name": "PermissionToReenter",
+        "description": "Any authorization or lack thereof permitting the defendant to lawfully reenter the United States"
+      },
+      {
+        "name": "PriorIllegalReentryConviction",
+        "description": "A previous conviction under 8 U.S.C. § 1326 or related statutes"
+      },
+      {
+        "name": "CriminalCharge",
+        "description": "A federal or state criminal charge associated with the defendant"
+      },
+      {
+        "name": "ArrestEvent",
+        "description": "An arrest of the defendant by law enforcement, including date and location"
+      },
+      {
+        "name": "CourtCase",
+        "description": "A judicial proceeding related to the defendant’s immigration or criminal history"
+      },
+      {
+        "name": "SentencingEvent",
+        "description": "The sentencing hearing and outcome for the illegal re-entry offense"
+      },
+      {
+        "name": "PresentenceReport",
+        "description": "The PSR prepared by probation summarizing offense conduct and criminal history"
+      },
+      {
+        "name": "GuidelinesCalculation",
+        "description": "U.S. Sentencing Guidelines offense level, enhancements, and recommended range"
+      },
+      {
+        "name": "CriminalHistoryCategory",
+        "description": "The defendant’s criminal history category under the Sentencing Guidelines"
+      },
+      {
+        "name": "GangAffiliation",
+        "description": "Any alleged or documented gang membership or association"
+      },
+      {
+        "name": "DetentionFacility",
+        "description": "A jail, prison, or immigration detention center where the defendant was held"
+      },
+      {
+        "name": "InCustodyAssault",
+        "description": "An alleged or documented assault or violent act committed while in custody"
+      },
+      {
+        "name": "Victim",
+        "description": "An individual harmed or threatened by the defendant’s conduct"
+      },
+      {
+        "name": "WeaponOrInstrument",
+        "description": "Any object used or alleged to be used to threaten or harm another person"
+      },
+      {
+        "name": "ThreatOrCoercion",
+        "description": "Statements or actions intended to intimidate, threaten, or coerce others"
+      },
+      {
+        "name": "Prosecutor",
+        "description": "Government attorney responsible for prosecuting the case"
+      },
+      {
+        "name": "Judge",
+        "description": "Judicial officer presiding over the case"
+      },
+      {
+        "name": "ProbationOfficer",
+        "description": "Probation officer involved in supervision or preparation of the PSR"
+      },
+      {
+        "name": "LawEnforcementAgency",
+        "description": "Agency involved in arrest, investigation, or immigration enforcement"
+      },
+      {
+        "name": "Location",
+        "description": "Any relevant geographic location (court, border crossing, county, facility)"
+      }
+    ],
+    "temperature": 1.0
+  },
+  "chat": {
+    "system_context": "You are an AI assistant helping investigators and legal teams analyze illegal re-entry cases and related sentencing factors.",
+    "analysis_guidance": "Summarize the immigration timeline (entries, removals, reentries), identify prior §1326 history, extract guideline calculations, and highlight aggravating or mitigating factors under 18 U.S.C. § 3553(a). Flag public-safety risks such as suspected gang ties or in-custody violence, and note discrepancies or missing information in the record.",
+    "temperature": 1.0
+  },
+  "llm_config": {
+    "provider": "openai",
+    "model_id": "gpt-4-turbo"
+  }
+}

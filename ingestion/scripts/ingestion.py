@@ -292,6 +292,7 @@ def process_chunk(
     total_chunks: int,
     db: Neo4jClient,
     existing_keys: List[str],
+    case_id: str,
     page_start: Optional[int] = None,
     page_end: Optional[int] = None,
     log_callback: Optional[Callable[[str], None]] = None,
@@ -307,13 +308,19 @@ def process_chunk(
         total_chunks: Total number of chunks in document
         db: Neo4j client
         existing_keys: List of existing entity keys (for LLM context)
+        case_id: REQUIRED - The case ID to associate with all created entities/relationships
         page_start: First page this chunk covers (for citations)
         page_end: Last page this chunk covers (for citations)
         profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Dict with 'entities_processed' and 'relationships_processed' counts
+
+    Raises:
+        ValueError: If case_id is not provided
     """
+    if not case_id:
+        raise ValueError("case_id is required for processing chunks")
     page_info = ""
     if page_start is not None:
         if page_end is not None and page_end != page_start:
@@ -384,6 +391,7 @@ def process_chunk(
             candidate_type=entity_type,
             candidate_facts=facts_str,
             db=db,
+            case_id=case_id,
             profile_name=profile_name,
             log_callback=log_callback,
         )
@@ -391,7 +399,7 @@ def process_chunk(
         if is_existing:
             log_progress(f"  [6.{chunk_index + 1}.2] Entity resolution: Entity '{name}' matched existing entity (key: {resolved_key})", log_callback)
             # Update existing entity
-            existing = db.find_entity_by_key(resolved_key)
+            existing = db.find_entity_by_key(resolved_key, case_id)
             if existing:
                 # Merge verified facts and AI insights
                 merged = merge_entity_data(
@@ -404,7 +412,7 @@ def process_chunk(
                 merged_insights = merged["ai_insights"]
 
                 # Generate updated summary from verified facts
-                neighbours = db.get_entity_neighbours(resolved_key, limit=5)
+                neighbours = db.get_entity_neighbours(resolved_key, case_id, limit=5)
                 neighbour_descriptions = [
                     f"{n['name']} ({n['type']}) - {n['relationship']}"
                     for n in neighbours
@@ -437,6 +445,7 @@ def process_chunk(
                 # Update in database
                 db.update_entity(
                     key=resolved_key,
+                    case_id=case_id,
                     summary=new_summary,
                     extra_props=extra_props,
                 )
@@ -505,6 +514,7 @@ def process_chunk(
                 entity_type=entity_type,
                 name=name,
                 notes="",  # Deprecated - using verified_facts instead
+                case_id=case_id,
                 summary=initial_summary,
                 date=date,
                 time=ent_time,
@@ -531,7 +541,7 @@ def process_chunk(
 
         # Link entity to document
         doc_key = normalise_key(doc_name)
-        db.link_entity_to_document(resolved_key if is_existing else key, doc_key)
+        db.link_entity_to_document(resolved_key if is_existing else key, doc_key, case_id)
 
         entities_processed += 1
 
@@ -546,9 +556,9 @@ def process_chunk(
             log_warning(f"Skipping relationship with missing keys: {rel}", log_callback, prefix="  ")
             continue
 
-        # Validate that both entities exist
-        from_exists = db.find_entity_by_key(from_key) is not None
-        to_exists = db.find_entity_by_key(to_key) is not None
+        # Validate that both entities exist in this case
+        from_exists = db.find_entity_by_key(from_key, case_id) is not None
+        to_exists = db.find_entity_by_key(to_key, case_id) is not None
 
         if not from_exists:
             log_warning(f"Skipping relationship: source entity '{from_key}' not found", log_callback, prefix="  ")
@@ -562,6 +572,7 @@ def process_chunk(
             from_key=from_key,
             to_key=to_key,
             rel_type=rel_type,
+            case_id=case_id,
             doc_name=doc_name,
             notes=rel_notes,
         )
@@ -578,6 +589,7 @@ def process_chunk(
 def ingest_document(
     text: str,
     doc_name: str,
+    case_id: str,
     doc_metadata: Optional[Dict] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     profile_name: Optional[str] = None,
@@ -590,13 +602,19 @@ def ingest_document(
     Args:
         text: Full document text
         doc_name: Document name/filename
+        case_id: REQUIRED - The case ID to associate with all created entities/relationships
         doc_metadata: Optional additional metadata
         log_callback: Optional callback function(message: str) to log progress messages
         profile_name: Name of the profile to use (e.g., 'fraud', 'generic')
 
     Returns:
         Dict with ingestion statistics
+
+    Raises:
+        ValueError: If case_id is not provided
     """
+    if not case_id:
+        raise ValueError("case_id is required for document ingestion")
     log_progress(f"{'='*60}", log_callback)
     log_progress(f"Ingesting document: {doc_name}", log_callback)
     log_progress(f"{'='*60}", log_callback)
@@ -667,13 +685,14 @@ def ingest_document(
         doc_id = db.ensure_document(
             doc_key=doc_key,
             doc_name=doc_name,
+            case_id=case_id,
             metadata=metadata,
         )
         log_progress(f"[Step 3] Document node: Created/updated successfully (ID: {doc_id})", log_callback)
 
-        # Get existing entity keys for context
+        # Get existing entity keys for context (scoped to this case)
         log_progress(f"[Step 4] Graph context: Loading existing entities from graph", log_callback)
-        existing_keys = db.get_all_entity_keys()
+        existing_keys = db.get_all_entity_keys(case_id)
         existing_count = len(existing_keys)
         log_progress(f"[Step 4] Graph context: Found {existing_count} existing entities in graph", log_callback)
 
@@ -700,6 +719,7 @@ def ingest_document(
                 total_chunks=chunk_info["total_chunks"],
                 db=db,
                 existing_keys=existing_keys,
+                case_id=case_id,
                 page_start=chunk_info.get("page_start"),
                 page_end=chunk_info.get("page_end"),
                 log_callback=log_callback,
@@ -779,7 +799,7 @@ def ingest_document(
                 
                 # Update Neo4j Document node with vector_db_id
                 log_progress(f"[Step 7] Document embedding: Linking document node to vector database (vector_db_id: {doc_id})", log_callback)
-                db.update_document(doc_key, {"vector_db_id": doc_id})
+                db.update_document(doc_key, case_id, {"vector_db_id": doc_id})
                 
                 embedding_stored = True
                 log_progress(f"[Step 7] Document embedding: Completed successfully", log_callback)
