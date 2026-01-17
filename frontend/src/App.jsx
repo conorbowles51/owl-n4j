@@ -1883,7 +1883,7 @@ export default function App() {
   useEffect(() => {
     const loadTimeline = async () => {
       try {
-        // Pass date range to timeline API if set
+        // Pass date range and case_id to timeline API if set
         const timelineParams = {};
         if (dateRange.start_date) {
           timelineParams.startDate = dateRange.start_date;
@@ -1891,7 +1891,10 @@ export default function App() {
         if (dateRange.end_date) {
           timelineParams.endDate = dateRange.end_date;
         }
-        
+        if (currentCaseId) {
+          timelineParams.caseId = currentCaseId;
+        }
+
         const response = await timelineAPI.getEvents(timelineParams);
         // Handle both array response and object with events property
         const events = Array.isArray(response) ? response : (response?.events || []);
@@ -1956,7 +1959,7 @@ export default function App() {
       }
     };
     loadTimeline();
-  }, [timelineContextKeys, dateRange]);
+  }, [timelineContextKeys, dateRange, currentCaseId]);
 
   // Load snapshots on mount and when case changes
   useEffect(() => {

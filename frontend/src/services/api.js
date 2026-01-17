@@ -431,12 +431,14 @@ export const timelineAPI = {
    * @param {string} options.types - Comma-separated event types
    * @param {string} options.startDate - Filter start date (YYYY-MM-DD)
    * @param {string} options.endDate - Filter end date (YYYY-MM-DD)
+   * @param {string} options.caseId - Filter to events in this case
    */
-  getEvents: async ({ types, startDate, endDate } = {}) => {
+  getEvents: async ({ types, startDate, endDate, caseId } = {}) => {
     const params = new URLSearchParams();
     if (types) params.append('types', types);
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    if (caseId) params.append('case_id', caseId);
     
     const queryString = params.toString();
     const response = await fetchAPI(`/timeline${queryString ? `?${queryString}` : ''}`);

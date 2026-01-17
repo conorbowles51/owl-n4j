@@ -21,8 +21,12 @@ async def get_timeline(
         description="Filter events on or after this date (YYYY-MM-DD)"
     ),
     end_date: Optional[str] = Query(
-        None, 
+        None,
         description="Filter events on or before this date (YYYY-MM-DD)"
+    ),
+    case_id: Optional[str] = Query(
+        None,
+        description="Filter to events in this case"
     ),
 ):
     """
@@ -40,6 +44,7 @@ async def get_timeline(
         event_types=event_types,
         start_date=start_date,
         end_date=end_date,
+        case_id=case_id,
     )
     
     return {
