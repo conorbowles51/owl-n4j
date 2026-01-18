@@ -2,7 +2,8 @@
 """
 Ingest Data CLI - Entry point for batch document ingestion.
 
-Scans the data/ directory for .txt, .pdf, .csv, .xls, and .xlsx files
+Scans the data/ directory for .txt, .pdf, .docx, .csv, .xls, and .xlsx files
+
 and ingests them into the Neo4j knowledge graph.
 
 Usage:
@@ -19,8 +20,10 @@ from threading import Lock
 
 from text_ingestion import ingest_text_file
 from pdf_ingestion import ingest_pdf_file
+from word_ingestion import ingest_word_file
 from excel_ingestion import ingest_excel_file
 from neo4j_client import Neo4jClient
+
 from logging_utils import log_progress, log_error, log_warning
 from config import MAX_INGESTION_WORKERS
 from typing import Optional, Callable
@@ -70,11 +73,14 @@ def ingest_file(
         return ingest_text_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix == ".pdf":
         return ingest_pdf_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
+    elif suffix == ".docx":
+        return ingest_word_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix in (".csv", ".xls", ".xlsx"):
         return ingest_excel_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     else:
         log_warning(f"Unsupported file type: {suffix}", log_callback)
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}
+
 
 
 def ingest_all_in_data(
@@ -102,13 +108,18 @@ def ingest_all_in_data(
     # Collect files (non-recursive)
     text_files = sorted(data_dir.glob("*.txt"))
     pdf_files = sorted(data_dir.glob("*.pdf"))
+    docx_files = sorted(data_dir.glob("*.docx"))
     csv_files = sorted(data_dir.glob("*.csv"))
     xls_files = sorted(data_dir.glob("*.xls"))
     xlsx_files = sorted(data_dir.glob("*.xlsx"))
 
-    all_files = text_files + pdf_files + csv_files + xls_files + xlsx_files
+    all_files = text_files + pdf_files + docx_files + csv_files + xls_files + xlsx_files
 
-    log_progress(f"Found {len(text_files)} text, {len(pdf_files)} PDF, {len(csv_files)} CSV, {len(xls_files) + len(xlsx_files)} Excel file(s)")
+    log_progress(
+        f"Found {len(text_files)} text, {len(pdf_files)} PDF, {len(docx_files)} Word, "
+        f"{len(csv_files)} CSV, {len(xls_files) + len(xlsx_files)} Excel file(s)"
+    )
+
     log_progress(f"Processing with max_workers={max_workers}")
 
     if not all_files:
