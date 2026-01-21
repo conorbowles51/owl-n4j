@@ -32,6 +32,7 @@ from llm_client import (
     extract_entities_and_relationships,
     generate_entity_summary,
     update_entity_notes,
+    call_llm,
 )
 from entity_resolution import normalise_key, resolve_entity, merge_entity_data
 from chunking import chunk_document
@@ -811,6 +812,67 @@ def ingest_document(
                 log_progress(f"[Step 7] Document embedding: Skipped (Vector DB not available)", log_callback)
             else:
                 log_progress(f"[Step 7] Document embedding: Skipped (Document text is empty)", log_callback)
+
+        # Generate document summary after all chunks are processed
+        doc_summary = None
+        log_progress(f"[Step 8] Document summary: Generating summary for document", log_callback)
+        try:
+            # Generate a concise summary of the document content
+            summary_text = text[:5000] if len(text) > 5000 else text  # Use first 5000 chars for summary generation
+            
+            summary_prompt = f"""Summarize the following document content in 2-4 sentences. Focus on the main topics, key facts, and important information.
+
+Document: {doc_name}
+Content:
+{summary_text}
+
+Provide a concise summary that captures the essential information:"""
+            
+            # Get LLM config from profile
+            llm_config = get_llm_config(profile_name)
+            llm_provider = llm_config.get("provider") if llm_config else None
+            llm_model_id = llm_config.get("model_id") if llm_config else None
+            
+            doc_summary = call_llm(
+                prompt=summary_prompt,
+                temperature=0.3,
+                log_callback=log_callback,
+                llm_provider=llm_provider,
+                llm_model_id=llm_model_id,
+            )
+            
+            # Store summary on Document node
+            if doc_summary and doc_summary.strip():
+                doc_summary = doc_summary.strip()
+                db.update_document(doc_key, case_id, {"summary": doc_summary})
+                log_progress(f"[Step 8] Document summary: Summary generated and stored in Neo4j successfully", log_callback)
+                
+                # Also store summary in vector DB if embedding was stored
+                if embedding_stored and VECTOR_DB_AVAILABLE and vector_db_service:
+                    try:
+                        log_progress(f"[Step 8] Document summary: Storing summary in vector database", log_callback)
+                        # Update the document in vector DB to include summary in metadata
+                        # Get the existing document to preserve other metadata
+                        existing_docs = vector_db_service.collection.get(ids=[doc_id])
+                        existing_metadata = existing_docs.get("metadatas", [{}])[0] if existing_docs.get("metadatas") else {}
+                        
+                        # Update metadata with summary
+                        updated_metadata = dict(existing_metadata)
+                        updated_metadata["summary"] = doc_summary
+                        
+                        # Update the document in vector DB
+                        vector_db_service.collection.update(
+                            ids=[doc_id],
+                            metadatas=[updated_metadata]
+                        )
+                        log_progress(f"[Step 8] Document summary: Summary stored in vector database successfully", log_callback)
+                    except Exception as e:
+                        log_warning(f"[Step 8] Document summary: Failed to store summary in vector DB - {e}", log_callback)
+            else:
+                log_warning(f"[Step 8] Document summary: LLM returned empty summary", log_callback)
+        except Exception as e:
+            # Don't fail ingestion if summary generation fails
+            log_warning(f"[Step 8] Document summary: FAILED - {e}", log_callback)
 
     log_progress(f"{'='*60}", log_callback)
     log_progress(f"[Final] Ingestion complete: {doc_name}", log_callback)

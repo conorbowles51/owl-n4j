@@ -8,6 +8,8 @@ import {
   Info,
   FileText,
   MessageSquare,
+  Folder,
+  AlertCircle,
 } from 'lucide-react';
 import { profilesAPI, llmConfigAPI } from '../services/api';
 
@@ -61,6 +63,9 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
   const [chatSystemContext, setChatSystemContext] = useState('');
   const [chatAnalysisGuidance, setChatAnalysisGuidance] = useState('');
   const [chatTemperature, setChatTemperature] = useState(1.0);
+  
+  // Folder Processing Configuration
+  const [folderProcessingJson, setFolderProcessingJson] = useState('');
 
   // Load available profiles for cloning
   const loadAvailableProfiles = async () => {
@@ -145,11 +150,12 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
     setIngestionTemperature(1.0);
     setIngestionLLMProvider('openai');
     setIngestionLLMModelId('gpt-5');
-    setChatSystemContext('');
-    setChatAnalysisGuidance('');
-    setChatTemperature(1.0);
-    setCloneFromProfile('');
-    setError(null);
+      setChatSystemContext('');
+      setChatAnalysisGuidance('');
+      setChatTemperature(1.0);
+      setFolderProcessingJson('');
+      setCloneFromProfile('');
+      setError(null);
   };
 
   const cloneProfile = async (profileNameToClone) => {
@@ -187,6 +193,10 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
       setChatTemperature(chat.temperature !== undefined ? chat.temperature : 1.0);
+      
+      // Load folder_processing config when cloning
+      const folderProcessing = profile.folder_processing || null;
+      setFolderProcessingJson(folderProcessing ? JSON.stringify(folderProcessing, null, 2) : '');
     } catch (err) {
       console.error('Failed to clone profile:', err);
       setError(err.message || 'Failed to clone profile');
@@ -230,6 +240,10 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
       setChatSystemContext(chat.system_context || '');
       setChatAnalysisGuidance(chat.analysis_guidance || '');
       setChatTemperature(chat.temperature !== undefined ? chat.temperature : 1.0);
+      
+      // Load folder_processing config
+      const folderProcessing = profile.folder_processing || null;
+      setFolderProcessingJson(folderProcessing ? JSON.stringify(folderProcessing, null, 2) : '');
     } catch (err) {
       console.error('Failed to load profile:', err);
       setError(err.message || 'Failed to load profile');
@@ -295,6 +309,17 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
         chat_temperature: chatTemperature,
       };
       
+      // Parse folder_processing JSON if provided
+      if (folderProcessingJson.trim()) {
+        try {
+          profileData.folder_processing = JSON.parse(folderProcessingJson.trim());
+        } catch (parseErr) {
+          setError(`Invalid folder processing JSON: ${parseErr.message}`);
+          setSaving(false);
+          return;
+        }
+      }
+      
       await profilesAPI.save(profileData);
       alert('Profile saved successfully!');
       
@@ -314,41 +339,45 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-2xl overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-light-200 shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-light-200 bg-light-50">
+        <div className="flex items-center justify-between mb-4 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <Settings className="w-5 h-5 text-owl-blue-700" />
+            <Settings className="w-5 h-5 text-owl-blue-600" />
             <h2 className="text-lg font-semibold text-owl-blue-900">
               {profileName ? 'Edit Profile' : 'Create Profile'}
             </h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded hover:bg-light-200 text-light-600 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-light-100 rounded transition-colors"
+            >
+              <X className="w-5 h-5 text-light-600" />
+            </button>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        {/* Content - scrollable */}
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="text-light-600">Loading profile...</div>
             </div>
           ) : (
             <>
+              {/* Error Message */}
               {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                  {error}
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">{error}</p>
                 </div>
               )}
 
               {/* Basic Information */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide flex items-center gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-light-700 mb-3 flex items-center gap-2">
                   <Info className="w-4 h-4" />
                   Basic Information
                 </h3>
@@ -356,7 +385,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                 {/* Clone from existing profile (only for new profiles) */}
                 {!profileName && (
                   <div>
-                    <label className="block text-sm font-medium text-light-700 mb-1">
+                    <label className="block text-sm font-medium text-light-700 mb-2">
                       Clone from Existing Profile (Optional)
                     </label>
                     <select
@@ -370,7 +399,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                           if (currentName) setName(currentName);
                         }
                       }}
-                      className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 bg-white"
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 focus:outline-none focus:border-owl-blue-500"
                       disabled={loadingProfiles || loading}
                     >
                       <option value="">-- Start from scratch --</option>
@@ -380,104 +409,96 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                         </option>
                       ))}
                     </select>
-                    <p className="text-xs text-light-500 mt-1">
+                    <p className="text-xs text-light-600 mt-1">
                       Select a profile to clone its settings, then modify as needed.
                     </p>
                   </div>
                 )}
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-light-700 mb-1">
+                    <label className="block text-sm font-medium text-light-700 mb-2">
                       Profile Name *
                     </label>
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500"
                       placeholder="e.g., fraud, terrorism"
                       disabled={!!profileName}
                     />
-                    <p className="text-xs text-light-500 mt-1">
+                    <p className="text-xs text-light-600 mt-1">
                       Lowercase letters, numbers, hyphens, underscores only
                     </p>
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-light-700 mb-1">
+                    <label className="block text-sm font-medium text-light-700 mb-2">
                       Case Type
                     </label>
                     <input
                       type="text"
                       value={caseType}
                       onChange={(e) => setCaseType(e.target.value)}
-                      className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500"
                       placeholder="e.g., Fraud Investigation"
                     />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Description *
-                  </label>
-                  <input
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    placeholder="Brief description of what this profile is for"
-                  />
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      Description *
+                    </label>
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 resize-none"
+                      placeholder="Brief description of what this profile is for"
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Ingestion Configuration */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide flex items-center gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-light-700 mb-3 flex items-center gap-2">
                   <FileText className="w-4 h-4" />
                   Ingestion Configuration
                 </h3>
                 
-                <div className="bg-owl-blue-50 border border-owl-blue-200 rounded-lg p-3">
-                  <p className="text-xs text-owl-blue-800">
-                    <strong>Tip:</strong> The ingestion system context tells the LLM how to extract entities and relationships from documents. 
-                    Be specific about what to look for and what entity types to create.
-                  </p>
-                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      System Context *
+                    </label>
+                    <textarea
+                      value={ingestionSystemContext}
+                      onChange={(e) => setIngestionSystemContext(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 font-mono text-sm resize-none"
+                      rows={6}
+                      placeholder="You are an expert analyst extracting entities and relationships from documents. Focus on identifying key people, organizations, locations, events, and their connections..."
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    System Context *
-                  </label>
-                  <textarea
-                    value={ingestionSystemContext}
-                    onChange={(e) => setIngestionSystemContext(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 font-mono text-sm"
-                    rows={6}
-                    placeholder="You are an expert analyst extracting entities and relationships from documents. Focus on identifying key people, organizations, locations, events, and their connections..."
-                  />
-                </div>
-
-                {/* Special Entity Types */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
+                  {/* Special Entity Types */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-light-700">
                         Special Entity Types (Optional)
                       </label>
-                      <p className="text-xs text-light-500">
-                        Define domain-specific entity types for the LLM to extract (e.g., ShellCompany, NomineeDirector)
-                      </p>
+                      <button
+                        onClick={handleAddSpecialEntityType}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-owl-blue-700 hover:bg-owl-blue-50 rounded-lg transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Type
+                      </button>
                     </div>
-                    <button
-                      onClick={handleAddSpecialEntityType}
-                      className="flex items-center gap-1 px-3 py-1.5 text-sm text-owl-blue-700 hover:bg-owl-blue-50 rounded-lg transition-colors"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add Type
-                    </button>
-                  </div>
+                    <p className="text-xs text-light-600 mb-3">
+                      Define domain-specific entity types for the LLM to extract (e.g., ShellCompany, NomineeDirector)
+                    </p>
 
                   {specialEntityTypes.length > 0 && (
                     <div className="space-y-2">
@@ -491,14 +512,14 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                               type="text"
                               value={entity.name}
                               onChange={(e) => handleUpdateSpecialEntityType(index, 'name', e.target.value)}
-                              className="px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                              className="px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500"
                               placeholder="Entity name (e.g., ShellCompany)"
                             />
                             <input
                               type="text"
                               value={entity.description || ''}
                               onChange={(e) => handleUpdateSpecialEntityType(index, 'description', e.target.value)}
-                              className="px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                              className="px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500"
                               placeholder="Description (e.g., A company used to obscure ownership)"
                             />
                           </div>
@@ -513,16 +534,16 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                       ))}
                     </div>
                   )}
-                </div>
+                  </div>
 
-                {/* LLM Provider and Model Selection */}
-                <div className="space-y-3">
-                  <label className="block text-sm font-medium text-light-700">
-                    LLM Provider & Model
-                  </label>
-                  <p className="text-xs text-light-500">
-                    Select the LLM provider and model to use for entity extraction during document ingestion.
-                  </p>
+                  {/* LLM Provider and Model Selection */}
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      LLM Provider & Model
+                    </label>
+                    <p className="text-xs text-light-600 mb-3">
+                      Select the LLM provider and model to use for entity extraction during document ingestion.
+                    </p>
                   
                   <div>
                     <label className="block text-xs font-medium text-light-700 mb-2">
@@ -580,7 +601,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                       <select
                         value={ingestionLLMModelId}
                         onChange={(e) => setIngestionLLMModelId(e.target.value)}
-                        className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500 bg-white"
+                        className="w-full px-3 py-2 text-sm bg-white border border-light-300 rounded-lg text-light-900 focus:outline-none focus:border-owl-blue-500"
                       >
                         <option value="">-- Select a model --</option>
                         {availableModels
@@ -633,82 +654,84 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                       </div>
                     );
                   })()}
-                </div>
-
-                {/* Ingestion Temperature */}
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Temperature (Ingestion)
-                  </label>
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="range"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={ingestionTemperature}
-                      onChange={(e) => setIngestionTemperature(parseFloat(e.target.value))}
-                      className="flex-1"
-                    />
-                    <input
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={ingestionTemperature}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        if (!isNaN(val) && val >= 0 && val <= 2) {
-                          setIngestionTemperature(val);
-                        }
-                      }}
-                      className="w-20 px-2 py-1 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    />
                   </div>
-                  <p className="text-xs text-light-500 mt-1">
-                    Lower (0.0-0.5) = more deterministic extraction. Higher (1.0-2.0) = more creative. Default: 1.0
-                  </p>
+
+                  {/* Ingestion Temperature */}
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      Temperature (Ingestion)
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={ingestionTemperature}
+                        onChange={(e) => setIngestionTemperature(parseFloat(e.target.value))}
+                        className="flex-1"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        max="2"
+                        step="0.1"
+                        value={ingestionTemperature}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val) && val >= 0 && val <= 2) {
+                            setIngestionTemperature(val);
+                          }
+                        }}
+                        className="w-20 px-2 py-1 bg-white border border-light-300 rounded-lg text-light-900 focus:outline-none focus:border-owl-blue-500"
+                      />
+                    </div>
+                    <p className="text-xs text-light-600 mt-1">
+                      Lower (0.0-0.5) = more deterministic extraction. Higher (1.0-2.0) = more creative. Default: 1.0
+                    </p>
+                  </div>
                 </div>
               </div>
 
               {/* Chat Configuration */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-light-900 uppercase tracking-wide flex items-center gap-2">
+              <div>
+                <h3 className="text-sm font-semibold text-light-700 mb-3 flex items-center gap-2">
                   <MessageSquare className="w-4 h-4" />
                   Chat Configuration
                 </h3>
 
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    System Context
-                  </label>
-                  <textarea
-                    value={chatSystemContext}
-                    onChange={(e) => setChatSystemContext(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    rows={3}
-                    placeholder="You are an AI assistant helping investigators analyze case documents..."
-                  />
-                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      System Context
+                    </label>
+                    <textarea
+                      value={chatSystemContext}
+                      onChange={(e) => setChatSystemContext(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 resize-none"
+                      rows={3}
+                      placeholder="You are an AI assistant helping investigators analyze case documents..."
+                    />
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Analysis Guidance
-                  </label>
-                  <textarea
-                    value={chatAnalysisGuidance}
-                    onChange={(e) => setChatAnalysisGuidance(e.target.value)}
-                    className="w-full px-3 py-2 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
-                    rows={3}
-                    placeholder="Identify suspicious patterns, highlight connections, and flag potential red flags..."
-                  />
-                </div>
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      Analysis Guidance
+                    </label>
+                    <textarea
+                      value={chatAnalysisGuidance}
+                      onChange={(e) => setChatAnalysisGuidance(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 resize-none"
+                      rows={3}
+                      placeholder="Identify suspicious patterns, highlight connections, and flag potential red flags..."
+                    />
+                  </div>
 
-                {/* Chat Temperature */}
-                <div>
-                  <label className="block text-sm font-medium text-light-700 mb-1">
-                    Temperature (Chat)
-                  </label>
+                  {/* Chat Temperature */}
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      Temperature (Chat)
+                    </label>
                   <div className="flex items-center gap-3">
                     <input
                       type="range"
@@ -731,23 +754,52 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
                           setChatTemperature(val);
                         }
                       }}
-                      className="w-20 px-2 py-1 border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                      className="w-20 px-2 py-1 bg-white border border-light-300 rounded-lg text-light-900 focus:outline-none focus:border-owl-blue-500"
                     />
                   </div>
-                  <p className="text-xs text-light-500 mt-1">
+                  <p className="text-xs text-light-600 mt-1">
                     Lower = more focused answers. Higher = more creative responses. Default: 1.0
                   </p>
+                  </div>
                 </div>
               </div>
+
+              {/* Folder Processing Configuration */}
+              {profileName && (
+                <div>
+                  <h3 className="text-sm font-semibold text-light-700 mb-3 flex items-center gap-2">
+                    <Folder className="w-4 h-4" />
+                    Folder Processing Configuration
+                  </h3>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-light-700 mb-2">
+                      Folder Processing Rules (JSON)
+                    </label>
+                    <textarea
+                      value={folderProcessingJson}
+                      onChange={(e) => setFolderProcessingJson(e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 font-mono text-xs resize-none"
+                      rows={20}
+                      placeholder='{\n  "type": "special",\n  "file_rules": [...],\n  "processing_rules": "...",\n  "output_format": "wiretap_structured"\n}'
+                    />
+                    <p className="text-xs text-light-600 mt-1">
+                      JSON configuration for folder processing. Leave empty if this profile does not handle folder processing.
+                      <br />
+                      <strong>Note:</strong> Invalid JSON will prevent saving. The folder_processing configuration will be preserved when editing other profile fields.
+                    </p>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-light-200 bg-light-50">
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-light-200 flex-shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-light-700 hover:bg-light-200 rounded-lg transition-colors"
+            className="px-4 py-2 text-light-700 hover:bg-light-100 rounded-lg transition-colors"
             disabled={saving}
           >
             Cancel
@@ -755,7 +807,7 @@ export default function ProfileEditor({ isOpen, onClose, profileName = null, onP
           <button
             onClick={handleSave}
             disabled={saving || loading}
-            className="flex items-center gap-2 px-4 py-2 bg-owl-blue-600 text-white rounded-lg hover:bg-owl-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : 'Save Profile'}

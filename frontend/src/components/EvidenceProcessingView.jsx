@@ -25,6 +25,7 @@ import BackgroundTasksPanel from './BackgroundTasksPanel';
 import ProfileEditor from './ProfileEditor';
 import FileNavigator from './FileNavigator';
 import FileInfoViewer from './FileInfoViewer';
+import FolderProfileModal from './FolderProfileModal';
 
 /**
  * EvidenceProcessingView
@@ -77,6 +78,10 @@ export default function EvidenceProcessingView({
   const [selectedFoldersInfo, setSelectedFoldersInfo] = useState([]); // Info for all selected folders
   const [wiretapProcessedFolders, setWiretapProcessedFolders] = useState(new Set());
   const [processedWiretapList, setProcessedWiretapList] = useState([]); // List of all processed wiretap folders
+  const [showFolderProfileModal, setShowFolderProfileModal] = useState(false);
+  const [folderProfilePath, setFolderProfilePath] = useState(null);
+  const [editingFolderProfileName, setEditingFolderProfileName] = useState(null); // Profile name being edited in FolderProfileModal
+  const [profilesWithFolderProcessing, setProfilesWithFolderProcessing] = useState([]);
   
   // Filters for unprocessed files
   const [unprocessedFilter, setUnprocessedFilter] = useState('');
@@ -144,6 +149,21 @@ export default function EvidenceProcessingView({
         if (data && data.length > 0 && !selectedProfile) {
           setSelectedProfile(data[0].name);
         }
+        
+        // Load profile details to filter for folder_processing
+        const profilesWithFolder = [];
+        for (const profile of data || []) {
+          try {
+            const details = await profilesAPI.get(profile.name);
+            if (details.folder_processing) {
+              profilesWithFolder.push(details);
+            }
+          } catch (err) {
+            // Skip profiles that fail to load
+            console.warn(`Failed to load profile ${profile.name}:`, err);
+          }
+        }
+        setProfilesWithFolderProcessing(profilesWithFolder);
       } catch (err) {
         console.error('Failed to load profiles:', err);
       } finally {
@@ -1322,12 +1342,60 @@ export default function EvidenceProcessingView({
             </h3>
           </div>
           <FileInfoViewer 
-            selectedFiles={Array.from(selectedIds)} 
+            selectedFiles={Array.from(selectedIds)}
             files={files}
             folderInfo={selectedFolderInfo}
             foldersInfo={selectedFoldersInfo}
             caseId={caseId}
             onProcessWiretap={handleProcessWiretap}
+            onCreateFolderProfile={(folderPath) => {
+              setFolderProfilePath(folderPath);
+              setShowFolderProfileModal(true);
+            }}
+            profilesWithFolderProcessing={profilesWithFolderProcessing}
+            onEditProfile={async (profileName) => {
+              // Validate profile name before proceeding
+              if (!profileName || typeof profileName !== 'string' || !profileName.trim()) {
+                console.error('[EvidenceProcessingView] Invalid profile name provided:', profileName);
+                alert('Please select a valid profile before editing.');
+                return;
+              }
+              
+              const trimmedName = profileName.trim();
+              
+              // Reject placeholder values
+              if (trimmedName === 'profile-name' || trimmedName === '' || trimmedName.toLowerCase() === 'profile name') {
+                console.error('[EvidenceProcessingView] Placeholder profile name detected:', trimmedName);
+                alert('Please select a valid profile from the dropdown before editing.');
+                return;
+              }
+              
+              console.log('[EvidenceProcessingView] Editing profile:', trimmedName);
+              
+              // Check if this is a folder profile (has folder_processing)
+              try {
+                const profileDetails = await profilesAPI.get(trimmedName);
+                if (profileDetails.folder_processing) {
+                  // It's a folder profile - open FolderProfileModal in edit mode
+                  setEditingFolderProfileName(trimmedName);
+                  setShowFolderProfileModal(true);
+                } else {
+                  // Regular profile - open ProfileEditor
+                  setEditingProfileName(trimmedName);
+                  setShowProfileEditor(true);
+                }
+              } catch (err) {
+                console.error('[EvidenceProcessingView] Failed to check profile type:', err);
+                // If it's a 404, show a helpful message
+                if (err.message && (err.message.includes('404') || err.message.includes('not found'))) {
+                  alert(`Profile "${trimmedName}" not found. Please select a valid profile.`);
+                  return;
+                }
+                // Fallback to ProfileEditor for other errors
+                setEditingProfileName(trimmedName);
+                setShowProfileEditor(true);
+              }
+            }}
           />
         </div>
 
@@ -1770,10 +1838,73 @@ export default function EvidenceProcessingView({
             } else if (savedProfileName) {
               setSelectedProfile(savedProfileName);
             }
+            
+            // Reload profiles with folder processing
+            const profilesWithFolder = [];
+            for (const profile of data || []) {
+              try {
+                const details = await profilesAPI.get(profile.name);
+                if (details.folder_processing) {
+                  profilesWithFolder.push(details);
+                }
+              } catch (err) {
+                // Skip profiles that fail to load
+                console.warn(`Failed to load profile ${profile.name}:`, err);
+              }
+            }
+            setProfilesWithFolderProcessing(profilesWithFolder);
           } catch (err) {
             console.error('Failed to reload profiles:', err);
           }
         }}
+      />
+      
+      {/* Folder Profile Modal */}
+      <FolderProfileModal
+        isOpen={showFolderProfileModal}
+        onClose={() => {
+          setShowFolderProfileModal(false);
+          setFolderProfilePath(null);
+          setEditingFolderProfileName(null);
+        }}
+        editingProfileName={editingFolderProfileName}
+        onProfileSaved={async (savedProfile) => {
+          // Reload profiles list to include the newly saved profile
+          try {
+            const data = await profilesAPI.list();
+            setProfiles(data || []);
+            
+            // Update profilesWithFolderProcessing if the new profile has folder_processing
+            if (savedProfile?.folder_processing) {
+              // Add the new profile to the list or reload the entire list
+              const profilesWithFolder = [];
+              for (const profile of data || []) {
+                try {
+                  const details = await profilesAPI.get(profile.name);
+                  if (details.folder_processing) {
+                    profilesWithFolder.push(details);
+                  }
+                } catch (err) {
+                  // Skip profiles that fail to load
+                  console.warn(`Failed to load profile ${profile.name}:`, err);
+                }
+              }
+              setProfilesWithFolderProcessing(profilesWithFolder);
+            }
+            
+            // If no profile is selected, select the newly saved one
+            if (!selectedProfile && savedProfile?.name) {
+              setSelectedProfile(savedProfile.name);
+            }
+            
+            // Clear editing state
+            setEditingFolderProfileName(null);
+          } catch (err) {
+            console.error('Failed to reload profiles after save:', err);
+          }
+        }}
+        caseId={caseId}
+        folderPath={editingFolderProfileName ? null : (folderProfilePath || '')}
       />
     </div>
   );

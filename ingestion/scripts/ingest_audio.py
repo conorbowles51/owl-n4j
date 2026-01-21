@@ -5,17 +5,23 @@ Audio Ingestion CLI - Entry point for wiretap audio ingestion.
 Processes wiretap folders containing audio files and metadata,
 transcribes using WhisperAI, and ingests into Neo4j.
 
+This script now uses profile-based folder processing (wiretap profile)
+which ensures proper ingestion through the standard pipeline including
+vectorization and entity extraction.
+
 Usage:
     python ingest_audio.py --dir ingestion/audio/example_wiretap
     python ingest_audio.py --folder ingestion/audio/example_wiretap/00000128
     python ingest_audio.py --dir ingestion/audio/example_wiretap --model large
+    python ingest_audio.py --folder ingestion/audio/example_wiretap/00000128 --case-id test-case
 """
 
 import argparse
 import sys
+import os
 from pathlib import Path
 
-from audio_processor import process_wiretap_directory, ingest_wiretap_folder, load_whisper_model
+from folder_ingestion import ingest_folder_with_profile
 from neo4j_client import Neo4jClient
 
 
@@ -61,6 +67,20 @@ def main():
         action="store_true",
         help="Clear the database before ingesting",
     )
+    
+    parser.add_argument(
+        "--case-id",
+        type=str,
+        default=None,
+        help="Case ID for associating entities (default: uses CASE_ID env var or 'default-case')",
+    )
+    
+    parser.add_argument(
+        "--profile",
+        type=str,
+        default="wiretap",
+        help="Profile to use for folder processing (default: wiretap)",
+    )
 
     args = parser.parse_args()
 
@@ -73,6 +93,9 @@ def main():
             print("Aborted.")
             return
 
+    # Get case_id
+    case_id = args.case_id or os.getenv("CASE_ID", "default-case")
+    
     # Process specific folder
     if args.folder:
         folder_path = Path(args.folder)
@@ -80,15 +103,39 @@ def main():
             print(f"Folder not found or is not a directory: {folder_path}", flush=True)
             sys.exit(1)
         
-        print(f"Loading Whisper model: {args.model}", flush=True)
-        model = load_whisper_model(args.model)
+        # Use profile-based folder ingestion
+        print(f"Processing folder with profile: {args.profile}", flush=True)
+        print(f"Case ID: {case_id}", flush=True)
         
         # Create a log callback that prints to stdout (which will be captured by subprocess)
         def log_callback(message: str):
             print(message, flush=True)
         
-        result = ingest_wiretap_folder(folder_path, model, log_callback)
-        print(f"\nResult: {result}", flush=True)
+        try:
+            result = ingest_folder_with_profile(
+                folder_path=folder_path,
+                profile_name=args.profile,
+                case_id=case_id,
+                log_callback=log_callback
+            )
+            
+            # Print result summary
+            print(f"\n{'='*60}", flush=True)
+            print(f"Processing Result:", flush=True)
+            print(f"  Status: {result.get('status', 'unknown')}", flush=True)
+            if result.get('entities_processed'):
+                print(f"  Entities processed: {result['entities_processed']}", flush=True)
+            if result.get('relationships_processed'):
+                print(f"  Relationships processed: {result['relationships_processed']}", flush=True)
+            if result.get('folder_processing_info'):
+                info = result['folder_processing_info']
+                print(f"  Files processed: {info.get('files_processed', 0)}", flush=True)
+            print(f"{'='*60}", flush=True)
+        except Exception as e:
+            print(f"\nERROR: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
         return
 
     # Process directory

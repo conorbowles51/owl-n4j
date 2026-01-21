@@ -41,6 +41,7 @@ class EvidenceRecord(BaseModel):
     created_at: str
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
+    summary: Optional[str] = None  # Document summary if available
 
 
 class EvidenceListResponse(BaseModel):
@@ -108,6 +109,28 @@ async def list_evidence(
             status=status,
             owner=user["username"],
         )
+        
+        # Get document summaries for processed files
+        if files and case_id:
+            processed_files = [f for f in files if f.get("status") == "processed"]
+            if processed_files:
+                try:
+                    # Get summaries from Neo4j
+                    doc_names = [f.get("original_filename", "") for f in processed_files]
+                    summaries = neo4j_service.get_document_summaries_batch(doc_names, case_id)
+                    
+                    # Add summaries to file records
+                    for file in files:
+                        if file.get("status") == "processed":
+                            filename = file.get("original_filename", "")
+                            if filename in summaries:
+                                file["summary"] = summaries[filename]
+                except Exception as e:
+                    # Don't fail the entire request if summary retrieval fails
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Failed to load document summaries: {str(e)}")
+        
         return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -696,12 +719,22 @@ async def get_evidence_by_filename(
         # Find matching file
         for record in all_files:
             if record.get("original_filename") == filename:
+                # Get document summary if available
+                summary = None
+                if case_id:
+                    try:
+                        summary = neo4j_service.get_document_summary(filename, case_id)
+                    except Exception:
+                        # Summary retrieval is optional
+                        pass
+                
                 return {
                     "found": True,
                     "evidence_id": record.get("id"),
                     "case_id": record.get("case_id"),
                     "original_filename": record.get("original_filename"),
                     "stored_path": record.get("stored_path"),
+                    "summary": summary,
                 }
         
         return {"found": False, "message": f"No evidence file found with name: {filename}"}
@@ -709,3 +742,345 @@ async def get_evidence_by_filename(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/summary/{filename}")
+async def get_document_summary(
+    filename: str,
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get the AI-generated summary for a document.
+    
+    Returns the summary stored in Neo4j for the document with the given filename.
+    """
+    try:
+        summary = neo4j_service.get_document_summary(filename, case_id)
+        return {
+            "filename": filename,
+            "case_id": case_id,
+            "summary": summary,
+            "has_summary": summary is not None,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Folder Profile Management Endpoints
+
+class FolderFileInfo(BaseModel):
+    name: str
+    path: str
+    type: str  # "file" or "directory"
+    size: Optional[int] = None
+
+
+class FolderFilesResponse(BaseModel):
+    files: List[FolderFileInfo]
+    folder_path: str
+
+
+class FolderProfileGenerateRequest(BaseModel):
+    folder_path: str
+    case_id: str
+    user_instructions: str
+    file_list: List[FolderFileInfo]
+
+
+class FolderProfileTestRequest(BaseModel):
+    folder_path: str
+    case_id: str
+    profile_name: str
+
+
+@router.get("/folder/files", response_model=FolderFilesResponse)
+async def list_folder_files(
+    case_id: str = Query(..., description="Case ID"),
+    folder_path: str = Query(..., description="Relative folder path from case data directory"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    List files in a folder for profile creation.
+    """
+    try:
+        case_data_dir = BASE_DIR / "ingestion" / "data" / case_id
+        if not case_data_dir.exists():
+            raise HTTPException(status_code=404, detail="Case data directory not found")
+        
+        full_folder_path = (case_data_dir / folder_path).resolve()
+        case_resolved = case_data_dir.resolve()
+        
+        try:
+            full_folder_path.relative_to(case_resolved)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path outside case directory")
+        
+        if not full_folder_path.exists() or not full_folder_path.is_dir():
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        files = []
+        for item_path in sorted(full_folder_path.iterdir()):
+            if item_path.name.startswith('.'):
+                continue
+            
+            relative_path = item_path.relative_to(full_folder_path)
+            files.append(FolderFileInfo(
+                name=item_path.name,
+                path=str(relative_path),
+                type="directory" if item_path.is_dir() else "file",
+                size=item_path.stat().st_size if item_path.is_file() else None
+            ))
+        
+        return FolderFilesResponse(files=files, folder_path=folder_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/folder/profile/generate")
+async def generate_folder_profile(
+    request: FolderProfileGenerateRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Generate a folder processing profile from natural language instructions.
+    Uses LLM to interpret user instructions and create a profile structure.
+    """
+    import json
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        from services.llm_service import llm_service
+        
+        # Validate that we have files to work with
+        if not request.file_list:
+            raise HTTPException(status_code=400, detail="No files provided in file_list")
+        
+        # Validate user instructions
+        if not request.user_instructions or not request.user_instructions.strip():
+            raise HTTPException(status_code=400, detail="User instructions cannot be empty")
+        
+        logger.info(f"Generating folder profile for case {request.case_id}, folder {request.folder_path} with {len(request.file_list)} files")
+        
+        # Build prompt for LLM
+        file_list_str = "\n".join([f"- {f.name} ({f.type})" for f in request.file_list])
+        
+        prompt = f"""You are helping a user configure a folder processing profile.
+
+The user has uploaded a folder with these files:
+{file_list_str}
+
+The user wants this processing:
+{request.user_instructions}
+
+Generate a JSON profile structure that defines how to process this folder. The profile should include:
+1. A "folder_processing" section with:
+   - "type": "special" (to indicate files are related)
+   - "file_rules": Array of rules, each with:
+     - "pattern": File pattern (e.g., "*.wav,*.mp3" or "*.sri")
+     - "role": Role of the file ("audio", "metadata", "interpretation", "document", etc.)
+     - For audio: "actions": ["transcribe", "translate"], "transcribe_languages": [...], "translate_languages": [...], "whisper_model": "base"
+     - For metadata: "parser": "sri" (or other), "metadata_extraction": {{...}}
+     - For interpretation: "parser": "rtf", "extract_participants": true, "extract_interpretation": true
+   - "processing_rules": Text description explaining how files relate and how to process them
+   - "output_format": "wiretap_structured" or "combined" or "custom"
+   - "related_files_indicator": true
+
+Respond with valid JSON only, matching this structure:
+{{
+  "folder_processing": {{
+    "type": "special",
+    "file_rules": [...],
+    "processing_rules": "...",
+    "output_format": "...",
+    "related_files_indicator": true
+  }}
+}}"""
+        
+        logger.info("Calling LLM service to generate profile...")
+        
+        # Call LLM with JSON mode and timeout
+        # Note: LLM calls can take 30-90 seconds depending on the model and prompt complexity
+        # This is expected behavior - the request will show "Waiting for Server" during this time
+        llm_timeout = 90  # Increased to 90 seconds to accommodate slower models
+        
+        try:
+            # Run LLM call in thread pool to avoid blocking the event loop
+            llm_response = await run_in_threadpool(
+                llm_service.call,
+                prompt=prompt,
+                temperature=0.3,
+                json_mode=True,
+                timeout=llm_timeout
+            )
+            logger.info(f"LLM service responded (length: {len(llm_response) if llm_response else 0})")
+        except Exception as llm_err:
+            logger.error(f"LLM service call failed: {str(llm_err)}")
+            # Check if it's a timeout error
+            error_str = str(llm_err).lower()
+            if 'timeout' in error_str or 'timed out' in error_str or '504' in str(llm_err):
+                raise HTTPException(
+                    status_code=504,
+                    detail=f"LLM service timeout: Profile generation took longer than {llm_timeout} seconds. The LLM call is taking longer than expected. Please try again with simpler instructions or check if your LLM service is responding."
+                )
+            raise HTTPException(
+                status_code=500,
+                detail=f"LLM service error: {str(llm_err)}. This might be due to a timeout or service unavailability. Please check your LLM configuration."
+            )
+        
+        if not llm_response:
+            raise HTTPException(status_code=500, detail="LLM service returned empty response")
+        
+        # Parse LLM response
+        try:
+            profile_data = json.loads(llm_response)
+        except json.JSONDecodeError as json_err:
+            logger.warning(f"Failed to parse LLM response as JSON: {str(json_err)}")
+            logger.debug(f"LLM response content: {llm_response[:500]}")
+            # Try to extract JSON from response if it's wrapped
+            import re
+            json_match = re.search(r'\{[\s\S]*\}', llm_response)
+            if json_match:
+                try:
+                    profile_data = json.loads(json_match.group(0))
+                except json.JSONDecodeError:
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Failed to parse LLM response as JSON. Response preview: {llm_response[:200]}"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"LLM response is not valid JSON. Response preview: {llm_response[:200]}"
+                )
+        
+        folder_processing = profile_data.get("folder_processing", {})
+        
+        if not folder_processing:
+            logger.warning("Generated profile does not contain folder_processing section")
+            # Create a basic structure if missing
+            folder_processing = {
+                "type": "special",
+                "file_rules": [],
+                "processing_rules": request.user_instructions,
+                "output_format": "combined",
+                "related_files_indicator": True
+            }
+        
+        logger.info("Profile generation completed successfully")
+        
+        return {
+            "success": True,
+            "profile": folder_processing,
+            "raw_response": llm_response[:500] if len(llm_response) > 500 else llm_response  # Truncate for response
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Unexpected error generating folder profile: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate profile: {str(e)}")
+
+
+@router.post("/folder/profile/test")
+async def test_folder_profile(
+    request: FolderProfileTestRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Test a folder processing profile on a folder (dry run or full processing).
+    Returns a background task ID for processing.
+    """
+    try:
+        case_data_dir = BASE_DIR / "ingestion" / "data" / request.case_id
+        if not case_data_dir.exists():
+            raise HTTPException(status_code=404, detail="Case data directory not found")
+        
+        full_folder_path = (case_data_dir / request.folder_path).resolve()
+        case_resolved = case_data_dir.resolve()
+        
+        try:
+            full_folder_path.relative_to(case_resolved)
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path outside case directory")
+        
+        if not full_folder_path.exists() or not full_folder_path.is_dir():
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        # Create background task for testing
+        task = background_task_storage.create_task(
+            task_type="folder_profile_test",
+            task_name=f"Test folder profile: {request.folder_path}",
+            case_id=request.case_id,
+            owner=user["username"],
+            metadata={
+                "folder_path": request.folder_path,
+                "profile_name": request.profile_name,
+            }
+        )
+        task_id = task["id"]
+        
+        # Import and run folder ingestion in background
+        def test_folder_profile_background():
+            from pathlib import Path
+            import sys
+            INGESTION_SCRIPTS_PATH = BASE_DIR / "ingestion" / "scripts"
+            if str(INGESTION_SCRIPTS_PATH) not in sys.path:
+                sys.path.insert(0, str(INGESTION_SCRIPTS_PATH))
+            
+            from folder_ingestion import ingest_folder_with_profile
+            
+            def log_callback(message: str):
+                evidence_log_storage.add_log(
+                    case_id=request.case_id,
+                    evidence_id=None,
+                    filename=None,
+                    level="info",
+                    message=f"[Profile Test] {message}"
+                )
+            
+            try:
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.RUNNING.value,
+                    started_at=datetime.now().isoformat(),
+                )
+                
+                result = ingest_folder_with_profile(
+                    folder_path=full_folder_path,
+                    profile_name=request.profile_name,
+                    case_id=request.case_id,
+                    log_callback=log_callback
+                )
+                
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.COMPLETED.value,
+                    completed_at=datetime.now().isoformat(),
+                    metadata={
+                        "result": result
+                    }
+                )
+            except Exception as e:
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    error=str(e),
+                    completed_at=datetime.now().isoformat(),
+                )
+        
+        import threading
+        thread = threading.Thread(target=test_folder_profile_background, daemon=False)
+        thread.start()
+        
+        return {
+            "success": True,
+            "task_id": task_id,
+            "message": "Folder profile test started"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

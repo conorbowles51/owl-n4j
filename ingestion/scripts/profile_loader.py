@@ -18,26 +18,32 @@ _cache: dict[str, dict[str, Any]] = {}
 _cache_lock = Lock()
 
 
-def load_profile(profile_name: str | None = None) -> dict[str, Any]:
+def load_profile(profile_name: str | None = None, force_reload: bool = False) -> dict[str, Any]:
     """
     Load a profile configuration by name. Thread-safe.
 
     Args:
         profile_name: Profile name (without .json). Defaults to 'generic'.
+        force_reload: If True, reload from disk even if cached.
 
     Returns:
         Profile configuration dictionary.
     """
     name = profile_name or "generic"
 
+    # If force_reload, clear cache for this profile
+    if force_reload:
+        with _cache_lock:
+            _cache.pop(name, None)
+
     # Fast path: check cache without lock first
-    if name in _cache:
+    if name in _cache and not force_reload:
         return _cache[name]
 
     # Slow path: acquire lock and load profile
     with _cache_lock:
         # Double-check after acquiring lock
-        if name in _cache:
+        if name in _cache and not force_reload:
             return _cache[name]
 
         profile_path = PROFILES_DIR / f"{name}.json"
@@ -47,7 +53,7 @@ def load_profile(profile_name: str | None = None) -> dict[str, Any]:
             profile_path = PROFILES_DIR / "generic.json"
             name = "generic"
             # Check cache again for generic
-            if name in _cache:
+            if name in _cache and not force_reload:
                 return _cache[name]
 
         with open(profile_path, "r", encoding="utf-8") as f:
@@ -73,3 +79,9 @@ def get_llm_config(profile_name: str | None = None) -> dict[str, Any] | None:
     """Get the LLM configuration from a profile."""
     profile = load_profile(profile_name)
     return profile.get("llm_config")
+
+
+def get_folder_processing_config(profile_name: str | None = None) -> dict[str, Any] | None:
+    """Get the folder_processing configuration section from a profile."""
+    profile = load_profile(profile_name)
+    return profile.get("folder_processing")

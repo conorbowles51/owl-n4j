@@ -25,6 +25,7 @@ import BackgroundTasksPanel from './BackgroundTasksPanel';
 import DocumentationViewer from './DocumentationViewer';
 import SystemLogsPanel from './SystemLogsPanel';
 import DatabaseModal from './DatabaseModal';
+import FilePreview from './FilePreview';
 
 /**
  * CaseManagementView Component
@@ -75,6 +76,7 @@ export default function CaseManagementView({
   const [loadedSnapshotDetails, setLoadedSnapshotDetails] = useState({}); // Store full snapshot data by ID
   const [loadingSnapshotIds, setLoadingSnapshotIds] = useState(new Set()); // Track which snapshots are currently being loaded
   const [showPreviousVersions, setShowPreviousVersions] = useState(false); // Show/hide previous versions
+  const [previewedFile, setPreviewedFile] = useState(null); // Track which file is being previewed: {id, name, stored_path}
   // Case opening progress
   const [caseOpeningProgress, setCaseOpeningProgress] = useState({
     isOpen: false,
@@ -1412,6 +1414,19 @@ export default function CaseManagementView({
                   )}
                   {showEvidenceFiles && (
                     <div className="ml-2">
+                      {/* File Preview - moved above file list */}
+                      {previewedFile && selectedCase && (
+                        <div className="mb-4 pb-4 border-b border-light-200">
+                          <FilePreview
+                            caseId={selectedCase.id}
+                            filePath={previewedFile.stored_path}
+                            fileName={previewedFile.name}
+                            fileType="file"
+                            onClose={() => setPreviewedFile(null)}
+                          />
+                        </div>
+                      )}
+                      
                       {/* Filter Input */}
                       <div className="mb-2 relative">
                         <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-light-400" />
@@ -1493,10 +1508,10 @@ export default function CaseManagementView({
                             {paginatedItems.map((file) => (
                               <div
                                 key={file.id}
-                                className="flex items-center justify-between p-2 bg-white rounded border border-light-200 text-xs"
+                                className="flex items-center justify-between p-2 bg-white rounded border border-light-200 text-xs group"
                               >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <FileText className="w-3 h-3 text-owl-blue-700" />
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <FileText className="w-3 h-3 text-owl-blue-700 flex-shrink-0" />
                                   <span className="truncate text-owl-blue-900">
                                     {file.original_filename}
                                   </span>
@@ -1506,6 +1521,24 @@ export default function CaseManagementView({
                                   <span className="hidden sm:inline">
                                     {new Date(file.created_at).toLocaleString()}
                                   </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPreviewedFile(
+                                        previewedFile?.id === file.id
+                                          ? null
+                                          : {
+                                              id: file.id,
+                                              name: file.original_filename,
+                                              stored_path: file.stored_path,
+                                            }
+                                      );
+                                    }}
+                                    className="p-1 rounded hover:bg-owl-blue-100 text-owl-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                    title="Preview file contents"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               </div>
                             ))}

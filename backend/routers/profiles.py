@@ -55,6 +55,7 @@ class ProfileDetail(BaseModel):
     ingestion: Dict[str, Any]
     chat: Dict[str, Any]
     llm_config: Optional[Dict[str, Any]] = None
+    folder_processing: Optional[Dict[str, Any]] = None  # Folder processing configuration if present
 
 
 class ProfileCreate(BaseModel):
@@ -73,6 +74,8 @@ class ProfileCreate(BaseModel):
     chat_system_context: Optional[str] = None
     chat_analysis_guidance: Optional[str] = None
     chat_temperature: Optional[float] = 1.0
+    # Folder processing config (optional, preserves existing if not provided when updating)
+    folder_processing: Optional[Dict[str, Any]] = None
 
 
 @router.get("", response_model=List[ProfileSummary])
@@ -103,10 +106,22 @@ async def list_profiles():
 @router.get("/{profile_name}", response_model=ProfileDetail)
 async def get_profile(profile_name: str):
     """Get detailed information about a specific profile."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Getting profile: {profile_name}")
+    
     profile_path = PROFILES_DIR / f"{profile_name}.json"
+    logger.info(f"Looking for profile file at: {profile_path}")
+    logger.info(f"Profile file exists: {profile_path.exists()}")
     
     if not profile_path.exists():
-        raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
+        # List available profiles for debugging
+        available_profiles = [f.stem for f in PROFILES_DIR.glob("*.json")] if PROFILES_DIR.exists() else []
+        logger.warning(f"Profile '{profile_name}' not found. Available profiles: {available_profiles}")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Profile '{profile_name}' not found. Available profiles: {', '.join(available_profiles) if available_profiles else 'none'}"
+        )
     
     try:
         with open(profile_path, 'r', encoding='utf-8') as f:
@@ -117,7 +132,8 @@ async def get_profile(profile_name: str):
                 case_type=data.get("case_type"),
                 ingestion=data.get("ingestion", {}),
                 chat=data.get("chat", {}),
-                llm_config=data.get("llm_config")
+                llm_config=data.get("llm_config"),
+                folder_processing=data.get("folder_processing")  # Include folder_processing if present
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load profile: {str(e)}")
@@ -137,6 +153,16 @@ async def create_or_update_profile(profile: ProfileCreate):
     PROFILES_DIR.mkdir(parents=True, exist_ok=True)
     
     profile_path = PROFILES_DIR / f"{profile.name}.json"
+    
+    # Load existing profile data if updating (to preserve folder_processing if not provided)
+    existing_profile_data = None
+    if profile_path.exists():
+        try:
+            with open(profile_path, 'r', encoding='utf-8') as f:
+                existing_profile_data = json.load(f)
+        except Exception:
+            # If we can't read existing, continue without it
+            pass
     
     # Build the profile structure matching the new simplified format
     # Convert special_entity_types to list of dicts for JSON serialization
@@ -161,26 +187,80 @@ async def create_or_update_profile(profile: ProfileCreate):
         }
     }
     
-    # Add LLM config if provided
-    if profile.llm_provider or profile.llm_model_id:
-        profile_data["llm_config"] = {
-            "provider": profile.llm_provider or "ollama",
-            "model_id": profile.llm_model_id or ""
-        }
+    # Add LLM config
+    # Always include llm_config - prioritize provided values, fall back to existing, then defaults
+    # IMPORTANT: When updating, if llm_provider/llm_model_id are provided (even if empty string),
+    # we should use them. Only use existing_profile_data if the fields are None (not provided).
+    provider_value = None
+    model_id_value = None
+    
+    if profile.llm_provider is not None:
+        # Explicitly provided - use it (even if empty string)
+        provider_value = profile.llm_provider
+    elif existing_profile_data and "llm_config" in existing_profile_data:
+        # Not provided - preserve existing
+        provider_value = existing_profile_data["llm_config"].get("provider", "ollama")
+    else:
+        # No existing - use default
+        provider_value = "ollama"
+    
+    if profile.llm_model_id is not None:
+        # Explicitly provided - use it (even if empty string)
+        model_id_value = profile.llm_model_id
+    elif existing_profile_data and "llm_config" in existing_profile_data:
+        # Not provided - preserve existing
+        model_id_value = existing_profile_data["llm_config"].get("model_id", "")
+    else:
+        # No existing - use default
+        model_id_value = ""
+    
+    # Always include llm_config in the saved profile
+    profile_data["llm_config"] = {
+        "provider": provider_value,
+        "model_id": model_id_value
+    }
+    
+    # Handle folder_processing: use provided value, or preserve existing if updating
+    if profile.folder_processing is not None:
+        # Explicitly provided (could be empty dict to clear it)
+        profile_data["folder_processing"] = profile.folder_processing
+    elif existing_profile_data and "folder_processing" in existing_profile_data:
+        # Not provided but exists in current profile - preserve it
+        profile_data["folder_processing"] = existing_profile_data["folder_processing"]
     
     try:
         # Write the profile file
+        # Log what we're saving for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Saving profile {profile.name} with llm_config: {profile_data.get('llm_config')}")
+        
         with open(profile_path, 'w', encoding='utf-8') as f:
             json.dump(profile_data, f, indent=2, ensure_ascii=False)
         
-        return ProfileDetail(
+        # Clear profile cache in ingestion scripts (if they're using the same cache)
+        # Note: This only works if running in the same process. For separate processes,
+        # the cache will be cleared on next load due to file modification time check.
+        # For now, we'll rely on the ingestion scripts checking file modification time
+        # or reloading on each use (which they should do for production reliability)
+        
+        result = ProfileDetail(
             name=profile_data["name"],
             description=profile_data["description"],
             case_type=profile_data["case_type"],
             ingestion=profile_data["ingestion"],
             chat=profile_data["chat"],
-            llm_config=profile_data.get("llm_config")
+            llm_config=profile_data.get("llm_config"),
+            folder_processing=profile_data.get("folder_processing")
         )
+        
+        # Verify the file was written correctly
+        if not profile_path.exists():
+            logger.error(f"Profile file was not created at {profile_path}")
+            raise HTTPException(status_code=500, detail=f"Profile file was not created")
+        
+        logger.info(f"Profile {profile_data['name']} saved successfully. llm_config: {profile_data.get('llm_config')}")
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save profile: {str(e)}")
 

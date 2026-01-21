@@ -13,8 +13,10 @@ import {
   Radio,
   CheckCircle2,
   Filter,
+  Eye,
 } from 'lucide-react';
 import { filesystemAPI } from '../services/api';
+import FilePreview from './FilePreview';
 
 /**
  * FileNavigator Component
@@ -42,6 +44,7 @@ export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, 
   const [filterProcessed, setFilterProcessed] = useState(null); // null = all, true = processed only, false = unprocessed only
   const [filterFileType, setFilterFileType] = useState(null); // null = all, or file extension like 'pdf', 'txt', etc.
   const [processedMapVersion, setProcessedMapVersion] = useState(0); // Force re-render when processedFilesMap changes
+  const [previewedFile, setPreviewedFile] = useState(null); // Track which file is being previewed: {path, name}
 
   const loadDirectory = useCallback(async (path = '') => {
     if (!caseId) {
@@ -540,15 +543,43 @@ export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, 
                     </span>
                   )}
                   <button
-                    onClick={(e) => handleInfoClick(e, { ...file, type: 'file' })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onInfoClick) {
+                        handleInfoClick(e, { ...file, type: 'file' });
+                      }
+                    }}
                     className="p-1 rounded hover:bg-owl-blue-100 text-owl-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
                     title="View file information"
                   >
                     <Info className="w-3.5 h-3.5" />
                   </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPreviewedFile(previewedFile?.path === file.path ? null : { path: file.path, name: file.name });
+                    }}
+                    className="p-1 rounded hover:bg-owl-blue-100 text-owl-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Preview file contents"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               );
             })}
+          </div>
+        )}
+        
+        {/* File Preview */}
+        {previewedFile && caseId && (
+          <div className="mt-4 pt-4 border-t border-light-200">
+            <FilePreview
+              caseId={caseId}
+              filePath={previewedFile.path}
+              fileName={previewedFile.name}
+              fileType="file"
+              onClose={() => setPreviewedFile(null)}
+            />
           </div>
         )}
       </div>

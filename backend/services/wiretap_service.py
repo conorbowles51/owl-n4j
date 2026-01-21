@@ -166,8 +166,10 @@ async def process_wiretap_folder_async(
             str(ingest_script),
             "--folder",
             str(folder_path),
-            "--model",
-            whisper_model
+            "--case-id",
+            case_id,
+            "--profile",
+            "wiretap",  # Use wiretap profile for profile-based processing
         ]
         
         def log(message: str):

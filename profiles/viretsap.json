@@ -1,0 +1,100 @@
+{
+  "name": "viretsap",
+  "description": "do something",
+  "case_type": "General Analysis",
+  "ingestion": {
+    "system_context": "You are an expert analyst extracting entities and relationships from documents. Focus on identifying key people, organizations, locations, events, dates, and their connections. Capture relevant details that establish relationships between entities. Be thorough but precise in your extractions.",
+    "special_entity_types": [],
+    "temperature": 1.0
+  },
+  "chat": {
+    "system_context": "You are an AI assistant helping to analyze and understand documents.",
+    "analysis_guidance": "Provide clear explanations and highlight important connections.",
+    "temperature": 1.0
+  },
+  "folder_processing": {
+    "type": "special",
+    "file_rules": [
+      {
+        "pattern": "*.wav,*.WAV",
+        "role": "audio",
+        "actions": [
+          "transcribe",
+          "translate"
+        ],
+        "transcribe_languages": [
+          "en",
+          "es"
+        ],
+        "translate_languages": [
+          "en"
+        ],
+        "whisper_model": "base"
+      },
+      {
+        "pattern": "*.sri,*.sri.XML",
+        "role": "metadata",
+        "parser": "sri",
+        "metadata_extraction": {
+          "fields": [
+            "call_id",
+            "case_id",
+            "caller_number",
+            "callee_number",
+            "start_time",
+            "end_time",
+            "direction",
+            "channel_map",
+            "confidence",
+            "keywords"
+          ],
+          "merge_strategy": "prefer_native_over_xml",
+          "dedupe_xml_sidecars": true
+        }
+      },
+      {
+        "pattern": "*_sri.xdb,*_sri.xdb.XML,*_sri.xsc,*_sri.xsc.XML",
+        "role": "metadata",
+        "parser": "wiretap_sidecar",
+        "metadata_extraction": {
+          "fields": [
+            "session_id",
+            "tap_id",
+            "source_system",
+            "schema_version",
+            "notes"
+          ],
+          "merge_strategy": "prefer_native_over_xml",
+          "dedupe_xml_sidecars": true
+        }
+      },
+      {
+        "pattern": "*.wav.XML,*.WAV.XML",
+        "role": "metadata",
+        "parser": "audio_xml",
+        "metadata_extraction": {
+          "fields": [
+            "duration",
+            "sample_rate",
+            "channels",
+            "bitrate",
+            "codec",
+            "file_path"
+          ],
+          "merge_strategy": "prefer_native_over_xml",
+          "dedupe_xml_sidecars": true
+        }
+      },
+      {
+        "pattern": "*_syn.rtf,*_syn.rtf.XML",
+        "role": "interpretation",
+        "parser": "rtf",
+        "extract_participants": true,
+        "extract_interpretation": true
+      }
+    ],
+    "processing_rules": "Group files by shared base name (e.g., `210-237-1858_174`) before the extension. Use the WAV as the primary audio source. Transcribe audio in English/Spanish and translate outputs to English. Parse .sri (prefer native .sri over .sri.XML) for call metadata (IDs, numbers, timing, direction, channels) and apply these to the audio transcript (e.g., seed participants and timing). Treat *_syn.rtf as a human-provided synopsis/interpretation: extract participants and interpretation notes; merge as annotations alongside the transcript without overwriting the machine transcript. Consider *_sri.xdb/.xsc (and their .XML exports) as supplemental wiretap sidecars to enrich metadata; prefer native over XML sidecars and deduplicate overlapping fields. Use *.wav.XML for technical audio properties to augment the record. When duplicate representations exist (native + XML), keep one canonical set based on native-first preference. Output a single structured record per base name with linked audio, parsed metadata, and interpretation.",
+    "output_format": "wiretap_structured",
+    "related_files_indicator": true
+  }
+}

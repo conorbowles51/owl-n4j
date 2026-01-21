@@ -2275,6 +2275,97 @@ class Neo4jService:
             }
 
     # -------------------------------------------------------------------------
+    # Document Summaries
+    # -------------------------------------------------------------------------
+
+    def get_document_summary(self, doc_name: str, case_id: str) -> Optional[str]:
+        """
+        Get the summary for a document by its name.
+        
+        Args:
+            doc_name: Document filename/name
+            case_id: Case ID to filter by
+            
+        Returns:
+            Document summary if found, None otherwise
+        """
+        # Normalise the document name to match the key format used during ingestion
+        # This matches the normalise_key function from ingestion/scripts/entity_resolution.py
+        import re
+        doc_key = doc_name.strip().lower()
+        doc_key = re.sub(r"[\s_]+", "-", doc_key)
+        doc_key = re.sub(r"[^a-z0-9\-]", "", doc_key)
+        doc_key = re.sub(r"-+", "-", doc_key)
+        doc_key = doc_key.strip("-")
+        
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Document {key: $doc_key, case_id: $case_id})
+                RETURN d.summary AS summary
+                """,
+                doc_key=doc_key,
+                case_id=case_id,
+            )
+            record = result.single()
+            if record and record["summary"]:
+                return record["summary"]
+            return None
+
+    def get_document_summaries_batch(self, doc_names: List[str], case_id: str) -> Dict[str, Optional[str]]:
+        """
+        Get summaries for multiple documents by their names.
+        
+        Args:
+            doc_names: List of document filenames/names
+            case_id: Case ID to filter by
+            
+        Returns:
+            Dict mapping doc_name -> summary (None if not found)
+        """
+        # Normalise all document names
+        import re
+        summaries = {}
+        
+        # Build normalized keys map
+        doc_key_map = {}  # doc_key -> doc_name
+        for doc_name in doc_names:
+            doc_key = doc_name.strip().lower()
+            doc_key = re.sub(r"[\s_]+", "-", doc_key)
+            doc_key = re.sub(r"[^a-z0-9\-]", "", doc_key)
+            doc_key = re.sub(r"-+", "-", doc_key)
+            doc_key = doc_key.strip("-")
+            doc_key_map[doc_key] = doc_name
+        
+        if not doc_key_map:
+            return summaries
+        
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Document)
+                WHERE d.key IN $doc_keys AND d.case_id = $case_id
+                RETURN d.key AS key, d.summary AS summary
+                """,
+                doc_keys=list(doc_key_map.keys()),
+                case_id=case_id,
+            )
+            
+            for record in result:
+                doc_key = record["key"]
+                summary = record["summary"]
+                doc_name = doc_key_map.get(doc_key)
+                if doc_name:
+                    summaries[doc_name] = summary if summary else None
+        
+        # Fill in None for docs that weren't found
+        for doc_name in doc_names:
+            if doc_name not in summaries:
+                summaries[doc_name] = None
+        
+        return summaries
+
+    # -------------------------------------------------------------------------
     # Case Management
     # -------------------------------------------------------------------------
 

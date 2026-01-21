@@ -1,0 +1,48 @@
+{
+  "name": "ggg",
+  "description": "Wiretap folder with audio recordings, metadata, and interpretation files\n\nAdditional Instructions: only metadata",
+  "case_type": "Wiretap investigation",
+  "ingestion": {
+    "system_context": "You are an expert analyst extracting entities and relationships from wiretap recordings. Focus on identifying participants, conversation topics, locations mentioned, times/dates of calls, phone numbers, and relationships between speakers. Pay attention to code words, aliases, and references to other entities. Extract verified facts about what was said and link participants to the conversations.",
+    "special_entity_types": [
+      {
+        "name": "WiretapRecording",
+        "description": "A recorded wiretap conversation or call"
+      },
+      {
+        "name": "CallParticipant",
+        "description": "A person who participated in a wiretap call"
+      }
+    ],
+    "temperature": 1.0
+  },
+  "chat": {
+    "system_context": "You are an AI assistant helping to analyze wiretap recordings and conversations.",
+    "analysis_guidance": "Focus on identifying key participants, conversation topics, and relationships between speakers. Highlight important calls and connections.",
+    "temperature": 1.0
+  },
+  "llm_config": {
+    "provider": "openai",
+    "model_id": "gpt-4o"
+  },
+  "folder_processing": {
+    "type": "special",
+    "file_rules": [
+      {
+        "pattern": "*sri",
+        "role": "metadata",
+        "parser": "sri"
+      },
+      {
+        "pattern": "*rtf",
+        "role": "interpretation",
+        "parser": "rtf",
+        "extract_participants": true,
+        "extract_interpretation": true
+      }
+    ],
+    "processing_rules": "only metadata",
+    "output_format": "wiretap_structured",
+    "related_files_indicator": true
+  }
+}

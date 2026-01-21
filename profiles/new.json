@@ -1,0 +1,167 @@
+{
+  "name": "new",
+  "description": "save",
+  "case_type": null,
+  "ingestion": {
+    "system_context": "You are an expert analyst extracting entities and relationships from document analysis documents. Focus on identifying key people, organizations, locations, events, and their connections. Capture dates for events and relevant details that establish relationships between entities.",
+    "special_entity_types": [],
+    "temperature": 1.0
+  },
+  "chat": {
+    "system_context": "You are an AI assistant helping to analyze case documents.",
+    "analysis_guidance": "Identify patterns, highlight connections, and provide clear explanations.",
+    "temperature": 1.0
+  },
+  "folder_processing": {
+    "type": "special",
+    "file_rules": [
+      {
+        "pattern": "*.wav,*.WAV",
+        "role": "audio",
+        "actions": [
+          "transcribe",
+          "translate"
+        ],
+        "transcribe_languages": [
+          "en"
+        ],
+        "translate_languages": [],
+        "whisper_model": "base"
+      },
+      {
+        "pattern": "*.sri",
+        "role": "metadata",
+        "parser": "sri",
+        "metadata_extraction": {
+          "fields": [
+            "call_id",
+            "start_time",
+            "end_time",
+            "duration",
+            "channel_count",
+            "sample_rate_hz",
+            "speakers",
+            "segments",
+            "words",
+            "timecodes",
+            "confidence",
+            "agencies",
+            "case_number"
+          ],
+          "merge_strategy": "prefer_primary"
+        }
+      },
+      {
+        "pattern": "*.sri.xml,*.sri.XML",
+        "role": "metadata",
+        "parser": "xml",
+        "metadata_extraction": {
+          "fields": [
+            "call_id",
+            "timestamps",
+            "speaker_labels",
+            "transcript",
+            "confidence",
+            "topics",
+            "keywords"
+          ],
+          "merge_strategy": "augment"
+        }
+      },
+      {
+        "pattern": "*_sri.xdb",
+        "role": "metadata",
+        "parser": "xdb",
+        "metadata_extraction": {
+          "fields": [
+            "indexes",
+            "lexicon",
+            "speaker_map",
+            "session_guid"
+          ],
+          "merge_strategy": "augment"
+        }
+      },
+      {
+        "pattern": "*_sri.xdb.xml,*_sri.xdb.XML",
+        "role": "metadata",
+        "parser": "xml",
+        "metadata_extraction": {
+          "fields": [
+            "indexes",
+            "speaker_map",
+            "entities",
+            "topics"
+          ],
+          "merge_strategy": "augment"
+        }
+      },
+      {
+        "pattern": "*_sri.xsc",
+        "role": "metadata",
+        "parser": "xsc",
+        "metadata_extraction": {
+          "fields": [
+            "schema_version",
+            "field_mappings",
+            "normalization"
+          ],
+          "merge_strategy": "augment"
+        }
+      },
+      {
+        "pattern": "*_sri.xsc.xml,*_sri.xsc.XML",
+        "role": "metadata",
+        "parser": "xml",
+        "metadata_extraction": {
+          "fields": [
+            "schema_version",
+            "field_mappings",
+            "normalization"
+          ],
+          "merge_strategy": "augment"
+        }
+      },
+      {
+        "pattern": "*.wav.xml,*.wav.XML",
+        "role": "metadata",
+        "parser": "xml",
+        "metadata_extraction": {
+          "fields": [
+            "media_info",
+            "duration",
+            "sample_rate_hz",
+            "channels",
+            "bit_depth",
+            "codec"
+          ],
+          "merge_strategy": "augment"
+        }
+      },
+      {
+        "pattern": "*_syn.rtf",
+        "role": "interpretation",
+        "parser": "rtf",
+        "extract_participants": true,
+        "extract_interpretation": true
+      },
+      {
+        "pattern": "*_syn.rtf.xml,*_syn.rtf.XML",
+        "role": "metadata",
+        "parser": "xml",
+        "metadata_extraction": {
+          "fields": [
+            "participants",
+            "summary",
+            "notes",
+            "tags"
+          ],
+          "merge_strategy": "augment"
+        }
+      }
+    ],
+    "processing_rules": "Treat files with the same base stem (e.g., 210-237-1858_174) as one related call/session. Use the WAV as the primary media for transcription; run English transcription with Whisper base; no translation targets are defined. Parse the SRI file as the canonical metadata source; use corresponding SRI/XML, XDB, XSC, and WAV.XML files only to augment the primary SRI metadata without creating duplicates. If both raw and XML variants exist (e.g., *.sri and *.sri.xml, *_sri.xdb and *_sri.xdb.xml), prefer the non-XML as primary and merge non-conflicting fields from XML. In case of conflicts across metadata sources, keep SRI values, then fall back to XDB/XSC, then WAV.XML. Parse the RTF synopsis as interpretation, extracting participants and interpretation/summary content; if an RTF XML sidecar exists, use it only to augment the extracted interpretation. Skip files that do not match any rule. Save results in a single structured output grouped by base stem.",
+    "output_format": "wiretap_structured",
+    "related_files_indicator": true
+  }
+}

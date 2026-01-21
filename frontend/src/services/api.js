@@ -727,6 +727,14 @@ export const chatHistoryAPI = {
  */
 export const evidenceAPI = {
   /**
+   * Get document summary by filename
+   * @param {string} filename - Document filename
+   * @param {string} caseId - Case ID
+   */
+  getSummary: (filename, caseId) => {
+    return fetchAPI(`/evidence/summary/${encodeURIComponent(filename)}?case_id=${encodeURIComponent(caseId)}`);
+  },
+  /**
    * List evidence files for a case
    */
   list: (caseId, status = null) => {
@@ -776,6 +784,36 @@ export const evidenceAPI = {
     const qs = params.toString();
     return fetchAPI(`/evidence/wiretap/processed${qs ? `?${qs}` : ''}`);
   },
+
+  /**
+   * List files in a folder for profile creation
+   */
+  listFolderFiles: (caseId, folderPath) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('folder_path', folderPath);
+    return fetchAPI(`/evidence/folder/files?${params.toString()}`);
+  },
+
+  /**
+   * Generate a folder processing profile from natural language instructions
+   */
+  generateFolderProfile: (request) =>
+    fetchAPI('/evidence/folder/profile/generate', {
+      method: 'POST',
+      body: JSON.stringify(request),
+      timeout: 100000, // 100 seconds - slightly longer than backend 90s timeout
+    }),
+
+  /**
+   * Test a folder processing profile on a folder
+   */
+  testFolderProfile: (request) =>
+    fetchAPI('/evidence/folder/profile/test', {
+      method: 'POST',
+      body: JSON.stringify(request),
+      timeout: 60000,
+    }),
 
   /**
    * Upload one or more evidence files for a case

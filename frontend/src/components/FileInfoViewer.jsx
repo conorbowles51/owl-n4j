@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { FileText, Calendar, CheckCircle2, AlertTriangle, Copy, X, Folder, Settings, Radio, PlayCircle, Loader2 } from 'lucide-react';
+import { FileText, Calendar, CheckCircle2, AlertTriangle, Copy, X, Folder, Settings, Radio, PlayCircle, Loader2, RefreshCw, Edit } from 'lucide-react';
 import { evidenceAPI, backgroundTasksAPI } from '../services/api';
+import FilePreview from './FilePreview';
 
 /**
  * FileInfoViewer
@@ -12,11 +13,36 @@ import { evidenceAPI, backgroundTasksAPI } from '../services/api';
  * - List of duplicate files elsewhere in the system
  * - Folder information (file types, processed/unprocessed counts, available processors)
  */
-export default function FileInfoViewer({ selectedFiles, files, folderInfo, foldersInfo = [], caseId, onProcessWiretap }) {
+export default function FileInfoViewer({ selectedFiles, files, folderInfo, foldersInfo = [], caseId, onProcessWiretap, onCreateFolderProfile, profilesWithFolderProcessing = [], onEditProfile }) {
   const [duplicates, setDuplicates] = useState({});
   const [loadingDuplicates, setLoadingDuplicates] = useState(false);
   const [activeTask, setActiveTask] = useState(null); // Track active wiretap processing task for this folder
   const [activeTasksByFolder, setActiveTasksByFolder] = useState({}); // Track active tasks for multiple folders: {folderPath: task}
+  const [previewedFileId, setPreviewedFileId] = useState(null); // Track which file is being previewed
+  const [selectedFolderProfile, setSelectedFolderProfile] = useState(null); // Selected profile for folder processing
+  
+  // Initialize selectedFolderProfile when profilesWithFolderProcessing changes
+  useEffect(() => {
+    if (profilesWithFolderProcessing.length > 0 && !selectedFolderProfile) {
+      // Set to first available profile if none is selected
+      const firstProfileName = profilesWithFolderProcessing[0]?.name;
+      if (firstProfileName && firstProfileName !== 'profile-name' && firstProfileName.trim()) {
+        console.log('[FileInfoViewer] Auto-selecting first profile:', firstProfileName);
+        setSelectedFolderProfile(firstProfileName);
+      }
+    }
+  }, [profilesWithFolderProcessing]);
+  
+  // Initialize selectedFolderProfile when profilesWithFolderProcessing changes
+  useEffect(() => {
+    if (profilesWithFolderProcessing.length > 0 && !selectedFolderProfile) {
+      // Set to first available profile if none is selected
+      const firstProfileName = profilesWithFolderProcessing[0]?.name;
+      if (firstProfileName && firstProfileName !== 'profile-name') {
+        setSelectedFolderProfile(firstProfileName);
+      }
+    }
+  }, [profilesWithFolderProcessing, selectedFolderProfile]);
 
   // Load duplicates for selected files
   useEffect(() => {
@@ -227,12 +253,12 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                     </div>
                   </div>
 
-                  {/* Wiretap Status */}
-                  {folder.wiretapInfo && (
+                  {/* Folder Processing Profile */}
+                  {folder.wiretapInfo && profilesWithFolderProcessing.length > 0 && (
                     <div className="mt-4 pt-4 border-t border-light-200">
                       <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
                         <Radio className="w-3 h-3" />
-                        <span className="font-medium">Special Wiretap Processing:</span>
+                        <span className="font-medium">Folder Processing Profile:</span>
                       </div>
                       <div className="ml-5">
                         {folder.wiretapInfo.suitable ? (
@@ -240,6 +266,9 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                             {(() => {
                               const folderActiveTask = activeTasksByFolder[folder.path];
                               const isProcessing = folderActiveTask !== undefined;
+                              const selectedProfile = profilesWithFolderProcessing.find(p => p.name === (selectedFolderProfile || profilesWithFolderProcessing[0]?.name));
+                              const folderProcessing = selectedProfile?.folder_processing;
+                              
                               return (
                                 <div className={`text-xs p-2 rounded border ${
                                   folder.wiretapInfo.processed 
@@ -253,31 +282,54 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                                       <Loader2 className="w-3 h-3 animate-spin" />
                                     )}
                                     {folder.wiretapInfo.processed 
-                                      ? '✓ Processed as Wiretap' 
+                                      ? `✓ Processed as ${selectedProfile?.name || 'Profile'}` 
                                       : isProcessing
-                                      ? 'Processing Wiretap'
-                                      : 'Suitable for wiretap processing'}
+                                      ? `Processing as ${selectedProfile?.name || 'Profile'}`
+                                      : `Suitable for processing with ${selectedProfile?.name || 'selected profile'}`}
                                   </div>
-                              <div className="text-xs mt-1 space-y-0.5">
-                                {folder.wiretapInfo.has_audio && (
-                                  <div>✓ Audio files: {folder.wiretapInfo.audio_files.length}</div>
-                                )}
-                                {folder.wiretapInfo.has_sri && (
-                                  <div>✓ Metadata (.sri): {folder.wiretapInfo.sri_files.length}</div>
-                                )}
-                                {folder.wiretapInfo.has_rtf && (
-                                  <div>✓ Interpretation (.rtf): {folder.wiretapInfo.rtf_files.length}</div>
-                                )}
-                                {!folder.wiretapInfo.has_sri && (
-                                  <div className="text-orange-700">⚠ Missing .sri metadata file</div>
-                                )}
-                                {!folder.wiretapInfo.has_rtf && (
-                                  <div className="text-orange-700">⚠ Missing .rtf interpretation file</div>
-                                )}
-                              </div>
+                                  {folderProcessing && (
+                                    <div className="text-xs mt-2 space-y-1.5 pt-1 border-t border-current/20">
+                                      {/* Model and Temperature */}
+                                      {(selectedProfile?.llm_config || selectedProfile?.ingestion?.temperature !== undefined) && (
+                                        <div className="flex items-center gap-3 opacity-90">
+                                          {selectedProfile?.llm_config?.provider && selectedProfile?.llm_config?.model_id && (
+                                            <div>
+                                              <span className="font-medium">Model:</span> {selectedProfile.llm_config.provider === 'openai' ? 'OpenAI' : selectedProfile.llm_config.provider} / {selectedProfile.llm_config.model_id}
+                                            </div>
+                                          )}
+                                          {selectedProfile?.ingestion?.temperature !== undefined && (
+                                            <div>
+                                              <span className="font-medium">Temperature:</span> {selectedProfile.ingestion.temperature}
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                      {folderProcessing.processing_rules && (
+                                        <div>
+                                          <div className="font-medium mb-1">Processing Instructions:</div>
+                                          <div className="text-xs opacity-90 leading-relaxed">{folderProcessing.processing_rules}</div>
+                                        </div>
+                                      )}
+                                      {folderProcessing.file_rules && folderProcessing.file_rules.length > 0 && (
+                                        <div>
+                                          <div className="font-medium mb-1">File Processing Rules:</div>
+                                          <div className="space-y-1">
+                                            {folderProcessing.file_rules.map((rule, idx) => (
+                                              <div key={idx} className="opacity-90">
+                                                <span className="font-medium">{rule.role}:</span> {rule.pattern}
+                                                {rule.actions && rule.actions.length > 0 && (
+                                                  <span className="ml-1">({rule.actions.join(', ')})</span>
+                                                )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
                                   {isProcessing && (
                                     <div className="text-xs mt-2 pt-2 border-t border-yellow-200 text-yellow-700">
-                                      Wiretap processing in progress...
+                                      Processing in progress...
                                     </div>
                                   )}
                                 </div>
@@ -286,7 +338,7 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                           </div>
                         ) : (
                           <div className="text-xs text-light-600 p-2 bg-light-100 rounded border border-light-300">
-                            {folder.wiretapInfo.message || 'Not suitable for wiretap processing'}
+                            {folder.wiretapInfo.message || 'Not suitable for folder processing'}
                           </div>
                         )}
                       </div>
@@ -298,19 +350,148 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
           ))}
         </div>
 
-        {/* Process All as Wiretaps Button */}
-        {allSuitable && !anyProcessing && onProcessWiretap && (
+              {/* Profile Selector - show for multiple folders */}
+        {profilesWithFolderProcessing && profilesWithFolderProcessing.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-light-200">
+            <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+              <Settings className="w-3 h-3" />
+              <label htmlFor="folder-profile-select-multi" className="font-medium">Available System Processors:</label>
+            </div>
+            <div className="ml-5 flex items-center gap-2">
+              <select
+                id="folder-profile-select-multi"
+                value={selectedFolderProfile || (profilesWithFolderProcessing[0]?.name || '')}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  console.log('[FileInfoViewer] Profile selected (multi-folder):', newValue);
+                  if (newValue && newValue !== 'profile-name' && newValue !== '' && newValue.trim()) {
+                    setSelectedFolderProfile(newValue.trim());
+                  } else {
+                    // If empty or invalid, set to first available profile
+                    const firstValidProfile = profilesWithFolderProcessing.find(p => p.name && p.name.trim() && p.name !== 'profile-name');
+                    setSelectedFolderProfile(firstValidProfile?.name || null);
+                  }
+                }}
+                className="flex-1 text-xs border border-light-300 rounded px-2 py-1.5 bg-white text-owl-blue-900 focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-owl-blue-500"
+              >
+                {profilesWithFolderProcessing.length === 0 ? (
+                  <option value="">No profiles available</option>
+                ) : (
+                  profilesWithFolderProcessing
+                    .filter(profile => profile.name && profile.name.trim() && profile.name !== 'profile-name')
+                    .map((profile) => (
+                      <option key={profile.name} value={profile.name}>
+                        {profile.name} {profile.description ? `- ${profile.description}` : ''}
+                      </option>
+                    ))
+                )}
+              </select>
+              {onEditProfile && (
+                <button
+                  onClick={() => {
+                    // Find a valid profile to edit
+                    const validProfile = selectedFolderProfile || 
+                      profilesWithFolderProcessing.find(p => p.name && p.name.trim() && p.name !== 'profile-name')?.name;
+                    
+                    console.log('[FileInfoViewer] Edit button clicked - validProfile:', validProfile, 'selectedFolderProfile:', selectedFolderProfile, 'profilesWithFolderProcessing:', profilesWithFolderProcessing);
+                    
+                    if (validProfile && validProfile.trim() && validProfile !== 'profile-name') {
+                      onEditProfile(validProfile.trim());
+                    } else {
+                      console.error('[FileInfoViewer] Invalid profile name for editing:', validProfile);
+                      alert('Please select a valid profile from the dropdown before editing.');
+                    }
+                  }}
+                  className="p-1.5 rounded hover:bg-light-100 text-light-600 transition-colors flex-shrink-0"
+                  title="Edit selected profile"
+                >
+                  <Edit className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Create Custom Profile Button - show for any folder (single or multiple) */}
+        {((foldersInfo.length > 0) || folderInfo) && onCreateFolderProfile && (
           <div className="mt-4 pt-4 border-t border-light-200">
             <button
               onClick={() => {
-                const folderPaths = foldersInfo.map(f => f.path);
-                onProcessWiretap(folderPaths);
+                const folderPath = foldersInfo.length > 0 
+                  ? foldersInfo[0].path 
+                  : (folderInfo ? folderInfo.path : null);
+                if (folderPath) {
+                  onCreateFolderProfile(folderPath);
+                }
               }}
-              className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-blue-600 hover:bg-owl-blue-700 w-full justify-center"
+              className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-purple-600 hover:bg-owl-purple-700 w-full justify-center mb-2"
+              title="Create a custom processing profile for this folder"
             >
-              <PlayCircle className="w-4 h-4" />
-              Process All {foldersInfo.length} Folders as Wiretaps
+              <Settings className="w-4 h-4" />
+              Create Custom Folder Profile
             </button>
+            <p className="text-xs text-light-600 mt-1 text-center">
+              Define custom processing rules using natural language
+            </p>
+          </div>
+        )}
+
+        {/* Process/Reprocess All Folders Button */}
+        {allSuitable && !anyProcessing && onProcessWiretap && (
+          <div className={foldersInfo.length > 0 && onCreateFolderProfile ? "pt-2" : "mt-4 pt-4 border-t border-light-200"}>
+            {allProcessed ? (
+              // All folders are processed - show Reprocess button
+              <button
+                onClick={() => {
+                  const folderPaths = foldersInfo.map(f => f.path);
+                  onProcessWiretap(folderPaths);
+                }}
+                className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-purple-600 hover:bg-owl-purple-700 w-full justify-center"
+                title={`Reprocess all ${foldersInfo.length} folders with ${selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'selected profile'}`}
+              >
+                <RefreshCw className="w-4 h-4" />
+                Reprocess All {foldersInfo.length} Folders as {selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'Profile'}
+              </button>
+            ) : someProcessed ? (
+              // Some folders are processed - show both options
+              <div className="space-y-2">
+                <button
+                  onClick={() => {
+                    const folderPaths = foldersInfo.filter(f => !f.wiretapInfo?.processed).map(f => f.path);
+                    if (folderPaths.length > 0) {
+                      onProcessWiretap(folderPaths);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-blue-600 hover:bg-owl-blue-700 w-full justify-center"
+                >
+                  <PlayCircle className="w-4 h-4" />
+                  Process {foldersInfo.filter(f => !f.wiretapInfo?.processed).length} Unprocessed Folders as {selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'Profile'}
+                </button>
+                <button
+                  onClick={() => {
+                    const folderPaths = foldersInfo.map(f => f.path);
+                    onProcessWiretap(folderPaths);
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-purple-600 hover:bg-owl-purple-700 w-full justify-center"
+                  title={`Reprocess all ${foldersInfo.length} folders (including already processed ones) with ${selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'selected profile'}`}
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Reprocess All {foldersInfo.length} Folders as {selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'Profile'}
+                </button>
+              </div>
+            ) : (
+              // No folders are processed - show Process button
+              <button
+                onClick={() => {
+                  const folderPaths = foldersInfo.map(f => f.path);
+                  onProcessWiretap(folderPaths);
+                }}
+                className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-blue-600 hover:bg-owl-blue-700 w-full justify-center"
+              >
+                <PlayCircle className="w-4 h-4" />
+                Process All {foldersInfo.length} Folders as {selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'Profile'}
+              </button>
+            )}
             <p className="text-xs text-light-600 mt-2 text-center">
               Each folder will be processed as a separate background task
             </p>
@@ -391,139 +572,263 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                 </div>
               )}
 
-              {/* Wiretap Processing */}
-              {folderInfo.wiretapInfo && (
+              {/* Folder Processing Profile */}
+              {folderInfo.wiretapInfo && profilesWithFolderProcessing.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-light-200">
                   <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
                     <Radio className="w-3 h-3" />
-                    <span className="font-medium">Special Wiretap Processing:</span>
+                    <span className="font-medium">Folder Processing Profile:</span>
                   </div>
                   <div className="ml-5">
-                    {folderInfo.wiretapInfo.suitable ? (
-                      <div className="space-y-2">
-                        <div className={`text-xs p-2 rounded border ${
-                          folderInfo.wiretapInfo.processed 
-                            ? 'bg-green-50 border-green-300 text-green-800' 
-                            : activeTask !== null
-                            ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
-                            : 'bg-owl-blue-50 border-owl-blue-300 text-owl-blue-800'
-                        }`}>
-                          <div className="font-medium mb-1 flex items-center gap-2">
-                            {activeTask !== null && (
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                            )}
-                            {folderInfo.wiretapInfo.processed 
-                              ? '✓ Processed as Wiretap' 
+                    {(() => {
+                      const selectedProfile = profilesWithFolderProcessing.find(p => p.name === (selectedFolderProfile || profilesWithFolderProcessing[0]?.name));
+                      const folderProcessing = selectedProfile?.folder_processing;
+                      
+                      return folderInfo.wiretapInfo.suitable ? (
+                        <div className="space-y-2">
+                          <div className={`text-xs p-2 rounded border ${
+                            folderInfo.wiretapInfo.processed 
+                              ? 'bg-green-50 border-green-300 text-green-800' 
                               : activeTask !== null
-                              ? 'Processing Wiretap'
-                              : 'Folder is suitable for wiretap processing'}
-                          </div>
-                          <div className="text-xs mt-1 space-y-0.5">
-                            {folderInfo.wiretapInfo.has_audio && (
-                              <div>✓ Audio files: {folderInfo.wiretapInfo.audio_files.length}</div>
-                            )}
-                            {folderInfo.wiretapInfo.has_sri && (
-                              <div>✓ Metadata (.sri): {folderInfo.wiretapInfo.sri_files.length}</div>
-                            )}
-                            {folderInfo.wiretapInfo.has_rtf && (
-                              <div>✓ Interpretation (.rtf): {folderInfo.wiretapInfo.rtf_files.length}</div>
-                            )}
-                            {!folderInfo.wiretapInfo.has_sri && (
-                              <div className="text-orange-700">⚠ Missing .sri metadata file</div>
-                            )}
-                            {!folderInfo.wiretapInfo.has_rtf && (
-                              <div className="text-orange-700">⚠ Missing .rtf interpretation file</div>
-                            )}
-                          </div>
-                        </div>
-                        {!folderInfo.wiretapInfo.processed && onProcessWiretap && (
-                          <div className="space-y-2">
-                            <button
-                              onClick={() => {
-                                onProcessWiretap(folderInfo.path);
-                                // Set temporary state to show immediate feedback
-                                setActiveTask({
-                                  id: 'pending',
-                                  status: 'pending',
-                                  progress: 0,
-                                  total: 1,
-                                });
-                              }}
-                              disabled={activeTask !== null}
-                              className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs rounded transition-colors ${
-                                activeTask !== null
-                                  ? 'bg-light-300 cursor-not-allowed'
-                                  : 'bg-owl-blue-600 hover:bg-owl-blue-700'
-                              }`}
-                            >
-                              {activeTask !== null ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  {activeTask.status === 'pending' ? 'Starting...' : 'Processing...'}
-                                </>
-                              ) : (
-                                <>
-                                  <PlayCircle className="w-3.5 h-3.5" />
-                                  Process as Wiretap
-                                </>
+                              ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+                              : 'bg-owl-blue-50 border-owl-blue-300 text-owl-blue-800'
+                          }`}>
+                            <div className="font-medium mb-1 flex items-center gap-2">
+                              {activeTask !== null && (
+                                <Loader2 className="w-3 h-3 animate-spin" />
                               )}
-                            </button>
-                            
-                            {/* Processing Status */}
-                            {activeTask !== null && (
-                              <div className="space-y-1">
-                                <div className="text-xs text-owl-blue-700 font-medium">
-                                  {activeTask.status === 'pending' 
-                                    ? 'Starting wiretap processing...'
-                                    : `Processing wiretap (${activeTask.progress} / ${activeTask.total})`}
-                                </div>
-                                {activeTask.status === 'running' && activeTask.total > 0 && (
-                                  <div className="w-full h-1.5 bg-light-200 rounded-full overflow-hidden">
-                                    <div
-                                      className="h-full bg-owl-blue-500 transition-all"
-                                      style={{
-                                        width: `${Math.min(100, (activeTask.progress / activeTask.total) * 100)}%`,
-                                      }}
-                                    />
+                              {folderInfo.wiretapInfo.processed 
+                                ? `✓ Processed as ${selectedProfile?.name || 'Profile'}` 
+                                : activeTask !== null
+                                ? `Processing as ${selectedProfile?.name || 'Profile'}`
+                                : `Folder is suitable for processing with ${selectedProfile?.name || 'selected profile'}`}
+                            </div>
+                            {folderProcessing && (
+                              <div className="text-xs mt-2 space-y-1.5 pt-1 border-t border-current/20">
+                                {/* Model and Temperature */}
+                                {(selectedProfile?.llm_config || selectedProfile?.ingestion?.temperature !== undefined) && (
+                                  <div className="flex items-center gap-3 opacity-90">
+                                    {selectedProfile?.llm_config?.provider && selectedProfile?.llm_config?.model_id && (
+                                      <div>
+                                        <span className="font-medium">Model:</span> {selectedProfile.llm_config.provider === 'openai' ? 'OpenAI' : selectedProfile.llm_config.provider} / {selectedProfile.llm_config.model_id}
+                                      </div>
+                                    )}
+                                    {selectedProfile?.ingestion?.temperature !== undefined && (
+                                      <div>
+                                        <span className="font-medium">Temperature:</span> {selectedProfile.ingestion.temperature}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
-                                <div className="text-xs text-light-600">
-                                  View progress in Background Tasks panel
-                                </div>
+                                {folderProcessing.processing_rules && (
+                                  <div>
+                                    <div className="font-medium mb-1">Processing Instructions:</div>
+                                    <div className="text-xs opacity-90 leading-relaxed">{folderProcessing.processing_rules}</div>
+                                  </div>
+                                )}
+                                {folderProcessing.file_rules && folderProcessing.file_rules.length > 0 && (
+                                  <div>
+                                    <div className="font-medium mb-1">File Processing Rules:</div>
+                                    <div className="space-y-1">
+                                      {folderProcessing.file_rules.map((rule, idx) => (
+                                        <div key={idx} className="opacity-90">
+                                          <span className="font-medium">{rule.role}:</span> {rule.pattern}
+                                          {rule.actions && rule.actions.length > 0 && (
+                                            <span className="ml-1">({rule.actions.join(', ')})</span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-light-600 p-2 bg-light-100 rounded border border-light-300">
-                        {folderInfo.wiretapInfo.message || 'Folder is not suitable for wiretap processing'}
-                      </div>
+                          {onProcessWiretap && (
+                            <div className="space-y-2">
+                              {folderInfo.wiretapInfo.processed ? (
+                                // Reprocess button for already processed folders
+                                <button
+                                  onClick={() => {
+                                    onProcessWiretap(folderInfo.path);
+                                    // Set temporary state to show immediate feedback
+                                    setActiveTask({
+                                      id: 'pending',
+                                      status: 'pending',
+                                      progress: 0,
+                                      total: 1,
+                                    });
+                                  }}
+                                  disabled={activeTask !== null}
+                                  className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs rounded transition-colors ${
+                                    activeTask !== null
+                                      ? 'bg-light-300 cursor-not-allowed'
+                                      : 'bg-owl-purple-600 hover:bg-owl-purple-700'
+                                  }`}
+                                  title={`Reprocess this folder with ${selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'selected profile'}`}
+                                >
+                                  {activeTask !== null ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      {activeTask.status === 'pending' ? 'Starting...' : 'Reprocessing...'}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="w-3.5 h-3.5" />
+                                      Reprocess as {selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'Profile'}
+                                    </>
+                                  )}
+                                </button>
+                              ) : (
+                                // Process button for unprocessed folders
+                                <button
+                                  onClick={() => {
+                                    onProcessWiretap(folderInfo.path);
+                                    // Set temporary state to show immediate feedback
+                                    setActiveTask({
+                                      id: 'pending',
+                                      status: 'pending',
+                                      progress: 0,
+                                      total: 1,
+                                    });
+                                  }}
+                                  disabled={activeTask !== null}
+                                  className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs rounded transition-colors ${
+                                    activeTask !== null
+                                      ? 'bg-light-300 cursor-not-allowed'
+                                      : 'bg-owl-blue-600 hover:bg-owl-blue-700'
+                                  }`}
+                                >
+                                  {activeTask !== null ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      {activeTask.status === 'pending' ? 'Starting...' : 'Processing...'}
+                                    </>
+                                  ) : (
+                                    <>
+                                      <PlayCircle className="w-3.5 h-3.5" />
+                                      Process as {selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'Profile'}
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                              
+                              {/* Processing Status */}
+                              {activeTask !== null && (
+                                <div className="space-y-1">
+                                  <div className="text-xs text-owl-blue-700 font-medium">
+                                    {activeTask.status === 'pending' 
+                                      ? `${folderInfo.wiretapInfo.processed ? 'Starting reprocessing' : 'Starting processing'} with ${selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'profile'}...`
+                                      : `${folderInfo.wiretapInfo.processed ? 'Reprocessing' : 'Processing'} with ${selectedFolderProfile || profilesWithFolderProcessing[0]?.name || 'profile'} (${activeTask.progress} / ${activeTask.total})`}
+                                  </div>
+                                  {activeTask.status === 'running' && activeTask.total > 0 && (
+                                    <div className="w-full h-1.5 bg-light-200 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-owl-blue-500 transition-all"
+                                        style={{
+                                          width: `${Math.min(100, (activeTask.progress / activeTask.total) * 100)}%`,
+                                        }}
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="text-xs text-light-600">
+                                    View progress in Background Tasks panel
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-light-600 p-2 bg-light-100 rounded border border-light-300">
+                          {folderInfo.wiretapInfo.message || 'Folder is not suitable for folder processing'}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Profile Selector */}
+              {profilesWithFolderProcessing && profilesWithFolderProcessing.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-light-200">
+                  <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+                    <Settings className="w-3 h-3" />
+                    <label htmlFor="folder-profile-select" className="font-medium">Available System Processors:</label>
+                  </div>
+                  <div className="ml-5 flex items-center gap-2">
+                    <select
+                      id="folder-profile-select"
+                      value={selectedFolderProfile || (profilesWithFolderProcessing[0]?.name || '')}
+                      onChange={(e) => {
+                        const newValue = e.target.value;
+                        console.log('[FileInfoViewer] Profile selected (single folder):', newValue);
+                        if (newValue && newValue !== 'profile-name' && newValue !== '' && newValue.trim()) {
+                          setSelectedFolderProfile(newValue.trim());
+                        } else {
+                          // If empty or invalid, set to first available profile
+                          const firstValidProfile = profilesWithFolderProcessing.find(p => p.name && p.name.trim() && p.name !== 'profile-name');
+                          setSelectedFolderProfile(firstValidProfile?.name || null);
+                        }
+                      }}
+                      className="flex-1 text-xs border border-light-300 rounded px-2 py-1.5 bg-white text-owl-blue-900 focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-owl-blue-500"
+                    >
+                      {profilesWithFolderProcessing.length === 0 ? (
+                        <option value="">No profiles available</option>
+                      ) : (
+                        profilesWithFolderProcessing
+                          .filter(profile => profile.name && profile.name.trim() && profile.name !== 'profile-name')
+                          .map((profile) => (
+                            <option key={profile.name} value={profile.name}>
+                              {profile.name} {profile.description ? `- ${profile.description}` : ''}
+                            </option>
+                          ))
+                      )}
+                    </select>
+                    {onEditProfile && (
+                      <button
+                        onClick={() => {
+                          // Find a valid profile to edit
+                          const validProfile = selectedFolderProfile || 
+                            profilesWithFolderProcessing.find(p => p.name && p.name.trim() && p.name !== 'profile-name')?.name;
+                          
+                          console.log('[FileInfoViewer] Edit button clicked (single folder) - validProfile:', validProfile, 'selectedFolderProfile:', selectedFolderProfile, 'profilesWithFolderProcessing:', profilesWithFolderProcessing);
+                          
+                          if (validProfile && validProfile.trim() && validProfile !== 'profile-name') {
+                            onEditProfile(validProfile.trim());
+                          } else {
+                            console.error('[FileInfoViewer] Invalid profile name for editing:', validProfile);
+                            alert('Please select a valid profile from the dropdown before editing.');
+                          }
+                        }}
+                        className="p-1.5 rounded hover:bg-light-100 text-light-600 transition-colors flex-shrink-0"
+                        title="Edit selected profile"
+                      >
+                        <Edit className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
                 </div>
               )}
 
-              {/* Available Processors */}
-              {folderInfo.availableProcessors && folderInfo.availableProcessors.length > 0 && (
+              {/* Create Custom Folder Profile Button */}
+              {onCreateFolderProfile && (
                 <div className="mt-4 pt-4 border-t border-light-200">
-                  <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
-                    <Settings className="w-3 h-3" />
-                    <span className="font-medium">Available System Processors:</span>
-                  </div>
-                  <div className="ml-5 space-y-2">
-                    {folderInfo.availableProcessors.map((processor) => (
-                      <div
-                        key={processor.name}
-                        className="text-xs bg-white p-2 rounded border border-light-200"
-                      >
-                        <div className="font-medium text-owl-blue-900">{processor.name}</div>
-                        {processor.description && (
-                          <div className="text-light-600 mt-0.5">{processor.description}</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <button
+                    onClick={() => {
+                      if (folderInfo?.path) {
+                        onCreateFolderProfile(folderInfo.path);
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 text-white text-sm rounded transition-colors bg-owl-purple-600 hover:bg-owl-purple-700 w-full justify-center"
+                    title="Create a custom processing profile for this folder"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Create Custom Folder Profile
+                  </button>
+                  <p className="text-xs text-light-600 mt-2 text-center">
+                    Define custom processing rules using natural language
+                  </p>
                 </div>
               )}
             </>
@@ -668,6 +973,21 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                 </p>
               </div>
 
+              {/* Document Summary */}
+              {file.status === 'processed' && file.summary && (
+                <div className="mb-3 pt-3 border-t border-light-200">
+                  <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+                    <FileText className="w-3 h-3" />
+                    <span className="font-medium">Content Summary:</span>
+                  </div>
+                  <div className="ml-5">
+                    <p className="text-xs text-light-600 whitespace-pre-wrap bg-white p-3 rounded border border-light-200 max-h-48 overflow-y-auto">
+                      {file.summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Duplicate Files */}
               {loadingDuplicates ? (
                 <div className="text-xs text-light-600 italic">Loading duplicates...</div>
@@ -681,15 +1001,26 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                   </div>
                   <div className="space-y-1 ml-5">
                     {fileDuplicates.map((dup) => (
-                      <div
-                        key={dup.id}
-                        className="text-xs text-light-600 bg-white p-2 rounded border border-light-200"
-                      >
-                        <div className="font-medium">{dup.original_filename}</div>
-                        <div className="text-light-500 mt-0.5">
-                          Case: {dup.case_id || 'N/A'} • Uploaded:{' '}
-                          {formatDateTime(dup.created_at)}
+                      <div key={dup.id}>
+                        <div
+                          className="text-xs text-light-600 bg-white p-2 rounded border border-light-200 cursor-pointer hover:bg-light-50 transition-colors"
+                          onClick={() => setPreviewedFileId(previewedFileId === `dup-${dup.id}` ? null : `dup-${dup.id}`)}
+                        >
+                          <div className="font-medium">{dup.original_filename}</div>
+                          <div className="text-light-500 mt-0.5">
+                            Case: {dup.case_id || 'N/A'} • Uploaded:{' '}
+                            {formatDateTime(dup.created_at)}
+                          </div>
                         </div>
+                        {previewedFileId === `dup-${dup.id}` && (
+                          <FilePreview
+                            caseId={dup.case_id || caseId}
+                            filePath={dup.stored_path || ''}
+                            fileName={dup.original_filename}
+                            fileType="file"
+                            onClose={() => setPreviewedFileId(null)}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
@@ -705,6 +1036,26 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                   </p>
                 </div>
               ) : null}
+
+              {/* File Preview */}
+              <div className="mt-3 pt-3 border-t border-light-200">
+                <button
+                  onClick={() => setPreviewedFileId(previewedFileId === file.id ? null : file.id)}
+                  className="text-xs text-owl-blue-600 hover:text-owl-blue-700 hover:underline flex items-center gap-1"
+                >
+                  <FileText className="w-3 h-3" />
+                  {previewedFileId === file.id ? 'Hide' : 'Show'} Preview
+                </button>
+                {previewedFileId === file.id && (
+                  <FilePreview
+                    caseId={caseId}
+                    filePath={file.stored_path || ''}
+                    fileName={file.original_filename}
+                    fileType="file"
+                    onClose={() => setPreviewedFileId(null)}
+                  />
+                )}
+              </div>
             </div>
           );
         })}
