@@ -523,23 +523,17 @@ async def process_wiretap_folders(
                                 completed_at=datetime.now().isoformat()
                             )
                             
-                            # Save Cypher queries to case after successful processing
+                            # Save case version after successful processing
                             try:
-                                # Get current full graph (nodes + links)
-                                graph_data = neo4j_service.get_full_graph()
-                                
-                                # Generate Cypher to recreate this graph
-                                cypher_queries = generate_cypher_from_graph(graph_data)
-                                
                                 # Look up case name (fallback to case_id if not found)
                                 case = case_storage.get_case(request.case_id)
                                 case_name = case["name"] if case and case.get("name") else request.case_id
                                 
                                 # Save as a new version on this case
+                                # Note: Cypher queries are no longer stored - graph data persists in Neo4j
                                 case_result = case_storage.save_case_version(
                                     case_id=request.case_id,
                                     case_name=case_name,
-                                    cypher_queries=cypher_queries,
                                     snapshots=[],
                                     save_notes=f"Auto-save after processing wiretap folder: {fp}",
                                     owner=user["username"],
@@ -761,6 +755,36 @@ async def get_document_summary(
             "summary": summary,
             "has_summary": summary is not None,
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/folder-summary/{folder_name}")
+async def get_folder_summary(
+    folder_name: str,
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get the AI-generated summary for a processed folder by folder name.
+    
+    Args:
+        folder_name: Folder name (e.g., "00000128")
+        case_id: Case ID to filter by
+    
+    Returns:
+        Folder summary if found
+    """
+    try:
+        summary = neo4j_service.get_folder_summary(folder_name, case_id)
+        return {
+            "folder_name": folder_name,
+            "case_id": case_id,
+            "summary": summary,
+            "has_summary": summary is not None,
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

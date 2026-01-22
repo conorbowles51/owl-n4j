@@ -2365,6 +2365,60 @@ class Neo4jService:
         
         return summaries
 
+    def get_folder_summary(self, folder_name: str, case_id: str) -> Optional[str]:
+        """
+        Get the summary for a folder by its folder name.
+        
+        This looks for documents that were created from folder processing,
+        identified by having 'folder_name' in their metadata.
+        
+        Args:
+            folder_name: Name of the folder (e.g., "00000128")
+            case_id: Case ID to filter by
+            
+        Returns:
+            Folder summary if found, None otherwise
+        """
+        with self._driver.session() as session:
+            # Look for documents with folder_name in metadata
+            # Folder documents are created with metadata containing folder_name
+            result = session.run(
+                """
+                MATCH (d:Document {case_id: $case_id})
+                WHERE d.folder_name = $folder_name
+                   OR (d.metadata IS NOT NULL AND d.metadata.folder_name = $folder_name)
+                RETURN d.summary AS summary
+                ORDER BY d.created_at DESC
+                LIMIT 1
+                """,
+                folder_name=folder_name,
+                case_id=case_id,
+            )
+            record = result.single()
+            if record and record["summary"]:
+                return record["summary"]
+            
+            # Fallback: Try to find by document name pattern {profile}_{folder_name}
+            # This matches the naming convention used in folder_ingestion.py
+            result = session.run(
+                """
+                MATCH (d:Document {case_id: $case_id})
+                WHERE d.name CONTAINS $folder_name
+                   OR d.key CONTAINS $folder_name_normalized
+                RETURN d.summary AS summary
+                ORDER BY d.created_at DESC
+                LIMIT 1
+                """,
+                folder_name=folder_name,
+                folder_name_normalized=folder_name.lower().replace("_", "-"),
+                case_id=case_id,
+            )
+            record = result.single()
+            if record and record["summary"]:
+                return record["summary"]
+            
+            return None
+
     # -------------------------------------------------------------------------
     # Case Management
     # -------------------------------------------------------------------------

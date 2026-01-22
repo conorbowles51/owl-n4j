@@ -21,7 +21,7 @@ export default function FilePreview({
   const [previewType, setPreviewType] = useState(null); // 'text', 'image', 'binary'
   const [summary, setSummary] = useState(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [showSummary, setShowSummary] = useState(false); // Toggle between file content and summary
+  const [activeTab, setActiveTab] = useState('content'); // 'content' or 'summary'
 
   useEffect(() => {
     if (filePath && fileName && caseId) {
@@ -29,6 +29,16 @@ export default function FilePreview({
       loadSummary();
     }
   }, [caseId, filePath, fileName]);
+
+  // Update active tab when summary is loaded
+  useEffect(() => {
+    if (summary) {
+      setActiveTab('summary');
+    } else if (!loadingSummary) {
+      // Only switch to content if summary loading is complete and no summary exists
+      setActiveTab('content');
+    }
+  }, [summary, loadingSummary]);
 
   const loadSummary = async () => {
     if (!fileName || !caseId) return;
@@ -226,109 +236,126 @@ export default function FilePreview({
           )}
           <span className="text-xs font-medium text-light-700">File Preview: {fileName}</span>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Toggle between file content and AI summary */}
-          {summary && (
-            <button
-              onClick={() => setShowSummary(!showSummary)}
-              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                showSummary
-                  ? 'bg-owl-blue-500 text-white'
-                  : 'bg-light-200 text-light-700 hover:bg-light-300'
-              }`}
-              title={showSummary ? 'Show file contents' : 'Show AI summary'}
-            >
-              <Sparkles className="w-3 h-3" />
-              {showSummary ? 'File' : 'Summary'}
-            </button>
-          )}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-light-200 rounded transition-colors"
-              title="Close preview"
-            >
-              <X className="w-3 h-3 text-light-600" />
-            </button>
-          )}
-        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-light-200 rounded transition-colors"
+            title="Close preview"
+          >
+            <X className="w-3 h-3 text-light-600" />
+          </button>
+        )}
+      </div>
+      
+      {/* Tabs */}
+      <div className="flex border-b border-light-200 bg-light-50">
+        <button
+          onClick={() => setActiveTab('content')}
+          className={`flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+            activeTab === 'content'
+              ? 'border-owl-blue-500 text-owl-blue-700 bg-white'
+              : 'border-transparent text-light-600 hover:text-light-800 hover:bg-light-100'
+          }`}
+        >
+          <div className="flex items-center justify-center gap-1.5">
+            <FileText className="w-3 h-3" />
+            Content
+          </div>
+        </button>
+        <button
+          onClick={() => setActiveTab('summary')}
+          className={`flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+            activeTab === 'summary'
+              ? 'border-owl-blue-500 text-owl-blue-700 bg-white'
+              : 'border-transparent text-light-600 hover:text-light-800 hover:bg-light-100'
+          }`}
+          disabled={!summary && !loadingSummary}
+        >
+          <div className="flex items-center justify-center gap-1.5">
+            <Sparkles className="w-3 h-3" />
+            AI Summary
+            {loadingSummary && <Loader2 className="w-3 h-3 animate-spin" />}
+          </div>
+        </button>
       </div>
       
       <div className="p-3 max-h-64 overflow-auto">
-        {loading && !showSummary && (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="w-4 h-4 animate-spin text-owl-blue-500" />
-            <span className="ml-2 text-xs text-light-600">Loading preview...</span>
-          </div>
-        )}
-        
-        {loadingSummary && showSummary && (
-          <div className="flex items-center justify-center py-4">
-            <Loader2 className="w-4 h-4 animate-spin text-owl-blue-500" />
-            <span className="ml-2 text-xs text-light-600">Loading summary...</span>
-          </div>
-        )}
-        
-        {error && !showSummary && (
-          <div className="flex items-start gap-2 text-xs text-light-600">
-            <AlertCircle className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" />
-            <span>{error}</span>
-          </div>
-        )}
-        
-        {/* Show AI Summary */}
-        {showSummary && summary && (
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
-              <Sparkles className="w-3 h-3 text-owl-blue-600" />
-              <span className="font-medium">AI Summary</span>
-            </div>
-            <div className="text-xs text-light-800 bg-owl-blue-50 p-3 rounded border border-owl-blue-200 leading-relaxed">
-              {summary}
-            </div>
-          </div>
-        )}
-        
-        {showSummary && !summary && !loadingSummary && (
-          <div className="text-xs text-light-600 italic">
-            No AI summary available for this file. The file may not have been processed yet.
-          </div>
-        )}
-        
-        {/* Show File Content */}
-        {!showSummary && content && !error && (
+        {/* Content Tab */}
+        {activeTab === 'content' && (
           <>
-            {previewType === 'image' && typeof content === 'string' ? (
-              <img 
-                src={content} 
-                alt={fileName}
-                className="max-w-full h-auto rounded border border-light-200"
-                onError={() => setError('Failed to load image')}
-              />
-            ) : previewType === 'audio' && typeof content === 'string' ? (
-              <div className="flex flex-col items-center gap-2 p-3 bg-light-50 rounded border border-light-200">
-                <audio 
-                  controls 
-                  src={content}
-                  className="w-full max-w-md"
-                  onError={() => setError('Failed to load audio file')}
-                >
-                  Your browser does not support the audio element.
-                </audio>
-                <p className="text-xs text-light-600">Audio file: {fileName}</p>
+            {loading && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-4 h-4 animate-spin text-owl-blue-500" />
+                <span className="ml-2 text-xs text-light-600">Loading preview...</span>
               </div>
-            ) : previewType === 'text' && typeof content === 'string' ? (
-              <pre className="text-xs text-light-800 bg-light-50 p-2 rounded border border-light-200 overflow-x-auto whitespace-pre-wrap font-mono">
-                {content}
-              </pre>
-            ) : null}
+            )}
+            
+            {error && (
+              <div className="flex items-start gap-2 text-xs text-light-600">
+                <AlertCircle className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+            
+            {content && !error && (
+              <>
+                {previewType === 'image' && typeof content === 'string' ? (
+                  <img 
+                    src={content} 
+                    alt={fileName}
+                    className="max-w-full h-auto rounded border border-light-200"
+                    onError={() => setError('Failed to load image')}
+                  />
+                ) : previewType === 'audio' && typeof content === 'string' ? (
+                  <div className="flex flex-col items-center gap-2 p-3 bg-light-50 rounded border border-light-200">
+                    <audio 
+                      controls 
+                      src={content}
+                      className="w-full max-w-md"
+                      onError={() => setError('Failed to load audio file')}
+                    >
+                      Your browser does not support the audio element.
+                    </audio>
+                    <p className="text-xs text-light-600">Audio file: {fileName}</p>
+                  </div>
+                ) : previewType === 'text' && typeof content === 'string' ? (
+                  <pre className="text-xs text-light-800 bg-light-50 p-2 rounded border border-light-200 overflow-x-auto whitespace-pre-wrap font-mono">
+                    {content}
+                  </pre>
+                ) : null}
+              </>
+            )}
+            
+            {!loading && !content && !error && (
+              <div className="text-xs text-light-600 italic">
+                Preview not available for this file type
+              </div>
+            )}
           </>
         )}
         
-        {!showSummary && !loading && !content && !error && (
-          <div className="text-xs text-light-600 italic">
-            Preview not available for this file type
-          </div>
+        {/* Summary Tab */}
+        {activeTab === 'summary' && (
+          <>
+            {loadingSummary && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-4 h-4 animate-spin text-owl-blue-500" />
+                <span className="ml-2 text-xs text-light-600">Loading summary...</span>
+              </div>
+            )}
+            
+            {summary && !loadingSummary && (
+              <div className="text-xs text-light-800 bg-owl-blue-50 p-3 rounded border border-owl-blue-200 leading-relaxed whitespace-pre-wrap">
+                {summary}
+              </div>
+            )}
+            
+            {!summary && !loadingSummary && (
+              <div className="text-xs text-light-600 italic">
+                No AI summary available for this file. The file may not have been processed yet.
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

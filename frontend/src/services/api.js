@@ -682,6 +682,53 @@ export const casesAPI = {
     fetchAPI(`/cases/${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
+
+  /**
+   * Backup a case - returns a blob URL for download
+   * @param {string} caseId - Case ID to backup
+   * @param {boolean} includeFiles - Whether to include file contents
+   * @returns {Promise<Blob>} - Backup ZIP file as blob
+   */
+  backup: async (caseId, includeFiles = false) => {
+    const url = `/api/cases/${encodeURIComponent(caseId)}/backup?include_files=${includeFiles}`;
+    const token = localStorage.getItem('authToken');
+    
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    const response = await fetch(`${API_BASE}${url}`, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to create backup' }));
+      throw new Error(error.detail || `HTTP ${response.status}`);
+    }
+    
+    return await response.blob();
+  },
+
+  /**
+   * Restore a case from backup file
+   * @param {string} caseId - Case ID to restore to
+   * @param {File} backupFile - Backup ZIP file
+   * @param {boolean} overwrite - Whether to overwrite existing case
+   * @returns {Promise<Object>} - Restore results
+   */
+  restore: async (caseId, backupFile, overwrite = false) => {
+    const formData = new FormData();
+    formData.append('backup_file', backupFile);
+    
+    const url = `/api/cases/${encodeURIComponent(caseId)}/restore?overwrite=${overwrite}`;
+    return fetchAPI(url, {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };
 
 /**
@@ -733,6 +780,14 @@ export const evidenceAPI = {
    */
   getSummary: (filename, caseId) => {
     return fetchAPI(`/evidence/summary/${encodeURIComponent(filename)}?case_id=${encodeURIComponent(caseId)}`);
+  },
+  /**
+   * Get folder summary by folder name
+   * @param {string} folderName - Folder name (e.g., "00000128")
+   * @param {string} caseId - Case ID
+   */
+  getFolderSummary: (folderName, caseId) => {
+    return fetchAPI(`/evidence/folder-summary/${encodeURIComponent(folderName)}?case_id=${encodeURIComponent(caseId)}`);
   },
   /**
    * List evidence files for a case

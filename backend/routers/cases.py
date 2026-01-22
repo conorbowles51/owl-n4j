@@ -10,12 +10,15 @@ Cypher queries are no longer stored since data persists in the database.
 
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends
+from io import BytesIO
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services.case_storage import case_storage
 from services.neo4j_service import neo4j_service
 from services.system_log_service import system_log_service, LogType, LogOrigin
+from services.backup_service import backup_service
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -199,6 +202,125 @@ async def get_case_version(case_id: str, version: int, user: dict = Depends(get_
         save_notes=version_data.get("save_notes", ""),
         timestamp=version_data.get("timestamp", ""),
     )
+
+
+@router.get("/{case_id}/backup")
+async def backup_case(
+    case_id: str,
+    include_files: bool = Query(False, description="Include actual file contents in backup"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Create a backup of a case including all Neo4j data, vector DB data, and metadata.
+    
+    Returns a ZIP file containing:
+    - backup.json: All case data (nodes, relationships, documents, metadata)
+    - files/: Actual file contents (if include_files=True)
+    """
+    try:
+        # Verify case exists and user has access
+        case = case_storage.get_case(case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Case not found")
+        
+        if case.get("owner") != user["username"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Create backup file
+        backup_zip = backup_service.create_backup_file(case_id, include_files=include_files)
+        
+        # Generate filename
+        case_name = case.get("name", "case").replace(" ", "_").replace("/", "-")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{case_name}_{case_id}_{timestamp}.zip"
+        
+        # Log the backup operation
+        system_log_service.log(
+            log_type=LogType.CASE_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Case Backup Created",
+            details={
+                "case_id": case_id,
+                "case_name": case.get("name"),
+                "include_files": include_files
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        
+        return StreamingResponse(
+            backup_zip,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create backup: {str(e)}")
+
+
+@router.post("/{case_id}/restore")
+async def restore_case(
+    case_id: str,
+    backup_file: UploadFile = File(...),
+    overwrite: bool = Query(False, description="Overwrite existing case data"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Restore a case from a backup file.
+    
+    The backup file should be a ZIP file created by the backup endpoint.
+    """
+    try:
+        # Verify case exists and user has access (if not overwriting)
+        if not overwrite:
+            case = case_storage.get_case(case_id)
+            if case:
+                if case.get("owner") != user["username"]:
+                    raise HTTPException(status_code=403, detail="Access denied")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Case already exists. Use overwrite=true to replace it."
+                )
+        
+        # Read backup file
+        file_content = await backup_file.read()
+        backup_zip = BytesIO(file_content)
+        
+        # Import backup
+        results = backup_service.import_from_file(
+            backup_zip,
+            new_case_id=case_id,
+            overwrite=overwrite
+        )
+        
+        # Log the restore operation
+        system_log_service.log(
+            log_type=LogType.CASE_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Case Restored",
+            details={
+                "case_id": case_id,
+                "overwrite": overwrite,
+                "nodes_imported": results.get("nodes_imported", 0),
+                "relationships_imported": results.get("relationships_imported", 0),
+                "documents_imported": results.get("documents_imported", 0),
+            },
+            user=user.get("username", "unknown"),
+            success=len(results.get("errors", [])) == 0,
+        )
+        
+        return {
+            "success": len(results.get("errors", [])) == 0,
+            "case_id": case_id,
+            "results": results
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to restore backup: {str(e)}")
 
 
 @router.delete("/{case_id}")

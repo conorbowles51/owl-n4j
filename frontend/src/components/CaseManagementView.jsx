@@ -17,6 +17,8 @@ import {
   Search,
   Database,
   Upload,
+  Download,
+  HardDrive,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { casesAPI, evidenceAPI, snapshotsAPI } from '../services/api';
@@ -65,6 +67,9 @@ export default function CaseManagementView({
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [showSystemLogs, setShowSystemLogs] = useState(false);
   const [showDatabaseModal, setShowDatabaseModal] = useState(false);
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreFile, setRestoreFile] = useState(null);
   // Filter states
   const [evidenceFilesFilter, setEvidenceFilesFilter] = useState('');
   const [selectedFileTypes, setSelectedFileTypes] = useState(new Set());
@@ -358,6 +363,70 @@ export default function CaseManagementView({
     } catch (err) {
       console.error('Failed to load version data:', err);
       alert(`Failed to load case version: ${err.message}`);
+    }
+  };
+
+  const handleBackupCase = async () => {
+    if (!selectedCase) return;
+    
+    setBackingUp(true);
+    try {
+      const blob = await casesAPI.backup(selectedCase.id, false); // Don't include files by default (can be large)
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      a.download = `${selectedCase.name.replace(/[^a-z0-9]/gi, '_')}_${selectedCase.id}_${timestamp}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      alert('Case backup downloaded successfully!');
+    } catch (err) {
+      console.error('Failed to backup case:', err);
+      alert('Failed to backup case: ' + (err.message || 'Unknown error'));
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
+  const handleRestoreCase = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedCase) return;
+    
+    if (!file.name.endsWith('.zip')) {
+      alert('Please select a valid backup ZIP file');
+      return;
+    }
+    
+    if (!confirm(`Restore case "${selectedCase.name}" from backup? This will ${selectedCase.versions?.length > 0 ? 'overwrite' : 'create'} the case data.`)) {
+      event.target.value = ''; // Reset file input
+      return;
+    }
+    
+    setRestoring(true);
+    try {
+      const result = await casesAPI.restore(selectedCase.id, file, true); // Overwrite existing
+      
+      if (result.success) {
+        alert(`Case restored successfully!\n\nNodes: ${result.results?.nodes_imported || 0}\nRelationships: ${result.results?.relationships_imported || 0}\nDocuments: ${result.results?.documents_imported || 0}`);
+        
+        // Reload case data
+        const updatedCase = await casesAPI.get(selectedCase.id);
+        setSelectedCase(updatedCase);
+      } else {
+        const errors = result.results?.errors || [];
+        alert(`Restore completed with errors:\n\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n... and ${errors.length - 5} more` : ''}`);
+      }
+    } catch (err) {
+      console.error('Failed to restore case:', err);
+      alert('Failed to restore case: ' + (err.message || 'Unknown error'));
+    } finally {
+      setRestoring(false);
+      event.target.value = ''; // Reset file input
     }
   };
 
@@ -742,6 +811,34 @@ export default function CaseManagementView({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleBackupCase}
+                      disabled={backingUp}
+                      className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Backup case data (Neo4j, Vector DB, metadata)"
+                    >
+                      {backingUp ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Download className="w-4 h-4" />
+                      )}
+                      {backingUp ? 'Backing up...' : 'Backup'}
+                    </button>
+                    <label className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                      {restoring ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <HardDrive className="w-4 h-4" />
+                      )}
+                      {restoring ? 'Restoring...' : 'Restore'}
+                      <input
+                        type="file"
+                        accept=".zip"
+                        onChange={handleRestoreCase}
+                        disabled={restoring}
+                        className="hidden"
+                      />
+                    </label>
                     {onGoToEvidenceView && (
                       <button
                         onClick={() => onGoToEvidenceView(selectedCase)}
@@ -1397,21 +1494,6 @@ export default function CaseManagementView({
                       )}
                     </div>
                   </button>
-                  {showEvidenceFiles && evidenceFiles.length > 0 && (
-                    <div className="mb-2 ml-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowDatabaseModal(true);
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 text-sm bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded transition-colors"
-                        title="Backfill documents to vector database"
-                      >
-                        <Database className="w-4 h-4" />
-                        <span>Backfill Database</span>
-                      </button>
-                    </div>
-                  )}
                   {showEvidenceFiles && (
                     <div className="ml-2">
                       {/* File Preview - moved above file list */}
@@ -1505,43 +1587,54 @@ export default function CaseManagementView({
                       return (
                         <>
                           <div className="space-y-1">
-                            {paginatedItems.map((file) => (
-                              <div
-                                key={file.id}
-                                className="flex items-center justify-between p-2 bg-white rounded border border-light-200 text-xs group"
-                              >
-                                <div className="flex items-center gap-2 min-w-0 flex-1">
-                                  <FileText className="w-3 h-3 text-owl-blue-700 flex-shrink-0" />
-                                  <span className="truncate text-owl-blue-900">
-                                    {file.original_filename}
-                                  </span>
+                            {paginatedItems.map((file) => {
+                              const isSelected = previewedFile?.id === file.id;
+                              return (
+                                <div
+                                  key={file.id}
+                                  onClick={() => {
+                                    setPreviewedFile(
+                                      isSelected
+                                        ? null
+                                        : {
+                                            id: file.id,
+                                            name: file.original_filename,
+                                            stored_path: file.stored_path,
+                                          }
+                                    );
+                                  }}
+                                  className={`flex items-center justify-between p-2 rounded border text-xs group cursor-pointer transition-colors ${
+                                    isSelected
+                                      ? 'bg-owl-blue-100 border-owl-blue-300'
+                                      : 'bg-white border-light-200 hover:bg-light-50'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                                    <FileText className={`w-3 h-3 flex-shrink-0 ${
+                                      isSelected ? 'text-owl-blue-700' : 'text-owl-blue-700'
+                                    }`} />
+                                    <span className={`truncate ${
+                                      isSelected ? 'text-owl-blue-900 font-medium' : 'text-owl-blue-900'
+                                    }`}>
+                                      {file.original_filename}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
+                                    <span>{file.status}</span>
+                                    <span className="hidden sm:inline">
+                                      {new Date(file.created_at).toLocaleString()}
+                                    </span>
+                                    <div className={`p-1 rounded flex-shrink-0 ${
+                                      isSelected
+                                        ? 'bg-owl-blue-200 text-owl-blue-700'
+                                        : 'opacity-0 group-hover:opacity-100 bg-light-200 text-owl-blue-600'
+                                    } transition-opacity`}>
+                                      <Eye className="w-3.5 h-3.5" />
+                                    </div>
+                                  </div>
                                 </div>
-                                <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
-                                  <span>{file.status}</span>
-                                  <span className="hidden sm:inline">
-                                    {new Date(file.created_at).toLocaleString()}
-                                  </span>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setPreviewedFile(
-                                        previewedFile?.id === file.id
-                                          ? null
-                                          : {
-                                              id: file.id,
-                                              name: file.original_filename,
-                                              stored_path: file.stored_path,
-                                            }
-                                      );
-                                    }}
-                                    className="p-1 rounded hover:bg-owl-blue-100 text-owl-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                                    title="Preview file contents"
-                                  >
-                                    <Eye className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                             {filteredFiles.length === 0 && evidenceFiles.length > 0 && (
                               <p className="text-sm text-light-600 italic text-center py-2">
                                 No files match the filter

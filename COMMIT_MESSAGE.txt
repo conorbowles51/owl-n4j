@@ -1,57 +1,52 @@
-Add graph expansion, entity resolution, merge, and delete features
+Add folder/document summaries, file preview improvements, and case backup/restore system
 
 Major Features:
-- Graph expansion: Added ability to expand nodes by N hops in Query Focus Graph and Result Graph
-  - Backend: Added expand_nodes() method to Neo4jService with configurable depth
-  - Frontend: Added ExpandGraphModal for user input, expansion buttons, and context menu option
-  - Supports expanding all nodes, selected nodes, or specific node sets
+- Folder and Document Summaries:
+  - Added AI-generated summaries for processed folders and documents
+  - Folder summaries displayed above "File Statistics" in FileInfoViewer
+  - Document summaries displayed when clicking on files
+  - Summaries stored in both Neo4j and Vector DB for semantic search
+  - Backend endpoints: GET /api/evidence/summary/{filename} and GET /api/evidence/folder-summary/{folder_name}
+  - Frontend components: DocumentSummaryDisplay and FolderSummaryDisplay
 
-- Entity resolution and merging: Added comprehensive entity resolution system
-  - Backend: Added find_similar_entities() and merge_entities() methods
-  - Frontend: Added MergeEntitiesModal with side-by-side comparison and "Use Both" option
-  - Find Similar Entities button in graph controls and Query Focus Graph menu
-  - Merge selected entities from context menu
-  - Supports merging properties from both entities with user control
+- File Preview Enhancements:
+  - Replaced toggle button with tabbed interface (Content and AI Summary tabs)
+  - AI Summary tab is default when summary is available, otherwise Content tab
+  - Improved visual design with proper tab styling
+  - Made entire file row clickable in case view (not just eye icon)
+  - Added selection highlighting for selected files (blue background and border)
 
-- Node deletion: Added ability to delete nodes from graph
-  - Backend: Added delete_node() method with relationship deletion
-  - Frontend: Added Delete Node option in context menu with confirmation dialog
-  - Automatic cleanup from selected nodes, subgraph, and timeline context
-
-UI/UX Improvements:
-- Fixed button spacing in graph controls (top-left floating buttons) with consistent 2px gaps
-- Renamed "Subgraph" to "Query Focus Graph" throughout UI for clarity
-- Added Result Graph tab toggle in subgraph panel
-- Auto-open subgraph panel when AI assistant is opened
-- Added Query Focus Graph history navigation (back/forward buttons)
-- Improved merge dialog with "Use Both" option for Name and Summary fields
+- Case Backup and Restore System:
+  - Complete backup/restore functionality for cases
+  - Backup exports: Neo4j nodes/relationships, Vector DB documents/entities, case metadata, evidence records
+  - Backup format: ZIP file containing backup.json and optional file contents
+  - Restore functionality with overwrite protection
+  - Backend service: BackupService with export_case() and import_case() methods
+  - Backend endpoints: GET /api/cases/{case_id}/backup, POST /api/cases/{case_id}/restore
+  - Frontend UI: Backup and Restore buttons in case header with loading states
 
 Bug Fixes:
-- Fixed Neo4j UNION query syntax error in merge_entities() (column name mismatch)
-- Fixed indentation errors in ingestion.py
-- Fixed ReferenceError in App.jsx (useState/useEffect ordering)
-- Added defensive checks in get_retrieval_history to handle malformed log entries
-- Fixed initialization order issues preventing state variable access
+- Fixed generate_cypher_from_graph() missing case_id argument in wiretap processing
+- Removed deprecated cypher_queries parameter from save_case_version() calls
+- Fixed missing Download and HardDrive icon imports in CaseManagementView
 
-Configuration:
-- Updated chunk size to 8000 characters with 1600 character overlap for ingestion
-- Default LLM provider changed to OpenAI with GPT-5 as default model
-- Improved error handling for missing API keys and embedding dimension mismatches
-
-Documentation:
-- Added AI_ASSISTANT_PROMPT_EXPLANATION.md
-- Added NEO4J_TRANSACTION_LOG_TROUBLESHOOTING.md
-- Updated various configuration guides
+UI/UX Improvements:
+- Removed "Backfill Database" button from Evidence Files section in case view
+- Improved file selection UX with full-row clickability and visual feedback
+- Enhanced FilePreview with cleaner tab interface
+- Better loading states and error messages for backup/restore operations
 
 Backend Changes:
-- Enhanced Neo4jService with graph expansion, similarity detection, merge, and delete operations
-- Added retry logic with exponential backoff for Neo4j transaction errors
-- Improved logging for all graph operations
-- Added defensive error handling throughout
+- Added backup_service.py with comprehensive case data export/import
+- Enhanced neo4j_service.py with get_folder_summary() method
+- Updated evidence.py router with folder summary endpoint
+- Fixed wiretap processing to remove Cypher generation (data persists in Neo4j)
+- Added proper case metadata import in restore functionality
 
 Frontend Changes:
-- Added ExpandGraphModal component
-- Added MergeEntitiesModal component
-- Enhanced ContextMenu with expand, merge, and delete options
-- Updated GraphView with floating controls and improved spacing
-- Enhanced App.jsx with history management and new feature integrations
+- Added DocumentSummaryDisplay and FolderSummaryDisplay components
+- Updated FileInfoViewer to show summaries for files and folders
+- Enhanced FilePreview with tabbed interface
+- Added backup/restore handlers and UI in CaseManagementView
+- Updated casesAPI with backup() and restore() methods
+- Improved file list selection with full-row clickability

@@ -4,6 +4,120 @@ import { evidenceAPI, backgroundTasksAPI } from '../services/api';
 import FilePreview from './FilePreview';
 
 /**
+ * Component to display folder summary
+ */
+function FolderSummaryDisplay({ folderName, caseId }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loadSummary = async () => {
+      if (!caseId || !folderName) {
+        setSummary(null);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const result = await evidenceAPI.getFolderSummary(folderName, caseId);
+        if (result?.summary) {
+          setSummary(result.summary);
+        } else {
+          setSummary(null);
+        }
+      } catch (err) {
+        // 404 is expected if folder hasn't been processed yet
+        if (err.status !== 404) {
+          console.error('Failed to load folder summary:', err);
+        }
+        setSummary(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSummary();
+  }, [caseId, folderName]);
+
+  if (!summary && !loading) {
+    return null;
+  }
+
+  return (
+    <div className="mb-4 pb-4 border-b border-light-200">
+      <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+        <FileText className="w-3 h-3" />
+        <span className="font-medium">Folder Summary:</span>
+      </div>
+      {loading ? (
+        <div className="ml-5 text-xs text-light-600 italic">Loading summary...</div>
+      ) : summary ? (
+        <div className="ml-5 text-xs text-light-600 leading-relaxed whitespace-pre-wrap">
+          {summary}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Component to display document summary
+ */
+function DocumentSummaryDisplay({ filename, caseId }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const loadSummary = async () => {
+      if (!caseId || !filename) {
+        setSummary(null);
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const result = await evidenceAPI.getSummary(filename, caseId);
+        if (result?.summary) {
+          setSummary(result.summary);
+        } else {
+          setSummary(null);
+        }
+      } catch (err) {
+        // 404 is expected if document hasn't been processed yet
+        if (err.status !== 404) {
+          console.error('Failed to load document summary:', err);
+        }
+        setSummary(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSummary();
+  }, [caseId, filename]);
+
+  if (!summary && !loading) {
+    return null;
+  }
+
+  return (
+    <div className="mb-4 pb-4 border-b border-light-200">
+      <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+        <FileText className="w-3 h-3" />
+        <span className="font-medium">Document Summary:</span>
+      </div>
+      {loading ? (
+        <div className="ml-5 text-xs text-light-600 italic">Loading summary...</div>
+      ) : summary ? (
+        <div className="ml-5 text-xs text-light-600 leading-relaxed whitespace-pre-wrap">
+          {summary}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * FileInfoViewer
  * 
  * Displays detailed information about selected files/folders:
@@ -20,6 +134,8 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
   const [activeTasksByFolder, setActiveTasksByFolder] = useState({}); // Track active tasks for multiple folders: {folderPath: task}
   const [previewedFileId, setPreviewedFileId] = useState(null); // Track which file is being previewed
   const [selectedFolderProfile, setSelectedFolderProfile] = useState(null); // Selected profile for folder processing
+  const [folderSummary, setFolderSummary] = useState(null); // Folder summary
+  const [loadingFolderSummary, setLoadingFolderSummary] = useState(false); // Loading state for folder summary
   
   // Initialize selectedFolderProfile when profilesWithFolderProcessing changes
   useEffect(() => {
@@ -201,6 +317,36 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
     return () => clearInterval(intervalId);
   }, [caseId, foldersInfo?.map(f => f.path).join(',')]);
 
+  // Load folder summary for single folder view
+  useEffect(() => {
+    const loadFolderSummary = async () => {
+      if (!caseId || !folderInfo?.name) {
+        setFolderSummary(null);
+        return;
+      }
+
+      setLoadingFolderSummary(true);
+      try {
+        const result = await evidenceAPI.getFolderSummary(folderInfo.name, caseId);
+        if (result?.summary) {
+          setFolderSummary(result.summary);
+        } else {
+          setFolderSummary(null);
+        }
+      } catch (err) {
+        // 404 is expected if folder hasn't been processed yet
+        if (err.status !== 404) {
+          console.error('Failed to load folder summary:', err);
+        }
+        setFolderSummary(null);
+      } finally {
+        setLoadingFolderSummary(false);
+      }
+    };
+
+    loadFolderSummary();
+  }, [caseId, folderInfo?.name]);
+
   // Show multiple folders info if provided
   if (foldersInfo && foldersInfo.length > 0) {
     // Check if all folders are suitable for wiretap processing and not already processed
@@ -235,6 +381,9 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                 <div className="text-sm text-red-600">{folder.error}</div>
               ) : (
                 <>
+                  {/* Folder Summary - will be loaded per folder */}
+                  <FolderSummaryDisplay folderName={folder.name} caseId={caseId} />
+
                   {/* File Counts */}
                   <div className="mb-4">
                     <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
@@ -535,6 +684,23 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
             <div className="text-sm text-red-600">{folderInfo.error}</div>
           ) : (
             <>
+              {/* Folder Summary */}
+              {(folderSummary || loadingFolderSummary) && (
+                <div className="mb-4 pb-4 border-b border-light-200">
+                  <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+                    <FileText className="w-3 h-3" />
+                    <span className="font-medium">Folder Summary:</span>
+                  </div>
+                  {loadingFolderSummary ? (
+                    <div className="ml-5 text-xs text-light-600 italic">Loading summary...</div>
+                  ) : folderSummary ? (
+                    <div className="ml-5 text-xs text-light-600 leading-relaxed whitespace-pre-wrap">
+                      {folderSummary}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               {/* File Counts */}
               <div className="mb-4">
                 <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
@@ -934,6 +1100,9 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                 </div>
               </div>
 
+              {/* Document Summary */}
+              <DocumentSummaryDisplay filename={file.original_filename} caseId={caseId} />
+
               {/* Upload Date */}
               <div className="mb-2">
                 <div className="flex items-center gap-2 text-xs text-light-700 mb-1">
@@ -973,20 +1142,6 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                 </p>
               </div>
 
-              {/* Document Summary */}
-              {file.status === 'processed' && file.summary && (
-                <div className="mb-3 pt-3 border-t border-light-200">
-                  <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
-                    <FileText className="w-3 h-3" />
-                    <span className="font-medium">Content Summary:</span>
-                  </div>
-                  <div className="ml-5">
-                    <p className="text-xs text-light-600 whitespace-pre-wrap bg-white p-3 rounded border border-light-200 max-h-48 overflow-y-auto">
-                      {file.summary}
-                    </p>
-                  </div>
-                </div>
-              )}
 
               {/* Duplicate Files */}
               {loadingDuplicates ? (
