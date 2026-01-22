@@ -1093,6 +1093,36 @@ export const authAPI = {
 };
 
 /**
+ * Setup API - for first-time application setup
+ */
+export const setupAPI = {
+  /**
+   * Check if the application needs initial setup
+   * Returns { needs_setup: boolean }
+   */
+  getStatus: () =>
+    fetchAPI('/setup/status', {
+      method: 'GET',
+      timeout: 5000,
+    }),
+
+  /**
+   * Create the initial super_admin user
+   * Only works when no users exist in the database
+   * @param {Object} userData - User data
+   * @param {string} userData.email - User email
+   * @param {string} userData.name - User name
+   * @param {string} userData.password - User password (min 8 chars)
+   */
+  createInitialUser: ({ email, name, password }) =>
+    fetchAPI('/setup/initial-user', {
+      method: 'POST',
+      body: JSON.stringify({ email, name, password }),
+      timeout: 10000,
+    }),
+};
+
+/**
  * Background Tasks API
  */
 export const backgroundTasksAPI = {

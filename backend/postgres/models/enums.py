@@ -2,7 +2,7 @@ from enum import Enum
 
 class GlobalRole(str, Enum):
     super_admin = "super_admin"
-    admin = "admin",
+    admin = "admin"
     user = "user"
 
 class CaseMembershipRole(str, Enum):

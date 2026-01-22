@@ -39,7 +39,7 @@ import {
   Square,
   MousePointer
 } from 'lucide-react';
-import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
+import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI, setupAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
 import { calculateCypherDelta, buildIncrementalQueries } from './utils/cypherDelta';
 import GraphView from './components/GraphView';
@@ -61,6 +61,7 @@ import EvidenceProcessingView from './components/EvidenceProcessingView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
+import SetupPanel from './components/SetupPanel';
 import DocumentationViewer from './components/DocumentationViewer';
 import DocumentViewer from './components/DocumentViewer';
 import LoadCaseProgressDialog from './components/LoadCaseProgressDialog';
@@ -222,8 +223,11 @@ export default function App() {
   const settingsDropdownRef = useRef(null);
   const settingsButtonRef = useRef(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authUsername, setAuthUsername] = useState('');
+  const [authUsername, setAuthUsername] = useState('');  // email
+  const [authDisplayName, setAuthDisplayName] = useState('');  // user's name
   const [showLoginPanel, setShowLoginPanel] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(null);
+  const [setupCheckComplete, setSetupCheckComplete] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
@@ -322,19 +326,50 @@ export default function App() {
   const logoButtonRef = useRef(null);
 
   useEffect(() => {
-    async function loadUser() {
+    async function initializeApp() {
       try {
-        const current = await authAPI.me();
-        setIsAuthenticated(true);
-        setAuthUsername(current.username);
-      } catch {
-        setIsAuthenticated(false);
-        setAuthUsername('');
-        localStorage.removeItem('authToken');
+        // First check if setup is needed
+        const setupStatus = await setupAPI.getStatus();
+        if (setupStatus.needs_setup) {
+          setNeedsSetup(true);
+          setSetupCheckComplete(true);
+          return;
+        }
+        setNeedsSetup(false);
+
+        // Setup not needed, check if user is authenticated
+        try {
+          const current = await authAPI.me();
+          setIsAuthenticated(true);
+          setAuthUsername(current.email);
+          setAuthDisplayName(current.name);
+        } catch {
+          setIsAuthenticated(false);
+          setAuthUsername('');
+          setAuthDisplayName('');
+          localStorage.removeItem('authToken');
+        }
+      } catch (err) {
+        // If setup check fails, assume setup is not needed and proceed with auth check
+        console.error('Setup status check failed:', err);
+        setNeedsSetup(false);
+        try {
+          const current = await authAPI.me();
+          setIsAuthenticated(true);
+          setAuthUsername(current.email);
+          setAuthDisplayName(current.name);
+        } catch {
+          setIsAuthenticated(false);
+          setAuthUsername('');
+          setAuthDisplayName('');
+          localStorage.removeItem('authToken');
+        }
+      } finally {
+        setSetupCheckComplete(true);
       }
     }
 
-    loadUser();
+    initializeApp();
   }, []);
 
   useEffect(() => {
@@ -363,10 +398,11 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAccountDropdownOpen, isSettingsDropdownOpen]);
 
-  const handleLoginSuccess = useCallback((token, username) => {
+  const handleLoginSuccess = useCallback((token, email, name) => {
     localStorage.setItem('authToken', token);
     setIsAuthenticated(true);
-    setAuthUsername(username);
+    setAuthUsername(email);
+    setAuthDisplayName(name);
     setIsAccountDropdownOpen(false);
   }, []);
 
@@ -379,6 +415,7 @@ export default function App() {
     localStorage.removeItem('authToken');
     setIsAuthenticated(false);
     setAuthUsername('');
+    setAuthDisplayName('');
     setIsAccountDropdownOpen(false);
   }, []);
 
@@ -2790,6 +2827,34 @@ export default function App() {
     });
   }, []);
 
+  // Show loading spinner while checking setup/auth status
+  if (!setupCheckComplete) {
+    return (
+      <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-owl-blue-500" />
+          <p className="text-light-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show setup panel if no users exist
+  if (needsSetup) {
+    return (
+      <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <SetupPanel
+            onSetupComplete={() => {
+              setNeedsSetup(false);
+              // User will now see the login panel
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
@@ -2818,6 +2883,7 @@ export default function App() {
           onLogout={handleLogout}
           isAuthenticated={isAuthenticated}
           authUsername={authUsername}
+          authDisplayName={authDisplayName}
           onGoToGraphView={() => setAppView('graph')}
           onGoToEvidenceView={(caseData) => {
             if (!caseData) return;

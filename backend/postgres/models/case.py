@@ -30,3 +30,6 @@ class Case(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
+
+    created_by = relationship("User", foreign_keys=[created_by_user_id])
+    owner = relationship("User", foreign_keys=[owner_user_id])

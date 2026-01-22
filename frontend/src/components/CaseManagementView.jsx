@@ -41,6 +41,7 @@ export default function CaseManagementView({
   onLogout,
   isAuthenticated,
   authUsername,
+  authDisplayName,
   onGoToGraphView,
   onGoToEvidenceView,
   onLoadLastGraph,
@@ -721,7 +722,7 @@ export default function CaseManagementView({
         <div className="w-1/3 border-r border-light-200 bg-white overflow-y-auto">
           <div className="p-4 border-b border-light-200">
             <h2 className="text-md font-semibold text-owl-blue-900 mb-1">
-              {authUsername ? `${authUsername.charAt(0).toUpperCase()}${authUsername.slice(1)}'s Cases` : 'Cases'}
+              {authDisplayName ? `${authDisplayName.charAt(0).toUpperCase()}${authDisplayName.slice(1)}'s Cases` : 'Cases'}
             </h2>
             <p className="text-xs text-light-600">
               {loading
