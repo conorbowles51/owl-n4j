@@ -407,13 +407,13 @@ class Neo4jService:
                     n.verified_facts AS verified_facts,
                     n.ai_insights AS ai_insights,
                     properties(n) AS properties,
-                    collect(DISTINCT {{
+                    collect(DISTINCT {
                         key: connected.key,
                         name: connected.name,
                         type: labels(connected)[0],
                         relationship: type(r),
                         direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
-                    }}) AS connections
+                    }) AS connections
                 """,
                 **params,
             )
