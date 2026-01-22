@@ -13,6 +13,7 @@ export default function CreateRelationshipModal({
   sourceNodes,
   targetNodes,
   onRelationshipCreated,
+  caseId, // REQUIRED: Case ID for case-specific data
 }) {
   const [relationshipType, setRelationshipType] = useState('');
   const [notes, setNotes] = useState('');
@@ -54,7 +55,7 @@ export default function CreateRelationshipModal({
       }
 
       // Call API to create relationships
-      const result = await graphAPI.createRelationships(relationships);
+      const result = await graphAPI.createRelationships(relationships, caseId);
 
       if (result.success) {
         onRelationshipCreated(result.cypher);

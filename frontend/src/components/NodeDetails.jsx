@@ -351,14 +351,15 @@ function CollapsibleSection({ title, icon: Icon, iconColor, count, children, def
  * - Connections
  * - Properties
  */
-export default function NodeDetails({ 
-  node, 
-  onClose, 
-  onSelectNode, 
+export default function NodeDetails({
+  node,
+  onClose,
+  onSelectNode,
   onViewDocument,
   onNodeUpdate,
   username,
-  compact = false 
+  compact = false,
+  caseId, // REQUIRED: Case ID for case-specific data
 }) {
   const [isPinning, setIsPinning] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -407,7 +408,7 @@ export default function NodeDetails({
       const originalFact = sortedFacts[factIndex];
       const originalIndex = verifiedFacts.findIndex(f => f === originalFact);
       
-      const result = await graphAPI.pinFact(node.key, originalIndex, pinned);
+      const result = await graphAPI.pinFact(node.key, originalIndex, pinned, caseId);
       if (result.success) {
         setLocalFacts(result.verified_facts);
         if (onNodeUpdate) {
@@ -430,7 +431,7 @@ export default function NodeDetails({
     
     setIsVerifying(true);
     try {
-      const result = await graphAPI.verifyInsight(node.key, insightIndex, username, sourceDoc, page);
+      const result = await graphAPI.verifyInsight(node.key, insightIndex, username, caseId, sourceDoc, page);
       if (result.success) {
         setLocalFacts(result.verified_facts);
         setLocalInsights(result.ai_insights);

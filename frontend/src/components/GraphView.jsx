@@ -117,6 +117,7 @@ const GraphView = forwardRef(function GraphView({
   onAddNode, // Callback to open Add Node modal
   onFindSimilarEntities, // Callback to find similar entities
   isScanningSimilar = false, // Whether similar entities scan is in progress
+  caseId, // REQUIRED: Case ID for case-specific data
 }, ref) {
   const graphRef = useRef();
   const containerRef = useRef();
@@ -913,11 +914,12 @@ const GraphView = forwardRef(function GraphView({
   // Load all entity types from database and profile colors
   useEffect(() => {
     const loadEntityTypes = async () => {
+      if (!caseId) return;
       try {
         // Get all entity types from database
-        const typesData = await graphAPI.getEntityTypes();
+        const typesData = await graphAPI.getEntityTypes(caseId);
         setAllEntityTypes(typesData.entity_types || []);
-        
+
         // Try to get colors from the currently selected profile (if any)
         // For now, we'll use a default approach - in the future we could pass selected profile
         // For now, we'll generate colors for all types
@@ -930,9 +932,9 @@ const GraphView = forwardRef(function GraphView({
         console.error('Failed to load entity types:', err);
       }
     };
-    
+
     loadEntityTypes();
-  }, []);
+  }, [caseId]);
 
   // Calculate entity types to display - use all types from database, merge with graph data counts
   const entityTypesInGraph = useMemo(() => {

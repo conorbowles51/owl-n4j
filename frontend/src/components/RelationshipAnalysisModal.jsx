@@ -12,6 +12,7 @@ export default function RelationshipAnalysisModal({
   onClose,
   node,
   onRelationshipsAdded,
+  caseId, // REQUIRED: Case ID for case-specific data
 }) {
   const [relationships, setRelationships] = useState([]);
   const [selectedRelationships, setSelectedRelationships] = useState(new Set());
@@ -90,7 +91,7 @@ export default function RelationshipAnalysisModal({
         }));
 
       // Create the relationships
-      const result = await graphAPI.createRelationships(selected);
+      const result = await graphAPI.createRelationships(selected, caseId);
 
       if (result.success) {
         onRelationshipsAdded(result.cypher);

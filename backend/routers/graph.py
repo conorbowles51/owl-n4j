@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/graph", tags=["graph"])
 
 class ShortestPathsRequest(BaseModel):
     """Request model for shortest paths endpoint."""
+    case_id: str  # REQUIRED: Filter to case-specific paths
     node_keys: List[str]
     max_depth: int = 10
 
@@ -24,12 +25,13 @@ class ExpandNodesRequest(BaseModel):
     """Request model for expanding nodes endpoint."""
     node_keys: List[str]
     depth: int = 1
-    case_id: Optional[str] = None
+    case_id: str  # REQUIRED: Filter to case-specific data
 
 
 class PageRankRequest(BaseModel):
     """Request model for PageRank endpoint."""
-    node_keys: Optional[List[str]] = None  # If None, runs on full graph
+    case_id: str  # REQUIRED: Filter to case-specific data
+    node_keys: Optional[List[str]] = None  # If None, runs on full graph (filtered by case_id)
     top_n: int = 20  # Number of top influential nodes to return
     iterations: int = 20  # Number of PageRank iterations
     damping_factor: float = 0.85  # Damping factor for PageRank
@@ -37,14 +39,16 @@ class PageRankRequest(BaseModel):
 
 class LouvainRequest(BaseModel):
     """Request model for Louvain community detection endpoint."""
-    node_keys: Optional[List[str]] = None  # If None, runs on full graph
+    case_id: str  # REQUIRED: Filter to case-specific data
+    node_keys: Optional[List[str]] = None  # If None, runs on full graph (filtered by case_id)
     resolution: float = 1.0  # Resolution parameter for modularity (higher = more communities)
     max_iterations: int = 10  # Maximum number of iterations
 
 
 class BetweennessCentralityRequest(BaseModel):
     """Request model for Betweenness Centrality endpoint."""
-    node_keys: Optional[List[str]] = None  # If None, runs on full graph
+    case_id: str  # REQUIRED: Filter to case-specific data
+    node_keys: Optional[List[str]] = None  # If None, runs on full graph (filtered by case_id)
     top_n: int = 20  # Number of top nodes by betweenness centrality to return
     normalized: bool = True  # Whether to normalize the scores
 
@@ -64,6 +68,7 @@ class FindSimilarEntitiesRequest(BaseModel):
 
 class MergeEntitiesRequest(BaseModel):
     """Request model for merging entities."""
+    case_id: str  # REQUIRED: Verify both entities belong to this case
     source_key: str
     target_key: str
     merged_data: Dict[str, Any]  # name, summary, notes, type, properties
@@ -123,12 +128,14 @@ class UpdateNodeResponse(BaseModel):
 
 class PinFactRequest(BaseModel):
     """Request model for pinning/unpinning a fact."""
+    case_id: str  # REQUIRED: Verify node belongs to this case
     fact_index: int
     pinned: bool
 
 
 class VerifyInsightRequest(BaseModel):
     """Request model for verifying an AI insight."""
+    case_id: str  # REQUIRED: Verify node belongs to this case
     insight_index: int
     username: str
     source_doc: Optional[str] = None
@@ -157,26 +164,28 @@ class CreateRelationshipsResponse(BaseModel):
 
 
 @router.get("/entity-types")
-async def get_entity_types():
+async def get_entity_types(
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
+):
     """
     Get all entity types in the graph with their counts.
-    
-    Returns a list of all entity types that exist in the database,
+
+    Returns a list of all entity types that exist in the database for this case,
     regardless of whether they're currently visible in the graph view.
     """
     try:
-        summary = neo4j_service.get_graph_summary()
+        summary = neo4j_service.get_graph_summary(case_id=case_id)
         entity_types = summary.get("entity_types", {})
-        
+
         # Convert to list format
         types_list = [
             {"type": type_name, "count": count}
             for type_name, count in entity_types.items()
         ]
-        
+
         # Sort by count descending, then by type name
         types_list.sort(key=lambda x: (-x["count"], x["type"]))
-        
+
         return {"entity_types": types_list}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -184,7 +193,7 @@ async def get_entity_types():
 
 @router.get("")
 async def get_graph(
-    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
     user: dict = Depends(get_current_user),
@@ -192,7 +201,7 @@ async def get_graph(
     """
     Get the full graph for visualization.
 
-    Returns all nodes and relationships. Optionally filter by case_id and date range.
+    Returns all nodes and relationships for the specified case. Optionally filter by date range.
     Nodes included if they have a date in range or are connected to nodes with dates in range.
     """
     try:
@@ -237,14 +246,14 @@ async def get_graph(
 @router.get("/node/{key}")
 async def get_node_details(
     key: str,
-    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
     """
     Get detailed information about a specific node.
 
     Args:
         key: The node's unique key
-        case_id: Filter to case-specific connections
+        case_id: REQUIRED - Filter to case-specific connections
     """
     try:
         node = neo4j_service.get_node_details(key, case_id=case_id)
@@ -261,7 +270,7 @@ async def get_node_details(
 async def get_node_neighbours(
     key: str,
     depth: int = Query(default=1, ge=1, le=3),
-    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
     """
     Get a node and its neighbours for expansion.
@@ -269,7 +278,7 @@ async def get_node_neighbours(
     Args:
         key: The node's unique key
         depth: How many hops to traverse (1-3)
-        case_id: Filter to case-specific neighbours
+        case_id: REQUIRED - Filter to case-specific neighbours
     """
     try:
         return neo4j_service.get_node_with_neighbours(key, depth, case_id=case_id)
@@ -335,7 +344,7 @@ async def expand_nodes(
 async def search_nodes(
     q: str = Query(..., min_length=1),
     limit: int = Query(default=20, ge=1, le=100),
-    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -344,7 +353,7 @@ async def search_nodes(
     Args:
         q: Search query
         limit: Maximum results to return
-        case_id: Filter to case-specific nodes
+        case_id: REQUIRED - Filter to case-specific nodes
         user: Current authenticated user
     """
     try:
@@ -385,10 +394,10 @@ async def search_nodes(
 
 @router.get("/summary")
 async def get_graph_summary(
-    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
     """
-    Get a summary of the graph (counts, types).
+    Get a summary of the graph (counts, types) for a specific case.
     """
     try:
         return neo4j_service.get_graph_summary(case_id=case_id)
@@ -399,12 +408,12 @@ async def get_graph_summary(
 @router.get("/locations")
 async def get_entities_with_locations(
     types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
-    case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
 ):
     """
     Get all entities that have geocoded locations for map display.
 
-    Returns entities with latitude, longitude, and connection information.
+    Returns entities with latitude, longitude, and connection information for the specified case.
     """
     try:
         entity_types = None
@@ -436,8 +445,9 @@ async def get_shortest_paths_subgraph(request: ShortestPathsRequest):
     
     try:
         return neo4j_service.get_shortest_paths_subgraph(
-            request.node_keys, 
-            request.max_depth
+            request.node_keys,
+            request.max_depth,
+            case_id=request.case_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -478,7 +488,8 @@ async def get_pagerank(request: PageRankRequest):
             node_keys=request.node_keys if request.node_keys else None,
             top_n=request.top_n,
             iterations=request.iterations,
-            damping_factor=request.damping_factor
+            damping_factor=request.damping_factor,
+            case_id=request.case_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -512,7 +523,8 @@ async def get_louvain_communities(request: LouvainRequest):
         return neo4j_service.get_louvain_communities(
             node_keys=request.node_keys if request.node_keys else None,
             resolution=request.resolution,
-            max_iterations=request.max_iterations
+            max_iterations=request.max_iterations,
+            case_id=request.case_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -540,7 +552,8 @@ async def get_betweenness_centrality(request: BetweennessCentralityRequest):
         return neo4j_service.get_betweenness_centrality(
             node_keys=request.node_keys if request.node_keys else None,
             top_n=request.top_n,
-            normalized=request.normalized
+            normalized=request.normalized,
+            case_id=request.case_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1147,11 +1160,11 @@ async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = De
 async def pin_fact(node_key: str, request: PinFactRequest):
     """
     Toggle the pinned status of a verified fact.
-    
+
     Args:
         node_key: The key of the node
-        request: Request with fact_index and pinned status
-        
+        request: Request with case_id, fact_index and pinned status
+
     Returns:
         Updated verified_facts array
     """
@@ -1159,7 +1172,8 @@ async def pin_fact(node_key: str, request: PinFactRequest):
         updated_facts = neo4j_service.pin_fact(
             node_key=node_key,
             fact_index=request.fact_index,
-            pinned=request.pinned
+            pinned=request.pinned,
+            case_id=request.case_id
         )
         return {
             "success": True,
@@ -1175,11 +1189,11 @@ async def pin_fact(node_key: str, request: PinFactRequest):
 async def verify_insight(node_key: str, request: VerifyInsightRequest):
     """
     Convert an AI insight to a verified fact with user attribution.
-    
+
     Args:
         node_key: The key of the node
-        request: Request with insight_index, username, and optional source info
-        
+        request: Request with case_id, insight_index, username, and optional source info
+
     Returns:
         Updated verified_facts and ai_insights arrays
     """
@@ -1189,7 +1203,8 @@ async def verify_insight(node_key: str, request: VerifyInsightRequest):
             insight_index=request.insight_index,
             username=request.username,
             source_doc=request.source_doc,
-            page=request.page
+            page=request.page,
+            case_id=request.case_id
         )
         return {
             "success": True,
@@ -1211,6 +1226,7 @@ class FindSimilarEntitiesRequest(BaseModel):
 
 class MergeEntitiesRequest(BaseModel):
     """Request model for merging entities."""
+    case_id: str  # REQUIRED: Verify both entities belong to this case
     source_key: str
     target_key: str
     merged_data: Dict[str, Any]  # name, summary, notes, type, properties
@@ -1277,6 +1293,7 @@ async def merge_entities(
             source_key=request.source_key,
             target_key=request.target_key,
             merged_data=request.merged_data,
+            case_id=request.case_id,
         )
         
         # Validate result is not None
@@ -1332,20 +1349,22 @@ async def merge_entities(
 @router.delete("/node/{node_key}")
 async def delete_node(
     node_key: str,
+    case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
     user: dict = Depends(get_current_user)
 ):
     """
     Delete a node and all its relationships from the graph.
-    
+
     Args:
         node_key: Key of the node to delete
+        case_id: REQUIRED - Verify node belongs to this case
         user: Current authenticated user
-        
+
     Returns:
         Dict with success status and deletion info
     """
     try:
-        result = neo4j_service.delete_node(node_key)
+        result = neo4j_service.delete_node(node_key, case_id=case_id)
         
         # Log the deletion
         system_log_service.log(

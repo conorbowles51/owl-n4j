@@ -82,27 +82,26 @@ export const graphAPI = {
   /**
    * Get full graph data for visualization
    * @param {Object} options - Filter options
-   * @param {string} options.start_date - Filter start date (YYYY-MM-DD)
-   * @param {string} options.end_date - Filter end date (YYYY-MM-DD)
-   * @param {string} options.case_id - Filter by case ID (required for case-specific graphs)
+   * @param {string} options.case_id - REQUIRED: Filter by case ID
+   * @param {string} [options.start_date] - Filter start date (YYYY-MM-DD)
+   * @param {string} [options.end_date] - Filter end date (YYYY-MM-DD)
    */
-  getGraph: ({ start_date, end_date, case_id } = {}) => {
+  getGraph: ({ case_id, start_date, end_date } = {}) => {
     const params = new URLSearchParams();
-    if (case_id) params.append('case_id', case_id);
+    params.append('case_id', case_id);
     if (start_date) params.append('start_date', start_date);
     if (end_date) params.append('end_date', end_date);
 
-    const queryString = params.toString();
-    return fetchAPI(`/graph${queryString ? `?${queryString}` : ''}`);
+    return fetchAPI(`/graph?${params.toString()}`);
   },
 
   /**
    * Get details for a specific node
    * @param {string} key - Node key
-   * @param {string} [caseId] - Optional case ID for case-specific data
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    */
-  getNodeDetails: (key, caseId = null) => {
-    const params = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
+  getNodeDetails: (key, caseId) => {
+    const params = `?case_id=${encodeURIComponent(caseId)}`;
     return fetchAPI(`/graph/node/${encodeURIComponent(key)}${params}`);
   },
 
@@ -110,12 +109,12 @@ export const graphAPI = {
    * Get a node and its neighbours
    * @param {string} key - Node key
    * @param {number} [depth=1] - Depth of neighbourhood
-   * @param {string} [caseId] - Optional case ID for case-specific data
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    */
-  getNodeNeighbours: (key, depth = 1, caseId = null) => {
+  getNodeNeighbours: (key, depth = 1, caseId) => {
     const params = new URLSearchParams();
     params.append('depth', depth);
-    if (caseId) params.append('case_id', caseId);
+    params.append('case_id', caseId);
     return fetchAPI(`/graph/node/${encodeURIComponent(key)}/neighbours?${params.toString()}`);
   },
 
@@ -123,54 +122,54 @@ export const graphAPI = {
    * Search nodes
    * @param {string} query - Search query
    * @param {number} [limit=20] - Max results
-   * @param {string} [caseId] - Optional case ID for case-specific search
+   * @param {string} caseId - REQUIRED: Case ID for case-specific search
    */
-  search: (query, limit = 20, caseId = null) => {
+  search: (query, limit = 20, caseId) => {
     const params = new URLSearchParams();
     params.append('q', query);
     params.append('limit', limit);
-    if (caseId) params.append('case_id', caseId);
+    params.append('case_id', caseId);
     return fetchAPI(`/graph/search?${params.toString()}`);
   },
 
   /**
    * Get graph summary
-   * @param {string} [caseId] - Optional case ID for case-specific summary
+   * @param {string} caseId - REQUIRED: Case ID for case-specific summary
    */
-  getSummary: (caseId = null) => {
-    const params = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
+  getSummary: (caseId) => {
+    const params = `?case_id=${encodeURIComponent(caseId)}`;
     return fetchAPI(`/graph/summary${params}`);
   },
 
   /**
    * Get subgraph with shortest paths between selected nodes
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    * @param {string[]} nodeKeys - Array of node keys
    * @param {number} [maxDepth=10] - Maximum path depth
-   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  getShortestPaths: (nodeKeys, maxDepth = 10, caseId = null) =>
+  getShortestPaths: (caseId, nodeKeys, maxDepth = 10) =>
     fetchAPI('/graph/shortest-paths', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         node_keys: nodeKeys,
         max_depth: maxDepth,
-        case_id: caseId,
       }),
     }),
 
   /**
    * Expand multiple nodes by N hops
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    * @param {string[]} nodeKeys - Array of node keys
    * @param {number} [depth=1] - Depth to expand
-   * @param {string} [caseId] - Optional case ID for case-specific data
    */
-  expandNodes: (nodeKeys, depth = 1, caseId = null) =>
+  expandNodes: (caseId, nodeKeys, depth = 1) =>
     fetchAPI('/graph/expand-nodes', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         node_keys: nodeKeys,
         depth: depth,
-        case_id: caseId,
       }),
     }),
 
@@ -190,11 +189,16 @@ export const graphAPI = {
 
   /**
    * Merge two entities
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
+   * @param {string} sourceKey - Source node key
+   * @param {string} targetKey - Target node key
+   * @param {Object} mergedData - Merged data for the resulting entity
    */
-  mergeEntities: (sourceKey, targetKey, mergedData) =>
+  mergeEntities: (caseId, sourceKey, targetKey, mergedData) =>
     fetchAPI('/graph/merge-entities', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         source_key: sourceKey,
         target_key: targetKey,
         merged_data: mergedData,
@@ -203,19 +207,27 @@ export const graphAPI = {
 
   /**
    * Delete a node and all its relationships
+   * @param {string} nodeKey - Node key to delete
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    */
-  deleteNode: (nodeKey) =>
-    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}`, {
+  deleteNode: (nodeKey, caseId) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}?case_id=${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
 
   /**
    * Get influential nodes using PageRank algorithm
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
+   * @param {string[]|null} [nodeKeys=null] - Node keys to include (null for all)
+   * @param {number} [topN=20] - Number of top nodes to return
+   * @param {number} [iterations=20] - PageRank iterations
+   * @param {number} [dampingFactor=0.85] - PageRank damping factor
    */
-  getPageRank: (nodeKeys = null, topN = 20, iterations = 20, dampingFactor = 0.85) =>
+  getPageRank: (caseId, nodeKeys = null, topN = 20, iterations = 20, dampingFactor = 0.85) =>
     fetchAPI('/graph/pagerank', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         node_keys: nodeKeys,
         top_n: topN,
         iterations: iterations,
@@ -225,11 +237,16 @@ export const graphAPI = {
 
   /**
    * Get communities using Louvain modularity algorithm
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
+   * @param {string[]|null} [nodeKeys=null] - Node keys to include (null for all)
+   * @param {number} [resolution=1.0] - Louvain resolution parameter
+   * @param {number} [maxIterations=10] - Maximum iterations
    */
-  getLouvainCommunities: (nodeKeys = null, resolution = 1.0, maxIterations = 10) =>
+  getLouvainCommunities: (caseId, nodeKeys = null, resolution = 1.0, maxIterations = 10) =>
     fetchAPI('/graph/louvain', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         node_keys: nodeKeys,
         resolution: resolution,
         max_iterations: maxIterations,
@@ -238,11 +255,16 @@ export const graphAPI = {
 
   /**
    * Get nodes with highest betweenness centrality
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
+   * @param {string[]|null} [nodeKeys=null] - Node keys to include (null for all)
+   * @param {number} [topN=20] - Number of top nodes to return
+   * @param {boolean} [normalized=true] - Whether to normalize centrality values
    */
-  getBetweennessCentrality: (nodeKeys = null, topN = 20, normalized = true) =>
+  getBetweennessCentrality: (caseId, nodeKeys = null, topN = 20, normalized = true) =>
     fetchAPI('/graph/betweenness-centrality', {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         node_keys: nodeKeys,
         top_n: topN,
         normalized: normalized,
@@ -255,10 +277,10 @@ export const graphAPI = {
 
   /**
    * Get all entity types in the graph with their counts
-   * @param {string} [caseId] - Optional case ID for case-specific data
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    */
-  getEntityTypes: (caseId = null) => {
-    const params = caseId ? `?case_id=${encodeURIComponent(caseId)}` : '';
+  getEntityTypes: (caseId) => {
+    const params = `?case_id=${encodeURIComponent(caseId)}`;
     return fetchAPI(`/graph/entity-types${params}`);
   },
 
@@ -313,15 +335,16 @@ export const graphAPI = {
 
   /**
    * Get entities with geocoded locations for map display
-   * @param {Object} options - Filter options
-   * @param {string} options.types - Comma-separated entity types to filter
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
+   * @param {Object} [options] - Filter options
+   * @param {string} [options.types] - Comma-separated entity types to filter
    */
-  getLocations: ({ types } = {}) => {
+  getLocations: (caseId, { types } = {}) => {
     const params = new URLSearchParams();
+    params.append('case_id', caseId);
     if (types) params.append('types', types);
 
-    const queryString = params.toString();
-    return fetchAPI(`/graph/locations${queryString ? `?${queryString}` : ''}`);
+    return fetchAPI(`/graph/locations?${params.toString()}`);
   },
 
   /**
@@ -329,11 +352,13 @@ export const graphAPI = {
    * @param {string} nodeKey - Node key
    * @param {number} factIndex - Index of the fact in verified_facts array
    * @param {boolean} pinned - Whether to pin (true) or unpin (false)
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    */
-  pinFact: (nodeKey, factIndex, pinned) =>
-    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/pin-fact`, {
+  pinFact: (nodeKey, factIndex, pinned, caseId) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/pin-fact?case_id=${encodeURIComponent(caseId)}`, {
       method: 'PUT',
       body: JSON.stringify({
+        case_id: caseId,
         fact_index: factIndex,
         pinned: pinned,
       }),
@@ -344,13 +369,15 @@ export const graphAPI = {
    * @param {string} nodeKey - Node key
    * @param {number} insightIndex - Index of the insight in ai_insights array
    * @param {string} username - Username of the verifying investigator
+   * @param {string} caseId - REQUIRED: Case ID for case-specific data
    * @param {string} [sourceDoc] - Optional source document reference
    * @param {number} [page] - Optional page number
    */
-  verifyInsight: (nodeKey, insightIndex, username, sourceDoc = null, page = null) =>
-    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/verify-insight`, {
+  verifyInsight: (nodeKey, insightIndex, username, caseId, sourceDoc = null, page = null) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/verify-insight?case_id=${encodeURIComponent(caseId)}`, {
       method: 'POST',
       body: JSON.stringify({
+        case_id: caseId,
         insight_index: insightIndex,
         username: username,
         source_doc: sourceDoc,
@@ -428,20 +455,19 @@ export const timelineAPI = {
   /**
    * Get timeline events
    * @param {Object} options - Filter options
-   * @param {string} options.types - Comma-separated event types
-   * @param {string} options.startDate - Filter start date (YYYY-MM-DD)
-   * @param {string} options.endDate - Filter end date (YYYY-MM-DD)
-   * @param {string} options.caseId - Filter to events in this case
+   * @param {string} options.caseId - REQUIRED: Filter to events in this case
+   * @param {string} [options.types] - Comma-separated event types
+   * @param {string} [options.startDate] - Filter start date (YYYY-MM-DD)
+   * @param {string} [options.endDate] - Filter end date (YYYY-MM-DD)
    */
-  getEvents: async ({ types, startDate, endDate, caseId } = {}) => {
+  getEvents: async ({ caseId, types, startDate, endDate } = {}) => {
     const params = new URLSearchParams();
+    params.append('case_id', caseId);
     if (types) params.append('types', types);
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
-    if (caseId) params.append('case_id', caseId);
-    
-    const queryString = params.toString();
-    const response = await fetchAPI(`/timeline${queryString ? `?${queryString}` : ''}`);
+
+    const response = await fetchAPI(`/timeline?${params.toString()}`);
     // The API returns { events: [...], total: ... }
     // Return the full response object so TimelineView can access both events and total
     return response;
