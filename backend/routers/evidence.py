@@ -21,7 +21,11 @@ from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
 from .auth import get_current_user
-from fastapi import Query
+from routers.users import get_current_db_user
+from fastapi import Query, status
+from postgres.session import get_db
+from postgres.models.user import User
+from sqlalchemy.orm import Session
 from config import BASE_DIR
 from datetime import datetime
 
@@ -158,7 +162,8 @@ async def upload_evidence(
     case_id: str = Form(..., description="Associated case ID"),
     files: List[UploadFile] = File(..., description="Evidence files to upload"),
     is_folder: Optional[str] = Form(None, description="Whether this is a folder upload"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Upload one or more evidence files for a case.
@@ -172,6 +177,13 @@ async def upload_evidence(
         raise HTTPException(status_code=400, detail="No files uploaded")
 
     try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         # Check if this is a folder upload or should be background task
         is_folder_upload = is_folder and is_folder.lower() == 'true'
         use_background = is_folder_upload or len(files) > 5
@@ -213,7 +225,7 @@ async def upload_evidence(
                 task_ids = evidence_service.upload_folders_background(
                     case_id=case_id,
                     files=uploads,
-                    owner=user["username"],
+                    owner=current_user.email,
                 )
                 return UploadResponse(
                     task_id=task_ids[0] if task_ids else None,  # First task ID for backwards compatibility
@@ -225,7 +237,7 @@ async def upload_evidence(
                 task_id = evidence_service.upload_files_background(
                     case_id=case_id,
                     files=uploads,
-                    owner=user["username"],
+                    owner=current_user.email,
                 )
                 return UploadResponse(
                     task_id=task_id,
@@ -246,7 +258,7 @@ async def upload_evidence(
             records = evidence_service.add_uploaded_files(
                 case_id=case_id,
                 uploads=uploads,
-                owner=user["username"],
+                owner=current_user.email,
             )
             return UploadResponse(files=records)
     except Exception as e:
@@ -256,7 +268,8 @@ async def upload_evidence(
 @router.post("/process/background")
 async def process_evidence_background(
     request: ProcessRequest,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Process selected evidence files in the background.
@@ -268,10 +281,18 @@ async def process_evidence_background(
         raise HTTPException(status_code=400, detail="No file_ids provided")
 
     try:
+        if request.case_id:
+            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+            from uuid import UUID
+            try:
+                check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+            except (CaseNotFound, CaseAccessDenied) as e:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         task_id = evidence_service.process_files_background(
             evidence_ids=request.file_ids,
             case_id=request.case_id,
-            owner=user["username"],
+            owner=current_user.email,
             profile=request.profile,
             max_workers=request.max_workers,
         )
@@ -283,7 +304,8 @@ async def process_evidence_background(
 @router.post("/process", response_model=ProcessResponse)
 async def process_evidence(
     request: ProcessRequest,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Process selected evidence files synchronously.
@@ -295,6 +317,14 @@ async def process_evidence(
         raise HTTPException(status_code=400, detail="No file_ids provided")
 
     try:
+        if request.case_id:
+            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+            from uuid import UUID
+            try:
+                check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+            except (CaseNotFound, CaseAccessDenied) as e:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         # Run the potentially long-running ingestion work in a threadpool
         # so that other requests (like /evidence/logs) can still be served
         # while processing is ongoing.
@@ -302,7 +332,7 @@ async def process_evidence(
             evidence_service.process_files,
             request.file_ids,
             request.case_id,
-            user["username"],
+            current_user.email,
             request.profile,
         )
         return ProcessResponse(**summary)
@@ -319,13 +349,25 @@ async def process_evidence(
 async def get_evidence_logs(
     case_id: Optional[str] = None,
     limit: int = 200,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get recent evidence ingestion logs, optionally filtered by case_id.
     """
     try:
+        if case_id:
+            from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+            from uuid import UUID
+            try:
+                check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
+            except (CaseNotFound, CaseAccessDenied) as e:
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         logs = evidence_log_storage.list_logs(case_id=case_id, limit=limit)
         return {"logs": logs}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -334,12 +376,20 @@ async def get_evidence_logs(
 async def check_wiretap_folder(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Check if a folder is suitable for wiretap processing.
     """
     try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         # Build full path to folder
         case_data_dir = BASE_DIR / "ingestion" / "data" / case_id
         full_folder_path = case_data_dir / folder_path
@@ -381,16 +431,24 @@ class WiretapProcessResponse(BaseModel):
 async def process_wiretap_folders(
     request: WiretapProcessRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Process one or more wiretap folders.
-    
+
     Creates a separate background task for each folder. Each folder is processed independently.
     """
     try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         case_data_dir = BASE_DIR / "ingestion" / "data" / request.case_id
-        
+
         # Do minimal validation (just path format check) - full validation happens in background
         # This allows the endpoint to return quickly
         validated_paths = []
@@ -402,18 +460,21 @@ async def process_wiretap_folders(
             if ".." in folder_path or folder_path.startswith("/"):
                 raise HTTPException(status_code=403, detail=f"Path outside case directory: {folder_path}")
             validated_paths.append(folder_path)
-        
+
         # Always use background processing for wiretap folders
         # Create a separate background task for each folder
         task_ids = []
-        
+
+        # Capture email outside the closure for use in background tasks
+        user_email = current_user.email
+
         for folder_path in validated_paths:
             # Create a background task for this folder
             task = background_task_storage.create_task(
                 task_type="wiretap_processing",
                 task_name=f"Process wiretap folder: {folder_path.split('/')[-1] or folder_path}",
                 case_id=request.case_id,
-                owner=user["username"],
+                owner=user_email,
                 metadata={
                     "folder_path": folder_path,  # Single folder path for this task
                     "whisper_model": request.whisper_model,
@@ -536,7 +597,7 @@ async def process_wiretap_folders(
                                     case_name=case_name,
                                     snapshots=[],
                                     save_notes=f"Auto-save after processing wiretap folder: {fp}",
-                                    owner=user["username"],
+                                    owner=user_email,
                                 )
                                 
                                 evidence_log_storage.add_log(
@@ -820,12 +881,20 @@ class FolderProfileTestRequest(BaseModel):
 async def list_folder_files(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     List files in a folder for profile creation.
     """
     try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         case_data_dir = BASE_DIR / "ingestion" / "data" / case_id
         if not case_data_dir.exists():
             raise HTTPException(status_code=404, detail="Case data directory not found")
@@ -864,7 +933,8 @@ async def list_folder_files(
 @router.post("/folder/profile/generate")
 async def generate_folder_profile(
     request: FolderProfileGenerateRequest,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Generate a folder processing profile from natural language instructions.
@@ -872,10 +942,17 @@ async def generate_folder_profile(
     """
     import json
     import logging
-    
+
     logger = logging.getLogger(__name__)
-    
+
     try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         from services.llm_service import llm_service
         
         # Validate that we have files to work with
@@ -1011,34 +1088,42 @@ Respond with valid JSON only, matching this structure:
 async def test_folder_profile(
     request: FolderProfileTestRequest,
     background_tasks: BackgroundTasks,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Test a folder processing profile on a folder (dry run or full processing).
     Returns a background task ID for processing.
     """
     try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
         case_data_dir = BASE_DIR / "ingestion" / "data" / request.case_id
         if not case_data_dir.exists():
             raise HTTPException(status_code=404, detail="Case data directory not found")
-        
+
         full_folder_path = (case_data_dir / request.folder_path).resolve()
         case_resolved = case_data_dir.resolve()
-        
+
         try:
             full_folder_path.relative_to(case_resolved)
         except ValueError:
             raise HTTPException(status_code=403, detail="Path outside case directory")
-        
+
         if not full_folder_path.exists() or not full_folder_path.is_dir():
             raise HTTPException(status_code=404, detail="Folder not found")
-        
+
         # Create background task for testing
         task = background_task_storage.create_task(
             task_type="folder_profile_test",
             task_name=f"Test folder profile: {request.folder_path}",
             case_id=request.case_id,
-            owner=user["username"],
+            owner=current_user.email,
             metadata={
                 "folder_path": request.folder_path,
                 "profile_name": request.profile_name,

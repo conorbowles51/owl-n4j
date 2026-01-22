@@ -28,12 +28,14 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     username: str  # Actually email, kept as 'username' for frontend compatibility
     name: str
+    role: str | None = None
 
 
 class MeResponse(BaseModel):
     email: str
     name: str
     username: str  # Backwards compatibility (same as email)
+    role: str | None = None
 
 
 def _extract_token(
@@ -78,7 +80,7 @@ async def login(request: LoginRequest, response: Response, db: Session = Depends
             samesite="lax",
         )
 
-        return TokenResponse(access_token=token, username=user.email, name=user.name)
+        return TokenResponse(access_token=token, username=user.email, name=user.name, role=user.global_role.value)
     except HTTPException:
         raise
     except Exception as e:
@@ -104,6 +106,6 @@ def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     if not db_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
 
-    return MeResponse(email=db_user.email, name=db_user.name, username=db_user.email)
+    return MeResponse(email=db_user.email, name=db_user.name, username=db_user.email, role=db_user.global_role.value)
 
 

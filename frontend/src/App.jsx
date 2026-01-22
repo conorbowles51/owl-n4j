@@ -75,6 +75,8 @@ import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
 import EditNodeModal from './components/EditNodeModal';
 import ExpandGraphModal from './components/ExpandGraphModal';
 import MergeEntitiesModal from './components/MergeEntitiesModal';
+import CollaboratorModal from './components/CollaboratorModal';
+import { CasePermissionProvider } from './contexts/CasePermissionContext';
 
 /**
  * Main App Component
@@ -213,7 +215,9 @@ export default function App() {
   const [currentCaseVersion, setCurrentCaseVersion] = useState(0);
   const [loadedCypherQueries, setLoadedCypherQueries] = useState(null); // Track loaded Cypher queries for comparison
   const [showCaseModal, setShowCaseModal] = useState(false);
-  
+  const [showCollaboratorModal, setShowCollaboratorModal] = useState(false);
+  const [collaboratorModalCase, setCollaboratorModalCase] = useState(null);
+
   // File management panel state
   const [showFilePanel, setShowFilePanel] = useState(false);
   // Background tasks panel state
@@ -225,6 +229,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authUsername, setAuthUsername] = useState('');  // email
   const [authDisplayName, setAuthDisplayName] = useState('');  // user's name
+  const [authUserRole, setAuthUserRole] = useState(null);  // user role (e.g., 'super_admin', 'user')
   const [showLoginPanel, setShowLoginPanel] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(null);
   const [setupCheckComplete, setSetupCheckComplete] = useState(false);
@@ -343,10 +348,12 @@ export default function App() {
           setIsAuthenticated(true);
           setAuthUsername(current.email);
           setAuthDisplayName(current.name);
+          setAuthUserRole(current.role || null);
         } catch {
           setIsAuthenticated(false);
           setAuthUsername('');
           setAuthDisplayName('');
+          setAuthUserRole(null);
           localStorage.removeItem('authToken');
         }
       } catch (err) {
@@ -358,10 +365,12 @@ export default function App() {
           setIsAuthenticated(true);
           setAuthUsername(current.email);
           setAuthDisplayName(current.name);
+          setAuthUserRole(current.role || null);
         } catch {
           setIsAuthenticated(false);
           setAuthUsername('');
           setAuthDisplayName('');
+          setAuthUserRole(null);
           localStorage.removeItem('authToken');
         }
       } finally {
@@ -398,11 +407,12 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAccountDropdownOpen, isSettingsDropdownOpen]);
 
-  const handleLoginSuccess = useCallback((token, email, name) => {
+  const handleLoginSuccess = useCallback((token, email, name, role = null) => {
     localStorage.setItem('authToken', token);
     setIsAuthenticated(true);
     setAuthUsername(email);
     setAuthDisplayName(name);
+    setAuthUserRole(role);
     setIsAccountDropdownOpen(false);
   }, []);
 
@@ -416,6 +426,7 @@ export default function App() {
     setIsAuthenticated(false);
     setAuthUsername('');
     setAuthDisplayName('');
+    setAuthUserRole(null);
     setIsAccountDropdownOpen(false);
   }, []);
 
@@ -2592,7 +2603,7 @@ export default function App() {
   // so the user starts with a fresh canvas. The Cypher is stored as "last graph"
   // and can be reloaded from the case management top bar.
   const handleCreateCase = useCallback(
-    async (caseName, saveNotes) => {
+    async (caseTitle, saveNotes, description = '') => {
       try {
         // Ask backend to snapshot the current graph and then clear it
         try {
@@ -2612,19 +2623,20 @@ export default function App() {
           // Continue with case creation even if snapshot/clear fails
         }
 
-        const emptyGraph = { nodes: [], links: [] };
-        const result = await casesAPI.save({
-          case_id: null,
-          case_name: caseName,
-          graph_data: emptyGraph,
-          snapshots: [],
-          save_notes: saveNotes,
+        // Use new API format with title/description, fallback to legacy format
+        const result = await casesAPI.create({
+          title: caseTitle,
+          description: description || undefined,
         });
 
+        // Handle both new response format (id, title) and legacy format (case_id, case_name)
+        const caseId = result.id || result.case_id;
+        const caseName = result.title || result.name || caseTitle;
+
         // Set current case context
-        setCurrentCaseId(result.case_id);
+        setCurrentCaseId(caseId);
         setCurrentCaseName(caseName);
-        setCurrentCaseVersion(result.version);
+        setCurrentCaseVersion(result.version || 1);
         setLoadedCypherQueries(null); // Clear loaded Cypher queries for new case
 
         // Switch to evidence processing view for this new case
@@ -2876,7 +2888,7 @@ export default function App() {
   // Show case management view if appView is 'caseManagement'
   if (appView === 'caseManagement') {
     return (
-      <>
+      <CasePermissionProvider userRole={authUserRole}>
         <CaseManagementView
           onLoadCase={handleLoadCase}
           onCreateCase={handleCreateCase}
@@ -2888,13 +2900,17 @@ export default function App() {
           onGoToEvidenceView={(caseData) => {
             if (!caseData) return;
             setCurrentCaseId(caseData.id);
-            setCurrentCaseName(caseData.name);
+            setCurrentCaseName(caseData.title || caseData.name);
             // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
             setAppView('evidence');
           }}
           initialCaseToSelect={caseToSelect}
           onViewDocument={handleViewDocument}
           onCaseSelected={() => setCaseToSelect(null)}
+          onShowCollaboratorModal={(caseData) => {
+            setCollaboratorModalCase(caseData);
+            setShowCollaboratorModal(true);
+          }}
           onLoadLastGraph={async () => {
             try {
               // If we don't have lastGraphInfo in memory yet, fetch from backend
@@ -2953,14 +2969,27 @@ export default function App() {
           initialPage={documentViewerState.page}
           highlightText={documentViewerState.highlightText}
         />
-      </>
+
+        {/* Collaborator Modal for managing case members */}
+        <CollaboratorModal
+          isOpen={showCollaboratorModal}
+          onClose={() => {
+            setShowCollaboratorModal(false);
+            setCollaboratorModalCase(null);
+          }}
+          caseData={collaboratorModalCase}
+          onMembersChanged={() => {
+            // Optionally refresh the case list or permissions
+          }}
+        />
+      </CasePermissionProvider>
     );
   }
 
   // Evidence processing view for current case
   if (appView === 'evidence') {
     return (
-      <>
+      <CasePermissionProvider userRole={authUserRole}>
         <EvidenceProcessingView
         caseId={currentCaseId}
         caseName={currentCaseName}
@@ -3031,11 +3060,12 @@ export default function App() {
           caseName={loadCaseProgress.caseName}
           version={loadCaseProgress.version}
         />
-      </>
+      </CasePermissionProvider>
     );
   }
 
   return (
+    <CasePermissionProvider userRole={authUserRole}>
     <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="h-16 bg-white border-b border-light-200 flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
@@ -4756,5 +4786,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </CasePermissionProvider>
   );
 }

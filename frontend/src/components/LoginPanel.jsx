@@ -30,7 +30,7 @@ export default function LoginPanel({
         password: credentials.password,
       });
       
-      onLoginSuccess(response.access_token, response.username, response.name);
+      onLoginSuccess(response.access_token, response.username, response.name, response.role);
       setCredentials({ username: '', password: '' });
       onClose();
     } catch (err) {

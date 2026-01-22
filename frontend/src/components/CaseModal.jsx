@@ -4,44 +4,51 @@ import { casesAPI } from '../services/api';
 
 /**
  * CaseModal Component
- * 
- * Modal for saving a case with name and notes
+ *
+ * Modal for creating/saving a case with title, description, and notes
+ *
+ * Note: The new PostgreSQL backend uses 'title' instead of 'name' for cases.
+ * This component supports both for backwards compatibility.
  */
-export default function CaseModal({ 
-  isOpen, 
-  onClose, 
+export default function CaseModal({
+  isOpen,
+  onClose,
   onSave,
   existingCaseId = null,
-  existingCaseName = null,
+  existingCaseTitle = null,  // New: use title (backward compatible with existingCaseName)
+  existingCaseName = null,   // Legacy: kept for backwards compatibility
+  existingDescription = null, // New: case description
   nextVersion = 1,
 }) {
-  const [caseName, setCaseName] = useState('');
+  const [caseTitle, setCaseTitle] = useState('');
+  const [caseDescription, setCaseDescription] = useState('');
   const [saveNotes, setSaveNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      if (existingCaseName) {
-        setCaseName(existingCaseName);
-      } else {
-        setCaseName('');
-      }
+      // Use existingCaseTitle if available, fallback to existingCaseName for backwards compatibility
+      const titleValue = existingCaseTitle || existingCaseName || '';
+      setCaseTitle(titleValue);
+      setCaseDescription(existingDescription || '');
       setSaveNotes('');
     }
-  }, [isOpen, existingCaseName]);
+  }, [isOpen, existingCaseTitle, existingCaseName, existingDescription]);
 
   if (!isOpen) return null;
 
   const handleSave = async () => {
-    if (!caseName.trim()) {
-      alert('Please enter a name for the case');
+    if (!caseTitle.trim()) {
+      alert('Please enter a title for the case');
       return;
     }
 
     setIsSaving(true);
     try {
-      await onSave(caseName.trim(), saveNotes.trim());
-      setCaseName('');
+      // Pass title, description, and notes to the save handler
+      await onSave(caseTitle.trim(), saveNotes.trim(), caseDescription.trim());
+      setCaseTitle('');
+      setCaseDescription('');
       setSaveNotes('');
     } catch (err) {
       console.error('Failed to save case:', err);
@@ -52,7 +59,8 @@ export default function CaseModal({
   };
 
   const handleCancel = () => {
-    setCaseName('');
+    setCaseTitle('');
+    setCaseDescription('');
     setSaveNotes('');
     onClose();
   };
@@ -78,13 +86,13 @@ export default function CaseModal({
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-light-700 mb-2">
-              Case Name *
+              Case Title *
             </label>
             <input
               type="text"
-              value={caseName}
-              onChange={(e) => setCaseName(e.target.value)}
-              placeholder="Enter case name"
+              value={caseTitle}
+              onChange={(e) => setCaseTitle(e.target.value)}
+              placeholder="Enter case title"
               className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500"
               autoFocus
               disabled={isSaving}
@@ -98,13 +106,27 @@ export default function CaseModal({
 
           <div>
             <label className="block text-sm font-medium text-light-700 mb-2">
+              Description
+            </label>
+            <textarea
+              value={caseDescription}
+              onChange={(e) => setCaseDescription(e.target.value)}
+              placeholder="Add a description for this case (optional)..."
+              rows={2}
+              className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 resize-none"
+              disabled={isSaving}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-light-700 mb-2">
               Save Notes
             </label>
             <textarea
               value={saveNotes}
               onChange={(e) => setSaveNotes(e.target.value)}
               placeholder="Add notes about this save (optional)..."
-              rows={3}
+              rows={2}
               className="w-full px-3 py-2 bg-white border border-light-300 rounded-lg text-light-900 placeholder-light-500 focus:outline-none focus:border-owl-blue-500 resize-none"
               disabled={isSaving}
             />
@@ -122,7 +144,7 @@ export default function CaseModal({
           <div className="flex items-center gap-3 pt-2">
             <button
               onClick={handleSave}
-              disabled={isSaving || !caseName.trim()}
+              disabled={isSaving || !caseTitle.trim()}
               className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 disabled:bg-light-300 disabled:text-light-500 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
             >
               <Save className="w-4 h-4" />
