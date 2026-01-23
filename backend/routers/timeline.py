@@ -13,25 +13,25 @@ router = APIRouter(prefix="/api/timeline", tags=["timeline"])
 @router.get("")
 async def get_timeline(
     types: Optional[str] = Query(
-        None, 
+        None,
         description="Comma-separated event types to include (e.g., 'Transaction,Payment')"
     ),
     start_date: Optional[str] = Query(
-        None, 
+        None,
         description="Filter events on or after this date (YYYY-MM-DD)"
     ),
     end_date: Optional[str] = Query(
         None,
         description="Filter events on or before this date (YYYY-MM-DD)"
     ),
-    case_id: Optional[str] = Query(
-        None,
-        description="Filter to events in this case"
+    case_id: str = Query(
+        ...,
+        description="REQUIRED: Filter to events in this case"
     ),
 ):
     """
-    Get timeline events sorted chronologically.
-    
+    Get timeline events sorted chronologically for a specific case.
+
     Returns events (Transaction, Payment, Communication, etc.) that have dates,
     along with their connected entities.
     """

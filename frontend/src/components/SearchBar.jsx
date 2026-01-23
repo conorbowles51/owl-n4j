@@ -4,10 +4,13 @@ import { graphAPI } from '../services/api';
 
 /**
  * SearchBar Component
- * 
+ *
  * Search for nodes in the graph
+ * @param {Object} props
+ * @param {Function} props.onSelectNode - Callback when a node is selected
+ * @param {string} props.caseId - REQUIRED: Case ID for case-specific search
  */
-export default function SearchBar({ onSelectNode }) {
+export default function SearchBar({ onSelectNode, caseId }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,9 +26,13 @@ export default function SearchBar({ onSelectNode }) {
     }
 
     const timer = setTimeout(async () => {
+      if (!caseId) {
+        setResults([]);
+        return;
+      }
       setIsLoading(true);
       try {
-        const data = await graphAPI.search(query);
+        const data = await graphAPI.search(query, 20, caseId);
         setResults(data);
         setIsOpen(true);
       } catch (err) {
@@ -37,7 +44,7 @@ export default function SearchBar({ onSelectNode }) {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, caseId]);
 
   // Close on click outside
   useEffect(() => {

@@ -1,0 +1,41 @@
+services:
+  # NEO4J
+  neo4j:
+    image: neo4j:5
+    container_name: owl-n4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"   # HTTP (browser)
+      - "7687:7687"   # Bolt (drivers)
+    environment:
+      - NEO4J_AUTH=neo4j/testpassword
+      - NEO4J_server_memory_pagecache_size=1G
+      - NEO4J_server_memory_heap_initial__size=1G
+      - NEO4J_server_memory_heap_max__size=1G
+
+      # Enable APOC plugin (Neo4j official Docker way)
+      - NEO4J_PLUGINS=["apoc"]
+
+      # Allow APOC procedures (incl. refactor.mergeNodes)
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*
+
+    volumes:
+      - ./neo4j/data:/data
+      - ./neo4j/logs:/logs
+      - ./neo4j/plugins:/plugins
+      - ./neo4j/import:/import
+
+  # POSTGRES
+  postgres:
+    image: postgres:16
+    container_name: owl-pg
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: owl_db
+      POSTGRES_USER: owl_us
+      POSTGRES_PASSWORD: owl_pw
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data

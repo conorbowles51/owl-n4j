@@ -4,10 +4,15 @@ import { graphAPI } from '../services/api';
 
 /**
  * AddNodeModal Component
- * 
+ *
  * Modal for creating a new node in the graph
+ * @param {Object} props
+ * @param {boolean} props.isOpen - Whether the modal is open
+ * @param {Function} props.onClose - Callback when modal is closed
+ * @param {Function} props.onNodeCreated - Callback when a node is created
+ * @param {string} props.caseId - REQUIRED: Case ID for case-specific data
  */
-export default function AddNodeModal({ isOpen, onClose, onNodeCreated }) {
+export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId }) {
   const [name, setName] = useState('');
   const [type, setType] = useState('');
   const [description, setDescription] = useState('');
@@ -32,9 +37,10 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated }) {
   }, [isOpen]);
 
   const loadEntityTypes = async () => {
+    if (!caseId) return;
     setLoading(true);
     try {
-      const data = await graphAPI.getEntityTypes();
+      const data = await graphAPI.getEntityTypes(caseId);
       setEntityTypes(data.entity_types || []);
       // Set first entity type as default if available
       if (data.entity_types && data.entity_types.length > 0) {

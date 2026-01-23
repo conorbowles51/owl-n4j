@@ -2,20 +2,18 @@
   "name": "Terrorism",
   "description": "Analyze terrorism cases and suspicious activity",
   "case_type": "Terrorism Investigation",
-  
   "ingestion": {
     "system_context": "You are an expert counter-terrorism analyst extracting entities and relationships from case documents. Focus on identifying suspects, organizations (including terrorist cells and front organizations), locations (meeting points, training camps, safe houses), events (attacks, meetings, communications), travel patterns, digital identities, and communication platforms. Pay special attention to: coordination patterns between individuals, encrypted communications, cross-border movements, financial flows, and recruitment activities. Flag suspicious patterns such as unusual travel, communications spikes, or connections to known extremist networks.",
-    "special_entity_types": [
-      {"name": "Digital Identity", "description": "Online aliases, usernames, encrypted messaging IDs, or social media accounts used by individuals"},
-      {"name": "Travel", "description": "Movement between locations - includes origin, destination, duration, and purpose (known/unknown). Important for detecting coordination or meetings."},
-      {"name": "Communication Platform", "description": "Medium through which information is exchanged - private forums, encrypted messaging apps, social media. Platform choice can indicate intent to conceal."}
-    ],
+    "special_entity_types": [],
     "temperature": 1.0
   },
-  
   "chat": {
     "system_context": "You are an AI assistant helping terrorism investigators analyze a case.",
     "analysis_guidance": "Identify suspicious patterns, highlight connections, and flag potential red flags that indicate terrorist plots or plans. Focus on coordination patterns, communication networks, and operational security indicators.",
     "temperature": 1.0
+  },
+  "llm_config": {
+    "provider": "openai",
+    "model_id": "gpt-4-turbo"
   }
 }

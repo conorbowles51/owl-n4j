@@ -601,7 +601,7 @@ export default function App() {
         
         for (let i = 0; i < keys.length; i += BATCH_SIZE) {
           const batch = keys.slice(i, i + BATCH_SIZE);
-          const batchPromises = batch.map(key => graphAPI.getNodeDetails(key));
+          const batchPromises = batch.map(key => graphAPI.getNodeDetails(key, currentCaseId));
           const batchResults = await Promise.all(batchPromises);
           details.push(...batchResults);
           
@@ -881,8 +881,8 @@ export default function App() {
     }
 
     try {
-      await graphAPI.deleteNode(node.key);
-      
+      await graphAPI.deleteNode(node.key, currentCaseId);
+
       // Remove from selected nodes if selected
       setSelectedNodes(prev => prev.filter(n => n.key !== node.key));
       
@@ -1010,8 +1010,8 @@ export default function App() {
   const handleMergeEntities = useCallback(async (sourceKey, targetKey, mergedData) => {
     try {
       setIsLoading(true);
-      const result = await graphAPI.mergeEntities(sourceKey, targetKey, mergedData);
-      
+      const result = await graphAPI.mergeEntities(currentCaseId, sourceKey, targetKey, mergedData);
+
       // Refresh graph to show merged entity
       await loadGraph();
       
@@ -1199,8 +1199,8 @@ export default function App() {
   // Handle expand from context menu (main graph only - old behavior)
   const handleExpand = useCallback(async (node) => {
     try {
-      const expandedData = await graphAPI.getNodeNeighbours(node.key, 1);
-      
+      const expandedData = await graphAPI.getNodeNeighbours(node.key, 1, currentCaseId);
+
       // Merge expanded nodes with existing graph
       setGraphData((prev) => {
         const existingKeys = new Set(prev.nodes.map((n) => n.key));
@@ -1283,7 +1283,7 @@ export default function App() {
       }
 
       // Call expansion API
-      const expandedData = await graphAPI.expandNodes(nodeKeysToExpand, depth);
+      const expandedData = await graphAPI.expandNodes(currentCaseId, nodeKeysToExpand, depth);
 
       // Merge expanded nodes into main graph data so they're available for subgraph
       // This ensures expanded nodes show up in the Spotlight Graph without reloading the entire graph
@@ -1513,8 +1513,8 @@ export default function App() {
     if (selectedNodeKeys.length >= 2) {
       try {
         setIsLoading(true);
-        const pathData = await graphAPI.getShortestPaths(selectedNodeKeys, 10);
-        
+        const pathData = await graphAPI.getShortestPaths(currentCaseId, selectedNodeKeys, 10);
+
         // Check if paths were found
         if (!pathData || !pathData.nodes || pathData.nodes.length === 0) {
           alert('No paths found between the selected nodes. They may not be connected.');
@@ -1559,8 +1559,8 @@ export default function App() {
       setIsLoading(true);
       // Use selected nodes if available, otherwise analyze full graph
       const nodeKeysToAnalyze = selectedNodeKeys.length > 0 ? selectedNodeKeys : null;
-      const pagerankData = await graphAPI.getPageRank(nodeKeysToAnalyze, 20, 20, 0.85);
-      
+      const pagerankData = await graphAPI.getPageRank(currentCaseId, nodeKeysToAnalyze, 20, 20, 0.85);
+
       // Check if nodes were found
       if (!pagerankData || !pagerankData.nodes || pagerankData.nodes.length === 0) {
         alert('No influential nodes found. The graph may be too small or disconnected.');
@@ -1647,9 +1647,9 @@ export default function App() {
         nodeKeysToAnalyze = selectedNodeKeys;
         analysisScope = `${selectedNodeKeys.length} selected nodes`;
       }
-      
-      const louvainData = await graphAPI.getLouvainCommunities(nodeKeysToAnalyze, 1.0, 10);
-      
+
+      const louvainData = await graphAPI.getLouvainCommunities(currentCaseId, nodeKeysToAnalyze, 1.0, 10);
+
       // Check if nodes were found
       if (!louvainData || !louvainData.nodes || louvainData.nodes.length === 0) {
         alert('No communities found. The graph may be too small or disconnected.');
@@ -1769,9 +1769,9 @@ export default function App() {
         nodeKeysToAnalyze = selectedNodeKeys;
         analysisScope = `${selectedNodeKeys.length} selected nodes`;
       }
-      
-      const betweennessData = await graphAPI.getBetweennessCentrality(nodeKeysToAnalyze, 20, true);
-      
+
+      const betweennessData = await graphAPI.getBetweennessCentrality(currentCaseId, nodeKeysToAnalyze, 20, true);
+
       // Check if nodes were found
       if (!betweennessData || !betweennessData.nodes || betweennessData.nodes.length === 0) {
         alert('No nodes found with betweenness centrality. The graph may be too small or disconnected.');
@@ -2145,7 +2145,7 @@ export default function App() {
       
       for (let i = 0; i < subgraphNodeKeys.length; i += BATCH_SIZE) {
         const batch = subgraphNodeKeys.slice(i, i + BATCH_SIZE);
-        const batchPromises = batch.map(key => graphAPI.getNodeDetails(key));
+        const batchPromises = batch.map(key => graphAPI.getNodeDetails(key, currentCaseId));
         const batchResults = await Promise.all(batchPromises);
         allSubgraphNodeDetails.push(...batchResults);
         
@@ -3364,7 +3364,7 @@ export default function App() {
             />
           )}
           
-          <SearchBar onSelectNode={handleSearchSelect} />
+          <SearchBar onSelectNode={handleSearchSelect} caseId={currentCaseId} />
           
           <button
             onClick={loadGraph}
@@ -3519,6 +3519,7 @@ export default function App() {
                       onAddNode={() => setShowAddNodeModal(true)}
                       onFindSimilarEntities={handleFindSimilarEntities}
                       isScanningSimilar={isScanningSimilar}
+                      caseId={currentCaseId}
                     />
                   )}
                 </div>
@@ -4044,6 +4045,7 @@ export default function App() {
                         isSubgraph={true}
                         onRemoveFromSubgraph={handleRemoveFromSubgraph}
                         subgraphNodeKeys={subgraphNodeKeys}
+                        caseId={currentCaseId}
                       />
                     </>
                   ) : (
@@ -4121,6 +4123,7 @@ export default function App() {
                 onAddNode={() => setShowAddNodeModal(true)}
                 onFindSimilarEntities={handleFindSimilarEntities}
                 isScanningSimilar={isScanningSimilar}
+                caseId={currentCaseId}
               />
             )}
             </>
@@ -4154,6 +4157,7 @@ export default function App() {
               onNodeClick={handleNodeClick}
               onBulkNodeSelect={handleBulkNodeSelect}
               onBackgroundClick={handleBackgroundClick}
+              caseId={currentCaseId}
             />
           )}
 
@@ -4213,12 +4217,13 @@ export default function App() {
                     onViewDocument={handleViewDocument}
                     onNodeUpdate={(updatedNode) => {
                       // Update the node in selectedNodesDetails
-                      setSelectedNodesDetails(prev => 
+                      setSelectedNodesDetails(prev =>
                         prev.map(n => n.key === updatedNode.key ? updatedNode : n)
                       );
                     }}
                     username={authUsername}
                     compact={selectedNodesDetails.length > 1}
+                    caseId={currentCaseId}
                   />
                 </div>
               ))}
@@ -4277,6 +4282,7 @@ export default function App() {
           target => !relationshipSourceNodes.some(source => source.key === target.key)
         )}
         onRelationshipCreated={handleRelationshipCreated}
+        caseId={currentCaseId}
       />
 
       {/* Relationship Analysis Modal */}
@@ -4288,6 +4294,7 @@ export default function App() {
         }}
         node={nodeForAnalysis}
         onRelationshipsAdded={handleRelationshipsAddedFromAnalysis}
+        caseId={currentCaseId}
       />
 
       {/* Edit Node Modal */}
@@ -4601,6 +4608,7 @@ export default function App() {
           // Refresh the graph to show the new node
           await loadGraph();
         }}
+        caseId={currentCaseId}
       />
 
       {/* Document Viewer Modal */}

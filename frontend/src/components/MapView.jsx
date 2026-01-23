@@ -392,6 +392,7 @@ export default function MapView({
   onBulkNodeSelect,
   onBackgroundClick,
   locations: externalLocations = null, // Allow passing locations directly
+  caseId, // REQUIRED: Case ID for case-specific data
 }) {
   const [locations, setLocations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -421,17 +422,18 @@ export default function MapView({
 
   // Load locations data
   const loadLocations = useCallback(async () => {
+    if (!caseId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await graphAPI.getLocations();
+      const data = await graphAPI.getLocations(caseId);
       setLocations(data || []);
     } catch (err) {
       setError(err.message);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [caseId]);
 
   // Use external locations if provided, otherwise load from API
   useEffect(() => {
