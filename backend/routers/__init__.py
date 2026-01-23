@@ -18,6 +18,7 @@ from routers.system_logs import router as system_logs_router
 from routers.backfill import router as backfill_router
 from routers.database import router as database_router
 from routers.llm_config import router as llm_config_router
+from routers.workspace import router as workspace_router
 
 __all__ = [
     "graph_router",
@@ -36,4 +37,5 @@ __all__ = [
     "backfill_router",
     "database_router",
     "llm_config_router",
+    "workspace_router",
 ]

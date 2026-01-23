@@ -26,6 +26,7 @@ from routers import (
     backfill_router,
     database_router,
     llm_config_router,
+    workspace_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -104,6 +105,7 @@ app.include_router(system_logs_router)
 app.include_router(backfill_router)
 app.include_router(database_router)
 app.include_router(llm_config_router)
+app.include_router(workspace_router)
 
 
 @app.get("/")

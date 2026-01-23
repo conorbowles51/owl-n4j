@@ -43,6 +43,7 @@ export default function CaseManagementView({
   authUsername,
   onGoToGraphView,
   onGoToEvidenceView,
+  onGoToWorkspaceView,
   onLoadLastGraph,
   lastGraphInfo,
   initialCaseToSelect,
@@ -345,8 +346,81 @@ export default function CaseManagementView({
         }
       }
     } catch (err) {
-      console.error('Failed to delete snapshot:', err);
-      alert(`Failed to delete snapshot: ${err.message}`);
+      // If snapshot doesn't exist in storage (404), remove it from case version instead
+      if (err?.message?.includes('not found') || err?.message?.includes('doesn\'t exist') || err?.status === 404) {
+        try {
+          console.log(`Snapshot ${snapshotId} not found in storage, removing from case version...`);
+          if (!selectedCase) {
+            throw new Error('No case selected');
+          }
+          
+          // Collect all snapshots from all versions, filtering out the deleted one
+          // This ensures the deleted snapshot won't be preserved when we save a new version
+          const allSnapshotIds = new Set();
+          const allSnapshots = [];
+          
+          // Collect from all versions (most recent first)
+          const sortedVersions = [...(selectedCase.versions || [])].sort((a, b) => (b.version ?? 0) - (a.version ?? 0));
+          for (const version of sortedVersions) {
+            if (version.snapshots) {
+              for (const snap of version.snapshots) {
+                const snapId = snap?.id;
+                // Skip the deleted snapshot and avoid duplicates
+                if (snapId && snapId !== snapshotId && !allSnapshotIds.has(snapId)) {
+                  allSnapshotIds.add(snapId);
+                  allSnapshots.push(snap);
+                }
+              }
+            }
+          }
+          
+          // Save case with all snapshots except the deleted one
+          await casesAPI.save({
+            case_id: selectedCase.id,
+            case_name: selectedCase.name,
+            snapshots: allSnapshots,
+            save_notes: `Removed snapshot ${snapshotId}`,
+          });
+            
+            // Reload the case to get updated state
+            const updatedCase = await casesAPI.get(selectedCase.id);
+            setSelectedCase(updatedCase);
+            
+            // Update the selected version if it exists
+            if (selectedVersion) {
+              const updatedVersion = updatedCase.versions?.find(v => v.version === selectedVersion.version);
+              if (updatedVersion) {
+                setSelectedVersion(updatedVersion);
+              } else {
+                // If the selected version no longer exists, use the latest
+                const newLatest = updatedCase.versions?.sort((a, b) => (b.version ?? 0) - (a.version ?? 0))[0];
+                if (newLatest) {
+                  setSelectedVersion(newLatest);
+                }
+              }
+            }
+          
+          // Remove from loaded snapshot details
+          setLoadedSnapshotDetails(prev => {
+            const next = { ...prev };
+            delete next[snapshotId];
+            return next;
+          });
+          
+          // Remove from expanded snapshots
+          setExpandedSnapshots(prev => {
+            const next = new Set(prev);
+            next.delete(snapshotId);
+            return next;
+          });
+        } catch (caseErr) {
+          console.error('Failed to remove snapshot from case:', caseErr);
+          alert('Snapshot not found in storage. Failed to remove from case version.');
+        }
+      } else {
+        console.error('Failed to delete snapshot:', err);
+        alert(`Failed to delete snapshot: ${err.message}`);
+      }
     }
   };
 
@@ -789,7 +863,7 @@ export default function CaseManagementView({
         </div>
 
         {/* Case Details - Right Panel */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="w-2/3 flex flex-col overflow-hidden">
           {selectedCase ? (
             <>
               {/* Case Header */}
@@ -811,7 +885,8 @@ export default function CaseManagementView({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+                    {/* Backup and Restore buttons hidden for now */}
+                    {/* <button
                       onClick={handleBackupCase}
                       disabled={backingUp}
                       className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -838,7 +913,7 @@ export default function CaseManagementView({
                         disabled={restoring}
                         className="hidden"
                       />
-                    </label>
+                    </label> */}
                     {onGoToEvidenceView && (
                       <button
                         onClick={() => onGoToEvidenceView(selectedCase)}
@@ -846,6 +921,15 @@ export default function CaseManagementView({
                       >
                         <UploadCloud className="w-4 h-4" />
                         Process Evidence
+                      </button>
+                    )}
+                    {onGoToWorkspaceView && (
+                      <button
+                        onClick={() => onGoToWorkspaceView(selectedCase)}
+                        className="flex items-center gap-2 px-4 py-2 bg-owl-purple-500 hover:bg-owl-purple-600 text-white rounded-lg transition-colors text-sm"
+                      >
+                        <FolderOpen className="w-4 h-4" />
+                        Open Workspace
                       </button>
                     )}
                     {selectedVersion && (

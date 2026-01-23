@@ -58,6 +58,7 @@ import FileManagementPanel from './components/FileManagementPanel';
 import BackgroundTasksPanel from './components/BackgroundTasksPanel';
 import CaseManagementView from './components/CaseManagementView';
 import EvidenceProcessingView from './components/EvidenceProcessingView';
+import WorkspaceView from './components/WorkspaceView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
@@ -79,7 +80,7 @@ import MergeEntitiesModal from './components/MergeEntitiesModal';
  * Main App Component
  */
 export default function App() {
-  // Main app view state - 'caseManagement' or 'graph'
+  // Main app view state - 'caseManagement', 'graph', 'evidence', or 'workspace'
   const [appView, setAppView] = useState('caseManagement'); // Start with case management after login
   // View mode state (for graph view)
   const [viewMode, setViewMode] = useState('graph'); // 'graph' or 'timeline'
@@ -2826,6 +2827,12 @@ export default function App() {
             // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
             setAppView('evidence');
           }}
+          onGoToWorkspaceView={(caseData) => {
+            if (!caseData) return;
+            setCurrentCaseId(caseData.id);
+            setCurrentCaseName(caseData.name);
+            setAppView('workspace');
+          }}
           initialCaseToSelect={caseToSelect}
           onViewDocument={handleViewDocument}
           onCaseSelected={() => setCaseToSelect(null)}
@@ -2888,6 +2895,18 @@ export default function App() {
           highlightText={documentViewerState.highlightText}
         />
       </>
+    );
+  }
+
+  // Workspace view for current case
+  if (appView === 'workspace') {
+    return (
+      <WorkspaceView
+        caseId={currentCaseId}
+        caseName={currentCaseName}
+        onBack={() => setAppView('caseManagement')}
+        authUsername={authUsername}
+      />
     );
   }
 

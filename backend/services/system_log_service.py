@@ -22,6 +22,7 @@ class LogType(str, Enum):
     AI_ASSISTANT = "ai_assistant"
     GRAPH_OPERATION = "graph_operation"
     CASE_MANAGEMENT = "case_management"
+    CASE_OPERATION = "case_operation"  # For workspace operations
     DOCUMENT_INGESTION = "document_ingestion"
     USER_ACTION = "user_action"
     SYSTEM = "system"

@@ -2,6 +2,9 @@ import React, { useRef, useCallback, useEffect, useState, useMemo, useImperative
 import ForceGraph2D from 'react-force-graph-2d';
 import { Settings, MousePointer, Square, Maximize2, Layout, ChevronLeft, ChevronRight, Plus, ChevronDown, ChevronUp, Target, Search } from "lucide-react";
 import { graphAPI, profilesAPI } from '../services/api';
+import TimelineView from './timeline/TimelineView';
+import MapView from './MapView';
+import { convertGraphNodesToTimelineEvents, convertGraphNodesToMapLocations, hasTimelineData, hasMapData } from '../utils/graphDataConverter';
 /**
  * Color palette for entity types
  */
@@ -117,6 +120,9 @@ const GraphView = forwardRef(function GraphView({
   onAddNode, // Callback to open Add Node modal
   onFindSimilarEntities, // Callback to find similar entities
   isScanningSimilar = false, // Whether similar entities scan is in progress
+  caseId, // Case ID for filtering timeline/map data
+  viewMode: externalViewMode, // External view mode control
+  onViewModeChange, // Callback when view mode changes
 }, ref) {
   const graphRef = useRef();
   const containerRef = useRef();
@@ -126,7 +132,12 @@ const GraphView = forwardRef(function GraphView({
   const [selectedEntityTypes, setSelectedEntityTypes] = useState(new Set()); // Track selected entity types
   const [allEntityTypes, setAllEntityTypes] = useState([]); // All entity types from database
   const [profileColors, setProfileColors] = useState({}); // Entity type colors from profile
-  const [isLegendMinimized, setIsLegendMinimized] = useState(isSubgraph); // Track if legend is minimized - default to minimized for subgraphs
+  const [isLegendMinimized, setIsLegendMinimized] = useState(true); // Track if legend is minimized - default to minimized
+  
+  // View mode state
+  const [internalViewMode, setInternalViewMode] = useState('graph');
+  const viewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
+  const setViewMode = onViewModeChange || setInternalViewMode;
 
   // Selection mode: 'click' or 'drag'
   const [selectionMode, setSelectionMode] = useState('click');
@@ -205,13 +216,28 @@ const GraphView = forwardRef(function GraphView({
 
   // Center graph function
   const centerGraph = useCallback(() => {
-    if (graphRef.current && graphData.nodes.length > 0) {
-      // Wait a bit for the simulation to settle, then center
-      setTimeout(() => {
-        if (graphRef.current) {
+    if (graphRef.current && graphData.nodes.length > 0 && containerRef.current) {
+      // Wait for container to have dimensions and simulation to settle
+      const checkAndCenter = () => {
+        if (!graphRef.current || !containerRef.current) return;
+        
+        const container = containerRef.current;
+        const containerWidth = container.offsetWidth || container.clientWidth;
+        const containerHeight = container.offsetHeight || container.clientHeight;
+        
+        // Only center if container has valid dimensions
+        if (containerWidth > 0 && containerHeight > 0) {
+          // Use zoomToFit with proper padding to center nodes in viewport
+          // The padding values ensure nodes are centered within the visible area
           graphRef.current.zoomToFit(400, 50);
+        } else {
+          // Retry if container doesn't have dimensions yet
+          setTimeout(checkAndCenter, 100);
         }
-      }, 100);
+      };
+      
+      // Initial delay for simulation to settle
+      setTimeout(checkAndCenter, 200);
     }
   }, [graphData]);
 
@@ -266,14 +292,17 @@ const GraphView = forwardRef(function GraphView({
     showControls,
   }), [centerGraph, centerOnNodes, getGraphCanvas, setSelectionMode, selectionMode, setShowControls, showControls]);
 
-  // Center graph on mount
+  // Center graph on mount - only when graphData changes, not when centerGraph changes
   useEffect(() => {
     if (graphRef.current && graphData.nodes.length > 0) {
-      setTimeout(() => {
-        centerGraph();
+      const timeoutId = setTimeout(() => {
+        if (graphRef.current) {
+          graphRef.current.zoomToFit(400, 50);
+        }
       }, 500);
+      return () => clearTimeout(timeoutId);
     }
-  }, [graphData, centerGraph]);
+  }, [graphData]); // Remove centerGraph from dependencies to avoid loop
 
   // Apply force simulation settings
   useEffect(() => {
@@ -534,7 +563,19 @@ const GraphView = forwardRef(function GraphView({
   // Update selectedEntityTypes when selectedNodes changes
   useEffect(() => {
     const typesInSelection = new Set(selectedNodes.map(n => n.type));
-    setSelectedEntityTypes(typesInSelection);
+    // Only update if the Set actually changed (compare sizes and contents)
+    setSelectedEntityTypes(prev => {
+      if (prev.size !== typesInSelection.size) {
+        return typesInSelection;
+      }
+      // Check if contents are the same
+      for (const type of typesInSelection) {
+        if (!prev.has(type)) {
+          return typesInSelection;
+        }
+      }
+      return prev; // No change, return previous value to avoid re-render
+    });
   }, [selectedNodes]);
 
   // Handle mouse down for drag selection
@@ -990,12 +1031,53 @@ const GraphView = forwardRef(function GraphView({
     onPaneViewModeChange(nextMode);
   }, [paneViewMode, onPaneViewModeChange]);
 
+  // Convert graph data to timeline and map formats
+  const timelineEvents = useMemo(() => {
+    if (viewMode !== 'timeline') return [];
+    return convertGraphNodesToTimelineEvents(graphData.nodes, graphData.links);
+  }, [graphData, viewMode]);
+
+  const mapLocations = useMemo(() => {
+    if (viewMode !== 'map') return [];
+    return convertGraphNodesToMapLocations(graphData.nodes, graphData.links);
+  }, [graphData, viewMode]);
+
+  // Check if data is available for each mode
+  const hasTimeline = useMemo(() => hasTimelineData(graphData.nodes), [graphData.nodes]);
+  const hasMap = useMemo(() => hasMapData(graphData.nodes), [graphData.nodes]);
+
+  // Handle timeline event selection
+  const handleTimelineEventSelect = useCallback((event, isMultiSelect) => {
+    if (!onNodeClick) return;
+    const node = graphData.nodes.find(n => n.key === event.key);
+    if (node) {
+      onNodeClick(node, { ctrlKey: isMultiSelect, metaKey: isMultiSelect });
+    }
+  }, [graphData.nodes, onNodeClick]);
+
+  // Handle map node click
+  const handleMapNodeClick = useCallback((entity, event) => {
+    if (!onNodeClick) return;
+    const node = graphData.nodes.find(n => n.key === entity.key);
+    if (node) {
+      onNodeClick(node, event);
+    }
+  }, [graphData.nodes, onNodeClick]);
+
+  // Get selected event keys for timeline
+  const selectedEventKeys = useMemo(() => {
+    return selectedNodes.map(n => n.key);
+  }, [selectedNodes]);
+
   return (
     <div 
       ref={containerRef}
-      className="relative w-full h-full bg-light-50"
-      style={{ cursor: selectionMode === 'drag' ? 'crosshair' : 'default' }}
+      className="relative w-full h-full bg-light-50 flex flex-col"
+      style={{ cursor: viewMode === 'graph' && selectionMode === 'drag' ? 'crosshair' : 'default' }}
     >
+      {/* Conditional rendering based on view mode */}
+      {viewMode === 'graph' && (
+      <div className="flex-1 min-h-0 relative">
       <ForceGraph2D
         ref={graphRef}
         graphData={graphData}
@@ -1313,6 +1395,57 @@ const GraphView = forwardRef(function GraphView({
           >
             Reset to Defaults
           </button>
+        </div>
+      )}
+      </div>
+      )}
+
+      {viewMode === 'timeline' && hasTimeline && (
+        <div className="flex-1 min-h-0">
+          <TimelineView
+            timelineData={timelineEvents}
+            onSelectEvent={handleTimelineEventSelect}
+            selectedEvent={selectedNodes[0] ? graphData.nodes.find(n => n.key === selectedNodes[0].key) : null}
+            selectedEventKeys={selectedEventKeys}
+            onSelectEvents={(events) => {
+              // Convert events to nodes and call onBulkNodeSelect
+              if (onBulkNodeSelect) {
+                const nodes = events.map(e => graphData.nodes.find(n => n.key === e.key)).filter(Boolean);
+                onBulkNodeSelect(nodes);
+              }
+            }}
+            onBackgroundClick={onBackgroundClick}
+          />
+        </div>
+      )}
+
+      {viewMode === 'map' && hasMap && (
+        <div className="flex-1 min-h-0">
+          <MapView
+            selectedNodes={selectedNodes}
+            onNodeClick={handleMapNodeClick}
+            onBulkNodeSelect={onBulkNodeSelect}
+            onBackgroundClick={onBackgroundClick}
+            locations={mapLocations}
+          />
+        </div>
+      )}
+
+      {viewMode === 'timeline' && !hasTimeline && (
+        <div className="flex-1 flex items-center justify-center text-light-500">
+          <div className="text-center">
+            <p className="text-lg font-medium mb-2">No timeline data available</p>
+            <p className="text-sm">Nodes need date properties to appear in timeline view</p>
+          </div>
+        </div>
+      )}
+
+      {viewMode === 'map' && !hasMap && (
+        <div className="flex-1 flex items-center justify-center text-light-500">
+          <div className="text-center">
+            <p className="text-lg font-medium mb-2">No map data available</p>
+            <p className="text-sm">Nodes need latitude and longitude properties to appear on the map</p>
+          </div>
         </div>
       )}
     </div>

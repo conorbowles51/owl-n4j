@@ -391,6 +391,7 @@ export default function MapView({
   onNodeClick,
   onBulkNodeSelect,
   onBackgroundClick,
+  locations: externalLocations = null, // Allow passing locations directly
 }) {
   const [locations, setLocations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -432,9 +433,15 @@ export default function MapView({
     }
   }, []);
 
+  // Use external locations if provided, otherwise load from API
   useEffect(() => {
-    loadLocations();
-  }, [loadLocations]);
+    if (externalLocations !== null) {
+      setLocations(externalLocations);
+      setIsLoading(false);
+    } else {
+      loadLocations();
+    }
+  }, [externalLocations, loadLocations]);
 
   // Filter locations by type and time
   const filteredLocations = useMemo(() => {

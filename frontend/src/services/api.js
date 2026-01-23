@@ -1212,6 +1212,106 @@ export const databaseAPI = {
 /**
  * LLM Configuration API
  */
+export const workspaceAPI = {
+  // Case Context
+  getCaseContext: (caseId) => fetchAPI(`/workspace/${caseId}/context`),
+  updateCaseContext: (caseId, context) => fetchAPI(`/workspace/${caseId}/context`, {
+    method: 'PUT',
+    body: context,
+  }),
+
+  // Witnesses
+  getWitnesses: (caseId) => fetchAPI(`/workspace/${caseId}/witnesses`),
+  createWitness: (caseId, witness) => fetchAPI(`/workspace/${caseId}/witnesses`, {
+    method: 'POST',
+    body: witness,
+  }),
+  updateWitness: (caseId, witnessId, witness) => fetchAPI(`/workspace/${caseId}/witnesses/${witnessId}`, {
+    method: 'PUT',
+    body: witness,
+  }),
+  deleteWitness: (caseId, witnessId) => fetchAPI(`/workspace/${caseId}/witnesses/${witnessId}`, {
+    method: 'DELETE',
+  }),
+
+  // Investigative Notes
+  getNotes: (caseId) => fetchAPI(`/workspace/${caseId}/notes`),
+  createNote: (caseId, note) => fetchAPI(`/workspace/${caseId}/notes`, {
+    method: 'POST',
+    body: note,
+  }),
+  updateNote: (caseId, noteId, note) => fetchAPI(`/workspace/${caseId}/notes/${noteId}`, {
+    method: 'PUT',
+    body: note,
+  }),
+  deleteNote: (caseId, noteId) => fetchAPI(`/workspace/${caseId}/notes/${noteId}`, {
+    method: 'DELETE',
+  }),
+
+  // Theories
+  getTheories: (caseId) => fetchAPI(`/workspace/${caseId}/theories`),
+  createTheory: (caseId, theory) => fetchAPI(`/workspace/${caseId}/theories`, {
+    method: 'POST',
+    body: theory,
+  }),
+  updateTheory: (caseId, theoryId, theory) => fetchAPI(`/workspace/${caseId}/theories/${theoryId}`, {
+    method: 'PUT',
+    body: theory,
+  }),
+  deleteTheory: (caseId, theoryId) => fetchAPI(`/workspace/${caseId}/theories/${theoryId}`, {
+    method: 'DELETE',
+  }),
+  buildTheoryGraph: (caseId, theoryId, options) => fetchAPI(`/workspace/${caseId}/theories/${theoryId}/build-graph`, {
+    method: 'POST',
+    body: options,
+  }),
+
+  // Tasks
+  getTasks: (caseId) => fetchAPI(`/workspace/${caseId}/tasks`),
+  createTask: (caseId, task) => fetchAPI(`/workspace/${caseId}/tasks`, {
+    method: 'POST',
+    body: task,
+  }),
+  updateTask: (caseId, taskId, task) => fetchAPI(`/workspace/${caseId}/tasks/${taskId}`, {
+    method: 'PUT',
+    body: task,
+  }),
+  deleteTask: (caseId, taskId) => fetchAPI(`/workspace/${caseId}/tasks/${taskId}`, {
+    method: 'DELETE',
+  }),
+
+  // Deadlines
+  getDeadlines: (caseId) => fetchAPI(`/workspace/${caseId}/deadlines`),
+  updateDeadlines: (caseId, deadlineConfig) => fetchAPI(`/workspace/${caseId}/deadlines`, {
+    method: 'PUT',
+    body: deadlineConfig,
+  }),
+
+  // Pinned Items
+  getPinnedItems: (caseId) => fetchAPI(`/workspace/${caseId}/pinned`),
+  pinItem: (caseId, itemType, itemId, annotationsCount = 0) => {
+    const params = new URLSearchParams({ item_type: itemType, item_id: itemId });
+    if (annotationsCount > 0) params.append('annotations_count', annotationsCount);
+    return fetchAPI(`/workspace/${caseId}/pinned?${params.toString()}`, {
+      method: 'POST',
+    });
+  },
+  unpinItem: (caseId, pinId) => fetchAPI(`/workspace/${caseId}/pinned/${pinId}`, {
+    method: 'DELETE',
+  }),
+
+  // Presence
+  getPresence: (caseId) => fetchAPI(`/workspace/${caseId}/presence`),
+  updatePresence: (caseId, status) => fetchAPI(`/workspace/${caseId}/presence`, {
+    method: 'PUT',
+    body: { status },
+  }),
+
+  // Investigation Timeline
+  getInvestigationTimeline: (caseId) => fetchAPI(`/workspace/${caseId}/investigation-timeline`),
+  getTheoryTimeline: (caseId, theoryId) => fetchAPI(`/workspace/${caseId}/theories/${theoryId}/timeline`),
+};
+
 export const llmConfigAPI = {
   /**
    * Get all available models
