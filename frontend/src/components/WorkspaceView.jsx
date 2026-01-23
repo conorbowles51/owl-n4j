@@ -176,6 +176,7 @@ export default function WorkspaceView({
         <div className="w-80 border-r border-light-200 bg-white overflow-y-auto">
           <CaseContextPanel
             caseId={caseId}
+            caseName={caseName || caseData?.name || 'Untitled Case'}
             caseContext={caseContext}
             onUpdateContext={handleUpdateContext}
             authUsername={authUsername}

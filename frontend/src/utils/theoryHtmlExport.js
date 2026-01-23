@@ -75,6 +75,7 @@ async function loadDocumentAsBase64(evidenceId) {
  * @param {string} timelineCanvasDataUrl - Optional base64 data URL of timeline canvas
  * @param {string} mapCanvasDataUrl - Optional base64 data URL of map canvas
  * @param {string} caseId - Case ID for loading document summaries and images
+ * @param {string} caseName - Case name for the report title
  */
 export async function exportTheoryToHTML(
   theory,
@@ -84,10 +85,26 @@ export async function exportTheoryToHTML(
   graphCanvasDataUrl = null,
   timelineCanvasDataUrl = null,
   mapCanvasDataUrl = null,
-  caseId = null
+  caseId = null,
+  caseName = null
 ) {
   // Load logo as base64
   const logoBase64 = await loadLogoAsBase64();
+  
+  // If caseName is not provided but caseId is, try to fetch it
+  let finalCaseName = caseName && caseName.trim() ? caseName.trim() : null;
+  if (!finalCaseName && caseId) {
+    try {
+      const { casesAPI } = await import('../services/api');
+      const caseData = await casesAPI.get(caseId);
+      finalCaseName = caseData?.name && caseData.name.trim() ? caseData.name.trim() : null;
+    } catch (err) {
+      console.warn('Failed to load case name:', err);
+    }
+  }
+  
+  // Debug: Log the case name being used
+  console.log('Exporting theory report - caseName:', caseName, 'finalCaseName:', finalCaseName, 'caseId:', caseId);
   
   // Load document summaries and images
   const documentData = {};
@@ -450,7 +467,7 @@ export async function exportTheoryToHTML(
   <!-- Cover Page -->
   <div class="cover-page">
     ${logoBase64 ? `<img src="${logoBase64}" alt="Owl Consultancy Group" class="cover-logo" />` : '<div class="cover-logo" style="font-size: 3rem; font-weight: bold;">🦉</div>'}
-    <div class="cover-title">Investigation Theory</div>
+    <div class="cover-title">Investigation Theory${finalCaseName ? `: ${escapeHtml(finalCaseName)}` : ''}</div>
     <div class="cover-subtitle">Owl Consultancy Group</div>
     <div class="cover-theory-title">${escapeHtml(theory.title || 'Untitled Theory')}</div>
     <div class="cover-meta">

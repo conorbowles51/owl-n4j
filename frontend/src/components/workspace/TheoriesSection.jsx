@@ -12,6 +12,7 @@ import BuildTheoryGraphModal from './BuildTheoryGraphModal';
  */
 export default function TheoriesSection({
   caseId,
+  caseName,
   authUsername,
   isCollapsed,
   onToggle,
@@ -312,6 +313,7 @@ export default function TheoriesSection({
           onClose={() => setAttachedModalTheory(null)}
           theory={attachedModalTheory}
           caseId={caseId}
+          caseName={caseName}
           onDetach={handleDetachItem}
         />
       )}

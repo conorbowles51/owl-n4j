@@ -22,6 +22,7 @@ import InvestigationTimelineSection from './InvestigationTimelineSection';
  */
 export default function CaseContextPanel({
   caseId,
+  caseName,
   caseContext,
   onUpdateContext,
   authUsername,
@@ -150,6 +151,7 @@ export default function CaseContextPanel({
       <div className={`border-b border-light-200 ${selectedSection === 'theories' ? 'bg-owl-blue-50' : ''}`}>
         <TheoriesSection
           caseId={caseId}
+          caseName={caseName}
           authUsername={authUsername}
           isCollapsed={isCollapsed('theories')}
           onToggle={(e) => toggleSection('theories', e)}

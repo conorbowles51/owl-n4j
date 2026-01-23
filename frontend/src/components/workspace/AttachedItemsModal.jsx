@@ -28,6 +28,7 @@ export default function AttachedItemsModal({
   onClose,
   theory,
   caseId,
+  caseName,
   onDetach,
 }) {
   const [attachedItems, setAttachedItems] = useState({
@@ -431,17 +432,54 @@ export default function AttachedItemsModal({
         }
       }
 
+      // Always load graph data if it exists, regardless of current tab
+      let graphDataForExport = theoryGraphData;
+      if (theory?.attached_graph_data && (!graphDataForExport || graphDataForExport.nodes.length === 0)) {
+        // Load graph data if not already loaded
+        try {
+          const entityKeys = theory.attached_graph_data.entity_keys || [];
+          if (entityKeys.length > 0) {
+            const fullGraph = await graphAPI.getGraph({ case_id: caseId });
+            const nodeKeysSet = new Set(entityKeys);
+            const filteredNodes = fullGraph.nodes.filter(node => nodeKeysSet.has(node.key));
+            const filteredNodeKeys = new Set(filteredNodes.map(n => n.key));
+            const filteredLinks = fullGraph.links.filter(link => {
+              const sourceKey = typeof link.source === 'object' ? link.source.key : link.source;
+              const targetKey = typeof link.target === 'object' ? link.target.key : link.target;
+              return filteredNodeKeys.has(sourceKey) && filteredNodeKeys.has(targetKey);
+            });
+            graphDataForExport = {
+              nodes: filteredNodes,
+              links: filteredLinks,
+            };
+            // Update state so the graph can be rendered
+            setTheoryGraphData(graphDataForExport);
+          }
+        } catch (err) {
+          console.error('Failed to load graph data for export:', err);
+        }
+      }
+
       // Capture graph, timeline, and map images
       let graphCanvasDataUrl = null;
       let timelineCanvasDataUrl = null;
       let mapCanvasDataUrl = null;
       
-      if (theory?.attached_graph_data && theoryGraphData && theoryGraphData.nodes.length > 0) {
+      if (theory?.attached_graph_data && graphDataForExport && graphDataForExport.nodes.length > 0) {
+        // Check if timeline and map data are available
+        const exportHasTimeline = hasTimelineData(graphDataForExport.nodes);
+        const exportHasMap = hasMapData(graphDataForExport.nodes);
+        
         // Switch to graph tab to render views
         if (activeTab !== 'graph') {
           setActiveTab('graph');
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for tab switch and graph to load
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 500));
         }
+        
+        // Wait for graph to be fully loaded and rendered
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         // Capture graph view
         setGraphViewMode('graph');
@@ -467,8 +505,8 @@ export default function AttachedItemsModal({
           }
         }
         
-        // Capture timeline view if available
-        if (hasTimeline) {
+        // Capture timeline view if nodes have timeline data
+        if (exportHasTimeline) {
           setGraphViewMode('timeline');
           await new Promise(resolve => setTimeout(resolve, 2000));
           if (timelineCanvasRef.current) {
@@ -488,8 +526,8 @@ export default function AttachedItemsModal({
           }
         }
         
-        // Capture map view if available
-        if (hasMap) {
+        // Capture map view if nodes have map data
+        if (exportHasMap) {
           setGraphViewMode('map');
           await new Promise(resolve => setTimeout(resolve, 2000));
           if (mapCanvasRef.current) {
@@ -513,7 +551,7 @@ export default function AttachedItemsModal({
         setGraphViewMode('graph');
       }
       
-      // Use stored graph image if available
+      // Use stored graph image if available and we didn't capture a new one
       if (!graphCanvasDataUrl && graphImageDataUrl) {
         graphCanvasDataUrl = graphImageDataUrl;
       }
@@ -559,15 +597,17 @@ export default function AttachedItemsModal({
       };
 
       // Export as HTML (better logo rendering and can be printed to PDF)
+      console.log('Exporting theory - caseName prop:', caseName, 'caseId:', caseId);
       await exportTheoryToHTML(
         theory,
         enhancedAttachedItems,
-        theoryGraphData,
+        graphDataForExport || theoryGraphData, // Use the loaded graph data
         timelineEvents,
         graphCanvasDataUrl,
         timelineCanvasDataUrl || theoryTimelineCanvasDataUrl,
         mapCanvasDataUrl,
-        caseId
+        caseId,
+        caseName
       );
     } catch (err) {
       console.error('Failed to export theory:', err);
