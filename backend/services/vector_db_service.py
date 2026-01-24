@@ -47,13 +47,26 @@ class VectorDBService:
     ) -> None:
         """
         Add or update a document embedding.
-        
+
         Args:
             doc_id: Unique document identifier (should match Neo4j Document.id)
             text: Document text content (for retrieval, truncated to 10k chars)
             embedding: Vector embedding (list of floats)
             metadata: Optional metadata (filename, case_id, etc.)
         """
+        # Check dimension consistency with existing embeddings
+        if self.collection.count() > 0:
+            sample = self.collection.peek(1)
+            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+                expected = len(sample["embeddings"][0])
+                actual = len(embedding)
+                if expected != actual:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: collection has {expected} dims, "
+                        f"new embedding has {actual} dims. "
+                        f"Delete data/chromadb/ and re-ingest with consistent embedding model."
+                    )
+
         metadata = metadata or {}
         metadata["doc_id"] = doc_id
         
@@ -166,13 +179,26 @@ class VectorDBService:
     ) -> None:
         """
         Add or update an entity embedding.
-        
+
         Args:
             entity_key: Unique entity key (human-readable identifier like 'john-smith')
             text: Entity text content for retrieval (name + summary + verified_facts)
             embedding: Vector embedding (list of floats)
             metadata: Optional metadata (entity_type, name, etc.)
         """
+        # Check dimension consistency with existing embeddings
+        if self.entity_collection.count() > 0:
+            sample = self.entity_collection.peek(1)
+            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+                expected = len(sample["embeddings"][0])
+                actual = len(embedding)
+                if expected != actual:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: entity collection has {expected} dims, "
+                        f"new embedding has {actual} dims. "
+                        f"Delete data/chromadb/ and re-ingest with consistent embedding model."
+                    )
+
         metadata = metadata or {}
         metadata["entity_key"] = entity_key
         
