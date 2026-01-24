@@ -19,10 +19,15 @@ import {
   Upload,
   Download,
   HardDrive,
+  Users,
+  Shield,
+  Crown,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { casesAPI, evidenceAPI, snapshotsAPI } from '../services/api';
+import { useCasePermissions } from '../contexts/CasePermissionContext';
 import CaseModal from './CaseModal';
+import CreateUserModal from './CreateUserModal';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
 import DocumentationViewer from './DocumentationViewer';
 import SystemLogsPanel from './SystemLogsPanel';
@@ -41,6 +46,7 @@ export default function CaseManagementView({
   onLogout,
   isAuthenticated,
   authUsername,
+  authDisplayName,
   onGoToGraphView,
   onGoToEvidenceView,
   onGoToWorkspaceView,
@@ -49,7 +55,18 @@ export default function CaseManagementView({
   initialCaseToSelect,
   onCaseSelected,
   onViewDocument,
+  onShowCollaboratorModal,
 }) {
+  // Permission context
+  const {
+    canEdit,
+    canDelete,
+    canInvite,
+    canUploadEvidence,
+    isOwner,
+    isSuperAdmin,
+    refreshPermissions,
+  } = useCasePermissions();
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState(null);
@@ -68,6 +85,7 @@ export default function CaseManagementView({
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [showSystemLogs, setShowSystemLogs] = useState(false);
   const [showDatabaseModal, setShowDatabaseModal] = useState(false);
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
   const [backingUp, setBackingUp] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [restoreFile, setRestoreFile] = useState(null);
@@ -164,7 +182,9 @@ export default function CaseManagementView({
     setLoading(true);
     try {
       const data = await casesAPI.list();
-      setCases(data);
+      // Handle both new format { cases: [...], total: number } and legacy array format
+      const casesList = Array.isArray(data) ? data : (data.cases || []);
+      setCases(casesList);
     } catch (err) {
       console.error('Failed to load cases:', err);
       alert(`Failed to load cases: ${err.message}`);
@@ -174,14 +194,20 @@ export default function CaseManagementView({
   };
 
   const handleViewCase = async (caseItem) => {
+    // Use title if available (new API), fallback to name (legacy API)
+    const caseDisplayName = caseItem.title || caseItem.name;
+
     // Show progress dialog
     setCaseOpeningProgress({
       isOpen: true,
-      caseName: caseItem.name,
+      caseName: caseDisplayName,
       current: 0,
       total: 3, // Loading case, processing versions, loading snapshots
       message: 'Loading case data...',
     });
+
+    // Refresh permissions for this case
+    refreshPermissions(caseItem.id);
 
     try {
       // Step 1: Load case data
@@ -425,15 +451,15 @@ export default function CaseManagementView({
   };
 
   const handleLoadCase = async () => {
-    if (!onLoadCase || !selectedCase || !selectedVersion) {
+    if (!onLoadCase || !selectedCase) {
       return;
     }
 
     try {
-      // Fetch the full version data (for snapshots metadata) before loading
-      const fullVersionData = await casesAPI.getVersion(selectedCase.id, selectedVersion.version);
+      // Pass a default version object - versions are no longer used but App.jsx still expects the structure
+      const defaultVersionData = { version: 1 };
       // Pass the version data to onLoadCase - graph data is loaded via case_id filter
-      onLoadCase(selectedCase, fullVersionData);
+      onLoadCase(selectedCase, defaultVersionData);
     } catch (err) {
       console.error('Failed to load version data:', err);
       alert(`Failed to load case version: ${err.message}`);
@@ -452,7 +478,8 @@ export default function CaseManagementView({
       const a = document.createElement('a');
       a.href = url;
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-      a.download = `${selectedCase.name.replace(/[^a-z0-9]/gi, '_')}_${selectedCase.id}_${timestamp}.zip`;
+      const caseName = selectedCase.title || selectedCase.name;
+      a.download = `${caseName.replace(/[^a-z0-9]/gi, '_')}_${selectedCase.id}_${timestamp}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -476,7 +503,8 @@ export default function CaseManagementView({
       return;
     }
     
-    if (!confirm(`Restore case "${selectedCase.name}" from backup? This will ${selectedCase.versions?.length > 0 ? 'overwrite' : 'create'} the case data.`)) {
+    const restoreCaseName = selectedCase.title || selectedCase.name;
+    if (!confirm(`Restore case "${restoreCaseName}" from backup? This will ${selectedCase.versions?.length > 0 ? 'overwrite' : 'create'} the case data.`)) {
       event.target.value = ''; // Reset file input
       return;
     }
@@ -680,6 +708,17 @@ export default function CaseManagementView({
                   >
                     Documentation
                   </button>
+                  {isSuperAdmin && (
+                    <button
+                      onClick={() => {
+                        setShowCreateUserModal(true);
+                        setIsAccountDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                    >
+                      Create User
+                    </button>
+                  )}
                   <button
                     onClick={async () => {
                       if (onLogout) {
@@ -795,7 +834,7 @@ export default function CaseManagementView({
         <div className="w-1/3 border-r border-light-200 bg-white overflow-y-auto">
           <div className="p-4 border-b border-light-200">
             <h2 className="text-md font-semibold text-owl-blue-900 mb-1">
-              {authUsername ? `${authUsername.charAt(0).toUpperCase()}${authUsername.slice(1)}'s Cases` : 'Cases'}
+              {authDisplayName ? `${authDisplayName.charAt(0).toUpperCase()}${authDisplayName.slice(1)}'s Cases` : 'Cases'}
             </h2>
             <p className="text-xs text-light-600">
               {loading
@@ -837,9 +876,21 @@ export default function CaseManagementView({
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-owl-blue-900 truncate mb-1">
-                        {caseItem.name}
-                      </h3>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-owl-blue-900 truncate">
+                          {caseItem.title || caseItem.name}
+                        </h3>
+                        {caseItem.is_owner && (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded" title="You own this case">
+                            <Crown className="w-3 h-3" />
+                          </span>
+                        )}
+                      </div>
+                      {caseItem.description && (
+                        <p className="text-xs text-light-700 mb-1 line-clamp-1">
+                          {caseItem.description}
+                        </p>
+                      )}
                       <div className="flex items-center gap-3 text-xs text-light-600">
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
@@ -848,13 +899,15 @@ export default function CaseManagementView({
                         <span>{caseItem.version_count || 0} version{(caseItem.version_count || 0) !== 1 ? 's' : ''}</span>
                       </div>
                     </div>
-                    <button
-                      onClick={(e) => handleDeleteCase(caseItem.id, e)}
-                      className="p-1 hover:bg-light-200 rounded transition-colors ml-2 flex-shrink-0"
-                      title="Delete case"
-                    >
-                      <Trash2 className="w-4 h-4 text-red-500" />
-                    </button>
+                    {(canDelete || caseItem.is_owner) && (
+                      <button
+                        onClick={(e) => handleDeleteCase(caseItem.id, e)}
+                        className="p-1 hover:bg-light-200 rounded transition-colors ml-2 flex-shrink-0"
+                        title="Delete case"
+                      >
+                        <Trash2 className="w-4 h-4 text-red-500" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -870,9 +923,22 @@ export default function CaseManagementView({
               <div className="p-6 border-b border-light-200 bg-white">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h2 className="text-xl font-semibold text-owl-blue-900 mb-2">
-                      {selectedCase.name}
-                    </h2>
+                    <div className="flex items-center gap-2 mb-2">
+                      <h2 className="text-xl font-semibold text-owl-blue-900">
+                        {selectedCase.title || selectedCase.name}
+                      </h2>
+                      {isOwner && (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded" title="You own this case">
+                          <Crown className="w-3 h-3" />
+                          Owner
+                        </span>
+                      )}
+                    </div>
+                    {selectedCase.description && (
+                      <p className="text-sm text-light-700 mb-2">
+                        {selectedCase.description}
+                      </p>
+                    )}
                     <div className="flex items-center gap-4 text-sm text-light-600">
                       <span>Created: {formatDate(selectedCase.created_at)}</span>
                       <span>•</span>
@@ -885,8 +951,18 @@ export default function CaseManagementView({
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {/* Backup and Restore buttons hidden for now */}
-                    {/* <button
+                    {/* Collaborator Management Button - visible when user can invite */}
+                    {canInvite && onShowCollaboratorModal && (
+                      <button
+                        onClick={() => onShowCollaboratorModal(selectedCase)}
+                        className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm"
+                        title="Manage case collaborators"
+                      >
+                        <Users className="w-4 h-4" />
+                        Collaborators
+                      </button>
+                    )}
+                    <button
                       onClick={handleBackupCase}
                       disabled={backingUp}
                       className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
@@ -913,8 +989,9 @@ export default function CaseManagementView({
                         disabled={restoring}
                         className="hidden"
                       />
-                    </label> */}
-                    {onGoToEvidenceView && (
+                    </label>
+                    {/* Process Evidence - visible when user can upload evidence */}
+                    {onGoToEvidenceView && canUploadEvidence && (
                       <button
                         onClick={() => onGoToEvidenceView(selectedCase)}
                         className="flex items-center gap-2 px-4 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm"
@@ -931,8 +1008,8 @@ export default function CaseManagementView({
                         <FolderOpen className="w-4 h-4" />
                         Open Workspace
                       </button>
-                    )}
-                    {selectedVersion && (
+                    )}     
+                    {selectedCase && (
                       <button
                         onClick={handleLoadCase}
                         className="flex items-center gap-2 px-4 py-2 bg-owl-orange-500 hover:bg-owl-orange-600 text-white rounded-lg transition-colors text-sm"
@@ -1541,28 +1618,35 @@ export default function CaseManagementView({
 
                 {/* Evidence Files Section */}
                 <div className="mb-6">
-                  <button
-                    onClick={() => setShowEvidenceFiles(!showEvidenceFiles)}
-                    className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <FolderOpen className="w-5 h-5 text-owl-blue-700" />
-                      <h3 className="text-md font-semibold text-owl-blue-900">
-                        Evidence Files
-                      </h3>
-                      <span className="text-xs text-light-600 bg-white px-2 py-0.5 rounded">
-                        {evidenceFiles.length}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <button
+                      onClick={() => setShowEvidenceFiles(!showEvidenceFiles)}
+                      className="flex-1 flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <FolderOpen className="w-5 h-5 text-owl-blue-700" />
+                        <h3 className="text-md font-semibold text-owl-blue-900">
+                          Evidence Files
+                        </h3>
+                        <span className="text-xs text-light-600 bg-white px-2 py-0.5 rounded">
+                          {evidenceFiles.length}
+                        </span>
+                      </div>
+                      {showEvidenceFiles ? (
+                        <ChevronDown className="w-4 h-4 text-light-600" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-light-600" />
+                      )}
+                    </button>
+                    {showEvidenceFiles && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           if (selectedCase) {
                             loadEvidenceForCase(selectedCase.id);
                           }
                         }}
-                        className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                        className="flex items-center gap-1 px-3 py-2 text-xs text-light-600 hover:text-owl-blue-700 border border-light-300 rounded-lg bg-white hover:bg-light-50 transition-colors"
+                        title="Refresh evidence files"
                       >
                         <RefreshCw
                           className={`w-3 h-3 ${
@@ -1571,13 +1655,8 @@ export default function CaseManagementView({
                         />
                         Refresh
                       </button>
-                      {showEvidenceFiles ? (
-                        <ChevronDown className="w-4 h-4 text-light-600" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-light-600" />
-                      )}
-                    </div>
-                  </button>
+                    )}
+                  </div>
                   {showEvidenceFiles && (
                     <div className="ml-2">
                       {/* File Preview - moved above file list */}
@@ -2088,6 +2167,15 @@ export default function CaseManagementView({
         existingCaseId={null}
         existingCaseName={null}
         nextVersion={1}
+      />
+
+      {/* Create User Modal (Super Admin only) */}
+      <CreateUserModal
+        isOpen={showCreateUserModal}
+        onClose={() => setShowCreateUserModal(false)}
+        onUserCreated={() => {
+          // Optional: could refresh user list or show success message
+        }}
       />
 
       {/* Background Tasks Panel */}

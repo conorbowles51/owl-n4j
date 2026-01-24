@@ -21,6 +21,7 @@ import {
   Radio,
 } from 'lucide-react';
 import { evidenceAPI, profilesAPI, filesystemAPI, backgroundTasksAPI } from '../services/api';
+import { useCasePermissions } from '../contexts/CasePermissionContext';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
 import ProfileEditor from './ProfileEditor';
 import FileNavigator from './FileNavigator';
@@ -47,6 +48,7 @@ export default function EvidenceProcessingView({
   authUsername,
   onViewCase,
 }) {
+  const { canUploadEvidence } = useCasePermissions();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -1200,7 +1202,11 @@ export default function EvidenceProcessingView({
               Upload individual files or entire folders (preserves folder structure).
             </p>
             <div className="flex flex-col gap-2">
-              <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm text-light-700 bg-light-50 hover:bg-light-100 cursor-pointer transition-colors">
+              <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm transition-colors ${
+                !canUploadEvidence || uploading || !caseId
+                  ? 'text-light-400 bg-light-100 cursor-not-allowed'
+                  : 'text-light-700 bg-light-50 hover:bg-light-100 cursor-pointer'
+              }`}>
                 <UploadCloud className="w-5 h-5 text-owl-blue-700" />
                 <span>{uploading ? 'Uploading…' : 'Click to choose files'}</span>
                 <input
@@ -1208,10 +1214,14 @@ export default function EvidenceProcessingView({
                   multiple
                   className="hidden"
                   onChange={handleFileSelect}
-                  disabled={uploading || !caseId}
+                  disabled={!canUploadEvidence || uploading || !caseId}
                 />
               </label>
-              <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm text-light-700 bg-light-50 hover:bg-light-100 cursor-pointer transition-colors">
+              <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm transition-colors ${
+                !canUploadEvidence || uploading || !caseId
+                  ? 'text-light-400 bg-light-100 cursor-not-allowed'
+                  : 'text-light-700 bg-light-50 hover:bg-light-100 cursor-pointer'
+              }`}>
                 <Folder className="w-5 h-5 text-owl-blue-700" />
                 <span>{uploading ? 'Uploading…' : 'Click to choose folder'}</span>
                 <input
@@ -1221,13 +1231,18 @@ export default function EvidenceProcessingView({
                   directory=""
                   className="hidden"
                   onChange={handleFolderSelect}
-                  disabled={uploading || !caseId}
+                  disabled={!canUploadEvidence || uploading || !caseId}
                 />
               </label>
             </div>
             {!caseId && (
               <p className="text-xs text-red-500 mt-2">
                 You must create a case before uploading evidence.
+              </p>
+            )}
+            {!canUploadEvidence && caseId && (
+              <p className="text-xs text-amber-600 mt-2">
+                You have view-only access to this case.
               </p>
             )}
           </div>
@@ -1442,15 +1457,17 @@ export default function EvidenceProcessingView({
               </div>
               <button
                 onClick={handleProcessSelected}
-                disabled={processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)}
+                disabled={!canUploadEvidence || processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm text-white transition-colors ${
-                  processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)
+                  !canUploadEvidence || processing || (selectedIds.size === 0 && selectedFilePaths.size === 0)
                     ? 'bg-light-300 cursor-not-allowed'
                     : 'bg-owl-blue-600 hover:bg-owl-blue-700'
                 }`}
+                title={!canUploadEvidence ? 'Processing requires upload permission' : ''}
               >
                 <PlayCircle className="w-4 h-4" />
-                {processing ? 'Processing…' : (() => {
+                {!canUploadEvidence ? 'Process (view-only)' :
+                 processing ? 'Processing…' : (() => {
                   // Calculate total selected files (from both sources)
                   const navigatorFileIds = getFileIdsFromPaths(selectedFilePaths);
                   const allSelectedIds = new Set([...selectedIds, ...navigatorFileIds]);

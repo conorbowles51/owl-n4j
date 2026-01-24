@@ -8,8 +8,10 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+from sqlalchemy.orm import Session
 
+from postgres.session import get_db
 from services.auth_service import auth_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -17,14 +19,23 @@ security = HTTPBearer(auto_error=False)
 
 
 class LoginRequest(BaseModel):
-    username: str
+    username: str  # Actually email, kept as 'username' for frontend compatibility
     password: str
 
 
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    username: str
+    username: str  # Actually email, kept as 'username' for frontend compatibility
+    name: str
+    role: str | None = None
+
+
+class MeResponse(BaseModel):
+    email: str
+    name: str
+    username: str  # Backwards compatibility (same as email)
+    role: str | None = None
 
 
 def _extract_token(
@@ -52,13 +63,16 @@ def get_current_user(
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: LoginRequest, response: Response):
+async def login(request: LoginRequest, response: Response, db: Session = Depends(get_db)):
     """Login endpoint - authenticates user and returns JWT token."""
     try:
-        if not auth_service["authenticate"](request.username, request.password):
+        # username field is actually the email
+        user = auth_service["authenticate_from_db"](db, request.username, request.password)
+        if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-        token = auth_service["create_access_token"]({"sub": request.username})
+        # Use email as the subject in the token
+        token = auth_service["create_access_token"]({"sub": user.email})
         response.set_cookie(
             key="access_token",
             value=token,
@@ -66,7 +80,7 @@ async def login(request: LoginRequest, response: Response):
             samesite="lax",
         )
 
-        return TokenResponse(access_token=token, username=request.username)
+        return TokenResponse(access_token=token, username=user.email, name=user.name, role=user.global_role.value)
     except HTTPException:
         raise
     except Exception as e:
@@ -82,8 +96,16 @@ def logout(response: Response):
     return {"status": "ok"}
 
 
-@router.get("/me")
-def me(user: dict = Depends(get_current_user)):
-    return {"username": user["username"]}
+@router.get("/me", response_model=MeResponse)
+def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    from postgres.models.user import User
+
+    email = user["username"]
+    db_user = db.query(User).filter(User.email == email).first()
+
+    if not db_user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    return MeResponse(email=db_user.email, name=db_user.name, username=db_user.email, role=db_user.global_role.value)
 
 

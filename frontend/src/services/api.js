@@ -59,7 +59,16 @@ async function fetchAPI(endpoint, options = {}) {
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(error.detail || `HTTP ${response.status}`);
+      // Handle various error response formats
+      const errorMessage = error.detail || error.message || error.error ||
+        (typeof error === 'string' ? error : JSON.stringify(error)) ||
+        `HTTP ${response.status}`;
+      throw new Error(errorMessage);
+    }
+
+    // Handle 204 No Content responses (e.g., DELETE operations)
+    if (response.status === 204) {
+      return null;
     }
 
     return response.json();
@@ -672,12 +681,29 @@ export const snapshotsAPI = {
 
 /**
  * Cases API
+ *
+ * Note: The new PostgreSQL backend returns cases with different field names:
+ * - 'title' instead of 'name'
+ * - 'description' field added
+ * - 'created_by_user_id' and 'owner_user_id' fields added
  */
 export const casesAPI = {
   /**
-   * Save a new version of a case
+   * Create a new case (new PostgreSQL endpoint)
+   * @param {Object} data - Case data
+   * @param {string} data.title - Case title
+   * @param {string} [data.description] - Optional case description
    */
-  save: (caseData) => 
+  create: (data) =>
+    fetchAPI('/cases', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  /**
+   * Save a new version of a case (legacy endpoint)
+   */
+  save: (caseData) =>
     fetchAPI('/cases', {
       method: 'POST',
       body: JSON.stringify(caseData),
@@ -685,6 +711,7 @@ export const casesAPI = {
 
   /**
    * List all cases
+   * Returns { cases: [...], total: number } from new endpoint
    */
   list: () => fetchAPI('/cases', {
     timeout: 60000, // 60 seconds for cases (may have large snapshot data)
@@ -696,15 +723,28 @@ export const casesAPI = {
   get: (caseId) => fetchAPI(`/cases/${encodeURIComponent(caseId)}`),
 
   /**
+   * Update case metadata (new PostgreSQL endpoint)
+   * @param {string} caseId - Case ID
+   * @param {Object} data - Update data
+   * @param {string} [data.title] - New title
+   * @param {string} [data.description] - New description
+   */
+  update: (caseId, data) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  /**
    * Get a specific version of a case
    */
-  getVersion: (caseId, version) => 
+  getVersion: (caseId, version) =>
     fetchAPI(`/cases/${encodeURIComponent(caseId)}/versions/${version}`),
 
   /**
    * Delete a case
    */
-  delete: (caseId) => 
+  delete: (caseId) =>
     fetchAPI(`/cases/${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
@@ -1093,6 +1133,36 @@ export const authAPI = {
 };
 
 /**
+ * Setup API - for first-time application setup
+ */
+export const setupAPI = {
+  /**
+   * Check if the application needs initial setup
+   * Returns { needs_setup: boolean }
+   */
+  getStatus: () =>
+    fetchAPI('/setup/status', {
+      method: 'GET',
+      timeout: 5000,
+    }),
+
+  /**
+   * Create the initial super_admin user
+   * Only works when no users exist in the database
+   * @param {Object} userData - User data
+   * @param {string} userData.email - User email
+   * @param {string} userData.name - User name
+   * @param {string} userData.password - User password (min 8 chars)
+   */
+  createInitialUser: ({ email, name, password }) =>
+    fetchAPI('/setup/initial-user', {
+      method: 'POST',
+      body: JSON.stringify({ email, name, password }),
+      timeout: 10000,
+    }),
+};
+
+/**
  * Background Tasks API
  */
 export const backgroundTasksAPI = {
@@ -1384,5 +1454,95 @@ export const llmConfigAPI = {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ threshold }),
+    }),
+};
+
+/**
+ * Case Members API
+ *
+ * Manages collaborators/members for cases with permission presets
+ */
+export const caseMembersAPI = {
+  /**
+   * List all members of a case
+   * @param {string} caseId - Case ID
+   * @returns {Promise<Array>} - Array of case members with permissions
+   */
+  list: (caseId) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/members`),
+
+  /**
+   * Add a member to a case
+   * @param {string} caseId - Case ID
+   * @param {string} userId - User ID to add
+   * @param {string} preset - Permission preset ('viewer', 'editor')
+   */
+  add: (caseId, userId, preset) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ user_id: userId, preset }),
+    }),
+
+  /**
+   * Update a member's permissions
+   * @param {string} caseId - Case ID
+   * @param {string} userId - User ID to update
+   * @param {string} preset - New permission preset ('viewer', 'editor')
+   */
+  update: (caseId, userId, preset) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/members/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ preset }),
+    }),
+
+  /**
+   * Remove a member from a case
+   * @param {string} caseId - Case ID
+   * @param {string} userId - User ID to remove
+   */
+  remove: (caseId, userId) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/members/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * Get current user's membership/permissions for a case
+   * @param {string} caseId - Case ID
+   * @returns {Promise<Object>} - Membership info with permissions
+   */
+  getMyMembership: (caseId) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/members/me`),
+};
+
+/**
+ * Users API
+ *
+ * For listing users (used in collaborator invite dropdown)
+ */
+export const usersAPI = {
+  /**
+   * List all users
+   * @returns {Promise<Array>} - Array of users
+   */
+  list: () => fetchAPI('/users'),
+
+  /**
+   * Get a specific user by ID
+   * @param {string} userId - User ID
+   */
+  get: (userId) => fetchAPI(`/users/${encodeURIComponent(userId)}`),
+
+  /**
+   * Create a new user (admin/super_admin only)
+   * @param {Object} userData - User data
+   * @param {string} userData.email - User email
+   * @param {string} userData.name - User name
+   * @param {string} userData.password - User password (min 8 chars)
+   * @param {string} userData.role - User role ('user', 'admin', 'super_admin')
+   */
+  create: (userData) =>
+    fetchAPI('/users', {
+      method: 'POST',
+      body: JSON.stringify(userData),
     }),
 };

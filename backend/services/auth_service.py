@@ -8,26 +8,33 @@ import os
 from datetime import datetime, timedelta
 
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
-from config import AUTH_USERNAME, AUTH_PASSWORD, AUTH_SECRET_KEY, AUTH_ALGORITHM, AUTH_TOKEN_EXPIRE_MINUTES
+from config import AUTH_SECRET_KEY, AUTH_ALGORITHM, AUTH_TOKEN_EXPIRE_MINUTES
 
 ACCESS_TOKEN_EXPIRE_MINUTES = AUTH_TOKEN_EXPIRE_MINUTES
 
-# Allow multiple usernames that share the same admin password.
-# The primary admin username comes from AUTH_USERNAME; additional
-# named accounts are hard-coded here for convenience.
-ALLOWED_USERNAMES = {
-    AUTH_USERNAME,
-    "neil",
-    "conor",
-    "alex",
-    "arturo",
-}
 
+def authenticate_from_db(db: Session, email: str, password: str):
+    """
+    Authenticate a user against the database.
 
-def authenticate(username: str, password: str) -> bool:
-    """Validate provided credentials."""
-    return username in ALLOWED_USERNAMES and password == AUTH_PASSWORD
+    Returns the User object if credentials are valid, None otherwise.
+    """
+    from postgres.models.user import User
+    from routers.users import verify_password
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        return None
+
+    if not verify_password(password, user.password_hash):
+        return None
+
+    if not user.is_active:
+        return None
+
+    return user
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
@@ -52,7 +59,7 @@ def verify_access_token(token: str) -> dict:
 
 # Singleton helpers
 auth_service = {
-    "authenticate": authenticate,
+    "authenticate_from_db": authenticate_from_db,
     "create_access_token": create_access_token,
     "verify_access_token": verify_access_token,
 }
