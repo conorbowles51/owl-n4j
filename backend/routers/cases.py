@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from postgres.models.case import Case
-from postgres.models.enums import CaseMembershipRole
+from postgres.models.enums import CaseMembershipRole, GlobalRole
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
@@ -82,9 +82,16 @@ def create_new_case(
     """
     Create a new case.
 
-    Any authenticated user can create a case. The creator becomes the owner
-    with full permissions.
+    Any authenticated user can create a case (except guests). The creator becomes
+    the owner with full permissions.
     """
+    # Guests cannot create cases
+    if current_user.global_role == GlobalRole.guest:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Guests cannot create cases",
+        )
+
     case = create_case(
         db=db,
         creator=current_user,

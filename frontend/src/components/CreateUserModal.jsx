@@ -166,6 +166,7 @@ export default function CreateUserModal({
               disabled={isCreating}
             >
               <option value="user">User</option>
+              <option value="guest">Guest (cannot create cases)</option>
               <option value="admin">Admin</option>
               <option value="super_admin">Super Admin</option>
             </select>

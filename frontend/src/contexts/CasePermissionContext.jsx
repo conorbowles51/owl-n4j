@@ -30,11 +30,13 @@ const CasePermissionContext = createContext({
   currentMembership: null,
   isOwner: false,
   isSuperAdmin: false,
+  isGuest: false,
   canEdit: false,
   canDelete: false,
   canInvite: false,
   canRemoveCollaborators: false,
   canUploadEvidence: false,
+  canCreateCase: true,
   isLoading: false,
   error: null,
   refreshPermissions: async () => {},
@@ -59,6 +61,16 @@ export function CasePermissionProvider({ children, userRole: initialUserRole = n
   // Check if user is super_admin
   const isSuperAdmin = useMemo(() => {
     return userRole === 'super_admin';
+  }, [userRole]);
+
+  // Check if user is guest
+  const isGuest = useMemo(() => {
+    return userRole === 'guest';
+  }, [userRole]);
+
+  // Guests cannot create cases
+  const canCreateCase = useMemo(() => {
+    return userRole !== 'guest';
   }, [userRole]);
 
   // Initialize permissions based on user role - super_admin gets full permissions by default
@@ -170,11 +182,13 @@ export function CasePermissionProvider({ children, userRole: initialUserRole = n
     currentMembership,
     isOwner,
     isSuperAdmin,
+    isGuest,
     canEdit,
     canDelete,
     canInvite,
     canRemoveCollaborators,
     canUploadEvidence,
+    canCreateCase,
     isLoading,
     error,
     refreshPermissions,
@@ -186,11 +200,13 @@ export function CasePermissionProvider({ children, userRole: initialUserRole = n
     currentMembership,
     isOwner,
     isSuperAdmin,
+    isGuest,
     canEdit,
     canDelete,
     canInvite,
     canRemoveCollaborators,
     canUploadEvidence,
+    canCreateCase,
     isLoading,
     error,
     refreshPermissions,

@@ -77,7 +77,21 @@ import EditNodeModal from './components/EditNodeModal';
 import ExpandGraphModal from './components/ExpandGraphModal';
 import MergeEntitiesModal from './components/MergeEntitiesModal';
 import CollaboratorModal from './components/CollaboratorModal';
-import { CasePermissionProvider } from './contexts/CasePermissionContext';
+import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
+
+/**
+ * Wrapper component that conditionally renders ContextMenu based on edit permissions.
+ * Must be used inside CasePermissionProvider.
+ */
+function PermissionAwareContextMenu({ contextMenu, ...props }) {
+  const { canEdit } = useCasePermissions();
+
+  if (!contextMenu || !canEdit) {
+    return null;
+  }
+
+  return <ContextMenu node={contextMenu.node} position={contextMenu.position} {...props} />;
+}
 
 /**
  * Main App Component
@@ -2747,7 +2761,7 @@ export default function App() {
 
       // Set case info first
       setCurrentCaseId(caseData.id);
-      setCurrentCaseName(caseData.name);
+      setCurrentCaseName(caseData.title || caseData.name);
       setCurrentCaseVersion(versionData.version);
 
       // Load the graph filtered by case_id
@@ -2897,7 +2911,6 @@ export default function App() {
           isAuthenticated={isAuthenticated}
           authUsername={authUsername}
           authDisplayName={authDisplayName}
-          onGoToGraphView={() => setAppView('graph')}
           onGoToEvidenceView={(caseData) => {
             if (!caseData) return;
             setCurrentCaseId(caseData.id);
@@ -2908,7 +2921,7 @@ export default function App() {
           onGoToWorkspaceView={(caseData) => {
             if (!caseData) return;
             setCurrentCaseId(caseData.id);
-            setCurrentCaseName(caseData.name);
+            setCurrentCaseName(caseData.title || caseData.name);
             setAppView('workspace');
           }}
           initialCaseToSelect={caseToSelect}
@@ -2917,38 +2930,6 @@ export default function App() {
           onShowCollaboratorModal={(caseData) => {
             setCollaboratorModalCase(caseData);
             setShowCollaboratorModal(true);
-          }}
-          onLoadLastGraph={async () => {
-            try {
-              // If we don't have lastGraphInfo in memory yet, fetch from backend
-              let info = lastGraphInfo;
-              if (!info || !info.cypher) {
-                info = await graphAPI.getLastGraph();
-                setLastGraphInfo(info);
-              }
-
-              if (!info || !info.cypher) {
-                alert('No last graph is available to load.');
-                return;
-              }
-
-              const result = await graphAPI.loadCase(info.cypher);
-              if (!result.success) {
-                console.error('Last graph load sanity check failed:', result.errors);
-                const details = (result.errors || []).join('\n');
-                alert(
-                  `Failed to load last graph: one or more Cypher statements did not validate.\n\n` +
-                  (details ? `Details:\n${details}` : '')
-                );
-                return;
-              }
-              await loadGraph();
-              setAppView('graph');
-              alert('Last graph loaded successfully.');
-            } catch (err) {
-              console.error('Failed to load last graph:', err);
-              alert(`Failed to load last graph: ${err.message}`);
-            }
           }}
           lastGraphInfo={lastGraphInfo}
         />
@@ -4344,30 +4325,27 @@ export default function App() {
         )}
       </div>
 
-      {/* Context menu */}
-      {contextMenu && (
-        <ContextMenu
-          node={contextMenu.node}
-          position={contextMenu.position}
-          onShowDetails={handleShowDetails}
-          onExpand={handleExpand}
-          onClose={() => setContextMenu(null)}
-          onAddRelationship={handleStartRelationshipCreation}
-          onCreateRelationship={handleCreateRelationship}
-          onAnalyzeRelationships={handleAnalyzeRelationships}
-          isRelationshipMode={isRelationshipMode}
-          selectedNodes={selectedNodes}
-          onExpandGraph={(context, nodeKeys) => {
-            if (nodeKeys && nodeKeys.length > 0) {
-              setExpandGraphContext(context);
-              setShowExpandGraphModal(true);
-            }
-          }}
-          isSubgraph={paneViewMode === 'split'}
-          onMerge={handleMergeSelected}
-          onDelete={handleDeleteNode}
-        />
-      )}
+      {/* Context menu - only show for users with edit permission */}
+      <PermissionAwareContextMenu
+        contextMenu={contextMenu}
+        onShowDetails={handleShowDetails}
+        onExpand={handleExpand}
+        onClose={() => setContextMenu(null)}
+        onAddRelationship={handleStartRelationshipCreation}
+        onCreateRelationship={handleCreateRelationship}
+        onAnalyzeRelationships={handleAnalyzeRelationships}
+        isRelationshipMode={isRelationshipMode}
+        selectedNodes={selectedNodes}
+        onExpandGraph={(context, nodeKeys) => {
+          if (nodeKeys && nodeKeys.length > 0) {
+            setExpandGraphContext(context);
+            setShowExpandGraphModal(true);
+          }
+        }}
+        isSubgraph={paneViewMode === 'split'}
+        onMerge={handleMergeSelected}
+        onDelete={handleDeleteNode}
+      />
 
       {/* Create Relationship Modal */}
       <CreateRelationshipModal

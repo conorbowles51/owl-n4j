@@ -1,0 +1,19 @@
+{
+  "name": "Katie-test",
+  "description": "katie test",
+  "case_type": "Katie test",
+  "ingestion": {
+    "system_context": "help analyse katies school work by extracting entities and relationships",
+    "special_entity_types": [],
+    "temperature": 1.0
+  },
+  "chat": {
+    "system_context": "you are an investigator, help analyse katies school work by extracting entities and relationships",
+    "analysis_guidance": "you are an investigator, help analyse katies school work by extracting entities and relationships",
+    "temperature": 1.0
+  },
+  "llm_config": {
+    "provider": "openai",
+    "model_id": "gpt-4-turbo"
+  }
+}

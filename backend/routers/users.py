@@ -130,13 +130,13 @@ def create_user(
     requested_role = user_data.role or GlobalRole.user
 
     # Enforce role creation rules:
-    # - Admins can only create users with 'user' role
+    # - Admins can only create users with 'user' or 'guest' role
     # - Super admins can create any role
     if current_user.global_role == GlobalRole.admin:
-        if requested_role != GlobalRole.user:
+        if requested_role not in (GlobalRole.user, GlobalRole.guest):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Admins can only create users with 'user' role",
+                detail="Admins can only create users with 'user' or 'guest' role",
             )
 
     new_user = User(

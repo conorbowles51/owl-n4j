@@ -47,11 +47,8 @@ export default function CaseManagementView({
   isAuthenticated,
   authUsername,
   authDisplayName,
-  onGoToGraphView,
   onGoToEvidenceView,
   onGoToWorkspaceView,
-  onLoadLastGraph,
-  lastGraphInfo,
   initialCaseToSelect,
   onCaseSelected,
   onViewDocument,
@@ -63,8 +60,10 @@ export default function CaseManagementView({
     canDelete,
     canInvite,
     canUploadEvidence,
+    canCreateCase,
     isOwner,
     isSuperAdmin,
+    isGuest,
     refreshPermissions,
   } = useCasePermissions();
   const [cases, setCases] = useState([]);
@@ -766,36 +765,15 @@ export default function CaseManagementView({
           >
             <Loader2 className="w-5 h-5" />
           </button>
-
-          {onLoadLastGraph && (
+          {canCreateCase && (
             <button
-              onClick={onLoadLastGraph}
-              className="px-3 py-2 text-sm text-owl-blue-900 border border-owl-blue-200 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors"
-              title={
-                lastGraphInfo?.saved_at
-                  ? `Last graph saved at ${formatDate(lastGraphInfo.saved_at)}`
-                  : 'Load the last cleared graph (if available)'
-              }
-              disabled={!lastGraphInfo || !lastGraphInfo.cypher}
+              onClick={() => setShowCaseModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded-lg transition-colors"
             >
-              Load Last Graph
+              <FolderPlus className="w-4 h-4" />
+              Create New Case
             </button>
           )}
-          {onGoToGraphView && (
-            <button
-              onClick={onGoToGraphView}
-              className="px-3 py-2 text-sm text-owl-blue-900 border border-owl-blue-200 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors"
-            >
-              Go to Graph View
-            </button>
-          )}
-          <button
-            onClick={() => setShowCaseModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded-lg transition-colors"
-          >
-            <FolderPlus className="w-4 h-4" />
-            Create New Case
-          </button>
         </div>
       </header>
 
@@ -853,14 +831,18 @@ export default function CaseManagementView({
               <FolderOpen className="w-16 h-16 mx-auto mb-4 text-light-400" />
               <p className="text-light-700 font-medium mb-2">No cases yet</p>
               <p className="text-sm text-light-600 mb-4">
-                Create your first case to start organizing your investigations
+                {isGuest
+                  ? 'You will see cases here when you are invited to collaborate'
+                  : 'Create your first case to start organizing your investigations'}
               </p>
-              <button
-                onClick={() => setShowCaseModal(true)}
-                className="px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded-lg transition-colors text-sm"
-              >
-                Create New Case
-              </button>
+              {canCreateCase && (
+                <button
+                  onClick={() => setShowCaseModal(true)}
+                  className="px-4 py-2 bg-owl-blue-500 hover:bg-owl-blue-600 text-white rounded-lg transition-colors text-sm"
+                >
+                  Create New Case
+                </button>
+              )}
             </div>
           ) : (
             <div className="p-2">
