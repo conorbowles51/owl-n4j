@@ -712,8 +712,9 @@ export const casesAPI = {
   /**
    * List all cases
    * Returns { cases: [...], total: number } from new endpoint
+   * @param {string} viewMode - 'my_cases' (default) or 'all_cases' (super admins only)
    */
-  list: () => fetchAPI('/cases', {
+  list: (viewMode = 'my_cases') => fetchAPI(`/cases?view_mode=${viewMode}`, {
     timeout: 60000, // 60 seconds for cases (may have large snapshot data)
   }),
 

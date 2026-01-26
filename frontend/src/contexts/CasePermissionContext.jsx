@@ -100,8 +100,9 @@ export function CasePermissionProvider({ children, userRole: initialUserRole = n
     setCurrentCaseId(caseId);
 
     // Super admins get full permissions without API call
+    // BUT we don't set is_owner to true - they have admin access, not ownership
     if (userRole === 'super_admin') {
-      setCurrentMembership({ preset: 'owner', is_owner: true });
+      setCurrentMembership({ preset: 'admin_access', is_owner: false });
       setCurrentCasePermissions(fullPermissions);
       return;
     }
@@ -145,11 +146,11 @@ export function CasePermissionProvider({ children, userRole: initialUserRole = n
     setError(null);
   }, []);
 
-  // Derived permission checks - super_admin always has full permissions
+  // Derived permission checks - isOwner reflects actual ownership, not admin access
+  // Super admins get full permissions but may not be the actual owner
   const isOwner = useMemo(() => {
-    if (isSuperAdmin) return true;
     return currentMembership?.preset === 'owner' || currentMembership?.is_owner === true;
-  }, [currentMembership, isSuperAdmin]);
+  }, [currentMembership]);
 
   const canEdit = useMemo(() => {
     if (isSuperAdmin) return true;

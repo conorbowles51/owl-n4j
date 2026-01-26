@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,8 @@ from services.case_service import (
     list_cases_for_user,
     update_case,
     get_case_if_allowed,
+    get_user_role_for_case,
+    is_super_admin,
 )
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
@@ -58,6 +60,10 @@ class CaseResponse(BaseModel):
     owner_user_id: UUID
     created_at: datetime
     updated_at: datetime
+    # Enriched fields for display
+    owner_name: str | None = None  # Display name of case owner
+    user_role: str | None = None  # 'owner', 'editor', 'viewer', 'admin_access'
+    is_owner: bool = False  # True ONLY if user is actual owner
 
     class Config:
         from_attributes = True
@@ -103,17 +109,53 @@ def create_new_case(
 
 @router.get("", response_model=CaseListResponse)
 def list_cases(
+    view_mode: str = Query("my_cases", description="'my_cases' or 'all_cases' (super admins only)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
     """
     List all cases accessible to the current user.
 
-    - Super admins see all cases
-    - Regular users see cases they are members of
+    Query params:
+    - view_mode: 'my_cases' (default) shows only cases user is a member of.
+                 'all_cases' shows all cases (super admins only).
+
+    Response includes enriched fields:
+    - owner_name: Display name of the case owner
+    - user_role: 'owner', 'editor', 'viewer', or 'admin_access'
+    - is_owner: True only if user is the actual owner (not synthetic admin access)
     """
-    cases = list_cases_for_user(db=db, user=current_user)
-    return CaseListResponse(cases=cases, total=len(cases))
+    user_is_super_admin = is_super_admin(current_user)
+
+    # Only super admins can use "all_cases" mode
+    include_all = view_mode == "all_cases" and user_is_super_admin
+
+    case_tuples = list_cases_for_user(db=db, user=current_user, include_all=include_all)
+
+    # Build enriched response
+    enriched_cases = []
+    for case, membership, owner in case_tuples:
+        user_role = get_user_role_for_case(membership, user_is_super_admin)
+        is_actual_owner = (
+            membership is not None
+            and membership.membership_role.value == "owner"
+        )
+
+        enriched_case = CaseResponse(
+            id=case.id,
+            title=case.title,
+            description=case.description,
+            created_by_user_id=case.created_by_user_id,
+            owner_user_id=case.owner_user_id,
+            created_at=case.created_at,
+            updated_at=case.updated_at,
+            owner_name=owner.name if owner else None,
+            user_role=user_role,
+            is_owner=is_actual_owner,
+        )
+        enriched_cases.append(enriched_case)
+
+    return CaseListResponse(cases=enriched_cases, total=len(enriched_cases))
 
 
 @router.get("/{case_id}", response_model=CaseResponse)

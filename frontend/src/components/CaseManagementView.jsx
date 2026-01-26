@@ -69,6 +69,7 @@ export default function CaseManagementView({
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState(null);
+  const [viewMode, setViewMode] = useState('my_cases'); // 'my_cases' or 'all_cases' (super admins only)
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [showCaseModal, setShowCaseModal] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(true);
@@ -177,10 +178,10 @@ export default function CaseManagementView({
     }
   }, [isAccountDropdownOpen]);
 
-  const loadCases = async () => {
+  const loadCases = async (mode = viewMode) => {
     setLoading(true);
     try {
-      const data = await casesAPI.list();
+      const data = await casesAPI.list(mode);
       // Handle both new format { cases: [...], total: number } and legacy array format
       const casesList = Array.isArray(data) ? data : (data.cases || []);
       setCases(casesList);
@@ -191,6 +192,13 @@ export default function CaseManagementView({
       setLoading(false);
     }
   };
+
+  // Reload cases when viewMode changes (for super admins)
+  useEffect(() => {
+    if (isSuperAdmin) {
+      loadCases(viewMode);
+    }
+  }, [viewMode, isSuperAdmin]);
 
   const handleViewCase = async (caseItem) => {
     // Use title if available (new API), fallback to name (legacy API)
@@ -812,7 +820,7 @@ export default function CaseManagementView({
         <div className="w-1/3 border-r border-light-200 bg-white overflow-y-auto">
           <div className="p-4 border-b border-light-200">
             <h2 className="text-md font-semibold text-owl-blue-900 mb-1">
-              {authDisplayName ? `${authDisplayName.charAt(0).toUpperCase()}${authDisplayName.slice(1)}'s Cases` : 'Cases'}
+              {viewMode === 'all_cases' ? 'All Cases' : (authDisplayName ? `${authDisplayName.charAt(0).toUpperCase()}${authDisplayName.slice(1)}'s Cases` : 'Cases')}
             </h2>
             <p className="text-xs text-light-600">
               {loading
@@ -820,6 +828,36 @@ export default function CaseManagementView({
                 : `${cases.length} case${cases.length !== 1 ? 's' : ''} available`}
             </p>
           </div>
+
+          {/* Super Admin Toggle */}
+          {isSuperAdmin && (
+            <div className="flex items-center gap-2 mx-2 mt-2 p-2 bg-purple-50 rounded-lg border border-purple-200">
+              <Shield className="w-4 h-4 text-purple-600 flex-shrink-0" />
+              <span className="text-sm text-purple-700">View:</span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setViewMode('my_cases')}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    viewMode === 'my_cases'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-purple-700 hover:bg-purple-100 border border-purple-300'
+                  }`}
+                >
+                  My Cases
+                </button>
+                <button
+                  onClick={() => setViewMode('all_cases')}
+                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                    viewMode === 'all_cases'
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-purple-700 hover:bg-purple-100 border border-purple-300'
+                  }`}
+                >
+                  All Cases
+                </button>
+              </div>
+            </div>
+          )}
 
           {loading ? (
             <div className="p-8 text-center">
@@ -862,12 +900,34 @@ export default function CaseManagementView({
                         <h3 className="font-semibold text-owl-blue-900 truncate">
                           {caseItem.title || caseItem.name}
                         </h3>
-                        {caseItem.is_owner && (
+                        {/* Role badges */}
+                        {caseItem.user_role === 'owner' && (
                           <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded" title="You own this case">
                             <Crown className="w-3 h-3" />
                           </span>
                         )}
+                        {caseItem.user_role === 'editor' && (
+                          <span className="inline-flex items-center text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded" title="You can edit this case">
+                            Editor
+                          </span>
+                        )}
+                        {caseItem.user_role === 'viewer' && (
+                          <span className="inline-flex items-center text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded" title="View only access">
+                            Viewer
+                          </span>
+                        )}
+                        {caseItem.user_role === 'admin_access' && (
+                          <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded" title="Admin access">
+                            <Shield className="w-3 h-3" />
+                          </span>
+                        )}
                       </div>
+                      {/* Show owner name for non-owned cases */}
+                      {!caseItem.is_owner && caseItem.owner_name && (
+                        <p className="text-xs text-gray-500 mb-1">
+                          by {caseItem.owner_name}
+                        </p>
+                      )}
                       {caseItem.description && (
                         <p className="text-xs text-light-700 mb-1 line-clamp-1">
                           {caseItem.description}
@@ -881,7 +941,8 @@ export default function CaseManagementView({
                         <span>{caseItem.version_count || 0} version{(caseItem.version_count || 0) !== 1 ? 's' : ''}</span>
                       </div>
                     </div>
-                    {(canDelete || caseItem.is_owner) && (
+                    {/* Delete button: shown for owners, super admins (canDelete), or cases with admin_access */}
+                    {(caseItem.is_owner || caseItem.user_role === 'admin_access' || canDelete) && (
                       <button
                         onClick={(e) => handleDeleteCase(caseItem.id, e)}
                         className="p-1 hover:bg-light-200 rounded transition-colors ml-2 flex-shrink-0"
@@ -909,13 +970,36 @@ export default function CaseManagementView({
                       <h2 className="text-xl font-semibold text-owl-blue-900">
                         {selectedCase.title || selectedCase.name}
                       </h2>
-                      {isOwner && (
+                      {/* Role badges based on actual case data */}
+                      {selectedCase.user_role === 'owner' && (
                         <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-100 text-amber-700 rounded" title="You own this case">
                           <Crown className="w-3 h-3" />
                           Owner
                         </span>
                       )}
+                      {selectedCase.user_role === 'editor' && (
+                        <span className="inline-flex items-center text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded" title="You can edit this case">
+                          Editor
+                        </span>
+                      )}
+                      {selectedCase.user_role === 'viewer' && (
+                        <span className="inline-flex items-center text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded" title="View only access">
+                          Viewer
+                        </span>
+                      )}
+                      {selectedCase.user_role === 'admin_access' && (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-purple-100 text-purple-700 rounded" title="Admin access">
+                          <Shield className="w-3 h-3" />
+                          Admin
+                        </span>
+                      )}
                     </div>
+                    {/* Show owner name for non-owned cases */}
+                    {!selectedCase.is_owner && selectedCase.owner_name && (
+                      <p className="text-xs text-gray-500 mb-1">
+                        Owned by {selectedCase.owner_name}
+                      </p>
+                    )}
                     {selectedCase.description && (
                       <p className="text-sm text-light-700 mb-2">
                         {selectedCase.description}

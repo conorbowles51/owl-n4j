@@ -208,30 +208,94 @@ def create_case(
     return case
 
 
-def list_cases_for_user(db: Session, user: User) -> list[Case]:
+def get_user_role_for_case(
+    membership: CaseMembership | None, is_super_admin_user: bool
+) -> str:
     """
-    List all cases a user has access to.
+    Determine the user's role string for display purposes.
 
-    Super admins see all cases. Regular users see cases they're members of.
+    Args:
+        membership: The case membership record (can be None)
+        is_super_admin_user: Whether the user is a super admin
+
+    Returns:
+        'owner', 'editor', 'viewer', or 'admin_access'
+    """
+    if membership is None:
+        if is_super_admin_user:
+            return "admin_access"
+        return "none"
+
+    if membership.membership_role == CaseMembershipRole.owner:
+        return "owner"
+
+    # Check permissions to determine editor vs viewer
+    permissions = membership.permissions or {}
+    if permissions.get("evidence", {}).get("upload", False):
+        return "editor"
+
+    return "viewer"
+
+
+def list_cases_for_user(
+    db: Session, user: User, include_all: bool = False
+) -> list[tuple[Case, CaseMembership | None, User | None]]:
+    """
+    List all cases a user has access to with enriched data.
 
     Args:
         db: Database session
         user: The user requesting the list
+        include_all: If True and user is super admin, return all cases.
+                    If False, only return cases user is a member of.
 
     Returns:
-        List of Case objects
+        List of tuples (Case, CaseMembership or None, Owner User or None)
     """
-    if is_super_admin(user):
-        return db.query(Case).order_by(Case.updated_at.desc()).all()
+    user_is_super_admin = is_super_admin(user)
 
-    # Get cases where user is a member
-    return (
-        db.query(Case)
-        .join(CaseMembership, Case.id == CaseMembership.case_id)
+    if user_is_super_admin and include_all:
+        # Super admin viewing all cases - get all cases with owner info
+        cases = db.query(Case).order_by(Case.updated_at.desc()).all()
+        result = []
+        for case in cases:
+            # Get user's membership (if any)
+            membership = get_membership(db, case.id, user.id)
+            # Get case owner
+            owner = db.query(User).filter(User.id == case.owner_user_id).first()
+            result.append((case, membership, owner))
+        return result
+
+    # For regular users OR super admins with include_all=False:
+    # Only show cases where user is a member
+    memberships = (
+        db.query(CaseMembership)
         .filter(CaseMembership.user_id == user.id)
+        .all()
+    )
+
+    case_ids = [m.case_id for m in memberships]
+    if not case_ids:
+        return []
+
+    cases = (
+        db.query(Case)
+        .filter(Case.id.in_(case_ids))
         .order_by(Case.updated_at.desc())
         .all()
     )
+
+    # Build lookup for memberships
+    membership_by_case = {m.case_id: m for m in memberships}
+
+    result = []
+    for case in cases:
+        membership = membership_by_case.get(case.id)
+        # Get case owner
+        owner = db.query(User).filter(User.id == case.owner_user_id).first()
+        result.append((case, membership, owner))
+
+    return result
 
 
 def update_case(
