@@ -47,7 +47,7 @@ def get_collection_dimension(collection) -> Optional[int]:
     """Get the embedding dimension from a collection, if it has any records."""
     if collection.count() > 0:
         sample = collection.peek(1)
-        if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+        if sample and sample.get("embeddings") is not None and len(sample["embeddings"]) > 0:
             return len(sample["embeddings"][0])
     return None
 
@@ -77,11 +77,11 @@ def extract_records(
         return records
 
     for i, record_id in enumerate(all_data["ids"]):
-        metadata = all_data.get("metadatas", [{}])[i] if all_data.get("metadatas") else {}
+        metadata = all_data.get("metadatas", [{}])[i] if all_data.get("metadatas") is not None else {}
         original_case_id = metadata.get("case_id", "(none)")
 
-        embedding = all_data.get("embeddings", [[]])[i] if all_data.get("embeddings") else []
-        text = all_data.get("documents", [""])[i] if all_data.get("documents") else ""
+        embedding = all_data.get("embeddings", [[]])[i] if all_data.get("embeddings") is not None else []
+        text = all_data.get("documents", [""])[i] if all_data.get("documents") is not None else ""
 
         # Set case_id to target
         new_metadata = metadata.copy()
@@ -131,7 +131,7 @@ def migrate_records(
     # Verify dimension compatibility
     target_dim = get_collection_dimension(target_collection)
     if target_dim and records:
-        sample_dim = len(records[0]["embedding"]) if records[0]["embedding"] else 0
+        sample_dim = len(records[0]["embedding"]) if len(records[0]["embedding"]) > 0 else 0
         if sample_dim and sample_dim != target_dim:
             print(f"  ERROR: Dimension mismatch! Target {collection_name} has {target_dim} dims, "
                   f"but records have {sample_dim} dims")
@@ -140,7 +140,7 @@ def migrate_records(
 
     for record in records:
         try:
-            if not record["embedding"]:
+            if len(record["embedding"]) == 0:
                 print(f"  SKIP: Record {record['id']} has no embedding")
                 stats["skipped"] += 1
                 continue
