@@ -2,8 +2,9 @@
 """
 ChromaDB Migration Script
 
-Merges documents and entities from legacy ChromaDB stores into a target store,
-remapping case_ids according to the provided configuration.
+Merges documents and entities from legacy ChromaDB stores into a target store.
+All records from each legacy store get assigned the specified target_case_id
+(overwriting whatever case_id was there, or adding one if none existed).
 
 Features:
 - Read-only access to legacy stores
@@ -53,22 +54,21 @@ def get_collection_dimension(collection) -> Optional[int]:
 
 def extract_records(
     collection,
-    case_id_mapping: Dict[str, str],
+    target_case_id: str,
     collection_name: str
 ) -> List[Dict[str, Any]]:
     """
-    Extract all records from a collection that match the case_id mapping.
+    Extract all records from a collection and set case_id to target.
 
     Args:
         collection: ChromaDB collection
-        case_id_mapping: Dict mapping legacy case_id -> target case_id
+        target_case_id: The case_id to assign to all records
         collection_name: Name of collection (for logging)
 
     Returns:
-        List of record dicts with remapped case_ids
+        List of record dicts with target case_id set
     """
     records = []
-    legacy_case_ids = set(case_id_mapping.keys())
 
     # Get all records including embeddings
     all_data = collection.get(include=["embeddings", "documents", "metadatas"])
@@ -78,18 +78,14 @@ def extract_records(
 
     for i, record_id in enumerate(all_data["ids"]):
         metadata = all_data.get("metadatas", [{}])[i] if all_data.get("metadatas") else {}
-        legacy_case_id = metadata.get("case_id")
-
-        # Skip records not in the mapping
-        if legacy_case_id not in legacy_case_ids:
-            continue
+        original_case_id = metadata.get("case_id", "(none)")
 
         embedding = all_data.get("embeddings", [[]])[i] if all_data.get("embeddings") else []
         text = all_data.get("documents", [""])[i] if all_data.get("documents") else ""
 
-        # Remap case_id
+        # Set case_id to target
         new_metadata = metadata.copy()
-        new_metadata["case_id"] = case_id_mapping[legacy_case_id]
+        new_metadata["case_id"] = target_case_id
         new_metadata = clean_metadata(new_metadata)
 
         records.append({
@@ -97,8 +93,8 @@ def extract_records(
             "embedding": embedding,
             "document": text,
             "metadata": new_metadata,
-            "original_case_id": legacy_case_id,
-            "new_case_id": case_id_mapping[legacy_case_id]
+            "original_case_id": original_case_id,
+            "new_case_id": target_case_id
         })
 
     return records
@@ -231,11 +227,17 @@ def run_migration(config: Dict[str, Any], dry_run: bool = True) -> Dict[str, Any
     # Process each legacy store
     for store_config in config.get("legacy_stores", []):
         legacy_path = store_config["path"]
-        case_id_mapping = store_config.get("case_id_mapping", {})
+        target_case_id = store_config.get("target_case_id")
+
+        if not target_case_id:
+            error = f"Missing target_case_id for legacy store: {legacy_path}"
+            print(f"ERROR: {error}")
+            results["errors"].append(error)
+            continue
 
         print(f"\n{'-'*60}")
         print(f"Processing legacy store: {legacy_path}")
-        print(f"Case ID mapping: {case_id_mapping}")
+        print(f"Target case_id: {target_case_id}")
 
         if not Path(legacy_path).exists():
             error = f"Legacy store path does not exist: {legacy_path}"
@@ -261,8 +263,8 @@ def run_migration(config: Dict[str, Any], dry_run: bool = True) -> Dict[str, Any
             legacy_docs = legacy_client.get_collection("documents")
             print(f"\n  Documents collection: {legacy_docs.count()} total records")
 
-            doc_records = extract_records(legacy_docs, case_id_mapping, "documents")
-            print(f"  Found {len(doc_records)} documents matching case_id mapping")
+            doc_records = extract_records(legacy_docs, target_case_id, "documents")
+            print(f"  Found {len(doc_records)} documents to migrate")
 
             if doc_records:
                 doc_stats = migrate_records(target_docs, doc_records, "documents", dry_run)
@@ -282,8 +284,8 @@ def run_migration(config: Dict[str, Any], dry_run: bool = True) -> Dict[str, Any
             legacy_entities = legacy_client.get_collection("entities")
             print(f"\n  Entities collection: {legacy_entities.count()} total records")
 
-            entity_records = extract_records(legacy_entities, case_id_mapping, "entities")
-            print(f"  Found {len(entity_records)} entities matching case_id mapping")
+            entity_records = extract_records(legacy_entities, target_case_id, "entities")
+            print(f"  Found {len(entity_records)} entities to migrate")
 
             if entity_records:
                 entity_stats = migrate_records(target_entities, entity_records, "entities", dry_run)
