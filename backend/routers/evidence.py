@@ -686,11 +686,7 @@ async def get_evidence_file(
         record = evidence_storage.get(evidence_id)
         
         if not record:
-            raise HTTPException(status_code=404, detail="Evidence not found")
-        
-        # Check ownership
-        if record.get("owner") and record.get("owner") != user["username"]:
-            raise HTTPException(status_code=403, detail="Access denied")
+            raise HTTPException(status_code=404, detail="Evidence not found") 
         
         # Get the stored file path
         stored_path = record.get("stored_path")
