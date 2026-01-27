@@ -111,7 +111,6 @@ async def list_evidence(
         files = evidence_service.list_files(
             case_id=case_id,
             status=status,
-            owner=user["username"],
         )
         
         # Get document summaries for processed files
@@ -768,7 +767,6 @@ async def get_evidence_by_filename(
         # Search for files matching the filename
         all_files = evidence_storage.list_files(
             case_id=case_id,
-            owner=user["username"]
         )
         
         # Find matching file
