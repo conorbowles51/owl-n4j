@@ -1,0 +1,18 @@
+{
+    "target_db_path": "/path/to/target/data/chromadb",
+    "legacy_stores": [
+        {
+            "path": "/path/to/legacy1/data/chromadb",
+            "case_id_mapping": {
+                "legacy_case_id_1": "target_case_id_1"
+            }
+        },
+        {
+            "path": "/path/to/legacy2/data/chromadb",
+            "case_id_mapping": {
+                "legacy_case_id_2": "target_case_id_2"
+            }
+        }
+    ],
+    "dry_run": true
+}
