@@ -197,6 +197,157 @@ export const graphAPI = {
     }),
 
   /**
+   * Find similar entities with streaming progress updates via SSE.
+   * Use this for large cases that would otherwise timeout.
+   *
+   * @param {string} caseId - REQUIRED: Case ID to scan
+   * @param {Object} options - Options object
+   * @param {string[]|null} options.entityTypes - Entity types to filter (null for all)
+   * @param {number} options.similarityThreshold - Minimum name similarity threshold (0-1)
+   * @param {number} options.maxResults - Maximum number of results to return
+   * @param {Object} callbacks - Callback functions for SSE events
+   * @param {Function} callbacks.onStart - Called when scan starts with metadata
+   * @param {Function} callbacks.onTypeStart - Called when starting a new entity type
+   * @param {Function} callbacks.onProgress - Called with progress updates
+   * @param {Function} callbacks.onResult - Called when a similar pair is found
+   * @param {Function} callbacks.onTypeComplete - Called when an entity type is done
+   * @param {Function} callbacks.onComplete - Called when scan finishes
+   * @param {Function} callbacks.onError - Called on error
+   * @param {Function} callbacks.onCancelled - Called if request was cancelled
+   * @returns {Function} Cancel function to abort the stream
+   */
+  findSimilarEntitiesStream: (caseId, options = {}, callbacks = {}) => {
+    const {
+      entityTypes = null,
+      similarityThreshold = 0.7,
+      maxResults = 50,
+    } = options;
+
+    const {
+      onStart,
+      onTypeStart,
+      onProgress,
+      onResult,
+      onTypeComplete,
+      onComplete,
+      onError,
+      onCancelled,
+    } = callbacks;
+
+    const abortController = new AbortController();
+    const token = localStorage.getItem('authToken');
+
+    // Build query params
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    if (entityTypes && entityTypes.length > 0) {
+      params.append('entity_types', entityTypes.join(','));
+    }
+    params.append('name_similarity_threshold', similarityThreshold.toString());
+    params.append('max_results', maxResults.toString());
+
+    const url = `${API_BASE}/graph/find-similar-entities/stream?${params.toString()}`;
+
+    // Start the fetch
+    (async () => {
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          credentials: 'include',
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+          throw new Error(error.detail || `HTTP ${response.status}`);
+        }
+
+        // Read the stream
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events from buffer
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          let currentEvent = null;
+          let currentData = '';
+
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              currentData = line.slice(6);
+            } else if (line === '') {
+              // Empty line signals end of event
+              if (currentEvent && currentData) {
+                try {
+                  const data = JSON.parse(currentData);
+
+                  switch (currentEvent) {
+                    case 'start':
+                      onStart?.(data);
+                      break;
+                    case 'type_start':
+                      onTypeStart?.(data);
+                      break;
+                    case 'progress':
+                      onProgress?.(data);
+                      break;
+                    case 'result':
+                      onResult?.(data);
+                      break;
+                    case 'type_complete':
+                      onTypeComplete?.(data);
+                      break;
+                    case 'complete':
+                      onComplete?.(data);
+                      break;
+                    case 'cancelled':
+                      onCancelled?.(data);
+                      break;
+                    case 'error':
+                      onError?.(new Error(data.message || 'Unknown error'));
+                      break;
+                  }
+                } catch (parseError) {
+                  console.error('Failed to parse SSE data:', parseError);
+                }
+              }
+              currentEvent = null;
+              currentData = '';
+            }
+          }
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          onCancelled?.({ message: 'Request aborted' });
+        } else {
+          onError?.(err);
+        }
+      }
+    })();
+
+    // Return cancel function
+    return () => {
+      abortController.abort();
+    };
+  },
+
+  /**
    * Merge two entities
    * @param {string} caseId - REQUIRED: Case ID for case-specific data
    * @param {string} sourceKey - Source node key

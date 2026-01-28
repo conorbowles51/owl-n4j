@@ -77,6 +77,7 @@ import EditNodeModal from './components/EditNodeModal';
 import ExpandGraphModal from './components/ExpandGraphModal';
 import MergeEntitiesModal from './components/MergeEntitiesModal';
 import CollaboratorModal from './components/CollaboratorModal';
+import SimilarEntitiesProgressDialog from './components/SimilarEntitiesProgressDialog';
 import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
 
 /**
@@ -281,6 +282,8 @@ export default function App() {
   const [similarEntitiesPairs, setSimilarEntitiesPairs] = useState([]);
   const [showSimilarEntitiesList, setShowSimilarEntitiesList] = useState(false);
   const [isScanningSimilar, setIsScanningSimilar] = useState(false);
+  const [similarScanProgress, setSimilarScanProgress] = useState(null);
+  const similarScanAbortRef = useRef(null);
   
   // Close and clear spotlight confirmation popup state
   const [showClearSpotlightConfirm, setShowClearSpotlightConfirm] = useState(false);
@@ -1118,24 +1121,139 @@ export default function App() {
     setShowMergeModal(true);
   }, [selectedNodes]);
 
-  // Handle find similar entities
-  const handleFindSimilarEntities = useCallback(async () => {
+  // Handle find similar entities with streaming progress
+  const handleFindSimilarEntities = useCallback(() => {
     if (!currentCaseId) {
       alert('Please select a case first');
       return;
     }
+
+    // Reset state
     setIsScanningSimilar(true);
-    try {
-      const result = await graphAPI.findSimilarEntities(currentCaseId, null, 0.7, 50);
-      setSimilarEntitiesPairs(result.similar_pairs || []);
-      setShowSimilarEntitiesList(true);
-    } catch (err) {
-      console.error('Failed to find similar entities:', err);
-      alert(`Failed to find similar entities: ${err.message}`);
-    } finally {
-      setIsScanningSimilar(false);
-    }
+    setSimilarEntitiesPairs([]);
+    setSimilarScanProgress({
+      totalEntities: 0,
+      totalTypes: 0,
+      entityTypes: [],
+      currentType: null,
+      typeIndex: 0,
+      comparisonsTotal: 0,
+      comparisonsDone: 0,
+      pairsFound: 0,
+      isComplete: false,
+      error: null,
+    });
+
+    // Collect results as they come in
+    const collectedPairs = [];
+
+    // Start the streaming request
+    const cancelFn = graphAPI.findSimilarEntitiesStream(
+      currentCaseId,
+      { entityTypes: null, similarityThreshold: 0.7, maxResults: 50 },
+      {
+        onStart: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            totalEntities: data.total_entities,
+            totalTypes: data.total_types,
+            entityTypes: data.entity_types,
+            comparisonsTotal: data.total_comparisons,
+          }));
+        },
+        onTypeStart: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            currentType: data.type_name,
+            typeIndex: data.type_index,
+          }));
+        },
+        onProgress: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            comparisonsDone: data.comparisons_done,
+            pairsFound: data.pairs_found,
+            currentType: data.current_type,
+            typeIndex: data.type_index,
+          }));
+        },
+        onResult: (pair) => {
+          collectedPairs.push(pair);
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            pairsFound: collectedPairs.length,
+          }));
+        },
+        onTypeComplete: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            typeIndex: data.type_index + 1,
+          }));
+        },
+        onComplete: (data) => {
+          // Use the limited results from the server (respects max_results)
+          const finalPairs = data.limited_results || collectedPairs;
+          setSimilarEntitiesPairs(finalPairs);
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            comparisonsDone: data.total_comparisons,
+            pairsFound: data.total_pairs,
+            isComplete: true,
+          }));
+          setIsScanningSimilar(false);
+          similarScanAbortRef.current = null;
+          // Show results after a brief delay
+          setTimeout(() => {
+            setSimilarScanProgress(null);
+            setShowSimilarEntitiesList(true);
+          }, 500);
+        },
+        onError: (err) => {
+          console.error('Failed to find similar entities:', err);
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            error: err.message || 'Unknown error occurred',
+          }));
+          // Show partial results if we have any
+          if (collectedPairs.length > 0) {
+            setSimilarEntitiesPairs(collectedPairs);
+            setTimeout(() => {
+              setSimilarScanProgress(null);
+              setShowSimilarEntitiesList(true);
+            }, 2000);
+          } else {
+            setTimeout(() => {
+              setSimilarScanProgress(null);
+            }, 3000);
+          }
+          setIsScanningSimilar(false);
+          similarScanAbortRef.current = null;
+        },
+        onCancelled: () => {
+          // Show partial results if we have any
+          if (collectedPairs.length > 0) {
+            setSimilarEntitiesPairs(collectedPairs);
+            setSimilarScanProgress(null);
+            setShowSimilarEntitiesList(true);
+          } else {
+            setSimilarScanProgress(null);
+          }
+          setIsScanningSimilar(false);
+          similarScanAbortRef.current = null;
+        },
+      }
+    );
+
+    // Store cancel function
+    similarScanAbortRef.current = cancelFn;
   }, [currentCaseId]);
+
+  // Handle cancel similar entities scan
+  const handleCancelSimilarScan = useCallback(() => {
+    if (similarScanAbortRef.current) {
+      similarScanAbortRef.current();
+    }
+  }, []);
 
   // Handle open merge modal for a similar pair
   const handleMergeSimilarPair = useCallback((pair) => {
@@ -4644,6 +4762,13 @@ export default function App() {
         isOpen={saveSnapshotProgress.isOpen}
         progress={saveSnapshotProgress}
         onClose={null} // Don't allow closing during save
+      />
+
+      {/* Similar Entities Scan Progress Dialog */}
+      <SimilarEntitiesProgressDialog
+        isOpen={similarScanProgress !== null}
+        onCancel={handleCancelSimilarScan}
+        progress={similarScanProgress}
       />
 
       <LoadSnapshotProgressDialog

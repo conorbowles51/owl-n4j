@@ -3,7 +3,10 @@ Graph Router - endpoints for graph visualization data.
 """
 
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Query, Depends
+import json
+import asyncio
+from fastapi import APIRouter, HTTPException, Query, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from services.neo4j_service import neo4j_service
@@ -1272,6 +1275,91 @@ async def find_similar_entities(
             success=False,
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/find-similar-entities/stream")
+async def find_similar_entities_stream(
+    request: Request,
+    case_id: str = Query(..., description="REQUIRED: Case ID to scan"),
+    entity_types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
+    name_similarity_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Minimum name similarity threshold"),
+    max_results: int = Query(50, ge=1, le=500, description="Maximum number of results to return"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Stream similar entities search with progress updates via Server-Sent Events (SSE).
+
+    This endpoint streams progress updates for large cases that would otherwise timeout.
+
+    SSE Events:
+    - start: Initial metadata (total_entities, entity_types, total_comparisons)
+    - type_start: Starting comparison for a specific entity type
+    - progress: Progress update with comparisons_done and pairs_found
+    - result: A similar pair was found (includes full pair data)
+    - type_complete: Finished comparing a specific entity type
+    - complete: Scan finished successfully
+    - cancelled: Client disconnected
+    - error: An error occurred
+    """
+    # Parse entity_types from comma-separated string
+    types_list = None
+    if entity_types:
+        types_list = [t.strip() for t in entity_types.split(",") if t.strip()]
+
+    async def event_generator():
+        """Generate SSE events from the streaming similarity search."""
+        try:
+            async for event in neo4j_service.find_similar_entities_streaming(
+                case_id=case_id,
+                entity_types=types_list,
+                name_similarity_threshold=name_similarity_threshold,
+                max_results=max_results,
+            ):
+                # Check if client disconnected
+                if await request.is_disconnected():
+                    yield f"event: cancelled\ndata: {json.dumps({'message': 'Client disconnected'})}\n\n"
+                    return
+
+                event_type = event.get("event", "message")
+                event_data = json.dumps(event.get("data", {}))
+                yield f"event: {event_type}\ndata: {event_data}\n\n"
+
+        except asyncio.CancelledError:
+            yield f"event: cancelled\ndata: {json.dumps({'message': 'Request cancelled'})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'message': str(e)})}\n\n"
+            system_log_service.log(
+                log_type=LogType.GRAPH_OPERATION,
+                origin=LogOrigin.FRONTEND,
+                action="Find Similar Entities Stream Failed",
+                details={"error": str(e)},
+                user=user.get("username", "unknown"),
+                success=False,
+            )
+
+    # Log the start of the streaming operation
+    system_log_service.log(
+        log_type=LogType.GRAPH_OPERATION,
+        origin=LogOrigin.FRONTEND,
+        action="Find Similar Entities Stream Started",
+        details={
+            "case_id": case_id,
+            "entity_types": types_list,
+            "similarity_threshold": name_similarity_threshold,
+        },
+        user=user.get("username", "unknown"),
+        success=True,
+    )
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
 
 
 @router.post("/merge-entities")
