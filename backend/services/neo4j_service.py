@@ -2064,6 +2064,7 @@ class Neo4jService:
                 "limited_results": similar_pairs[:max_results] if len(similar_pairs) > max_results else similar_pairs,
             }
         }
+        await asyncio.sleep(0)  # Ensure event is flushed before generator ends
 
     def merge_entities(
         self,

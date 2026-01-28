@@ -271,11 +271,8 @@ export const graphAPI = {
         while (true) {
           const { done, value } = await reader.read();
 
-          if (done) {
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
+          // Decode the chunk (even if done, there may be final data)
+          buffer += decoder.decode(value, { stream: !done });
 
           // Parse SSE events from buffer
           const lines = buffer.split('\n');
@@ -325,6 +322,10 @@ export const graphAPI = {
               currentEvent = null;
               currentData = '';
             }
+          }
+
+          if (done) {
+            break;
           }
         }
       } catch (err) {
