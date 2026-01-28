@@ -39,6 +39,7 @@ import {
   Square,
   MousePointer,
   Table2,
+  Eye,
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI, setupAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
@@ -80,6 +81,7 @@ import ExpandGraphModal from './components/ExpandGraphModal';
 import MergeEntitiesModal from './components/MergeEntitiesModal';
 import CollaboratorModal from './components/CollaboratorModal';
 import SimilarEntitiesProgressDialog from './components/SimilarEntitiesProgressDialog';
+import EntityComparisonModal from './components/EntityComparisonModal';
 import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
 
 /**
@@ -287,6 +289,7 @@ export default function App() {
   const [mergeEntity1, setMergeEntity1] = useState(null);
   const [mergeEntity2, setMergeEntity2] = useState(null);
   const [mergeSimilarity, setMergeSimilarity] = useState(null);
+  const [mergeModalOrigin, setMergeModalOrigin] = useState(null); // 'similar_entities' | 'comparison' | 'graph_selection'
   
   // Similar entities scan state
   const [similarEntitiesPairs, setSimilarEntitiesPairs] = useState([]);
@@ -294,7 +297,11 @@ export default function App() {
   const [isScanningSimilar, setIsScanningSimilar] = useState(false);
   const [similarScanProgress, setSimilarScanProgress] = useState(null);
   const similarScanAbortRef = useRef(null);
-  
+
+  // Entity comparison modal state
+  const [showComparisonModal, setShowComparisonModal] = useState(false);
+  const [comparisonPair, setComparisonPair] = useState(null);
+
   // Close and clear spotlight confirmation popup state
   const [showClearSpotlightConfirm, setShowClearSpotlightConfirm] = useState(false);
   const clearSpotlightButtonRef = useRef(null);
@@ -1173,16 +1180,18 @@ export default function App() {
       alert('Please select at least 2 nodes to merge');
       return;
     }
-    
+
     // Use first node as source, second as target (user can change in modal)
-    const entity1 = selectedNodes[0];
-    const entity2 = selectedNodes[1];
-    
+    // Try to use full details from selectedNodesDetails, fall back to selectedNodes
+    const entity1 = selectedNodesDetails.find(n => n.key === selectedNodes[0].key) || selectedNodes[0];
+    const entity2 = selectedNodesDetails.find(n => n.key === selectedNodes[1].key) || selectedNodes[1];
+
     setMergeEntity1(entity1);
     setMergeEntity2(entity2);
     setMergeSimilarity(null);
+    setMergeModalOrigin('graph_selection');
     setShowMergeModal(true);
-  }, [selectedNodes]);
+  }, [selectedNodes, selectedNodesDetails]);
 
   // Handle find similar entities with streaming progress
   const handleFindSimilarEntities = useCallback(() => {
@@ -1207,13 +1216,10 @@ export default function App() {
       error: null,
     });
 
-    // Collect results as they come in
-    const collectedPairs = [];
-
     // Start the streaming request
     const cancelFn = graphAPI.findSimilarEntitiesStream(
       currentCaseId,
-      { entityTypes: null, similarityThreshold: 0.7, maxResults: 50 },
+      { entityTypes: null, similarityThreshold: 0.7, maxResults: 1000 },
       {
         onStart: (data) => {
           setSimilarScanProgress(prev => ({
@@ -1240,13 +1246,6 @@ export default function App() {
             typeIndex: data.type_index,
           }));
         },
-        onResult: (pair) => {
-          collectedPairs.push(pair);
-          setSimilarScanProgress(prev => ({
-            ...prev,
-            pairsFound: collectedPairs.length,
-          }));
-        },
         onTypeComplete: (data) => {
           setSimilarScanProgress(prev => ({
             ...prev,
@@ -1254,8 +1253,8 @@ export default function App() {
           }));
         },
         onComplete: (data) => {
-          // Use the limited results from the server (respects max_results)
-          const finalPairs = data.limited_results || collectedPairs;
+          // All results come in the complete event (no more per-result events)
+          const finalPairs = data.limited_results || [];
           setSimilarEntitiesPairs(finalPairs);
           setSimilarScanProgress(prev => ({
             ...prev,
@@ -1277,30 +1276,14 @@ export default function App() {
             ...prev,
             error: err.message || 'Unknown error occurred',
           }));
-          // Show partial results if we have any
-          if (collectedPairs.length > 0) {
-            setSimilarEntitiesPairs(collectedPairs);
-            setTimeout(() => {
-              setSimilarScanProgress(null);
-              setShowSimilarEntitiesList(true);
-            }, 2000);
-          } else {
-            setTimeout(() => {
-              setSimilarScanProgress(null);
-            }, 3000);
-          }
+          setTimeout(() => {
+            setSimilarScanProgress(null);
+          }, 3000);
           setIsScanningSimilar(false);
           similarScanAbortRef.current = null;
         },
         onCancelled: () => {
-          // Show partial results if we have any
-          if (collectedPairs.length > 0) {
-            setSimilarEntitiesPairs(collectedPairs);
-            setSimilarScanProgress(null);
-            setShowSimilarEntitiesList(true);
-          } else {
-            setSimilarScanProgress(null);
-          }
+          setSimilarScanProgress(null);
           setIsScanningSimilar(false);
           similarScanAbortRef.current = null;
         },
@@ -1323,9 +1306,106 @@ export default function App() {
     setMergeEntity1(pair.entity1);
     setMergeEntity2(pair.entity2);
     setMergeSimilarity(pair.similarity);
+    setMergeModalOrigin('similar_entities');
     setShowMergeModal(true);
     setShowSimilarEntitiesList(false);
   }, []);
+
+  // Handle rejecting a pair as false positive
+  const handleRejectPair = useCallback(async (pair) => {
+    if (!currentCaseId) return;
+
+    try {
+      await graphAPI.rejectMergePair(
+        currentCaseId,
+        pair.entity1.key,
+        pair.entity2.key
+      );
+
+      // Remove the pair from the list
+      setSimilarEntitiesPairs(prev =>
+        prev.filter(p =>
+          !(p.entity1.key === pair.entity1.key && p.entity2.key === pair.entity2.key)
+        )
+      );
+
+      // Show feedback (using alert for simplicity - can be replaced with toast)
+      console.log('Pair rejected - will not appear in future scans');
+    } catch (err) {
+      console.error('Failed to reject pair:', err);
+      alert('Failed to reject pair: ' + (err.message || 'Unknown error'));
+    }
+  }, [currentCaseId]);
+
+  // Handle viewing a similar pair in the comparison modal
+  const handleViewSimilarPair = useCallback((pair) => {
+    setComparisonPair(pair);
+    setShowComparisonModal(true);
+  }, []);
+
+  // Handle closing the comparison modal
+  const handleCloseComparisonModal = useCallback(() => {
+    setShowComparisonModal(false);
+    setComparisonPair(null);
+  }, []);
+
+  // Handle merge action from comparison modal
+  const handleMergeFromComparison = useCallback((pair) => {
+    setShowComparisonModal(false);
+    setComparisonPair(null);
+    setMergeEntity1(pair.entity1);
+    setMergeEntity2(pair.entity2);
+    setMergeSimilarity(pair.similarity);
+    setMergeModalOrigin('comparison');
+    setShowMergeModal(true);
+    setShowSimilarEntitiesList(false);
+  }, []);
+
+  // Handle reject action from comparison modal
+  const handleRejectFromComparison = useCallback(async (pair) => {
+    await handleRejectPair(pair);
+    setShowComparisonModal(false);
+    setComparisonPair(null);
+  }, [handleRejectPair]);
+
+  // Handle merge modal cancel - return to appropriate view
+  const handleMergeModalCancel = useCallback(() => {
+    setShowMergeModal(false);
+
+    // Return to similar entities list if came from there
+    if (mergeModalOrigin === 'similar_entities' || mergeModalOrigin === 'comparison') {
+      setShowSimilarEntitiesList(true);
+    }
+
+    setMergeEntity1(null);
+    setMergeEntity2(null);
+    setMergeSimilarity(null);
+    setMergeModalOrigin(null);
+  }, [mergeModalOrigin]);
+
+  // Handle merge modal success - return to appropriate view and remove merged pair
+  const handleMergeModalSuccess = useCallback((mergedPair) => {
+    setShowMergeModal(false);
+
+    // Remove merged pair from results
+    if (mergedPair) {
+      setSimilarEntitiesPairs(prev =>
+        prev.filter(p =>
+          !(p.entity1.key === mergedPair.entity1.key && p.entity2.key === mergedPair.entity2.key)
+        )
+      );
+    }
+
+    // Return to similar entities list if came from there
+    if (mergeModalOrigin === 'similar_entities' || mergeModalOrigin === 'comparison') {
+      setShowSimilarEntitiesList(true);
+    }
+
+    setMergeEntity1(null);
+    setMergeEntity2(null);
+    setMergeSimilarity(null);
+    setMergeModalOrigin(null);
+  }, [mergeModalOrigin]);
 
   // Handle updating node information
   const handleUpdateNode = useCallback(async (nodeKey, updates) => {
@@ -5178,12 +5258,8 @@ export default function App() {
       {/* Merge Entities Modal */}
       <MergeEntitiesModal
         isOpen={showMergeModal}
-        onClose={() => {
-          setShowMergeModal(false);
-          setMergeEntity1(null);
-          setMergeEntity2(null);
-          setMergeSimilarity(null);
-        }}
+        onClose={handleMergeModalCancel}
+        onSuccess={handleMergeModalSuccess}
         entity1={mergeEntity1}
         entity2={mergeEntity2}
         similarity={mergeSimilarity}
@@ -5227,6 +5303,22 @@ export default function App() {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-light-600">{Math.round(pair.similarity * 100)}% similar</span>
                           <button
+                            onClick={() => handleViewSimilarPair(pair)}
+                            className="px-3 py-1 text-xs bg-owl-blue-100 text-owl-blue-700 rounded hover:bg-owl-blue-200 transition-colors flex items-center gap-1"
+                            title="View detailed comparison"
+                          >
+                            <Eye className="w-3 h-3" />
+                            View
+                          </button>
+                          <button
+                            onClick={() => handleRejectPair(pair)}
+                            className="px-3 py-1 text-xs bg-light-200 text-light-700 rounded hover:bg-light-300 transition-colors flex items-center gap-1"
+                            title="Mark as false positive - won't appear in future scans"
+                          >
+                            <X className="w-3 h-3" />
+                            Reject
+                          </button>
+                          <button
                             onClick={() => handleMergeSimilarPair(pair)}
                             className="px-3 py-1 text-xs bg-owl-blue-500 text-white rounded hover:bg-owl-blue-600 transition-colors flex items-center gap-1"
                           >
@@ -5246,6 +5338,21 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Entity Comparison Modal */}
+      <EntityComparisonModal
+        isOpen={showComparisonModal}
+        onClose={handleCloseComparisonModal}
+        entity1={comparisonPair?.entity1}
+        entity2={comparisonPair?.entity2}
+        similarity={comparisonPair?.similarity}
+        caseId={currentCaseId}
+        onMerge={handleMergeFromComparison}
+        onReject={handleRejectFromComparison}
+        onSelectNode={handleSearchSelect}
+        onViewDocument={handleViewDocument}
+        username={authUsername}
+      />
     </div>
     </CasePermissionProvider>
   );

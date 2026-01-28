@@ -2,7 +2,7 @@
 Neo4j Service - handles all database operations for the investigation console.
 """
 
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set, Tuple
 from neo4j import GraphDatabase
 import random
 import json
@@ -1783,13 +1783,15 @@ class Neo4jService:
                     labels(n)[0] AS type,
                     n.summary AS summary,
                     n.notes AS notes,
+                    n.verified_facts AS verified_facts,
+                    n.ai_insights AS ai_insights,
                     properties(n) AS properties
                 ORDER BY n.name
             """
 
             result = session.run(query, **params)
             entities = [dict(record) for record in result]
-            
+
             # Compare entities pairwise
             similar_pairs = []
             for i, e1 in enumerate(entities):
@@ -1797,16 +1799,16 @@ class Neo4jService:
                     # Same type required
                     if e1["type"] != e2["type"]:
                         continue
-                    
+
                     # Calculate name similarity
                     name1 = (e1["name"] or "").lower().strip()
                     name2 = (e2["name"] or "").lower().strip()
-                    
+
                     if not name1 or not name2:
                         continue
-                    
+
                     similarity = SequenceMatcher(None, name1, name2).ratio()
-                    
+
                     if similarity >= name_similarity_threshold:
                         similar_pairs.append({
                             "entity1": {
@@ -1816,6 +1818,8 @@ class Neo4jService:
                                 "type": e1["type"],
                                 "summary": e1["summary"],
                                 "notes": e1["notes"],
+                                "verified_facts": parse_json_field(e1.get("verified_facts")),
+                                "ai_insights": parse_json_field(e1.get("ai_insights")),
                                 "properties": e1["properties"] or {},
                             },
                             "entity2": {
@@ -1825,6 +1829,8 @@ class Neo4jService:
                                 "type": e2["type"],
                                 "summary": e2["summary"],
                                 "notes": e2["notes"],
+                                "verified_facts": parse_json_field(e2.get("verified_facts")),
+                                "ai_insights": parse_json_field(e2.get("ai_insights")),
                                 "properties": e2["properties"] or {},
                             },
                             "similarity": similarity,
@@ -1839,7 +1845,8 @@ class Neo4jService:
         case_id: str,
         entity_types: Optional[List[str]] = None,
         name_similarity_threshold: float = 0.7,
-        max_results: int = 50,
+        max_results: int = 1000,
+        rejected_pairs: Optional[Set[Tuple[str, str]]] = None,
     ):
         """
         Async generator that yields similar entity pairs with progress updates.
@@ -1851,6 +1858,7 @@ class Neo4jService:
             entity_types: Optional list of entity types to filter by
             name_similarity_threshold: Minimum similarity score (0-1) for name matching
             max_results: Maximum number of pairs to return
+            rejected_pairs: Set of (key1, key2) tuples to skip (already normalized/sorted)
 
         Yields:
             dict: SSE event data with 'event' type and 'data' payload
@@ -1858,6 +1866,10 @@ class Neo4jService:
         import asyncio
         from difflib import SequenceMatcher
         from collections import defaultdict
+
+        # Initialize rejected_pairs to empty set if None
+        if rejected_pairs is None:
+            rejected_pairs = set()
 
         with self._driver.session() as session:
             # Build type filter
@@ -1882,6 +1894,8 @@ class Neo4jService:
                     labels(n)[0] AS type,
                     n.summary AS summary,
                     n.notes AS notes,
+                    n.verified_facts AS verified_facts,
+                    n.ai_insights AS ai_insights,
                     properties(n) AS properties
                 ORDER BY labels(n)[0], n.name
             """
@@ -1952,6 +1966,12 @@ class Neo4jService:
                         if not name1 or not name2:
                             continue
 
+                        # Skip rejected pairs (normalize keys for lookup)
+                        key1, key2 = e1["key"], e2["key"]
+                        normalized_pair = (key1, key2) if key1 <= key2 else (key2, key1)
+                        if normalized_pair in rejected_pairs:
+                            continue
+
                         similarity = SequenceMatcher(None, name1, name2).ratio()
 
                         if similarity >= name_similarity_threshold:
@@ -1963,6 +1983,8 @@ class Neo4jService:
                                     "type": e1["type"],
                                     "summary": e1["summary"],
                                     "notes": e1["notes"],
+                                    "verified_facts": parse_json_field(e1.get("verified_facts")),
+                                    "ai_insights": parse_json_field(e1.get("ai_insights")),
                                     "properties": e1["properties"] or {},
                                 },
                                 "entity2": {
@@ -1972,6 +1994,8 @@ class Neo4jService:
                                     "type": e2["type"],
                                     "summary": e2["summary"],
                                     "notes": e2["notes"],
+                                    "verified_facts": parse_json_field(e2.get("verified_facts")),
+                                    "ai_insights": parse_json_field(e2.get("ai_insights")),
                                     "properties": e2["properties"] or {},
                                 },
                                 "similarity": similarity,
@@ -1980,11 +2004,9 @@ class Neo4jService:
                             pairs_found += 1
                             type_pairs_found += 1
 
-                            # Yield result event immediately
-                            yield {
-                                "event": "result",
-                                "data": pair
-                            }
+                            # NOTE: Removed individual "result" event emission to prevent
+                            # UI freezing with large numbers of pairs (93k+ causes 93k React updates).
+                            # Results are now only sent in the "complete" event at the end.
 
                         # Emit progress every ~100 comparisons
                         if comparisons_done - last_progress_update >= 100:
@@ -2133,16 +2155,13 @@ class Neo4jService:
                 set_clauses.append("t.summary = $merged_summary")
                 params["merged_summary"] = merged_data["summary"]
             
-            if "notes" in merged_data and merged_data["notes"] is not None:
-                # Merge notes (append if target has notes)
-                set_clauses.append("""
-                    t.notes = CASE 
-                        WHEN t.notes IS NOT NULL AND t.notes <> '' 
-                        THEN t.notes + '\n\n' + $merged_notes 
-                        ELSE $merged_notes 
-                    END
-                """)
-                params["merged_notes"] = merged_data["notes"]
+            if "verified_facts" in merged_data and merged_data["verified_facts"] is not None:
+                set_clauses.append("t.verified_facts = $merged_verified_facts")
+                params["merged_verified_facts"] = json.dumps(merged_data["verified_facts"])
+
+            if "ai_insights" in merged_data and merged_data["ai_insights"] is not None:
+                set_clauses.append("t.ai_insights = $merged_ai_insights")
+                params["merged_ai_insights"] = json.dumps(merged_data["ai_insights"])
             
             # Handle type (label) change if needed
             new_type = merged_data.get("type")

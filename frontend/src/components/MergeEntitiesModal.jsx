@@ -3,26 +3,30 @@ import { X, Merge, ArrowRight } from 'lucide-react';
 
 /**
  * MergeEntitiesModal Component
- * 
+ *
  * Modal for merging two entities with side-by-side comparison
  */
-export default function MergeEntitiesModal({ 
-  isOpen, 
-  onClose, 
-  entity1, 
-  entity2, 
+export default function MergeEntitiesModal({
+  isOpen,
+  onClose,
+  onSuccess,  // Called after successful merge with { entity1, entity2 }
+  entity1,
+  entity2,
   onMerge,
   similarity = null,
 }) {
   const [mergedName, setMergedName] = useState('');
   const [mergedSummary, setMergedSummary] = useState('');
-  const [mergedNotes, setMergedNotes] = useState('');
   const [mergedType, setMergedType] = useState('');
   const [nameMode, setNameMode] = useState('entity1'); // 'entity1', 'entity2', 'both'
   const [summaryMode, setSummaryMode] = useState('entity1'); // 'entity1', 'entity2', 'both'
-  const [useEntity1Notes, setUseEntity1Notes] = useState(true);
   const [isMerging, setIsMerging] = useState(false);
   const [error, setError] = useState(null);
+
+  // Track facts and insights with source and selection state
+  // Each item: { data: original fact/insight object, source: 'entity1' | 'entity2', selected: boolean }
+  const [factsWithMeta, setFactsWithMeta] = useState([]);
+  const [insightsWithMeta, setInsightsWithMeta] = useState([]);
 
   // Initialize form when modal opens
   useEffect(() => {
@@ -30,12 +34,36 @@ export default function MergeEntitiesModal({
       // Default to entity1's values
       setMergedName(entity1.name || '');
       setMergedSummary(entity1.summary || '');
-      setMergedNotes(entity1.notes || '');
       setMergedType(entity1.type || '');
       setNameMode('entity1');
       setSummaryMode('entity1');
-      setUseEntity1Notes(true);
       setError(null);
+
+      // Build facts list with source tags, all selected by default
+      const facts1 = (entity1.verified_facts || []).map(f => ({
+        data: f,
+        source: 'entity1',
+        selected: true,
+      }));
+      const facts2 = (entity2.verified_facts || []).map(f => ({
+        data: f,
+        source: 'entity2',
+        selected: true,
+      }));
+      setFactsWithMeta([...facts1, ...facts2]);
+
+      // Build insights list with source tags, all selected by default
+      const insights1 = (entity1.ai_insights || []).map(i => ({
+        data: i,
+        source: 'entity1',
+        selected: true,
+      }));
+      const insights2 = (entity2.ai_insights || []).map(i => ({
+        data: i,
+        source: 'entity2',
+        selected: true,
+      }));
+      setInsightsWithMeta([...insights1, ...insights2]);
     }
   }, [isOpen, entity1, entity2]);
 
@@ -83,27 +111,29 @@ export default function MergeEntitiesModal({
     }
   }, [summaryMode, entity1, entity2]);
 
-  useEffect(() => {
-    if (entity1 && entity2) {
-      let notes = '';
-      if (useEntity1Notes && entity1.notes) {
-        notes = entity1.notes;
-        if (entity2.notes) {
-          notes += '\n\n' + entity2.notes;
-        }
-      } else if (entity2.notes) {
-        notes = entity2.notes;
-        if (entity1.notes) {
-          notes = entity1.notes + '\n\n' + notes;
-        }
-      } else if (entity1.notes) {
-        notes = entity1.notes;
-      }
-      setMergedNotes(notes);
-    }
-  }, [useEntity1Notes, entity1, entity2]);
-
   if (!isOpen || !entity1 || !entity2) return null;
+
+  // Toggle fact selection
+  const toggleFactSelection = (index) => {
+    setFactsWithMeta(prev => prev.map((item, i) =>
+      i === index ? { ...item, selected: !item.selected } : item
+    ));
+  };
+
+  // Toggle insight selection
+  const toggleInsightSelection = (index) => {
+    setInsightsWithMeta(prev => prev.map((item, i) =>
+      i === index ? { ...item, selected: !item.selected } : item
+    ));
+  };
+
+  // Get text from fact/insight (handles both object and string formats)
+  const getItemText = (item) => {
+    if (typeof item === 'object' && item !== null) {
+      return item.text || JSON.stringify(item);
+    }
+    return item;
+  };
 
   const handleMerge = async () => {
     if (!mergedName.trim()) {
@@ -115,18 +145,25 @@ export default function MergeEntitiesModal({
     setIsMerging(true);
 
     try {
-      // Determine which entity is source and which is target
-      // Source will be deleted, target will be kept and updated
-      // We'll use entity1 as source and entity2 as target
+      // Get only selected facts and insights (extract the original data)
+      const selectedFacts = factsWithMeta
+        .filter(f => f.selected)
+        .map(f => f.data);
+      const selectedInsights = insightsWithMeta
+        .filter(i => i.selected)
+        .map(i => i.data);
+
       const mergedData = {
         name: mergedName.trim(),
         summary: mergedSummary.trim() || null,
-        notes: mergedNotes.trim() || null,
+        verified_facts: selectedFacts,
+        ai_insights: selectedInsights,
         type: mergedType || entity1.type || entity2.type,
-        properties: {}, // Can be extended to merge additional properties
+        properties: {},
       };
 
       await onMerge(entity1.key, entity2.key, mergedData);
+      if (onSuccess) onSuccess({ entity1, entity2 });
       onClose();
     } catch (err) {
       setError(err.message || 'Failed to merge entities');
@@ -140,6 +177,9 @@ export default function MergeEntitiesModal({
       onClose();
     }
   };
+
+  const selectedFactsCount = factsWithMeta.filter(f => f.selected).length;
+  const selectedInsightsCount = insightsWithMeta.filter(i => i.selected).length;
 
   return (
     <div
@@ -207,9 +247,31 @@ export default function MergeEntitiesModal({
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-light-700 uppercase">Notes</label>
-                  <div className="mt-1 p-2 bg-white border border-light-200 rounded text-sm max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {entity1.notes || <span className="text-light-400 italic">No notes</span>}
+                  <label className="text-xs font-medium text-light-700 uppercase">Verified Facts ({entity1.verified_facts?.length || 0})</label>
+                  <div className="mt-1 p-2 bg-white border border-light-200 rounded text-sm max-h-32 overflow-y-auto">
+                    {entity1.verified_facts?.length > 0 ? (
+                      <ul className="list-disc list-inside space-y-1">
+                        {entity1.verified_facts.map((fact, i) => (
+                          <li key={i} className="text-light-700">{getItemText(fact)}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-light-400 italic">No verified facts</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-light-700 uppercase">AI Insights ({entity1.ai_insights?.length || 0})</label>
+                  <div className="mt-1 p-2 bg-white border border-light-200 rounded text-sm max-h-32 overflow-y-auto">
+                    {entity1.ai_insights?.length > 0 ? (
+                      <ul className="list-disc list-inside space-y-1">
+                        {entity1.ai_insights.map((insight, i) => (
+                          <li key={i} className="text-light-700">{getItemText(insight)}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-light-400 italic">No AI insights</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -241,9 +303,31 @@ export default function MergeEntitiesModal({
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-light-700 uppercase">Notes</label>
-                  <div className="mt-1 p-2 bg-white border border-light-200 rounded text-sm max-h-32 overflow-y-auto whitespace-pre-wrap">
-                    {entity2.notes || <span className="text-light-400 italic">No notes</span>}
+                  <label className="text-xs font-medium text-light-700 uppercase">Verified Facts ({entity2.verified_facts?.length || 0})</label>
+                  <div className="mt-1 p-2 bg-white border border-light-200 rounded text-sm max-h-32 overflow-y-auto">
+                    {entity2.verified_facts?.length > 0 ? (
+                      <ul className="list-disc list-inside space-y-1">
+                        {entity2.verified_facts.map((fact, i) => (
+                          <li key={i} className="text-light-700">{getItemText(fact)}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-light-400 italic">No verified facts</span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-light-700 uppercase">AI Insights ({entity2.ai_insights?.length || 0})</label>
+                  <div className="mt-1 p-2 bg-white border border-light-200 rounded text-sm max-h-32 overflow-y-auto">
+                    {entity2.ai_insights?.length > 0 ? (
+                      <ul className="list-disc list-inside space-y-1">
+                        {entity2.ai_insights.map((insight, i) => (
+                          <li key={i} className="text-light-700">{getItemText(insight)}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-light-400 italic">No AI insights</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -371,40 +455,102 @@ export default function MergeEntitiesModal({
                 )}
               </div>
 
-              {/* Notes */}
+              {/* Verified Facts with checkboxes */}
               <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <label className="text-sm font-medium text-light-800">Notes</label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setUseEntity1Notes(true)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${
-                        useEntity1Notes
-                          ? 'bg-owl-blue-500 text-white'
-                          : 'bg-light-200 text-light-700 hover:bg-light-300'
-                      }`}
-                    >
-                      Entity 1 First
-                    </button>
-                    <button
-                      onClick={() => setUseEntity1Notes(false)}
-                      className={`text-xs px-2 py-1 rounded transition-colors ${
-                        !useEntity1Notes
-                          ? 'bg-owl-blue-500 text-white'
-                          : 'bg-light-200 text-light-700 hover:bg-light-300'
-                      }`}
-                    >
-                      Entity 2 First
-                    </button>
-                  </div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-light-800">Verified Facts</label>
+                  <span className="text-xs text-light-600">
+                    {selectedFactsCount} of {factsWithMeta.length} selected
+                  </span>
                 </div>
-                <textarea
-                  value={mergedNotes}
-                  onChange={(e) => setMergedNotes(e.target.value)}
-                  className="w-full p-2 border border-light-300 rounded-md focus:ring-owl-blue-500 focus:border-owl-blue-500"
-                  rows={6}
-                  placeholder="Merged notes (combines both entities)"
-                />
+                <div className="border border-light-300 rounded-md bg-light-50 max-h-48 overflow-y-auto">
+                  {factsWithMeta.length > 0 ? (
+                    <div className="divide-y divide-light-200">
+                      {factsWithMeta.map((item, index) => (
+                        <label
+                          key={index}
+                          className={`flex items-start gap-3 p-3 cursor-pointer hover:bg-light-100 transition-colors ${
+                            !item.selected ? 'opacity-50' : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={item.selected}
+                            onChange={() => toggleFactSelection(index)}
+                            className="mt-1 h-4 w-4 text-owl-blue-600 rounded border-light-300 focus:ring-owl-blue-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                item.source === 'entity1'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-green-100 text-green-700'
+                              }`}>
+                                {item.source === 'entity1' ? 'E1' : 'E2'}
+                              </span>
+                            </div>
+                            <p className={`text-sm text-light-700 ${!item.selected ? 'line-through' : ''}`}>
+                              {getItemText(item.data)}
+                            </p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 text-sm text-light-400 italic">
+                      No verified facts to merge
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* AI Insights with checkboxes */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-light-800">AI Insights</label>
+                  <span className="text-xs text-light-600">
+                    {selectedInsightsCount} of {insightsWithMeta.length} selected
+                  </span>
+                </div>
+                <div className="border border-light-300 rounded-md bg-light-50 max-h-48 overflow-y-auto">
+                  {insightsWithMeta.length > 0 ? (
+                    <div className="divide-y divide-light-200">
+                      {insightsWithMeta.map((item, index) => (
+                        <label
+                          key={index}
+                          className={`flex items-start gap-3 p-3 cursor-pointer hover:bg-light-100 transition-colors ${
+                            !item.selected ? 'opacity-50' : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={item.selected}
+                            onChange={() => toggleInsightSelection(index)}
+                            className="mt-1 h-4 w-4 text-owl-blue-600 rounded border-light-300 focus:ring-owl-blue-500"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                item.source === 'entity1'
+                                  ? 'bg-red-100 text-red-700'
+                                  : 'bg-green-100 text-green-700'
+                              }`}>
+                                {item.source === 'entity1' ? 'E1' : 'E2'}
+                              </span>
+                            </div>
+                            <p className={`text-sm text-light-700 ${!item.selected ? 'line-through' : ''}`}>
+                              {getItemText(item.data)}
+                            </p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 text-sm text-light-400 italic">
+                      No AI insights to merge
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -417,7 +563,7 @@ export default function MergeEntitiesModal({
 
           {/* Warning */}
           <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded text-yellow-800 text-sm">
-            <strong>Warning:</strong> This action will delete Entity 1 and merge all its relationships into Entity 2. 
+            <strong>Warning:</strong> This action will delete Entity 1 and merge all its relationships into Entity 2.
             This cannot be undone.
           </div>
         </div>

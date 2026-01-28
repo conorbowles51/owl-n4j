@@ -185,7 +185,7 @@ export const graphAPI = {
   /**
    * Find similar entities for resolution
    */
-  findSimilarEntities: (caseId, entityTypes = null, similarityThreshold = 0.7, maxResults = 50) =>
+  findSimilarEntities: (caseId, entityTypes = null, similarityThreshold = 0.7, maxResults = 1000) =>
     fetchAPI('/graph/find-similar-entities', {
       method: 'POST',
       body: JSON.stringify({
@@ -209,9 +209,8 @@ export const graphAPI = {
    * @param {Function} callbacks.onStart - Called when scan starts with metadata
    * @param {Function} callbacks.onTypeStart - Called when starting a new entity type
    * @param {Function} callbacks.onProgress - Called with progress updates
-   * @param {Function} callbacks.onResult - Called when a similar pair is found
    * @param {Function} callbacks.onTypeComplete - Called when an entity type is done
-   * @param {Function} callbacks.onComplete - Called when scan finishes
+   * @param {Function} callbacks.onComplete - Called when scan finishes with all results
    * @param {Function} callbacks.onError - Called on error
    * @param {Function} callbacks.onCancelled - Called if request was cancelled
    * @returns {Function} Cancel function to abort the stream
@@ -220,14 +219,13 @@ export const graphAPI = {
     const {
       entityTypes = null,
       similarityThreshold = 0.7,
-      maxResults = 50,
+      maxResults = 1000,
     } = options;
 
     const {
       onStart,
       onTypeStart,
       onProgress,
-      onResult,
       onTypeComplete,
       onComplete,
       onError,
@@ -307,9 +305,6 @@ export const graphAPI = {
                     case 'progress':
                       onProgress?.(data);
                       break;
-                    case 'result':
-                      onResult?.(data);
-                      break;
                     case 'type_complete':
                       onTypeComplete?.(data);
                       break;
@@ -363,6 +358,42 @@ export const graphAPI = {
         target_key: targetKey,
         merged_data: mergedData,
       }),
+    }),
+
+  /**
+   * Reject a merge pair as a false positive (not actually duplicates).
+   * The pair will be filtered out from future similar-entities scans.
+   * @param {string} caseId - REQUIRED: Case ID
+   * @param {string} entityKey1 - First entity key
+   * @param {string} entityKey2 - Second entity key
+   */
+  rejectMergePair: (caseId, entityKey1, entityKey2) =>
+    fetchAPI('/graph/reject-merge', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        entity_key_1: entityKey1,
+        entity_key_2: entityKey2,
+      }),
+    }),
+
+  /**
+   * Get all rejected merge pairs for a case
+   * @param {string} caseId - REQUIRED: Case ID
+   * @returns {Promise<{rejected_pairs: Array, total: number}>}
+   */
+  getRejectedMergePairs: (caseId) => {
+    const params = `?case_id=${encodeURIComponent(caseId)}`;
+    return fetchAPI(`/graph/rejected-merges${params}`);
+  },
+
+  /**
+   * Undo a rejection (allow the pair to appear in future scans)
+   * @param {string} rejectionId - ID of the rejection to undo
+   */
+  undoRejection: (rejectionId) =>
+    fetchAPI(`/graph/rejected-merges/${encodeURIComponent(rejectionId)}`, {
+      method: 'DELETE',
     }),
 
   /**

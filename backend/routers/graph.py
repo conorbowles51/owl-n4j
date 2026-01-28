@@ -3,16 +3,20 @@ Graph Router - endpoints for graph visualization data.
 """
 
 from typing import Optional, List, Dict, Any
+from uuid import UUID
 import json
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from services.neo4j_service import neo4j_service
 from services.last_graph_storage import last_graph_storage
 from services.system_log_service import system_log_service, LogType, LogOrigin
+from services.rejected_pairs_service import RejectedPairsService
 from routers.auth import get_current_user
+from postgres.session import get_db
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
 
@@ -1283,21 +1287,22 @@ async def find_similar_entities_stream(
     case_id: str = Query(..., description="REQUIRED: Case ID to scan"),
     entity_types: Optional[str] = Query(None, description="Comma-separated entity types to filter"),
     name_similarity_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Minimum name similarity threshold"),
-    max_results: int = Query(50, ge=1, le=500, description="Maximum number of results to return"),
+    max_results: int = Query(1000, ge=1, le=5000, description="Maximum number of results to return"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Stream similar entities search with progress updates via Server-Sent Events (SSE).
 
     This endpoint streams progress updates for large cases that would otherwise timeout.
+    Previously rejected pairs are automatically filtered out.
 
     SSE Events:
     - start: Initial metadata (total_entities, entity_types, total_comparisons)
     - type_start: Starting comparison for a specific entity type
     - progress: Progress update with comparisons_done and pairs_found
-    - result: A similar pair was found (includes full pair data)
     - type_complete: Finished comparing a specific entity type
-    - complete: Scan finished successfully
+    - complete: Scan finished successfully with all results
     - cancelled: Client disconnected
     - error: An error occurred
     """
@@ -1305,6 +1310,13 @@ async def find_similar_entities_stream(
     types_list = None
     if entity_types:
         types_list = [t.strip() for t in entity_types.split(",") if t.strip()]
+
+    # Fetch rejected pairs for this case to filter them out
+    rejected_pairs_service = RejectedPairsService(db)
+    try:
+        rejected_pairs = rejected_pairs_service.get_rejected_pairs_set(UUID(case_id))
+    except ValueError:
+        rejected_pairs = set()  # Invalid UUID, use empty set
 
     async def event_generator():
         """Generate SSE events from the streaming similarity search."""
@@ -1314,6 +1326,7 @@ async def find_similar_entities_stream(
                 entity_types=types_list,
                 name_similarity_threshold=name_similarity_threshold,
                 max_results=max_results,
+                rejected_pairs=rejected_pairs,
             ):
                 # Check if client disconnected
                 if await request.is_disconnected():
@@ -1428,6 +1441,193 @@ async def merge_entities(
                 "target_key": request.target_key,
                 "error": str(e),
             },
+            user=user.get("username", "unknown"),
+            success=False,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Rejected Merge Pairs Endpoints ---
+
+class RejectMergeRequest(BaseModel):
+    """Request model for rejecting a merge pair."""
+    case_id: str
+    entity_key_1: str
+    entity_key_2: str
+
+
+class RejectedPairResponse(BaseModel):
+    """Response model for a rejected merge pair."""
+    id: str
+    case_id: str
+    entity_key_1: str
+    entity_key_2: str
+    rejected_at: str
+    rejected_by_user_id: Optional[str] = None
+
+
+@router.post("/reject-merge")
+async def reject_merge_pair(
+    request: RejectMergeRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Reject a pair of entities as a false positive (not actually duplicates).
+
+    The rejected pair will be filtered out from future similar-entities scans.
+
+    Args:
+        request: Request with case_id, entity_key_1, and entity_key_2
+        user: Current authenticated user
+        db: Database session
+
+    Returns:
+        The created rejection record
+    """
+    try:
+        rejected_pairs_service = RejectedPairsService(db)
+        user_id = UUID(user.get("id")) if user.get("id") else None
+
+        rejection = rejected_pairs_service.reject_pair(
+            case_id=UUID(request.case_id),
+            key1=request.entity_key_1,
+            key2=request.entity_key_2,
+            user_id=user_id,
+        )
+
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Reject Merge Pair",
+            details={
+                "case_id": request.case_id,
+                "entity_key_1": rejection.entity_key_1,
+                "entity_key_2": rejection.entity_key_2,
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+
+        return RejectedPairResponse(
+            id=str(rejection.id),
+            case_id=str(rejection.case_id),
+            entity_key_1=rejection.entity_key_1,
+            entity_key_2=rejection.entity_key_2,
+            rejected_at=rejection.created_at.isoformat(),
+            rejected_by_user_id=str(rejection.rejected_by_user_id) if rejection.rejected_by_user_id else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Reject Merge Pair Failed",
+            details={
+                "case_id": request.case_id,
+                "entity_key_1": request.entity_key_1,
+                "entity_key_2": request.entity_key_2,
+                "error": str(e),
+            },
+            user=user.get("username", "unknown"),
+            success=False,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/rejected-merges")
+async def get_rejected_merges(
+    case_id: str = Query(..., description="REQUIRED: Case ID to get rejected pairs for"),
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Get all rejected merge pairs for a case.
+
+    Args:
+        case_id: The case ID to get rejections for
+        user: Current authenticated user
+        db: Database session
+
+    Returns:
+        List of rejected pairs with total count
+    """
+    try:
+        rejected_pairs_service = RejectedPairsService(db)
+        rejections = rejected_pairs_service.get_rejected_pairs(UUID(case_id))
+
+        pairs = [
+            RejectedPairResponse(
+                id=str(r.id),
+                case_id=str(r.case_id),
+                entity_key_1=r.entity_key_1,
+                entity_key_2=r.entity_key_2,
+                rejected_at=r.created_at.isoformat(),
+                rejected_by_user_id=str(r.rejected_by_user_id) if r.rejected_by_user_id else None,
+            )
+            for r in rejections
+        ]
+
+        return {
+            "rejected_pairs": pairs,
+            "total": len(pairs),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/rejected-merges/{rejection_id}")
+async def undo_rejection(
+    rejection_id: str,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Undo a rejection (remove it from the rejected list).
+
+    The pair will appear again in future similar-entities scans.
+
+    Args:
+        rejection_id: The ID of the rejection to undo
+        user: Current authenticated user
+        db: Database session
+
+    Returns:
+        Success status
+    """
+    try:
+        rejected_pairs_service = RejectedPairsService(db)
+        success = rejected_pairs_service.undo_rejection(
+            rejection_id=UUID(rejection_id),
+            user_id=UUID(user.get("id")) if user.get("id") else None,
+        )
+
+        if not success:
+            raise HTTPException(status_code=404, detail="Rejection not found")
+
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Undo Merge Rejection",
+            details={"rejection_id": rejection_id},
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+
+        return {"success": True}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Undo Merge Rejection Failed",
+            details={"rejection_id": rejection_id, "error": str(e)},
             user=user.get("username", "unknown"),
             success=False,
         )
