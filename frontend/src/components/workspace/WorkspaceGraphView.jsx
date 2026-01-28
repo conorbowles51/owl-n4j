@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import GraphView from '../GraphView';
+import GraphTableView from '../GraphTableView';
 import VisualInvestigationTimeline from './VisualInvestigationTimeline';
 import TimelineView from '../timeline/TimelineView';
 import MapView from '../MapView';
 import ViewModeSwitcher from '../ViewModeSwitcher';
+import GraphSearchFilter from '../GraphSearchFilter';
 import { convertGraphNodesToTimelineEvents, convertGraphNodesToMapLocations, hasTimelineData, hasMapData } from '../../utils/graphDataConverter';
 
 /**
@@ -14,21 +16,45 @@ import { convertGraphNodesToTimelineEvents, convertGraphNodesToMapLocations, has
 export default function WorkspaceGraphView({
   caseId,
   graphData,
+  tableGraphData,
   onNodeSelect,
   selectedNode,
   theoryGraphKeys,
+  theoryName,
   onClearTheoryFilter,
+  tableScope,
+  onTableScopeChange,
   viewMode: externalViewMode,
   onViewModeChange,
+  tableViewState,
+  onTableViewStateChange,
+  graphSearchTerm,
+  graphSearchFieldScope,
+  onGraphFieldScopeChange,
+  graphSearchMode,
+  pendingGraphSearch,
+  onGraphFilterChange,
+  onGraphQueryChange,
+  onGraphSearchExecute,
+  onGraphModeChange,
+  onTableNodeSelect,
 }) {
+  const tableData = tableGraphData ?? graphData;
   const graphViewRef = useRef();
   const containerRef = useRef();
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [internalViewMode, setInternalViewMode] = useState(externalViewMode || 'graph');
   
   // Use internal view mode if external is not provided
-  const currentViewMode = externalViewMode || internalViewMode;
-  const handleViewModeChange = onViewModeChange || setInternalViewMode;
+  const currentViewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
+  const handleViewModeChange = (newMode) => {
+    console.log('ViewMode change requested:', newMode, 'externalViewMode:', externalViewMode, 'onViewModeChange:', !!onViewModeChange);
+    if (onViewModeChange) {
+      onViewModeChange(newMode);
+    } else {
+      setInternalViewMode(newMode);
+    }
+  };
 
   // Track container dimensions
   useEffect(() => {
@@ -75,60 +101,100 @@ export default function WorkspaceGraphView({
   const hasMap = useMemo(() => hasMapData(graphData.nodes), [graphData.nodes]);
   
   // Convert graph nodes to timeline events and map locations
+  // Always compute these so they're ready when switching modes
   const timelineEvents = useMemo(() => {
-    if (currentViewMode === 'timeline' && hasTimeline) {
+    if (hasTimeline) {
       return convertGraphNodesToTimelineEvents(graphData.nodes, graphData.links);
     }
     return [];
-  }, [currentViewMode, hasTimeline, graphData.nodes, graphData.links]);
+  }, [hasTimeline, graphData.nodes, graphData.links]);
   
   const mapLocations = useMemo(() => {
-    if (currentViewMode === 'map' && hasMap) {
+    if (hasMap) {
       return convertGraphNodesToMapLocations(graphData.nodes, graphData.links);
     }
     return [];
-  }, [currentViewMode, hasMap, graphData.nodes, graphData.links]);
+  }, [hasMap, graphData.nodes, graphData.links]);
 
   return (
     <div ref={containerRef} className="h-full w-full flex flex-col relative">
-      {/* View Mode Switcher - positioned in viewport */}
-      <div className="absolute top-4 left-4 z-30">
+      {/* View Mode Switcher Banner - fixed at top */}
+      <div className="flex-shrink-0 bg-white border-b border-light-200 px-4 py-2 flex items-center justify-between gap-4">
         <ViewModeSwitcher
           mode={currentViewMode}
           onModeChange={handleViewModeChange}
           hasTimelineData={hasTimeline}
           hasMapData={hasMap}
         />
+        {currentViewMode === 'table' && (
+          <GraphSearchFilter
+            mode={graphSearchMode || 'filter'}
+            onModeChange={onGraphModeChange}
+            onFilterChange={onGraphFilterChange}
+            onQueryChange={onGraphQueryChange}
+            onSearch={onGraphSearchExecute}
+            placeholder="Filter table nodes..."
+            disabled={false}
+          />
+        )}
+        {theoryGraphKeys && theoryGraphKeys.length > 0 && currentViewMode !== 'timeline' && currentViewMode !== 'map' && (
+          <div className="flex items-center gap-4">
+            {currentViewMode === 'table' ? (
+              <>
+                <div className="text-sm text-owl-blue-900">
+                  <span className="font-semibold">
+                    {tableScope === 'theory' ? 'Theory Table' : 'Full Table'}
+                    {theoryName ? ` (${theoryName})` : ''}
+                    {':'}
+                  </span>
+                  {' '}
+                  Showing {tableData.nodes.length} {tableScope === 'theory' ? 'theory-relevant' : ''} entities
+                </div>
+                <button
+                  onClick={() => onTableScopeChange && onTableScopeChange(tableScope === 'theory' ? 'full' : 'theory')}
+                  className="text-xs text-owl-blue-600 hover:text-owl-blue-800 underline"
+                >
+                  {tableScope === 'theory' ? 'Show full table' : `Show theory table${theoryName ? ` (${theoryName})` : ''}`}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="text-sm text-owl-blue-900">
+                  <span className="font-semibold">
+                    Theory Graph{theoryName ? ` (${theoryName})` : ''}:
+                  </span>
+                  {' '}
+                  Showing {graphData.nodes.length} relevant entities
+                </div>
+                <button
+                  onClick={onClearTheoryFilter}
+                  className="text-xs text-owl-blue-600 hover:text-owl-blue-800 underline"
+                >
+                  Show Full Graph
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
       
-      {theoryGraphKeys && theoryGraphKeys.length > 0 && currentViewMode !== 'timeline' && currentViewMode !== 'map' && (
-        <div className="bg-owl-blue-50 border-b border-owl-blue-200 px-4 py-2 flex items-center justify-between flex-shrink-0">
-          <div className="text-sm text-owl-blue-900">
-            <span className="font-semibold">Theory Graph Mode:</span> Showing {graphData.nodes.length} relevant entities
-          </div>
-          <button
-            onClick={onClearTheoryFilter}
-            className="text-xs text-owl-blue-600 hover:text-owl-blue-800 underline"
-          >
-            Show Full Graph
-          </button>
-        </div>
-      )}
       <div className="flex-1 min-h-0">
         {dimensions.width > 0 && dimensions.height > 0 && (
           <>
             {currentViewMode === 'timeline' ? (
               hasTimeline ? (
-                <TimelineView
-                  timelineData={timelineEvents}
-                  onSelectEvent={(event) => {
-                    // Find the node in graphData and select it
-                    const node = graphData.nodes.find(n => n.key === event.key);
-                    if (node && onNodeSelect) {
-                      onNodeSelect(node);
-                    }
-                  }}
-                />
+                <div className="h-full w-full">
+                  <TimelineView
+                    timelineData={timelineEvents}
+                    onSelectEvent={(event) => {
+                      // Find the node in graphData and select it
+                      const node = graphData.nodes.find(n => n.key === event.key);
+                      if (node && onNodeSelect) {
+                        onNodeSelect(node);
+                      }
+                    }}
+                  />
+                </div>
               ) : (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-sm text-light-500">No timeline data available for visible nodes</p>
@@ -136,21 +202,42 @@ export default function WorkspaceGraphView({
               )
             ) : currentViewMode === 'map' ? (
               hasMap ? (
-                <MapView
-                  locations={mapLocations}
-                  onNodeClick={(location) => {
-                    // Find the node in graphData and select it
-                    const node = graphData.nodes.find(n => n.key === location.key);
-                    if (node && onNodeSelect) {
-                      onNodeSelect(node);
-                    }
-                  }}
-                />
+                <div className="h-full w-full">
+                  <MapView
+                    locations={mapLocations}
+                    caseId={caseId}
+                    onNodeClick={(location) => {
+                      // Find the node in graphData and select it
+                      const node = graphData.nodes.find(n => n.key === location.key);
+                      if (node && onNodeSelect) {
+                        onNodeSelect(node);
+                      }
+                    }}
+                  />
+                </div>
               ) : (
                 <div className="flex items-center justify-center h-full">
                   <p className="text-sm text-light-500">No map data available for visible nodes</p>
                 </div>
               )
+            ) : currentViewMode === 'table' ? (
+              <div className="h-full w-full flex flex-col min-h-0">
+                <GraphTableView
+                  key={`table-${tableScope}-${(theoryGraphKeys?.length ?? 0)}`}
+                  graphData={tableData}
+                  searchTerm={graphSearchTerm || ''}
+                  onNodeClick={(node, panel, e) => {
+                    if (onTableNodeSelect) {
+                      onTableNodeSelect(node, panel, e);
+                    } else if (onNodeSelect) {
+                      onNodeSelect(node, e);
+                    }
+                  }}
+                  selectedNodeKeys={selectedNode ? [selectedNode.key] : []}
+                  tableViewState={tableViewState}
+                  onTableViewStateChange={onTableViewStateChange}
+                />
+              </div>
             ) : (
               <GraphView
                 ref={graphViewRef}

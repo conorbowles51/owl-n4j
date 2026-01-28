@@ -7,7 +7,8 @@ import AttachToTheoryModal from './AttachToTheoryModal';
 /**
  * Tasks Section
  * 
- * Displays pending tasks with color coding based on urgency and status
+ * Displays tasks with color coding based on urgency and status
+ * Has tabs for "Pending" and "Complete" tasks
  * Format: [Urgency Emoji] [Priority] - Due [Date]
  *         [Title]
  *         [Description]
@@ -26,6 +27,7 @@ export default function TasksSection({
   const [showEditor, setShowEditor] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [attachModal, setAttachModal] = useState({ open: false, task: null });
+  const [activeTab, setActiveTab] = useState('pending'); // 'pending' or 'complete'
 
   useEffect(() => {
     const loadTasks = async () => {
@@ -184,17 +186,23 @@ export default function TasksSection({
   };
 
   const pendingTasks = tasks.filter(t => t.status !== 'COMPLETED');
-  const sortedTasks = [...pendingTasks].sort((a, b) => {
-    // Sort by priority first (URGENT > HIGH > STANDARD)
-    const priorityOrder = { URGENT: 0, HIGH: 1, STANDARD: 2 };
-    const priorityDiff = (priorityOrder[a.priority] || 2) - (priorityOrder[b.priority] || 2);
-    if (priorityDiff !== 0) return priorityDiff;
-    
-    // Then by due date
-    const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-    const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-    return dateA - dateB;
-  });
+  const completedTasks = tasks.filter(t => t.status === 'COMPLETED');
+  
+  const sortTasks = (taskList) => {
+    return [...taskList].sort((a, b) => {
+      // Sort by priority first (URGENT > HIGH > STANDARD)
+      const priorityOrder = { URGENT: 0, HIGH: 1, STANDARD: 2 };
+      const priorityDiff = (priorityOrder[a.priority] || 2) - (priorityOrder[b.priority] || 2);
+      if (priorityDiff !== 0) return priorityDiff;
+      
+      // Then by due date
+      const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+      const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+      return dateA - dateB;
+    });
+  };
+  
+  const sortedTasks = activeTab === 'pending' ? sortTasks(pendingTasks) : sortTasks(completedTasks);
 
   return (
     <div className="border-b border-light-200">
@@ -203,7 +211,7 @@ export default function TasksSection({
         onClick={(e) => onToggle && onToggle(e)}
       >
         <h3 className="text-sm font-semibold text-owl-blue-900">
-          Pending Tasks ({pendingTasks.length})
+          Tasks ({tasks.length})
         </h3>
         <div className="flex items-center gap-2">
           <button
@@ -237,12 +245,40 @@ export default function TasksSection({
       </div>
 
       {!isCollapsed && (
-        <div className="px-4 pb-4 space-y-3">
-          {loading ? (
-            <p className="text-xs text-light-500">Loading tasks...</p>
-          ) : sortedTasks.length === 0 ? (
-            <p className="text-xs text-light-500 italic">No pending tasks</p>
-          ) : (
+        <div className="px-4 pb-4">
+          {/* Tabs */}
+          <div className="flex gap-1 mb-3 bg-light-100 rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab('pending')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeTab === 'pending'
+                  ? 'bg-white text-owl-blue-600 shadow-sm'
+                  : 'text-light-700 hover:text-owl-blue-600'
+              }`}
+            >
+              Pending ({pendingTasks.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('complete')}
+              className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeTab === 'complete'
+                  ? 'bg-white text-owl-blue-600 shadow-sm'
+                  : 'text-light-700 hover:text-owl-blue-600'
+              }`}
+            >
+              Complete ({completedTasks.length})
+            </button>
+          </div>
+
+          {/* Tasks List */}
+          <div className="space-y-3">
+            {loading ? (
+              <p className="text-xs text-light-500">Loading tasks...</p>
+            ) : sortedTasks.length === 0 ? (
+              <p className="text-xs text-light-500 italic">
+                No {activeTab === 'pending' ? 'pending' : 'completed'} tasks
+              </p>
+            ) : (
             sortedTasks.map((task) => {
               const priorityColor = getPriorityColor(task.priority);
               const priorityEmoji = getPriorityEmoji(task.priority);
@@ -318,7 +354,8 @@ export default function TasksSection({
                 </div>
               );
             })
-          )}
+            )}
+          </div>
         </div>
       )}
 

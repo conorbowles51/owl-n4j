@@ -40,6 +40,24 @@ async function loadDocumentSummary(filename, caseId) {
 }
 
 /**
+ * Load wiretap Spanish transcription and English translation for a folder, when available.
+ */
+async function loadTranscriptionTranslation(folderName, caseId) {
+  if (!folderName || !caseId) return { spanish_transcription: null, english_translation: null };
+  try {
+    const { evidenceAPI } = await import('../services/api');
+    const result = await evidenceAPI.getTranscriptionTranslation(folderName, caseId);
+    return {
+      spanish_transcription: result.spanish_transcription || null,
+      english_translation: result.english_translation || null,
+    };
+  } catch (err) {
+    console.warn('Failed to load transcription/translation:', err);
+    return { spanish_transcription: null, english_translation: null };
+  }
+}
+
+/**
  * Load document/image as base64
  */
 async function loadDocumentAsBase64(evidenceId) {
@@ -66,16 +84,18 @@ async function loadDocumentAsBase64(evidenceId) {
 
 /**
  * Export theory to HTML
- * 
+ *
  * @param {Object} theory - The theory data
- * @param {Object} attachedItems - All attached items (evidence, witnesses, notes, etc.)
- * @param {Object} graphData - Theory graph data (nodes and links)
+ * @param {Object} attachedItems - All attached items
+ * @param {Object} graphData - Theory graph data
  * @param {Array} timelineEvents - Timeline events
- * @param {string} graphCanvasDataUrl - Optional base64 data URL of graph canvas
- * @param {string} timelineCanvasDataUrl - Optional base64 data URL of timeline canvas
- * @param {string} mapCanvasDataUrl - Optional base64 data URL of map canvas
- * @param {string} caseId - Case ID for loading document summaries and images
- * @param {string} caseName - Case name for the report title
+ * @param {string} graphCanvasDataUrl - Graph viz data URL
+ * @param {string} graphTimelineCanvasDataUrl - Graph-derived timeline viz data URL
+ * @param {string} mapCanvasDataUrl - Map viz data URL
+ * @param {string} theoryTimelineCanvasDataUrl - Theory timeline viz data URL
+ * @param {string} caseId - Case ID
+ * @param {string} caseName - Case name
+ * @param {Object} includeTabs - Which tabs to include (e.g. { evidence: true, graph: true, ... }). Omit/false = exclude.
  */
 export async function exportTheoryToHTML(
   theory,
@@ -83,11 +103,14 @@ export async function exportTheoryToHTML(
   graphData = null,
   timelineEvents = [],
   graphCanvasDataUrl = null,
-  timelineCanvasDataUrl = null,
+  graphTimelineCanvasDataUrl = null,
   mapCanvasDataUrl = null,
+  theoryTimelineCanvasDataUrl = null,
   caseId = null,
-  caseName = null
+  caseName = null,
+  includeTabs = null
 ) {
+  const inc = (key) => includeTabs == null || includeTabs[key] !== false;
   // Load logo as base64
   const logoBase64 = await loadLogoAsBase64();
   
@@ -109,15 +132,18 @@ export async function exportTheoryToHTML(
   // Load document summaries and images
   const documentData = {};
   if (caseId) {
-    // Load summaries and images for evidence
+    // Load summaries, images, and transcription/translation for evidence
     if (attachedItems.evidence && attachedItems.evidence.length > 0) {
       for (const file of attachedItems.evidence) {
         if (file.id) {
-          const [summary, imageData] = await Promise.all([
+          const relPath = (file.relative_path || '').replace(/\\/g, '/').trim();
+          const folderName = relPath ? relPath.split('/')[0] : null;
+          const [summary, imageData, tt] = await Promise.all([
             loadDocumentSummary(file.original_filename || file.filename, caseId),
             loadDocumentAsBase64(file.id),
+            folderName ? loadTranscriptionTranslation(folderName, caseId) : Promise.resolve({ spanish_transcription: null, english_translation: null }),
           ]);
-          documentData[file.id] = { summary, imageData };
+          documentData[file.id] = { summary, imageData, ...tt };
         }
       }
     }
@@ -518,7 +544,7 @@ export async function exportTheoryToHTML(
       </div>
       
       <!-- Evidence -->
-      ${attachedItems.evidence && attachedItems.evidence.length > 0 ? `
+      ${inc('evidence') && attachedItems.evidence && attachedItems.evidence.length > 0 ? `
         <div class="section-header">Attached Evidence</div>
         ${attachedItems.evidence.map((file, idx) => {
           const data = documentData[file.id] || {};
@@ -538,6 +564,18 @@ export async function exportTheoryToHTML(
                     ${escapeHtml(data.summary)}
                   </div>
                 ` : ''}
+                ${data.spanish_transcription ? `
+                  <div class="detail-value" style="margin-top: 1rem; padding: 1rem; background: #f8fafc; border-radius: 4px; border-left: 3px solid #0d9488;">
+                    <div class="detail-label" style="margin-bottom: 0.5rem;">Spanish Transcription</div>
+                    <div style="white-space: pre-wrap;">${escapeHtml(data.spanish_transcription)}</div>
+                  </div>
+                ` : ''}
+                ${data.english_translation ? `
+                  <div class="detail-value" style="margin-top: 1rem; padding: 1rem; background: #f8fafc; border-radius: 4px; border-left: 3px solid #0369a1;">
+                    <div class="detail-label" style="margin-bottom: 0.5rem;">English Translation</div>
+                    <div style="white-space: pre-wrap;">${escapeHtml(data.english_translation)}</div>
+                  </div>
+                ` : ''}
                 ${data.imageData ? `
                   <div style="margin-top: 1rem;">
                     <img src="${data.imageData}" alt="${escapeHtml(file.original_filename || file.filename)}" style="max-width: 100%; height: auto; border-radius: 4px; border: 1px solid #e5e7eb;" />
@@ -550,10 +588,12 @@ export async function exportTheoryToHTML(
         }).join('')}
       ` : ''}
       
-      <!-- Witnesses -->
-      ${attachedItems.witnesses && attachedItems.witnesses.length > 0 ? `
+      <!-- Witnesses (with interviews) -->
+      ${inc('witnesses') && attachedItems.witnesses && attachedItems.witnesses.length > 0 ? `
         <div class="section-header">Attached Witnesses</div>
-        ${attachedItems.witnesses.map((witness, idx) => `
+        ${attachedItems.witnesses.map((witness, idx) => {
+          const interviews = (witness.interviews || []).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+          return `
           <div class="item-card">
             <div class="item-title">${idx + 1}. ${escapeHtml(witness.name || 'Unknown Witness')}</div>
             <div class="item-meta">
@@ -561,14 +601,35 @@ export async function exportTheoryToHTML(
               ${witness.organization ? ` • Organization: ${escapeHtml(witness.organization)}` : ''}
               ${witness.status ? ` • Status: ${escapeHtml(witness.status)}` : ''}
               ${witness.credibility_rating ? ` • Credibility: ${witness.credibility_rating}/5` : ''}
-              ${witness.interviews && witness.interviews.length > 0 ? ` • Interviews: ${witness.interviews.length}` : ''}
+              ${interviews.length > 0 ? ` • Interviews: ${interviews.length}` : ''}
             </div>
+            ${interviews.length > 0 ? `
+            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #e5e7eb;">
+              <div class="detail-label" style="margin-bottom: 0.75rem; font-weight: 600;">Witness Interviews</div>
+              ${interviews.map((inv, i) => `
+              <div style="margin-bottom: ${i < interviews.length - 1 ? '1rem' : '0'}; padding: 1rem; background: #f8fafc; border-radius: 4px; border-left: 3px solid #357dbe;">
+                <div class="item-meta" style="margin-bottom: 0.5rem;">
+                  ${inv.date ? `<span>${formatDate(inv.date)}</span>` : ''}
+                  ${inv.duration ? ` • ${escapeHtml(inv.duration)}` : ''}
+                  ${inv.interviewer ? ` • Interviewer: ${escapeHtml(inv.interviewer)}` : ''}
+                </div>
+                ${inv.status ? `<div style="font-weight: 600; margin-bottom: 0.25rem;">Status: ${escapeHtml(inv.status)}</div>` : ''}
+                ${inv.credibility_rating ? `<div style="margin-bottom: 0.25rem;">Credibility: ${inv.credibility_rating}/5</div>` : ''}
+                ${inv.statement ? `<div style="margin-top: 0.5rem;"><span style="font-weight: 500;">Statement:</span> ${escapeHtml(inv.statement)}</div>` : ''}
+                ${inv.notes ? `<div style="margin-top: 0.5rem; white-space: pre-wrap;">${escapeHtml(inv.notes)}</div>` : ''}
+                ${inv.summary ? `<div style="margin-top: 0.5rem;"><span style="font-weight: 500;">Summary:</span> ${escapeHtml(inv.summary)}</div>` : ''}
+                ${inv.risk_assessment ? `<div style="margin-top: 0.5rem; color: #b91c1c;">Risk: ${escapeHtml(inv.risk_assessment)}</div>` : ''}
+              </div>
+              `).join('')}
+            </div>
+            ` : ''}
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       ` : ''}
       
       <!-- Notes -->
-      ${attachedItems.notes && attachedItems.notes.length > 0 ? `
+      ${inc('notes') && attachedItems.notes && attachedItems.notes.length > 0 ? `
         <div class="section-header">Attached Notes</div>
         ${attachedItems.notes.map((note, idx) => {
           const noteContent = note.content || '';
@@ -586,7 +647,7 @@ export async function exportTheoryToHTML(
       ` : ''}
       
       <!-- Tasks -->
-      ${attachedItems.tasks && attachedItems.tasks.length > 0 ? `
+      ${inc('tasks') && attachedItems.tasks && attachedItems.tasks.length > 0 ? `
         <div class="section-header">Attached Tasks</div>
         ${attachedItems.tasks.map((task, idx) => `
           <div class="item-card">
@@ -602,7 +663,7 @@ export async function exportTheoryToHTML(
       ` : ''}
       
       <!-- Documents -->
-      ${attachedItems.documents && attachedItems.documents.length > 0 ? `
+      ${inc('documents') && attachedItems.documents && attachedItems.documents.length > 0 ? `
         <div class="section-header">Attached Documents</div>
         ${attachedItems.documents.map((document, idx) => {
           const data = documentData[document.id] || {};
@@ -627,7 +688,7 @@ export async function exportTheoryToHTML(
       ` : ''}
       
       <!-- Snapshots -->
-      ${attachedItems.snapshots && attachedItems.snapshots.length > 0 ? `
+      ${inc('snapshots') && attachedItems.snapshots && attachedItems.snapshots.length > 0 ? `
         <div class="section-header">Attached Snapshots</div>
         ${attachedItems.snapshots.map((snapshot, idx) => {
           const overviewNodes = snapshot.overview?.nodes ?? (Array.isArray(snapshot.overview) ? snapshot.overview : null);
@@ -755,7 +816,7 @@ export async function exportTheoryToHTML(
       ` : ''}
       
       <!-- Graph -->
-      ${graphData && graphData.nodes && graphData.nodes.length > 0 ? `
+      ${inc('graph') && graphData && graphData.nodes && graphData.nodes.length > 0 ? `
         <div class="section-header">Theory Graph</div>
         <div class="graph-container">
           <p style="margin-bottom: 1rem; color: #6b7280; font-weight: 600;">
@@ -784,19 +845,29 @@ export async function exportTheoryToHTML(
         </div>
       ` : ''}
       
-      <!-- Timeline -->
-      ${timelineEvents && timelineEvents.length > 0 ? `
+      <!-- Graph Timeline -->
+      ${inc('graph-timeline') && graphTimelineCanvasDataUrl ? `
+        <div class="section-header">Graph Timeline</div>
+        <div class="graph-container">
+          <img src="${graphTimelineCanvasDataUrl}" alt="Graph Timeline Visualization" class="graph-image" />
+        </div>
+      ` : ''}
+      
+      <!-- Graph Map -->
+      ${inc('graph-map') && mapCanvasDataUrl ? `
+        <div class="section-header">Graph Map</div>
+        <div class="graph-container">
+          <img src="${mapCanvasDataUrl}" alt="Map Visualization" class="graph-image" />
+        </div>
+      ` : ''}
+      
+      <!-- Timeline (theory timeline) -->
+      ${inc('timeline') && timelineEvents && timelineEvents.length > 0 ? `
         <div class="section-header">Timeline</div>
-        ${timelineCanvasDataUrl ? `
+        ${theoryTimelineCanvasDataUrl ? `
           <div class="graph-container" style="margin-bottom: 2rem;">
             <h3 class="subsection-header">Visual Timeline</h3>
-            <img src="${timelineCanvasDataUrl}" alt="Timeline Visualization" class="graph-image" />
-          </div>
-        ` : ''}
-        ${mapCanvasDataUrl ? `
-          <div class="graph-container" style="margin-bottom: 2rem;">
-            <h3 class="subsection-header">Map Visualization</h3>
-            <img src="${mapCanvasDataUrl}" alt="Map Visualization" class="graph-image" />
+            <img src="${theoryTimelineCanvasDataUrl}" alt="Timeline Visualization" class="graph-image" />
           </div>
         ` : ''}
         <h3 class="subsection-header">Timeline Events</h3>
@@ -834,5 +905,307 @@ export async function exportTheoryToHTML(
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Export case to HTML report.
+ * Uses same structure as theory export but for case-wide data.
+ * @param {Object} opts - { caseContext, caseItems, graphData, timelineEvents, timelineEventsFromGraph, mapLocationsFromGraph, graphCanvasDataUrl, graphTimelineCanvasDataUrl, mapCanvasDataUrl, theoryTimelineCanvasDataUrl, caseId, caseName, includeTabs }
+ */
+export async function exportCaseToHTML(opts) {
+  const {
+    caseContext,
+    caseItems,
+    graphData,
+    timelineEvents = [],
+    timelineEventsFromGraph = [],
+    mapLocationsFromGraph = [],
+    graphCanvasDataUrl = null,
+    graphTimelineCanvasDataUrl = null,
+    mapCanvasDataUrl = null,
+    theoryTimelineCanvasDataUrl = null,
+    caseId,
+    caseName,
+    includeTabs = {},
+  } = opts;
+
+  const inc = (key) => includeTabs[key] !== false;
+  const attachedItems = {
+    evidence: caseItems?.evidence || [],
+    witnesses: caseItems?.witnesses || [],
+    notes: caseItems?.notes || [],
+    tasks: caseItems?.tasks || [],
+    documents: caseItems?.documents || [],
+    snapshots: caseItems?.snapshots || [],
+  };
+
+  const logoBase64 = await loadLogoAsBase64();
+  let finalCaseName = (caseName && caseName.trim()) || null;
+  if (!finalCaseName && caseId) {
+    try {
+      const { casesAPI } = await import('../services/api');
+      const d = await casesAPI.get(caseId);
+      finalCaseName = (d?.name && d.name.trim()) ? d.name.trim() : null;
+    } catch (_) {}
+  }
+
+  const documentData = {};
+  if (caseId) {
+    for (const file of attachedItems.evidence) {
+      if (file.id) {
+        const relPath = (file.relative_path || '').replace(/\\/g, '/').trim();
+        const folderName = relPath ? relPath.split('/')[0] : null;
+        const [summary, imageData, tt] = await Promise.all([
+          loadDocumentSummary(file.original_filename || file.filename, caseId),
+          loadDocumentAsBase64(file.id),
+          folderName ? loadTranscriptionTranslation(folderName, caseId) : Promise.resolve({ spanish_transcription: null, english_translation: null }),
+        ]);
+        documentData[file.id] = { summary, imageData, ...tt };
+      }
+    }
+    for (const doc of attachedItems.documents) {
+      if (doc.id) {
+        const [summary, imageData] = await Promise.all([
+          loadDocumentSummary(doc.original_filename || doc.filename, caseId),
+          loadDocumentAsBase64(doc.id),
+        ]);
+        documentData[doc.id] = { summary, imageData };
+      }
+    }
+  }
+
+  const formatDate = (s) => {
+    if (!s) return 'Unknown date';
+    try {
+      return new Date(s).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return s;
+    }
+  };
+  const formatShortDate = (s) => {
+    if (!s) return 'Unknown date';
+    try {
+      return new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch {
+      return s;
+    }
+  };
+  const escapeHtml = (t) => {
+    if (!t) return '';
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+
+  const theoryExportStyles = `
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2937; background: #fff; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0; }
+    .cover-page { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(135deg, #0f2f4a 0%, #1d4d76 100%); color: white; text-align: center; padding: 3rem; page-break-after: always; }
+    .cover-logo { max-width: 200px; height: auto; margin-bottom: 2rem; filter: brightness(0) invert(1); }
+    .cover-title { font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 2px; }
+    .cover-subtitle { font-size: 1.2rem; opacity: 0.9; margin-bottom: 3rem; }
+    .cover-theory-title { font-size: 2rem; font-weight: 600; margin-bottom: 2rem; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 8px; }
+    .content-page { padding: 3rem 2rem; page-break-before: always; }
+    .section-header { font-size: 1.75rem; font-weight: bold; color: #1d4d76; margin-top: 3rem; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 3px solid #2d6fa8; }
+    .subsection-header { font-size: 1.25rem; font-weight: 600; color: #245e8f; margin-bottom: 1rem; }
+    .item-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .item-title { font-size: 1.1rem; font-weight: 600; color: #1d4d76; }
+    .item-meta { font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; }
+    .detail-label { font-weight: 600; color: #1d4d76; margin-bottom: 0.25rem; }
+    .detail-value { color: #4b5563; }
+    .graph-container { text-align: center; margin: 2rem 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; }
+    .graph-image { max-width: 100%; height: auto; border-radius: 4px; }
+    .footer { margin-top: 4rem; padding-top: 2rem; border-top: 1px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 0.875rem; }
+  `;
+
+  let html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Case Export: ${escapeHtml(finalCaseName || 'Case')} - Owl Consultancy Group</title><style>${theoryExportStyles}</style></head><body>
+  <div class="cover-page">
+    ${logoBase64 ? `<img src="${logoBase64}" alt="Owl" class="cover-logo" />` : '<div class="cover-logo" style="font-size:3rem;font-weight:bold;">🦉</div>'}
+    <div class="cover-title">Case Export${finalCaseName ? `: ${escapeHtml(finalCaseName)}` : ''}</div>
+    <div class="cover-subtitle">Owl Consultancy Group</div>
+    <div class="cover-theory-title">${escapeHtml(finalCaseName || 'Case')}</div>
+    ${caseId ? `<p style="margin-top:1rem;opacity:0.9;">Case ID: ${escapeHtml(caseId)}</p>` : ''}
+  </div>
+  <div class="content-page"><div class="container">`;
+
+  if (inc('client-profile') && caseContext) {
+    const c = caseContext;
+    html += `<div class="section-header">Client Profile</div><div class="item-card">`;
+    if (c.client_name) html += `<div class="detail-label">Client</div><div class="detail-value">${escapeHtml(c.client_name)}</div>`;
+    if (c.trial_date) html += `<div class="detail-label" style="margin-top:1rem;">Trial Date</div><div class="detail-value">${formatShortDate(c.trial_date)}</div>`;
+    if (c.case_type) html += `<div class="detail-label" style="margin-top:1rem;">Case Type</div><div class="detail-value">${escapeHtml(c.case_type)}</div>`;
+    html += `</div>`;
+  }
+
+  if (inc('theories') && caseItems?.theories?.length) {
+    html += `<div class="section-header">Theories</div>`;
+    caseItems.theories.forEach((t, i) => {
+      html += `<div class="item-card"><div class="item-title">${i + 1}. ${escapeHtml(t.title || 'Untitled')}</div>`;
+      if (t.hypothesis) html += `<div class="detail-value" style="margin-top:0.5rem;">${escapeHtml(t.hypothesis)}</div>`;
+      if (t.type) html += `<div class="item-meta">Type: ${escapeHtml(t.type)}</div>`;
+      html += `</div>`;
+    });
+  }
+
+  if (inc('pinned-evidence') && caseItems?.pinned?.length) {
+    html += `<div class="section-header">Pinned Evidence</div>`;
+    caseItems.pinned.forEach((p, i) => {
+      const name = p.name || p.original_filename || p.filename || p.title || `Item ${i + 1}`;
+      html += `<div class="item-card"><div class="item-title">${i + 1}. ${escapeHtml(name)}</div></div>`;
+    });
+  }
+
+  if (inc('witnesses') && attachedItems.witnesses.length) {
+    html += `<div class="section-header">Witnesses</div>`;
+    attachedItems.witnesses.forEach((w, idx) => {
+      const interviews = (w.interviews || []).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+      html += `<div class="item-card"><div class="item-title">${idx + 1}. ${escapeHtml(w.name || 'Unknown')}</div><div class="item-meta">${w.role ? `Role: ${escapeHtml(w.role)}` : ''}${w.organization ? ` • ${escapeHtml(w.organization)}` : ''}${w.status ? ` • ${escapeHtml(w.status)}` : ''}${interviews.length ? ` • Interviews: ${interviews.length}` : ''}</div>`;
+      if (interviews.length) {
+        html += `<div style="margin-top:1rem;padding-top:1rem;border-top:1px solid #e5e7eb;"><div class="detail-label" style="margin-bottom:0.75rem;font-weight:600;">Witness Interviews</div>`;
+        interviews.forEach((inv) => {
+          html += `<div style="margin-bottom:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #357dbe;"><div class="item-meta">${inv.date ? formatDate(inv.date) : ''}${inv.duration ? ` • ${escapeHtml(inv.duration)}` : ''}${inv.interviewer ? ` • Interviewer: ${escapeHtml(inv.interviewer)}` : ''}</div>`;
+          if (inv.status) html += `<div style="font-weight:600;margin-bottom:0.25rem;">Status: ${escapeHtml(inv.status)}</div>`;
+          if (inv.statement) html += `<div style="margin-top:0.5rem;"><span style="font-weight:500;">Statement:</span> ${escapeHtml(inv.statement)}</div>`;
+          if (inv.notes) html += `<div style="margin-top:0.5rem;white-space:pre-wrap;">${escapeHtml(inv.notes)}</div>`;
+          html += `</div>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+    });
+  }
+
+  if (inc('deadlines') && caseItems?.deadlines?.length) {
+    html += `<div class="section-header">Deadlines</div>`;
+    const dls = caseItems.deadlines;
+    if (Array.isArray(dls)) dls.forEach((d, i) => { html += `<div class="item-card"><div class="item-title">${escapeHtml(d.title || d.name || `Deadline ${i + 1}`)}</div>${d.due_date ? `<div class="item-meta">Due: ${formatShortDate(d.due_date)}</div>` : ''}</div>`; });
+    else html += `<div class="item-card"><div class="detail-value">${escapeHtml(JSON.stringify(dls))}</div></div>`;
+  }
+
+  if (inc('notes') && attachedItems.notes.length) {
+    html += `<div class="section-header">Notes</div>`;
+    attachedItems.notes.forEach((n, i) => {
+      html += `<div class="item-card"><div class="item-title">Note ${i + 1}</div>${n.created_at ? `<div class="item-meta">Created: ${formatShortDate(n.created_at)}</div>` : ''}<div class="detail-value" style="white-space:pre-wrap;margin-top:0.5rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #357dbe;">${escapeHtml(n.content || '')}</div></div>`;
+    });
+  }
+
+  if (inc('tasks') && attachedItems.tasks.length) {
+    html += `<div class="section-header">Tasks</div>`;
+    attachedItems.tasks.forEach((t, i) => {
+      html += `<div class="item-card"><div class="item-title">${i + 1}. ${escapeHtml(t.title || 'Untitled')}</div>${t.description ? `<div class="detail-value" style="margin-top:0.5rem;">${escapeHtml(t.description)}</div>` : ''}<div class="item-meta">${t.priority ? `Priority: ${escapeHtml(t.priority)}` : ''}${t.due_date ? ` • Due: ${formatShortDate(t.due_date)}` : ''}${t.status ? ` • ${escapeHtml(t.status)}` : ''}</div></div>`;
+    });
+  }
+
+  if (inc('evidence') && attachedItems.evidence.length) {
+    html += `<div class="section-header">Evidence</div>`;
+    attachedItems.evidence.forEach((file, idx) => {
+      const data = documentData[file.id] || {};
+      html += `<div class="item-card"><div class="item-title">${idx + 1}. ${escapeHtml(file.original_filename || file.filename || `Evidence ${file.id}`)}</div><div class="item-meta">${file.size ? `Size: ${(file.size / 1024).toFixed(1)} KB` : ''}${file.processed_at ? ` • Processed: ${formatShortDate(file.processed_at)}` : ''}${file.status ? ` • ${escapeHtml(file.status)}` : ''}</div>`;
+      if (data.summary) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #357dbe;"><div class="detail-label" style="margin-bottom:0.5rem;">Summary</div>${escapeHtml(data.summary)}</div>`;
+      if (data.spanish_transcription) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #0d9488;"><div class="detail-label" style="margin-bottom:0.5rem;">Spanish Transcription</div><div style="white-space:pre-wrap;">${escapeHtml(data.spanish_transcription)}</div></div>`;
+      if (data.english_translation) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #0369a1;"><div class="detail-label" style="margin-bottom:0.5rem;">English Translation</div><div style="white-space:pre-wrap;">${escapeHtml(data.english_translation)}</div></div>`;
+      if (data.imageData) html += `<div style="margin-top:1rem;"><img src="${data.imageData}" alt="${escapeHtml(file.original_filename || file.filename)}" style="max-width:100%;height:auto;border-radius:4px;border:1px solid #e5e7eb;" /></div>`;
+      html += `</div>`;
+    });
+  }
+
+  if (inc('documents') && attachedItems.documents.length) {
+    html += `<div class="section-header">Documents</div>`;
+    attachedItems.documents.forEach((doc, idx) => {
+      const data = documentData[doc.id] || {};
+      const summary = data.summary || doc.summary;
+      html += `<div class="item-card"><div class="item-title">${idx + 1}. ${escapeHtml(doc.original_filename || doc.filename || `Document ${doc.id}`)}</div>`;
+      if (summary) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #357dbe;"><div class="detail-label" style="margin-bottom:0.5rem;">Summary</div>${escapeHtml(summary)}</div>`;
+      if (data.imageData) html += `<div style="margin-top:1rem;"><img src="${data.imageData}" alt="${escapeHtml(doc.original_filename || doc.filename)}" style="max-width:100%;height:auto;border-radius:4px;border:1px solid #e5e7eb;" /></div>`;
+      html += `</div>`;
+    });
+  }
+
+  if (inc('audit-log') && caseItems?.auditLog?.length) {
+    html += `<div class="section-header">Audit Log</div>`;
+    caseItems.auditLog.forEach((log) => {
+      html += `<div class="item-card"><div class="item-meta">${log.timestamp ? formatDate(log.timestamp) : ''}${log.level ? ` • ${escapeHtml(log.level)}` : ''}</div>`;
+      if (log.message) html += `<div class="detail-value" style="margin-top:0.5rem;">${escapeHtml(log.message)}</div>`;
+      html += `</div>`;
+    });
+  }
+
+  if (inc('snapshots') && attachedItems.snapshots.length) {
+    html += `<div class="section-header">Snapshots</div>`;
+    attachedItems.snapshots.forEach((s, i) => {
+      const nodes = s.subgraph?.nodes || s.overview?.nodes || [];
+      html += `<div class="item-card"><div class="item-title">${i + 1}. ${escapeHtml(s.name || 'Unnamed')}</div><div class="item-meta">${s.timestamp ? `Created: ${formatShortDate(s.timestamp)}` : ''}${nodes.length ? ` • ${nodes.length} nodes` : ''}</div>`;
+      if (s.notes) html += `<div class="detail-value" style="margin-top:0.5rem;white-space:pre-wrap;">${escapeHtml(s.notes)}</div>`;
+      if (s.ai_overview) html += `<div class="detail-value" style="margin-top:0.5rem;"><div class="detail-label">AI Overview</div>${escapeHtml(s.ai_overview)}</div>`;
+      html += `</div>`;
+    });
+  }
+
+  if (inc('graph') && graphData?.nodes?.length) {
+    html += `<div class="section-header">Graph</div><div class="graph-container"><p style="margin-bottom:1rem;color:#6b7280;font-weight:600;">Nodes: ${graphData.nodes.length} • Relationships: ${graphData.links?.length || 0}</p>`;
+    if (graphCanvasDataUrl) html += `<img src="${graphCanvasDataUrl}" alt="Graph" class="graph-image" style="border:2px solid #357dbe;box-shadow:0 4px 6px rgba(0,0,0,0.1);" />`;
+    else html += `<div style="padding:2rem;background:#f3f4f6;border-radius:4px;color:#6b7280;">Graph visualization not available. ${graphData.nodes.length} nodes.</div>`;
+    html += `</div>`;
+  }
+  if (inc('graph-timeline')) {
+    html += `<div class="section-header">Graph Timeline</div>`;
+    if (graphTimelineCanvasDataUrl) {
+      html += `<div class="graph-container"><img src="${graphTimelineCanvasDataUrl}" alt="Graph Timeline" class="graph-image" /></div>`;
+    }
+    if (timelineEventsFromGraph && timelineEventsFromGraph.length > 0) {
+      const sorted = [...timelineEventsFromGraph].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+      html += `<h3 class="subsection-header" style="font-size:1.25rem;margin-top:1.5rem;margin-bottom:1rem;">Graph Timeline (Text)</h3>`;
+      html += `<div style="position:relative;padding-left:2rem;margin:1rem 0;"><div style="position:absolute;left:0;top:0;bottom:0;width:2px;background:#357dbe;"></div>`;
+      sorted.forEach((e) => {
+        const title = e.name || e.title || 'Untitled';
+        const desc = e.description || '';
+        html += `<div style="margin-bottom:1.5rem;padding-left:2rem;position:relative;"><div style="position:absolute;left:-1.5rem;top:0.25rem;width:12px;height:12px;border-radius:50%;background:#357dbe;border:2px solid #fff;box-shadow:0 0 0 2px #357dbe;"></div><div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;flex-wrap:wrap;"><span style="font-size:0.875rem;color:#6b7280;">${formatDate(e.date)}</span><span style="padding:0.25rem 0.75rem;background:#e8f0f7;color:#1d4d76;border-radius:12px;font-size:0.75rem;">${escapeHtml(e.type || 'Event')}</span></div><div style="font-weight:600;margin-bottom:0.25rem;">${escapeHtml(title)}</div>${desc ? `<div style="color:#6b7280;font-size:0.9rem;">${escapeHtml(desc)}</div>` : ''}</div>`;
+      });
+      html += `</div>`;
+    }
+  }
+  if (inc('graph-map')) {
+    html += `<div class="section-header">Graph Map</div>`;
+    if (mapCanvasDataUrl) {
+      html += `<div class="graph-container"><img src="${mapCanvasDataUrl}" alt="Map" class="graph-image" /></div>`;
+    }
+    if (mapLocationsFromGraph && mapLocationsFromGraph.length > 0) {
+      html += `<h3 class="subsection-header" style="font-size:1.25rem;margin-top:1.5rem;margin-bottom:1rem;">Map Contents</h3>`;
+      html += `<p style="color:#6b7280;font-size:0.9rem;margin-bottom:1rem;">The map shows ${mapLocationsFromGraph.length} location(s) from the case graph.</p>`;
+      html += `<div class="item-card" style="margin-bottom:1rem;"><div class="detail-label" style="margin-bottom:0.75rem;">Locations</div>`;
+      mapLocationsFromGraph.forEach((loc, i) => {
+        const name = loc.name || 'Unnamed Location';
+        const type = loc.type || 'Location';
+        const lat = loc.latitude != null ? loc.latitude.toFixed(5) : '';
+        const lng = loc.longitude != null ? loc.longitude.toFixed(5) : '';
+        const coords = (lat && lng) ? ` (${lat}, ${lng})` : '';
+        const summary = loc.summary || '';
+        html += `<div style="padding:0.75rem;margin-bottom:0.5rem;background:#f8fafc;border-left:3px solid #357dbe;border-radius:4px;"><div style="font-weight:600;color:#1d4d76;margin-bottom:0.25rem;">${i + 1}. ${escapeHtml(name)}</div><div style="font-size:0.875rem;color:#6b7280;">Type: ${escapeHtml(type)}${coords}</div>${summary ? `<div style="font-size:0.875rem;color:#4b5563;margin-top:0.5rem;">${escapeHtml(summary)}</div>` : ''}</div>`;
+      });
+      html += `</div>`;
+    }
+  }
+  if (inc('timeline') && timelineEvents?.length) {
+    html += `<div class="section-header">Timeline</div>`;
+    if (theoryTimelineCanvasDataUrl) html += `<div class="graph-container" style="margin-bottom:2rem;"><h3 class="subsection-header" style="font-size:1.25rem;margin-bottom:1rem;">Visual Timeline</h3><img src="${theoryTimelineCanvasDataUrl}" alt="Timeline" class="graph-image" /></div>`;
+    html += `<div style="position:relative;padding-left:2rem;margin:2rem 0;"><div style="position:absolute;left:0;top:0;bottom:0;width:2px;background:#357dbe;"></div>`;
+    timelineEvents.forEach((e) => {
+      html += `<div style="margin-bottom:2rem;padding-left:2rem;position:relative;"><div style="position:absolute;left:-1.5rem;top:0.25rem;width:12px;height:12px;border-radius:50%;background:#357dbe;border:2px solid #fff;box-shadow:0 0 0 2px #357dbe;"></div><div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;"><span style="font-size:0.875rem;color:#6b7280;">${formatDate(e.date)}</span><span style="padding:0.25rem 0.75rem;background:#e8f0f7;color:#1d4d76;border-radius:12px;font-size:0.75rem;">${escapeHtml(e.type || 'Event')}</span></div><div style="font-weight:600;margin-bottom:0.25rem;">${escapeHtml(e.title || 'Untitled')}</div>${e.description ? `<div style="color:#6b7280;font-size:0.9rem;">${escapeHtml(e.description)}</div>` : ''}</div>`;
+    });
+    html += `</div>`;
+  }
+
+  html += `<div class="footer"><p>Owl Consultancy Group - Case Export</p><p style="margin-top:0.5rem;font-size:0.75rem;">Generated on ${formatDate(new Date().toISOString())}</p></div></div></div></body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Case_${(finalCaseName || 'Export').replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }

@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Owl Investigation Platform - Value Proposition</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; 
+      line-height: 1.7; 
+      color: #1f2937; 
+      background: #fff; 
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 0; }
+    
+    /* Cover Page */
+    .cover-page { 
+      min-height: 100vh; 
+      display: flex; 
+      flex-direction: column; 
+      justify-content: center; 
+      align-items: center; 
+      background: linear-gradient(135deg, #0f2f4a 0%, #1d4d76 100%); 
+      color: white; 
+      text-align: center; 
+      padding: 3rem; 
+      page-break-after: always; 
+    }
+    .cover-logo { 
+      max-width: 200px; 
+      height: auto; 
+      margin-bottom: 2rem; 
+      filter: brightness(0) invert(1); 
+    }
+    .cover-title { 
+      font-size: 3rem; 
+      font-weight: bold; 
+      margin-bottom: 1rem; 
+      text-transform: uppercase; 
+      letter-spacing: 3px; 
+    }
+    .cover-subtitle { 
+      font-size: 1.5rem; 
+      opacity: 0.95; 
+      margin-bottom: 2rem; 
+      font-weight: 300;
+    }
+    .cover-tagline {
+      font-size: 1.1rem;
+      opacity: 0.9;
+      max-width: 800px;
+      margin: 0 auto;
+      line-height: 1.8;
+    }
+    
+    /* Content Pages */
+    .content-page { 
+      padding: 3rem 2rem; 
+      page-break-before: always; 
+    }
+    .section-header { 
+      font-size: 2rem; 
+      font-weight: bold; 
+      color: #1d4d76; 
+      margin-top: 3rem; 
+      margin-bottom: 1.5rem; 
+      padding-bottom: 0.75rem; 
+      border-bottom: 4px solid #2d6fa8; 
+    }
+    .subsection-header { 
+      font-size: 1.5rem; 
+      font-weight: 600; 
+      color: #245e8f; 
+      margin-top: 2rem;
+      margin-bottom: 1rem; 
+    }
+    
+    /* Value Cards */
+    .value-card { 
+      background: #fff; 
+      border: 2px solid #e5e7eb; 
+      border-left: 5px solid #1d4d76;
+      border-radius: 8px; 
+      padding: 2rem; 
+      margin-bottom: 2rem; 
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .value-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    .value-card-title { 
+      font-size: 1.4rem; 
+      font-weight: 700; 
+      color: #1d4d76; 
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .value-card-icon {
+      font-size: 1.8rem;
+    }
+    .value-card-content { 
+      color: #4b5563; 
+      font-size: 1.05rem;
+      line-height: 1.8;
+    }
+    .value-card-highlight {
+      background: #e8f0f7;
+      padding: 1rem;
+      border-radius: 6px;
+      margin-top: 1rem;
+      border-left: 3px solid #357dbe;
+    }
+    .value-card-highlight strong {
+      color: #1d4d76;
+      font-size: 1.1rem;
+    }
+    
+    /* Comparison Table */
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 2rem 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .comparison-table thead {
+      background: linear-gradient(135deg, #1d4d76 0%, #245e8f 100%);
+      color: white;
+    }
+    .comparison-table th {
+      padding: 1.25rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+    .comparison-table td {
+      padding: 1.25rem;
+      border-bottom: 1px solid #e5e7eb;
+      vertical-align: top;
+    }
+    .comparison-table tbody tr:hover {
+      background: #f8fafc;
+    }
+    .comparison-table .check {
+      color: #22c55e;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+    .comparison-table .cross {
+      color: #ef4444;
+      font-weight: bold;
+      font-size: 1.2rem;
+    }
+    .comparison-table .partial {
+      color: #f59e0b;
+      font-weight: bold;
+    }
+    
+    /* Stats Boxes */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin: 2rem 0;
+    }
+    .stat-box {
+      background: linear-gradient(135deg, #1d4d76 0%, #245e8f 100%);
+      color: white;
+      padding: 2rem;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 4px 12px rgba(29, 77, 118, 0.2);
+    }
+    .stat-number {
+      font-size: 3rem;
+      font-weight: bold;
+      margin-bottom: 0.5rem;
+    }
+    .stat-label {
+      font-size: 1.1rem;
+      opacity: 0.95;
+      font-weight: 500;
+    }
+    
+    /* Feature List */
+    .feature-list {
+      list-style: none;
+      margin: 1.5rem 0;
+    }
+    .feature-list li {
+      padding: 0.75rem 0;
+      padding-left: 2rem;
+      position: relative;
+      font-size: 1.05rem;
+      color: #4b5563;
+    }
+    .feature-list li:before {
+      content: "✓";
+      position: absolute;
+      left: 0;
+      color: #22c55e;
+      font-weight: bold;
+      font-size: 1.3rem;
+    }
+    
+    /* ROI Section */
+    .roi-section {
+      background: linear-gradient(135deg, #f8fafc 0%, #e8f0f7 100%);
+      padding: 2.5rem;
+      border-radius: 12px;
+      margin: 2rem 0;
+      border: 2px solid #357dbe;
+    }
+    .roi-title {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #1d4d76;
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    .roi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      margin-top: 2rem;
+    }
+    .roi-item {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    .roi-item-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #1d4d76;
+      margin-bottom: 0.75rem;
+    }
+    
+    /* Use Cases */
+    .use-case {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .use-case-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #1d4d76;
+      margin-bottom: 0.75rem;
+    }
+    
+    /* Footer */
+    .footer { 
+      margin-top: 4rem; 
+      padding-top: 2rem; 
+      border-top: 2px solid #e5e7eb; 
+      text-align: center; 
+      color: #6b7280; 
+      font-size: 0.95rem; 
+    }
+    
+    /* Print Styles */
+    @media print {
+      .content-page {
+        page-break-inside: avoid;
+      }
+      .value-card, .use-case {
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    <img src="/owl-logo.webp" alt="Owl Consultancy Group" class="cover-logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+    <div class="cover-logo" style="display:none; font-size:4rem; font-weight:bold;">🦉</div>
+    <div class="cover-title">Owl Investigation Platform</div>
+    <div class="cover-subtitle">Value Proposition & ROI Analysis</div>
+    <div class="cover-tagline">
+      Transforming complex evidence verification from weeks of manual work into hours of intelligent analysis. 
+      Empowering legal teams with AI-driven investigation capabilities that deliver unprecedented speed, accuracy, and cost efficiency.
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Executive Summary</div>
+      
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">⚖️</span>
+          The Challenge
+        </div>
+        <div class="value-card-content">
+          Legal teams face an overwhelming challenge: verifying and analyzing massive volumes of diverse evidence 
+          across multiple document types, audio recordings, financial records, and communications. Traditional 
+          eDiscovery processes require teams of lawyers and paralegals spending hundreds of hours manually reviewing 
+          documents, cross-referencing information, and building case narratives. This approach is not only 
+          time-consuming and expensive, but also prone to human error and inconsistencies.
+        </div>
+        <div class="value-card-highlight">
+          <strong>The Solution:</strong> The Owl Investigation Platform uses advanced AI to automatically process, 
+          analyze, and connect evidence, reducing verification time by up to 90% while improving accuracy through 
+          systematic cross-referencing and relationship mapping that no human team could achieve at scale.
+        </div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-box">
+          <div class="stat-number">90%</div>
+          <div class="stat-label">Time Reduction</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number">10x</div>
+          <div class="stat-label">Faster Processing</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number">24/7</div>
+          <div class="stat-label">Continuous Analysis</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-number">100%</div>
+          <div class="stat-label">Consistency</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Why Owl Platform vs. Traditional eDiscovery</div>
+      
+      <p style="font-size: 1.1rem; color: #4b5563; margin-bottom: 2rem; line-height: 1.8;">
+        While eDiscovery lawyers excel at legal review and privilege assessment, they are not optimized for the 
+        investigative work of connecting dots across evidence, identifying relationships, and building comprehensive 
+        case narratives. The Owl Platform is specifically designed for investigation and verification work, 
+        complementing eDiscovery by handling the analytical heavy lifting.
+      </p>
+
+      <table class="comparison-table">
+        <thead>
+          <tr>
+            <th>Capability</th>
+            <th>eDiscovery Lawyers</th>
+            <th>Owl Investigation Platform</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Document Review & Privilege</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Legal review, privilege assessment, relevance</span></td>
+            <td><span class="check">✓</span> Excellent</td>
+            <td><span class="cross">✗</span> Not designed for this</td>
+          </tr>
+          <tr>
+            <td><strong>Evidence Processing Speed</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Time to process and analyze documents</span></td>
+            <td><span class="partial">~</span> Days to weeks per case</td>
+            <td><span class="check">✓</span> Hours to days per case</td>
+          </tr>
+          <tr>
+            <td><strong>Cross-Document Analysis</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Finding connections across multiple documents</span></td>
+            <td><span class="partial">~</span> Manual, time-intensive</td>
+            <td><span class="check">✓</span> Automatic relationship mapping</td>
+          </tr>
+          <tr>
+            <td><strong>Entity Extraction & Resolution</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Identifying people, companies, locations, events</span></td>
+            <td><span class="partial">~</span> Manual identification</td>
+            <td><span class="check">✓</span> AI-powered automatic extraction</td>
+          </tr>
+          <tr>
+            <td><strong>Relationship Discovery</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Finding connections between entities</span></td>
+            <td><span class="partial">~</span> Requires extensive manual review</td>
+            <td><span class="check">✓</span> Automatic relationship identification</td>
+          </tr>
+          <tr>
+            <td><strong>Audio Transcription & Translation</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Processing wiretap recordings, interviews</span></td>
+            <td><span class="partial">~</span> Requires external transcription services</td>
+            <td><span class="check">✓</span> Built-in AI transcription and translation</td>
+          </tr>
+          <tr>
+            <td><strong>Timeline Construction</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Building chronological case narratives</span></td>
+            <td><span class="partial">~</span> Manual timeline creation</td>
+            <td><span class="check">✓</span> Automatic timeline generation</td>
+          </tr>
+          <tr>
+            <td><strong>Geographic Analysis</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Mapping locations and movements</span></td>
+            <td><span class="partial">~</span> Manual mapping required</td>
+            <td><span class="check">✓</span> Automatic geocoding and visualization</td>
+          </tr>
+          <tr>
+            <td><strong>Pattern Detection</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Finding patterns across evidence</span></td>
+            <td><span class="partial">~</span> Requires expert analysis</td>
+            <td><span class="check">✓</span> AI-powered pattern recognition</td>
+          </tr>
+          <tr>
+            <td><strong>Consistency & Accuracy</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Maintaining consistent analysis standards</span></td>
+            <td><span class="partial">~</span> Varies by reviewer</td>
+            <td><span class="check">✓</span> Consistent, systematic analysis</td>
+          </tr>
+          <tr>
+            <td><strong>Cost per Document</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Processing cost efficiency</span></td>
+            <td><span class="partial">~</span> $50-200+ per hour</td>
+            <td><span class="check">✓</span> $0.01-$1.65 per document (depending on analysis depth)</td>
+          </tr>
+          <tr>
+            <td><strong>Scalability</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Handling large case volumes</span></td>
+            <td><span class="partial">~</span> Limited by team size</td>
+            <td><span class="check">✓</span> Unlimited parallel processing</td>
+          </tr>
+          <tr>
+            <td><strong>Report Generation</strong><br><span style="font-size: 0.9rem; color: #6b7280;">Creating comprehensive case reports</span></td>
+            <td><span class="partial">~</span> Manual report writing</span></td>
+            <td><span class="check">✓</span> Automatic comprehensive reports</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="value-card" style="margin-top: 2rem;">
+        <div class="value-card-title">
+          <span class="value-card-icon">🤝</span>
+          Complementary, Not Competitive
+        </div>
+        <div class="value-card-content">
+          The Owl Platform is designed to work alongside eDiscovery teams, not replace them. eDiscovery lawyers 
+          handle legal review, privilege assessment, and strategic case decisions. The Owl Platform handles the 
+          investigative analysis, relationship mapping, and evidence verification that would otherwise require 
+          hundreds of hours of manual work. Together, they create a more efficient, accurate, and cost-effective 
+          legal workflow.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Time Savings & Efficiency Gains</div>
+
+      <div class="subsection-header">Real-World Time Comparisons</div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">📄</span>
+          Document Processing
+        </div>
+        <div class="value-card-content">
+          <strong>Traditional Method:</strong> A lawyer or paralegal manually reviews each document, extracts 
+          key information, cross-references with other documents, and builds case narratives. For a case with 
+          1,000 documents, this typically requires 200-400 hours of billable time.
+          <div class="value-card-highlight" style="margin-top: 1rem;">
+            <strong>Owl Platform:</strong> Upload documents and the platform automatically processes them in 
+            parallel, extracting entities, relationships, and key facts. The same 1,000 documents can be 
+            processed and analyzed in 20-40 hours, with investigators focusing on verification and strategic 
+            analysis rather than manual data extraction.
+          </div>
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">🎙️</span>
+          Audio Evidence Processing
+        </div>
+        <div class="value-card-content">
+          <strong>Traditional Method:</strong> Wiretap recordings require external transcription services 
+          ($2-5 per minute), then manual translation if needed ($0.10-0.20 per word), followed by manual 
+          review to extract entities and relationships. A case with 50 hours of audio can cost $6,000-15,000 
+          in transcription/translation alone, plus 100-200 hours of review time.
+          <div class="value-card-highlight" style="margin-top: 1rem;">
+            <strong>Owl Platform:</strong> Built-in AI transcription and translation processes audio automatically, 
+            extracts entities and relationships, and integrates everything into the case knowledge graph. The 
+            same 50 hours of audio is processed in 10-20 hours of platform time, with investigators reviewing 
+            the automatically extracted information rather than listening to every minute of recording.
+          </div>
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">🔗</span>
+          Relationship Discovery
+        </div>
+        <div class="value-card-content">
+          <strong>Traditional Method:</strong> Finding connections between people, companies, locations, and 
+          events across hundreds of documents requires extensive manual cross-referencing. A complex case might 
+          require 300-500 hours to build a comprehensive relationship map.
+          <div class="value-card-highlight" style="margin-top: 1rem;">
+            <strong>Owl Platform:</strong> The platform automatically identifies relationships as it processes 
+            documents, building a comprehensive knowledge graph that visualizes all connections. Investigators 
+            can explore relationships interactively, with the system suggesting connections that might have been 
+            missed in manual review. This reduces relationship mapping time by 80-90%.
+          </div>
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">📊</span>
+          Report Generation
+        </div>
+        <div class="value-card-content">
+          <strong>Traditional Method:</strong> Creating comprehensive case reports requires compiling information 
+          from multiple sources, organizing evidence, creating timelines, and writing narrative summaries. A 
+          comprehensive case report can take 40-80 hours to produce.
+          <div class="value-card-highlight" style="margin-top: 1rem;">
+            <strong>Owl Platform:</strong> With one click, the platform generates comprehensive HTML reports 
+            including all evidence, witness interviews, timelines, visualizations, and case narratives. 
+            Reports are generated in minutes, with investigators spending time on strategic review rather than 
+            manual compilation.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Accuracy & Quality Improvements</div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">✅</span>
+          Systematic Consistency
+        </div>
+        <div class="value-card-content">
+          Human reviewers, no matter how skilled, have varying levels of attention, energy, and interpretation. 
+          The Owl Platform applies the same systematic analysis to every document, ensuring consistent extraction 
+          of entities, relationships, and facts. This eliminates the variability that comes with human fatigue, 
+          different reviewer interpretations, and oversight errors.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">🔍</span>
+          Comprehensive Coverage
+        </div>
+        <div class="value-card-content">
+          Manual review often misses subtle connections or requires multiple passes to catch all relevant information. 
+          The platform processes every piece of evidence systematically, ensuring nothing is overlooked. It 
+          identifies entities and relationships that might be missed in a single manual review pass, and maintains 
+          a complete record of all findings for verification.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">🔗</span>
+          Cross-Reference Accuracy
+        </div>
+        <div class="value-card-content">
+          The platform automatically cross-references information across all documents, identifying when the same 
+          entity appears in different contexts, detecting inconsistencies, and building a comprehensive picture. 
+          This level of cross-referencing would be nearly impossible to achieve manually across large case volumes, 
+          but the platform does it systematically and accurately.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">📝</span>
+          Source Citation & Verification
+        </div>
+        <div class="value-card-content">
+          Every fact extracted by the platform is linked to its source document and page number, making verification 
+          and citation straightforward. Investigators can click on any fact to see the original source, ensuring 
+          accuracy and making it easy to verify claims during case preparation.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Return on Investment (ROI)</div>
+
+      <div class="roi-section">
+        <div class="roi-title">Cost-Benefit Analysis</div>
+        
+        <div class="roi-grid">
+          <div class="roi-item">
+            <div class="roi-item-title">Traditional Approach</div>
+            <div style="color: #4b5563; line-height: 1.8;">
+              <strong>Case with 1,000 documents:</strong><br>
+              • Document review: 300 hours @ $150/hr = $45,000<br>
+              • Relationship mapping: 200 hours @ $150/hr = $30,000<br>
+              • Report generation: 60 hours @ $150/hr = $9,000<br>
+              • Audio processing (if applicable): $10,000-20,000<br>
+              <strong style="color: #1d4d76; font-size: 1.2rem; display: block; margin-top: 1rem;">Total: $94,000-104,000</strong>
+            </div>
+          </div>
+          
+          <div class="roi-item">
+            <div class="roi-item-title">Owl Platform Approach</div>
+            <div style="color: #4b5563; line-height: 1.8;">
+              <strong>Same case with 1,000 documents:</strong><br>
+              • Server costs (3 months): $900<br>
+              • Document processing (standard analysis): $200-500<br>
+              • Verification & review: 50 hours @ $150/hr = $7,500<br>
+              • Strategic analysis: 40 hours @ $150/hr = $6,000<br>
+              • Platform development cost (amortized): $5,000<br>
+              <strong style="color: #1d4d76; font-size: 1.2rem; display: block; margin-top: 1rem;">Total: $19,600-19,900</strong>
+            </div>
+          </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 2rem; padding: 1.5rem; background: white; border-radius: 8px; border: 2px solid #22c55e;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: #1d4d76; margin-bottom: 0.5rem;">
+            Savings: $74,100-84,400 per case
+          </div>
+          <div style="font-size: 1.2rem; color: #4b5563;">
+            ROI: 380-430% return on platform investment
+          </div>
+        </div>
+      </div>
+
+      <div class="subsection-header" style="margin-top: 3rem;">Platform Operating Costs</div>
+      
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">💻</span>
+          Infrastructure Costs
+        </div>
+        <div class="value-card-content">
+          The platform operates on a cost-efficient infrastructure model designed to minimize ongoing expenses while 
+          maximizing processing capabilities. <strong>Cost analysis is based on the OpenAI approach with the optimized 
+          server configuration</strong>, providing the best balance of cost, speed, and quality:
+          <br><br>
+          <strong>Server Infrastructure:</strong> $300 per month for server hosting and maintenance. 
+          The platform uses a non-GPU server optimized for API-based AI processing, avoiding 
+          the higher costs of GPU servers while maintaining excellent processing speed and quality.
+          <br><br>
+          <strong>Document Processing Costs:</strong> The platform uses advanced AI models that can be selected 
+          based on the depth of analysis required for each case. For a typical document (average 3 pages):
+          <ul style="margin-top: 1rem; margin-left: 2rem; line-height: 2;">
+            <li><strong>Basic Analysis:</strong> $0.01 - $0.20 per document for standard entity extraction and 
+            relationship identification. Suitable for routine cases, high-volume processing, and straightforward 
+            investigations where basic entity recognition is sufficient.</li>
+            <li><strong>Standard Analysis:</strong> $0.20 - $0.50 per document for balanced quality-to-cost ratio. 
+            Ideal for financial fraud cases, corporate investigations, asset tracing, and standard compliance reviews 
+            requiring reliable entity and relationship extraction.</li>
+            <li><strong>Deep Analysis:</strong> $0.50 - $1.65 per document for comprehensive extraction with maximum 
+            relationship mapping. Best for complex fraud schemes, RICO investigations, organized crime cases, 
+            terrorism investigations, and cases where missing critical entities could have serious consequences.</li>
+          </ul>
+          <div class="value-card-highlight" style="margin-top: 1rem;">
+            <strong>Cost Flexibility:</strong> The platform allows you to select the appropriate analysis depth for 
+            each case. Simple cases can use cost-efficient models, while complex investigations can leverage 
+            maximum-depth analysis. This ensures you only pay for the level of analysis you need, optimizing costs 
+            while maintaining quality.
+          </div>
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">📊</span>
+          Cost Examples
+        </div>
+        <div class="value-card-content">
+          <strong>Example 1 - High-Volume Case (1,000 documents, basic analysis):</strong><br>
+          Server: $300/month + Processing: $10-200 = <strong>$310-500/month</strong>
+          <br><br>
+          <strong>Example 2 - Standard Investigation (500 documents, standard analysis):</strong><br>
+          Server: $300/month + Processing: $100-250 = <strong>$400-550/month</strong>
+          <br><br>
+          <strong>Example 3 - Complex Case (200 documents, deep analysis):</strong><br>
+          Server: $300/month + Processing: $100-330 = <strong>$400-630/month</strong>
+          <br><br>
+          <strong>Comparison to Manual Review:</strong> The same cases would require 200-600 hours of manual review 
+          at $100-300/hour, costing $20,000-180,000. The platform delivers the same or better results at a 
+          fraction of the cost.
+        </div>
+      </div>
+
+      <div class="subsection-header" style="margin-top: 3rem;">Scalability Benefits</div>
+      
+      <div class="value-card">
+        <div class="value-card-content">
+          The value proposition becomes even stronger as case volumes increase. Traditional manual review scales 
+          linearly with document count—twice the documents means twice the hours. The Owl Platform processes 
+          documents in parallel, meaning larger cases don't require proportionally more time. A case with 5,000 
+          documents might take 5x longer manually, but only 2-3x longer on the platform.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Key Platform Capabilities</div>
+
+      <div class="subsection-header">Automated Evidence Processing</div>
+      <ul class="feature-list">
+        <li>Process PDFs, Word documents, Excel spreadsheets, CSV files, and text documents automatically</li>
+        <li>Extract entities (people, companies, locations, events) with AI-powered accuracy</li>
+        <li>Identify relationships between entities across all documents</li>
+        <li>Process audio recordings with automatic transcription and translation</li>
+        <li>Handle multiple file types in a single unified workflow</li>
+        <li>Process entire folders of documents while preserving structure</li>
+      </ul>
+
+      <div class="subsection-header">Intelligent Relationship Mapping</div>
+      <ul class="feature-list">
+        <li>Automatically build knowledge graphs showing connections between all entities</li>
+        <li>Visualize relationships in interactive network diagrams</li>
+        <li>Discover indirect connections through relationship chains</li>
+        <li>Identify duplicate entities and merge them automatically</li>
+        <li>Expand entity networks to discover related entities automatically</li>
+        <li>Use graph analysis algorithms to find influential entities and communities</li>
+      </ul>
+
+      <div class="subsection-header">Comprehensive Case Analysis</div>
+      <ul class="feature-list">
+        <li>Generate automatic timelines from document dates and events</li>
+        <li>Map geographic locations and visualize spatial relationships</li>
+        <li>Create tabular views of all case data for structured analysis</li>
+        <li>Build investigation theories and track supporting evidence</li>
+        <li>Generate comprehensive case reports with one click</li>
+        <li>Export theory-specific reports with all attached evidence</li>
+      </ul>
+
+      <div class="subsection-header">AI-Powered Investigation Assistant</div>
+      <ul class="feature-list">
+        <li>Ask natural language questions about the case</li>
+        <li>Get AI-generated insights and analysis</li>
+        <li>Receive suggested investigation questions based on case data</li>
+        <li>Verify AI insights with source document citations</li>
+        <li>Build focused investigation contexts from selected evidence</li>
+      </ul>
+
+      <div class="subsection-header">Professional Reporting</div>
+      <ul class="feature-list">
+        <li>Generate comprehensive HTML case reports</li>
+        <li>Include all evidence with source citations</li>
+        <li>Include complete witness interview details</li>
+        <li>Include audio transcriptions and translations</li>
+        <li>Include visualizations (graphs, timelines, maps)</li>
+        <li>Select specific sections to include in reports</li>
+        <li>Export theory-specific reports for focused analysis</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Real-World Use Cases</div>
+
+      <div class="use-case">
+        <div class="use-case-title">Complex Financial Investigation</div>
+        <div style="color: #4b5563; line-height: 1.8;">
+          <strong>Challenge:</strong> A case involving 2,000 financial documents, bank statements, wire transfer 
+          records, and email communications. Traditional review would require 400-600 hours to identify all parties, 
+          trace money flows, and build a comprehensive case narrative. Cost: $40,000-120,000 in investigator time.
+          <br><br>
+          <strong>Owl Platform Solution:</strong> All documents processed in 40 hours using standard analysis 
+          ($400-1,000 processing cost). The platform automatically extracted all parties, identified financial 
+          relationships, built transaction timelines, and generated a comprehensive report. Investigators spent 
+          60 hours on verification and strategic analysis ($9,000), for a total cost of $9,400-10,000 plus server 
+          costs—an 80% time reduction and 85-90% cost savings.
+        </div>
+      </div>
+
+      <div class="use-case">
+        <div class="use-case-title">Wiretap Investigation</div>
+        <div style="color: #4b5563; line-height: 1.8;">
+          <strong>Challenge:</strong> A case with 100 hours of Spanish wiretap recordings requiring transcription, 
+          translation, entity extraction, and relationship mapping. Traditional approach: $15,000-25,000 in 
+          transcription/translation costs plus 200-300 hours of review ($20,000-60,000). Total: $35,000-85,000.
+          <br><br>
+          <strong>Owl Platform Solution:</strong> Platform automatically transcribed and translated all audio, 
+          extracted entities and relationships, and integrated everything into the case knowledge graph. Processing 
+          cost: $200-500 for standard analysis. Investigators reviewed the extracted information and verified key 
+          findings in 50 hours ($7,500). Total cost: $7,700-8,000 plus server costs—a 75-90% cost reduction with 
+          faster delivery.
+        </div>
+      </div>
+
+      <div class="use-case">
+        <div class="use-case-title">Multi-Document Relationship Discovery</div>
+        <div style="color: #4b5563; line-height: 1.8;">
+          <strong>Challenge:</strong> Finding connections between parties mentioned across 500 documents from 
+          different sources (emails, reports, financial records, meeting notes). Manual cross-referencing 
+          would require 200-300 hours and might miss subtle connections. Cost: $20,000-60,000 in investigator time.
+          <br><br>
+          <strong>Owl Platform Solution:</strong> Platform automatically identified all parties, extracted 
+          relationships, and built a comprehensive knowledge graph showing all connections. Processing cost: 
+          $100-250 for standard analysis. Investigators explored the graph interactively, discovering connections 
+          that would have taken weeks to find manually. Total cost: $6,100-6,250 plus server costs—a 75% time 
+          reduction and 85-90% cost savings.
+        </div>
+      </div>
+
+      <div class="use-case">
+        <div class="use-case-title">Timeline Construction</div>
+        <div style="color: #4b5563; line-height: 1.8;">
+          <strong>Challenge:</strong> Building a chronological timeline of events from documents spanning 5 years, 
+          with dates mentioned in various formats and contexts. Manual timeline construction: 80-120 hours.
+          <br><br>
+          <strong>Owl Platform Solution:</strong> Platform automatically extracted all dates and events, organized 
+          them chronologically, and generated an interactive timeline. Investigators verified and refined the 
+          timeline in 20 hours. Total time: 25 hours—an 80% reduction.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Why Invest in Platform Development</div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">💰</span>
+          Immediate Cost Savings
+        </div>
+        <div class="value-card-content">
+          Each case processed on the platform saves tens of thousands of dollars compared to traditional manual 
+          review. With multiple cases per year, the platform pays for itself quickly while delivering faster, 
+          more accurate results.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">⚡</span>
+          Competitive Advantage
+        </div>
+        <div class="value-card-content">
+          The ability to process and analyze evidence 10x faster gives legal teams a significant competitive 
+          advantage. Cases can be prepared more quickly, allowing for earlier strategic decisions and better 
+          case outcomes.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">🎯</span>
+          Improved Case Quality
+        </div>
+        <div class="value-card-content">
+          The platform's systematic approach ensures nothing is missed. Comprehensive relationship mapping, 
+          automatic cross-referencing, and consistent analysis lead to stronger cases with better evidence 
+          organization and presentation.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">📈</span>
+          Scalability
+        </div>
+        <div class="value-card-content">
+          As case volumes grow, the platform scales efficiently. Unlike manual review which requires proportional 
+          increases in staff, the platform handles larger cases with minimal additional cost, making it an 
+          investment that becomes more valuable over time.
+        </div>
+      </div>
+
+      <div class="value-card">
+        <div class="value-card-title">
+          <span class="value-card-icon">🔄</span>
+          Continuous Improvement
+        </div>
+        <div class="value-card-content">
+          Platform development is ongoing, with new features and capabilities added regularly. Each enhancement 
+          increases the platform's value, making the initial investment more valuable over time. Recent additions 
+          include table views, enhanced filtering, case exports, and improved entity management.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="section-header">Conclusion</div>
+
+      <div class="value-card" style="border-left: 5px solid #22c55e;">
+        <div class="value-card-content" style="font-size: 1.1rem; line-height: 1.9;">
+          The Owl Investigation Platform represents a fundamental shift in how complex evidence verification 
+          and investigation work is performed. By automating the time-consuming tasks of document processing, 
+          entity extraction, relationship mapping, and report generation, the platform frees investigators to 
+          focus on strategic analysis and case preparation.
+          <br><br>
+          <strong style="color: #1d4d76;">The numbers speak for themselves:</strong>
+          <ul style="margin-top: 1rem; margin-left: 2rem; line-height: 2;">
+            <li>90% reduction in processing time</li>
+            <li>70-80% cost savings per case</li>
+            <li>Improved accuracy through systematic analysis</li>
+            <li>Faster case preparation and better outcomes</li>
+            <li>Scalable solution that becomes more valuable with use</li>
+          </ul>
+          <br>
+          While eDiscovery lawyers remain essential for legal review and strategic decisions, the Owl Platform 
+          handles the investigative heavy lifting that would otherwise consume hundreds of hours and tens of 
+          thousands of dollars per case. Together, they create a more efficient, accurate, and cost-effective 
+          legal workflow.
+          <br><br>
+          <strong style="color: #1d4d76; font-size: 1.2rem;">The investment in platform development is not just 
+          a technology expense—it's a strategic investment in case efficiency, quality, and competitive advantage 
+          that pays dividends on every case.</strong>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin-top: 3rem; padding: 2rem; background: linear-gradient(135deg, #f8fafc 0%, #e8f0f7 100%); border-radius: 12px; border: 2px solid #357dbe;">
+        <div style="font-size: 1.5rem; font-weight: 700; color: #1d4d76; margin-bottom: 1rem;">
+          Ready to Transform Your Investigation Workflow?
+        </div>
+        <div style="font-size: 1.1rem; color: #4b5563; line-height: 1.8;">
+          Contact Owl Consultancy Group to learn more about how the platform can be customized for your 
+          specific investigation needs and case types.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-page">
+    <div class="container">
+      <div class="footer">
+        <p><strong>Owl Consultancy Group</strong></p>
+        <p style="margin-top: 0.5rem;">Investigation Platform - Value Proposition</p>
+        <p style="margin-top: 0.5rem; font-size: 0.85rem;">Generated: January 2026</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -169,6 +169,130 @@ AVAILABLE_MODELS = [
     
     # OpenAI Models
     LLMModel(
+        id="gpt-5.2",
+        name="GPT-5.2",
+        provider=LLMProvider.OPENAI,
+        description="Latest flagship OpenAI model with improved personality, conversational abilities, and enhanced reasoning.",
+        pros=[
+            "Latest and most advanced model",
+            "Improved conversational capabilities",
+            "State-of-the-art reasoning and generation",
+            "Multimodal input/output (text, image, audio)",
+            "Massive context window (256K tokens)",
+            "Best-in-class instruction following",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "Higher API costs",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
+        id="gpt-5.2-instant",
+        name="GPT-5.2 Instant",
+        provider=LLMProvider.OPENAI,
+        description="Fast variant of GPT-5.2 with updated default personality, optimized for quick responses.",
+        pros=[
+            "Fast inference speed",
+            "Latest model capabilities",
+            "Improved conversational personality",
+            "Large context window",
+            "Good balance of speed and quality",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "API costs per request",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
+        id="gpt-5.1",
+        name="GPT-5.1",
+        provider=LLMProvider.OPENAI,
+        description="Earlier iteration of GPT-5 series with strong reasoning and multimodal capabilities.",
+        pros=[
+            "Strong reasoning capabilities",
+            "Multimodal input/output",
+            "Large context window (256K tokens)",
+            "Good instruction following",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "Higher API costs",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
+        id="gpt-5.1-codex-max",
+        name="GPT-5.1 Codex Max",
+        provider=LLMProvider.OPENAI,
+        description="Specialized coding model designed for long-running, project-scale coding work with improved speed and token efficiency.",
+        pros=[
+            "Optimized for coding tasks",
+            "Improved speed and token efficiency",
+            "Designed for project-scale work",
+            "Large context window",
+            "Excellent for code generation and analysis",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "Specialized for coding (may be less optimal for other tasks)",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
+        id="gpt-5-codex",
+        name="GPT-5 Codex",
+        provider=LLMProvider.OPENAI,
+        description="Standard coding variant of GPT-5 optimized for code generation and analysis.",
+        pros=[
+            "Optimized for coding tasks",
+            "Good code generation capabilities",
+            "Large context window",
+            "Cost-effective coding solution",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "Specialized for coding",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
+        id="gpt-5-codex-mini",
+        name="GPT-5 Codex Mini",
+        provider=LLMProvider.OPENAI,
+        description="Smaller, cost-effective coding variant offering up to 4x more usage within subscriptions.",
+        pros=[
+            "Cost-effective for coding tasks",
+            "Up to 4x more usage within subscriptions",
+            "Good for smaller coding tasks",
+            "Faster inference",
+        ],
+        cons=[
+            "Requires OpenAI API key",
+            "Less capable than full Codex models",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=128000,
+        parameters="N/A",
+    ),
+    LLMModel(
         id="gpt-5",
         name="GPT-5",
         provider=LLMProvider.OPENAI,
@@ -271,5 +395,6 @@ def get_default_model(provider: LLMProvider) -> LLMModel:
     if provider == LLMProvider.OLLAMA:
         return get_model_by_id("qwen2.5:32b-instruct") or AVAILABLE_MODELS[0]
     else:
-        return get_model_by_id("gpt-5") or AVAILABLE_MODELS[-1]
+        # Default to latest GPT-5.2, fallback to gpt-5.2, then gpt-5, then last model
+        return get_model_by_id("gpt-5.2") or get_model_by_id("gpt-5") or AVAILABLE_MODELS[-1]
 

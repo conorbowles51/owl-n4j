@@ -10,8 +10,10 @@ export function convertGraphNodesToTimelineEvents(nodes, links = []) {
   const events = [];
   
   nodes.forEach(node => {
-    // Check for various date properties
-    const date = node.date || node.timestamp || node.created_at || node.occurred_at;
+    // Check for various date properties - also check nested properties object
+    const props = node.properties || {};
+    const date = node.date || node.timestamp || node.created_at || node.occurred_at ||
+                 props.date || props.timestamp || props.created_at || props.occurred_at;
     
     if (date) {
       // Parse date
@@ -23,8 +25,8 @@ export function convertGraphNodesToTimelineEvents(nodes, links = []) {
           name: node.name || node.title || 'Untitled Event',
           type: node.type || 'Event',
           date: date,
-          time: node.time || null,
-          description: node.summary || node.description || '',
+          time: node.time || props.time || null,
+          description: node.summary || node.description || props.summary || props.description || '',
           // Include relationships for timeline visualization
           relationships: links
             .filter(link => {
@@ -56,9 +58,11 @@ export function convertGraphNodesToMapLocations(nodes, links = []) {
   const locations = [];
   
   nodes.forEach(node => {
-    // Check for geographic coordinates
-    const latitude = node.latitude || node.lat;
-    const longitude = node.longitude || node.lng || node.lon;
+    // Check for geographic coordinates - also check nested properties object
+    const props = node.properties || {};
+    const latitude = node.latitude || node.lat || props.latitude || props.lat;
+    const longitude = node.longitude || node.lng || node.lon || 
+                      props.longitude || props.lng || props.lon;
     
     if (latitude != null && longitude != null && 
         !isNaN(parseFloat(latitude)) && !isNaN(parseFloat(longitude))) {
@@ -69,7 +73,7 @@ export function convertGraphNodesToMapLocations(nodes, links = []) {
         type: node.type || 'Location',
         latitude: parseFloat(latitude),
         longitude: parseFloat(longitude),
-        summary: node.summary || '',
+        summary: node.summary || props.summary || '',
         // Include relationships for map visualization
         connections: links
           .filter(link => {
@@ -82,15 +86,19 @@ export function convertGraphNodesToMapLocations(nodes, links = []) {
             const targetKey = typeof link.target === 'object' ? link.target?.key : link.target;
             const connectedKey = sourceKey === node.key ? targetKey : sourceKey;
             const connectedNode = nodes.find(n => n.key === connectedKey);
+            const connectedProps = connectedNode?.properties || {};
             return {
               key: connectedKey,
               name: connectedNode?.name || connectedKey,
               type: link.type || link.relationship || 'RELATED_TO',
-              latitude: connectedNode?.latitude || connectedNode?.lat,
-              longitude: connectedNode?.longitude || connectedNode?.lng || connectedNode?.lon,
+              latitude: connectedNode?.latitude || connectedNode?.lat || 
+                       connectedProps.latitude || connectedProps.lat,
+              longitude: connectedNode?.longitude || connectedNode?.lng || connectedNode?.lon ||
+                        connectedProps.longitude || connectedProps.lng || connectedProps.lon,
             };
           })
-          .filter(conn => conn.latitude != null && conn.longitude != null),
+          .filter(conn => conn.latitude != null && conn.longitude != null &&
+                         !isNaN(parseFloat(conn.latitude)) && !isNaN(parseFloat(conn.longitude))),
       });
     }
   });
@@ -103,7 +111,10 @@ export function convertGraphNodesToMapLocations(nodes, links = []) {
  */
 export function hasTimelineData(nodes) {
   return nodes.some(node => {
-    const date = node.date || node.timestamp || node.created_at || node.occurred_at;
+    // Check both direct properties and nested properties object
+    const props = node.properties || {};
+    const date = node.date || node.timestamp || node.created_at || node.occurred_at ||
+                 props.date || props.timestamp || props.created_at || props.occurred_at;
     if (date) {
       const eventDate = new Date(date);
       return !isNaN(eventDate.getTime());
@@ -117,8 +128,11 @@ export function hasTimelineData(nodes) {
  */
 export function hasMapData(nodes) {
   return nodes.some(node => {
-    const latitude = node.latitude || node.lat;
-    const longitude = node.longitude || node.lng || node.lon;
+    // Check both direct properties and nested properties object
+    const props = node.properties || {};
+    const latitude = node.latitude || node.lat || props.latitude || props.lat;
+    const longitude = node.longitude || node.lng || node.lon || 
+                      props.longitude || props.lng || props.lon;
     return latitude != null && longitude != null && 
            !isNaN(parseFloat(latitude)) && !isNaN(parseFloat(longitude));
   });

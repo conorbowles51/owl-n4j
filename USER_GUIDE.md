@@ -1,22 +1,29 @@
 # Owl Investigation Platform - User Guide
 
-**Version:** 2.2  
-**Last Updated:** 24/12/2025
+**Version:** 3.0  
+**Last Updated:** January 2026
 
 ## Table of Contents
 
 1. [Getting Started](#getting-started)
 2. [Case Management](#case-management)
-3. [Evidence Processing](#evidence-processing)
-4. [LLM Profile Management](#llm-profile-management)
-5. [Graph View](#graph-view)
-6. [Timeline View](#timeline-view)
-7. [Map View](#map-view)
-8. [Graph Analysis Tools](#graph-analysis-tools)
-9. [AI Assistant](#ai-assistant)
-10. [Snapshots](#snapshots)
-11. [File Management](#file-management)
-12. [Background Tasks](#background-tasks)
+3. [Workspace View](#workspace-view)
+4. [Case Overview](#case-overview)
+5. [Evidence Processing](#evidence-processing)
+6. [LLM Profile Management](#llm-profile-management)
+7. [Graph View](#graph-view)
+8. [Table View](#table-view)
+9. [Timeline View](#timeline-view)
+10. [Map View](#map-view)
+11. [Graph Analysis Tools](#graph-analysis-tools)
+12. [Entity Management](#entity-management)
+13. [AI Assistant](#ai-assistant)
+14. [Theories and Reports](#theories-and-reports)
+15. [Snapshots](#snapshots)
+16. [File Management](#file-management)
+17. [Background Tasks](#background-tasks)
+18. [Case Backup and Restore](#case-backup-and-restore)
+19. [Cost Analysis](#cost-analysis)
 
 ---
 
@@ -142,12 +149,192 @@ All major sections in the case details can be collapsed or expanded:
 
 1. Select a case from the list.
 2. Choose a version (latest is shown first, older versions are in a collapsible list).
-3. Click **Load Version** to load the case into the graph view.
+3. Click **Load Version** to load the case into the workspace view.
+
+### Opening Case in Workspace
+
+- Click **Open in Workspace** to open the case in the full workspace view with all investigation tools.
 
 ### Deleting a Case
 
 1. Click the **trash icon** on any case in the list.
 2. Confirm the deletion (this will delete all versions of the case).
+
+---
+
+## Workspace View
+
+The Workspace View is the main investigation interface where you work with your case data. It provides a comprehensive view of all case information and investigation tools.
+
+### Accessing Workspace View
+
+1. From **Case Management**, select a case and click **Open in Workspace**.
+2. Or, after loading a case version, you'll automatically enter the workspace.
+
+### Workspace Layout
+
+The workspace is organized into several key areas:
+
+- **Case Header Bar**: Shows case name, client information, and key actions at the top
+- **Case Context Panel**: Left sidebar with case information, client profile, and quick actions
+- **Main Investigation Area**: Center panel showing graph, timeline, map, or table views
+- **Investigation Panel**: Right sidebar with theories, evidence, notes, tasks, and other case materials
+- **Activity Timeline**: Bottom panel showing recent case activity
+
+### Navigation Tabs
+
+The main investigation area has several tabs:
+
+- **Graph**: Visual network diagram of entities and relationships
+- **Timeline**: Chronological view of events
+- **Map**: Geographic visualization of locations
+- **Table**: Spreadsheet-style view of all entities
+- **Case Overview**: Comprehensive dashboard of all case information
+
+### Case Context Panel
+
+The left sidebar provides quick access to:
+
+- **Client Profile**: Client name, case type, trial date, and other key information
+- **Quick Actions**: Common tasks like adding notes, creating tasks, or pinning evidence
+- **Case Information**: Case metadata and statistics
+
+### Investigation Panel
+
+The right sidebar contains:
+
+- **Theories**: Investigation theories and hypotheses
+- **Evidence**: All case evidence files
+- **Witnesses**: Witness information and interviews
+- **Notes**: Investigative notes
+- **Tasks**: Investigation tasks and to-dos
+- **Deadlines**: Important case deadlines
+- **Documents**: Case documents
+- **Snapshots**: Saved investigation states
+- **Audit Log**: System activity log
+
+### Switching Between Views
+
+- Click the tabs at the top of the main investigation area to switch between Graph, Timeline, Map, Table, and Case Overview
+- Each view maintains your current selection and filters
+- The workspace remembers your preferences as you switch views
+
+---
+
+## Case Overview
+
+The Case Overview provides a comprehensive dashboard view of all case information in one place. It's perfect for getting a complete picture of your investigation at a glance.
+
+### Accessing Case Overview
+
+1. In the **Workspace View**, click the **Case Overview** tab at the top of the main investigation area.
+2. The overview displays all case sections side-by-side in a horizontal scrollable layout.
+
+### Overview Sections
+
+The Case Overview displays the following sections as cards that you can scroll through horizontally:
+
+#### Client Profile
+- Client name and case type
+- Trial date and other key dates
+- Case metadata
+
+#### Theories
+- List of all investigation theories
+- Theory titles and hypotheses
+- Quick access to theory details
+
+#### Pinned Evidence
+- Evidence items you've marked as important
+- Quick reference to key documents
+
+#### Witnesses
+- All witnesses in the case
+- Interview summaries
+- Witness credibility ratings
+
+#### Deadlines
+- Important case deadlines
+- Upcoming dates
+- Deadline status
+
+#### Investigative Notes
+- All case notes
+- Organized chronologically
+- Searchable content
+
+#### Tasks
+- Investigation tasks
+- Task status and assignments
+- Priority items
+
+#### All Evidence
+- Complete list of all evidence files
+- File types and processing status
+- Quick access to evidence details
+
+#### Documents
+- Case documents
+- Document summaries
+- File previews
+
+#### Graph Visualization
+- Visual network diagram
+- Interactive graph view
+- Entity relationships
+
+#### Timeline Visualization
+- Chronological event timeline
+- Date-based organization
+- Event connections
+
+#### Map Visualization
+- Geographic locations
+- Location markers
+- Geographic relationships
+
+#### Snapshots
+- Saved investigation states
+- Snapshot summaries
+- Quick access to saved views
+
+#### Audit Log
+- System activity log
+- User actions
+- Case changes
+
+### Including Sections in Export
+
+Each section card has a checkbox at the top:
+
+- **Checkbox**: Use the checkbox to include or exclude that section from case reports
+- **Default**: All sections are included by default
+- **Custom Selection**: Uncheck sections you don't want in your reports
+
+### Exporting Case Reports
+
+1. Click the **Export Case** button in the toolbar at the top of the Case Overview.
+2. The export modal opens showing:
+   - **Sections Tab**: List of all sections with inclusion status
+   - **Graph Tab**: Preview of graph visualization
+   - **Graph Timeline Tab**: Preview of timeline visualization
+   - **Graph Map Tab**: Preview of map visualization
+   - **Timeline Tab**: Preview of investigation timeline
+3. Review which sections are included (based on your checkbox selections).
+4. Click **Export** to generate the report.
+5. A progress bar shows the export generation progress.
+6. The report downloads as an HTML file containing:
+   - All selected sections with full details
+   - Visual representations (graphs, timelines, maps)
+   - Witness interviews with complete information
+   - Audio transcriptions and translations (if available)
+   - All evidence, notes, tasks, and other case materials
+
+### Scrolling Through Overview
+
+- **Horizontal Scroll**: Scroll left and right to see all sections
+- **Vertical Scroll**: Each section card can scroll vertically if content is long
+- **Fixed Toolbar**: The export toolbar stays fixed at the top while you scroll
 
 ---
 
@@ -158,7 +345,7 @@ The Evidence Processing view allows you to upload and process documents for your
 ### Uploading Files
 
 1. Click the **Choose files** area or drag and drop files.
-2. Supported formats: PDF, TXT, and other document types.
+2. Supported formats: PDF, TXT, Word documents (.docx), Excel files (.xlsx, .xls), CSV files, and other document types.
 3. Files are uploaded immediately and appear in the **Unprocessed Files** list.
 
 ### Processing Files
@@ -186,11 +373,10 @@ The Evidence Processing view allows you to upload and process documents for your
 - **Duplicate**: Files with the same content (identified by hash)
 - **Failed**: Files that encountered errors during processing
 
-### Opening Case in Graph
+### Opening Case in Workspace
 
-- Click **Open Case in Graph** to load the processed case into the graph view.
-- If Cypher exists for the case, it will be loaded. Otherwise, an empty graph will be shown.
-- The button is disabled while files are processing.
+- Click **Open Case in Workspace** to load the processed case into the workspace view.
+- If data exists for the case, it will be loaded. Otherwise, an empty workspace will be shown.
 
 ### Loading Processed Graph
 
@@ -216,6 +402,15 @@ The selected profile guides the AI in:
 - How to identify relationships
 - What to prioritize in the analysis
 - The creativity level (temperature) of responses
+
+### Folder Upload and Processing
+
+You can upload entire folders of documents for processing:
+
+1. **Upload Folder**: Use folder upload to preserve folder structure
+2. **Folder Profiles**: Configure how different folder types are processed
+3. **Automatic Detection**: The system automatically detects folder types (e.g., wiretap folders)
+4. **Batch Processing**: Process entire folders in the background
 
 ### Wiretap Audio Processing
 
@@ -302,7 +497,7 @@ Choose the Whisper model size based on your needs:
 
 #### Troubleshooting Wiretap Processing
 
-- **Missing Dependencies**: If processing fails, check that `openai-whisper`, `striprtf`, and `ffmpeg` are installed (see WIRETAP_DEPENDENCIES.md)
+- **Missing Dependencies**: If processing fails, check that `openai-whisper`, `striprtf`, and `ffmpeg` are installed
 - **Error Messages**: Check the Background Tasks panel for detailed error messages
 - **Processing Logs**: Review the Ingestion Log for specific error details
 - **Folder Requirements**: Ensure folders contain at least one audio file
@@ -360,6 +555,8 @@ LLM Profiles allow you to customize how the AI processes evidence files. Each pr
 - The system can create new relationship types dynamically based on document content
 
 #### LLM Configuration
+- **Provider**: Choose AI provider (OpenAI, Ollama, etc.)
+- **Model**: Select specific AI model to use
 - **Temperature**: Controls AI creativity (0.0-2.0)
   - **Lower (0.0-0.5)**: More deterministic, consistent outputs
   - **Higher (1.0-2.0)**: More creative, varied outputs
@@ -397,7 +594,7 @@ The system supports dynamic creation of entity and relationship types:
 
 ## Graph View
 
-The Graph View is the main workspace for visualizing and analyzing relationships.
+The Graph View is the main workspace for visualizing and analyzing relationships between entities in your case.
 
 ### Navigation
 
@@ -459,6 +656,8 @@ Located in the top toolbar:
    - **Wildcards**: Use `*` for partial matches (e.g., `John*`)
    - **Fuzzy Matching**: Finds similar but not exact matches
 3. **Apply Filter**: In Search mode, click the search button to execute.
+
+**Note**: The search filter replaces the "Search entities" box in graph and table views for more powerful filtering capabilities.
 
 #### Date Range Filter
 
@@ -650,6 +849,103 @@ Right-click on a node to see options:
 
 ---
 
+## Table View
+
+The Table View provides a spreadsheet-style view of all entities in your case, making it easy to review and analyze data in a structured format.
+
+### Accessing Table View
+
+1. In the **Graph View** or **Workspace View**, click the **Table** tab at the top.
+2. The graph is replaced with a tabular view of all entities.
+
+### Table Features
+
+- **Rows**: Each row represents one entity (person, company, location, etc.)
+- **Columns**: Each column shows a different property of the entities (name, type, summary, notes, etc.)
+- **All Data Visible**: All entity information is displayed in columns, making it easy to review and compare entities
+- **Horizontal Scroll**: Scroll left and right to see all columns
+- **Vertical Scroll**: Scroll up and down to see all entities
+
+### Relations Column
+
+The rightmost column is the **Relations** column, which is always visible (sticky on the right):
+
+- **Expand Relations**: For entities that have relationships, you'll see a button showing the number of relations (e.g., "▶ 5")
+- **No Relations**: Entities without relationships show "—"
+- **Always Visible**: The Relations column stays fixed on the right side when you scroll horizontally
+
+### Expanding Relations
+
+To see related entities:
+
+1. Find an entity with relations (shows a number in the Relations column)
+2. Click the **▶** button with the relation count
+3. A new panel opens to the right showing all related entities
+4. Each related entity appears as a row with the same column structure
+5. The panel header shows "Relations of [Entity Name]"
+
+### Expanding Further Relations
+
+You can continue expanding relations:
+
+1. In a relations panel, find an entity that has its own relations
+2. Click the **▶** button for that entity
+3. Another panel opens further to the right
+4. This creates a chain of related entities, helping you explore connections
+
+### Collapsing Relations
+
+To collapse relation panels:
+
+1. Each relations panel has an **X** button in its header
+2. Click the **X** to collapse that panel
+3. All panels to the right of the collapsed panel are also removed
+4. This helps you focus on specific relationship chains
+
+### Relation Types
+
+In relation panels, you'll see:
+
+- **Relation Column**: Shows the type of relationship connecting entities (e.g., "KNOWS", "OWNS", "WORKS_FOR")
+- **Multiple Types**: If an entity is connected via multiple relationship types, they're all listed
+
+### Filtering in Table View
+
+The table view uses the same powerful filter as the graph view:
+
+1. **Filter Input**: Located in the top toolbar (replaces the "Search entities" box)
+2. **Filter Mode**: Filters as you type in real-time
+3. **Search Mode**: Click search button for advanced queries
+4. **Boolean Logic**: Use `AND`, `OR`, `NOT` for complex searches
+5. **Wildcards**: Use `*` for partial matches
+6. **Results**: The table updates to show only matching entities
+
+### Selecting Entities in Table
+
+- **Click Row**: Click any row to select that entity
+- **Multi-Select**: Hold **Ctrl** (Windows) or **Command** (Mac) and click multiple rows
+- **Selected Highlighting**: Selected rows are highlighted
+- **Node Details**: Selected entities appear in the node details panel (if available)
+
+### Table Layout
+
+- **Multiple Panels**: You can have multiple relation panels open side-by-side
+- **Horizontal Scroll**: Scroll horizontally to see all panels
+- **Panel Headers**: Each panel shows its title (e.g., "All nodes" or "Relations of [Name]")
+- **Fixed Relations Column**: The Relations column stays visible on the right in each panel
+
+### Use Cases
+
+The Table View is useful for:
+
+- **Data Review**: Quickly review all entity information in a structured format
+- **Finding Entities**: Use filters to find specific entities
+- **Exploring Connections**: Expand relations to discover how entities are connected
+- **Data Export**: Review data before exporting case reports
+- **Comparison**: Compare multiple entities side-by-side
+
+---
+
 ## Timeline View
 
 The Timeline view provides a chronological view of events and entities.
@@ -694,6 +990,9 @@ The Map view shows geocoded entities on an interactive map.
 - **Clustering**: Nearby markers are grouped into clusters.
 - **Filters**: Filter by entity type.
 - **Click Markers**: View entity details.
+- **Connections**: View relationships between locations.
+- **Heatmap**: Visualize location density.
+- **Proximity Analysis**: Analyze distances between locations.
 
 ---
 
@@ -752,6 +1051,92 @@ Identifies nodes that act as bridges between different parts of the graph.
 
 ---
 
+## Entity Management
+
+The platform provides tools for managing entities, including resolving duplicates and merging entities.
+
+### Entity Resolution
+
+Entity resolution helps identify when multiple entries in your case refer to the same real-world entity (person, company, etc.).
+
+#### Finding Similar Entities
+
+1. Select a node on the graph
+2. Right-click and select **Find Similar Entities** (or use the button in the graph controls)
+3. The system scans the graph for entities that might be the same
+4. Results show potential matches with similarity scores
+
+#### Reviewing Matches
+
+- **Similarity Score**: Each match shows how similar it is to the selected entity
+- **Entity Details**: Review name, type, and summary of potential matches
+- **Select Matches**: Check boxes next to entities you want to merge
+
+### Merging Entities
+
+When you've identified duplicate entities, you can merge them:
+
+1. **Select Entities**: Select two or more entities you want to merge
+2. **Open Merge Dialog**: Right-click and select **Merge Entities** (or use the merge button)
+3. **Review Merge**:
+   - The system shows what will be combined
+   - Choose which entity's name, type, and summary to keep
+   - Review relationships that will be preserved
+4. **Confirm Merge**: Click **Merge Entities**
+5. **Result**: All entities are combined into one, with all relationships preserved
+
+#### What Gets Merged
+
+- **Properties**: Name, type, summary, and notes are combined
+- **Relationships**: All relationships from all merged entities are preserved
+- **Verified Facts**: All verified facts are combined
+- **AI Insights**: All AI insights are combined
+- **Source Citations**: All source document citations are preserved
+
+#### Validation
+
+The system validates merges to prevent errors:
+- **Type Compatibility**: Ensures entities of compatible types are merged
+- **Relationship Preservation**: Verifies all relationships will be maintained
+- **Data Integrity**: Checks that no information will be lost
+
+### Deleting Entities
+
+You can remove incorrect or unwanted entities:
+
+1. **Select Entity**: Select the entity you want to delete
+2. **Delete Option**: Right-click and select **Delete Entity** (or use delete button)
+3. **Confirm Deletion**: Confirm that you want to delete the entity
+4. **Result**: The entity and all its relationships are removed from the graph
+
+**Warning**: Deleting an entity permanently removes it and all its relationships. This action cannot be undone.
+
+### Graph Expansion
+
+Graph expansion automatically discovers related entities:
+
+1. **Select Starting Point**: Select one or more nodes
+2. **Expand Connections**: Right-click and select **Expand Connections** (or use expand button)
+3. **Choose Depth**: Select how many levels of connections to explore (1-3 levels recommended)
+4. **Review Results**: New related entities are added to the graph
+5. **Continue Exploring**: You can expand from the newly discovered entities
+
+#### Expansion Options
+
+- **Expand Selected**: Expands connections from currently selected nodes
+- **Expand Subgraph**: Expands all entities in the Spotlight Graph
+- **Expand Result Graph**: Expands entities in analysis result graphs
+- **Expand All**: Expands the entire visible graph (use with caution on large graphs)
+
+#### What Expansion Finds
+
+- **Direct Connections**: Entities directly connected to your starting point
+- **Indirect Connections**: Entities connected through intermediate entities
+- **Relationship Types**: All types of relationships are explored
+- **New Entities**: Previously unknown entities are discovered and added
+
+---
+
 ## AI Assistant
 
 The AI Assistant helps you query and understand your investigation data.
@@ -782,7 +1167,113 @@ The AI Assistant helps you query and understand your investigation data.
 ### Chat History
 
 - All questions and answers are saved in the chat history.
-- Chat history is included when saving snapshots.
+- Chat history is included when saving snapshots and exporting reports.
+
+### Model Selection
+
+- You can select different AI models for chat interactions
+- Different models may provide different styles of analysis
+- Model selection is available in the chat interface
+
+---
+
+## Theories and Reports
+
+The platform allows you to create investigation theories and generate comprehensive reports.
+
+### Creating Theories
+
+1. In the **Workspace View**, go to the **Theories** section in the Investigation Panel
+2. Click **New Theory** or **Add Theory**
+3. Enter:
+   - **Theory Title**: A descriptive name for your theory
+   - **Hypothesis**: Your investigation hypothesis
+   - **Theory Type**: Category of theory (optional)
+4. Click **Save**
+
+### Building Theory Graphs
+
+1. **Select Entities**: Select entities relevant to your theory on the graph
+2. **Build Theory Graph**: Use the theory tools to create a focused graph
+3. **Review**: The theory graph shows only entities related to your theory
+4. **Refine**: Add or remove entities as your theory develops
+
+### Theory Export
+
+Generate comprehensive reports for your theories:
+
+1. **Open Theory**: Select a theory from the Theories section
+2. **View Attached Items**: See all evidence, witnesses, notes, and other materials attached to the theory
+3. **Export Report**: Click **Export Report** button
+4. **Select Sections**: Choose which sections to include:
+   - Theory details
+   - Attached evidence
+   - Witness interviews (with full details)
+   - Notes and tasks
+   - Graph visualization
+   - Timeline visualization
+   - Map visualization
+   - Investigation timeline
+5. **Generate**: Click export to generate the report
+6. **Progress**: A progress bar shows report generation status
+7. **Download**: The report downloads as an HTML file
+
+#### Theory Report Contents
+
+Theory reports include:
+- **Theory Information**: Title, hypothesis, type, and description
+- **Attached Evidence**: All evidence files with summaries and source citations
+- **Witness Interviews**: Complete interview details including:
+  - Interview date and duration
+  - Interviewer information
+  - Interview notes and summary
+  - Witness statement
+  - Status and credibility rating
+  - Risk assessment
+- **Audio Transcriptions**: Spanish transcriptions from wiretap processing (if available)
+- **Audio Translations**: English translations of wiretap audio (if available)
+- **Notes and Tasks**: All investigative notes and tasks
+- **Visualizations**: Graph, timeline, and map images
+- **Investigation Timeline**: Chronological events
+
+### Case Export
+
+Generate comprehensive case-level reports:
+
+1. **Open Case Overview**: Go to the Case Overview tab in Workspace View
+2. **Select Sections**: Use checkboxes on each section card to include/exclude from export
+3. **Export Case**: Click **Export Case** button in the toolbar
+4. **Review Selection**: The export modal shows which sections are included
+5. **Preview Visualizations**: View graph, timeline, and map previews
+6. **Generate**: Click export to generate the report
+7. **Progress**: A progress bar shows report generation progress
+8. **Download**: The report downloads as an HTML file
+
+#### Case Report Contents
+
+Case reports include all selected sections:
+- **Client Profile**: Client information and case details
+- **Theories**: All investigation theories
+- **Pinned Evidence**: Evidence marked as important
+- **Witnesses**: All witnesses with complete interview details
+- **Deadlines**: Important case deadlines
+- **Investigative Notes**: All case notes
+- **Tasks**: Investigation tasks
+- **All Evidence**: Complete evidence list with summaries
+- **Documents**: Case documents
+- **Graph Visualization**: Network diagram of entities
+- **Graph Timeline**: Text-readable timeline of graph events
+- **Graph Map**: Map visualization with text explanation of locations
+- **Investigation Timeline**: Chronological investigation events
+- **Snapshots**: Saved investigation states
+- **Audit Log**: System activity log
+
+#### Audio Content in Reports
+
+When wiretap audio has been processed:
+- **Spanish Transcriptions**: Full Spanish text of audio recordings
+- **English Translations**: English translations of audio content
+- Both are included in evidence sections when the source evidence file is included
 
 ---
 
@@ -889,6 +1380,72 @@ Each task shows:
 
 ---
 
+## Case Backup and Restore
+
+The platform includes a case backup and restore system to protect your investigation data.
+
+### Creating a Backup
+
+1. In **Case Management**, select a case
+2. Look for **Backup** or **Export Case** options
+3. The system creates a backup file containing:
+   - All case data
+   - Evidence files metadata
+   - Graph data
+   - Case versions
+   - Snapshots
+
+### Restoring a Backup
+
+1. Use the **Restore** or **Import Case** feature
+2. Select your backup file
+3. The system restores:
+   - Case information
+   - All evidence
+   - Graph data
+   - Versions and snapshots
+
+### Backup Best Practices
+
+- **Regular Backups**: Create backups before major changes
+- **Version Control**: Each case version is automatically saved
+- **Export Reports**: Export case reports as additional documentation
+- **Multiple Copies**: Keep backups in multiple locations
+
+---
+
+## Cost Analysis
+
+The platform tracks AI processing costs and generates cost reports for client billing.
+
+### Viewing Costs
+
+1. Access the **Cost Analysis** feature (location varies by view)
+2. View cost breakdowns by:
+   - Case
+   - Date range
+   - Processing type
+   - AI model used
+
+### Cost Reports
+
+1. Generate detailed cost reports
+2. Reports include:
+   - Total costs
+   - Cost per file
+   - Cost by processing type
+   - Time period breakdown
+3. Reports can be exported as documents for client billing
+
+### Cost Tracking
+
+- **Automatic Tracking**: All AI processing is automatically tracked
+- **Real-time Updates**: Costs update in real-time as processing occurs
+- **Historical Data**: View costs for past processing
+- **Forecasting**: Estimate costs for future processing
+
+---
+
 ## Tips and Best Practices
 
 ### Organizing Your Work
@@ -903,24 +1460,37 @@ Each task shows:
 1. **Use Entity Types**: Quickly select all nodes of a type.
 2. **Combine Methods**: Use drag selection, then refine with individual clicks.
 3. **Timeline Selection**: Great for selecting events by time period.
+4. **Table View**: Use table view for structured data review.
 
 ### Analysis Workflow
 
 1. **Start Broad**: Begin with the full graph or a large selection.
 2. **Use Filters**: Narrow down with search and date filters.
 3. **Run Analyses**: Use algorithms to discover patterns.
-4. **Save Results**: Save interesting findings as snapshots.
+4. **Expand Connections**: Use graph expansion to discover related entities.
+5. **Resolve Duplicates**: Use entity resolution to clean up duplicate entities.
+6. **Save Results**: Save interesting findings as snapshots.
+
+### Report Generation
+
+1. **Theory Reports**: Generate focused reports for specific investigation theories.
+2. **Case Reports**: Create comprehensive case reports from Case Overview.
+3. **Select Sections**: Choose only relevant sections to keep reports focused.
+4. **Include Visualizations**: Always include graph, timeline, and map visualizations.
+5. **Review Before Export**: Check your section selections before generating reports.
 
 ### Collaboration
 
 - Each user's cases and snapshots are private to their account.
 - Cases are organized by username (e.g., "Neil's Cases").
+- Use case exports to share information with team members.
 
 ### Performance
 
 - **Large Graphs**: Use filters to reduce node count for better performance.
 - **Background Processing**: Process multiple files in the background to continue working.
 - **Subgraph Focus**: Work with subgraphs to focus on relevant data.
+- **Table View**: Use table view for faster data review on large datasets.
 
 ---
 
@@ -931,6 +1501,7 @@ Each task shows:
 - **Mouse Wheel**: Zoom graph/timeline
 - **Click + Drag**: Pan graph / Create selection box (when in selection mode)
 - **Right-Click**: Context menu on nodes
+- **Esc**: Close document viewer or modals
 
 ---
 
@@ -960,201 +1531,99 @@ Each task shows:
 - Try reloading the case first.
 - Check that nodes still exist in the current graph.
 
+### Table View Issues
+
+- If relations don't appear, check that entities have relationships in the graph.
+- Use the filter to narrow down large tables.
+- Collapse relation panels if you have too many open.
+
+### Export Issues
+
+- Ensure you have selected at least one section for export.
+- Wait for the progress bar to complete.
+- Check that you have sufficient browser storage for large reports.
+
 ---
 
-## New Features
+## New Features in Version 3.0
 
-This section provides a release-by-release overview of major features and enhancements added to the Owl Investigation Platform.
+### Workspace View
 
-### Version 2.2 (24/12/2025)
+- **Comprehensive Interface**: New workspace view with integrated case management
+- **Case Overview Dashboard**: Complete case information in one scrollable view
+- **Section Cards**: Organized sections for all case materials
+- **Quick Navigation**: Easy switching between graph, timeline, map, and table views
 
-**Wiretap Audio Processing:**
-- **Wiretap Folder Detection**: Automatically detect folders suitable for wiretap processing based on audio files (.wav, .mp3, .m4a, .flac), metadata files (.sri), and interpretation files (.rtf)
-- **Wiretap Processing**: Process wiretap folders with Whisper AI for audio transcription and translation
-- **Background Processing**: Wiretap folders are processed in the background with real-time progress tracking
-- **Multiple Folder Processing**: Process multiple wiretap folders simultaneously, each in its own background task
-- **Whisper Model Selection**: Choose Whisper model size (tiny, base, small, medium, large) for transcription accuracy vs. speed trade-off
-- **Processed Wiretap Tracking**: Track which wiretap folders have been successfully processed
-- **Automatic Case Versioning**: Automatically save new case versions after successful wiretap processing
-- **Wiretap Metadata Extraction**: Extract metadata from .sri files including call times, contact IDs, session lengths, and participants
-- **RTF Interpretation Parsing**: Parse prosecutor interpretation files (.rtf) for additional context
-- **Error Handling**: Comprehensive error messages with detailed output for troubleshooting wiretap processing issues
-- **Dependency Checking**: Automatic detection of missing dependencies (openai-whisper, striprtf, ffmpeg) with helpful error messages
+### Case Export
 
-**File System Browser:**
-- **Case File System Navigation**: Browse files and directories within case data folders
-- **File System API**: New filesystem router for listing directories and reading files
-- **Recursive Folder Navigation**: Navigate through nested folder structures
-- **File Information**: View file sizes, modification dates, and file types
-- **Text File Reading**: Read text file contents directly from the file system browser
+- **Comprehensive Reports**: Export complete case reports with all selected sections
+- **Section Selection**: Choose which sections to include via checkboxes
+- **Progress Tracking**: Real-time progress bar during report generation
+- **Audio Content**: Includes Spanish transcriptions and English translations from wiretap processing
+- **Witness Details**: Complete witness interview information in reports
+- **Visualizations**: Graph, timeline, and map images included automatically
 
-**Document Viewer Enhancements:**
-- **Evidence File Serving**: Direct access to evidence files via evidence ID endpoint
-- **Find Evidence by Filename**: Search for evidence files by original filename to locate evidence IDs from citations
-- **Improved File Access**: Secure file serving with ownership verification and proper content-type headers
-- **Multiple File Format Support**: Support for PDFs, text files, Word documents, and images in document viewer
+### Theory Export
 
-**Background Tasks Improvements:**
-- **Wiretap Task Tracking**: Dedicated task type for wiretap processing with progress monitoring
-- **Task Icons**: Visual indicators for different task types (file upload, wiretap processing)
-- **Enhanced Error Messages**: Detailed error output included in task failure messages for better debugging
-- **Multiple Task Management**: Support for processing multiple wiretap folders with separate background tasks
+- **Theory Reports**: Generate focused reports for investigation theories
+- **Attached Items**: Include all evidence, witnesses, and materials attached to theories
+- **Full Interview Details**: Complete witness interview information
+- **Audio Content**: Wiretap transcriptions and translations when available
 
-**Error Handling and Diagnostics:**
-- **Dependency Validation**: Pre-flight checks for required dependencies before starting wiretap processing
-- **Detailed Error Logging**: Full error output captured and displayed in evidence logs
-- **Script Output Capture**: Last 10 lines of script output included in error messages for troubleshooting
-- **Installation Guide**: Comprehensive dependency installation guide (WIRETAP_DEPENDENCIES.md) for server setup
+### Table View
 
-### Version 2.1 (21/12/2025)
+- **Spreadsheet Interface**: View all entities in a structured table format
+- **All Data Visible**: All entity properties displayed as columns
+- **Expandable Relations**: Click to expand and see related entities
+- **Multiple Panels**: Open multiple relation panels side-by-side
+- **Collapsible Panels**: Collapse relation panels to focus on specific chains
+- **Sticky Relations Column**: Relations column always visible on the right
+- **Powerful Filtering**: Same advanced filter as graph view
 
-**Manual Graph Editing:**
-- **Manual Node Creation**: Add nodes directly to the graph with custom properties (name, type, summary, description)
-- **Node Editing**: Edit summary and notes for selected nodes from the Selected Panel
-- **Manual Relationship Creation**: Create relationships between nodes with custom relationship types
-- **AI-Powered Relationship Analysis**: Right-click on a node to get AI suggestions for relationships with existing nodes
-- **Create Snapshot from Selected Panel**: Camera icon button in Selected Panel to quickly create snapshots
-- **Center Graph Button**: New center/focus button in top-left graph controls that focuses on selected nodes if any are selected, otherwise centers the whole graph
+### Enhanced Filtering
 
-**Graph Controls and UI Improvements:**
-- **Vertical Graph Controls**: Graph control buttons (center, add node, selection mode, settings) are now arranged vertically in the top-left corner
-- **Minimizable Entity Type Legend**: Entity type legend on graph and subgraph can be collapsed/expanded with a minimize button
-- **Smart Center Behavior**: Center graph button automatically focuses on selected nodes when available, falls back to centering entire graph
+- **Unified Search**: Graph and table views use the same powerful filter
+- **Replaces Search Box**: Filter replaces the "Search entities" input in graph/table modes
+- **Real-time Filtering**: Filter mode updates as you type
+- **Advanced Search**: Search mode with boolean logic and wildcards
 
-**Subgraph Enhancements:**
-- **Subgraph Node Selection**: Select single or multiple nodes directly in the subgraph view (single click or Ctrl/Cmd+click)
-- **Remove from Subgraph**: Button in subgraph legend to remove selected nodes from the subgraph
-- **Subgraph Selection Management**: Clear selection by clicking background in subgraph view
+### Entity Management
 
-**Analysis Overview Improvements:**
-- **Clickable Node Names**: All node names listed in analysis results (PageRank, Betweenness Centrality) are clickable to select them
-- **Clickable Communities**: Community names in Louvain analysis are clickable to select all nodes in that community
-- **Multi-Select Support**: Hold Ctrl/Cmd while clicking node names or communities to toggle them in selection
-- **No Text Truncation**: Analysis overview text, node summaries, and community descriptions are displayed in full without truncation
-- **Full Text Display**: All analysis descriptions and summaries show complete text with proper word wrapping
+- **Entity Resolution**: Find and identify duplicate entities
+- **Entity Merging**: Merge duplicate entities with validation
+- **Entity Deletion**: Remove incorrect entities from the graph
+- **Graph Expansion**: Automatically discover related entities
 
-**Case Management Enhancements:**
-- **Collapsible Sections**: Evidence Files, Processing History, Versions, and Snapshots can be collapsed/expanded
-- **Pagination**: All lists support pagination with 10 items per page for better navigation
-- **Text Filters**: Filter Evidence Files by filename, Versions by version number/notes, Snapshots by name/notes
-- **File Type Filter Pills**: Visual filter buttons for Evidence Files based on file extensions
-- **Smart Defaults**: Only latest version/snapshot expanded by default, older items collapsed
-- **Version Notes Visibility**: Version notes always visible even when collapsed
+### Enhanced File Support
 
-**Documentation Viewer Improvements:**
-- **Expandable Subsections**: Table of contents supports expandable sections with subsections
-- **Hierarchical Navigation**: Click main sections to expand/collapse subsections
-- **Direct Subsection Navigation**: Click subsections to jump directly to that section in the documentation
-- **Version History in TOC**: Version History section now appears in the table of contents for easy navigation
+- **Excel Files**: Process .xlsx and .xls spreadsheet files
+- **CSV Files**: Process comma-separated value files
+- **Word Documents**: Process .docx Word documents
+- **Folder Processing**: Upload and process entire folders with structure preservation
 
-### Version 2.0 (20/12/2025)
+### Case Backup and Restore
 
-**LLM Profile Management:**
-- **Profile Creation and Editing**: Create custom LLM profiles for different case types
-- **Profile Cloning**: Clone existing profiles as a starting point for new ones
-- **Custom Entity Types**: Define entity types with custom colors and descriptions
-- **Relationship Examples**: Provide relationship examples instead of predefined types
-- **Temperature Control**: Adjust AI creativity level (0.0-2.0) for different use cases
-- **Profile Selection**: Choose which profile to use when processing evidence files
+- **Data Protection**: Backup case data for safety
+- **Restore Functionality**: Restore cases from backup files
+- **Version History**: Automatic versioning preserves case history
 
-**Enhanced Evidence Processing:**
-- **Dynamic Entity Creation**: System automatically creates new entity types found in documents
-- **Dynamic Relationship Creation**: New relationship types are created based on document content
-- **Profile-Based Colors**: Entity colors in graph are determined by selected profile
-- **Comprehensive Entity Legend**: All entity types in database are displayed in legend
-- **Improved Cypher Validation**: Better error handling and validation for generated queries
+### Cost Analysis
 
-**User Experience:**
-- **Password Visibility Toggle**: Show/hide password during login
-- **Documentation Viewer**: Access user guide directly from platform
-- **Improved Profile Editor**: New entities added to top of list for better UX
+- **Cost Tracking**: Automatic tracking of AI processing costs
+- **Cost Reports**: Generate detailed cost reports for client billing
+- **Export Reports**: Export cost reports as documents
 
-### Background Tasks System (3 days ago)
+### Enhanced Map Features
 
-**Asynchronous Processing:**
-- **Background Task Management**: Process multiple files without blocking the UI
-- **Task Monitoring**: View task progress in dedicated flyout panel
-- **File-by-File Progress**: See individual file processing status
-- **Auto-Refresh**: Task panel automatically updates every 2 seconds
-- **View in Case**: Navigate directly to case after task completion
+- **Extended Functionality**: Improved geographic visualization
+- **Location Analysis**: Better tools for analyzing location data
+- **Connection Visualization**: See relationships between locations
 
-### User Accounts and Case Management (3 days ago)
+### Document Summaries
 
-**User-Specific Data:**
-- **User Authentication**: Multiple user accounts (admin, neil, conor, alex, arturo)
-- **Personal Case Lists**: Each user sees only their own cases ("Username's Cases")
-- **Case Ownership**: All case components (files, versions, snapshots) are user-specific
-- **Secure Access**: JWT-based authentication for all API endpoints
-
-**Case Management:**
-- **Case Creation**: Create new cases with custom names and notes
-- **Case Loading**: Load cases into graph view with automatic graph clearing
-- **Version Management**: Automatic versioning when saving cases
-- **Evidence File Integration**: Files associated with cases and visible in case details
-
-### File Processing and Ingestion (3 days ago)
-
-**Evidence File Handling:**
-- **File Upload**: Drag-and-drop or select files for upload
-- **File Hashing**: Automatic duplicate detection using file hashes
-- **Processing Integration**: Files automatically added to case after processing
-- **Ingestion Logs**: Real-time feedback during file processing
-- **Status Tracking**: Files show processing status (unprocessed, processed, duplicate, failed)
-
-### Graph Analysis Features
-
-**Advanced Algorithms:**
-- **Shortest Path**: Find shortest path between two selected nodes
-- **PageRank (Influence)**: Identify most influential nodes in graph
-- **Louvain Communities**: Detect communities/clusters of connected nodes
-- **Betweenness Centrality**: Find bridge nodes connecting different graph regions
-- **Analysis Overview**: Detailed explanations of analysis results
-
-**Subgraph Management:**
-- **Add to Subgraph**: Build custom subgraphs by adding selected nodes
-- **Remove from Subgraph**: Remove nodes from subgraph
-- **Subgraph View**: Dedicated split-pane view for subgraph visualization
-- **Subgraph Menu**: Consolidated menu for all subgraph operations
-
-### Timeline and Search Enhancements
-
-**Timeline View:**
-- **SwimLane Visualization**: Chronological view with swim lanes
-- **Event Organization**: Events organized by entity type or entity
-- **Multi-Select**: Select multiple events/nodes with Command+Click
-- **Timeline Context**: Selected timeline events become subgraph context
-
-**Search and Filter:**
-- **Complex Search**: Advanced search with boolean logic (AND, OR, NOT)
-- **Wildcard Support**: Use `*` for partial matches
-- **Fuzzy Matching**: Find similar but not exact matches
-- **Filter Mode**: Real-time filtering as you type
-- **Date Range Filter**: Filter nodes by timestamp with visual timeline slider
-
-### Map and Geocoding
-
-**Geographic Visualization:**
-- **Geocoding Service**: Automatic geocoding of location entities during ingestion
-- **Map View**: Interactive map showing geocoded entities
-- **Marker Clustering**: Nearby markers grouped into clusters
-- **Entity Type Filtering**: Filter map markers by entity type
-
-### Authentication and Security
-
-**Login System:**
-- **User Authentication**: Secure login with username and password
-- **Session Management**: JWT tokens for authenticated sessions
-- **Logout**: Secure logout with token cleanup
-- **Password Security**: Password visibility toggle with secure storage
-
-### Foundation Features
-
-**Core Graph Visualization:**
-- **Force-Directed Graph**: Interactive force-directed graph layout
-- **Node Selection**: Single and multi-select node selection
-- **Relationship Labels**: Toggle relationship labels in subgraph view
-- **Graph Controls**: Force simulation controls for customizing layout
-- **Zoom and Pan**: Mouse wheel zoom and drag-to-pan navigation
+- **Folder Summaries**: Automatic summaries for document folders
+- **File Summaries**: Enhanced summaries for individual files
+- **Preview Improvements**: Better file preview functionality
 
 ---
 
@@ -1164,109 +1633,4 @@ For technical support or questions, please contact your system administrator or 
 
 ---
 
----
-
-## Version History
-
-### Version 2.2 (24/12/2025)
-
-**New Features:**
-- Wiretap Audio Processing System
-  - Automatic detection of wiretap folders suitable for processing
-  - Background processing with Whisper AI for transcription and translation
-  - Support for multiple wiretap folders processed simultaneously
-  - Whisper model selection (tiny, base, small, medium, large)
-  - Metadata extraction from .sri files (call times, contact IDs, participants)
-  - RTF interpretation file parsing
-  - Processed wiretap tracking and history
-  - Automatic case versioning after successful processing
-  - Comprehensive error handling with detailed diagnostics
-
-- File System Browser
-  - Browse case file systems with directory navigation
-  - View file information (size, modification date, type)
-  - Read text file contents directly
-  - Recursive folder navigation support
-
-- Document Viewer Enhancements
-  - Direct evidence file serving by evidence ID
-  - Find evidence files by original filename
-  - Improved file access with ownership verification
-  - Support for multiple file formats (PDF, text, Word, images)
-
-- Background Tasks Improvements
-  - Dedicated wiretap processing task type
-  - Visual task type indicators
-  - Enhanced error messages with script output
-  - Multiple concurrent task support
-
-**Improvements:**
-- Better error diagnostics for wiretap processing failures
-- Dependency validation before processing starts
-- Comprehensive installation guide for server dependencies
-- Improved error logging with full output capture
-
-### Version 2.1 (21/12/2025)
-
-**New Features:**
-- Enhanced Case Management Interface
-  - Collapsible sections for Evidence Files, Processing History, Versions, and Snapshots
-  - Pagination (10 items per page) for all lists
-  - Text filters for Evidence Files, Versions, and Snapshots
-  - File type filter pills for Evidence Files with dynamic type detection
-  - Default collapsed state: only latest version/snapshot expanded
-  - Version notes always visible, even when collapsed
-  - Automatic sorting: versions by version number, snapshots by timestamp
-
-- Manual Graph Editing
-  - Add nodes manually with custom properties
-  - Edit node summary and notes directly from the graph
-  - Create relationships between selected nodes
-  - AI-powered relationship analysis for nodes
-  - Node information (summary and notes) is searchable and available to AI
-
-- Graph Interaction Improvements
-  - Add Node button in top-left corner of graph view
-  - Edit button in Selected panel for quick node editing
-  - Context menu options for relationship creation and analysis
-  - Relationship mode indicator when creating relationships
-
-**Improvements:**
-- Better organization of case details with collapsible sections
-- Improved navigation with pagination for large lists
-- Enhanced filtering capabilities for finding specific items
-- More intuitive version and snapshot display
-
-### Version 2.0 (20/12/2025)
-
-**New Features:**
-- LLM Profile Management System
-  - Create, edit, and clone LLM profiles
-  - Custom entity types with color pickers
-  - Relationship examples instead of predefined types
-  - Temperature control for AI creativity
-  - Profile selection in evidence processing
-
-- Enhanced Evidence Processing
-  - Dynamic entity and relationship type creation
-  - All entity types displayed in graph legend
-  - Profile-based entity colors in graph visualization
-  - Improved Cypher query validation
-
-- User Experience Improvements
-  - Password visibility toggle in login
-  - Profile cloning for easy profile creation
-  - New entities added to top of list
-  - Documentation viewer accessible from platform
-
-**Improvements:**
-- Better error handling for Cypher queries
-- Enhanced string escaping in Cypher generation
-- Improved entity type sanitization for Neo4j
-- More flexible LLM prompt system
-
----
-
-*Last Updated: 21/12/2025*
-
-
+*Last Updated: January 2026*

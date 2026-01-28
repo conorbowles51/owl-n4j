@@ -77,13 +77,17 @@ export default function SnapshotModal({
           </div>
 
           <div className="text-xs text-light-600 bg-light-50 rounded p-2 border border-light-200">
-            <p>This snapshot will include:</p>
+            <p className="font-medium mb-1">This snapshot will include:</p>
             <ul className="list-disc list-inside mt-1 space-y-0.5">
+              <li>Complete graph state (full graph + spotlight graph)</li>
+              <li>AI Assistant result graph (if available)</li>
               <li>{nodeCount} selected nodes</li>
               <li>{linkCount} relationships</li>
+              <li>Table view state (panels, filters, selections)</li>
               <li>Timeline events for selected nodes</li>
               <li>Node overview details</li>
-              <li>AI chat history related to this selection</li>
+              <li>Complete AI chat history with all responses</li>
+              <li>Selected nodes and current view mode</li>
             </ul>
           </div>
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Focus } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
-import QuickActionsSection from './QuickActionsSection';
+import QuickActionsButtons from './QuickActionsButtons';
 import PinnedEvidenceSection from './PinnedEvidenceSection';
 import ClientProfileSection from './ClientProfileSection';
 import WitnessMatrixSection from './WitnessMatrixSection';
@@ -34,7 +34,6 @@ export default function CaseContextPanel({
   // Initialize with all sections collapsed by default
   const [collapsedSections, setCollapsedSections] = useState(new Set([
     'theories',
-    'quick-actions',
     'pinned-evidence',
     'client-profile',
     'witness-matrix',
@@ -121,15 +120,13 @@ export default function CaseContextPanel({
 
   return (
     <div className="h-full overflow-y-auto">
-      {/* Case Overview Toggle */}
+      {/* Case Overview Toggle + Quick Actions */}
       <div className="p-4 border-b border-light-200">
         <button
           onClick={() => {
             if (selectedSection === 'case-overview') {
-              // Turn off - clear selection to show graph/text view
               onSectionSelect && onSectionSelect(null);
             } else {
-              // Turn on - show case overview
               onSectionSelect && onSectionSelect('case-overview');
             }
           }}
@@ -139,12 +136,12 @@ export default function CaseContextPanel({
               : 'bg-light-100 text-owl-blue-900 hover:bg-light-200'
           }`}
         >
-          <span>📋</span>
           <span>Case Overview</span>
           {selectedSection === 'case-overview' && (
             <span className="text-xs">ON</span>
           )}
         </button>
+        <QuickActionsButtons caseId={caseId} />
       </div>
 
       {/* Theories */}
@@ -157,41 +154,6 @@ export default function CaseContextPanel({
           onToggle={(e) => toggleSection('theories', e)}
           onFocus={(e) => focusSection('theories', e)}
         />
-      </div>
-
-      {/* Quick Actions */}
-      <div className={`border-b border-light-200 ${selectedSection === 'quick-actions' ? 'bg-owl-blue-50' : ''}`}>
-        <div
-          className="p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between"
-          onClick={(e) => toggleSection('quick-actions', e)}
-        >
-          <h3 className="text-sm font-semibold text-owl-blue-900">Quick Actions</h3>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={(e) => focusSection('quick-actions', e)}
-              className="p-1 hover:bg-light-100 rounded transition-colors"
-              title="Focus on this section"
-            >
-              <Focus className="w-4 h-4 text-owl-blue-600" />
-            </button>
-            {isCollapsed('quick-actions') ? (
-              <ChevronRight className="w-4 h-4 text-light-600" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-light-600" />
-            )}
-          </div>
-        </div>
-        {!isCollapsed('quick-actions') && (
-          <div className="px-4 pb-4">
-            <QuickActionsSection 
-              caseId={caseId} 
-              onUploaded={() => {
-                // Trigger refresh of documents section
-                window.dispatchEvent(new Event('documents-refresh'));
-              }}
-            />
-          </div>
-        )}
       </div>
 
       {/* Pinned Evidence */}
@@ -260,7 +222,7 @@ export default function CaseContextPanel({
         />
       </div>
 
-      {/* Pending Tasks */}
+      {/* Tasks */}
       <div className={selectedSection === 'tasks' ? 'bg-owl-blue-50' : ''}>
         <TasksSection
           caseId={caseId}

@@ -170,18 +170,24 @@ function processAndOperators(tokens) {
         });
       }
     } else if (tokens[i].type !== 'operator') {
-      // Implicit AND for consecutive terms
+      // Implicit AND for consecutive terms only (never combine OR with the next term)
       const left = result.pop();
-      const right = tokens[i];
-      result.push({
-        type: 'and',
-        left: left.type === 'term' || left.type === 'quoted'
-          ? { type: 'term', value: left.value }
-          : left,
-        right: right.type === 'term' || right.type === 'quoted'
-          ? { type: 'term', value: right.value }
-          : right
-      });
+      if (left && left.type === 'operator') {
+        // Left is OR (or other non-AND) — leave for processOrOperators, don't form AND(OR, term)
+        result.push(left);
+        result.push(tokens[i]);
+      } else {
+        const right = tokens[i];
+        result.push({
+          type: 'and',
+          left: left.type === 'term' || left.type === 'quoted'
+            ? { type: 'term', value: left.value }
+            : left,
+          right: right.type === 'term' || right.type === 'quoted'
+            ? { type: 'term', value: right.value }
+            : right
+        });
+      }
     } else {
       // Push operators (like OR) to be processed later
       result.push(tokens[i]);
@@ -255,23 +261,106 @@ export function evaluateQuery(ast, searchFn) {
 }
 
 /**
+ * Build searchable text from an item. Always includes name, key, summary, type.
+ * When allFields is true, also includes all property values. Used for both filter and search.
+ * @param {Object} item - Item to search
+ * @param {{ allFields?: boolean }} options - allFields: include (item.properties) values
+ * @returns {string} - Lowercase concatenated searchable text
+ */
+function getSearchableText(item, options = {}) {
+  const parts = [
+    item.name || '',
+    item.key || '',
+    item.summary || '',
+    item.type || ''
+  ];
+  if (options.allFields && item.properties && typeof item.properties === 'object') {
+    for (const v of Object.values(item.properties)) {
+      if (v != null && typeof v === 'string') parts.push(v);
+      else if (v != null) parts.push(String(v));
+    }
+  }
+  return parts.join(' ').toLowerCase();
+}
+
+/**
+ * Collect all positive terms (and quoted phrases) from the AST for highlighting matches in UI.
+ * @param {Object} ast - Parsed query AST
+ * @returns {string[]} - Normalized terms to highlight (lowercase)
+ */
+export function getHighlightTerms(ast) {
+  if (!ast) return [];
+  const terms = [];
+  function collect(node) {
+    if (!node) return;
+    if (node.type === 'term') {
+      const v = (node.value || '').toLowerCase().trim();
+      if (v) terms.push(v);
+      return;
+    }
+    if (node.type === 'quoted') {
+      const v = (node.value || '').toLowerCase().trim();
+      if (v) terms.push(v);
+      return;
+    }
+    if (node.type === 'not') {
+      collect(node.operand);
+      return;
+    }
+    if (node.type === 'and' || node.type === 'or') {
+      collect(node.left);
+      collect(node.right);
+    }
+  }
+  collect(ast);
+  return [...new Set(terms)];
+}
+
+/**
+ * Find ranges in text where any of the terms appear (case-insensitive). Returns merged [start, end] pairs.
+ * @param {string} text - Text to search
+ * @param {string[]} terms - Terms to highlight
+ * @returns {Array<[number, number]>} - Sorted, non-overlapping [start, end] ranges
+ */
+export function getHighlightRanges(text, terms) {
+  if (!text || typeof text !== 'string' || !terms || terms.length === 0) return [];
+  const ranges = [];
+  const lower = text.toLowerCase();
+  for (const term of terms) {
+    const t = (term || '').toLowerCase();
+    if (!t) continue;
+    let i = 0;
+    while ((i = lower.indexOf(t, i)) !== -1) {
+      ranges.push([i, i + t.length]);
+      i += t.length;
+    }
+  }
+  if (ranges.length === 0) return [];
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [s, e] of ranges) {
+    if (merged.length && s <= merged[merged.length - 1][1]) {
+      merged[merged.length - 1][1] = Math.max(merged[merged.length - 1][1], e);
+    } else {
+      merged.push([s, e]);
+    }
+  }
+  return merged;
+}
+
+/**
  * Check if a searchable object matches the query
  * 
  * @param {Object} ast - Parsed query AST
  * @param {Object} item - Item to search (should have name, key, summary, type properties)
+ * @param {{ allFields?: boolean }} options - allFields: search in all properties too
  * @returns {boolean} - Whether the item matches
  */
-export function matchesQuery(ast, item) {
+export function matchesQuery(ast, item, options = {}) {
   if (!ast) return true; // Empty query matches everything
 
   const searchFn = (term, exact = false) => {
-    // Build searchable text from all item fields
-    const searchableText = [
-      item.name || '',
-      item.key || '',
-      item.summary || '',
-      item.type || ''
-    ].join(' ').toLowerCase();
+    const searchableText = getSearchableText(item, options);
 
     const normalizedTerm = term.toLowerCase();
 

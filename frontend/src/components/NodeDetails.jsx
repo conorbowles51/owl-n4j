@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { 
+import {
   X, User, Building2, Wallet, MapPin, FileText, ArrowRight, ArrowLeft,
   CheckCircle2, AlertTriangle, ExternalLink, Quote, ChevronDown, ChevronUp,
   Star, CheckSquare, UserCheck
 } from 'lucide-react';
 import { graphAPI } from '../services/api';
+import { parseSearchQuery, getHighlightTerms } from '../utils/searchParser';
+import { highlightMatchedText } from '../utils/highlightText';
 
 /**
  * Icon mapping for entity types
@@ -91,7 +93,7 @@ function CitationLink({ sourceDoc, page, onViewDocument }) {
 /**
  * Verified Fact Item Component
  */
-function VerifiedFactItem({ fact, index, nodeKey, onViewDocument, onPinToggle, isPinning }) {
+function VerifiedFactItem({ fact, index, nodeKey, onViewDocument, onPinToggle, isPinning, highlightTerms = [] }) {
   const importance = fact.importance || 3;
   const importanceStyle = IMPORTANCE_STYLES[importance] || IMPORTANCE_STYLES[3];
   const isPinned = fact.pinned || false;
@@ -135,12 +137,12 @@ function VerifiedFactItem({ fact, index, nodeKey, onViewDocument, onPinToggle, i
             )}
           </div>
           <p className="text-sm text-light-800 leading-relaxed">
-            {fact.text}
+            {highlightTerms.length ? highlightMatchedText(fact.text, highlightTerms, '') : fact.text}
           </p>
           {fact.quote && (
             <div className="mt-2 flex items-start gap-1.5 text-xs text-light-600 italic">
               <Quote className="w-3 h-3 mt-0.5 flex-shrink-0" />
-              <span className="line-clamp-2">"{fact.quote}"</span>
+              <span className="line-clamp-2">"{highlightTerms.length ? highlightMatchedText(fact.quote, highlightTerms, '') : fact.quote}"</span>
             </div>
           )}
           {/* Show original insight info if this was converted from an AI insight */}
@@ -166,7 +168,7 @@ function VerifiedFactItem({ fact, index, nodeKey, onViewDocument, onPinToggle, i
 /**
  * AI Insight Item Component
  */
-function AIInsightItem({ insight, index, nodeKey, username, onVerify, isVerifying }) {
+function AIInsightItem({ insight, index, nodeKey, username, onVerify, isVerifying, highlightTerms = [] }) {
   const [showVerifyForm, setShowVerifyForm] = useState(false);
   const [sourceDoc, setSourceDoc] = useState('');
   const [page, setPage] = useState('');
@@ -205,7 +207,7 @@ function AIInsightItem({ insight, index, nodeKey, username, onVerify, isVerifyin
             </span>
           </div>
           <p className="text-sm text-light-800 leading-relaxed">
-            {insight.text}
+            {highlightTerms.length ? highlightMatchedText(insight.text, highlightTerms, '') : insight.text}
           </p>
           {insight.reasoning && (
             <p className="mt-1.5 text-xs text-light-600">
@@ -360,11 +362,19 @@ export default function NodeDetails({
   username,
   compact = false,
   caseId, // REQUIRED: Case ID for case-specific data
+  searchTerm = '', // Current filter/search query for highlighting matches in Selected panel
 }) {
   const [isPinning, setIsPinning] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [localFacts, setLocalFacts] = useState(null);
   const [localInsights, setLocalInsights] = useState(null);
+
+  const highlightTerms = useMemo(() => {
+    const t = (searchTerm || '').trim();
+    if (!t) return [];
+    const ast = parseSearchQuery(t);
+    return ast ? getHighlightTerms(ast) : [];
+  }, [searchTerm]);
 
   if (!node) return null;
 
@@ -466,9 +476,11 @@ export default function NodeDetails({
             <Icon className={`${iconSize} text-owl-blue-700`} />
           </div>
           <div>
-            <h2 className={`${titleSize} text-owl-blue-900`}>{node.name}</h2>
+            <h2 className={`${titleSize} text-owl-blue-900`}>
+              {highlightTerms.length ? highlightMatchedText(node.name, highlightTerms, '') : node.name}
+            </h2>
             <span className="text-xs text-light-600 bg-light-100 px-2 py-0.5 rounded">
-              {node.type}
+              {highlightTerms.length ? highlightMatchedText(node.type, highlightTerms, '') : node.type}
             </span>
           </div>
         </div>
@@ -489,7 +501,9 @@ export default function NodeDetails({
           <label className="text-xs font-medium text-light-600 uppercase tracking-wide">
             Key
           </label>
-          <p className="text-sm text-light-800 font-mono mt-1">{node.key}</p>
+          <p className="text-sm text-light-800 font-mono mt-1">
+            {highlightTerms.length ? highlightMatchedText(node.key, highlightTerms, '') : node.key}
+          </p>
         </div>
 
         {/* Summary */}
@@ -499,7 +513,7 @@ export default function NodeDetails({
               Summary
             </label>
             <p className="text-sm text-light-800 mt-1 leading-relaxed">
-              {node.summary}
+              {highlightTerms.length ? highlightMatchedText(node.summary, highlightTerms, '') : node.summary}
             </p>
           </div>
         )}
@@ -514,14 +528,15 @@ export default function NodeDetails({
           emptyMessage="No verified facts yet."
         >
           {sortedFacts.map((fact, idx) => (
-            <VerifiedFactItem 
-              key={idx} 
+            <VerifiedFactItem
+              key={idx}
               fact={fact}
               index={idx}
               nodeKey={node.key}
               onViewDocument={onViewDocument}
               onPinToggle={handlePinToggle}
               isPinning={isPinning}
+              highlightTerms={highlightTerms}
             />
           ))}
         </CollapsibleSection>
@@ -541,14 +556,15 @@ export default function NodeDetails({
             </p>
           )}
           {aiInsights.map((insight, idx) => (
-            <AIInsightItem 
-              key={idx} 
+            <AIInsightItem
+              key={idx}
               insight={insight}
               index={idx}
               nodeKey={node.key}
               username={username}
               onVerify={handleVerifyInsight}
               isVerifying={isVerifying}
+              highlightTerms={highlightTerms}
             />
           ))}
         </CollapsibleSection>
@@ -560,7 +576,7 @@ export default function NodeDetails({
               Document Notes
             </label>
             <div className="mt-1 text-sm text-light-700 bg-light-50 rounded-lg p-3 max-h-48 overflow-y-auto whitespace-pre-wrap font-mono text-xs border border-light-200">
-              {node.notes}
+              {highlightTerms.length ? highlightMatchedText(node.notes, highlightTerms, '') : node.notes}
             </div>
           </div>
         )}
@@ -587,15 +603,15 @@ export default function NodeDetails({
                     <ArrowLeft className="w-4 h-4 text-owl-purple-500" />
                   )}
                   <span className="text-xs text-owl-purple-600 font-mono">
-                    {conn.relationship}
+                    {highlightTerms.length ? highlightMatchedText(conn.relationship, highlightTerms, '') : conn.relationship}
                   </span>
                 </div>
                 <div className="mt-1 flex items-center justify-between">
                   <span className="text-sm text-light-800 group-hover:text-owl-blue-900">
-                    {conn.name}
+                    {highlightTerms.length ? highlightMatchedText(conn.name, highlightTerms, '') : conn.name}
                   </span>
                   <span className="text-xs text-light-600">
-                    {conn.type}
+                    {highlightTerms.length ? highlightMatchedText(conn.type, highlightTerms, '') : conn.type}
                   </span>
                 </div>
               </button>
@@ -616,7 +632,9 @@ export default function NodeDetails({
                   <div key={key} className="flex justify-between text-sm">
                     <span className="text-light-600">{key}</span>
                     <span className="text-light-800 font-mono text-xs">
-                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                      {highlightTerms.length
+                        ? highlightMatchedText(typeof value === 'object' ? JSON.stringify(value) : String(value), highlightTerms, '')
+                        : (typeof value === 'object' ? JSON.stringify(value) : String(value))}
                     </span>
                   </div>
                 ))}

@@ -300,6 +300,7 @@ export default function ChatPanel({
   currentCaseId, // Current case ID for associating chat history
   currentCaseName, // Current case name
   currentCaseVersion, // Current case version
+  isTableMode = false, // Whether we're in table view mode
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
@@ -537,7 +538,7 @@ export default function ChatPanel({
   }
 
   return (
-    <div className="w-96 bg-white border-l border-light-200 h-full flex flex-col shadow-sm">
+    <div className={`${isTableMode ? 'flex-shrink-0' : 'w-96'} bg-white border-l border-light-200 h-full flex flex-col shadow-sm ${isTableMode ? 'w-96' : ''}`}>
       {/* Header */}
       <div className="p-4 border-b border-light-200 flex items-center justify-between">
         <div className="flex items-center gap-2">

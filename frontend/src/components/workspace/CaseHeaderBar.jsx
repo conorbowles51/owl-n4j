@@ -13,6 +13,7 @@ export default function CaseHeaderBar({
   trialDate,
   onlineUsers,
   onBack,
+  onLogoClick,
 }) {
   const formatDate = (dateString) => {
     if (!dateString) return null;
@@ -36,6 +37,20 @@ export default function CaseHeaderBar({
           title="Back to cases"
         >
           <ArrowLeft className="w-5 h-5 text-light-600" />
+        </button>
+
+        {/* Owl logo: same size and click as main app (account dropdown) */}
+        <button
+          type="button"
+          onClick={onLogoClick || undefined}
+          className="group focus:outline-none relative flex-shrink-0"
+          title="Account"
+        >
+          <img
+            src="/owl-logo.webp"
+            alt="Owl Consultancy Group"
+            className="w-40 h-40 object-contain"
+          />
         </button>
 
         <div className="flex items-center gap-3">

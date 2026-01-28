@@ -1,5 +1,4 @@
 import React from 'react';
-import QuickActionsSection from './QuickActionsSection';
 import PinnedEvidenceSection from './PinnedEvidenceSection';
 import ClientProfileSection from './ClientProfileSection';
 import WitnessMatrixSection from './WitnessMatrixSection';
@@ -61,13 +60,6 @@ export default function SectionContentPanel({
             fullHeight={true} // Indicate this is in the content panel
             {...commonProps}
           />
-        </div>
-      );
-    
-    case 'quick-actions':
-      return (
-        <div className="h-full overflow-y-auto p-4">
-          <QuickActionsSection caseId={caseId} />
         </div>
       );
     

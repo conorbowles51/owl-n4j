@@ -2321,6 +2321,30 @@ class Neo4jService:
             
             return None
 
+    def get_transcription_translation(self, folder_name: str, case_id: str) -> dict:
+        """
+        Get wiretap Spanish transcription and English translation for a folder, when available.
+        Looks for Neo4j Document nodes: wiretap_{folder}_transcription_spanish,
+        wiretap_{folder}_translation_english.
+
+        Args:
+            folder_name: Folder name (e.g. "00000128")
+            case_id: Case ID
+
+        Returns:
+            {"spanish_transcription": str or None, "english_translation": str or None}
+        """
+        out = {"spanish_transcription": None, "english_translation": None}
+        spanish_doc = f"wiretap_{folder_name}_transcription_spanish"
+        english_doc = f"wiretap_{folder_name}_translation_english"
+        s = self.get_document_summary(spanish_doc, case_id)
+        e = self.get_document_summary(english_doc, case_id)
+        if s and s.strip():
+            out["spanish_transcription"] = s.strip()
+        if e and e.strip():
+            out["english_translation"] = e.strip()
+        return out
+
     # -------------------------------------------------------------------------
     # Case Management
     # -------------------------------------------------------------------------

@@ -815,6 +815,18 @@ export const evidenceAPI = {
   getFolderSummary: (folderName, caseId) => {
     return fetchAPI(`/evidence/folder-summary/${encodeURIComponent(folderName)}?case_id=${encodeURIComponent(caseId)}`);
   },
+
+  /**
+   * Get wiretap Spanish transcription and English translation for a folder, when available.
+   * @param {string} folderName - Wiretap folder name (e.g., "00000128")
+   * @param {string} caseId - Case ID
+   */
+  getTranscriptionTranslation: (folderName, caseId) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('folder_name', folderName);
+    return fetchAPI(`/evidence/transcription-translation?${params.toString()}`);
+  },
   /**
    * List evidence files for a case
    */

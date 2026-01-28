@@ -195,6 +195,8 @@ class EvidenceStorage:
                     "processed_at": None,
                     "last_error": None,
                 }
+                if file_info.get("relative_path") is not None:
+                    record["relative_path"] = file_info["relative_path"]
 
                 self._records[evidence_id] = record
                 created_records.append(record)

@@ -49,7 +49,8 @@ export default function TimelineView({
   timelineData = null,
   onSelectEvents,
   selectedEventKeys = [],
-  onBackgroundClick
+  onBackgroundClick,
+  expandAllOnMount = false,
 }) {
   const [events, setEvents] = useState([]);
   const [allEvents, setAllEvents] = useState([]);
@@ -141,6 +142,13 @@ export default function TimelineView({
       setSelectedTypes(new Set(eventTypes));
     }
   }, [eventTypes]);
+
+  // Expand all columns on mount when requested (e.g. for export capture)
+  useEffect(() => {
+    if (expandAllOnMount && eventTypes.length > 0) {
+      setExpandedColumns(new Set(eventTypes));
+    }
+  }, [expandAllOnMount, eventTypes]);
 
   // Use provided timelineData - the parent (App.jsx) handles filtering
   useEffect(() => {

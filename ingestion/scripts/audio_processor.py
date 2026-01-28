@@ -572,6 +572,7 @@ def ingest_wiretap_folder(
                 "source_type": "wiretap_transcription",
                 "language": "spanish",
                 "wiretap_source": wiretap_doc_name,
+                "summary": spanish_text,
             }
             
             log(f"Ingesting Spanish transcription: {spanish_doc_name}")
@@ -605,6 +606,7 @@ def ingest_wiretap_folder(
                 "source_type": "wiretap_translation",
                 "language": "english",
                 "wiretap_source": wiretap_doc_name,
+                "summary": english_text,
             }
             
             log(f"Ingesting English translation: {english_doc_name}")

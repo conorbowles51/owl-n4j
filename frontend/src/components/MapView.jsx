@@ -334,19 +334,46 @@ function ConnectionLine({ line, showLabel }) {
   );
 }
 
+// Call invalidateSize when map is shown or resized (e.g. in modal/tab) so Leaflet recalculates dimensions
+function InvalidateSizeOnMount() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    if (!container) return;
+    const invalidate = () => {
+      map.invalidateSize();
+    };
+    const ro = new ResizeObserver(() => {
+      invalidate();
+    });
+    ro.observe(container);
+    invalidate();
+    const t = setTimeout(invalidate, 150);
+    const t2 = setTimeout(invalidate, 500);
+    return () => {
+      ro.disconnect();
+      clearTimeout(t);
+      clearTimeout(t2);
+    };
+  }, [map]);
+  return null;
+}
+
 // Component to fit map bounds to markers
 function FitBounds({ locations }) {
   const map = useMap();
-  
+
   useEffect(() => {
-    if (locations && locations.length > 0) {
-      const bounds = L.latLngBounds(
-        locations.map(loc => [loc.latitude, loc.longitude])
-      );
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+    if (!locations || locations.length === 0) return;
+    const pts = locations.map(loc => [loc.latitude, loc.longitude]);
+    if (pts.length === 1) {
+      map.setView(pts[0], 12);
+      return;
     }
+    const bounds = L.latLngBounds(pts);
+    map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
   }, [locations, map]);
-  
+
   return null;
 }
 
@@ -393,6 +420,7 @@ export default function MapView({
   onBackgroundClick,
   locations: externalLocations = null, // Allow passing locations directly
   caseId, // REQUIRED: Case ID for case-specific data
+  containerStyle, // Optional: explicit style for MapContainer (e.g. minHeight in modals)
 }) {
   const [locations, setLocations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -601,6 +629,8 @@ export default function MapView({
   const defaultCenter = [20, 0];
   const defaultZoom = 2;
 
+  const mapContainerStyle = { height: '100%', width: '100%', ...containerStyle };
+
   return (
     <div className="h-full relative">
       {/* Map Container */}
@@ -608,13 +638,15 @@ export default function MapView({
         center={defaultCenter}
         zoom={defaultZoom}
         className="h-full w-full"
+        style={mapContainerStyle}
         onClick={handleMapClick}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        
+
+        <InvalidateSizeOnMount />
         {/* Fit bounds to all markers on initial load */}
         <FitBounds locations={filteredLocations} />
         

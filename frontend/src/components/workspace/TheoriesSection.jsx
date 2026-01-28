@@ -165,8 +165,8 @@ export default function TheoriesSection({
   };
 
   return (
-    <>
-      <div className="border-b border-light-200">
+    <div className={fullHeight ? 'h-full flex flex-col' : ''}>
+      <div className="border-b border-light-200 flex-shrink-0">
         <div
           className="p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between"
           onClick={(e) => onToggle && onToggle(e)}
@@ -207,7 +207,7 @@ export default function TheoriesSection({
         </div>
 
         {!isCollapsed && (
-          <div className={`px-4 pb-4 ${fullHeight ? 'flex flex-col h-full' : ''}`}>
+          <div className={`px-4 pb-4 ${fullHeight ? 'flex flex-col flex-1 min-h-0' : ''}`}>
             {loading ? (
               <p className="text-sm text-light-500 text-center py-8">Loading theories...</p>
             ) : theories.length === 0 ? (
@@ -326,6 +326,6 @@ export default function TheoriesSection({
           onBuild={handleBuildGraph}
         />
       )}
-    </>
+    </div>
   );
 }

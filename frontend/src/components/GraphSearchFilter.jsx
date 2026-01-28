@@ -3,44 +3,46 @@ import { Search, X } from 'lucide-react';
 
 /**
  * GraphSearchFilter Component
- * 
+ *
  * Filters graph nodes or timeline events based on search term.
  * Supports two modes: immediate filter (runs on keystrokes) and manual search (runs on button click).
+ * Empty filter resets to full list immediately. Always searches all fields.
  */
-export default function GraphSearchFilter({ 
+export default function GraphSearchFilter({
   onFilterChange,
   onQueryChange,
   onSearch,
   mode = 'filter',
   onModeChange,
   placeholder = "Filter by search term...",
-  disabled = false
+  disabled = false,
 }) {
   const [query, setQuery] = useState('');
   const inputRef = useRef(null);
+  const trimmed = (query || '').trim();
 
-  // Debounced filter update (only in filter mode)
+  // In filter mode: empty filter resets immediately; non-empty is debounced so typing/removing chars refilters
   useEffect(() => {
-    if (mode !== 'filter') {
+    if (mode !== 'filter') return;
+    if (trimmed === '') {
+      onFilterChange?.('', 'all');
       return;
     }
-
     const timer = setTimeout(() => {
-      onFilterChange?.(query.trim());
+      onFilterChange?.(trimmed, 'all');
     }, 300);
-
     return () => clearTimeout(timer);
-  }, [query, mode, onFilterChange]);
+  }, [trimmed, mode, onFilterChange]);
 
-  // Notify parent of raw query string (used for pending search text)
   useEffect(() => {
-    onQueryChange?.(query.trim());
+    onQueryChange?.(trimmed);
   }, [query, onQueryChange]);
 
   const handleClear = useCallback(() => {
     setQuery('');
+    onFilterChange?.('', 'all');
     inputRef.current?.focus();
-  }, []);
+  }, [onFilterChange]);
 
   const handleModeChange = (event) => {
     onModeChange?.(event.target.value);
@@ -60,8 +62,8 @@ export default function GraphSearchFilter({
   };
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="relative flex-1">
+    <div className="flex items-center gap-2 flex-wrap">
+      <div className="relative flex-1 min-w-[160px]">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-light-600" />
         <input
           ref={inputRef}

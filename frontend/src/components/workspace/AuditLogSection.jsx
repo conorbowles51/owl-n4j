@@ -54,9 +54,8 @@ export default function AuditLogSection({
   };
 
   return (
-    <div className="border-b border-light-200">
-      <div
-        className="p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between"
+    <div className={`border-b border-light-200 ${fullHeight ? 'h-full flex flex-col' : ''}`}>
+      <div className={`${fullHeight ? 'flex-shrink-0' : ''} p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between`}
         onClick={(e) => onToggle && onToggle(e)}
       >
         <h3 className="text-sm font-semibold text-owl-blue-900 flex items-center gap-2">
@@ -85,7 +84,7 @@ export default function AuditLogSection({
       </div>
 
       {!isCollapsed && (
-        <div className={`px-4 pb-4 ${fullHeight ? 'flex flex-col h-full' : ''}`}>
+        <div className={`px-4 pb-4 ${fullHeight ? 'flex flex-col flex-1 min-h-0' : ''}`}>
           {loading ? (
             <p className="text-xs text-light-500">Loading audit log...</p>
           ) : logs.length === 0 ? (

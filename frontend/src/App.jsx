@@ -37,7 +37,8 @@ import {
   ArrowRight,
   Minimize2,
   Square,
-  MousePointer
+  MousePointer,
+  Table2,
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
@@ -50,6 +51,7 @@ import SearchBar from './components/SearchBar';
 import GraphSearchFilter from './components/GraphSearchFilter';
 import TimelineView from './components/timeline/TimelineView';
 import MapView from './components/MapView';
+import GraphTableView from './components/GraphTableView';
 import SnapshotModal from './components/SnapshotModal';
 import SaveSnapshotProgressDialog from './components/SaveSnapshotProgressDialog';
 import CaseModal from './components/CaseModal';
@@ -84,6 +86,13 @@ export default function App() {
   const [appView, setAppView] = useState('caseManagement'); // Start with case management after login
   // View mode state (for graph view)
   const [viewMode, setViewMode] = useState('graph'); // 'graph' or 'timeline'
+  
+  // Table view state persistence
+  const [tableViewState, setTableViewState] = useState({
+    panels: null,
+    selectedPanels: new Set(),
+    columnFilters: new Map(),
+  });
   // Graph state
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [fullGraphData, setFullGraphData] = useState({ nodes: [], links: [] }); // Store unfiltered graph
@@ -91,6 +100,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [dateRange, setDateRange] = useState({ start_date: null, end_date: null });
   const [graphSearchTerm, setGraphSearchTerm] = useState('');
+  const [graphSearchFieldScope, setGraphSearchFieldScope] = useState('all'); // 'all' | 'selected'
   const [graphSearchMode, setGraphSearchMode] = useState('filter');
   const [pendingGraphSearch, setPendingGraphSearch] = useState('');
 
@@ -282,6 +292,20 @@ export default function App() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showClearSpotlightConfirm]);
+
+  // Keyboard shortcut for Save Snapshot (Cmd+S / Ctrl+S)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Check for Cmd+S (Mac) or Ctrl+S (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault(); // Prevent browser's default save dialog
+        setShowSnapshotModal(true);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
   
   // Document viewer state
   const [documentViewerState, setDocumentViewerState] = useState({
@@ -472,13 +496,9 @@ export default function App() {
       return;
     }
 
-    // Parse the search query
     const queryAST = parseSearchQuery(searchTerm);
-    
-    // Filter nodes that match the query
-    const matchingNodes = data.nodes.filter(node => {
-      return matchesQuery(queryAST, node);
-    });
+    const searchOpts = { allFields: graphSearchFieldScope === 'all' };
+    const matchingNodes = data.nodes.filter(node => matchesQuery(queryAST, node, searchOpts));
 
     const matchingNodeKeys = new Set(matchingNodes.map(n => n.key));
 
@@ -490,7 +510,7 @@ export default function App() {
     });
 
     setGraphData({ nodes: matchingNodes, links: matchingLinks });
-  }, []);
+  }, [graphSearchFieldScope]);
 
   // Load graph data
   const loadGraph = useCallback(async (caseIdOverride = null) => {
@@ -527,8 +547,9 @@ export default function App() {
   }, [fullGraphData, graphSearchTerm, applyGraphFilter]);
 
   // Handle graph search filter change
-  const handleGraphFilterChange = useCallback((searchTerm) => {
-    setGraphSearchTerm(searchTerm);
+  const handleGraphFilterChange = useCallback((searchTerm, fieldScope) => {
+    setGraphSearchTerm(searchTerm ?? '');
+    if (fieldScope !== undefined) setGraphSearchFieldScope(fieldScope);
   }, []);
 
   const handleGraphQueryChange = useCallback((searchTerm) => {
@@ -624,7 +645,34 @@ export default function App() {
         setSelectedNodesDetails([]);
       }
     }, debounceDelay);
-  }, []);
+  }, [currentCaseId]);
+
+  // Handle opening chat from table view with selected nodes
+  const handleTableChatOpen = useCallback(async (nodes) => {
+    if (!nodes || nodes.length === 0) return;
+    
+    // Extract node keys
+    const nodeKeys = nodes.map(n => n.key).filter(Boolean);
+    if (nodeKeys.length === 0) return;
+    
+    // Set node details immediately with available info from table nodes
+    // This ensures chat opens right away with basic node information
+    const nodeDetails = nodes.map(node => ({
+      key: node.key,
+      name: node.name || node.key,
+      type: node.type || '',
+      summary: node.summary || '',
+      notes: node.notes || '',
+      properties: node.properties || {},
+    }));
+    setSelectedNodesDetails(nodeDetails);
+    
+    // Open chat panel
+    setIsChatOpen(true);
+    
+    // Load full node details in background (will update selectedNodesDetails when complete)
+    loadNodeDetails(nodeKeys);
+  }, [loadNodeDetails]);
 
   // Navigate back in Spotlight Graph history
   const navigateQueryFocusHistoryBack = useCallback(() => {
@@ -769,16 +817,36 @@ export default function App() {
   }, [subgraphNodeKeys, fullGraphData, graphData, loadNodeDetails]);
 
   // Handle node click - support multi-select with Ctrl/Cmd
-  const handleNodeClick = useCallback((node, event) => {
-    // Check both the event and tracked state (event might not have modifiers for canvas clicks)
+  // Table view passes (node, panel, event); graph/timeline/map pass (node, event)
+  const handleNodeClick = useCallback((node, eventOrPanel, eventMaybe) => {
+    const event = eventMaybe ?? eventOrPanel;
+    const panel = eventMaybe !== undefined ? eventOrPanel : null;
     const isMultiSelect = event?.ctrlKey || event?.metaKey || event?.originalCtrlKey || event?.originalMetaKey;
-    
+
+    // Table row in relations panel: include breadcrumb trail + clicked node
+    const isRelationsPanel = panel?.type === 'relations' && panel?.breadcrumb?.length > 0;
+    if (isRelationsPanel && !isMultiSelect) {
+      const nodes = graphData.nodes;
+      const breadcrumbNodes = panel.breadcrumb
+        .map((c) => nodes.find((n) => n.key === c.key))
+        .filter(Boolean);
+      // Order: clicked node first (most recent), then breadcrumb in reverse (most recent breadcrumb first)
+      const nodesToShow = [
+        ...(breadcrumbNodes.some((n) => n.key === node.key) ? [] : [node]),
+        ...breadcrumbNodes.reverse(),
+      ];
+      const keysToLoad = nodesToShow.map((n) => n.key);
+      setSelectedNodes(nodesToShow);
+      loadNodeDetails(keysToLoad);
+      setTimelineContextKeys(keysToLoad);
+      setContextMenu(null);
+      return;
+    }
+
     if (isMultiSelect) {
-      // Toggle node in selection
       setSelectedNodes(prev => {
         const isSelected = prev.some(n => n.key === node.key);
         if (isSelected) {
-          // Remove from selection
           const newSelection = prev.filter(n => n.key !== node.key);
           const newKeys = newSelection.map(n => n.key);
           if (newKeys.length > 0) {
@@ -786,28 +854,23 @@ export default function App() {
           } else {
             setSelectedNodesDetails([]);
           }
-          // Update timeline context when selecting from graph
           setTimelineContextKeys(newKeys);
           return newSelection;
         } else {
-          // Add to selection
           const newSelection = [...prev, node];
           const newKeys = newSelection.map(n => n.key);
           loadNodeDetails(newKeys);
-          // Update timeline context when selecting from graph
           setTimelineContextKeys(newKeys);
           return newSelection;
         }
       });
     } else {
-      // Single select - replace selection
       setSelectedNodes([node]);
       loadNodeDetails([node.key]);
-      // Update timeline context when selecting from graph
       setTimelineContextKeys([node.key]);
     }
     setContextMenu(null);
-  }, [loadNodeDetails]);
+  }, [loadNodeDetails, graphData.nodes]);
 
   // Handle timeline event selection - show details without changing timeline context
   // This is different from graph selection because we don't want clicking an event
@@ -2113,11 +2176,7 @@ export default function App() {
 
   // Save snapshot
   const handleSaveSnapshot = useCallback(async (name, notes) => {
-    if (subgraphNodeKeys.length === 0) {
-      alert('Please add nodes to subgraph to save as a snapshot');
-      return;
-    }
-
+    // Allow saving snapshots even without subgraph - save complete work state
     // Show progress dialog
     setSaveSnapshotProgress({
       isOpen: true,
@@ -2126,7 +2185,7 @@ export default function App() {
       stageProgress: 0,
       stageTotal: 0,
       current: 0,
-      total: 5, // Loading nodes, extracting citations, filtering chat, generating AI overview, saving
+      total: 6, // Loading nodes, extracting citations, processing chat, generating AI overview, collecting state, saving
     });
 
     try {
@@ -2236,137 +2295,145 @@ export default function App() {
         }
       }
       
-      // Stage 3: Filter chat history
+      // Stage 3: Collect full chat history (all messages and AI responses)
       setSaveSnapshotProgress(prev => ({
         ...prev,
-        stage: 'Processing chat history',
+        stage: 'Collecting chat history',
         stageProgress: 0,
         stageTotal: chatHistory.length,
         current: 3,
-        message: 'Filtering relevant chat history...',
+        message: 'Collecting complete chat history and AI responses...',
       }));
 
-      const relevantChatHistory = [];
-      for (let i = 0; i < chatHistory.length; i++) {
-        const msg = chatHistory[i];
-        // Check if this is a user message with selected nodes matching our subgraph
-        if (msg.role === 'user' && msg.selectedNodes) {
-          const isRelevant = msg.selectedNodes.some(key => subgraphNodeKeys.includes(key));
-          if (isRelevant) {
-            // Include the user message
-            relevantChatHistory.push({
-              role: msg.role,
-              content: msg.content,
-              timestamp: msg.timestamp || new Date().toISOString(),
-            });
-            
-            // Include the next assistant response if it exists
-            if (i + 1 < chatHistory.length && chatHistory[i + 1].role === 'assistant') {
-              const assistantMsg = chatHistory[i + 1];
-              relevantChatHistory.push({
-                role: assistantMsg.role,
-                content: assistantMsg.content,
-                contextMode: assistantMsg.contextMode,
-                contextDescription: assistantMsg.contextDescription,
-                cypherUsed: assistantMsg.cypherUsed,
-                timestamp: assistantMsg.timestamp || new Date().toISOString(),
-              });
-            }
-          }
-        }
+      // Save full chat history including all AI responses
+      const fullChatHistory = chatHistory.map(msg => ({
+        role: msg.role,
+        content: msg.content,
+        timestamp: msg.timestamp || new Date().toISOString(),
+        contextMode: msg.contextMode,
+        contextDescription: msg.contextDescription,
+        cypherUsed: msg.cypherUsed,
+        usedNodeKeys: msg.usedNodeKeys,
+        resultGraph: msg.resultGraph, // Include result graph from AI responses
+        modelInfo: msg.modelInfo,
+        selectedNodes: msg.selectedNodes,
+        isError: msg.isError,
+      }));
 
-        if (i % 5 === 0) {
-          setSaveSnapshotProgress(prev => ({
-            ...prev,
-            stageProgress: i + 1,
-          }));
-        }
-      }
-
-      // Stage 4: Generate AI overview of the snapshot
       setSaveSnapshotProgress(prev => ({
         ...prev,
-        stage: 'Generating AI overview',
-        stageProgress: 0,
-        stageTotal: 1,
-        current: 4,
-        message: 'Generating AI overview...',
+        stageProgress: chatHistory.length,
       }));
 
+      // Stage 4: Generate AI overview of the snapshot (only if we have subgraph nodes)
       let aiOverview = null;
-      try {
-        // Create a prompt for the AI to generate an overview
-        const nodeNames = allSubgraphNodeDetails
-          .slice(0, 20) // Limit to first 20 nodes to avoid token limits
-          .map(n => n.name || n.key)
-          .join(', ');
-        
-        const overviewPrompt = `Provide a brief, readable overview (2-3 sentences) of this investigation snapshot. The snapshot contains ${subgraphData.nodes.length} nodes and ${subgraphData.links.length} relationships. Key entities include: ${nodeNames}. Focus on the main connections and insights.`;
-        
-        console.log('Generating AI overview for snapshot:', {
-          nodeCount: subgraphData.nodes.length,
-          linkCount: subgraphData.links.length,
-          nodeNames: nodeNames.substring(0, 100) + '...',
-          promptLength: overviewPrompt.length
-        });
-        
-        const aiResponse = await chatAPI.ask(overviewPrompt, subgraphNodeKeys.slice(0, 10)); // Limit to 10 nodes for context
-        
-        console.log('Raw AI response:', aiResponse);
-        
-        // Extract answer from response - check multiple possible fields
-        aiOverview = aiResponse?.answer || aiResponse?.response || aiResponse?.content || null;
-        
-        // Clean up the answer if it exists
-        if (aiOverview && typeof aiOverview === 'string') {
-          aiOverview = aiOverview.trim();
-          // If empty after trimming, set to null
-          if (aiOverview.length === 0) {
-            aiOverview = null;
-          }
-        }
-        
-        console.log('AI overview generation result:', {
-          hasResponse: !!aiResponse,
-          responseType: typeof aiResponse,
-          responseKeys: aiResponse ? Object.keys(aiResponse) : [],
-          answer: aiResponse?.answer,
-          response: aiResponse?.response,
-          content: aiResponse?.content,
-          aiOverview: aiOverview,
-          success: !!aiOverview,
-          length: aiOverview?.length || 0,
-          preview: aiOverview?.substring(0, 100) || 'null'
-        });
-        
-        if (!aiOverview) {
-          console.warn('AI overview is null or empty. Full response:', JSON.stringify(aiResponse, null, 2));
-        }
-        
+      if (subgraphNodeKeys.length > 0 && allSubgraphNodeDetails.length > 0) {
         setSaveSnapshotProgress(prev => ({
           ...prev,
-          stageProgress: 1,
+          stage: 'Generating AI overview',
+          stageProgress: 0,
+          stageTotal: 1,
+          current: 4,
+          message: 'Generating AI overview...',
         }));
-      } catch (err) {
-        console.error('Failed to generate AI overview:', err);
-        console.error('Error details:', {
-          message: err.message,
-          stack: err.stack,
-          name: err.name
-        });
-        // Continue without AI overview if generation fails
+
+        try {
+          // Create a prompt for the AI to generate an overview
+          const nodeNames = allSubgraphNodeDetails
+            .slice(0, 20) // Limit to first 20 nodes to avoid token limits
+            .map(n => n.name || n.key)
+            .join(', ');
+          
+          const overviewPrompt = `Provide a brief, readable overview (2-3 sentences) of this investigation snapshot. The snapshot contains ${subgraphData.nodes.length} nodes and ${subgraphData.links.length} relationships. Key entities include: ${nodeNames}. Focus on the main connections and insights.`;
+          
+          console.log('Generating AI overview for snapshot:', {
+            nodeCount: subgraphData.nodes.length,
+            linkCount: subgraphData.links.length,
+            nodeNames: nodeNames.substring(0, 100) + '...',
+            promptLength: overviewPrompt.length
+          });
+          
+          const aiResponse = await chatAPI.ask(overviewPrompt, subgraphNodeKeys.slice(0, 10)); // Limit to 10 nodes for context
+          
+          console.log('Raw AI response:', aiResponse);
+          
+          // Extract answer from response - check multiple possible fields
+          aiOverview = aiResponse?.answer || aiResponse?.response || aiResponse?.content || null;
+          
+          // Clean up the answer if it exists
+          if (aiOverview && typeof aiOverview === 'string') {
+            aiOverview = aiOverview.trim();
+            // If empty after trimming, set to null
+            if (aiOverview.length === 0) {
+              aiOverview = null;
+            }
+          }
+          
+          console.log('AI overview generation result:', {
+            hasResponse: !!aiResponse,
+            responseType: typeof aiResponse,
+            responseKeys: aiResponse ? Object.keys(aiResponse) : [],
+            answer: aiResponse?.answer,
+            response: aiResponse?.response,
+            content: aiResponse?.content,
+            aiOverview: aiOverview,
+            success: !!aiOverview,
+            length: aiOverview?.length || 0,
+            preview: aiOverview?.substring(0, 100) || 'null'
+          });
+          
+          if (!aiOverview) {
+            console.warn('AI overview is null or empty. Full response:', JSON.stringify(aiResponse, null, 2));
+          }
+          
+          setSaveSnapshotProgress(prev => ({
+            ...prev,
+            stageProgress: 1,
+          }));
+        } catch (err) {
+          console.error('Failed to generate AI overview:', err);
+          console.error('Error details:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name
+          });
+          // Continue without AI overview if generation fails
+          setSaveSnapshotProgress(prev => ({
+            ...prev,
+            stageProgress: 1,
+          }));
+        }
+      } else {
+        // Skip AI overview if no subgraph
         setSaveSnapshotProgress(prev => ({
           ...prev,
+          stage: 'Skipping AI overview',
           stageProgress: 1,
+          stageTotal: 1,
+          current: 4,
+          message: 'No subgraph nodes for AI overview',
         }));
       }
+
+      // Stage 5: Collect complete work state
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stage: 'Collecting work state',
+        stageProgress: 0,
+        stageTotal: 1,
+        current: 5,
+        message: 'Collecting complete work state (graph, table, selections)...',
+      }));
 
       // Create a deep copy of all snapshot data to prevent reference issues
       // This ensures that if the original state is modified later, it won't affect the saved snapshot
       const snapshot = {
         name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
-        subgraph: JSON.parse(JSON.stringify(subgraphData)), // Deep copy subgraph
+        // Subgraph data (spotlight graph)
+        subgraph: subgraphNodeKeys.length > 0 
+          ? JSON.parse(JSON.stringify(subgraphData)) 
+          : { nodes: [], links: [] }, // Empty if no subgraph
         timeline: JSON.parse(JSON.stringify(timelineData || [])), // Deep copy timeline
         overview: {
           nodes: JSON.parse(JSON.stringify(allSubgraphNodeDetails)), // Deep copy node details
@@ -2374,17 +2441,40 @@ export default function App() {
           linkCount: subgraphData.links.length,
         },
         citations: JSON.parse(JSON.stringify(citations)), // Deep copy citations
-        chat_history: JSON.parse(JSON.stringify(relevantChatHistory)), // Deep copy chat history
+        // Full chat history with all AI responses
+        chat_history: JSON.parse(JSON.stringify(fullChatHistory)), // Full chat history
         ai_overview: aiOverview ? String(aiOverview) : null, // Ensure string, not reference
+        // Complete work state
+        work_state: {
+          // Graph state
+          full_graph: JSON.parse(JSON.stringify(fullGraphData)), // Full graph data
+          result_graph: resultGraphData ? JSON.parse(JSON.stringify(resultGraphData)) : null, // AI assistant result graph
+          selected_nodes: JSON.parse(JSON.stringify(selectedNodes)), // Currently selected nodes
+          selected_node_keys: Array.from(selectedNodeKeys), // Selected node keys
+          subgraph_node_keys: Array.from(subgraphNodeKeys), // Spotlight graph node keys
+          view_mode: viewMode, // Current view mode (graph, table, timeline, map)
+          active_subgraph_tab: activeSubgraphTab, // Which subgraph tab is active
+          // Table view state
+          table_view_state: tableViewState ? JSON.parse(JSON.stringify(tableViewState)) : null, // Table panels, filters, selections
+          // Graph view state
+          date_range: JSON.parse(JSON.stringify(dateRange)), // Date range filter
+          graph_search_term: graphSearchTerm, // Graph search term
+          graph_search_mode: graphSearchMode, // Graph search mode
+        },
       };
 
-      // Stage 5: Save snapshot
+      setSaveSnapshotProgress(prev => ({
+        ...prev,
+        stageProgress: 1,
+      }));
+
+      // Stage 6: Save snapshot
       setSaveSnapshotProgress(prev => ({
         ...prev,
         stage: 'Saving snapshot',
         stageProgress: 0,
         stageTotal: 1,
-        current: 5,
+        current: 6,
         message: 'Saving snapshot to database...',
       }));
 
@@ -2900,13 +2990,79 @@ export default function App() {
 
   // Workspace view for current case
   if (appView === 'workspace') {
+    const accountDropdownContent = (
+      <div className="w-48 rounded-lg bg-white shadow-lg border border-light-200 py-2">
+        {isAuthenticated ? (
+          <div className="px-3 py-1 space-y-1 text-sm text-dark-600">
+            <p className="text-xs uppercase text-dark-400">Signed in as</p>
+            <p className="font-semibold text-dark-800">{authUsername}</p>
+            <button
+              onClick={() => {
+                setShowDocumentation(true);
+                setIsAccountDropdownOpen(false);
+              }}
+              className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+            >
+              Documentation
+            </button>
+            <button
+              onClick={async () => {
+                await handleLogout();
+                setIsAccountDropdownOpen(false);
+              }}
+              className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+            >
+              Logout
+            </button>
+          </div>
+        ) : (
+          <div className="px-3 py-2 space-y-1">
+            <button
+              onClick={() => {
+                setShowDocumentation(true);
+                setIsAccountDropdownOpen(false);
+              }}
+              className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+            >
+              Documentation
+            </button>
+            <button
+              onClick={() => {
+                setShowLoginPanel(true);
+                setIsAccountDropdownOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 bg-dark-900 text-light-100 rounded shadow-sm hover:bg-dark-800 transition-colors text-sm"
+            >
+              Login
+            </button>
+          </div>
+        )}
+      </div>
+    );
     return (
-      <WorkspaceView
-        caseId={currentCaseId}
-        caseName={currentCaseName}
-        onBack={() => setAppView('caseManagement')}
-        authUsername={authUsername}
-      />
+      <>
+        <WorkspaceView
+          caseId={currentCaseId}
+          caseName={currentCaseName}
+          onBack={() => setAppView('caseManagement')}
+          authUsername={authUsername}
+          onLogoClick={() => setIsAccountDropdownOpen(prev => !prev)}
+        />
+        {isAccountDropdownOpen && (
+          <div
+            className="fixed inset-0 z-50"
+            onClick={() => setIsAccountDropdownOpen(false)}
+            aria-hidden="true"
+          >
+            <div
+              className="absolute left-6 top-16"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {accountDropdownContent}
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -2992,6 +3148,7 @@ export default function App() {
     <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="h-16 bg-white border-b border-light-200 flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
+        {/* Left side: File Management, Settings, Logo, and Save Snapshot */}
         <div className="flex items-center gap-3 relative">
           {/* File Management Button */}
           <button
@@ -3072,70 +3229,74 @@ export default function App() {
             )}
           </div>
 
-
+          {/* Owl Logo */}
           <button
             ref={logoButtonRef}
             onClick={() => setIsAccountDropdownOpen(prev => !prev)}
-            className="group focus:outline-none"
+            className="group focus:outline-none relative"
             type="button"
           >
             <img src="/owl-logo.webp" alt="Owl Consultancy Group" className="w-40 h-40 object-contain" />
+            
+            {isAccountDropdownOpen && (
+              <div
+                ref={accountDropdownRef}
+                className="absolute z-50 mt-2 w-48 rounded-lg bg-white shadow-lg border border-light-200 py-2 left-0"
+                style={{ top: '70px' }}
+              >
+                {isAuthenticated ? (
+                  <div className="px-3 py-1 space-y-1 text-sm text-dark-600">
+                    <p className="text-xs uppercase text-dark-400">Signed in as</p>
+                    <p className="font-semibold text-dark-800">{authUsername}</p>
+                    <button
+                      onClick={() => {
+                        setShowDocumentation(true);
+                        setIsAccountDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                    >
+                      Documentation
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await handleLogout();
+                        setIsAccountDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                    >
+                      Logout
+                    </button>
+                  </div>
+                ) : (
+                  <div className="px-3 py-2 space-y-1">
+                    <button
+                      onClick={() => {
+                        setShowDocumentation(true);
+                        setIsAccountDropdownOpen(false);
+                      }}
+                      className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
+                    >
+                      Documentation
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowLoginPanel(true);
+                        setIsAccountDropdownOpen(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-3 py-2 bg-dark-900 text-light-100 rounded shadow-sm hover:bg-dark-800 transition-colors text-sm"
+                    >
+                      Login
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </button>
 
-          {isAccountDropdownOpen && (
-            <div
-              ref={accountDropdownRef}
-              className="absolute z-50 mt-2 w-48 rounded-lg bg-white shadow-lg border border-light-200 py-2 right-0"
-              style={{ top: '70px', left: '0' }}
-            >
-              {isAuthenticated ? (
-                <div className="px-3 py-1 space-y-1 text-sm text-dark-600">
-                  <p className="text-xs uppercase text-dark-400">Signed in as</p>
-                  <p className="font-semibold text-dark-800">{authUsername}</p>
-                  <button
-                    onClick={() => {
-                      setShowDocumentation(true);
-                      setIsAccountDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
-                  >
-                    Documentation
-                  </button>
-                  <button
-                    onClick={async () => {
-                      await handleLogout();
-                      setIsAccountDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
-                  >
-                    Logout
-                  </button>
-                </div>
-              ) : (
-                <div className="px-3 py-2 space-y-1">
-                  <button
-                    onClick={() => {
-                      setShowDocumentation(true);
-                      setIsAccountDropdownOpen(false);
-                    }}
-                    className="w-full text-left px-2 py-1 rounded hover:bg-light-100 transition-colors text-sm text-dark-700"
-                  >
-                    Documentation
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowLoginPanel(true);
-                      setIsAccountDropdownOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-dark-900 text-light-100 rounded shadow-sm hover:bg-dark-800 transition-colors text-sm"
-                  >
-                    Login
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
+        </div>
 
+        {/* Right side: View controls and other buttons */}
+        <div className="flex items-center gap-3">
           {/* Current Case Name */}
           <div className="flex flex-col">
             <span className="text-sm font-semibold text-owl-blue-900">
@@ -3340,6 +3501,17 @@ export default function App() {
               <MapPin className="w-4 h-4" />
               Map
             </button>
+            <button
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                viewMode === 'table'
+                  ? 'bg-white text-owl-blue-900 shadow-sm'
+                  : 'text-light-600 hover:text-light-800'
+              }`}
+            >
+              <Table2 className="w-4 h-4" />
+              Table
+            </button>
           </div>
 
           {/* Date Range Filter */}
@@ -3352,19 +3524,21 @@ export default function App() {
             />
           )}
 
-          {viewMode === 'graph' && (
+          {(viewMode === 'graph' || viewMode === 'table') && (
             <GraphSearchFilter
               mode={graphSearchMode}
               onModeChange={handleGraphModeChange}
               onFilterChange={handleGraphFilterChange}
               onQueryChange={handleGraphQueryChange}
               onSearch={handleGraphSearchExecute}
-              placeholder="Filter graph nodes..."
+              placeholder={viewMode === 'table' ? 'Filter table nodes...' : 'Filter graph nodes...'}
               disabled={isLoading}
             />
           )}
-          
-          <SearchBar onSelectNode={handleSearchSelect} caseId={currentCaseId} />
+
+          {viewMode !== 'graph' && viewMode !== 'table' && (
+            <SearchBar onSelectNode={handleSearchSelect} caseId={currentCaseId} />
+          )}
           
           <button
             onClick={loadGraph}
@@ -3386,14 +3560,124 @@ export default function App() {
           >
             <MessageSquare className="w-5 h-5" />
           </button>
+
+          <button
+            onClick={() => setShowSnapshotModal(true)}
+            className="p-2 rounded-lg transition-colors bg-owl-orange-500 hover:bg-owl-orange-600 text-white"
+            title="Save Snapshot (Cmd/Ctrl+S)"
+          >
+            <Camera className="w-5 h-5" />
+          </button>
         </div>
       </header>
 
-      {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Main content - min-w-0 so it can shrink when table has Selected/Chat alongside */}
+      <div className="flex-1 flex min-w-0 overflow-hidden">
         {/* Main view area - min-w-0 prevents flex item from expanding beyond container */}
-        <div className="flex-1 relative overflow-hidden min-w-0">
-          {viewMode === 'graph' ? (
+        {viewMode === 'table' ? (
+          // Table mode: table | selected | chat in one row; Selected/Chat push table (shrink), never overlay
+          <div className="flex-1 flex min-w-0 overflow-hidden w-full">
+            {/* Table view - takes remaining space, shrinks when Selected or Chat are shown */}
+            <div className="flex-1 min-w-0 overflow-hidden">
+              <div className="h-full flex flex-col min-h-0">
+                <GraphTableView
+                  graphData={graphData}
+                  searchTerm={graphSearchTerm || ''}
+                  onNodeClick={handleNodeClick}
+                  selectedNodeKeys={selectedNodeKeys}
+                  onOpenChat={handleTableChatOpen}
+                  isChatOpen={isChatOpen || selectedNodesDetails.length > 0}
+                  resultGraphData={resultGraphData}
+                  tableViewState={tableViewState}
+                  onTableViewStateChange={setTableViewState}
+                />
+              </div>
+            </div>
+            
+            {/* Selected nodes sidebar - only show in table mode if nodes are selected */}
+            {selectedNodesDetails.length > 0 && (
+              <div className="w-80 bg-white border-l border-light-200 h-full flex flex-col overflow-hidden shadow-sm flex-shrink-0">
+                <div className="p-4 border-b border-light-200 flex items-center justify-between flex-shrink-0">
+                  <h2 className="font-semibold text-owl-blue-900">
+                    Selected ({selectedNodesDetails.length})
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowSnapshotModal(true)}
+                      className="p-1.5 hover:bg-light-100 rounded transition-colors text-owl-blue-600 hover:text-owl-blue-700"
+                      title="Create snapshot"
+                    >
+                      <Camera className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setShowEditNodeModal(true)}
+                      className="p-1.5 hover:bg-light-100 rounded transition-colors text-owl-blue-600 hover:text-owl-blue-700"
+                      title="Edit node information"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleCloseDetails}
+                      className="p-1 hover:bg-light-100 rounded transition-colors"
+                    >
+                      <X className="w-5 h-5 text-light-600" />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {selectedNodesDetails.map((node, idx) => (
+                    <div key={node.key} className={idx > 0 ? "border-t border-light-200" : ""}>
+                      <NodeDetails
+                        node={node}
+                        onClose={() => {
+                          const newSelection = selectedNodes.filter(n => n.key !== node.key);
+                          const newKeys = newSelection.map(n => n.key);
+                          setSelectedNodes(newSelection);
+                          if (newSelection.length > 0) {
+                            loadNodeDetails(newKeys);
+                          } else {
+                            setSelectedNodesDetails([]);
+                          }
+                        }}
+                        onSelectNode={handleSearchSelect}
+                        onViewDocument={handleViewDocument}
+                        onNodeUpdate={(updatedNode) => {
+                          setSelectedNodesDetails(prev =>
+                            prev.map(n => n.key === updatedNode.key ? updatedNode : n)
+                          );
+                        }}
+                        username={authUsername}
+                        compact={selectedNodesDetails.length > 1}
+                        caseId={currentCaseId}
+                        searchTerm={graphSearchTerm || ''}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Chat panel - side by side with table view */}
+            {isChatOpen && (
+              <ChatPanel
+                isOpen={isChatOpen}
+                onToggle={() => setIsChatOpen(!isChatOpen)}
+                onClose={() => setIsChatOpen(false)}
+                selectedNodes={selectedNodesDetails}
+                onMessagesChange={setChatHistory}
+                initialMessages={chatHistory}
+                onAutoSave={handleAutoSaveChat}
+                currentCaseId={currentCaseId}
+                currentCaseName={currentCaseName}
+                currentCaseVersion={currentCaseVersion}
+                isTableMode={true}
+              />
+            )}
+          </div>
+        ) : (
+          // Normal view mode (graph, timeline, map) or table without chat
+          <div className="flex-1 relative overflow-hidden min-w-0">
+            {viewMode === 'graph' ? (
             <>
             {/* Relationship Mode Indicator */}
             {isRelationshipMode && (
@@ -4150,6 +4434,21 @@ export default function App() {
                 </div>
               </div>
             )
+          ) : viewMode === 'table' ? (
+            // Table View - tabular view of graph nodes with expandable relations
+            <div className="h-full flex flex-col min-h-0">
+              <GraphTableView
+                graphData={graphData}
+                searchTerm={graphSearchTerm || ''}
+                onNodeClick={handleNodeClick}
+                selectedNodeKeys={selectedNodeKeys}
+                onOpenChat={handleTableChatOpen}
+                isChatOpen={isChatOpen}
+                resultGraphData={resultGraphData}
+                tableViewState={tableViewState}
+                onTableViewStateChange={setTableViewState}
+              />
+            </div>
           ) : (
             // Map View
             <MapView
@@ -4160,11 +4459,11 @@ export default function App() {
               caseId={currentCaseId}
             />
           )}
+          </div>
+        )}
 
-        </div>
-
-        {/* Node details sidebar - show all selected nodes */}
-        {selectedNodesDetails.length > 0 && (
+        {/* Node details sidebar - show all selected nodes (only for non-table views) */}
+        {selectedNodesDetails.length > 0 && viewMode !== 'table' && (
           <div className="w-80 bg-white border-l border-light-200 h-full flex flex-col overflow-hidden shadow-sm">
             <div className="p-4 border-b border-light-200 flex items-center justify-between flex-shrink-0">
               <h2 className="font-semibold text-owl-blue-900">
@@ -4224,6 +4523,7 @@ export default function App() {
                     username={authUsername}
                     compact={selectedNodesDetails.length > 1}
                     caseId={currentCaseId}
+                    searchTerm={graphSearchTerm || ''}
                   />
                 </div>
               ))}
@@ -4231,8 +4531,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Chat panel */}
-        {isChatOpen && (
+        {/* Chat panel - only show if not in table mode (table mode chat is handled above) */}
+        {isChatOpen && viewMode !== 'table' && (
           <ChatPanel
             isOpen={isChatOpen}
             onToggle={() => setIsChatOpen(!isChatOpen)}
@@ -4244,6 +4544,7 @@ export default function App() {
             currentCaseId={currentCaseId}
             currentCaseName={currentCaseName}
             currentCaseVersion={currentCaseVersion}
+            isTableMode={false}
           />
         )}
       </div>
@@ -4347,7 +4648,7 @@ export default function App() {
           setLoadSnapshotProgress({
             isOpen: true,
             current: 0,
-            total: 4,
+            total: 6, // Fetching, loading nodes, restoring chat, setting up timeline, restoring work state, finalizing
             snapshotName: snapshot.name || 'Snapshot',
             stage: 'Fetching snapshot data...',
             message: 'Loading snapshot...',
@@ -4368,68 +4669,106 @@ export default function App() {
               fullSnapshot = await snapshotsAPI.get(snapshot.id);
             }
 
-            if (!fullSnapshot.subgraph || !fullSnapshot.subgraph.nodes) {
-              setLoadSnapshotProgress(prev => ({ ...prev, isOpen: false }));
-              alert('This snapshot has no subgraph data to load.');
-              return;
-            }
-
-            // Ensure split view is enabled to show the subgraph
-            if (paneViewMode !== 'split') {
-              setPaneViewMode('split');
-            }
-
-            // Set subgraph node keys to snapshot's subgraph nodes
-            const snapshotNodes = fullSnapshot.subgraph.nodes;
-            const nodeKeys = snapshotNodes.map(n => n.key);
-            setSubgraphNodeKeys(nodeKeys);
-            setSelectedNodes(snapshotNodes);
-            setTimelineContextKeys(nodeKeys);
-
-            // Stage 2: Load node details
+            // Restore work state if available
+            const workState = fullSnapshot.work_state || {};
+            
+            // Stage 2: Restore graph state
             setLoadSnapshotProgress(prev => ({
               ...prev,
               current: 2,
-              stage: `Loading node details (${nodeKeys.length} nodes)...`,
-              message: 'Loading node details...',
+              stage: 'Restoring graph state...',
+              message: 'Restoring graph and result graph...',
             }));
 
-            // Load node details for the selected nodes (for the overview panel)
-            await loadNodeDetails(nodeKeys);
+            if (workState.full_graph) {
+              setFullGraphData(workState.full_graph);
+            }
+            if (workState.result_graph) {
+              setResultGraphData(workState.result_graph);
+            }
+            if (workState.view_mode) {
+              setViewMode(workState.view_mode);
+            }
+            if (workState.active_subgraph_tab) {
+              setActiveSubgraphTab(workState.active_subgraph_tab);
+            }
+            if (workState.date_range) {
+              setDateRange(workState.date_range);
+            }
+            if (workState.graph_search_term !== undefined) {
+              setGraphSearchTerm(workState.graph_search_term);
+            }
+            if (workState.graph_search_mode) {
+              setGraphSearchMode(workState.graph_search_mode);
+            }
 
-            // Stage 3: Restore chat history
+            // Restore subgraph node keys and selected nodes
+            if (fullSnapshot.subgraph && fullSnapshot.subgraph.nodes) {
+              const snapshotNodes = fullSnapshot.subgraph.nodes;
+              const nodeKeys = snapshotNodes.map(n => n.key);
+              
+              // Use work_state node keys if available, otherwise use subgraph nodes
+              const subgraphKeys = workState.subgraph_node_keys || nodeKeys;
+              const selectedKeys = workState.selected_node_keys || nodeKeys;
+              
+              setSubgraphNodeKeys(subgraphKeys);
+              setSelectedNodes(snapshotNodes.filter(n => selectedKeys.includes(n.key)));
+              setTimelineContextKeys(subgraphKeys);
+              
+              // Ensure split view is enabled to show the subgraph
+              if (paneViewMode !== 'split') {
+                setPaneViewMode('split');
+              }
+            } else if (workState.subgraph_node_keys && workState.subgraph_node_keys.length > 0) {
+              // Restore from work_state even if no subgraph in snapshot
+              setSubgraphNodeKeys(workState.subgraph_node_keys);
+              if (workState.selected_nodes && workState.selected_nodes.length > 0) {
+                setSelectedNodes(workState.selected_nodes);
+              }
+              setTimelineContextKeys(workState.subgraph_node_keys);
+              if (paneViewMode !== 'split') {
+                setPaneViewMode('split');
+              }
+            }
+
+            // Stage 3: Restore table view state
             setLoadSnapshotProgress(prev => ({
               ...prev,
               current: 3,
-              stage: 'Restoring chat history...',
-              message: 'Restoring chat history...',
+              stage: 'Restoring table view state...',
+              message: 'Restoring table panels and filters...',
             }));
 
-            // Restore chat history from snapshot
-            // First try to load case-specific chat histories
-            if (currentCaseId) {
-              try {
-                const allChatHistories = await chatHistoryAPI.list();
-                const caseChatHistories = allChatHistories
-                  .filter(chat => chat.case_id === currentCaseId)
-                  .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                
-                if (caseChatHistories.length > 0) {
-                  // Use the most recent case-specific chat history
-                  const latestChat = caseChatHistories[0];
-                  setChatHistory(latestChat.messages);
-                } else if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
-                  // Fall back to snapshot's chat history
-                  setChatHistory(fullSnapshot.chat_history);
-                }
-              } catch (err) {
-                console.warn('Failed to load case chat history:', err);
-                // Fall back to snapshot chat history
-                if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
-                  setChatHistory(fullSnapshot.chat_history);
-                }
-              }
-            } else if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
+            if (workState.table_view_state) {
+              setTableViewState(workState.table_view_state);
+            }
+
+            // Stage 4: Load node details
+            const nodeKeysToLoad = workState.subgraph_node_keys || 
+              (fullSnapshot.subgraph ? fullSnapshot.subgraph.nodes.map(n => n.key) : []);
+            
+            if (nodeKeysToLoad.length > 0) {
+              setLoadSnapshotProgress(prev => ({
+                ...prev,
+                current: 4,
+                stage: `Loading node details (${nodeKeysToLoad.length} nodes)...`,
+                message: 'Loading node details...',
+              }));
+
+              // Load node details for the selected nodes (for the overview panel)
+              await loadNodeDetails(nodeKeysToLoad);
+            }
+
+            // Stage 5: Restore chat history
+            setLoadSnapshotProgress(prev => ({
+              ...prev,
+              current: 5,
+              stage: 'Restoring chat history...',
+              message: 'Restoring complete chat history and AI responses...',
+            }));
+
+            // Restore full chat history from snapshot (includes all AI responses)
+            if (fullSnapshot.chat_history && fullSnapshot.chat_history.length > 0) {
               setChatHistory(fullSnapshot.chat_history);
             } else {
               // Try to load chat history separately if not in snapshot
@@ -4446,11 +4785,11 @@ export default function App() {
               }
             }
 
-            // Stage 4: Setting up timeline
+            // Stage 6: Finalizing
             setLoadSnapshotProgress(prev => ({
               ...prev,
-              current: 4,
-              stage: 'Setting up timeline...',
+              current: 6,
+              stage: 'Finalizing...',
               message: 'Finalizing snapshot load...',
             }));
 

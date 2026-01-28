@@ -44,6 +44,7 @@ class SnapshotCreate(BaseModel):
     citations: Optional[dict] = None  # Citations and references to source documents
     chat_history: Optional[List[dict]] = None
     ai_overview: Optional[str] = None  # AI-generated overview of the snapshot
+    work_state: Optional[dict] = None  # Complete work state (graph, table, selections, etc.)
 
 
 class SnapshotChunkCreate(BaseModel):
@@ -92,6 +93,7 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
         "citations": snapshot.citations or {},
         "chat_history": snapshot.chat_history or [],
         "ai_overview": snapshot.ai_overview,  # Include AI overview
+        "work_state": snapshot.work_state or {},  # Include complete work state
         "timestamp": timestamp,
         "created_at": timestamp,
         "owner": user["username"],

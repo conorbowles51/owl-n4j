@@ -75,9 +75,18 @@ def get_chat_config(profile_name: str | None = None) -> dict[str, Any]:
     return load_profile(profile_name).get("chat", {})
 
 
-def get_llm_config(profile_name: str | None = None) -> dict[str, Any] | None:
-    """Get the LLM configuration from a profile."""
-    profile = load_profile(profile_name)
+def get_llm_config(profile_name: str | None = None, force_reload: bool = True) -> dict[str, Any] | None:
+    """
+    Get the LLM configuration from a profile.
+    
+    Args:
+        profile_name: Profile name (without .json). Defaults to 'generic'.
+        force_reload: If True, reload from disk even if cached (default: True to ensure latest config).
+    
+    Returns:
+        LLM configuration dictionary or None.
+    """
+    profile = load_profile(profile_name, force_reload=force_reload)
     return profile.get("llm_config")
 
 
@@ -85,3 +94,19 @@ def get_folder_processing_config(profile_name: str | None = None) -> dict[str, A
     """Get the folder_processing configuration section from a profile."""
     profile = load_profile(profile_name)
     return profile.get("folder_processing")
+
+
+def clear_profile_cache(profile_name: str | None = None):
+    """
+    Clear the cache for a specific profile or all profiles.
+    
+    Args:
+        profile_name: Profile name to clear. If None, clears all cached profiles.
+    """
+    with _cache_lock:
+        if profile_name:
+            _cache.pop(profile_name, None)
+            log_progress(f"[profile_loader] Cleared cache for profile: {profile_name}")
+        else:
+            _cache.clear()
+            log_progress("[profile_loader] Cleared all profile caches")

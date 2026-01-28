@@ -785,6 +785,24 @@ async def get_folder_summary(
         }
     except HTTPException:
         raise
+
+
+@router.get("/transcription-translation")
+async def get_transcription_translation(
+    case_id: str = Query(..., description="Case ID"),
+    folder_name: str = Query(..., description="Wiretap folder name (e.g. 00000128)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get wiretap Spanish transcription and English translation for a folder, when available.
+    """
+    try:
+        result = neo4j_service.get_transcription_translation(folder_name, case_id)
+        return {
+            "folder_name": folder_name,
+            "case_id": case_id,
+            **result,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

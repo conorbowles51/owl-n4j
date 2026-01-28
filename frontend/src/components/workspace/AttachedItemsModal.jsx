@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, FileText, User, Archive, Trash2, CheckCircle2, Calendar, ChevronDown, ChevronUp, Clock, Network, Download } from 'lucide-react';
+import { X, FileText, User, Archive, Trash2, CheckCircle2, Calendar, ChevronDown, ChevronUp, Clock, Network, Download, MapPin, Check, Loader2 } from 'lucide-react';
 import { evidenceAPI, casesAPI, workspaceAPI, snapshotsAPI, graphAPI } from '../../services/api';
 import FilePreview from '../FilePreview';
 import ReactMarkdown from 'react-markdown';
@@ -7,11 +7,11 @@ import VisualInvestigationTimeline from './VisualInvestigationTimeline';
 import GraphView from '../GraphView';
 import TimelineView from '../timeline/TimelineView';
 import MapView from '../MapView';
-import ViewModeSwitcher from '../ViewModeSwitcher';
-import { exportTheoryToPDF } from '../../utils/theoryPdfExport';
 import { exportTheoryToHTML } from '../../utils/theoryHtmlExport';
 import html2canvas from 'html2canvas';
 import { convertGraphNodesToTimelineEvents, convertGraphNodesToMapLocations, hasTimelineData, hasMapData } from '../../utils/graphDataConverter';
+
+const TAB_KEYS = ['evidence', 'witnesses', 'notes', 'snapshots', 'documents', 'tasks', 'graph', 'graph-timeline', 'graph-map', 'timeline'];
 
 /**
  * Attached Items Modal
@@ -44,9 +44,8 @@ export default function AttachedItemsModal({
   const [timelineEvents, setTimelineEvents] = useState([]);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [theoryGraphData, setTheoryGraphData] = useState(null);
+  const [fullGraphData, setFullGraphData] = useState(null);
   const [loadingGraph, setLoadingGraph] = useState(false);
-  const [graphImageDataUrl, setGraphImageDataUrl] = useState(null);
-  const [graphViewMode, setGraphViewMode] = useState('graph'); // 'graph', 'timeline', or 'map'
   const [expandedEvidenceId, setExpandedEvidenceId] = useState(null);
   const [expandedDocumentId, setExpandedDocumentId] = useState(null);
   const [expandedSnapshotId, setExpandedSnapshotId] = useState(null);
@@ -54,7 +53,24 @@ export default function AttachedItemsModal({
   const [loadedSnapshotDetails, setLoadedSnapshotDetails] = useState({});
   const graphCanvasRef = useRef(null);
   const timelineCanvasRef = useRef(null);
+  const graphTimelineCanvasRef = useRef(null);
   const mapCanvasRef = useRef(null);
+
+  const [includeInExport, setIncludeInExport] = useState(() => {
+    const o = {};
+    TAB_KEYS.forEach(k => { o[k] = true; });
+    return o;
+  });
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
+  const toggleIncludeInExport = (key, e) => {
+    e?.stopPropagation();
+    setIncludeInExport(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const setProgress = (p) => {
+    setExportProgress(Math.min(100, Math.max(0, p)));
+  };
 
   // Load timeline events when modal opens (to show count) and when timeline tab is active
   useEffect(() => {
@@ -81,133 +97,68 @@ export default function AttachedItemsModal({
     loadTimeline();
   }, [isOpen, theory, caseId]);
 
-  // Clear graph image when theory changes
-  useEffect(() => {
-    if (!isOpen || !theory) {
-      setGraphImageDataUrl(null);
-      return;
-    }
-  }, [isOpen, theory?.theory_id]);
 
-  // Load theory graph when graph tab is active
+  // Preload full case graph when modal opens (if theory has attached graph). Use full graph for
+  // Graph Timeline / Graph Map; use filtered theory subgraph for Graph tab only.
   useEffect(() => {
-    if (!isOpen || !theory || !caseId || activeTab !== 'graph') {
-      // Clear image when not on graph tab
-      if (activeTab !== 'graph') {
-        setGraphImageDataUrl(null);
-      }
-      return;
-    }
-    
-    // Check if graph data exists
+    if (!isOpen || !theory || !caseId) return;
     if (!theory.attached_graph_data) {
-      setGraphImageDataUrl(null);
       setTheoryGraphData(null);
+      setFullGraphData(null);
       return;
     }
 
     const loadGraph = async () => {
       setLoadingGraph(true);
-      setGraphImageDataUrl(null); // Clear previous image
       try {
+        const fullGraph = await graphAPI.getGraph({ case_id: caseId });
+        setFullGraphData(fullGraph);
+
         const entityKeys = theory.attached_graph_data.entity_keys || [];
         if (entityKeys.length === 0) {
           setTheoryGraphData({ nodes: [], links: [] });
-          setGraphImageDataUrl(null);
           return;
         }
-
-        // Get full graph data
-        const fullGraph = await graphAPI.getGraph({ case_id: caseId });
-        
-        // Filter to only include nodes with entity_keys and their connections
         const nodeKeysSet = new Set(entityKeys);
         const filteredNodes = fullGraph.nodes.filter(node => nodeKeysSet.has(node.key));
         const filteredNodeKeys = new Set(filteredNodes.map(n => n.key));
-        
-        // Get links between filtered nodes
         const filteredLinks = fullGraph.links.filter(link => {
           const sourceKey = typeof link.source === 'object' ? link.source.key : link.source;
           const targetKey = typeof link.target === 'object' ? link.target.key : link.target;
           return filteredNodeKeys.has(sourceKey) && filteredNodeKeys.has(targetKey);
         });
-
-        setTheoryGraphData({
-          nodes: filteredNodes,
-          links: filteredLinks,
-        });
+        setTheoryGraphData({ nodes: filteredNodes, links: filteredLinks });
       } catch (err) {
         console.error('Failed to load theory graph:', err);
         setTheoryGraphData({ nodes: [], links: [] });
-        setGraphImageDataUrl(null);
+        setFullGraphData(null);
       } finally {
         setLoadingGraph(false);
       }
     };
 
     loadGraph();
-  }, [isOpen, theory, caseId, activeTab]);
+  }, [isOpen, theory, caseId]);
 
-  // Check if timeline and map data are available from theory graph nodes
-  const hasTimeline = theoryGraphData ? hasTimelineData(theoryGraphData.nodes) : false;
-  const hasMap = theoryGraphData ? hasMapData(theoryGraphData.nodes) : false;
-  
-  // Convert graph nodes to timeline events and map locations
-  const timelineEventsFromGraph = theoryGraphData && hasTimeline
-    ? convertGraphNodesToTimelineEvents(theoryGraphData.nodes, theoryGraphData.links)
-    : [];
-  
-  const mapLocationsFromGraph = theoryGraphData && hasMap
-    ? convertGraphNodesToMapLocations(theoryGraphData.nodes, theoryGraphData.links)
-    : [];
-
-  // Capture graph/timeline/map as image when it's rendered
   useEffect(() => {
-    if (!isOpen || activeTab !== 'graph' || !theoryGraphData || theoryGraphData.nodes.length === 0) {
-      return;
-    }
+    if (!isOpen) return;
+    setIncludeInExport(prev => {
+      const next = { ...prev };
+      TAB_KEYS.forEach(k => { if (next[k] === undefined) next[k] = true; });
+      return next;
+    });
+  }, [isOpen]);
 
-    // Wait for view to render, then capture it
-    const captureView = async () => {
-      // Give the view time to render and settle
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      let container = null;
-      if (graphViewMode === 'graph' && graphCanvasRef.current) {
-        container = graphCanvasRef.current;
-      } else if (graphViewMode === 'timeline' && timelineCanvasRef.current) {
-        container = timelineCanvasRef.current;
-      } else if (graphViewMode === 'map' && mapCanvasRef.current) {
-        container = mapCanvasRef.current;
-      }
-      
-      if (container) {
-        try {
-          // Try to get canvas from GraphView
-          const canvasElement = container.querySelector('canvas');
-          if (canvasElement) {
-            const dataUrl = canvasElement.toDataURL('image/png', 1.0);
-            setGraphImageDataUrl(dataUrl);
-          } else {
-            // If no canvas found, try using html2canvas on the container
-            const canvas = await html2canvas(container, {
-              backgroundColor: '#ffffff',
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              width: container.scrollWidth || container.offsetWidth,
-              height: container.scrollHeight || container.offsetHeight,
-            });
-            setGraphImageDataUrl(canvas.toDataURL('image/png', 1.0));
-          }
-        } catch (err) {
-          console.warn('Failed to capture view image:', err);
-        }
-      }
-    };
-
-    captureView();
-  }, [isOpen, activeTab, theoryGraphData, graphViewMode]);
+  // Use full case graph for timeline/map (same as workspace) so Graph Timeline & Graph Map have data.
+  // Graph tab uses filtered theory subgraph only.
+  const hasTimeline = fullGraphData ? hasTimelineData(fullGraphData.nodes) : false;
+  const hasMap = fullGraphData ? hasMapData(fullGraphData.nodes) : false;
+  const timelineEventsFromGraph = fullGraphData && hasTimeline
+    ? convertGraphNodesToTimelineEvents(fullGraphData.nodes, fullGraphData.links)
+    : [];
+  const mapLocationsFromGraph = fullGraphData && hasMap
+    ? convertGraphNodesToMapLocations(fullGraphData.nodes, fullGraphData.links)
+    : [];
 
   useEffect(() => {
     if (!isOpen || !theory || !caseId) return;
@@ -401,9 +352,12 @@ export default function AttachedItemsModal({
   };
 
   const handleExportPDF = async () => {
+    setExporting(true);
+    setProgress(0);
     try {
       const originalTab = activeTab;
-      
+
+      setProgress(5);
       // Load full snapshot details for export
       const snapshotsWithDetails = [];
       if (attachedItems.snapshots && attachedItems.snapshots.length > 0) {
@@ -431,15 +385,17 @@ export default function AttachedItemsModal({
           }
         }
       }
+      setProgress(15);
 
-      // Always load graph data if it exists, regardless of current tab
       let graphDataForExport = theoryGraphData;
-      if (theory?.attached_graph_data && (!graphDataForExport || graphDataForExport.nodes.length === 0)) {
-        // Load graph data if not already loaded
+      let fullGraphForExport = fullGraphData;
+      if (theory?.attached_graph_data) {
         try {
+          const fullGraph = await graphAPI.getGraph({ case_id: caseId });
+          fullGraphForExport = fullGraph;
+          if (!fullGraphData) setFullGraphData(fullGraph);
           const entityKeys = theory.attached_graph_data.entity_keys || [];
-          if (entityKeys.length > 0) {
-            const fullGraph = await graphAPI.getGraph({ case_id: caseId });
+          if (entityKeys.length > 0 && (!graphDataForExport || graphDataForExport.nodes.length === 0)) {
             const nodeKeysSet = new Set(entityKeys);
             const filteredNodes = fullGraph.nodes.filter(node => nodeKeysSet.has(node.key));
             const filteredNodeKeys = new Set(filteredNodes.map(n => n.key));
@@ -448,144 +404,75 @@ export default function AttachedItemsModal({
               const targetKey = typeof link.target === 'object' ? link.target.key : link.target;
               return filteredNodeKeys.has(sourceKey) && filteredNodeKeys.has(targetKey);
             });
-            graphDataForExport = {
-              nodes: filteredNodes,
-              links: filteredLinks,
-            };
-            // Update state so the graph can be rendered
-            setTheoryGraphData(graphDataForExport);
+            graphDataForExport = { nodes: filteredNodes, links: filteredLinks };
+            if (!theoryGraphData?.nodes?.length) setTheoryGraphData(graphDataForExport);
           }
         } catch (err) {
           console.error('Failed to load graph data for export:', err);
         }
       }
+      setProgress(25);
 
-      // Capture graph, timeline, and map images
       let graphCanvasDataUrl = null;
-      let timelineCanvasDataUrl = null;
+      let graphTimelineCanvasDataUrl = null;
       let mapCanvasDataUrl = null;
-      
-      if (theory?.attached_graph_data && graphDataForExport && graphDataForExport.nodes.length > 0) {
-        // Check if timeline and map data are available
-        const exportHasTimeline = hasTimelineData(graphDataForExport.nodes);
-        const exportHasMap = hasMapData(graphDataForExport.nodes);
-        
-        // Switch to graph tab to render views
-        if (activeTab !== 'graph') {
-          setActiveTab('graph');
-          await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for tab switch and graph to load
+      let theoryTimelineCanvasDataUrl = null;
+
+      const exportHasTimeline = fullGraphForExport && hasTimelineData(fullGraphForExport.nodes);
+      const exportHasMap = fullGraphForExport && hasMapData(fullGraphForExport.nodes);
+
+      const captureTab = async (tab, ref, extraWait = 0) => {
+        if (activeTab !== tab) {
+          setActiveTab(tab);
+          await new Promise(resolve => setTimeout(resolve, 1500));
         } else {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
-        
-        // Wait for graph to be fully loaded and rendered
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Capture graph view
-        setGraphViewMode('graph');
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (graphCanvasRef.current) {
-          try {
-            const graphContainer = graphCanvasRef.current.querySelector('canvas');
-            if (graphContainer) {
-              graphCanvasDataUrl = graphContainer.toDataURL('image/png', 1.0);
-            } else {
-              const canvas = await html2canvas(graphCanvasRef.current, {
-                backgroundColor: '#ffffff',
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                width: graphCanvasRef.current.scrollWidth || graphCanvasRef.current.offsetWidth,
-                height: graphCanvasRef.current.scrollHeight || graphCanvasRef.current.offsetHeight,
-              });
-              graphCanvasDataUrl = canvas.toDataURL('image/png', 1.0);
-            }
-          } catch (err) {
-            console.warn('Failed to capture graph during export:', err);
-          }
-        }
-        
-        // Capture timeline view if nodes have timeline data
-        if (exportHasTimeline) {
-          setGraphViewMode('timeline');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          if (timelineCanvasRef.current) {
-            try {
-              const canvas = await html2canvas(timelineCanvasRef.current, {
-                backgroundColor: '#ffffff',
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                width: timelineCanvasRef.current.scrollWidth || timelineCanvasRef.current.offsetWidth,
-                height: timelineCanvasRef.current.scrollHeight || timelineCanvasRef.current.offsetHeight,
-              });
-              timelineCanvasDataUrl = canvas.toDataURL('image/png', 1.0);
-            } catch (err) {
-              console.warn('Failed to capture timeline during export:', err);
-            }
-          }
-        }
-        
-        // Capture map view if nodes have map data
-        if (exportHasMap) {
-          setGraphViewMode('map');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          if (mapCanvasRef.current) {
-            try {
-              const canvas = await html2canvas(mapCanvasRef.current, {
-                backgroundColor: '#ffffff',
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                width: mapCanvasRef.current.scrollWidth || mapCanvasRef.current.offsetWidth,
-                height: mapCanvasRef.current.scrollHeight || mapCanvasRef.current.offsetHeight,
-              });
-              mapCanvasDataUrl = canvas.toDataURL('image/png', 1.0);
-            } catch (err) {
-              console.warn('Failed to capture map during export:', err);
-            }
-          }
-        }
-        
-        // Restore graph view mode
-        setGraphViewMode('graph');
-      }
-      
-      // Use stored graph image if available and we didn't capture a new one
-      if (!graphCanvasDataUrl && graphImageDataUrl) {
-        graphCanvasDataUrl = graphImageDataUrl;
-      }
-
-      // Also capture the theory timeline tab if it has events
-      let theoryTimelineCanvasDataUrl = null;
-      if (timelineEvents.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1500 + extraWait));
+        const el = ref?.current;
+        if (!el) return null;
         try {
-          // Switch to timeline tab to render it
-          if (activeTab !== 'timeline') {
-            setActiveTab('timeline');
-            await new Promise(resolve => setTimeout(resolve, 1500)); // Wait for timeline to render
-          } else {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-          
-          // Now capture the timeline
-          if (timelineCanvasRef.current) {
-            const canvas = await html2canvas(timelineCanvasRef.current, {
-              backgroundColor: '#ffffff',
-              scale: 2,
-              useCORS: true,
-              logging: false,
-              width: timelineCanvasRef.current.scrollWidth || timelineCanvasRef.current.offsetWidth,
-              height: timelineCanvasRef.current.scrollHeight || timelineCanvasRef.current.offsetHeight,
-            });
-            theoryTimelineCanvasDataUrl = canvas.toDataURL('image/png', 1.0);
-          }
+          const canvas = await html2canvas(el, {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            width: el.scrollWidth || el.offsetWidth,
+            height: el.scrollHeight || el.offsetHeight,
+          });
+          return canvas.toDataURL('image/png', 1.0);
         } catch (err) {
-          console.warn('Failed to capture theory timeline visualization:', err);
+          console.warn(`Failed to capture ${tab}:`, err);
+          return null;
+        }
+      };
+
+      if (includeInExport.graph && theory?.attached_graph_data && graphDataForExport?.nodes?.length > 0) {
+        setProgress(35);
+        const dataUrl = await captureTab('graph', graphCanvasRef);
+        if (dataUrl) graphCanvasDataUrl = dataUrl;
+        else {
+          const canvasEl = graphCanvasRef.current?.querySelector?.('canvas');
+          if (canvasEl) graphCanvasDataUrl = canvasEl.toDataURL('image/png', 1.0);
         }
       }
+      if (includeInExport['graph-timeline'] && theory?.attached_graph_data && exportHasTimeline) {
+        setProgress(48);
+        const dataUrl = await captureTab('graph-timeline', graphTimelineCanvasRef, 800);
+        if (dataUrl) graphTimelineCanvasDataUrl = dataUrl;
+      }
+      if (includeInExport['graph-map'] && theory?.attached_graph_data && exportHasMap) {
+        setProgress(62);
+        const dataUrl = await captureTab('graph-map', mapCanvasRef, 1000);
+        if (dataUrl) mapCanvasDataUrl = dataUrl;
+      }
+      if (includeInExport.timeline && timelineEvents.length > 0) {
+        setProgress(75);
+        const dataUrl = await captureTab('timeline', timelineCanvasRef);
+        if (dataUrl) theoryTimelineCanvasDataUrl = dataUrl;
+      }
+      setProgress(88);
 
-      // Restore original tab and view mode
       if (activeTab !== originalTab) {
         setActiveTab(originalTab);
       }
@@ -596,22 +483,28 @@ export default function AttachedItemsModal({
         snapshots: snapshotsWithDetails,
       };
 
-      // Export as HTML (better logo rendering and can be printed to PDF)
+      setProgress(92);
       console.log('Exporting theory - caseName prop:', caseName, 'caseId:', caseId);
       await exportTheoryToHTML(
         theory,
         enhancedAttachedItems,
-        graphDataForExport || theoryGraphData, // Use the loaded graph data
+        graphDataForExport || theoryGraphData,
         timelineEvents,
         graphCanvasDataUrl,
-        timelineCanvasDataUrl || theoryTimelineCanvasDataUrl,
+        graphTimelineCanvasDataUrl,
         mapCanvasDataUrl,
+        theoryTimelineCanvasDataUrl,
         caseId,
-        caseName
+        caseName,
+        includeInExport
       );
+      setProgress(100);
     } catch (err) {
       console.error('Failed to export theory:', err);
       alert(`Failed to export: ${err.message}`);
+    } finally {
+      setExporting(false);
+      setExportProgress(0);
     }
   };
 
@@ -625,6 +518,8 @@ export default function AttachedItemsModal({
     { key: 'documents', label: 'Documents', icon: FileText, count: attachedItems.documents.length },
     { key: 'tasks', label: 'Tasks', icon: FileText, count: attachedItems.tasks.length },
     { key: 'graph', label: 'Graph', icon: Network, count: theory?.attached_graph_data ? 1 : 0 },
+    { key: 'graph-timeline', label: 'Graph Timeline', icon: Calendar, count: fullGraphData && hasTimeline ? 1 : 0 },
+    { key: 'graph-map', label: 'Graph Map', icon: MapPin, count: fullGraphData && hasMap ? 1 : 0 },
     { key: 'timeline', label: 'Timeline', icon: Clock, count: timelineEvents.length },
   ];
 
@@ -643,39 +538,69 @@ export default function AttachedItemsModal({
           <div className="flex items-center gap-2">
             <button
               onClick={handleExportPDF}
-              className="px-3 py-1.5 text-sm font-medium text-owl-blue-700 bg-owl-blue-50 rounded-lg hover:bg-owl-blue-100 transition-colors flex items-center gap-2"
+              disabled={exporting}
+              className="px-3 py-1.5 text-sm font-medium text-owl-blue-700 bg-owl-blue-50 rounded-lg hover:bg-owl-blue-100 transition-colors flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-owl-blue-50"
               title="Export theory to HTML (can be printed to PDF)"
             >
-              <Download className="w-4 h-4" />
+              {exporting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
               <span>Export Report</span>
             </button>
-            <button onClick={onClose} className="p-1 hover:bg-light-100 rounded">
+            <button onClick={onClose} disabled={exporting} className="p-1 hover:bg-light-100 rounded disabled:opacity-60 disabled:cursor-not-allowed">
               <X className="w-5 h-5 text-light-600" />
             </button>
           </div>
         </div>
 
+        {/* Export progress overlay */}
+        {exporting && (
+          <div className="flex-shrink-0 px-4 py-3 bg-owl-blue-50 border-b border-owl-blue-100 flex flex-col gap-2">
+            <div className="flex items-center gap-2 text-sm text-owl-blue-900">
+              <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+              <span className="font-medium">Generating report…</span>
+              <span className="text-owl-blue-700 ml-auto">{exportProgress}%</span>
+            </div>
+            <div className="h-2 bg-owl-blue-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-owl-blue-600 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${exportProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* Tabs */}
         <div className="flex border-b border-light-200 bg-light-50 overflow-x-auto">
           {tabs.map((tab) => {
             const Icon = tab.icon;
+            const included = includeInExport[tab.key] !== false;
             return (
               <button
                 key={tab.key}
                 onClick={() => {
                   setActiveTab(tab.key);
-                  // Reset expanded states when switching tabs
                   setExpandedEvidenceId(null);
                   setExpandedDocumentId(null);
                   setExpandedSnapshotId(null);
                   setExpandedWitnessId(null);
                 }}
-                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 flex-shrink-0 ${
+                className={`flex items-center gap-2 px-3 py-3 text-sm font-medium transition-colors border-b-2 flex-shrink-0 ${
                   activeTab === tab.key
                     ? 'border-owl-blue-600 text-owl-blue-900 bg-white'
                     : 'border-transparent text-light-600 hover:text-owl-blue-900 hover:bg-light-100'
                 }`}
               >
+                <button
+                  type="button"
+                  onClick={(e) => toggleIncludeInExport(tab.key, e)}
+                  className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${included ? 'bg-owl-blue-100 border-owl-blue-300 text-owl-blue-700' : 'bg-white border-light-300 text-light-400'}`}
+                  title={included ? 'Include in export (click to exclude)' : 'Exclude from export (click to include)'}
+                >
+                  {included && <Check className="w-3 h-3" strokeWidth={3} />}
+                </button>
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
                 {tab.count > 0 && (
@@ -703,7 +628,7 @@ export default function AttachedItemsModal({
                   <p className="text-sm text-light-500">No timeline events for this theory</p>
                 </div>
               ) : (
-                <div ref={timelineCanvasRef}>
+                <div ref={timelineCanvasRef} className="h-full">
                   <VisualInvestigationTimeline
                     caseId={caseId}
                     events={timelineEvents}
@@ -730,73 +655,64 @@ export default function AttachedItemsModal({
                   <p className="text-sm text-light-500">Graph is empty</p>
                 </div>
               ) : (
-                <div className="flex flex-col h-full relative">
-                  {/* View Mode Switcher - positioned in viewport */}
-                  <div className="absolute top-4 left-4 z-30">
-                    <ViewModeSwitcher
-                      mode={graphViewMode}
-                      onModeChange={setGraphViewMode}
-                      hasTimelineData={hasTimeline}
-                      hasMapData={hasMap}
-                    />
-                  </div>
-                  
-                  {/* Graph Image - displayed prominently (only for graph view) */}
-                  {graphViewMode === 'graph' && graphImageDataUrl ? (
-                    <div className="flex-shrink-0 p-4 border-b border-light-200 bg-light-50">
-                      <div className="text-sm font-medium text-owl-blue-900 mb-2">Theory Graph Visualization</div>
-                      <div className="border border-owl-blue-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                        <img 
-                          src={graphImageDataUrl} 
-                          alt="Theory Graph" 
-                          className="w-full h-auto max-h-96 object-contain"
-                        />
-                      </div>
-                    </div>
-                  ) : graphViewMode === 'graph' ? (
-                    <div className="flex-shrink-0 p-4 border-b border-light-200 bg-light-50">
-                      <div className="text-sm text-light-500">Rendering graph image...</div>
-                    </div>
-                  ) : null}
-                  
-                  {/* Interactive Views */}
-                  <div className="flex-1 min-h-0">
-                    {graphViewMode === 'graph' ? (
-                      <div ref={graphCanvasRef} className="h-full">
-                        <GraphView
-                          graphData={theoryGraphData || { nodes: [], links: [] }}
-                          onNodeClick={() => {}}
-                          selectedNodes={[]}
-                        />
-                      </div>
-                    ) : graphViewMode === 'timeline' ? (
-                      hasTimeline ? (
-                        <div ref={timelineCanvasRef} className="h-full">
-                          <TimelineView
-                            timelineData={timelineEventsFromGraph}
-                            onSelectEvent={() => {}}
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <p className="text-sm text-light-500">No timeline data available for visible nodes</p>
-                        </div>
-                      )
-                    ) : graphViewMode === 'map' ? (
-                      hasMap ? (
-                        <div ref={mapCanvasRef} className="h-full">
-                          <MapView
-                            locations={mapLocationsFromGraph}
-                            onNodeClick={() => {}}
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <p className="text-sm text-light-500">No map data available for visible nodes</p>
-                        </div>
-                      )
-                    ) : null}
-                  </div>
+                <div ref={graphCanvasRef} className="h-full">
+                  <GraphView
+                    graphData={theoryGraphData || { nodes: [], links: [] }}
+                    onNodeClick={() => {}}
+                    selectedNodes={[]}
+                  />
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'graph-timeline' ? (
+            <div className="flex-1 min-h-0">
+              {loadingGraph ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-light-500">Loading...</p>
+                </div>
+              ) : !theory?.attached_graph_data ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-light-500">Build a theory graph first</p>
+                </div>
+              ) : !hasTimeline ? (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-sm text-light-500">No timeline data in case graph</p>
+                </div>
+              ) : (
+                <div ref={graphTimelineCanvasRef} className="h-full">
+                  <TimelineView
+                    timelineData={timelineEventsFromGraph}
+                    onSelectEvent={() => {}}
+                    expandAllOnMount
+                  />
+                </div>
+              )}
+            </div>
+          ) : activeTab === 'graph-map' ? (
+            <div className="flex-1 min-h-0 flex flex-col">
+              {loadingGraph ? (
+                <div className="flex items-center justify-center flex-1 min-h-[280px]">
+                  <p className="text-sm text-light-500">Loading...</p>
+                </div>
+              ) : !theory?.attached_graph_data ? (
+                <div className="flex items-center justify-center flex-1 min-h-[280px]">
+                  <p className="text-sm text-light-500">Build a theory graph first</p>
+                </div>
+              ) : !hasMap ? (
+                <div className="flex items-center justify-center flex-1 min-h-[280px]">
+                  <p className="text-sm text-light-500">No map data in case graph</p>
+                </div>
+              ) : (
+                <div
+                  ref={mapCanvasRef}
+                  className="flex-1 min-h-[320px] w-full h-full"
+                >
+                  <MapView
+                    locations={mapLocationsFromGraph}
+                    caseId={caseId}
+                    onNodeClick={() => {}}
+                    containerStyle={{ minHeight: 320 }}
+                  />
                 </div>
               )}
             </div>
