@@ -1249,7 +1249,7 @@ export default function App() {
         onTypeComplete: (data) => {
           setSimilarScanProgress(prev => ({
             ...prev,
-            typeIndex: data.type_index + 1,
+            typeIndex: data.type_index,  // Display already adds 1, don't double-increment
           }));
         },
         onComplete: (data) => {

@@ -1871,6 +1871,8 @@ class Neo4jService:
         if rejected_pairs is None:
             rejected_pairs = set()
 
+        # Fetch data and close session immediately - we don't need the session
+        # held open during comparison loop, which can cause hanging issues
         with self._driver.session() as session:
             # Build type filter
             type_filter = ""
@@ -1902,150 +1904,166 @@ class Neo4jService:
 
             result = session.run(query, **params)
             all_entities = [dict(record) for record in result]
+        # Session is now closed - all data fetched
 
-            # Group entities by type (backend already only compares same-type entities)
-            entities_by_type = defaultdict(list)
-            for entity in all_entities:
-                entities_by_type[entity["type"]].append(entity)
+        # Group entities by type (backend already only compares same-type entities)
+        entities_by_type = defaultdict(list)
+        for entity in all_entities:
+            entities_by_type[entity["type"]].append(entity)
 
-            entity_types_list = sorted(entities_by_type.keys())
+        entity_types_list = sorted(entities_by_type.keys())
 
-            # Calculate total comparisons needed (for progress)
-            total_comparisons = 0
-            for entities in entities_by_type.values():
-                n = len(entities)
-                # n*(n-1)/2 pairs for same-type comparison
-                total_comparisons += n * (n - 1) // 2
+        # Calculate total comparisons needed (for progress)
+        total_comparisons = 0
+        for entities in entities_by_type.values():
+            n = len(entities)
+            # n*(n-1)/2 pairs for same-type comparison
+            total_comparisons += n * (n - 1) // 2
 
-            # Yield start event
+        # Yield start event
+        yield {
+            "event": "start",
+            "data": {
+                "total_entities": len(all_entities),
+                "entity_types": entity_types_list,
+                "total_types": len(entity_types_list),
+                "total_comparisons": total_comparisons,
+            }
+        }
+        await asyncio.sleep(0)  # Yield control for cancellation check
+
+        similar_pairs = []
+        comparisons_done = 0
+        pairs_found = 0
+        last_progress_update = 0
+
+        for type_index, type_name in enumerate(entity_types_list):
+            entities = entities_by_type[type_name]
+            n = len(entities)
+            type_comparisons = n * (n - 1) // 2
+
+            # Yield type_start event
             yield {
-                "event": "start",
+                "event": "type_start",
                 "data": {
-                    "total_entities": len(all_entities),
-                    "entity_types": entity_types_list,
+                    "type_name": type_name,
+                    "type_count": len(entities),
+                    "type_index": type_index,
                     "total_types": len(entity_types_list),
-                    "total_comparisons": total_comparisons,
+                    "total_comparisons": type_comparisons,
                 }
             }
-            await asyncio.sleep(0)  # Yield control for cancellation check
+            await asyncio.sleep(0)
 
-            similar_pairs = []
-            comparisons_done = 0
-            pairs_found = 0
-            last_progress_update = 0
+            type_pairs_found = 0
 
-            for type_index, type_name in enumerate(entity_types_list):
-                entities = entities_by_type[type_name]
-                n = len(entities)
-                type_comparisons = n * (n - 1) // 2
+            # Compare entities within this type
+            for i, e1 in enumerate(entities):
+                for e2 in entities[i+1:]:
+                    comparisons_done += 1
 
-                # Yield type_start event
-                yield {
-                    "event": "type_start",
-                    "data": {
-                        "type_name": type_name,
-                        "type_count": len(entities),
-                        "type_index": type_index,
-                        "total_types": len(entity_types_list),
-                        "total_comparisons": type_comparisons,
-                    }
-                }
-                await asyncio.sleep(0)
+                    # Calculate name similarity
+                    name1 = (e1["name"] or "").lower().strip()
+                    name2 = (e2["name"] or "").lower().strip()
 
-                type_pairs_found = 0
+                    if not name1 or not name2:
+                        continue
 
-                # Compare entities within this type
-                for i, e1 in enumerate(entities):
-                    for e2 in entities[i+1:]:
-                        comparisons_done += 1
+                    # Skip rejected pairs (normalize keys for lookup)
+                    key1, key2 = e1["key"], e2["key"]
+                    normalized_pair = (key1, key2) if key1 <= key2 else (key2, key1)
+                    if normalized_pair in rejected_pairs:
+                        continue
 
-                        # Calculate name similarity
-                        name1 = (e1["name"] or "").lower().strip()
-                        name2 = (e2["name"] or "").lower().strip()
+                    similarity = SequenceMatcher(None, name1, name2).ratio()
 
-                        if not name1 or not name2:
-                            continue
+                    if similarity >= name_similarity_threshold:
+                        pair = {
+                            "entity1": {
+                                "key": e1["key"],
+                                "id": e1["id"],
+                                "name": e1["name"],
+                                "type": e1["type"],
+                                "summary": e1["summary"],
+                                "notes": e1["notes"],
+                                "verified_facts": parse_json_field(e1.get("verified_facts")),
+                                "ai_insights": parse_json_field(e1.get("ai_insights")),
+                                "properties": e1["properties"] or {},
+                            },
+                            "entity2": {
+                                "key": e2["key"],
+                                "id": e2["id"],
+                                "name": e2["name"],
+                                "type": e2["type"],
+                                "summary": e2["summary"],
+                                "notes": e2["notes"],
+                                "verified_facts": parse_json_field(e2.get("verified_facts")),
+                                "ai_insights": parse_json_field(e2.get("ai_insights")),
+                                "properties": e2["properties"] or {},
+                            },
+                            "similarity": similarity,
+                        }
+                        similar_pairs.append(pair)
+                        pairs_found += 1
+                        type_pairs_found += 1
 
-                        # Skip rejected pairs (normalize keys for lookup)
-                        key1, key2 = e1["key"], e2["key"]
-                        normalized_pair = (key1, key2) if key1 <= key2 else (key2, key1)
-                        if normalized_pair in rejected_pairs:
-                            continue
+                        # NOTE: Removed individual "result" event emission to prevent
+                        # UI freezing with large numbers of pairs (93k+ causes 93k React updates).
+                        # Results are now only sent in the "complete" event at the end.
 
-                        similarity = SequenceMatcher(None, name1, name2).ratio()
-
-                        if similarity >= name_similarity_threshold:
-                            pair = {
-                                "entity1": {
-                                    "key": e1["key"],
-                                    "id": e1["id"],
-                                    "name": e1["name"],
-                                    "type": e1["type"],
-                                    "summary": e1["summary"],
-                                    "notes": e1["notes"],
-                                    "verified_facts": parse_json_field(e1.get("verified_facts")),
-                                    "ai_insights": parse_json_field(e1.get("ai_insights")),
-                                    "properties": e1["properties"] or {},
-                                },
-                                "entity2": {
-                                    "key": e2["key"],
-                                    "id": e2["id"],
-                                    "name": e2["name"],
-                                    "type": e2["type"],
-                                    "summary": e2["summary"],
-                                    "notes": e2["notes"],
-                                    "verified_facts": parse_json_field(e2.get("verified_facts")),
-                                    "ai_insights": parse_json_field(e2.get("ai_insights")),
-                                    "properties": e2["properties"] or {},
-                                },
-                                "similarity": similarity,
+                    # Emit progress every ~100 comparisons
+                    if comparisons_done - last_progress_update >= 100:
+                        yield {
+                            "event": "progress",
+                            "data": {
+                                "comparisons_done": comparisons_done,
+                                "total_comparisons": total_comparisons,
+                                "pairs_found": pairs_found,
+                                "current_type": type_name,
+                                "type_index": type_index,
                             }
-                            similar_pairs.append(pair)
-                            pairs_found += 1
-                            type_pairs_found += 1
+                        }
+                        last_progress_update = comparisons_done
+                        await asyncio.sleep(0)  # Yield control for cancellation check
 
-                            # NOTE: Removed individual "result" event emission to prevent
-                            # UI freezing with large numbers of pairs (93k+ causes 93k React updates).
-                            # Results are now only sent in the "complete" event at the end.
-
-                        # Emit progress every ~100 comparisons
-                        if comparisons_done - last_progress_update >= 100:
-                            yield {
-                                "event": "progress",
-                                "data": {
-                                    "comparisons_done": comparisons_done,
-                                    "total_comparisons": total_comparisons,
-                                    "pairs_found": pairs_found,
-                                    "current_type": type_name,
-                                    "type_index": type_index,
-                                }
-                            }
-                            last_progress_update = comparisons_done
-                            await asyncio.sleep(0)  # Yield control for cancellation check
-
-                # Yield type_complete event
-                yield {
-                    "event": "type_complete",
-                    "data": {
-                        "type_name": type_name,
-                        "pairs_found": type_pairs_found,
-                        "type_index": type_index,
-                    }
-                }
-                await asyncio.sleep(0)
-
-            # Sort final results by similarity
-            similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
-
-            # Yield complete event
+            # Yield type_complete event
             yield {
-                "event": "complete",
+                "event": "type_complete",
                 "data": {
-                    "total_pairs": len(similar_pairs),
-                    "total_comparisons": comparisons_done,
-                    "limited_results": similar_pairs[:max_results] if len(similar_pairs) > max_results else similar_pairs,
+                    "type_name": type_name,
+                    "pairs_found": type_pairs_found,
+                    "type_index": type_index,
                 }
             }
+            await asyncio.sleep(0)
+
+        # Emit final progress update if not already at 100%
+        # This ensures the UI shows 100% before the complete event
+        if comparisons_done != last_progress_update:
+            yield {
+                "event": "progress",
+                "data": {
+                    "comparisons_done": comparisons_done,
+                    "total_comparisons": total_comparisons,
+                    "pairs_found": pairs_found,
+                    "current_type": "Finalizing...",
+                    "type_index": len(entity_types_list) - 1,
+                }
+            }
+            await asyncio.sleep(0)
+
+        # Sort final results by similarity
+        similar_pairs.sort(key=lambda x: x["similarity"], reverse=True)
+
+        # Yield complete event
+        yield {
+            "event": "complete",
+            "data": {
+                "total_pairs": len(similar_pairs),
+                "total_comparisons": comparisons_done,
+                "limited_results": similar_pairs[:max_results] if len(similar_pairs) > max_results else similar_pairs,
+            }
+        }
 
     def merge_entities(
         self,
