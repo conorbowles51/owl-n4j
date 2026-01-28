@@ -16,6 +16,7 @@ from routers import (
     timeline_router,
     snapshots_router,
     cases_router,
+    case_members_router,
     auth_router,
     evidence_router,
     background_tasks_router,
@@ -27,10 +28,11 @@ from routers import (
     database_router,
     llm_config_router,
     workspace_router,
+    users_router,
+    setup_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
-from services.case_storage import case_storage
 
 
 @asynccontextmanager
@@ -44,25 +46,9 @@ async def lifespan(app: FastAPI):
         print(f"Loaded {len(snapshot_storage.get_all())} snapshots from storage")
     except Exception as e:
         print(f"Warning: Failed to load snapshots: {e}")
-    
-    try:
-        # Reload cases from disk (non-blocking)
-        # Use a quick check to see if file exists and is readable
-        from services.case_storage import STORAGE_FILE
-        if STORAGE_FILE.exists():
-            try:
-                case_storage.reload()
-                case_count = len(case_storage.get_all())
-                print(f"Loaded {case_count} cases from storage")
-            except Exception as e:
-                print(f"Warning: Failed to load cases: {e}")
-                # Continue anyway - cases will be loaded on-demand
-        else:
-            print("No cases file found, starting with empty case storage")
-    except Exception as e:
-        print(f"Warning: Failed to initialize case storage: {e}")
-        # Continue anyway - cases will be loaded on-demand
-    
+
+    # Cases are now stored in PostgreSQL - no JSON file to reload
+
     yield
     # Shutdown
     print("Shutting down, closing Neo4j connection...")
@@ -95,6 +81,7 @@ app.include_router(query_router)
 app.include_router(timeline_router)
 app.include_router(snapshots_router)
 app.include_router(cases_router)
+app.include_router(case_members_router)
 app.include_router(auth_router)
 app.include_router(evidence_router)
 app.include_router(background_tasks_router)
@@ -106,6 +93,8 @@ app.include_router(backfill_router)
 app.include_router(database_router)
 app.include_router(llm_config_router)
 app.include_router(workspace_router)
+app.include_router(users_router)
+app.include_router(setup_router)
 
 
 @app.get("/")

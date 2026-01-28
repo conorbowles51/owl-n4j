@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Shield, LogIn, LogOut, Eye, EyeOff, User, KeyRound, CheckCircle } from 'lucide-react';
+import { X, Shield, LogIn, LogOut, Eye, EyeOff, Mail, KeyRound, CheckCircle } from 'lucide-react';
 import { authAPI } from '../services/api';
 
 export default function LoginPanel({
@@ -30,7 +30,7 @@ export default function LoginPanel({
         password: credentials.password,
       });
       
-      onLoginSuccess(response.access_token, response.username);
+      onLoginSuccess(response.access_token, response.username, response.name, response.role);
       setCredentials({ username: '', password: '' });
       onClose();
     } catch (err) {
@@ -119,22 +119,22 @@ export default function LoginPanel({
         ) : (
           /* Login Form */
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Username Field */}
+            {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-light-700 mb-2">
-                Username
+                Email
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <User className="w-5 h-5 text-light-400" />
+                  <Mail className="w-5 h-5 text-light-400" />
                 </div>
                 <input
-                  type="text"
+                  type="email"
                   className="w-full pl-10 pr-4 py-2.5 bg-light-50 border border-light-300 rounded-xl text-light-900 placeholder-light-400 focus:outline-none focus:ring-2 focus:ring-owl-blue-500/20 focus:border-owl-blue-500 transition-all duration-200"
-                  placeholder="Enter your username"
+                  placeholder="Enter your email"
                   value={credentials.username}
                   onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
-                  autoComplete="username"
+                  autoComplete="email"
                   required
                 />
               </div>

@@ -8,6 +8,7 @@ from routers.query import router as query_router
 from routers.timeline import router as timeline_router
 from routers.snapshots import router as snapshots_router
 from routers.cases import router as cases_router
+from routers.case_members import router as case_members_router
 from routers.auth import router as auth_router
 from routers.evidence import router as evidence_router
 from routers.background_tasks import router as background_tasks_router
@@ -19,6 +20,8 @@ from routers.backfill import router as backfill_router
 from routers.database import router as database_router
 from routers.llm_config import router as llm_config_router
 from routers.workspace import router as workspace_router
+from routers.users import router as users_router
+from routers.setup import router as setup_router
 
 __all__ = [
     "graph_router",
@@ -27,6 +30,7 @@ __all__ = [
     "timeline_router",
     "snapshots_router",
     "cases_router",
+    "case_members_router",
     "auth_router",
     "evidence_router",
     "background_tasks_router",
@@ -38,4 +42,6 @@ __all__ = [
     "database_router",
     "llm_config_router",
     "workspace_router",
+    "users_router",
+    "setup_router",
 ]

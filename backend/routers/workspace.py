@@ -13,20 +13,24 @@ Handles workspace-specific endpoints for case workspaces including:
 
 from datetime import datetime
 from typing import List, Optional, Dict, Any
+from uuid import UUID
 from fastapi import APIRouter, HTTPException, Depends, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from services.workspace_service import workspace_service
 from services.presence_service import presence_service
 from services.system_log_service import system_log_service, LogType, LogOrigin
-from services.case_storage import case_storage
+from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessDenied
 from services.vector_db_service import vector_db_service
 from services.embedding_service import EmbeddingService
 from services.evidence_storage import evidence_storage
 from services.neo4j_service import neo4j_service
 from pathlib import Path
 from utils.text_extraction import extract_text_from_file
-from .auth import get_current_user
+from postgres.session import get_db
+from postgres.models.user import User
+from routers.users import get_current_db_user
 
 router = APIRouter(prefix="/api/workspace", tags=["workspace"])
 
@@ -123,18 +127,17 @@ class DeadlineCreate(BaseModel):
 @router.get("/{case_id}/context")
 async def get_case_context(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get case context for a workspace."""
     try:
-        # Verify case exists
-        case = case_storage.get_case(case_id)
-        if not case:
+        # Verify case exists and user has access
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
-        if case.get("owner") != user["username"]:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
+
         context = workspace_service.get_case_context(case_id)
         if not context:
             # Return default structure
@@ -149,7 +152,7 @@ async def get_case_context(
                 "trial_date": None,
                 "court_info": {}
             }
-        
+
         return context
     except HTTPException:
         raise
@@ -161,18 +164,17 @@ async def get_case_context(
 async def update_case_context(
     case_id: str,
     context: CaseContextUpdate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Update case context."""
     try:
-        # Verify case exists
-        case = case_storage.get_case(case_id)
-        if not case:
+        # Verify case exists and user has access
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
-        if case.get("owner") != user["username"]:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
+
         # Get existing context or create new
         existing = workspace_service.get_case_context(case_id) or {}
         updated = {
@@ -181,19 +183,19 @@ async def update_case_context(
             **context.dict(exclude_unset=True),
             "updated_at": datetime.now().isoformat()
         }
-        
+
         workspace_service.save_case_context(case_id, updated)
-        
+
         # Log the update
         system_log_service.log(
             log_type=LogType.CASE_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Update Case Context",
             details={"case_id": case_id},
-            user=user.get("username", "unknown"),
+            user=current_user.email,
             success=True,
         )
-        
+
         return updated
     except HTTPException:
         raise
@@ -205,14 +207,16 @@ async def update_case_context(
 @router.get("/{case_id}/witnesses")
 async def get_witnesses(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get all witnesses for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         witnesses = workspace_service.get_witnesses(case_id)
         return {"witnesses": witnesses}
     except HTTPException:
@@ -225,26 +229,28 @@ async def get_witnesses(
 async def create_witness(
     case_id: str,
     witness: WitnessCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Create a new witness."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         witness_data = witness.dict()
         witness_id = workspace_service.save_witness(case_id, witness_data)
-        
+
         system_log_service.log(
             log_type=LogType.CASE_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Create Witness",
             details={"case_id": case_id, "witness_id": witness_id, "name": witness.name},
-            user=user.get("username", "unknown"),
+            user=current_user.email,
             success=True,
         )
-        
+
         return {"witness_id": witness_id, **witness_data}
     except HTTPException:
         raise
@@ -257,21 +263,23 @@ async def update_witness(
     case_id: str,
     witness_id: str,
     witness: WitnessCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Update a witness."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         existing = workspace_service.get_witness(case_id, witness_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Witness not found")
-        
+
         witness_data = {**existing, **witness.dict(exclude_unset=True)}
         workspace_service.save_witness(case_id, witness_data)
-        
+
         return witness_data
     except HTTPException:
         raise
@@ -283,17 +291,19 @@ async def update_witness(
 async def delete_witness(
     case_id: str,
     witness_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Delete a witness."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         if not workspace_service.delete_witness(case_id, witness_id):
             raise HTTPException(status_code=404, detail="Witness not found")
-        
+
         return {"success": True}
     except HTTPException:
         raise
@@ -305,16 +315,18 @@ async def delete_witness(
 @router.get("/{case_id}/theories")
 async def get_theories(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get all theories for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         # Get user role for privilege filtering
-        user_role = user.get("role", "investigator")  # Default to investigator
+        user_role = current_user.global_role.value if current_user.global_role else "investigator"
         theories = workspace_service.get_theories(case_id, user_role=user_role)
         return {"theories": theories}
     except HTTPException:
@@ -327,27 +339,29 @@ async def get_theories(
 async def create_theory(
     case_id: str,
     theory: TheoryCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Create a new theory."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         theory_data = theory.dict()
-        theory_data["author_id"] = user.get("username")
+        theory_data["author_id"] = current_user.email
         theory_id = workspace_service.save_theory(case_id, theory_data)
-        
+
         system_log_service.log(
             log_type=LogType.CASE_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Create Theory",
             details={"case_id": case_id, "theory_id": theory_id, "title": theory.title},
-            user=user.get("username", "unknown"),
+            user=current_user.email,
             success=True,
         )
-        
+
         return {"theory_id": theory_id, **theory_data}
     except HTTPException:
         raise
@@ -360,21 +374,23 @@ async def update_theory(
     case_id: str,
     theory_id: str,
     theory: TheoryCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Update a theory."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         existing = workspace_service.get_theory(case_id, theory_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Theory not found")
-        
+
         theory_data = {**existing, **theory.dict(exclude_unset=True)}
         workspace_service.save_theory(case_id, theory_data)
-        
+
         return theory_data
     except HTTPException:
         raise
@@ -386,17 +402,19 @@ async def update_theory(
 async def delete_theory(
     case_id: str,
     theory_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Delete a theory."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         if not workspace_service.delete_theory(case_id, theory_id):
             raise HTTPException(status_code=404, detail="Theory not found")
-        
+
         return {"success": True}
     except HTTPException:
         raise
@@ -415,7 +433,8 @@ async def build_theory_graph(
     case_id: str,
     theory_id: str,
     request: BuildTheoryGraphRequest,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """
     Build a graph for a theory by:
@@ -425,8 +444,9 @@ async def build_theory_graph(
     4. Returning relevant entity keys to display in graph
     """
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
         
         # Get the theory
@@ -570,14 +590,16 @@ async def build_theory_graph(
 @router.get("/{case_id}/investigation-timeline")
 async def get_investigation_timeline(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get investigation timeline events for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         events = workspace_service.get_investigation_timeline(case_id)
         return {"events": events, "total": len(events)}
     except HTTPException:
@@ -590,14 +612,16 @@ async def get_investigation_timeline(
 async def get_theory_timeline(
     case_id: str,
     theory_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get timeline events for a specific theory and its attached items."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         events = workspace_service.get_theory_timeline(case_id, theory_id)
         return {"events": events, "total": len(events)}
     except HTTPException:
@@ -610,14 +634,16 @@ async def get_theory_timeline(
 @router.get("/{case_id}/tasks")
 async def get_tasks(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get all tasks for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         tasks = workspace_service.get_tasks(case_id)
         return {"tasks": tasks}
     except HTTPException:
@@ -630,17 +656,19 @@ async def get_tasks(
 async def create_task(
     case_id: str,
     task: TaskCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Create a new task."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         task_data = task.dict()
         task_id = workspace_service.save_task(case_id, task_data)
-        
+
         return {"task_id": task_id, **task_data}
     except HTTPException:
         raise
@@ -653,21 +681,23 @@ async def update_task(
     case_id: str,
     task_id: str,
     task: TaskCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Update a task."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         existing = workspace_service.get_task(case_id, task_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         task_data = {**existing, **task.dict(exclude_unset=True)}
         workspace_service.save_task(case_id, task_data)
-        
+
         return task_data
     except HTTPException:
         raise
@@ -679,17 +709,19 @@ async def update_task(
 async def delete_task(
     case_id: str,
     task_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Delete a task."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         if not workspace_service.delete_task(case_id, task_id):
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         return {"success": True}
     except HTTPException:
         raise
@@ -701,14 +733,16 @@ async def delete_task(
 @router.get("/{case_id}/deadlines")
 async def get_deadlines(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get deadline configuration for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         deadline_config = workspace_service.get_deadline_config(case_id)
         if not deadline_config:
             # Return default structure
@@ -719,7 +753,7 @@ async def get_deadlines(
                 "court_division": None,
                 "deadlines": []
             }
-        
+
         return deadline_config
     except HTTPException:
         raise
@@ -731,17 +765,19 @@ async def get_deadlines(
 async def update_deadlines(
     case_id: str,
     deadline_config: DeadlineCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Update deadline configuration for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         config_data = deadline_config.dict()
         workspace_service.save_deadline_config(case_id, config_data)
-        
+
         return config_data
     except HTTPException:
         raise
@@ -753,15 +789,17 @@ async def update_deadlines(
 @router.get("/{case_id}/pinned")
 async def get_pinned_items(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get pinned items for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
-        pinned = workspace_service.get_pinned_items(case_id, user_id=user.get("username"))
+
+        pinned = workspace_service.get_pinned_items(case_id, user_id=current_user.email)
         return {"pinned_items": pinned}
     except HTTPException:
         raise
@@ -775,22 +813,24 @@ async def pin_item(
     item_type: str = Query(..., description="Type of item: 'evidence' or 'document'"),
     item_id: str = Query(..., description="ID of the item to pin"),
     annotations_count: int = Query(0, description="Number of annotations"),
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Pin an item to the workspace."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         pin_id = workspace_service.pin_item(
             case_id=case_id,
             item_type=item_type,
             item_id=item_id,
-            user_id=user.get("username"),
+            user_id=current_user.email,
             annotations_count=annotations_count
         )
-        
+
         return {"pin_id": pin_id, "success": True}
     except HTTPException:
         raise
@@ -802,17 +842,19 @@ async def pin_item(
 async def unpin_item(
     case_id: str,
     pin_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Unpin an item from the workspace."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         if not workspace_service.unpin_item(case_id, pin_id):
             raise HTTPException(status_code=404, detail="Pinned item not found")
-        
+
         return {"success": True}
     except HTTPException:
         raise
@@ -824,14 +866,16 @@ async def unpin_item(
 @router.get("/{case_id}/notes")
 async def get_notes(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get all investigative notes for a case."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         notes = workspace_service.get_notes(case_id)
         return {"notes": notes}
     except HTTPException:
@@ -844,26 +888,28 @@ async def get_notes(
 async def create_note(
     case_id: str,
     note: NoteCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Create a new investigative note."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         note_data = note.dict()
         note_id = workspace_service.save_note(case_id, note_data)
-        
+
         system_log_service.log(
             log_type=LogType.CASE_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Create Investigative Note",
             details={"case_id": case_id, "note_id": note_id},
-            user=user.get("username", "unknown"),
+            user=current_user.email,
             success=True,
         )
-        
+
         return {"note_id": note_id, **note_data}
     except HTTPException:
         raise
@@ -876,21 +922,23 @@ async def update_note(
     case_id: str,
     note_id: str,
     note: NoteCreate,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Update an investigative note."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         existing = workspace_service.get_note(case_id, note_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Note not found")
-        
+
         note_data = {**existing, **note.dict(exclude_unset=True)}
         workspace_service.save_note(case_id, note_data)
-        
+
         return note_data
     except HTTPException:
         raise
@@ -902,17 +950,19 @@ async def update_note(
 async def delete_note(
     case_id: str,
     note_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Delete an investigative note."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         if not workspace_service.delete_note(case_id, note_id):
             raise HTTPException(status_code=404, detail="Note not found")
-        
+
         return {"success": True}
     except HTTPException:
         raise
@@ -924,14 +974,16 @@ async def delete_note(
 @router.get("/{case_id}/presence")
 async def get_presence(
     case_id: str,
-    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
 ):
     """Get online users for a workspace."""
     try:
-        case = case_storage.get_case(case_id)
-        if not case or case.get("owner") != user["username"]:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
             raise HTTPException(status_code=404, detail="Case not found")
-        
+
         online_users = presence_service.get_online_users(case_id)
         return {"online_users": online_users, "count": len(online_users)}
     except HTTPException:

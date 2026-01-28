@@ -40,7 +40,7 @@ import {
   MousePointer,
   Table2,
 } from 'lucide-react';
-import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI } from './services/api';
+import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI, setupAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
 import { calculateCypherDelta, buildIncrementalQueries } from './utils/cypherDelta';
 import GraphView from './components/GraphView';
@@ -64,6 +64,7 @@ import WorkspaceView from './components/WorkspaceView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
+import SetupPanel from './components/SetupPanel';
 import DocumentationViewer from './components/DocumentationViewer';
 import DocumentViewer from './components/DocumentViewer';
 import LoadCaseProgressDialog from './components/LoadCaseProgressDialog';
@@ -77,6 +78,23 @@ import RelationshipAnalysisModal from './components/RelationshipAnalysisModal';
 import EditNodeModal from './components/EditNodeModal';
 import ExpandGraphModal from './components/ExpandGraphModal';
 import MergeEntitiesModal from './components/MergeEntitiesModal';
+import CollaboratorModal from './components/CollaboratorModal';
+import SimilarEntitiesProgressDialog from './components/SimilarEntitiesProgressDialog';
+import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
+
+/**
+ * Wrapper component that conditionally renders ContextMenu based on edit permissions.
+ * Must be used inside CasePermissionProvider.
+ */
+function PermissionAwareContextMenu({ contextMenu, ...props }) {
+  const { canEdit } = useCasePermissions();
+
+  if (!contextMenu || !canEdit) {
+    return null;
+  }
+
+  return <ContextMenu node={contextMenu.node} position={contextMenu.position} {...props} />;
+}
 
 /**
  * Main App Component
@@ -223,7 +241,9 @@ export default function App() {
   const [currentCaseVersion, setCurrentCaseVersion] = useState(0);
   const [loadedCypherQueries, setLoadedCypherQueries] = useState(null); // Track loaded Cypher queries for comparison
   const [showCaseModal, setShowCaseModal] = useState(false);
-  
+  const [showCollaboratorModal, setShowCollaboratorModal] = useState(false);
+  const [collaboratorModalCase, setCollaboratorModalCase] = useState(null);
+
   // File management panel state
   const [showFilePanel, setShowFilePanel] = useState(false);
   // Background tasks panel state
@@ -233,8 +253,12 @@ export default function App() {
   const settingsDropdownRef = useRef(null);
   const settingsButtonRef = useRef(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [authUsername, setAuthUsername] = useState('');
+  const [authUsername, setAuthUsername] = useState('');  // email
+  const [authDisplayName, setAuthDisplayName] = useState('');  // user's name
+  const [authUserRole, setAuthUserRole] = useState(null);  // user role (e.g., 'super_admin', 'user')
   const [showLoginPanel, setShowLoginPanel] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(null);
+  const [setupCheckComplete, setSetupCheckComplete] = useState(false);
   const [isAccountDropdownOpen, setIsAccountDropdownOpen] = useState(false);
   const [showDocumentation, setShowDocumentation] = useState(false);
   const [showAddNodeModal, setShowAddNodeModal] = useState(false);
@@ -268,6 +292,8 @@ export default function App() {
   const [similarEntitiesPairs, setSimilarEntitiesPairs] = useState([]);
   const [showSimilarEntitiesList, setShowSimilarEntitiesList] = useState(false);
   const [isScanningSimilar, setIsScanningSimilar] = useState(false);
+  const [similarScanProgress, setSimilarScanProgress] = useState(null);
+  const similarScanAbortRef = useRef(null);
   
   // Close and clear spotlight confirmation popup state
   const [showClearSpotlightConfirm, setShowClearSpotlightConfirm] = useState(false);
@@ -347,19 +373,54 @@ export default function App() {
   const logoButtonRef = useRef(null);
 
   useEffect(() => {
-    async function loadUser() {
+    async function initializeApp() {
       try {
-        const current = await authAPI.me();
-        setIsAuthenticated(true);
-        setAuthUsername(current.username);
-      } catch {
-        setIsAuthenticated(false);
-        setAuthUsername('');
-        localStorage.removeItem('authToken');
+        // First check if setup is needed
+        const setupStatus = await setupAPI.getStatus();
+        if (setupStatus.needs_setup) {
+          setNeedsSetup(true);
+          setSetupCheckComplete(true);
+          return;
+        }
+        setNeedsSetup(false);
+
+        // Setup not needed, check if user is authenticated
+        try {
+          const current = await authAPI.me();
+          setIsAuthenticated(true);
+          setAuthUsername(current.email);
+          setAuthDisplayName(current.name);
+          setAuthUserRole(current.role || null);
+        } catch {
+          setIsAuthenticated(false);
+          setAuthUsername('');
+          setAuthDisplayName('');
+          setAuthUserRole(null);
+          localStorage.removeItem('authToken');
+        }
+      } catch (err) {
+        // If setup check fails, assume setup is not needed and proceed with auth check
+        console.error('Setup status check failed:', err);
+        setNeedsSetup(false);
+        try {
+          const current = await authAPI.me();
+          setIsAuthenticated(true);
+          setAuthUsername(current.email);
+          setAuthDisplayName(current.name);
+          setAuthUserRole(current.role || null);
+        } catch {
+          setIsAuthenticated(false);
+          setAuthUsername('');
+          setAuthDisplayName('');
+          setAuthUserRole(null);
+          localStorage.removeItem('authToken');
+        }
+      } finally {
+        setSetupCheckComplete(true);
       }
     }
 
-    loadUser();
+    initializeApp();
   }, []);
 
   useEffect(() => {
@@ -388,10 +449,12 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isAccountDropdownOpen, isSettingsDropdownOpen]);
 
-  const handleLoginSuccess = useCallback((token, username) => {
+  const handleLoginSuccess = useCallback((token, email, name, role = null) => {
     localStorage.setItem('authToken', token);
     setIsAuthenticated(true);
-    setAuthUsername(username);
+    setAuthUsername(email);
+    setAuthDisplayName(name);
+    setAuthUserRole(role);
     setIsAccountDropdownOpen(false);
   }, []);
 
@@ -404,6 +467,8 @@ export default function App() {
     localStorage.removeItem('authToken');
     setIsAuthenticated(false);
     setAuthUsername('');
+    setAuthDisplayName('');
+    setAuthUserRole(null);
     setIsAccountDropdownOpen(false);
   }, []);
 
@@ -1119,24 +1184,139 @@ export default function App() {
     setShowMergeModal(true);
   }, [selectedNodes]);
 
-  // Handle find similar entities
-  const handleFindSimilarEntities = useCallback(async () => {
+  // Handle find similar entities with streaming progress
+  const handleFindSimilarEntities = useCallback(() => {
     if (!currentCaseId) {
       alert('Please select a case first');
       return;
     }
+
+    // Reset state
     setIsScanningSimilar(true);
-    try {
-      const result = await graphAPI.findSimilarEntities(currentCaseId, null, 0.7, 50);
-      setSimilarEntitiesPairs(result.similar_pairs || []);
-      setShowSimilarEntitiesList(true);
-    } catch (err) {
-      console.error('Failed to find similar entities:', err);
-      alert(`Failed to find similar entities: ${err.message}`);
-    } finally {
-      setIsScanningSimilar(false);
-    }
+    setSimilarEntitiesPairs([]);
+    setSimilarScanProgress({
+      totalEntities: 0,
+      totalTypes: 0,
+      entityTypes: [],
+      currentType: null,
+      typeIndex: 0,
+      comparisonsTotal: 0,
+      comparisonsDone: 0,
+      pairsFound: 0,
+      isComplete: false,
+      error: null,
+    });
+
+    // Collect results as they come in
+    const collectedPairs = [];
+
+    // Start the streaming request
+    const cancelFn = graphAPI.findSimilarEntitiesStream(
+      currentCaseId,
+      { entityTypes: null, similarityThreshold: 0.7, maxResults: 50 },
+      {
+        onStart: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            totalEntities: data.total_entities,
+            totalTypes: data.total_types,
+            entityTypes: data.entity_types,
+            comparisonsTotal: data.total_comparisons,
+          }));
+        },
+        onTypeStart: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            currentType: data.type_name,
+            typeIndex: data.type_index,
+          }));
+        },
+        onProgress: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            comparisonsDone: data.comparisons_done,
+            pairsFound: data.pairs_found,
+            currentType: data.current_type,
+            typeIndex: data.type_index,
+          }));
+        },
+        onResult: (pair) => {
+          collectedPairs.push(pair);
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            pairsFound: collectedPairs.length,
+          }));
+        },
+        onTypeComplete: (data) => {
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            typeIndex: data.type_index + 1,
+          }));
+        },
+        onComplete: (data) => {
+          // Use the limited results from the server (respects max_results)
+          const finalPairs = data.limited_results || collectedPairs;
+          setSimilarEntitiesPairs(finalPairs);
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            comparisonsDone: data.total_comparisons,
+            pairsFound: data.total_pairs,
+            isComplete: true,
+          }));
+          setIsScanningSimilar(false);
+          similarScanAbortRef.current = null;
+          // Show results after a brief delay
+          setTimeout(() => {
+            setSimilarScanProgress(null);
+            setShowSimilarEntitiesList(true);
+          }, 500);
+        },
+        onError: (err) => {
+          console.error('Failed to find similar entities:', err);
+          setSimilarScanProgress(prev => ({
+            ...prev,
+            error: err.message || 'Unknown error occurred',
+          }));
+          // Show partial results if we have any
+          if (collectedPairs.length > 0) {
+            setSimilarEntitiesPairs(collectedPairs);
+            setTimeout(() => {
+              setSimilarScanProgress(null);
+              setShowSimilarEntitiesList(true);
+            }, 2000);
+          } else {
+            setTimeout(() => {
+              setSimilarScanProgress(null);
+            }, 3000);
+          }
+          setIsScanningSimilar(false);
+          similarScanAbortRef.current = null;
+        },
+        onCancelled: () => {
+          // Show partial results if we have any
+          if (collectedPairs.length > 0) {
+            setSimilarEntitiesPairs(collectedPairs);
+            setSimilarScanProgress(null);
+            setShowSimilarEntitiesList(true);
+          } else {
+            setSimilarScanProgress(null);
+          }
+          setIsScanningSimilar(false);
+          similarScanAbortRef.current = null;
+        },
+      }
+    );
+
+    // Store cancel function
+    similarScanAbortRef.current = cancelFn;
   }, [currentCaseId]);
+
+  // Handle cancel similar entities scan
+  const handleCancelSimilarScan = useCallback(() => {
+    if (similarScanAbortRef.current) {
+      similarScanAbortRef.current();
+    }
+  }, []);
 
   // Handle open merge modal for a similar pair
   const handleMergeSimilarPair = useCallback((pair) => {
@@ -2646,7 +2826,7 @@ export default function App() {
   // so the user starts with a fresh canvas. The Cypher is stored as "last graph"
   // and can be reloaded from the case management top bar.
   const handleCreateCase = useCallback(
-    async (caseName, saveNotes) => {
+    async (caseTitle, saveNotes, description = '') => {
       try {
         // Ask backend to snapshot the current graph and then clear it
         try {
@@ -2666,19 +2846,20 @@ export default function App() {
           // Continue with case creation even if snapshot/clear fails
         }
 
-        const emptyGraph = { nodes: [], links: [] };
-        const result = await casesAPI.save({
-          case_id: null,
-          case_name: caseName,
-          graph_data: emptyGraph,
-          snapshots: [],
-          save_notes: saveNotes,
+        // Use new API format with title/description, fallback to legacy format
+        const result = await casesAPI.create({
+          title: caseTitle,
+          description: description || undefined,
         });
 
+        // Handle both new response format (id, title) and legacy format (case_id, case_name)
+        const caseId = result.id || result.case_id;
+        const caseName = result.title || result.name || caseTitle;
+
         // Set current case context
-        setCurrentCaseId(result.case_id);
+        setCurrentCaseId(caseId);
         setCurrentCaseName(caseName);
-        setCurrentCaseVersion(result.version);
+        setCurrentCaseVersion(result.version || 1);
         setLoadedCypherQueries(null); // Clear loaded Cypher queries for new case
 
         // Switch to evidence processing view for this new case
@@ -2788,7 +2969,7 @@ export default function App() {
 
       // Set case info first
       setCurrentCaseId(caseData.id);
-      setCurrentCaseName(caseData.name);
+      setCurrentCaseName(caseData.title || caseData.name);
       setCurrentCaseVersion(versionData.version);
 
       // Load the graph filtered by case_id
@@ -2881,6 +3062,34 @@ export default function App() {
     });
   }, []);
 
+  // Show loading spinner while checking setup/auth status
+  if (!setupCheckComplete) {
+    return (
+      <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-8 h-8 animate-spin text-owl-blue-500" />
+          <p className="text-light-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show setup panel if no users exist
+  if (needsSetup) {
+    return (
+      <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
+        <div className="w-full max-w-md">
+          <SetupPanel
+            onSetupComplete={() => {
+              setNeedsSetup(false);
+              // User will now see the login panel
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-dark-950 text-light-100 flex items-center justify-center px-4">
@@ -2902,61 +3111,33 @@ export default function App() {
   // Show case management view if appView is 'caseManagement'
   if (appView === 'caseManagement') {
     return (
-      <>
+      <CasePermissionProvider userRole={authUserRole}>
         <CaseManagementView
           onLoadCase={handleLoadCase}
           onCreateCase={handleCreateCase}
           onLogout={handleLogout}
           isAuthenticated={isAuthenticated}
           authUsername={authUsername}
-          onGoToGraphView={() => setAppView('graph')}
+          authDisplayName={authDisplayName}
           onGoToEvidenceView={(caseData) => {
             if (!caseData) return;
             setCurrentCaseId(caseData.id);
-            setCurrentCaseName(caseData.name);
+            setCurrentCaseName(caseData.title || caseData.name);
             // Keep currentCaseVersion unchanged; evidence processing doesn't depend on it
             setAppView('evidence');
           }}
           onGoToWorkspaceView={(caseData) => {
             if (!caseData) return;
             setCurrentCaseId(caseData.id);
-            setCurrentCaseName(caseData.name);
+            setCurrentCaseName(caseData.title || caseData.name);
             setAppView('workspace');
           }}
           initialCaseToSelect={caseToSelect}
           onViewDocument={handleViewDocument}
           onCaseSelected={() => setCaseToSelect(null)}
-          onLoadLastGraph={async () => {
-            try {
-              // If we don't have lastGraphInfo in memory yet, fetch from backend
-              let info = lastGraphInfo;
-              if (!info || !info.cypher) {
-                info = await graphAPI.getLastGraph();
-                setLastGraphInfo(info);
-              }
-
-              if (!info || !info.cypher) {
-                alert('No last graph is available to load.');
-                return;
-              }
-
-              const result = await graphAPI.loadCase(info.cypher);
-              if (!result.success) {
-                console.error('Last graph load sanity check failed:', result.errors);
-                const details = (result.errors || []).join('\n');
-                alert(
-                  `Failed to load last graph: one or more Cypher statements did not validate.\n\n` +
-                  (details ? `Details:\n${details}` : '')
-                );
-                return;
-              }
-              await loadGraph();
-              setAppView('graph');
-              alert('Last graph loaded successfully.');
-            } catch (err) {
-              console.error('Failed to load last graph:', err);
-              alert(`Failed to load last graph: ${err.message}`);
-            }
+          onShowCollaboratorModal={(caseData) => {
+            setCollaboratorModalCase(caseData);
+            setShowCollaboratorModal(true);
           }}
           lastGraphInfo={lastGraphInfo}
         />
@@ -2984,7 +3165,20 @@ export default function App() {
           initialPage={documentViewerState.page}
           highlightText={documentViewerState.highlightText}
         />
-      </>
+
+        {/* Collaborator Modal for managing case members */}
+        <CollaboratorModal
+          isOpen={showCollaboratorModal}
+          onClose={() => {
+            setShowCollaboratorModal(false);
+            setCollaboratorModalCase(null);
+          }}
+          caseData={collaboratorModalCase}
+          onMembersChanged={() => {
+            // Optionally refresh the case list or permissions
+          }}
+        />
+      </CasePermissionProvider>
     );
   }
 
@@ -3069,7 +3263,7 @@ export default function App() {
   // Evidence processing view for current case
   if (appView === 'evidence') {
     return (
-      <>
+      <CasePermissionProvider userRole={authUserRole}>
         <EvidenceProcessingView
         caseId={currentCaseId}
         caseName={currentCaseName}
@@ -3140,11 +3334,12 @@ export default function App() {
           caseName={loadCaseProgress.caseName}
           version={loadCaseProgress.version}
         />
-      </>
+      </CasePermissionProvider>
     );
   }
 
   return (
+    <CasePermissionProvider userRole={authUserRole}>
     <div className="h-screen w-screen bg-light-50 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="h-16 bg-white border-b border-light-200 flex items-center justify-between px-4 flex-shrink-0 shadow-sm">
@@ -4549,30 +4744,27 @@ export default function App() {
         )}
       </div>
 
-      {/* Context menu */}
-      {contextMenu && (
-        <ContextMenu
-          node={contextMenu.node}
-          position={contextMenu.position}
-          onShowDetails={handleShowDetails}
-          onExpand={handleExpand}
-          onClose={() => setContextMenu(null)}
-          onAddRelationship={handleStartRelationshipCreation}
-          onCreateRelationship={handleCreateRelationship}
-          onAnalyzeRelationships={handleAnalyzeRelationships}
-          isRelationshipMode={isRelationshipMode}
-          selectedNodes={selectedNodes}
-          onExpandGraph={(context, nodeKeys) => {
-            if (nodeKeys && nodeKeys.length > 0) {
-              setExpandGraphContext(context);
-              setShowExpandGraphModal(true);
-            }
-          }}
-          isSubgraph={paneViewMode === 'split'}
-          onMerge={handleMergeSelected}
-          onDelete={handleDeleteNode}
-        />
-      )}
+      {/* Context menu - only show for users with edit permission */}
+      <PermissionAwareContextMenu
+        contextMenu={contextMenu}
+        onShowDetails={handleShowDetails}
+        onExpand={handleExpand}
+        onClose={() => setContextMenu(null)}
+        onAddRelationship={handleStartRelationshipCreation}
+        onCreateRelationship={handleCreateRelationship}
+        onAnalyzeRelationships={handleAnalyzeRelationships}
+        isRelationshipMode={isRelationshipMode}
+        selectedNodes={selectedNodes}
+        onExpandGraph={(context, nodeKeys) => {
+          if (nodeKeys && nodeKeys.length > 0) {
+            setExpandGraphContext(context);
+            setShowExpandGraphModal(true);
+          }
+        }}
+        isSubgraph={paneViewMode === 'split'}
+        onMerge={handleMergeSelected}
+        onDelete={handleDeleteNode}
+      />
 
       {/* Create Relationship Modal */}
       <CreateRelationshipModal
@@ -4911,6 +5103,13 @@ export default function App() {
         onClose={null} // Don't allow closing during save
       />
 
+      {/* Similar Entities Scan Progress Dialog */}
+      <SimilarEntitiesProgressDialog
+        isOpen={similarScanProgress !== null}
+        onCancel={handleCancelSimilarScan}
+        progress={similarScanProgress}
+      />
+
       <LoadSnapshotProgressDialog
         isOpen={loadSnapshotProgress.isOpen}
         onClose={() => {
@@ -5048,5 +5247,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </CasePermissionProvider>
   );
 }

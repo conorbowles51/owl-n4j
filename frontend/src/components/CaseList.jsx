@@ -23,7 +23,9 @@ export default function CaseList({ isOpen, onClose, onLoadCase }) {
     setLoading(true);
     try {
       const data = await casesAPI.list();
-      setCases(data);
+      // Handle both new format { cases: [...], total: number } and legacy array format
+      const casesList = Array.isArray(data) ? data : (data.cases || []);
+      setCases(casesList);
     } catch (err) {
       console.error('Failed to load cases:', err);
     } finally {
@@ -122,7 +124,10 @@ export default function CaseList({ isOpen, onClose, onLoadCase }) {
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-owl-blue-900 truncate">{caseItem.name}</h3>
+                        <h3 className="font-medium text-owl-blue-900 truncate">{caseItem.title || caseItem.name}</h3>
+                        {caseItem.description && (
+                          <p className="text-xs text-light-700 mt-1 line-clamp-1">{caseItem.description}</p>
+                        )}
                         <div className="flex items-center gap-3 mt-2 text-xs text-light-600">
                           <span className="flex items-center gap-1">
                             <Calendar className="w-3 h-3" />
@@ -150,7 +155,10 @@ export default function CaseList({ isOpen, onClose, onLoadCase }) {
             {selectedCase ? (
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-owl-blue-900 mb-2">{selectedCase.name}</h3>
+                  <h3 className="text-lg font-semibold text-owl-blue-900 mb-2">{selectedCase.title || selectedCase.name}</h3>
+                  {selectedCase.description && (
+                    <p className="text-sm text-light-700 mb-2">{selectedCase.description}</p>
+                  )}
                   <div className="text-xs text-light-600">
                     <p>Created: {formatDate(selectedCase.created_at)}</p>
                     <p>Updated: {formatDate(selectedCase.updated_at)}</p>
