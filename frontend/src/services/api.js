@@ -267,6 +267,43 @@ export const graphAPI = {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        // IMPORTANT: Keep currentEvent and currentData outside the loop
+        // so they persist across network chunks (SSE events may span multiple chunks)
+        let currentEvent = null;
+        let currentData = '';
+
+        // Helper function to dispatch SSE events
+        const dispatchEvent = (eventType, eventData) => {
+          try {
+            const data = JSON.parse(eventData);
+
+            switch (eventType) {
+              case 'start':
+                onStart?.(data);
+                break;
+              case 'type_start':
+                onTypeStart?.(data);
+                break;
+              case 'progress':
+                onProgress?.(data);
+                break;
+              case 'type_complete':
+                onTypeComplete?.(data);
+                break;
+              case 'complete':
+                onComplete?.(data);
+                break;
+              case 'cancelled':
+                onCancelled?.(data);
+                break;
+              case 'error':
+                onError?.(new Error(data.message || 'Unknown error'));
+                break;
+            }
+          } catch (parseError) {
+            console.error('Failed to parse SSE data:', parseError);
+          }
+        };
 
         while (true) {
           const { done, value } = await reader.read();
@@ -278,9 +315,6 @@ export const graphAPI = {
           const lines = buffer.split('\n');
           buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-          let currentEvent = null;
-          let currentData = '';
-
           for (const line of lines) {
             if (line.startsWith('event: ')) {
               currentEvent = line.slice(7).trim();
@@ -289,35 +323,7 @@ export const graphAPI = {
             } else if (line === '') {
               // Empty line signals end of event
               if (currentEvent && currentData) {
-                try {
-                  const data = JSON.parse(currentData);
-
-                  switch (currentEvent) {
-                    case 'start':
-                      onStart?.(data);
-                      break;
-                    case 'type_start':
-                      onTypeStart?.(data);
-                      break;
-                    case 'progress':
-                      onProgress?.(data);
-                      break;
-                    case 'type_complete':
-                      onTypeComplete?.(data);
-                      break;
-                    case 'complete':
-                      onComplete?.(data);
-                      break;
-                    case 'cancelled':
-                      onCancelled?.(data);
-                      break;
-                    case 'error':
-                      onError?.(new Error(data.message || 'Unknown error'));
-                      break;
-                  }
-                } catch (parseError) {
-                  console.error('Failed to parse SSE data:', parseError);
-                }
+                dispatchEvent(currentEvent, currentData);
               }
               currentEvent = null;
               currentData = '';
@@ -325,6 +331,21 @@ export const graphAPI = {
           }
 
           if (done) {
+            // Process any remaining complete event in buffer before breaking
+            if (buffer.trim()) {
+              const finalLines = buffer.split('\n');
+              for (const line of finalLines) {
+                if (line.startsWith('event: ')) {
+                  currentEvent = line.slice(7).trim();
+                } else if (line.startsWith('data: ')) {
+                  currentData = line.slice(6);
+                }
+              }
+              // If we have a complete event, dispatch it
+              if (currentEvent && currentData) {
+                dispatchEvent(currentEvent, currentData);
+              }
+            }
             break;
           }
         }

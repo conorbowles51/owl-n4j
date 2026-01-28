@@ -1282,7 +1282,13 @@ export default function App() {
           setIsScanningSimilar(false);
           similarScanAbortRef.current = null;
         },
-        onCancelled: () => {
+        onCancelled: (data) => {
+          // Check if partial results were returned on cancellation
+          const partialPairs = data?.partial_results || [];
+          if (partialPairs.length > 0) {
+            setSimilarEntitiesPairs(partialPairs);
+            setShowSimilarEntitiesList(true);
+          }
           setSimilarScanProgress(null);
           setIsScanningSimilar(false);
           similarScanAbortRef.current = null;
