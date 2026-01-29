@@ -64,6 +64,7 @@ export default function TimelineView({
   const [zoomLevel, setZoomLevel] = useState(1);
   const [showRelationships, setShowRelationships] = useState(false);
   const [entityDockExpanded, setEntityDockExpanded] = useState(true);
+  const [filterPanelExpanded, setFilterPanelExpanded] = useState(true);
   const timelineContainerRef = useRef(null);
 
   // Base timeline height
@@ -354,6 +355,8 @@ export default function TimelineView({
               onToggleType={toggleType}
               onSelectAll={selectAllTypes}
               onClearAll={clearAllTypes}
+              isExpanded={filterPanelExpanded}
+              onToggleExpand={() => setFilterPanelExpanded(prev => !prev)}
             />
           )}
         </div>
