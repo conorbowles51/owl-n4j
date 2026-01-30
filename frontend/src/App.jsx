@@ -82,6 +82,7 @@ import MergeEntitiesModal from './components/MergeEntitiesModal';
 import CollaboratorModal from './components/CollaboratorModal';
 import SimilarEntitiesProgressDialog from './components/SimilarEntitiesProgressDialog';
 import EntityComparisonModal from './components/EntityComparisonModal';
+import EntityTypeSelectorModal from './components/EntityTypeSelectorModal';
 import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
 
 /**
@@ -297,6 +298,11 @@ export default function App() {
   const [isScanningSimilar, setIsScanningSimilar] = useState(false);
   const [similarScanProgress, setSimilarScanProgress] = useState(null);
   const similarScanAbortRef = useRef(null);
+
+  // Entity type selector modal state (for similar entities scan)
+  const [showEntityTypeSelector, setShowEntityTypeSelector] = useState(false);
+  const [scanEntityTypes, setScanEntityTypes] = useState([]);
+  const [isLoadingEntityTypes, setIsLoadingEntityTypes] = useState(false);
 
   // Entity comparison modal state
   const [showComparisonModal, setShowComparisonModal] = useState(false);
@@ -1193,12 +1199,31 @@ export default function App() {
     setShowMergeModal(true);
   }, [selectedNodes, selectedNodesDetails]);
 
-  // Handle find similar entities with streaming progress
-  const handleFindSimilarEntities = useCallback(() => {
+  // Handle find similar entities - opens type selector modal first
+  const handleFindSimilarEntities = useCallback(async () => {
     if (!currentCaseId) {
       alert('Please select a case first');
       return;
     }
+
+    // Fetch entity types and show selector modal
+    setIsLoadingEntityTypes(true);
+    setShowEntityTypeSelector(true);
+
+    try {
+      const response = await graphAPI.getEntityTypes(currentCaseId);
+      setScanEntityTypes(response.entity_types || []);
+    } catch (err) {
+      console.error('Failed to fetch entity types:', err);
+      setScanEntityTypes([]);
+    } finally {
+      setIsLoadingEntityTypes(false);
+    }
+  }, [currentCaseId]);
+
+  // Start the actual similar entities scan with selected types
+  const startSimilarEntitiesScan = useCallback((selectedTypes) => {
+    if (!currentCaseId) return;
 
     // Reset state
     setIsScanningSimilar(true);
@@ -1216,10 +1241,10 @@ export default function App() {
       error: null,
     });
 
-    // Start the streaming request
+    // Start the streaming request with selected types
     const cancelFn = graphAPI.findSimilarEntitiesStream(
       currentCaseId,
-      { entityTypes: null, similarityThreshold: 0.7, maxResults: 1000 },
+      { entityTypes: selectedTypes, similarityThreshold: 0.7, maxResults: 1000 },
       {
         onStart: (data) => {
           setSimilarScanProgress(prev => ({
@@ -5194,6 +5219,18 @@ export default function App() {
         isOpen={similarScanProgress !== null}
         onCancel={handleCancelSimilarScan}
         progress={similarScanProgress}
+      />
+
+      {/* Entity Type Selector Modal (for similar entities scan) */}
+      <EntityTypeSelectorModal
+        isOpen={showEntityTypeSelector}
+        onClose={() => setShowEntityTypeSelector(false)}
+        onStartScan={(selectedTypes) => {
+          setShowEntityTypeSelector(false);
+          startSimilarEntitiesScan(selectedTypes);
+        }}
+        entityTypes={scanEntityTypes}
+        isLoading={isLoadingEntityTypes}
       />
 
       <LoadSnapshotProgressDialog
