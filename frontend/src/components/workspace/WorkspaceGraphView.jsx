@@ -38,6 +38,10 @@ export default function WorkspaceGraphView({
   onGraphSearchExecute,
   onGraphModeChange,
   onTableNodeSelect,
+  onUpdateNode = null,
+  onNodeCreated = null,
+  onGraphRefresh = null,
+  onDeleteNodes = null,
 }) {
   const tableData = tableGraphData ?? graphData;
   const graphViewRef = useRef();
@@ -223,7 +227,7 @@ export default function WorkspaceGraphView({
             ) : currentViewMode === 'table' ? (
               <div className="h-full w-full flex flex-col min-h-0">
                 <GraphTableView
-                  key={`table-${tableScope}-${(theoryGraphKeys?.length ?? 0)}`}
+                  key={`table-${tableScope}-${(theoryGraphKeys?.length ?? 0)}-${tableData?.nodes?.length ?? 0}-${tableData?.nodes?.map(n => n.key).sort().join(',') || ''}`}
                   graphData={tableData}
                   searchTerm={graphSearchTerm || ''}
                   onNodeClick={(node, panel, e) => {
@@ -236,6 +240,11 @@ export default function WorkspaceGraphView({
                   selectedNodeKeys={selectedNode ? [selectedNode.key] : []}
                   tableViewState={tableViewState}
                   onTableViewStateChange={onTableViewStateChange}
+                  caseId={caseId}
+                  onUpdateNode={onUpdateNode}
+                  onNodeCreated={onNodeCreated}
+                  onGraphRefresh={onGraphRefresh}
+                  onDeleteNodes={onDeleteNodes}
                 />
               </div>
             ) : (

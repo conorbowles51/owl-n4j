@@ -138,6 +138,7 @@ export default function WorkspaceView({
   }, []);
 
   // Apply search filter to graph data
+  // Always creates new array references to ensure React detects changes
   const applyGraphFilter = useCallback((data, searchTerm) => {
     if (!searchTerm) {
       // If no search term, apply theory filter if active
@@ -149,9 +150,11 @@ export default function WorkspaceView({
           const targetKey = typeof link.target === 'object' ? link.target?.key : link.target;
           return keysSet.has(sourceKey) && keysSet.has(targetKey);
         });
-        setGraphData({ nodes: filteredNodes, links: filteredLinks });
+        // Create new array references
+        setGraphData({ nodes: [...filteredNodes], links: [...filteredLinks] });
       } else {
-        setGraphData(data);
+        // Create new array references even when no filtering
+        setGraphData({ nodes: [...data.nodes], links: [...data.links] });
       }
       return;
     }
@@ -178,7 +181,8 @@ export default function WorkspaceView({
       return matchingNodeKeys.has(sourceKey) && matchingNodeKeys.has(targetKey);
     });
 
-    setGraphData({ nodes: matchingNodes, links: matchingLinks });
+    // Create new array references
+    setGraphData({ nodes: [...matchingNodes], links: [...matchingLinks] });
   }, [theoryGraphKeys, graphSearchFieldScope]);
 
   // Filter graph when theory keys or search term changes
@@ -199,12 +203,108 @@ export default function WorkspaceView({
     }
   }, [fullGraphData, graphSearchTerm, applyGraphFilter]);
 
+  // Graph update handlers (defined after applyGraphFilter)
+  const handleUpdateNode = useCallback(async (nodeKey, updates) => {
+    try {
+      await graphAPI.updateNode(nodeKey, updates);
+      // Refresh graph data - create new object references to ensure React detects changes
+      const graph = await graphAPI.getGraph({ case_id: caseId });
+      // Create new array references to ensure React detects the change
+      const newGraph = {
+        nodes: [...graph.nodes],
+        links: [...graph.links],
+      };
+      setFullGraphData(newGraph);
+      // Reapply filters if needed
+      if (graphSearchTerm || theoryGraphKeys) {
+        applyGraphFilter(newGraph, graphSearchTerm);
+      } else {
+        setGraphData(newGraph);
+      }
+      // Refresh selected node details if the updated node is selected
+      if (selectedNode && selectedNode.key === nodeKey) {
+        const nodeDetails = await graphAPI.getNodeDetails(nodeKey, caseId);
+        setSelectedNode({ ...selectedNode, ...nodeDetails });
+      }
+    } catch (err) {
+      throw err;
+    }
+  }, [caseId, graphSearchTerm, theoryGraphKeys, selectedNode, applyGraphFilter]);
+
+  const handleNodeCreated = useCallback(async (nodeKey) => {
+    // Refresh graph data after node creation - create new object references to ensure React detects changes
+    const graph = await graphAPI.getGraph({ case_id: caseId });
+    // Create new array references to ensure React detects the change
+    const newGraph = {
+      nodes: [...graph.nodes],
+      links: [...graph.links],
+    };
+    setFullGraphData(newGraph);
+    // Reapply filters if needed
+    if (graphSearchTerm || theoryGraphKeys) {
+      applyGraphFilter(newGraph, graphSearchTerm);
+    } else {
+      setGraphData(newGraph);
+    }
+  }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
+
+  const handleGraphRefresh = useCallback(async () => {
+    // Refresh graph data - create new object references to ensure React detects changes
+    const graph = await graphAPI.getGraph({ case_id: caseId });
+    // Create new array references to ensure React detects the change
+    const newGraph = {
+      nodes: [...graph.nodes],
+      links: [...graph.links],
+    };
+    setFullGraphData(newGraph);
+    // Reapply filters if needed
+    if (graphSearchTerm || theoryGraphKeys) {
+      applyGraphFilter(newGraph, graphSearchTerm);
+    } else {
+      setGraphData(newGraph);
+    }
+  }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
+
+  const handleDeleteNodes = useCallback(async (nodesToDelete) => {
+    try {
+      // Delete each node
+      for (const node of nodesToDelete) {
+        await graphAPI.deleteNode(node.key, caseId);
+      }
+      // Refresh graph data after deletion - create new object references to ensure React detects changes
+      const graph = await graphAPI.getGraph({ case_id: caseId });
+      // Create new array references to ensure React detects the change
+      const newGraph = {
+        nodes: [...graph.nodes],
+        links: [...graph.links],
+      };
+      setFullGraphData(newGraph);
+      // Reapply filters if needed
+      if (graphSearchTerm || theoryGraphKeys) {
+        applyGraphFilter(newGraph, graphSearchTerm);
+      } else {
+        setGraphData(newGraph);
+      }
+      // Clear selected nodes if any deleted nodes were selected
+      setSelectedNodes(prev => prev.filter(n => !nodesToDelete.some(d => d.key === n.key)));
+      setSelectedNodesDetails(prev => prev.filter(n => !nodesToDelete.some(d => d.key === n.key)));
+    } catch (err) {
+      console.error('Failed to delete nodes:', err);
+      throw err;
+    }
+  }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
+
   // Data for table: theory-filtered or full, then search-filtered when graphSearchTerm is set.
+  // Always returns new object/array references to ensure React detects changes
   const tableGraphData = useMemo(() => {
     let base;
     if (theoryGraphKeys && theoryGraphKeys.length > 0) {
       if (tableScope === 'full') {
-        base = fullGraphData;
+        // Create new array references even when using fullGraphData
+        base = {
+          nodes: [...fullGraphData.nodes],
+          links: [...fullGraphData.links],
+        };
       } else {
         const keysSet = new Set(theoryGraphKeys);
         const nodes = fullGraphData.nodes.filter((n) => keysSet.has(n.key));
@@ -216,10 +316,17 @@ export default function WorkspaceView({
         base = { nodes, links };
       }
     } else {
-      base = graphData;
+      // Create new array references even when using graphData directly
+      base = {
+        nodes: [...graphData.nodes],
+        links: [...graphData.links],
+      };
     }
     const term = (graphSearchTerm || '').trim();
-    if (!term || !base.nodes.length) return base;
+    if (!term || !base.nodes.length) {
+      // Return new object reference even when no search term
+      return { nodes: [...base.nodes], links: [...base.links] };
+    }
     const queryAST = parseSearchQuery(term);
     const opts = { allFields: graphSearchFieldScope === 'all' };
     const matchingNodes = base.nodes.filter((n) => matchesQuery(queryAST, n, opts));
@@ -465,6 +572,10 @@ export default function WorkspaceView({
                 onGraphSearchExecute={handleGraphSearchExecute}
                 onGraphModeChange={handleGraphModeChange}
                 onTableNodeSelect={handleTableNodeSelect}
+                onUpdateNode={handleUpdateNode}
+                onNodeCreated={handleNodeCreated}
+                onGraphRefresh={handleGraphRefresh}
+                onDeleteNodes={handleDeleteNodes}
               />
             </div>
 

@@ -4,8 +4,6 @@ Vector DB Service for semantic document search.
 Handles storage and retrieval of document embeddings using ChromaDB.
 """
 
-import chromadb
-from chromadb.config import Settings
 from typing import List, Dict, Optional
 from pathlib import Path
 
@@ -16,6 +14,29 @@ class VectorDBService:
     """Service for managing document and entity embeddings in ChromaDB."""
     
     def __init__(self):
+        # Lazy import ChromaDB to avoid Python 3.14 compatibility issues at import time
+        # Note: On Python 3.14, chromadb.config will raise ConfigError due to Pydantic v1 incompatibility
+        try:
+            import chromadb
+            from chromadb.config import Settings
+        except Exception as e:
+            # Catch any exception during import, including Pydantic v1 ConfigError on Python 3.14
+            error_type = type(e).__name__
+            error_msg = str(e)
+            
+            # Check if it's a Pydantic/ConfigError (Python 3.14 compatibility issue)
+            if "ConfigError" in error_type or "pydantic" in error_msg.lower() or "infer type" in error_msg.lower():
+                raise RuntimeError(
+                    f"ChromaDB is not compatible with Python 3.14 due to Pydantic v1 issues. "
+                    f"Please use Python 3.13 or earlier, or wait for ChromaDB to support Python 3.14. "
+                    f"Original error: {error_type}: {error_msg}"
+                ) from e
+            else:
+                # Other import errors
+                raise ImportError(
+                    f"ChromaDB is not available: {error_type}: {error_msg}"
+                ) from e
+        
         # Store ChromaDB data in project data directory
         db_path = BASE_DIR / CHROMADB_PATH
         db_path.mkdir(parents=True, exist_ok=True)
@@ -294,6 +315,39 @@ class VectorDBService:
             return 0
 
 
-# Singleton instance
-vector_db_service = VectorDBService()
+# Lazy singleton instance - only create when accessed
+_vector_db_service = None
+
+def get_vector_db_service():
+    """Get or create the vector DB service singleton (lazy initialization)."""
+    global _vector_db_service
+    if _vector_db_service is None:
+        try:
+            _vector_db_service = VectorDBService()
+        except ImportError as e:
+            # If ChromaDB can't be imported (e.g., Python 3.14 compatibility), return None
+            print(f"Warning: VectorDBService unavailable: {e}")
+            return None
+    return _vector_db_service
+
+# For backwards compatibility, try to create instance but handle errors gracefully
+# This will fail on Python 3.14 due to ChromaDB's Pydantic v1 incompatibility
+# but we catch it so the app can still start
+vector_db_service = None
+try:
+    vector_db_service = VectorDBService()
+except Exception as e:
+    # Catch any exception - ImportError, RuntimeError, ConfigError, or any other error
+    error_type = type(e).__name__
+    error_msg = str(e)
+    
+    # Check if it's a Python 3.14 / ChromaDB compatibility issue
+    if "ConfigError" in error_type or "pydantic" in error_msg.lower() or "infer type" in error_msg.lower() or "Python 3.14" in error_msg:
+        print(f"⚠️  Warning: VectorDBService unavailable due to Python 3.14 / ChromaDB compatibility issue.")
+        print(f"   Error: {error_type}")
+        print(f"   Vector search will be disabled. Consider using Python 3.13 or earlier.")
+    else:
+        print(f"⚠️  Warning: Could not initialize VectorDBService: {error_type}: {error_msg}")
+        print("   Vector search will be disabled.")
+    vector_db_service = None
 

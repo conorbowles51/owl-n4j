@@ -31,6 +31,7 @@ class ChatRequest(BaseModel):
     provider: str
     model: str
     confidence_threshold: Optional[float] = None  # Optional confidence threshold for vector search (0.0-1.0)
+    case_id: Optional[str] = None  # Optional case ID for cost tracking
 
 
 class ChatResponse(BaseModel):
@@ -118,11 +119,45 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
 
         rag_service.llm.set_config(provider, model_id)
         
+        # Set cost tracking context for AI assistant queries
+        try:
+            from postgres.session import get_db
+            from postgres.models.user import User
+            from services.cost_tracking_service import CostJobType
+            
+            # Get user_id from database
+            db = next(get_db())
+            try:
+                db_user = db.query(User).filter(User.email == username).first()
+                user_id = str(db_user.id) if db_user else None
+            except Exception:
+                user_id = None
+            finally:
+                db.close()
+            
+            # Set cost tracking context
+            rag_service.llm.set_cost_tracking_context(
+                case_id=request.case_id,
+                user_id=user_id,
+                job_type=CostJobType.AI_ASSISTANT.value,
+                description=f"AI Assistant Query: {question[:100]}",
+                extra_metadata={"question": question, "selected_keys": request.selected_keys},
+            )
+        except Exception as e:
+            # Don't fail if cost tracking setup fails
+            print(f"[Chat] WARNING: Failed to set cost tracking context: {e}")
+        
         result = rag_service.answer_question(
             question=question,
             selected_keys=request.selected_keys,
             confidence_threshold=request.confidence_threshold,
         )
+        
+        # Clear cost tracking context after use
+        try:
+            rag_service.llm.clear_cost_tracking_context()
+        except Exception:
+            pass
         
         # Get current model info
         

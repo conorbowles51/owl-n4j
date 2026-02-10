@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Merge, ArrowRight } from 'lucide-react';
+import { X, Merge, ArrowRight, Plus, Trash2 } from 'lucide-react';
 
 /**
  * MergeEntitiesModal Component
@@ -27,6 +27,7 @@ export default function MergeEntitiesModal({
   // Each item: { data: original fact/insight object, source: 'entity1' | 'entity2', selected: boolean }
   const [factsWithMeta, setFactsWithMeta] = useState([]);
   const [insightsWithMeta, setInsightsWithMeta] = useState([]);
+  const [customFields, setCustomFields] = useState([]); // Array of { name: '', value: '' } for new fields
 
   // Initialize form when modal opens
   useEffect(() => {
@@ -64,6 +65,9 @@ export default function MergeEntitiesModal({
         selected: true,
       }));
       setInsightsWithMeta([...insights1, ...insights2]);
+      
+      // Initialize custom fields as empty
+      setCustomFields([]);
     }
   }, [isOpen, entity1, entity2]);
 
@@ -153,13 +157,30 @@ export default function MergeEntitiesModal({
         .filter(i => i.selected)
         .map(i => i.data);
 
+      // Build properties object with custom fields
+      const properties = {};
+      customFields.forEach(customField => {
+        const fieldName = customField.name.trim();
+        const fieldValue = customField.value.trim();
+        if (fieldName && fieldValue) {
+          // Try to parse as number or boolean, otherwise keep as string
+          if (fieldValue === 'true' || fieldValue === 'false') {
+            properties[fieldName] = fieldValue === 'true';
+          } else if (!isNaN(fieldValue) && fieldValue !== '') {
+            properties[fieldName] = parseFloat(fieldValue);
+          } else {
+            properties[fieldName] = fieldValue;
+          }
+        }
+      });
+      
       const mergedData = {
         name: mergedName.trim(),
         summary: mergedSummary.trim() || null,
         verified_facts: selectedFacts,
         ai_insights: selectedInsights,
         type: mergedType || entity1.type || entity2.type,
-        properties: {},
+        properties: properties,
       };
 
       await onMerge(entity1.key, entity2.key, mergedData);
@@ -549,6 +570,76 @@ export default function MergeEntitiesModal({
                     <div className="p-3 text-sm text-light-400 italic">
                       No AI insights to merge
                     </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Custom/New Fields */}
+              <div className="border-t border-light-200 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-owl-blue-900">
+                    Custom Fields ({customFields.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCustomFields(prev => [...prev, { name: '', value: '' }]);
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-owl-blue-600 hover:text-owl-blue-700 hover:bg-owl-blue-50 rounded-md transition-colors"
+                    disabled={isMerging}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Field
+                  </button>
+                </div>
+                <div className="space-y-3">
+                  {customFields.map((customField, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customField.name}
+                        onChange={(e) => {
+                          setCustomFields(prev => {
+                            const updated = [...prev];
+                            updated[index] = { ...updated[index], name: e.target.value };
+                            return updated;
+                          });
+                        }}
+                        className="flex-1 px-3 py-2 border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
+                        placeholder="Field name"
+                        disabled={isMerging}
+                      />
+                      <input
+                        type="text"
+                        value={customField.value}
+                        onChange={(e) => {
+                          setCustomFields(prev => {
+                            const updated = [...prev];
+                            updated[index] = { ...updated[index], value: e.target.value };
+                            return updated;
+                          });
+                        }}
+                        className="flex-1 px-3 py-2 border border-light-300 rounded-md focus:outline-none focus:ring-2 focus:ring-owl-blue-500 focus:border-transparent"
+                        placeholder="Field value"
+                        disabled={isMerging}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomFields(prev => prev.filter((_, i) => i !== index));
+                        }}
+                        className="p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-md transition-colors"
+                        disabled={isMerging}
+                        title="Remove field"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {customFields.length === 0 && (
+                    <p className="text-xs text-light-500 italic">
+                      No custom fields added. Click "Add Field" to create a new property.
+                    </p>
                   )}
                 </div>
               </div>

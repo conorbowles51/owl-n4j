@@ -22,6 +22,7 @@ from routers.llm_config import router as llm_config_router
 from routers.workspace import router as workspace_router
 from routers.users import router as users_router
 from routers.setup import router as setup_router
+from routers.cost_ledger import router as cost_ledger_router
 
 __all__ = [
     "graph_router",
@@ -44,4 +45,5 @@ __all__ = [
     "workspace_router",
     "users_router",
     "setup_router",
+    "cost_ledger_router",
 ]

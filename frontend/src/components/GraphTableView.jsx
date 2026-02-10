@@ -1,8 +1,13 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRight, X, ChevronsRight, MessageSquare, CheckSquare, Square, Filter, Search, Check } from 'lucide-react';
+import { ChevronRight, X, ChevronsRight, MessageSquare, CheckSquare, Square, Filter, Search, Check, ChevronLeft, ChevronsLeft, Merge, Trash2, Edit, Plus, Link2 } from 'lucide-react';
 import { parseSearchQuery, getHighlightTerms } from '../utils/searchParser';
 import { highlightMatchedText } from '../utils/highlightText';
+import MergeEntitiesModal from './MergeEntitiesModal';
+import EditNodeModal from './EditNodeModal';
+import AddNodeModal from './AddNodeModal';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
+import CreateRelationshipModal from './CreateRelationshipModal';
 
 const PREFERRED_COLUMN_ORDER = ['key', 'name', 'type', 'summary', 'notes'];
 const RELATIONS_COLUMN_WIDTH = '7rem';
@@ -151,8 +156,16 @@ export default function GraphTableView({
   tableViewState = null, // Persisted table view state
   onTableViewStateChange = null, // Callback to save table view state
   searchTerm = '', // Current filter/search query for match highlighting in cells
+  caseId = null, // Case ID for API calls
+  onMergeNodes = null, // Callback to merge nodes: (sourceKey, targetKey, mergedData) => Promise
+  onDeleteNodes = null, // Callback to delete nodes: (nodes) => Promise
+  onUpdateNode = null, // Callback to update node: (nodeKey, updates) => Promise
+  onNodeCreated = null, // Callback when node is created: (nodeKey) => void
+  onGraphRefresh = null, // Callback to refresh graph data: () => Promise
 }) {
-  const { nodes = [], links = [] } = graphData || {};
+  const { nodes: rawNodes = [], links = [] } = graphData || {};
+  // Always create new array reference to ensure React detects changes
+  const nodes = useMemo(() => [...rawNodes], [rawNodes]);
   const searchHighlightTerms = useMemo(() => {
     const t = (searchTerm || '').trim();
     if (!t) return [];
@@ -176,6 +189,18 @@ export default function GraphTableView({
   const [highlightedKeys, setHighlightedKeys] = useState(new Set()); // Temporary highlights (e.g., from breadcrumb clicks)
   const [breadcrumbHighlightedKeys, setBreadcrumbHighlightedKeys] = useState(new Set()); // Persistent highlights for breadcrumb rows
   const [selectedRowKeys, setSelectedRowKeys] = useState(new Set(selectedNodeKeys));
+  const [checkboxSelectedKeys, setCheckboxSelectedKeys] = useState(new Set()); // Checkbox-selected rows for bulk operations
+  
+  // Modal states
+  const [showMergeModal, setShowMergeModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showCreateRelationshipModal, setShowCreateRelationshipModal] = useState(false);
+  const [mergeEntity1, setMergeEntity1] = useState(null);
+  const [mergeEntity2, setMergeEntity2] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [relationshipSourceNodes, setRelationshipSourceNodes] = useState([]);
   
   // Restore selectedPanels from persisted state
   const [selectedPanels, setSelectedPanels] = useState(() => {
@@ -201,6 +226,14 @@ export default function GraphTableView({
     return new Map();
   });
   
+  // Restore pagination state from persisted state
+  const [paginationState, setPaginationState] = useState(() => {
+    if (tableViewState?.paginationState && typeof tableViewState.paginationState === 'object') {
+      return new Map(Object.entries(tableViewState.paginationState).map(([k, v]) => [parseInt(k), v]));
+    }
+    return new Map();
+  });
+  
   const [openFilterDropdown, setOpenFilterDropdown] = useState(null); // { panelIndex, column } or null
   const rowRefs = useRef(new Map()); // Refs for scrolling to rows
   const mainScrollContainerRef = useRef(null); // Ref for the main horizontal scroll container
@@ -208,6 +241,26 @@ export default function GraphTableView({
   const prevResultGraphDataRef = useRef(null); // Track previous result graph to detect changes
   const prevPanelsLengthRef = useRef(0);
   const lastClickWasFromRelationsRef = useRef(false); // So we can re-apply scroll-right after Selected panel appears
+  
+  // Initialize default pagination for panels that don't have it
+  useEffect(() => {
+    setPaginationState((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+      panels.forEach((_, index) => {
+        if (!next.has(index)) {
+          next.set(index, { pageSize: 100, currentPage: 1, viewAll: false });
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [panels.length]);
+  
+  // Cache for filtered datasets per panel: Map<panelIndex, filteredNodes[]>
+  const filteredDataCache = useRef(new Map());
+  // Cache for unique values per column per panel: Map<`${panelIndex}-${column}`, Set<values>>
+  const uniqueValuesCache = useRef(new Map());
 
   // When a relations panel is added (e.g. expanding from main), scroll viewport to the right so the new panel is visible.
   // Runs after commit so layout is done; fixes scroll not moving when filter is active (timing/layout).
@@ -249,19 +302,45 @@ export default function GraphTableView({
           panels: panelsToSave,
           selectedPanels: Array.from(selectedPanels), // Convert Set to Array for serialization
           columnFilters: Object.fromEntries(columnFilters), // Convert Map to Object for serialization
+          paginationState: Object.fromEntries(paginationState), // Convert Map to Object for serialization
         });
       }, 100);
       return () => clearTimeout(timeoutId);
     }
-  }, [panels, selectedPanels, columnFilters, onTableViewStateChange]);
+  }, [panels, selectedPanels, columnFilters, paginationState, onTableViewStateChange]);
 
   // Sync main panel to current graphData.nodes so search filter hides/shows rows (not just relations)
+  // Also updates node data when properties change (e.g., after editing)
+  // Use a ref to track previous nodes signature to detect any changes
+  const prevNodesSignatureRef = useRef(nodesSignature);
+  const prevNodesLengthRef = useRef(nodes.length);
+  const prevNodesHashRef = useRef('');
+  
+  // Create a hash of node data to detect property changes
+  const nodesHash = useMemo(() => {
+    return nodes.map(n => `${n.key}:${JSON.stringify(n)}`).join('|');
+  }, [nodes]);
+  
   useEffect(() => {
+    // Always update if signature, length, or hash changed
+    const signatureChanged = prevNodesSignatureRef.current !== nodesSignature;
+    const lengthChanged = prevNodesLengthRef.current !== nodes.length;
+    const hashChanged = prevNodesHashRef.current !== nodesHash;
+    
+    if (!signatureChanged && !lengthChanged && !hashChanged && nodes.length > 0) {
+      // No changes detected, skip update
+      return;
+    }
+    
+    prevNodesSignatureRef.current = nodesSignature;
+    prevNodesLengthRef.current = nodes.length;
+    prevNodesHashRef.current = nodesHash;
+    
     if (!nodes.length) {
       setPanels([]);
       return;
     }
-    const mainPanelFromData = () => [{ type: 'main', nodes, parentIndex: null, parentRowKey: null, relationTypes: {}, breadcrumb: [] }];
+    const mainPanelFromData = () => [{ type: 'main', nodes: [...nodes], parentIndex: null, parentRowKey: null, relationTypes: {}, breadcrumb: [] }];
 
     setPanels((prev) => {
       if (prev.length === 0) {
@@ -275,6 +354,12 @@ export default function GraphTableView({
         if (!sameSet) {
           // Filter or data changed; hide non-matching rows by replacing main panel with current nodes
           return mainPanelFromData();
+        } else {
+          // Same set of keys, but node data might have changed (e.g., properties updated)
+          // Update the main panel's nodes with the latest data while preserving other panels
+          const updatedPanels = [...prev];
+          updatedPanels[0] = { ...main, nodes: [...nodes] }; // Create new array reference
+          return updatedPanels;
         }
       }
       // When no persisted state, only init when empty (theory table: avoid wiping expanded relations)
@@ -283,7 +368,7 @@ export default function GraphTableView({
       }
       return prev;
     });
-  }, [nodesSignature, tableViewState, nodes]);
+  }, [nodesSignature, tableViewState, nodes, nodes.length, nodesHash]);
 
   useEffect(() => {
     setSelectedRowKeys(new Set(selectedNodeKeys));
@@ -762,41 +847,32 @@ export default function GraphTableView({
     handleColumnFilterChange(panelIndex, column, null);
   }, [handleColumnFilterChange]);
 
-  // Get unique values for a column in a panel
-  const getUniqueValuesForColumn = useCallback((panelIndex, column, panelNodes, relationTypes) => {
-    const values = new Set();
-    panelNodes.forEach(node => {
-      let value;
-      if (column === 'Relation') {
-        // For Relation column, get value from relationTypes
-        const relTypes = relationTypes && relationTypes[node.key];
-        value = relTypes && relTypes.length > 0 ? relTypes.join(', ') : null;
-      } else {
-        const flat = flattenNode(node);
-        value = flat[column];
-      }
-      values.add(value === null || value === undefined ? null : value);
-    });
-    return Array.from(values).sort((a, b) => {
-      if (a === null) return 1;
-      if (b === null) return -1;
-      return String(a).localeCompare(String(b));
-    });
-  }, []);
-
-  // Apply filters to panel nodes
-  const applyFiltersToNodes = useCallback((panelIndex, panelNodes, columns, relationTypes) => {
-    let filtered = panelNodes;
+  // Get filtered dataset for a panel (with caching and sequential filtering)
+  // This applies all filters sequentially, so each filter sees the results of previous filters
+  const getFilteredNodes = useCallback((panelIndex, panelNodesRaw, columns, relationTypes) => {
+    const cacheKey = `${panelIndex}-${Array.from(columnFilters.keys()).filter(k => k.startsWith(`${panelIndex}-`)).sort().join(',')}`;
     
-    columns.forEach(column => {
-      const key = `${panelIndex}-${column}`;
+    // Check cache first
+    if (filteredDataCache.current.has(cacheKey)) {
+      return filteredDataCache.current.get(cacheKey);
+    }
+    
+    // Apply filters sequentially - each filter works on the already-filtered dataset
+    let filtered = panelNodesRaw;
+    
+    // Get all filter keys for this panel, sorted by column order
+    const filterKeys = columns
+      .map(col => `${panelIndex}-${col}`)
+      .filter(key => columnFilters.has(key));
+    
+    // Apply each filter in sequence
+    for (const key of filterKeys) {
       const filterConfig = columnFilters.get(key);
-      
       if (filterConfig && filterConfig.selectedValues && filterConfig.selectedValues.length > 0) {
+        const column = key.split('-').slice(1).join('-'); // Get column name from key
         filtered = filtered.filter(node => {
           let value;
           if (column === 'Relation') {
-            // For Relation column, get value from relationTypes
             const relTypes = relationTypes && relationTypes[node.key];
             value = relTypes && relTypes.length > 0 ? relTypes.join(', ') : null;
           } else {
@@ -809,10 +885,273 @@ export default function GraphTableView({
           return filterConfig.mode === 'include' ? isIncluded : !isIncluded;
         });
       }
-    });
+    }
+    
+    // Cache the result
+    filteredDataCache.current.set(cacheKey, filtered);
+    
+    // Limit cache size to prevent memory issues
+    if (filteredDataCache.current.size > 50) {
+      const firstKey = filteredDataCache.current.keys().next().value;
+      filteredDataCache.current.delete(firstKey);
+    }
     
     return filtered;
   }, [columnFilters]);
+
+  // Get unique values for a column in a panel (from already-filtered dataset, not raw)
+  // This ensures sequential filtering - each filter shows values from previously filtered data
+  const getUniqueValuesForColumn = useCallback((panelIndex, column, panelNodesRaw, relationTypes, columns) => {
+    // Get the filtered dataset up to (but not including) this column
+    // This means we show unique values from the dataset that has all OTHER filters applied
+    const cacheKey = `${panelIndex}-${column}-${Array.from(columnFilters.keys())
+      .filter(k => k.startsWith(`${panelIndex}-`) && !k.endsWith(`-${column}`))
+      .sort()
+      .join(',')}`;
+    
+    // Check cache first
+    if (uniqueValuesCache.current.has(cacheKey)) {
+      return Array.from(uniqueValuesCache.current.get(cacheKey)).sort((a, b) => {
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return String(a).localeCompare(String(b));
+      });
+    }
+    
+    // Get filtered nodes excluding the current column's filter
+    const otherFilterKeys = columns
+      .map(col => `${panelIndex}-${col}`)
+      .filter(key => columnFilters.has(key) && !key.endsWith(`-${column}`));
+    
+    let filtered = panelNodesRaw;
+    for (const key of otherFilterKeys) {
+      const filterConfig = columnFilters.get(key);
+      if (filterConfig && filterConfig.selectedValues && filterConfig.selectedValues.length > 0) {
+        const col = key.split('-').slice(1).join('-');
+        filtered = filtered.filter(node => {
+          let value;
+          if (col === 'Relation') {
+            const relTypes = relationTypes && relationTypes[node.key];
+            value = relTypes && relTypes.length > 0 ? relTypes.join(', ') : null;
+          } else {
+            const flat = flattenNode(node);
+            value = flat[col];
+          }
+          const normalizedValue = value === null || value === undefined ? null : value;
+          const isIncluded = filterConfig.selectedValues.includes(normalizedValue);
+          return filterConfig.mode === 'include' ? isIncluded : !isIncluded;
+        });
+      }
+    }
+    
+    // Extract unique values from the filtered dataset
+    const values = new Set();
+    filtered.forEach(node => {
+      let value;
+      if (column === 'Relation') {
+        const relTypes = relationTypes && relationTypes[node.key];
+        value = relTypes && relTypes.length > 0 ? relTypes.join(', ') : null;
+      } else {
+        const flat = flattenNode(node);
+        value = flat[column];
+      }
+      values.add(value === null || value === undefined ? null : value);
+    });
+    
+    // Cache the result
+    uniqueValuesCache.current.set(cacheKey, values);
+    
+    // Limit cache size
+    if (uniqueValuesCache.current.size > 100) {
+      const firstKey = uniqueValuesCache.current.keys().next().value;
+      uniqueValuesCache.current.delete(firstKey);
+    }
+    
+    return Array.from(values).sort((a, b) => {
+      if (a === null) return 1;
+      if (b === null) return -1;
+      return String(a).localeCompare(String(b));
+    });
+  }, [columnFilters]);
+
+  // Apply filters to panel nodes (uses cached filtered dataset)
+  const applyFiltersToNodes = useCallback((panelIndex, panelNodesRaw, columns, relationTypes) => {
+    return getFilteredNodes(panelIndex, panelNodesRaw, columns, relationTypes);
+  }, [getFilteredNodes]);
+  
+  // Clear caches when filters change
+  useEffect(() => {
+    filteredDataCache.current.clear();
+    uniqueValuesCache.current.clear();
+  }, [columnFilters]);
+
+  // Get selected nodes from checkbox selection
+  const getSelectedNodes = useCallback(() => {
+    return nodes.filter(n => checkboxSelectedKeys.has(n.key));
+  }, [nodes, checkboxSelectedKeys]);
+
+  // Get all nodes from the table (from all panels)
+  const getAllTableNodes = useCallback(() => {
+    const allTableNodes = [];
+    panels.forEach(panel => {
+      if (panel.nodes && Array.isArray(panel.nodes)) {
+        allTableNodes.push(...panel.nodes);
+      }
+    });
+    // Deduplicate by key
+    const nodeMap = new Map();
+    allTableNodes.forEach(node => {
+      if (node.key && !nodeMap.has(node.key)) {
+        nodeMap.set(node.key, node);
+      }
+    });
+    return Array.from(nodeMap.values());
+  }, [panels]);
+
+  // Handle checkbox toggle
+  const handleCheckboxToggle = useCallback((nodeKey, checked) => {
+    setCheckboxSelectedKeys(prev => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(nodeKey);
+      } else {
+        next.delete(nodeKey);
+      }
+      return next;
+    });
+  }, []);
+
+  // Handle select all / deselect all
+  const handleSelectAll = useCallback((panelNodes) => {
+    const allKeys = new Set(panelNodes.map(n => n.key));
+    setCheckboxSelectedKeys(allKeys);
+  }, []);
+
+  const handleDeselectAll = useCallback(() => {
+    setCheckboxSelectedKeys(new Set());
+  }, []);
+
+  // Handle merge action
+  const handleMerge = useCallback(() => {
+    const selected = getSelectedNodes();
+    if (selected.length < 2) {
+      alert('Please select at least 2 nodes to merge');
+      return;
+    }
+    setMergeEntity1(selected[0]);
+    setMergeEntity2(selected[1]);
+    setShowMergeModal(true);
+  }, [getSelectedNodes]);
+
+  // Handle delete action
+  const handleDelete = useCallback(() => {
+    const selected = getSelectedNodes();
+    if (selected.length === 0) {
+      alert('Please select at least one node to delete');
+      return;
+    }
+    setShowDeleteModal(true);
+  }, [getSelectedNodes]);
+
+  // Handle edit action
+  const handleEdit = useCallback(() => {
+    const selected = getSelectedNodes();
+    if (selected.length === 0) {
+      alert('Please select at least one node to edit');
+      return;
+    }
+    setShowEditModal(true);
+  }, [getSelectedNodes]);
+
+  // Handle add action
+  const handleAdd = useCallback(() => {
+    setShowAddModal(true);
+  }, []);
+
+  // Handle merge confirmation
+  const handleMergeConfirm = useCallback(async (sourceKey, targetKey, mergedData) => {
+    if (!onMergeNodes) {
+      alert('Merge functionality is not available');
+      return;
+    }
+    try {
+      await onMergeNodes(sourceKey, targetKey, mergedData);
+      setCheckboxSelectedKeys(new Set());
+      setShowMergeModal(false);
+      if (onGraphRefresh) {
+        await onGraphRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to merge nodes:', err);
+      throw err;
+    }
+  }, [onMergeNodes, onGraphRefresh]);
+
+  // Handle delete confirmation
+  const handleDeleteConfirm = useCallback(async (nodesToDelete) => {
+    if (!onDeleteNodes) {
+      alert('Delete functionality is not available');
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      await onDeleteNodes(nodesToDelete);
+      setCheckboxSelectedKeys(new Set());
+      setShowDeleteModal(false);
+      // onDeleteNodes already refreshes the graph, but call onGraphRefresh to ensure table updates
+      if (onGraphRefresh) {
+        await onGraphRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to delete nodes:', err);
+      alert(`Failed to delete nodes: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [onDeleteNodes, onGraphRefresh]);
+
+  // Handle edit save
+  const handleEditSave = useCallback(async (nodeKey, updates) => {
+    if (!onUpdateNode) {
+      alert('Update functionality is not available');
+      return;
+    }
+    try {
+      await onUpdateNode(nodeKey, updates);
+      if (onGraphRefresh) {
+        await onGraphRefresh();
+      }
+    } catch (err) {
+      console.error('Failed to update node:', err);
+      throw err;
+    }
+  }, [onUpdateNode, onGraphRefresh]);
+
+  // Handle node created
+  const handleNodeCreated = useCallback(async (nodeKey) => {
+    setShowAddModal(false);
+    if (onNodeCreated) {
+      await onNodeCreated(nodeKey);
+    }
+    if (onGraphRefresh) {
+      await onGraphRefresh();
+    }
+  }, [onNodeCreated, onGraphRefresh]);
+
+  // Handle relationship created
+  const handleRelationshipCreated = useCallback(async (cypher) => {
+    setShowCreateRelationshipModal(false);
+    setRelationshipSourceNodes([]);
+    if (onGraphRefresh) {
+      await onGraphRefresh();
+    }
+  }, [onGraphRefresh]);
+
+  // Handle add relationship from edit/add modal
+  const handleAddRelationship = useCallback((sourceNodes) => {
+    setRelationshipSourceNodes(sourceNodes);
+    setShowCreateRelationshipModal(true);
+  }, []);
 
   // Add/update results panel when resultGraphData changes (must run before any conditional return)
   useEffect(() => {
@@ -910,6 +1249,52 @@ export default function GraphTableView({
           </button>
         </div>
       )}
+
+      {/* Table Tools Toolbar */}
+      <div className="flex-shrink-0 px-4 py-2 bg-light-50 border-b border-light-200 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-light-700 font-medium">
+            {checkboxSelectedKeys.size > 0 ? `${checkboxSelectedKeys.size} selected` : 'Table Tools'}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleAdd}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors text-sm font-medium"
+            title="Add new node"
+          >
+            <Plus className="w-4 h-4" />
+            Add
+          </button>
+          <button
+            onClick={handleEdit}
+            disabled={checkboxSelectedKeys.size === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Edit selected nodes"
+          >
+            <Edit className="w-4 h-4" />
+            Edit
+          </button>
+          <button
+            onClick={handleMerge}
+            disabled={checkboxSelectedKeys.size < 2}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Merge selected nodes (requires 2+ selected)"
+          >
+            <Merge className="w-4 h-4" />
+            Merge
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={checkboxSelectedKeys.size === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Delete selected nodes"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
+        </div>
+      </div>
       
       <div 
         ref={(el) => {
@@ -960,6 +1345,13 @@ export default function GraphTableView({
                 getUniqueValuesForColumn={getUniqueValuesForColumn}
                 applyFiltersToNodes={applyFiltersToNodes}
                 searchHighlightTerms={searchHighlightTerms}
+                paginationState={paginationState}
+                onPaginationChange={setPaginationState}
+                columns={columns}
+                checkboxSelectedKeys={Array.from(checkboxSelectedKeys)}
+                onCheckboxToggle={handleCheckboxToggle}
+                onSelectAll={handleSelectAll}
+                onDeselectAll={handleDeselectAll}
               />
             </div>
           )}
@@ -1007,6 +1399,12 @@ export default function GraphTableView({
                       getUniqueValuesForColumn={getUniqueValuesForColumn}
                       applyFiltersToNodes={applyFiltersToNodes}
                       searchHighlightTerms={searchHighlightTerms}
+                      paginationState={paginationState}
+                      onPaginationChange={setPaginationState}
+                      checkboxSelectedKeys={Array.from(checkboxSelectedKeys)}
+                      onCheckboxToggle={handleCheckboxToggle}
+                      onSelectAll={handleSelectAll}
+                      onDeselectAll={handleDeselectAll}
                     />
                   </div>
                 );
@@ -1053,11 +1451,76 @@ export default function GraphTableView({
                 applyFiltersToNodes={applyFiltersToNodes}
                 isResultsPanel={true} // Mark as results panel for special styling
                 searchHighlightTerms={searchHighlightTerms}
+                paginationState={paginationState}
+                onPaginationChange={setPaginationState}
+                columns={columns}
+                checkboxSelectedKeys={Array.from(checkboxSelectedKeys)}
+                onCheckboxToggle={handleCheckboxToggle}
+                onSelectAll={handleSelectAll}
+                onDeselectAll={handleDeselectAll}
               />
             </div>
           )}
         </div>
       </div>
+
+      {/* Modals */}
+      <MergeEntitiesModal
+        isOpen={showMergeModal}
+        onClose={() => {
+          setShowMergeModal(false);
+          setMergeEntity1(null);
+          setMergeEntity2(null);
+        }}
+        onSuccess={() => {
+          setShowMergeModal(false);
+          setMergeEntity1(null);
+          setMergeEntity2(null);
+        }}
+        entity1={mergeEntity1}
+        entity2={mergeEntity2}
+        onMerge={handleMergeConfirm}
+      />
+
+      <EditNodeModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        nodes={getSelectedNodes()}
+        onSave={handleEditSave}
+        caseId={caseId}
+        onRelationshipCreated={handleRelationshipCreated}
+        tableNodes={getAllTableNodes()}
+      />
+
+      <AddNodeModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        onNodeCreated={handleNodeCreated}
+        caseId={caseId}
+        onRelationshipCreated={handleRelationshipCreated}
+        tableNodes={nodes} // Use all nodes from graphData, not just panel nodes
+        tableColumns={columns}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        nodes={getSelectedNodes()}
+        onConfirm={handleDeleteConfirm}
+        isDeleting={isDeleting}
+      />
+
+      <CreateRelationshipModal
+        isOpen={showCreateRelationshipModal}
+        onClose={() => {
+          setShowCreateRelationshipModal(false);
+          setRelationshipSourceNodes([]);
+        }}
+        sourceNodes={relationshipSourceNodes}
+        targetNodes={[]} // Will be selected in the modal
+        onRelationshipCreated={handleRelationshipCreated}
+        caseId={caseId}
+      />
     </div>
   );
 }
@@ -1094,6 +1557,12 @@ function PanelTable({
   applyFiltersToNodes,
   isResultsPanel = false, // Whether this is the AI assistant results panel
   searchHighlightTerms = [], // Terms from current filter/search for highlighting matches in cells
+  paginationState = new Map(), // Pagination state per panel
+  onPaginationChange, // Callback to update pagination state
+  checkboxSelectedKeys = [], // Checkbox-selected node keys
+  onCheckboxToggle = null, // Callback: (nodeKey, checked) => void
+  onSelectAll = null, // Callback: (panelNodes) => void
+  onDeselectAll = null, // Callback: () => void
 }) {
   const isMain = panel.type === 'main';
   const { nodes: panelNodesRaw, parentRowKey, relationTypes, breadcrumb = [] } = panel;
@@ -1101,8 +1570,57 @@ function PanelTable({
     ? ['Relation', ...columns]
     : columns;
   
-  // Apply filters to nodes
-  const panelNodes = applyFiltersToNodes ? applyFiltersToNodes(panelIndex, panelNodesRaw, allCols, relationTypes) : panelNodesRaw;
+  // Apply filters to nodes (works on full dataset)
+  const panelNodesFiltered = applyFiltersToNodes ? applyFiltersToNodes(panelIndex, panelNodesRaw, allCols, relationTypes) : panelNodesRaw;
+  
+  // Pagination logic
+  const pagination = paginationState.get(panelIndex) || { pageSize: 100, currentPage: 1, viewAll: false };
+  const { pageSize, currentPage, viewAll } = pagination;
+  
+  // Calculate pagination
+  const totalRows = panelNodesFiltered.length;
+  const totalPages = viewAll ? 1 : Math.max(1, Math.ceil(totalRows / pageSize));
+  const startIndex = viewAll ? 0 : (currentPage - 1) * pageSize;
+  const endIndex = viewAll ? totalRows : startIndex + pageSize;
+  const panelNodes = viewAll ? panelNodesFiltered : panelNodesFiltered.slice(startIndex, endIndex);
+  
+  // Pagination handlers
+  const handlePageChange = useCallback((newPage) => {
+    if (onPaginationChange) {
+      onPaginationChange((prev) => {
+        const next = new Map(prev);
+        next.set(panelIndex, { ...pagination, currentPage: newPage });
+        return next;
+      });
+    }
+  }, [panelIndex, pagination, onPaginationChange]);
+  
+  const handlePageSizeChange = useCallback((newPageSize) => {
+    if (onPaginationChange) {
+      onPaginationChange((prev) => {
+        const next = new Map(prev);
+        next.set(panelIndex, { pageSize: newPageSize, currentPage: 1, viewAll: false });
+        return next;
+      });
+    }
+  }, [panelIndex, onPaginationChange]);
+  
+  const handleViewAllToggle = useCallback(() => {
+    if (onPaginationChange) {
+      onPaginationChange((prev) => {
+        const next = new Map(prev);
+        next.set(panelIndex, { ...pagination, viewAll: !viewAll, currentPage: 1 });
+        return next;
+      });
+    }
+  }, [panelIndex, pagination, viewAll, onPaginationChange]);
+  
+  // Update pagination state when filtered data changes
+  useEffect(() => {
+    if (!viewAll && currentPage > totalPages && totalPages > 0) {
+      handlePageChange(totalPages);
+    }
+  }, [totalPages, currentPage, viewAll, handlePageChange]);
 
   // Get relation type for breadcrumb segments between two nodes
   const getRelationTypeForBreadcrumb = (fromKey, toKey) => {
@@ -1227,12 +1745,12 @@ function PanelTable({
                   <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-600 text-white text-xs font-semibold">
                     AI
                   </span>
-                  <span>Assistant Results ({panelNodes.length} nodes)</span>
+                  <span>Assistant Results ({totalRows} nodes)</span>
                 </span>
               ) : isMain ? (
-                'All nodes'
+                `All nodes (${totalRows})`
               ) : (
-                `Relations of "${parentName(parentRowKey)}"`
+                `Relations of "${parentName(parentRowKey)}" (${totalRows})`
               )}
             </span>
           </div>
@@ -1260,18 +1778,109 @@ function PanelTable({
             )}
           </div>
         </div>
+        
+        {/* Pagination Controls */}
+        {totalRows > 0 && (
+          <div className="px-3 py-2 border-b border-light-200 bg-light-50 flex items-center justify-between gap-4 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-light-600">Rows per page:</span>
+              <select
+                value={viewAll ? 'all' : pageSize}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (value === 'all') {
+                    handleViewAllToggle();
+                  } else {
+                    handlePageSizeChange(parseInt(value));
+                  }
+                }}
+                className="px-2 py-1 border border-light-300 rounded bg-white text-owl-blue-900 focus:outline-none focus:ring-2 focus:ring-owl-blue-500"
+              >
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="250">250</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+                <option value="all">All</option>
+              </select>
+            </div>
+            
+            {!viewAll && totalPages > 1 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === 1}
+                  className="p-1 rounded hover:bg-light-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="First page"
+                >
+                  <ChevronsLeft className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className="p-1 rounded hover:bg-light-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Previous page"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-light-700 px-2">
+                  Page {currentPage} of {totalPages}
+                </span>
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  className="p-1 rounded hover:bg-light-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Next page"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handlePageChange(totalPages)}
+                  disabled={currentPage >= totalPages}
+                  className="p-1 rounded hover:bg-light-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Last page"
+                >
+                  <ChevronsRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            
+            <div className="text-light-600">
+              Showing {viewAll ? totalRows : `${startIndex + 1}-${Math.min(endIndex, totalRows)}`} of {totalRows} rows
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="overflow-auto flex-1 min-w-0">
         <table className="w-full text-sm border-collapse">
           <thead className="bg-light-100 sticky top-0 z-10">
             <tr>
+              {onCheckboxToggle && (
+                <th className="border-b border-r border-light-200 px-2 py-1.5 text-center font-medium text-light-700 w-12">
+                  <div className="flex items-center justify-center gap-1">
+                    <input
+                      type="checkbox"
+                      checked={panelNodes.length > 0 && panelNodes.every(n => checkboxSelectedKeys.includes(n.key))}
+                      onChange={(e) => {
+                        if (e.target.checked && onSelectAll) {
+                          onSelectAll(panelNodes);
+                        } else if (!e.target.checked && onDeselectAll) {
+                          onDeselectAll();
+                        }
+                      }}
+                      className="w-4 h-4 text-owl-blue-600 border-light-300 rounded focus:ring-owl-blue-500"
+                      title={panelNodes.length > 0 && panelNodes.every(n => checkboxSelectedKeys.includes(n.key)) ? 'Deselect all' : 'Select all'}
+                    />
+                  </div>
+                </th>
+              )}
               {allCols.map((col) => {
                 const filterKey = `${panelIndex}-${col}`;
                 const filterConfig = columnFilters.get(filterKey);
                 const hasActiveFilter = filterConfig && filterConfig.selectedValues && filterConfig.selectedValues.length > 0;
                 const isFilterOpen = openFilterDropdown && openFilterDropdown.key === filterKey;
-                const uniqueValues = getUniqueValuesForColumn ? getUniqueValuesForColumn(panelIndex, col, panelNodesRaw, relationTypes) : [];
+                const uniqueValues = getUniqueValuesForColumn ? getUniqueValuesForColumn(panelIndex, col, panelNodesRaw, relationTypes, allCols) : [];
                 
                 return (
                   <th
@@ -1368,6 +1977,7 @@ function PanelTable({
                 : '';
               
               const isSelected = selectedNodeKeys.includes(node.key);
+              const isCheckboxSelected = checkboxSelectedKeys.includes(node.key);
               const isTemporarilyHighlighted = highlightedKeys.has(node.key);
               const isBreadcrumbHighlighted = breadcrumbHighlightedKeys.has(node.key);
               const isHighlighted = isTemporarilyHighlighted || isBreadcrumbHighlighted;
@@ -1375,10 +1985,20 @@ function PanelTable({
               const entityColor = getEntityTypeColor(entityType);
               
               // Determine row background color
+              // Priority: checkbox selected > click selected > breadcrumb > temporary highlight
               let rowBgColor = 'bg-white';
               let rowStyle = {};
-              if (isSelected) {
-                // Selected: use entity type color with low opacity
+              let rowClassName = '';
+              
+              if (isCheckboxSelected) {
+                // Checkbox selected: use stronger highlight with border
+                rowBgColor = '';
+                rowStyle = {
+                  backgroundColor: `${entityColor}20`, // ~12% opacity for checkbox selection
+                };
+                rowClassName = 'ring-2 ring-owl-blue-400 ring-offset-1'; // Blue ring to indicate checkbox selection
+              } else if (isSelected) {
+                // Click selected: use entity type color with low opacity
                 rowBgColor = '';
                 rowStyle = {
                   backgroundColor: `${entityColor}15`, // ~8% opacity
@@ -1409,17 +2029,33 @@ function PanelTable({
                   }}
                   className={`border-b border-light-200 hover:bg-owl-blue-50/50 transition-all duration-300 ${
                     rowBgColor
-                  } ${onNodeClick ? 'cursor-pointer' : ''} ${isHighlighted ? 'animate-pulse' : ''} ${isChatFocused ? 'ring-2 ring-owl-blue-500 ring-offset-2' : ''}`}
+                  } ${onNodeClick ? 'cursor-pointer' : ''} ${isHighlighted ? 'animate-pulse' : ''} ${isChatFocused ? 'ring-2 ring-owl-blue-500 ring-offset-2' : ''} ${rowClassName}`}
                   style={rowStyle}
                   onClick={(e) => onNodeClick && onNodeClick(node, panel, e)}
                 >
+                  {onCheckboxToggle && (
+                    <td
+                      className="border-r border-light-200 px-2 py-1 text-center align-top"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checkboxSelectedKeys.includes(node.key)}
+                        onChange={(e) => onCheckboxToggle(node.key, e.target.checked)}
+                        className="w-4 h-4 text-owl-blue-600 border-light-300 rounded focus:ring-owl-blue-500"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </td>
+                  )}
                   {allCols.map((col) => (
                     <td
                       key={col}
                       className="border-r border-light-200 px-2 py-1 text-light-800 max-w-[200px] truncate align-top"
                       title={String(flat[col] ?? '')}
                       style={{
-                        backgroundColor: isSelected 
+                        backgroundColor: isCheckboxSelected
+                          ? `${entityColor}20`
+                          : isSelected 
                           ? `${entityColor}15` 
                           : isHighlighted 
                           ? `${entityColor}40` 
@@ -1435,7 +2071,9 @@ function PanelTable({
                     className={`border-l border-light-200 px-2 py-1 align-top z-10`}
                     style={{
                       ...RELATIONS_COLUMN_STICKY,
-                      backgroundColor: isSelected 
+                      backgroundColor: isCheckboxSelected
+                        ? '#c8d8eb' // More tinted for checkbox selection
+                        : isSelected 
                         ? '#d4e1f0' // Slightly tinted blue-gray when selected
                         : isHighlighted 
                         ? '#c8d8eb' // More tinted when highlighted
@@ -1465,7 +2103,9 @@ function PanelTable({
                       className={`border-l border-light-200 px-2 py-1 align-top z-10 text-center`}
                       style={{
                         ...CHAT_COLUMN_STICKY,
-                        backgroundColor: isSelected 
+                        backgroundColor: isCheckboxSelected
+                          ? '#c8d8eb' // More tinted for checkbox selection
+                          : isSelected 
                           ? '#d4e1f0' // Slightly tinted blue-gray when selected
                           : breadcrumbHighlightedKeys.has(node.key)
                           ? '#c8d8eb' // More tinted for breadcrumb highlight

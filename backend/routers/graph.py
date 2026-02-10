@@ -109,6 +109,7 @@ class CreateNodeRequest(BaseModel):
     case_id: str  # REQUIRED: Associate node with case
     description: Optional[str] = None
     summary: Optional[str] = None
+    properties: Optional[Dict[str, Any]] = None  # Additional type-specific properties
 
 
 class CreateNodeResponse(BaseModel):
@@ -124,6 +125,7 @@ class UpdateNodeRequest(BaseModel):
     name: Optional[str] = None
     summary: Optional[str] = None
     notes: Optional[str] = None
+    properties: Optional[Dict[str, Any]] = None  # Additional type-specific properties
 
 
 class UpdateNodeResponse(BaseModel):
@@ -842,6 +844,16 @@ async def create_node(request: CreateNodeRequest, user: dict = Depends(get_curre
             "summary": request.summary.strip() if request.summary else None,
             "notes": request.description.strip() if request.description else None,
         }
+        
+        # Add type-specific properties if provided
+        if request.properties:
+            # Put additional properties into a properties dict
+            # The cypher_generator will merge these with standard properties
+            node_data["properties"] = {}
+            for key, value in request.properties.items():
+                # Skip standard fields that are already handled
+                if key not in ['key', 'id', 'name', 'type', 'summary', 'notes', 'case_id']:
+                    node_data["properties"][key] = value
 
         # Generate Cypher using the cypher generator (with case_id)
         from services.cypher_generator import generate_cypher_from_graph
@@ -1108,8 +1120,37 @@ async def update_node(node_key: str, request: UpdateNodeRequest, user: dict = De
             set_clauses.append(f"n.notes = '{escaped_notes}'")
             updated_fields.append("notes")
         
+        # Add type-specific properties if provided
+        if request.properties:
+            from services.cypher_generator import format_properties
+            # Format properties for Cypher (escape values)
+            for key, value in request.properties.items():
+                # Skip standard fields that are handled above
+                if key in ['name', 'summary', 'notes']:
+                    continue
+                # Escape property key if needed
+                if not key.replace("_", "").replace("-", "").isalnum() or (key and key[0].isdigit()):
+                    escaped_key = f"`{key.replace('`', '``')}`"
+                else:
+                    escaped_key = key
+                # Format value based on type
+                if isinstance(value, str):
+                    escaped_value = value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+                    set_clauses.append(f"n.{escaped_key} = '{escaped_value}'")
+                elif isinstance(value, bool):
+                    set_clauses.append(f"n.{escaped_key} = {str(value).lower()}")
+                elif isinstance(value, (int, float)):
+                    set_clauses.append(f"n.{escaped_key} = {value}")
+                elif value is None:
+                    set_clauses.append(f"n.{escaped_key} = null")
+                else:
+                    # For other types, convert to string
+                    escaped_value = str(value).replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+                    set_clauses.append(f"n.{escaped_key} = '{escaped_value}'")
+                updated_fields.append(key)
+        
         if not set_clauses:
-            raise HTTPException(status_code=400, detail="At least one field (name, summary, or notes) must be provided")
+            raise HTTPException(status_code=400, detail="At least one field must be provided")
         
         # Generate Cypher query to update the node
         # Find the node by key and update properties

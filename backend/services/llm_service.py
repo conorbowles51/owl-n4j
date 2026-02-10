@@ -51,6 +51,9 @@ class LLMService:
             default_model = get_default_model(provider_enum)
             self.model_id = default_model.id
             self.provider = default_model.provider.value
+        
+        # Context for cost tracking (set by caller)
+        self._cost_tracking_context = None
     
     def get_current_config(self) -> tuple[str, str]:
         """Get current provider and model ID."""
@@ -60,6 +63,20 @@ class LLMService:
         """Set the provider and model."""
         self.provider = provider.lower()
         self.model_id = model_id
+    
+    def set_cost_tracking_context(self, case_id: Optional[str] = None, user_id: Optional[str] = None, job_type: Optional[str] = None, description: Optional[str] = None, extra_metadata: Optional[Dict] = None):
+        """Set context for cost tracking."""
+        self._cost_tracking_context = {
+            "case_id": case_id,
+            "user_id": user_id,
+            "job_type": job_type,
+            "description": description,
+            "extra_metadata": extra_metadata,
+        }
+    
+    def clear_cost_tracking_context(self):
+        """Clear cost tracking context."""
+        self._cost_tracking_context = None
 
     def call(
         self,
@@ -205,6 +222,61 @@ class LLMService:
             if not content:
                 print("[LLM] WARNING: Empty response from LLM")
                 raise ValueError("LLM returned empty response")
+            
+            # Track token usage and cost
+            try:
+                from services.cost_tracking_service import record_cost, CostJobType
+                from postgres.session import get_db
+                import uuid as uuid_lib
+                
+                usage = response.usage
+                if usage:
+                    # Get database session
+                    db = next(get_db())
+                    try:
+                        # Get context from instance variable
+                        context = self._cost_tracking_context or {}
+                        job_type_str = context.get("job_type", "ai_assistant")
+                        job_type = CostJobType.AI_ASSISTANT if job_type_str == "ai_assistant" else CostJobType.INGESTION
+                        
+                        # Parse case_id and user_id if provided
+                        case_id = None
+                        if context.get("case_id"):
+                            try:
+                                case_id = uuid_lib.UUID(context["case_id"])
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        user_id = None
+                        if context.get("user_id"):
+                            try:
+                                user_id = uuid_lib.UUID(context["user_id"])
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        record_cost(
+                            job_type=job_type,
+                            provider="openai",
+                            model_id=self.model_id,
+                            prompt_tokens=usage.prompt_tokens,
+                            completion_tokens=usage.completion_tokens,
+                            total_tokens=usage.total_tokens,
+                            case_id=case_id,
+                            user_id=user_id,
+                            description=context.get("description"),
+                            extra_metadata=context.get("extra_metadata"),
+                            db=db,
+                        )
+                    except Exception as e:
+                        print(f"[LLM] WARNING: Failed to record cost: {e}")
+                    finally:
+                        db.close()
+            except ImportError:
+                # Cost tracking not available, skip
+                pass
+            except Exception as e:
+                # Don't fail the request if cost tracking fails
+                print(f"[LLM] WARNING: Cost tracking error: {e}")
             
             print(f"[LLM] Response length: {len(content)}")
             return content

@@ -13,9 +13,11 @@ import {
   ChevronUp,
   Clock,
   List,
-  Calendar
+  Calendar,
+  DollarSign
 } from 'lucide-react';
 import { systemLogsAPI } from '../services/api';
+import CostLedgerPanel from './CostLedgerPanel';
 
 const LOG_TYPES = [
   { value: 'ai_assistant', label: 'AI Assistant' },
@@ -39,6 +41,7 @@ export default function SystemLogsPanel({ isOpen, onClose }) {
   const [loading, setLoading] = useState(false);
   const [statistics, setStatistics] = useState(null);
   const [expandedLogs, setExpandedLogs] = useState(new Set());
+  const [showCostLedger, setShowCostLedger] = useState(false);
   
   // Filters - using arrays for multi-select
   const [filters, setFilters] = useState({
@@ -299,6 +302,14 @@ export default function SystemLogsPanel({ isOpen, onClose }) {
               title="Clear all logs"
             >
               <Trash2 className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setShowCostLedger(true)}
+              className="flex items-center gap-2 px-3 py-2 text-sm bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors"
+              title="View Cost Ledger"
+            >
+              <DollarSign className="w-4 h-4" />
+              Cost Ledger
             </button>
             <button
               onClick={onClose}
@@ -622,6 +633,12 @@ export default function SystemLogsPanel({ isOpen, onClose }) {
         )}
 
       </div>
+      
+      {/* Cost Ledger Panel */}
+      <CostLedgerPanel
+        isOpen={showCostLedger}
+        onClose={() => setShowCostLedger(false)}
+      />
     </div>
   );
 }

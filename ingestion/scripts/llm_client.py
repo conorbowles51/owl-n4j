@@ -201,6 +201,41 @@ def _call_openai(
         
         response = client.chat.completions.create(**kwargs)
         
+        # Track token usage and cost for ingestion
+        try:
+            import sys
+            from pathlib import Path
+            backend_dir = Path(__file__).parent.parent.parent / "backend"
+            if str(backend_dir) not in sys.path:
+                sys.path.insert(0, str(backend_dir))
+            
+            from services.cost_tracking_service import record_cost, CostJobType
+            from postgres.session import get_db
+            
+            usage = response.usage
+            if usage:
+                # Get database session
+                db = next(get_db())
+                try:
+                    record_cost(
+                        job_type=CostJobType.INGESTION,
+                        provider="openai",
+                        model_id=model_id,
+                        prompt_tokens=usage.prompt_tokens,
+                        completion_tokens=usage.completion_tokens,
+                        total_tokens=usage.total_tokens,
+                        description=f"Document ingestion: {doc_name if 'doc_name' in locals() else 'unknown'}",
+                        extra_metadata={"doc_name": doc_name if 'doc_name' in locals() else None},
+                        db=db,
+                    )
+                except Exception as e:
+                    log_error(f"Failed to record cost: {e}", log_callback, prefix="[LLM] ")
+                finally:
+                    db.close()
+        except (ImportError, Exception) as e:
+            # Cost tracking not available or failed, skip silently
+            pass
+        
         # Extract content
         return response.choices[0].message.content or ""
     except Exception as e:

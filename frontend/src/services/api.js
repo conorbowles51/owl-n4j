@@ -59,6 +59,16 @@ async function fetchAPI(endpoint, options = {}) {
     
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+      // Handle FastAPI validation errors (422) - they have a specific format
+      if (response.status === 422 && Array.isArray(error.detail)) {
+        // Pydantic validation errors
+        const validationErrors = error.detail.map(err => {
+          const field = err.loc ? err.loc.join('.') : 'unknown';
+          const msg = err.msg || 'validation error';
+          return `${field}: ${msg}`;
+        }).join(', ');
+        throw new Error(`Validation error: ${validationErrors}`);
+      }
       // Handle various error response formats
       const errorMessage = error.detail || error.message || error.error ||
         (typeof error === 'string' ? error : JSON.stringify(error)) ||
@@ -499,7 +509,7 @@ export const graphAPI = {
 
   /**
    * Create a new node in the graph
-   * @param {Object} nodeData - Node data including name, type, description, summary
+   * @param {Object} nodeData - Node data including name, type, description, summary, properties
    * @param {string} caseId - REQUIRED: Case ID to associate with the node
    */
   createNode: (nodeData, caseId) =>
@@ -510,6 +520,7 @@ export const graphAPI = {
         type: nodeData.type,
         description: nodeData.description,
         summary: nodeData.summary,
+        properties: nodeData.properties,
         case_id: caseId,
       }),
     }),
@@ -534,17 +545,43 @@ export const graphAPI = {
     }),
 
   /**
-   * Update node properties (name, summary, and/or notes)
+   * Update node properties (name, summary, notes, and/or type-specific properties)
    */
-  updateNode: (nodeKey, updates) =>
-    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}`, {
+  updateNode: (nodeKey, updates) => {
+    // Separate standard fields from type-specific properties
+    const standardFields = ['name', 'summary', 'notes'];
+    const requestBody = {};
+    const properties = {};
+    
+    // If updates has a nested 'properties' object, extract it first
+    if (updates.properties && typeof updates.properties === 'object') {
+      Object.assign(properties, updates.properties);
+    }
+    
+    // Process top-level keys
+    Object.keys(updates).forEach(key => {
+      if (key === 'properties') {
+        // Already handled above, skip
+        return;
+      }
+      if (standardFields.includes(key)) {
+        requestBody[key] = updates[key];
+      } else {
+        // Other top-level keys go into properties
+        properties[key] = updates[key];
+      }
+    });
+    
+    // Add properties if there are any
+    if (Object.keys(properties).length > 0) {
+      requestBody.properties = properties;
+    }
+    
+    return fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}`, {
       method: 'PUT',
-      body: JSON.stringify({
-        name: updates.name,
-        summary: updates.summary,
-        notes: updates.notes,
-      }),
-    }),
+      body: JSON.stringify(requestBody),
+    });
+  },
 
   /**
    * Get entities with geocoded locations for map display
@@ -1408,6 +1445,37 @@ export const backgroundTasksAPI = {
     fetchAPI(`/background-tasks/${encodeURIComponent(taskId)}`, {
       method: 'DELETE',
     }),
+};
+
+/**
+ * Cost Ledger API
+ */
+export const costLedgerAPI = {
+  /**
+   * Get cost ledger records
+   */
+  getLedger: (params = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(params).forEach(key => {
+      if (params[key] !== null && params[key] !== undefined && params[key] !== '') {
+        queryParams.append(key, params[key]);
+      }
+    });
+    return fetchAPI(`/cost-ledger?${queryParams.toString()}`);
+  },
+
+  /**
+   * Get cost summary
+   */
+  getSummary: (params = {}) => {
+    const queryParams = new URLSearchParams();
+    Object.keys(params).forEach(key => {
+      if (params[key] !== null && params[key] !== undefined && params[key] !== '') {
+        queryParams.append(key, params[key]);
+      }
+    });
+    return fetchAPI(`/cost-ledger/summary?${queryParams.toString()}`);
+  },
 };
 
 /**

@@ -1028,34 +1028,39 @@ export default function CaseManagementView({
                         Collaborators
                       </button>
                     )}
-                    <button
-                      onClick={handleBackupCase}
-                      disabled={backingUp}
-                      className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Backup case data (Neo4j, Vector DB, metadata)"
-                    >
-                      {backingUp ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Download className="w-4 h-4" />
-                      )}
-                      {backingUp ? 'Backing up...' : 'Backup'}
-                    </button>
-                    <label className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                      {restoring ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <HardDrive className="w-4 h-4" />
-                      )}
-                      {restoring ? 'Restoring...' : 'Restore'}
-                      <input
-                        type="file"
-                        accept=".zip"
-                        onChange={handleRestoreCase}
-                        disabled={restoring}
-                        className="hidden"
-                      />
-                    </label>
+                    {/* Backup and Restore buttons - Hidden */}
+                    {false && (
+                      <>
+                        <button
+                          onClick={handleBackupCase}
+                          disabled={backingUp}
+                          className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Backup case data (Neo4j, Vector DB, metadata)"
+                        >
+                          {backingUp ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <Download className="w-4 h-4" />
+                          )}
+                          {backingUp ? 'Backing up...' : 'Backup'}
+                        </button>
+                        <label className="flex items-center gap-2 px-3 py-2 border border-owl-blue-300 text-owl-blue-900 rounded-lg bg-white hover:bg-owl-blue-50 transition-colors text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+                          {restoring ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <HardDrive className="w-4 h-4" />
+                          )}
+                          {restoring ? 'Restoring...' : 'Restore'}
+                          <input
+                            type="file"
+                            accept=".zip"
+                            onChange={handleRestoreCase}
+                            disabled={restoring}
+                            className="hidden"
+                          />
+                        </label>
+                      </>
+                    )}
                     {/* Process Evidence - visible when user can upload evidence */}
                     {onGoToEvidenceView && canUploadEvidence && (
                       <button

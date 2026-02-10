@@ -1441,10 +1441,8 @@ export default function App() {
   // Handle updating node information
   const handleUpdateNode = useCallback(async (nodeKey, updates) => {
     try {
-      const result = await graphAPI.updateNode(nodeKey, updates);
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to update node');
-      }
+      // updateNode API will throw if there's an error, so we don't need to check result.success
+      await graphAPI.updateNode(nodeKey, updates);
       // Refresh node details to show updated information
       const selectedKeys = selectedNodesDetails.map(n => n.key);
       await loadNodeDetails(selectedKeys);
@@ -3896,6 +3894,19 @@ export default function App() {
                   resultGraphData={resultGraphData}
                   tableViewState={tableViewState}
                   onTableViewStateChange={setTableViewState}
+                  caseId={currentCaseId}
+                  onMergeNodes={handleMergeEntities}
+                  onDeleteNodes={async (nodesToDelete) => {
+                    for (const node of nodesToDelete) {
+                      await graphAPI.deleteNode(node.key, currentCaseId);
+                    }
+                    await loadGraph();
+                  }}
+                  onUpdateNode={handleUpdateNode}
+                  onNodeCreated={async (nodeKey) => {
+                    await loadGraph();
+                  }}
+                  onGraphRefresh={loadGraph}
                 />
               </div>
             </div>
@@ -4753,6 +4764,19 @@ export default function App() {
                 resultGraphData={resultGraphData}
                 tableViewState={tableViewState}
                 onTableViewStateChange={setTableViewState}
+                caseId={currentCaseId}
+                onMergeNodes={handleMergeEntities}
+                onDeleteNodes={async (nodesToDelete) => {
+                  for (const node of nodesToDelete) {
+                    await graphAPI.deleteNode(node.key, currentCaseId);
+                  }
+                  await loadGraph();
+                }}
+                onUpdateNode={handleUpdateNode}
+                onNodeCreated={async (nodeKey) => {
+                  await loadGraph();
+                }}
+                onGraphRefresh={loadGraph}
               />
             </div>
           ) : (
