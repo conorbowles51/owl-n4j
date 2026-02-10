@@ -4,6 +4,7 @@ Neo4j Service - handles all database operations for the investigation console.
 
 from typing import Dict, List, Optional, Any, Set, Tuple
 from neo4j import GraphDatabase
+import math
 import random
 import json
 
@@ -26,6 +27,17 @@ def parse_json_field(value: Optional[str]) -> Optional[List]:
         return json.loads(value)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+def safe_float(value, default=0) -> float:
+    """Convert a value to float, returning default if it's None, NaN, or invalid."""
+    if value is None:
+        return default
+    try:
+        f = float(value)
+        return default if math.isnan(f) or math.isinf(f) else round(f, 2)
+    except (TypeError, ValueError):
+        return default
 
 
 class Neo4jService:
@@ -2711,11 +2723,7 @@ class Neo4jService:
                 to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
                 to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"]
 
-                raw_amount = record["amount"]
-                try:
-                    amount_val = round(float(raw_amount), 2) if raw_amount is not None else 0
-                except (TypeError, ValueError):
-                    amount_val = 0
+                amount_val = safe_float(record["amount"])
 
                 transactions.append({
                     "key": record["key"],
@@ -2768,8 +2776,8 @@ class Neo4jService:
                 record = session.run(query, case_id=case_id, entity_key=entity_key).single()
                 if not record or record["transaction_count"] == 0:
                     return {"transaction_count": 0, "total_inflows": 0, "total_outflows": 0, "net_flow": 0}
-                inflows = round(float(record["total_inflows"] or 0), 2)
-                outflows = round(float(record["total_outflows"] or 0), 2)
+                inflows = safe_float(record["total_inflows"])
+                outflows = safe_float(record["total_outflows"])
                 return {
                     "transaction_count": record["transaction_count"],
                     "total_inflows": inflows,
@@ -2793,9 +2801,9 @@ class Neo4jService:
                     return {"transaction_count": 0, "total_volume": 0, "avg_amount": 0, "max_amount": 0}
                 return {
                     "transaction_count": record["transaction_count"],
-                    "total_volume": round(float(record["total_volume"] or 0), 2),
-                    "avg_amount": round(float(record["avg_amount"] or 0), 2),
-                    "max_amount": round(float(record["max_amount"] or 0), 2),
+                    "total_volume": safe_float(record["total_volume"]),
+                    "avg_amount": safe_float(record["avg_amount"]),
+                    "max_amount": safe_float(record["max_amount"]),
                 }
 
     def get_financial_volume_over_time(self, case_id: str) -> List[Dict]:
@@ -2825,7 +2833,7 @@ class Neo4jService:
                 {
                     "date": record["date"],
                     "type": record["type"],
-                    "total_amount": round(float(record["total_amount"] or 0), 2),
+                    "total_amount": safe_float(record["total_amount"]),
                     "count": record["count"],
                 }
                 for record in result
