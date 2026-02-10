@@ -5,11 +5,12 @@ import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
 import FinancialTable from './FinancialTable';
 import FinancialFilterPanel from './FinancialFilterPanel';
+import AddCategoryModal from './AddCategoryModal';
 
 export default function FinancialView({ caseId, onNodeSelect }) {
   const [transactions, setTransactions] = useState([]);
   const [volumeData, setVolumeData] = useState([]);
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState([]); // {name, color, builtin}[]
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -24,6 +25,17 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   // Selection state for batch operations
   const [selectedKeys, setSelectedKeys] = useState([]);
 
+  // Add category modal
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+
+  // Derived helpers from category objects
+  const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
+  const categoryColorMap = useMemo(() => {
+    const map = {};
+    categories.forEach(c => { map[c.name] = c.color; });
+    return map;
+  }, [categories]);
+
   // Load all financial data
   const loadData = useCallback(async () => {
     if (!caseId) return;
@@ -37,13 +49,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       ]);
       setTransactions(txnRes.transactions || []);
       setVolumeData(volumeRes.data || []);
-      setCategories(catRes.categories || []);
+      const cats = catRes.categories || [];
+      setCategories(cats);
 
       // Initialize filters with all types and categories selected
       const types = new Set((txnRes.transactions || []).map(t => t.type));
       setSelectedTypes(types);
-      const cats = new Set(catRes.categories || []);
-      setSelectedCategories(cats);
+      setSelectedCategories(new Set(cats.map(c => c.name)));
     } catch (err) {
       console.error('Failed to load financial data:', err);
       setError(err.message || 'Failed to load financial data');
@@ -139,12 +151,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     const groups = {};
     filteredTransactions.forEach(t => {
       if (!t.date) return;
-      const key = `${t.date}|${t.type}`;
-      if (!groups[key]) groups[key] = { date: t.date, type: t.type, total_amount: 0, count: 0 };
+      const cat = t.financial_category || 'Uncategorized';
+      const key = `${t.date}|${cat}`;
+      if (!groups[key]) groups[key] = { date: t.date, category: cat, total_amount: 0, count: 0 };
       groups[key].total_amount += Math.abs(parseFloat(t.amount) || 0);
       groups[key].count += 1;
     });
-    return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
+    return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date) || a.category.localeCompare(b.category));
   }, [filteredTransactions]);
 
   // Handle category change on a single transaction
@@ -196,6 +209,72 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     } catch (err) {
       console.error('Failed to update from/to:', err);
     }
+  }, [caseId]);
+
+  // Handle details change (purpose, counterparty_details, notes)
+  const handleDetailsChange = useCallback(async (nodeKey, details) => {
+    try {
+      await financialAPI.updateDetails(nodeKey, {
+        caseId,
+        purpose: details.purpose,
+        counterpartyDetails: details.counterpartyDetails,
+        notes: details.notes,
+      });
+      setTransactions(prev =>
+        prev.map(t => {
+          if (t.key !== nodeKey) return t;
+          const updated = { ...t };
+          if (details.purpose !== undefined) updated.purpose = details.purpose;
+          if (details.counterpartyDetails !== undefined) updated.counterparty_details = details.counterpartyDetails;
+          if (details.notes !== undefined) updated.notes = details.notes;
+          return updated;
+        })
+      );
+    } catch (err) {
+      console.error('Failed to update details:', err);
+    }
+  }, [caseId]);
+
+  // Handle batch from/to change
+  const handleBatchFromTo = useCallback(async (nodeKeys, side, entity) => {
+    try {
+      const payload = { caseId };
+      if (side === 'from') {
+        payload.fromKey = entity.key;
+        payload.fromName = entity.name;
+      } else {
+        payload.toKey = entity.key;
+        payload.toName = entity.name;
+      }
+      await financialAPI.batchSetFromTo(nodeKeys, payload);
+      setTransactions(prev =>
+        prev.map(t => {
+          if (!nodeKeys.includes(t.key)) return t;
+          if (side === 'from') {
+            return { ...t, from_entity: entity, has_manual_from: true };
+          }
+          return { ...t, to_entity: entity, has_manual_to: true };
+        })
+      );
+      setSelectedKeys([]);
+    } catch (err) {
+      console.error('Failed to batch update from/to:', err);
+    }
+  }, [caseId]);
+
+  // Handle creating a new custom category
+  const handleCreateCategory = useCallback(async (name, color) => {
+    await financialAPI.createCategory(name, color, caseId);
+    // Refresh categories from backend to get accurate state
+    const catRes = await financialAPI.getCategories(caseId);
+    const cats = catRes.categories || [];
+    setCategories(cats);
+    // Auto-select the new category in filters
+    setSelectedCategories(prev => {
+      const next = new Set(prev);
+      next.add(name);
+      return next;
+    });
   }, [caseId]);
 
   // Filter handlers
@@ -282,10 +361,10 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           onToggleType={toggleType}
           onSelectAllTypes={() => setSelectedTypes(new Set(transactionTypes))}
           onClearAllTypes={() => setSelectedTypes(new Set())}
-          categories={categories}
+          categories={categoryNames}
           selectedCategories={selectedCategories}
           onToggleCategory={toggleCategory}
-          onSelectAllCategories={() => setSelectedCategories(new Set(categories))}
+          onSelectAllCategories={() => setSelectedCategories(new Set(categoryNames))}
           onClearAllCategories={() => setSelectedCategories(new Set())}
           startDate={startDate}
           endDate={endDate}
@@ -296,6 +375,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           allEntities={allEntities}
           isExpanded={filterExpanded}
           onToggleExpand={() => setFilterExpanded(!filterExpanded)}
+          categoryColorMap={categoryColorMap}
+          onAddCategory={() => setShowAddCategoryModal(true)}
         />
         <FinancialSummaryCards summary={filteredSummary} entityFilter={entityFilter} />
       </div>
@@ -306,11 +387,14 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         <div className="w-[55%] min-w-0 border-r border-light-200">
           <FinancialTable
             transactions={filteredTransactions}
-            categories={categories}
+            categories={categoryNames}
+            categoryColorMap={categoryColorMap}
             caseId={caseId}
             onNodeSelect={onNodeSelect}
             onCategoryChange={handleCategoryChange}
             onFromToChange={handleFromToChange}
+            onDetailsChange={handleDetailsChange}
+            onBatchFromTo={handleBatchFromTo}
             selectedKeys={selectedKeys}
             onSelectionChange={setSelectedKeys}
             onBatchCategorize={handleBatchCategorize}
@@ -318,9 +402,17 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         </div>
         {/* Right: Charts */}
         <div className="w-[45%] min-w-0 overflow-y-auto p-3">
-          <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} />
+          <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} categoryColorMap={categoryColorMap} />
         </div>
       </div>
+
+      {/* Add Category Modal */}
+      <AddCategoryModal
+        isOpen={showAddCategoryModal}
+        onClose={() => setShowAddCategoryModal(false)}
+        onSubmit={handleCreateCategory}
+        existingNames={categoryNames}
+      />
     </div>
   );
 }

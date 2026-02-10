@@ -785,6 +785,42 @@ export const financialAPI = {
   },
 
   /**
+   * Update purpose, counterparty details, and/or notes on a transaction
+   * @param {string} nodeKey - Node key
+   * @param {Object} data - { caseId, purpose?, counterpartyDetails?, notes? }
+   */
+  updateDetails: (nodeKey, { caseId, purpose, counterpartyDetails, notes }) => {
+    return fetchAPI(`/financial/details/${encodeURIComponent(nodeKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        case_id: caseId,
+        purpose: purpose,
+        counterparty_details: counterpartyDetails,
+        notes: notes,
+      }),
+    });
+  },
+
+  /**
+   * Batch set from or to entity on multiple transactions
+   * @param {string[]} nodeKeys - Array of node keys
+   * @param {Object} data - { caseId, fromKey?, fromName?, toKey?, toName? }
+   */
+  batchSetFromTo: (nodeKeys, { caseId, fromKey, fromName, toKey, toName }) => {
+    return fetchAPI('/financial/batch-from-to', {
+      method: 'PUT',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        case_id: caseId,
+        from_key: fromKey,
+        from_name: fromName,
+        to_key: toKey,
+        to_name: toName,
+      }),
+    });
+  },
+
+  /**
    * Get predefined + custom categories for a case
    * @param {string} caseId - REQUIRED: Case ID
    */
@@ -792,6 +828,19 @@ export const financialAPI = {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
     return fetchAPI(`/financial/categories?${params.toString()}`);
+  },
+
+  /**
+   * Create a custom financial category for a case
+   * @param {string} name - Category name
+   * @param {string} color - Hex color string
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  createCategory: (name, color, caseId) => {
+    return fetchAPI('/financial/categories', {
+      method: 'POST',
+      body: { name, color, case_id: caseId },
+    });
   },
 };
 

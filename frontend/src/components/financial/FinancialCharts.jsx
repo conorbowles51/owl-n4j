@@ -4,23 +4,7 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import { ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
-
-const TYPE_COLORS = {
-  Transaction: '#06b6d4',
-  Transfer: '#14b8a6',
-  Payment: '#84cc16',
-  Invoice: '#f97316',
-  Deposit: '#3b82f6',
-  Withdrawal: '#ef4444',
-  Other: '#6b7280',
-};
-
-const CATEGORY_COLORS = {
-  Suspicious: '#ef4444',
-  Legitimate: '#22c55e',
-  'Under Review': '#f59e0b',
-  Unknown: '#6b7280',
-};
+import { CATEGORY_COLORS } from './constants';
 
 function detectGrouping(dates) {
   if (dates.length < 2) return 'day';
@@ -53,13 +37,13 @@ function groupByPeriod(data, grouping) {
     }
 
     if (!groups[key]) groups[key] = {};
-    const type = item.type || 'Other';
-    groups[key][type] = (groups[key][type] || 0) + (item.total_amount || 0);
+    const category = item.category || 'Uncategorized';
+    groups[key][category] = (groups[key][category] || 0) + (item.total_amount || 0);
   });
 
   return Object.entries(groups)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([period, types]) => ({ period, ...types }));
+    .map(([period, categories]) => ({ period, ...categories }));
 }
 
 function formatPeriodLabel(period, grouping) {
@@ -76,31 +60,31 @@ function formatPeriodLabel(period, grouping) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function FinancialCharts({ volumeData = [], transactions = [] }) {
+export default function FinancialCharts({ volumeData = [], transactions = [], categoryColorMap = {} }) {
   const [isExpanded, setIsExpanded] = useState(true);
 
   const dates = useMemo(() => volumeData.map(d => d.date).filter(Boolean), [volumeData]);
   const grouping = useMemo(() => detectGrouping(dates), [dates]);
   const barData = useMemo(() => groupByPeriod(volumeData, grouping), [volumeData, grouping]);
 
-  const allTypes = useMemo(() => {
-    const types = new Set();
-    volumeData.forEach(d => types.add(d.type || 'Other'));
-    return [...types];
+  const allCategories = useMemo(() => {
+    const cats = new Set();
+    volumeData.forEach(d => cats.add(d.category || 'Uncategorized'));
+    return [...cats];
   }, [volumeData]);
 
   const categoryData = useMemo(() => {
     const counts = {};
     transactions.forEach(t => {
-      const cat = t.financial_category || 'Unknown';
+      const cat = t.financial_category || 'Uncategorized';
       counts[cat] = (counts[cat] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({
       name,
       value,
-      color: CATEGORY_COLORS[name] || '#6b7280',
+      color: categoryColorMap[name] || CATEGORY_COLORS[name] || '#9ca3af',
     }));
-  }, [transactions]);
+  }, [transactions, categoryColorMap]);
 
   if (volumeData.length === 0 && transactions.length === 0) return null;
 
@@ -140,13 +124,13 @@ export default function FinancialCharts({ volumeData = [], transactions = [] }) 
                     labelFormatter={(label) => formatPeriodLabel(label, grouping)}
                   />
                   <Legend wrapperStyle={{ fontSize: 10 }} />
-                  {allTypes.map(type => (
+                  {allCategories.map(cat => (
                     <Bar
-                      key={type}
-                      dataKey={type}
+                      key={cat}
+                      dataKey={cat}
                       stackId="volume"
-                      fill={TYPE_COLORS[type] || TYPE_COLORS.Other}
-                      name={type}
+                      fill={categoryColorMap[cat] || CATEGORY_COLORS[cat] || '#9ca3af'}
+                      name={cat}
                     />
                   ))}
                 </BarChart>

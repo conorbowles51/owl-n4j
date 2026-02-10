@@ -1,16 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Plus } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
+import { CATEGORY_COLORS } from './constants';
 
-const CATEGORY_COLORS = {
-  Suspicious: '#ef4444',
-  Legitimate: '#22c55e',
-  'Under Review': '#f59e0b',
-  Unknown: '#6b7280',
-};
-
-export default function CategoryBadge({ category, categories = [], onCategoryChange }) {
+export default function CategoryBadge({ category, categories = [], categoryColorMap = {}, onCategoryChange }) {
   const [isOpen, setIsOpen] = useState(false);
-  const [customInput, setCustomInput] = useState('');
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -25,20 +18,11 @@ export default function CategoryBadge({ category, categories = [], onCategoryCha
     }
   }, [isOpen]);
 
-  const color = CATEGORY_COLORS[category] || '#6b7280';
+  const color = categoryColorMap[category] || CATEGORY_COLORS[category] || '#6b7280';
 
   const handleSelect = (cat) => {
     onCategoryChange(cat);
     setIsOpen(false);
-    setCustomInput('');
-  };
-
-  const handleCustomSubmit = (e) => {
-    e.preventDefault();
-    const trimmed = customInput.trim();
-    if (trimmed) {
-      handleSelect(trimmed);
-    }
   };
 
   return (
@@ -60,11 +44,11 @@ export default function CategoryBadge({ category, categories = [], onCategoryCha
       </button>
 
       {isOpen && (
-        <div className="absolute z-50 mt-1 w-44 bg-white rounded-lg shadow-lg border border-light-200 py-1 left-0"
+        <div className="absolute z-50 mt-1 w-44 bg-white rounded-lg shadow-lg border border-light-200 py-1 left-0 max-h-60 overflow-y-auto"
           onClick={(e) => e.stopPropagation()}
         >
           {(categories.length > 0 ? categories : Object.keys(CATEGORY_COLORS)).map((cat) => {
-            const catColor = CATEGORY_COLORS[cat] || '#6b7280';
+            const catColor = categoryColorMap[cat] || CATEGORY_COLORS[cat] || '#6b7280';
             const isActive = cat === category;
             return (
               <button
@@ -80,25 +64,6 @@ export default function CategoryBadge({ category, categories = [], onCategoryCha
               </button>
             );
           })}
-          <div className="border-t border-light-200 mt-1 pt-1 px-2 pb-1">
-            <form onSubmit={handleCustomSubmit} className="flex items-center gap-1">
-              <input
-                type="text"
-                placeholder="Custom..."
-                value={customInput}
-                onChange={(e) => setCustomInput(e.target.value)}
-                className="flex-1 text-xs px-2 py-1 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
-                onClick={(e) => e.stopPropagation()}
-              />
-              <button
-                type="submit"
-                disabled={!customInput.trim()}
-                className="p-1 text-light-500 hover:text-owl-blue-600 disabled:opacity-30"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
-            </form>
-          </div>
         </div>
       )}
     </div>

@@ -2698,6 +2698,9 @@ class Neo4jService:
                     n.currency AS currency,
                     n.summary AS summary,
                     n.financial_category AS financial_category,
+                    n.purpose AS purpose,
+                    n.counterparty_details AS counterparty_details,
+                    n.notes AS notes,
                     n.from_entity_key AS from_entity_key,
                     n.from_entity_name AS from_entity_name,
                     n.to_entity_key AS to_entity_key,
@@ -2734,7 +2737,10 @@ class Neo4jService:
                     "amount": amount_val,
                     "currency": record["currency"],
                     "summary": record["summary"],
-                    "financial_category": record["financial_category"] or "Unknown",
+                    "financial_category": record["financial_category"] or "Uncategorized",
+                    "purpose": record["purpose"],
+                    "counterparty_details": record["counterparty_details"],
+                    "notes": record["notes"],
                     "from_entity": {"key": from_key, "name": from_name} if from_key else None,
                     "to_entity": {"key": to_key, "name": to_name} if to_key else None,
                     "has_manual_from": record["from_entity_key"] is not None,
@@ -2808,31 +2814,31 @@ class Neo4jService:
 
     def get_financial_volume_over_time(self, case_id: str) -> List[Dict]:
         """
-        Get transaction volume grouped by date and type for chart data.
+        Get transaction volume grouped by date and category for chart data.
 
         Args:
             case_id: REQUIRED - Case ID
 
         Returns:
-            List of {date, type, total_amount, count}
+            List of {date, category, total_amount, count}
         """
         with self._driver.session() as session:
             query = """
                 MATCH (n)
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id AND n.date IS NOT NULL
-                WITH n.date AS date, labels(n)[0] AS type, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
+                WITH n.date AS date, coalesce(n.financial_category, 'Uncategorized') AS category, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
                 RETURN
                     date,
-                    type,
+                    category,
                     sum(abs(amt)) AS total_amount,
                     count(*) AS count
-                ORDER BY date ASC, type ASC
+                ORDER BY date ASC, category ASC
             """
             result = session.run(query, case_id=case_id)
             return [
                 {
                     "date": record["date"],
-                    "type": record["type"],
+                    "category": record["category"],
                     "total_amount": safe_float(record["total_amount"]),
                     "count": record["count"],
                 }
@@ -2913,26 +2919,173 @@ class Neo4jService:
                 return {"success": False, "error": "Node not found"}
             return {"success": True, "key": record["key"]}
 
-    def get_financial_categories(self, case_id: str) -> List[str]:
+    def get_financial_categories(self, case_id: str) -> List[Dict]:
         """
-        Get all distinct financial_category values used in a case.
+        Get all financial categories for a case: predefined + persisted custom + orphaned from transactions.
 
         Args:
             case_id: REQUIRED - Case ID
 
         Returns:
-            List of category strings (predefined + custom)
+            List of dicts with name, color, builtin keys
         """
-        predefined = ["Suspicious", "Legitimate", "Under Review", "Unknown"]
+        predefined = {
+            "Utility":            "#3b82f6",
+            "Payroll/Salary":     "#22c55e",
+            "Rent/Lease":         "#8b5cf6",
+            "Reimbursement":      "#06b6d4",
+            "Loan Payment":       "#ef4444",
+            "Insurance":          "#f59e0b",
+            "Subscription":       "#ec4899",
+            "Transfer":           "#14b8a6",
+            "Income":             "#10b981",
+            "Personal":           "#f97316",
+            "Legal/Professional": "#6366f1",
+            "Other":              "#6b7280",
+        }
+        result_categories = [
+            {"name": name, "color": color, "builtin": True}
+            for name, color in predefined.items()
+        ]
+        seen_names = set(predefined.keys())
+
         with self._driver.session() as session:
-            query = """
+            # Persisted custom FinancialCategory nodes for this case
+            custom_query = """
+                MATCH (c:FinancialCategory {case_id: $case_id})
+                RETURN c.name AS name, c.color AS color
+                ORDER BY c.name
+            """
+            custom_result = session.run(custom_query, case_id=case_id)
+            for record in custom_result:
+                name = record["name"]
+                if name not in seen_names:
+                    result_categories.append({"name": name, "color": record["color"] or "#6b7280", "builtin": False})
+                    seen_names.add(name)
+
+            # Orphaned categories on transaction nodes (no FinancialCategory node)
+            orphan_query = """
                 MATCH (n)
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id AND n.financial_category IS NOT NULL
                 RETURN DISTINCT n.financial_category AS category
             """
-            result = session.run(query, case_id=case_id)
-            custom = [record["category"] for record in result if record["category"] not in predefined]
-        return predefined + sorted(custom)
+            orphan_result = session.run(orphan_query, case_id=case_id)
+            for record in orphan_result:
+                name = record["category"]
+                if name not in seen_names:
+                    result_categories.append({"name": name, "color": "#6b7280", "builtin": False})
+                    seen_names.add(name)
+
+        return result_categories
+
+    def create_financial_category(self, name: str, color: str, case_id: str) -> Dict:
+        """
+        Create or update a custom FinancialCategory node for a case.
+
+        Args:
+            name: Category name
+            color: Hex color string
+            case_id: REQUIRED - Case ID
+
+        Returns:
+            Dict with success, name, color
+        """
+        with self._driver.session() as session:
+            query = """
+                MERGE (c:FinancialCategory {name: $name, case_id: $case_id})
+                ON CREATE SET c.color = $color, c.created_at = datetime()
+                ON MATCH SET c.color = $color
+                RETURN c.name AS name, c.color AS color
+            """
+            record = session.run(query, name=name, color=color, case_id=case_id).single()
+            if not record:
+                return {"success": False, "error": "Failed to create category"}
+            return {"success": True, "name": record["name"], "color": record["color"]}
+
+    def update_transaction_details(
+        self,
+        node_key: str,
+        case_id: str,
+        purpose: Optional[str] = None,
+        counterparty_details: Optional[str] = None,
+        notes: Optional[str] = None,
+    ) -> Dict:
+        """
+        Set purpose, counterparty_details, and/or notes on a transaction node.
+
+        Args:
+            node_key: The node key
+            case_id: REQUIRED - Case ID
+            purpose: Optional purpose text
+            counterparty_details: Optional counterparty details text
+            notes: Optional investigation notes
+
+        Returns:
+            Dict with success status
+        """
+        with self._driver.session() as session:
+            set_clauses = []
+            params = {"key": node_key, "case_id": case_id}
+
+            if purpose is not None:
+                set_clauses.append("n.purpose = $purpose")
+                params["purpose"] = purpose
+            if counterparty_details is not None:
+                set_clauses.append("n.counterparty_details = $counterparty_details")
+                params["counterparty_details"] = counterparty_details
+            if notes is not None:
+                set_clauses.append("n.notes = $notes")
+                params["notes"] = notes
+
+            if not set_clauses:
+                return {"success": False, "error": "No details provided"}
+
+            query = f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                SET {', '.join(set_clauses)}
+                RETURN n.key AS key
+            """
+            record = session.run(query, **params).single()
+            if not record:
+                return {"success": False, "error": "Node not found"}
+            return {"success": True, "key": record["key"]}
+
+    def batch_update_from_to(
+        self,
+        node_keys: List[str],
+        case_id: str,
+        from_key: Optional[str] = None,
+        from_name: Optional[str] = None,
+        to_key: Optional[str] = None,
+        to_name: Optional[str] = None,
+    ) -> Dict:
+        """
+        Set from/to entity on multiple transaction nodes at once.
+
+        Args:
+            node_keys: List of node keys to update
+            case_id: REQUIRED - Case ID
+            from_key: Key of the from entity
+            from_name: Display name of the from entity
+            to_key: Key of the to entity
+            to_name: Display name of the to entity
+
+        Returns:
+            Dict with success count
+        """
+        results = []
+        for key in node_keys:
+            result = self.update_transaction_from_to(
+                node_key=key,
+                case_id=case_id,
+                from_key=from_key,
+                from_name=from_name,
+                to_key=to_key,
+                to_name=to_name,
+            )
+            results.append(result)
+        success_count = sum(1 for r in results if r.get("success"))
+        return {"success": True, "updated": success_count, "total": len(node_keys)}
 
 
 # Singleton instance

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { Filter, ChevronDown, ChevronRight, X, Search, User } from 'lucide-react';
+import { Filter, ChevronDown, ChevronRight, X, Search, User, Plus } from 'lucide-react';
+import { CATEGORY_COLORS } from './constants';
 
 const TYPE_COLORS = {
   Transaction: '#06b6d4',
@@ -9,13 +10,6 @@ const TYPE_COLORS = {
   Deposit: '#3b82f6',
   Withdrawal: '#ef4444',
   Other: '#6b7280',
-};
-
-const CATEGORY_COLORS = {
-  Suspicious: '#ef4444',
-  Legitimate: '#22c55e',
-  'Under Review': '#f59e0b',
-  Unknown: '#6b7280',
 };
 
 function EntityFilterDropdown({ allEntities, entityFilter, onEntityFilterChange }) {
@@ -123,6 +117,8 @@ export default function FinancialFilterPanel({
   allEntities = [],
   isExpanded = true,
   onToggleExpand,
+  categoryColorMap = {},
+  onAddCategory,
 }) {
   const selectedTypeCount = selectedTypes.size;
   const totalTypeCount = transactionTypes.length;
@@ -188,7 +184,18 @@ export default function FinancialFilterPanel({
           {/* Category chips */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <span className="text-xs text-light-600 font-medium">Category</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-light-600 font-medium">Category</span>
+                {onAddCategory && (
+                  <button
+                    onClick={onAddCategory}
+                    className="p-0.5 text-light-400 hover:text-owl-blue-600 rounded hover:bg-light-100"
+                    title="Add custom category"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
               <div className="flex gap-2">
                 <button onClick={onSelectAllCategories} className="text-xs text-light-600 hover:text-light-800">All</button>
                 <span className="text-light-400">|</span>
@@ -198,7 +205,7 @@ export default function FinancialFilterPanel({
             <div className="flex flex-wrap gap-1.5">
               {categories.map(cat => {
                 const isSelected = selectedCategories.has(cat);
-                const color = CATEGORY_COLORS[cat] || '#6b7280';
+                const color = categoryColorMap[cat] || CATEGORY_COLORS[cat] || '#6b7280';
                 return (
                   <button
                     key={cat}

@@ -30,6 +30,28 @@ class BatchCategorizeRequest(BaseModel):
     case_id: str
 
 
+class DetailsRequest(BaseModel):
+    case_id: str
+    purpose: Optional[str] = None
+    counterparty_details: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class BatchFromToRequest(BaseModel):
+    node_keys: List[str]
+    case_id: str
+    from_key: Optional[str] = None
+    from_name: Optional[str] = None
+    to_key: Optional[str] = None
+    to_name: Optional[str] = None
+
+
+class CreateCategoryRequest(BaseModel):
+    name: str
+    color: str
+    case_id: str
+
+
 @router.get("")
 async def get_financial_transactions(
     case_id: str = Query(..., description="REQUIRED: Filter to transactions in this case"),
@@ -150,6 +172,47 @@ async def update_from_to(node_key: str, body: FromToRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/details/{node_key}")
+async def update_transaction_details(node_key: str, body: DetailsRequest):
+    """
+    Set purpose, counterparty_details, and/or notes on a transaction node.
+    """
+    try:
+        result = neo4j_service.update_transaction_details(
+            node_key=node_key,
+            case_id=body.case_id,
+            purpose=body.purpose,
+            counterparty_details=body.counterparty_details,
+            notes=body.notes,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=404, detail=result.get("error", "Node not found"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/batch-from-to")
+async def batch_update_from_to(body: BatchFromToRequest):
+    """
+    Set from/to entity on multiple transaction nodes at once.
+    """
+    try:
+        result = neo4j_service.batch_update_from_to(
+            node_keys=body.node_keys,
+            case_id=body.case_id,
+            from_key=body.from_key,
+            from_name=body.from_name,
+            to_key=body.to_key,
+            to_name=body.to_name,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/categories")
 async def get_categories(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
@@ -160,5 +223,37 @@ async def get_categories(
     try:
         categories = neo4j_service.get_financial_categories(case_id=case_id)
         return {"categories": categories}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+PREDEFINED_CATEGORY_NAMES = {
+    "Utility", "Payroll/Salary", "Rent/Lease", "Reimbursement",
+    "Loan Payment", "Insurance", "Subscription", "Transfer",
+    "Income", "Personal", "Legal/Professional", "Other",
+}
+
+
+@router.post("/categories")
+async def create_category(body: CreateCategoryRequest):
+    """
+    Create a custom financial category for a case (persisted as a FinancialCategory node).
+    """
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Category name cannot be empty")
+    if name in PREDEFINED_CATEGORY_NAMES:
+        raise HTTPException(status_code=400, detail=f"'{name}' is a predefined category and cannot be overridden")
+    try:
+        result = neo4j_service.create_financial_category(
+            name=name,
+            color=body.color,
+            case_id=body.case_id,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to create category"))
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
