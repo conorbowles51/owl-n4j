@@ -23,6 +23,7 @@ from routers.workspace import router as workspace_router
 from routers.users import router as users_router
 from routers.setup import router as setup_router
 from routers.cost_ledger import router as cost_ledger_router
+from routers.financial import router as financial_router
 
 __all__ = [
     "graph_router",
@@ -46,4 +47,5 @@ __all__ = [
     "users_router",
     "setup_router",
     "cost_ledger_router",
+    "financial_router",
 ]

@@ -3,7 +3,7 @@ import { Network, Calendar, MapPin, Table2 } from 'lucide-react';
 
 /**
  * View Mode Switcher Component
- * 
+ *
  * Allows switching between Graph, Timeline, Map, and Table views
  */
 export default function ViewModeSwitcher({
@@ -24,14 +24,14 @@ export default function ViewModeSwitcher({
       id: 'timeline',
       label: 'Timeline',
       icon: Calendar,
-      alwaysAvailable: true, // Always allow clicking, show message if no data
+      alwaysAvailable: true,
       hasData: hasTimelineData,
     },
     {
       id: 'map',
       label: 'Map',
       icon: MapPin,
-      alwaysAvailable: true, // Always allow clicking, show message if no data
+      alwaysAvailable: true,
       hasData: hasMapData,
     },
     {
@@ -39,7 +39,7 @@ export default function ViewModeSwitcher({
       label: 'Table',
       icon: Table2,
       alwaysAvailable: true,
-      hasData: true, // Table always shows nodes; empty state handled in view
+      hasData: true,
     },
   ];
 

@@ -10,7 +10,7 @@ import { convertGraphNodesToTimelineEvents, convertGraphNodesToMapLocations, has
 
 /**
  * Workspace Graph View Component
- * 
+ *
  * Enhanced graph view for workspace with risk scoring and workspace-specific features
  */
 export default function WorkspaceGraphView({
@@ -48,7 +48,7 @@ export default function WorkspaceGraphView({
   const containerRef = useRef();
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [internalViewMode, setInternalViewMode] = useState(externalViewMode || 'graph');
-  
+
   // Use internal view mode if external is not provided
   const currentViewMode = externalViewMode !== undefined ? externalViewMode : internalViewMode;
   const handleViewModeChange = (newMode) => {
@@ -95,15 +95,15 @@ export default function WorkspaceGraphView({
           graphViewRef.current.centerGraph();
         }
       }, 800);
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [graphData, dimensions]);
 
-  // Check if timeline and map data are available from current graph nodes
+  // Check if timeline, map, and financial data are available from current graph nodes
   const hasTimeline = useMemo(() => hasTimelineData(graphData.nodes), [graphData.nodes]);
   const hasMap = useMemo(() => hasMapData(graphData.nodes), [graphData.nodes]);
-  
+
   // Convert graph nodes to timeline events and map locations
   // Always compute these so they're ready when switching modes
   const timelineEvents = useMemo(() => {
@@ -112,7 +112,7 @@ export default function WorkspaceGraphView({
     }
     return [];
   }, [hasTimeline, graphData.nodes, graphData.links]);
-  
+
   const mapLocations = useMemo(() => {
     if (hasMap) {
       return convertGraphNodesToMapLocations(graphData.nodes, graphData.links);
@@ -181,7 +181,7 @@ export default function WorkspaceGraphView({
           </div>
         )}
       </div>
-      
+
       <div className="flex-1 min-h-0">
         {dimensions.width > 0 && dimensions.height > 0 && (
           <>
@@ -191,7 +191,6 @@ export default function WorkspaceGraphView({
                   <TimelineView
                     timelineData={timelineEvents}
                     onSelectEvent={(event) => {
-                      // Find the node in graphData and select it
                       const node = graphData.nodes.find(n => n.key === event.key);
                       if (node && onNodeSelect) {
                         onNodeSelect(node);
@@ -211,7 +210,6 @@ export default function WorkspaceGraphView({
                     locations={mapLocations}
                     caseId={caseId}
                     onNodeClick={(location) => {
-                      // Find the node in graphData and select it
                       const node = graphData.nodes.find(n => n.key === location.key);
                       if (node && onNodeSelect) {
                         onNodeSelect(node);

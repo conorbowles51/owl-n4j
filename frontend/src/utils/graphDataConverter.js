@@ -133,7 +133,18 @@ export function hasMapData(nodes) {
     const latitude = node.latitude || node.lat || props.latitude || props.lat;
     const longitude = node.longitude || node.lng || node.lon || 
                       props.longitude || props.lng || props.lon;
-    return latitude != null && longitude != null && 
+    return latitude != null && longitude != null &&
            !isNaN(parseFloat(latitude)) && !isNaN(parseFloat(longitude));
+  });
+}
+
+/**
+ * Check if graph data has financial data (nodes with amount properties)
+ */
+export function hasFinancialData(nodes) {
+  return nodes.some(node => {
+    const props = node.properties || {};
+    const amount = node.amount ?? props.amount;
+    return amount != null && !isNaN(parseFloat(amount));
   });
 }

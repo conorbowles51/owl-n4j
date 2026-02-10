@@ -40,6 +40,7 @@ import {
   MousePointer,
   Table2,
   Eye,
+  DollarSign,
 } from 'lucide-react';
 import { graphAPI, snapshotsAPI, timelineAPI, casesAPI, authAPI, evidenceAPI, chatHistoryAPI, chatAPI, setupAPI } from './services/api';
 import { compareCypherQueries } from './utils/cypherCompare';
@@ -53,6 +54,7 @@ import GraphSearchFilter from './components/GraphSearchFilter';
 import TimelineView from './components/timeline/TimelineView';
 import MapView from './components/MapView';
 import GraphTableView from './components/GraphTableView';
+import FinancialView from './components/financial/FinancialView';
 import SnapshotModal from './components/SnapshotModal';
 import SaveSnapshotProgressDialog from './components/SaveSnapshotProgressDialog';
 import CaseModal from './components/CaseModal';
@@ -3806,6 +3808,17 @@ export default function App() {
               Map
             </button>
             <button
+              onClick={() => setViewMode('financial')}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
+                viewMode === 'financial'
+                  ? 'bg-white text-owl-blue-900 shadow-sm'
+                  : 'text-light-600 hover:text-light-800'
+              }`}
+            >
+              <DollarSign className="w-4 h-4" />
+              Financial
+            </button>
+            <button
               onClick={() => setViewMode('table')}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${
                 viewMode === 'table'
@@ -4751,6 +4764,17 @@ export default function App() {
                 </div>
               </div>
             )
+          ) : viewMode === 'financial' ? (
+            // Financial View
+            <div className="h-full">
+              <FinancialView
+                caseId={currentCaseId}
+                onNodeSelect={(nodeKey) => {
+                  const node = graphData.nodes.find(n => n.key === nodeKey);
+                  if (node) handleNodeClick(node);
+                }}
+              />
+            </div>
           ) : viewMode === 'table' ? (
             // Table View - tabular view of graph nodes with expandable relations
             <div className="h-full flex flex-col min-h-0">

@@ -730,6 +730,158 @@ export const timelineAPI = {
 };
 
 /**
+ * Financial API
+ */
+export const financialAPI = {
+  /**
+   * Get financial transactions with from/to entity resolution
+   * @param {Object} options - Filter options
+   * @param {string} options.caseId - REQUIRED: Case ID
+   * @param {string} [options.types] - Comma-separated transaction types
+   * @param {string} [options.startDate] - Filter start date (YYYY-MM-DD)
+   * @param {string} [options.endDate] - Filter end date (YYYY-MM-DD)
+   * @param {string} [options.categories] - Comma-separated categories
+   */
+  getTransactions: async ({ caseId, types, startDate, endDate, categories } = {}) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    if (types) params.append('types', types);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (categories) params.append('categories', categories);
+    return fetchAPI(`/financial?${params.toString()}`);
+  },
+
+  /**
+   * Get financial summary statistics
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getSummary: (caseId) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    return fetchAPI(`/financial/summary?${params.toString()}`);
+  },
+
+  /**
+   * Get transaction volume over time for chart data
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getVolume: (caseId) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    return fetchAPI(`/financial/volume?${params.toString()}`);
+  },
+
+  /**
+   * Set financial category on a transaction
+   * @param {string} nodeKey - Node key
+   * @param {string} category - Category string
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  categorize: (nodeKey, category, caseId) => {
+    return fetchAPI(`/financial/categorize/${encodeURIComponent(nodeKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ category, case_id: caseId }),
+    });
+  },
+
+  /**
+   * Batch categorize multiple transactions
+   * @param {string[]} nodeKeys - Node keys
+   * @param {string} category - Category string
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  batchCategorize: (nodeKeys, category, caseId) => {
+    return fetchAPI('/financial/batch-categorize', {
+      method: 'PUT',
+      body: JSON.stringify({ node_keys: nodeKeys, category, case_id: caseId }),
+    });
+  },
+
+  /**
+   * Set manual from/to entity override on a transaction
+   * @param {string} nodeKey - Node key
+   * @param {Object} data - From/to data
+   * @param {string} data.caseId - REQUIRED: Case ID
+   * @param {string} [data.fromKey] - From entity key
+   * @param {string} [data.fromName] - From entity name
+   * @param {string} [data.toKey] - To entity key
+   * @param {string} [data.toName] - To entity name
+   */
+  setFromTo: (nodeKey, { caseId, fromKey, fromName, toKey, toName }) => {
+    return fetchAPI(`/financial/from-to/${encodeURIComponent(nodeKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        case_id: caseId,
+        from_key: fromKey,
+        from_name: fromName,
+        to_key: toKey,
+        to_name: toName,
+      }),
+    });
+  },
+
+  /**
+   * Update purpose, counterparty details, and/or notes on a transaction
+   * @param {string} nodeKey - Node key
+   * @param {Object} data - { caseId, purpose?, counterpartyDetails?, notes? }
+   */
+  updateDetails: (nodeKey, { caseId, purpose, counterpartyDetails, notes }) => {
+    return fetchAPI(`/financial/details/${encodeURIComponent(nodeKey)}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        case_id: caseId,
+        purpose: purpose,
+        counterparty_details: counterpartyDetails,
+        notes: notes,
+      }),
+    });
+  },
+
+  /**
+   * Batch set from or to entity on multiple transactions
+   * @param {string[]} nodeKeys - Array of node keys
+   * @param {Object} data - { caseId, fromKey?, fromName?, toKey?, toName? }
+   */
+  batchSetFromTo: (nodeKeys, { caseId, fromKey, fromName, toKey, toName }) => {
+    return fetchAPI('/financial/batch-from-to', {
+      method: 'PUT',
+      body: JSON.stringify({
+        node_keys: nodeKeys,
+        case_id: caseId,
+        from_key: fromKey,
+        from_name: fromName,
+        to_key: toKey,
+        to_name: toName,
+      }),
+    });
+  },
+
+  /**
+   * Get predefined + custom categories for a case
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getCategories: (caseId) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    return fetchAPI(`/financial/categories?${params.toString()}`);
+  },
+
+  /**
+   * Create a custom financial category for a case
+   * @param {string} name - Category name
+   * @param {string} color - Hex color string
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  createCategory: (name, color, caseId) => {
+    return fetchAPI('/financial/categories', {
+      method: 'POST',
+      body: { name, color, case_id: caseId },
+    });
+  },
+};
+
+/**
  * Snapshots API
  */
 export const snapshotsAPI = {
