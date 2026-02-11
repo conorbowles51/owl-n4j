@@ -57,6 +57,7 @@ def call_llm(
     log_callback: Optional[Callable[[str], None]] = None,
     llm_provider: Optional[str] = None,  # "ollama" or "openai"
     llm_model_id: Optional[str] = None,  # Model ID to use (overrides default)
+    doc_name: Optional[str] = None,  # Document name for cost tracking
 ) -> str:
     """
     Call the LLM endpoint (Ollama or OpenAI).
@@ -96,6 +97,7 @@ def call_llm(
             timeout=timeout,
             system_context=system_context,
             log_callback=log_callback,
+            doc_name=doc_name,
         )
     else:  # ollama
         return _call_ollama(
@@ -168,6 +170,7 @@ def _call_openai(
     timeout: int,
     system_context: Optional[str],
     log_callback: Optional[Callable[[str], None]],
+    doc_name: Optional[str] = None,
 ) -> str:
     """Call OpenAI LLM endpoint."""
     if not OPENAI_AVAILABLE:
@@ -202,21 +205,43 @@ def _call_openai(
         response = client.chat.completions.create(**kwargs)
         
         # Track token usage and cost for ingestion
-        try:
-            import sys
-            from pathlib import Path
-            backend_dir = Path(__file__).parent.parent.parent / "backend"
-            if str(backend_dir) not in sys.path:
-                sys.path.insert(0, str(backend_dir))
+        # Check if we have usage information from OpenAI
+        usage = response.usage
+        if usage:
+            log_progress(f"[Cost Tracking] OpenAI usage - prompt: {usage.prompt_tokens}, completion: {usage.completion_tokens}, total: {usage.total_tokens}", log_callback, prefix="")
             
-            from services.cost_tracking_service import record_cost, CostJobType
-            from postgres.session import get_db
-            
-            usage = response.usage
-            if usage:
+            try:
+                import sys
+                from pathlib import Path
+                backend_dir = Path(__file__).parent.parent.parent / "backend"
+                if str(backend_dir) not in sys.path:
+                    sys.path.insert(0, str(backend_dir))
+                
+                from services.cost_tracking_service import record_cost, CostJobType
+                from postgres.session import get_db
+                
                 # Get database session
                 db = next(get_db())
                 try:
+                    # Use doc_name parameter if provided, otherwise try to get from calling context
+                    doc_name_for_cost = doc_name or "unknown"
+                    if doc_name_for_cost == "unknown":
+                        import inspect
+                        frame = inspect.currentframe()
+                        try:
+                            # Look up the call stack for doc_name
+                            caller_frame = frame.f_back
+                            if caller_frame:
+                                caller_locals = caller_frame.f_locals
+                                if 'doc_name' in caller_locals:
+                                    doc_name_for_cost = caller_locals['doc_name']
+                        except Exception:
+                            pass
+                        finally:
+                            del frame
+                    
+                    log_progress(f"[Cost Tracking] Recording cost for document: {doc_name_for_cost}", log_callback, prefix="")
+                    
                     record_cost(
                         job_type=CostJobType.INGESTION,
                         provider="openai",
@@ -224,17 +249,27 @@ def _call_openai(
                         prompt_tokens=usage.prompt_tokens,
                         completion_tokens=usage.completion_tokens,
                         total_tokens=usage.total_tokens,
-                        description=f"Document ingestion: {doc_name if 'doc_name' in locals() else 'unknown'}",
-                        extra_metadata={"doc_name": doc_name if 'doc_name' in locals() else None},
+                        description=f"Document ingestion: {doc_name_for_cost}",
+                        extra_metadata={"doc_name": doc_name_for_cost},
                         db=db,
                     )
+                    log_progress(f"[Cost Tracking] Successfully recorded cost", log_callback, prefix="")
                 except Exception as e:
-                    log_error(f"Failed to record cost: {e}", log_callback, prefix="[LLM] ")
+                    import traceback
+                    error_msg = f"Failed to record cost: {e}"
+                    log_error(error_msg, log_callback, prefix="[Cost Tracking] ")
+                    log_error(f"Traceback: {traceback.format_exc()}", log_callback, prefix="[Cost Tracking] ")
                 finally:
                     db.close()
-        except (ImportError, Exception) as e:
-            # Cost tracking not available or failed, skip silently
-            pass
+            except ImportError as e:
+                log_error(f"Cost tracking not available (ImportError): {e}", log_callback, prefix="[Cost Tracking] ")
+            except Exception as e:
+                import traceback
+                error_msg = f"Cost tracking error: {e}"
+                log_error(error_msg, log_callback, prefix="[Cost Tracking] ")
+                log_error(f"Traceback: {traceback.format_exc()}", log_callback, prefix="[Cost Tracking] ")
+        else:
+            log_progress("[Cost Tracking] No usage information available from OpenAI response", log_callback, prefix="")
         
         # Extract content
         return response.choices[0].message.content or ""
@@ -542,6 +577,7 @@ IMPORTANT REMINDERS:
         log_callback=log_callback,
         llm_provider=llm_provider,
         llm_model_id=llm_model_id,
+        doc_name=doc_name,
     )
     
     # Debug: Log raw LLM response

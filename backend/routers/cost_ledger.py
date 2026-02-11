@@ -8,7 +8,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, text
 from sqlalchemy.orm import Session
 
 from postgres.session import get_db
@@ -134,75 +134,88 @@ async def get_cost_summary(
     """
     Get cost summary statistics.
     """
-    # Helper to apply case_id filter to a query
-    def apply_case_filter(query):
-        if case_id:
-            try:
-                case_uuid = UUID(case_id)
-                return query.filter(CostRecord.case_id == case_uuid)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid case_id format")
-        return query
-    
-    # Total cost
-    total_cost_query = apply_case_filter(db.query(CostRecord))
-    total_cost = total_cost_query.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
-    
-    # Total tokens (filter out None values before aggregation)
-    total_tokens_base = apply_case_filter(db.query(CostRecord))
-    total_tokens = total_tokens_base.filter(CostRecord.total_tokens.isnot(None)).with_entities(
-        func.sum(CostRecord.total_tokens)
-    ).scalar()
-    
-    # Ingestion costs
-    ingestion_base = apply_case_filter(db.query(CostRecord)).filter(
-        CostRecord.job_type == CostJobType.INGESTION.value
-    )
-    ingestion_cost = ingestion_base.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
-    
-    ingestion_tokens_base = apply_case_filter(db.query(CostRecord)).filter(
-        CostRecord.job_type == CostJobType.INGESTION.value,
-        CostRecord.total_tokens.isnot(None)
-    )
-    ingestion_tokens = ingestion_tokens_base.with_entities(func.sum(CostRecord.total_tokens)).scalar()
-    
-    # AI Assistant costs
-    ai_base = apply_case_filter(db.query(CostRecord)).filter(
-        CostRecord.job_type == CostJobType.AI_ASSISTANT.value
-    )
-    ai_cost = ai_base.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
-    
-    ai_tokens_base = apply_case_filter(db.query(CostRecord)).filter(
-        CostRecord.job_type == CostJobType.AI_ASSISTANT.value,
-        CostRecord.total_tokens.isnot(None)
-    )
-    ai_tokens = ai_tokens_base.with_entities(func.sum(CostRecord.total_tokens)).scalar()
-    
-    # By model
-    model_stats_query = apply_case_filter(
-        db.query(
-            CostRecord.model_id,
-            func.sum(CostRecord.cost_usd).label('cost'),
-            func.sum(CostRecord.total_tokens).label('tokens'),
-            func.count(CostRecord.id).label('count')
+    try:
+        # Helper to apply case_id filter to a query
+        def apply_case_filter(query):
+            if case_id:
+                try:
+                    case_uuid = UUID(case_id)
+                    return query.filter(CostRecord.case_id == case_uuid)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid case_id format")
+            return query
+        
+        # Total cost
+        total_cost_query = apply_case_filter(db.query(CostRecord))
+        total_cost = total_cost_query.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
+        
+        # Total tokens (filter out None values before aggregation)
+        total_tokens_base = apply_case_filter(db.query(CostRecord))
+        total_tokens = total_tokens_base.filter(CostRecord.total_tokens.isnot(None)).with_entities(
+            func.sum(CostRecord.total_tokens)
+        ).scalar()
+        
+        # Ingestion costs - use text() to bypass SQLAlchemy enum conversion
+        ingestion_base = apply_case_filter(db.query(CostRecord)).filter(
+            text("cost_records.job_type = 'ingestion'")
         )
-    )
-    model_stats = model_stats_query.group_by(CostRecord.model_id).all()
-    
-    by_model = {}
-    for model_id, cost, tokens, count in model_stats:
-        by_model[model_id] = {
-            "cost": float(cost or 0.0),
-            "tokens": int(tokens) if tokens else None,
-            "count": int(count),
-        }
-    
-    return CostSummaryResponse(
-        total_cost=float(total_cost),
-        total_tokens=int(total_tokens) if total_tokens else None,
-        ingestion_cost=float(ingestion_cost),
-        ingestion_tokens=int(ingestion_tokens) if ingestion_tokens else None,
-        ai_assistant_cost=float(ai_cost),
-        ai_assistant_tokens=int(ai_tokens) if ai_tokens else None,
-        by_model=by_model,
-    )
+        ingestion_cost = ingestion_base.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
+        
+        ingestion_tokens_base = apply_case_filter(db.query(CostRecord)).filter(
+            text("cost_records.job_type = 'ingestion'"),
+            CostRecord.total_tokens.isnot(None)
+        )
+        ingestion_tokens = ingestion_tokens_base.with_entities(func.sum(CostRecord.total_tokens)).scalar()
+        
+        # AI Assistant costs - use text() to bypass SQLAlchemy enum conversion
+        ai_base = apply_case_filter(db.query(CostRecord)).filter(
+            text("cost_records.job_type = 'ai_assistant'")
+        )
+        ai_cost = ai_base.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
+        
+        ai_tokens_base = apply_case_filter(db.query(CostRecord)).filter(
+            text("cost_records.job_type = 'ai_assistant'"),
+            CostRecord.total_tokens.isnot(None)
+        )
+        ai_tokens = ai_tokens_base.with_entities(func.sum(CostRecord.total_tokens)).scalar()
+        
+        # By model
+        model_stats_query = apply_case_filter(
+            db.query(
+                CostRecord.model_id,
+                func.sum(CostRecord.cost_usd).label('cost'),
+                func.sum(CostRecord.total_tokens).label('tokens'),
+                func.count(CostRecord.id).label('count')
+            )
+        )
+        model_stats = model_stats_query.group_by(CostRecord.model_id).all()
+        
+        by_model = {}
+        for model_id, cost, tokens, count in model_stats:
+            by_model[model_id] = {
+                "cost": float(cost or 0.0),
+                "tokens": int(tokens) if tokens else None,
+                "count": int(count),
+            }
+        
+        return CostSummaryResponse(
+            total_cost=float(total_cost),
+            total_tokens=int(total_tokens) if total_tokens else None,
+            ingestion_cost=float(ingestion_cost),
+            ingestion_tokens=int(ingestion_tokens) if ingestion_tokens else None,
+            ai_assistant_cost=float(ai_cost),
+            ai_assistant_tokens=int(ai_tokens) if ai_tokens else None,
+            by_model=by_model,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = str(e)
+        traceback_str = traceback.format_exc()
+        print(f"Error in cost ledger summary: {error_detail}")
+        print(f"Traceback: {traceback_str}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to load cost summary: {error_detail}. Please ensure the cost_records table exists (run database migrations)."
+        )

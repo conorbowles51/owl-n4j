@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 from enum import Enum
-from sqlalchemy import String, ForeignKey, Integer, Numeric, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import String, ForeignKey, Integer, Numeric
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from postgres.base import Base
@@ -25,8 +25,9 @@ class CostRecord(Base, TimestampMixin):
     )
 
     # Job information
+    # Use PostgreSQL ENUM with explicit values to ensure lowercase strings are used
     job_type: Mapped[str] = mapped_column(
-        SQLEnum(CostJobType, name="cost_job_type"),
+        ENUM('ingestion', 'ai_assistant', name='cost_job_type', create_type=False),
         nullable=False,
         index=True,
     )

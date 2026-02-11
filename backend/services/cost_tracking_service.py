@@ -132,8 +132,10 @@ def record_cost(
         should_close = False
     
     try:
+        # Explicitly use .value to get the lowercase string ("ingestion" or "ai_assistant")
+        # SQLAlchemy's SQLEnum uses the enum name by default, but the database expects the value
         cost_record = CostRecord(
-            job_type=job_type.value,
+            job_type=job_type.value,  # Use .value to get "ingestion" not "INGESTION"
             provider=provider,
             model_id=model_id,
             prompt_tokens=prompt_tokens,
@@ -151,6 +153,11 @@ def record_cost(
         db.refresh(cost_record)
         
         return cost_record
+    except Exception as e:
+        # Rollback on error to ensure clean state
+        db.rollback()
+        # Re-raise the exception so callers know it failed
+        raise
     finally:
         if should_close:
             db.close()
