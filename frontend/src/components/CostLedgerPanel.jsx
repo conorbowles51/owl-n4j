@@ -10,6 +10,9 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
     job_type: '',
     model_id: '',
     case_id: '',
+    time_period: '',
+    start_date: '',
+    end_date: '',
   });
   const [limit, setLimit] = useState(100);
   const [offset, setOffset] = useState(0);
@@ -21,10 +24,24 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
     setLoading(true);
     try {
       const params = {
-        ...filters,
+        job_type: filters.job_type,
+        model_id: filters.model_id,
+        case_id: filters.case_id,
         limit,
         offset,
       };
+      
+      // Date range takes precedence over quick time period filter
+      if (filters.start_date || filters.end_date) {
+        if (filters.start_date) {
+          params.start_date = filters.start_date;
+        }
+        if (filters.end_date) {
+          params.end_date = filters.end_date;
+        }
+      } else if (filters.time_period) {
+        params.time_period = filters.time_period;
+      }
       
       // Remove empty filters
       const cleanedParams = {};
@@ -54,13 +71,30 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
       if (filters.case_id) {
         params.case_id = filters.case_id;
       }
+      if (filters.job_type) {
+        params.job_type = filters.job_type;
+      }
+      if (filters.model_id) {
+        params.model_id = filters.model_id;
+      }
+      // Date range takes precedence over quick time period filter
+      if (filters.start_date || filters.end_date) {
+        if (filters.start_date) {
+          params.start_date = filters.start_date;
+        }
+        if (filters.end_date) {
+          params.end_date = filters.end_date;
+        }
+      } else if (filters.time_period) {
+        params.time_period = filters.time_period;
+      }
       
       const result = await costLedgerAPI.getSummary(params);
       setSummary(result);
     } catch (err) {
       console.error('Failed to load cost summary:', err);
     }
-  }, [filters.case_id]);
+  }, [filters.case_id, filters.job_type, filters.model_id, filters.time_period, filters.start_date, filters.end_date]);
 
   useEffect(() => {
     if (isOpen) {
@@ -121,6 +155,40 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
     }
   };
 
+  const getActiveFilters = () => {
+    const activeFilters = [];
+    
+    if (filters.job_type) {
+      activeFilters.push(`Job Type: ${getJobTypeLabel(filters.job_type)}`);
+    }
+    if (filters.model_id) {
+      activeFilters.push(`Model: ${filters.model_id}`);
+    }
+    if (filters.case_id) {
+      activeFilters.push(`Case: ${filters.case_id}`);
+    }
+    if (filters.start_date || filters.end_date) {
+      const dateRange = [];
+      if (filters.start_date) {
+        dateRange.push(new Date(filters.start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }));
+      }
+      dateRange.push('to');
+      if (filters.end_date) {
+        dateRange.push(new Date(filters.end_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }));
+      }
+      activeFilters.push(`Date Range: ${dateRange.join(' ')}`);
+    } else if (filters.time_period) {
+      const periodLabels = {
+        day: 'Today',
+        week: 'This Week',
+        month: 'This Month',
+      };
+      activeFilters.push(`Period: ${periodLabels[filters.time_period] || filters.time_period}`);
+    }
+    
+    return activeFilters;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -140,6 +208,23 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Active Filters Display */}
+        {getActiveFilters().length > 0 && (
+          <div className="px-6 py-3 bg-owl-blue-50 border-b border-light-200">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-owl-blue-700">Active Filters:</span>
+              {getActiveFilters().map((filter, index) => (
+                <span
+                  key={index}
+                  className="px-2.5 py-1 bg-white border border-owl-blue-200 rounded text-xs text-owl-blue-700 font-medium"
+                >
+                  {filter}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Summary Section */}
         {summary && (
@@ -212,9 +297,60 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
               placeholder="Case ID"
               className="px-3 py-1.5 border border-light-300 rounded text-sm focus:outline-none focus:border-owl-blue-500"
             />
+            <select
+              value={filters.time_period}
+              onChange={(e) => {
+                const value = e.target.value;
+                setFilters(prev => ({ 
+                  ...prev, 
+                  time_period: value,
+                  // Clear date range when quick filter is selected
+                  start_date: value ? '' : prev.start_date,
+                  end_date: value ? '' : prev.end_date,
+                }));
+              }}
+              className="px-3 py-1.5 border border-light-300 rounded text-sm focus:outline-none focus:border-owl-blue-500"
+            >
+              <option value="">All Time</option>
+              <option value="day">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+            </select>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-light-600">Date Range:</span>
+              <input
+                type="date"
+                value={filters.start_date}
+                onChange={(e) => {
+                  setFilters(prev => ({ 
+                    ...prev, 
+                    start_date: e.target.value,
+                    // Clear quick filter when date range is set
+                    time_period: e.target.value ? '' : prev.time_period,
+                  }));
+                }}
+                className="px-3 py-1.5 border border-light-300 rounded text-sm focus:outline-none focus:border-owl-blue-500"
+                placeholder="Start Date"
+              />
+              <span className="text-light-600">to</span>
+              <input
+                type="date"
+                value={filters.end_date}
+                onChange={(e) => {
+                  setFilters(prev => ({ 
+                    ...prev, 
+                    end_date: e.target.value,
+                    // Clear quick filter when date range is set
+                    time_period: e.target.value ? '' : prev.time_period,
+                  }));
+                }}
+                className="px-3 py-1.5 border border-light-300 rounded text-sm focus:outline-none focus:border-owl-blue-500"
+                placeholder="End Date"
+              />
+            </div>
             <button
               onClick={() => {
-                setFilters({ job_type: '', model_id: '', case_id: '' });
+                setFilters({ job_type: '', model_id: '', case_id: '', time_period: '', start_date: '', end_date: '' });
                 setOffset(0);
               }}
               className="px-3 py-1.5 text-sm text-light-600 hover:text-light-900 hover:bg-light-100 rounded transition-colors"

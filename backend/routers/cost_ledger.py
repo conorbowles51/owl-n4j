@@ -2,7 +2,7 @@
 Cost Ledger Router - API endpoints for viewing OpenAI API usage and costs.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List
 from uuid import UUID
 
@@ -61,6 +61,9 @@ async def get_cost_ledger(
     case_id: Optional[str] = Query(None, description="Filter by case ID"),
     job_type: Optional[str] = Query(None, description="Filter by job type (ingestion, ai_assistant)"),
     model_id: Optional[str] = Query(None, description="Filter by model ID"),
+    time_period: Optional[str] = Query(None, description="Filter by time period: 'day', 'week', or 'month'"),
+    start_date: Optional[str] = Query(None, description="Filter by start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Filter by end date (YYYY-MM-DD)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     offset: int = Query(0, ge=0, description="Number of records to skip"),
     db: Session = Depends(get_db),
@@ -86,6 +89,36 @@ async def get_cost_ledger(
     
     if model_id:
         query = query.filter(CostRecord.model_id == model_id)
+    
+    # Apply time period filter (date range takes precedence over quick filters)
+    if start_date or end_date:
+        # Custom date range filter
+        try:
+            if start_date:
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                query = query.filter(CostRecord.created_at >= start_dt)
+            if end_date:
+                # Include the entire end date (up to 23:59:59)
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+                query = query.filter(CostRecord.created_at <= end_dt)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    elif time_period:
+        # Quick filter (only if no custom date range is set)
+        now = datetime.utcnow()
+        if time_period == 'day':
+            start_date_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_period == 'week':
+            # Start of current week (Monday)
+            days_since_monday = now.weekday()
+            start_date_dt = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+        elif time_period == 'month':
+            start_date_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid time_period. Must be 'day', 'week', or 'month'")
+        
+        query = query.filter(CostRecord.created_at >= start_date_dt)
     
     # Get total count
     total = query.count()
@@ -128,6 +161,11 @@ async def get_cost_ledger(
 @router.get("/summary", response_model=CostSummaryResponse)
 async def get_cost_summary(
     case_id: Optional[str] = Query(None, description="Filter by case ID"),
+    job_type: Optional[str] = Query(None, description="Filter by job type (ingestion, ai_assistant)"),
+    model_id: Optional[str] = Query(None, description="Filter by model ID"),
+    time_period: Optional[str] = Query(None, description="Filter by time period: 'day', 'week', or 'month'"),
+    start_date: Optional[str] = Query(None, description="Filter by start date (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Filter by end date (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     user: dict = Depends(get_current_user),
 ):
@@ -135,52 +173,91 @@ async def get_cost_summary(
     Get cost summary statistics.
     """
     try:
-        # Helper to apply case_id filter to a query
-        def apply_case_filter(query):
+        # Helper to apply all filters to a query
+        def apply_all_filters(query):
+            # Case ID filter
             if case_id:
                 try:
                     case_uuid = UUID(case_id)
-                    return query.filter(CostRecord.case_id == case_uuid)
+                    query = query.filter(CostRecord.case_id == case_uuid)
                 except ValueError:
                     raise HTTPException(status_code=400, detail="Invalid case_id format")
+            
+            # Job type filter
+            if job_type:
+                if job_type not in [CostJobType.INGESTION.value, CostJobType.AI_ASSISTANT.value]:
+                    raise HTTPException(status_code=400, detail="Invalid job_type. Must be 'ingestion' or 'ai_assistant'")
+                query = query.filter(CostRecord.job_type == job_type)
+            
+            # Model ID filter
+            if model_id:
+                query = query.filter(CostRecord.model_id == model_id)
+            
+            # Time period filter (date range takes precedence over quick filters)
+            if start_date or end_date:
+                try:
+                    if start_date:
+                        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+                        query = query.filter(CostRecord.created_at >= start_dt)
+                    if end_date:
+                        # Include the entire end date (up to 23:59:59)
+                        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+                        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+                        query = query.filter(CostRecord.created_at <= end_dt)
+                except ValueError:
+                    raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+            elif time_period:
+                now = datetime.utcnow()
+                if time_period == 'day':
+                    start_date_dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+                elif time_period == 'week':
+                    # Start of current week (Monday)
+                    days_since_monday = now.weekday()
+                    start_date_dt = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+                elif time_period == 'month':
+                    start_date_dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                else:
+                    raise HTTPException(status_code=400, detail="Invalid time_period. Must be 'day', 'week', or 'month'")
+                query = query.filter(CostRecord.created_at >= start_date_dt)
+            
             return query
         
         # Total cost
-        total_cost_query = apply_case_filter(db.query(CostRecord))
+        total_cost_query = apply_all_filters(db.query(CostRecord))
         total_cost = total_cost_query.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
         
         # Total tokens (filter out None values before aggregation)
-        total_tokens_base = apply_case_filter(db.query(CostRecord))
+        total_tokens_base = apply_all_filters(db.query(CostRecord))
         total_tokens = total_tokens_base.filter(CostRecord.total_tokens.isnot(None)).with_entities(
             func.sum(CostRecord.total_tokens)
         ).scalar()
         
         # Ingestion costs - use text() to bypass SQLAlchemy enum conversion
-        ingestion_base = apply_case_filter(db.query(CostRecord)).filter(
+        ingestion_base = apply_all_filters(db.query(CostRecord)).filter(
             text("cost_records.job_type = 'ingestion'")
         )
         ingestion_cost = ingestion_base.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
         
-        ingestion_tokens_base = apply_case_filter(db.query(CostRecord)).filter(
+        ingestion_tokens_base = apply_all_filters(db.query(CostRecord)).filter(
             text("cost_records.job_type = 'ingestion'"),
             CostRecord.total_tokens.isnot(None)
         )
         ingestion_tokens = ingestion_tokens_base.with_entities(func.sum(CostRecord.total_tokens)).scalar()
         
         # AI Assistant costs - use text() to bypass SQLAlchemy enum conversion
-        ai_base = apply_case_filter(db.query(CostRecord)).filter(
+        ai_base = apply_all_filters(db.query(CostRecord)).filter(
             text("cost_records.job_type = 'ai_assistant'")
         )
         ai_cost = ai_base.with_entities(func.sum(CostRecord.cost_usd)).scalar() or 0.0
         
-        ai_tokens_base = apply_case_filter(db.query(CostRecord)).filter(
+        ai_tokens_base = apply_all_filters(db.query(CostRecord)).filter(
             text("cost_records.job_type = 'ai_assistant'"),
             CostRecord.total_tokens.isnot(None)
         )
         ai_tokens = ai_tokens_base.with_entities(func.sum(CostRecord.total_tokens)).scalar()
         
         # By model
-        model_stats_query = apply_case_filter(
+        model_stats_query = apply_all_filters(
             db.query(
                 CostRecord.model_id,
                 func.sum(CostRecord.cost_usd).label('cost'),

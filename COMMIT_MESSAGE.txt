@@ -1,0 +1,30 @@
+Enhance cost ledger with comprehensive filtering and display improvements
+
+Fixed critical bug preventing cost records from being saved during document
+ingestion. SQLAlchemy was converting enum values to their names instead of
+values, causing PostgreSQL enum validation errors.
+
+Changes:
+- Fixed cost tracking enum conversion: Updated cost_record.py to use
+  postgresql.ENUM with explicit values and cost_tracking_service.py to use
+  job_type.value, ensuring lowercase enum values are correctly passed to
+  the database
+
+- Added time period filtering: Implemented quick filters (Today, This Week,
+  This Month) and custom date range filtering (start_date/end_date) for both
+  the cost ledger records and summary endpoints
+
+- Enhanced summary calculations: Updated summary endpoint to respect all
+  filters (job_type, model_id, case_id, time_period, date range) so totals
+  accurately reflect filtered data
+
+- Added active filters display: Implemented visual filter indicator at the
+  top of the cost ledger modal showing all active filters (job type, model,
+  case, date range/period) for better user awareness
+
+- Improved filter UX: Date range and quick time period filters are mutually
+  exclusive, with date range taking precedence when both are set
+
+This ensures cost records are properly saved during ingestion and provides
+users with flexible, comprehensive filtering options to analyze OpenAI API
+usage and costs.
