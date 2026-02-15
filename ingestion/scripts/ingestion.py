@@ -116,6 +116,7 @@ def store_entity_embedding(
     ai_insights: Optional[List[Dict]] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     profile_name: Optional[str] = None,
+    case_id: Optional[str] = None,
 ) -> bool:
     """
     Generate and store embedding for an entity.
@@ -198,14 +199,18 @@ def store_entity_embedding(
         embedding = profile_embedding_service.generate_embedding(embedding_text)
         
         # Store in vector DB
+        entity_metadata = {
+            "name": name,
+            "entity_type": entity_type,
+        }
+        if case_id:
+            entity_metadata["case_id"] = case_id
+
         vector_db_service.add_entity(
             entity_key=entity_key,
             text=embedding_text,
             embedding=embedding,
-            metadata={
-                "name": name,
-                "entity_type": entity_type,
-            }
+            metadata=entity_metadata,
         )
         
         log_progress(f"Entity embedding stored: {entity_key}", log_callback)
@@ -214,6 +219,44 @@ def store_entity_embedding(
     except Exception as e:
         log_warning(f"Entity embedding failed for {entity_key}: {e}", log_callback)
         return False
+
+
+def _create_embedding_service(
+    embedding_provider: Optional[str],
+    embedding_model: Optional[str],
+    log_callback: Optional[Callable[[str], None]] = None,
+):
+    """
+    Create an EmbeddingService instance based on provider/model config.
+
+    Returns:
+        EmbeddingService instance or None on failure
+    """
+    if not VECTOR_DB_AVAILABLE or not EmbeddingService:
+        return None
+
+    try:
+        if embedding_provider:
+            return EmbeddingService(
+                provider=embedding_provider,
+                model=embedding_model,
+            )
+        else:
+            return EmbeddingService()
+    except ValueError as e:
+        error_msg = str(e)
+        if "OPENAI_API_KEY" in error_msg:
+            log_warning(
+                f"Embedding: Cannot use OpenAI embedding - OPENAI_API_KEY not set. "
+                f"Please set OPENAI_API_KEY in your .env file or switch to Ollama provider.",
+                log_callback,
+            )
+        else:
+            log_warning(f"Embedding: Configuration error - {error_msg}", log_callback)
+        return None
+    except Exception as e:
+        log_warning(f"Embedding: Failed to initialize embedding service - {e}", log_callback)
+        return None
 
 
 def merge_verified_facts(existing_facts: List[Dict], new_facts: List[Dict], doc_name: str) -> List[Dict]:
@@ -463,6 +506,7 @@ def process_chunk(
                     ai_insights=merged_insights,
                     log_callback=log_callback,
                     profile_name=profile_name,
+                    case_id=case_id,
                 )
         else:
             # Create new entity
@@ -538,6 +582,7 @@ def process_chunk(
                 ai_insights=enriched_insights,
                 log_callback=log_callback,
                 profile_name=profile_name,
+                case_id=case_id,
             )
 
         # Link entity to document
@@ -737,41 +782,56 @@ def ingest_document(
         
         log_progress(f"[Step 6] Chunk processing: All chunks processed. Total: {total_entities} entities, {total_relationships} relationships", log_callback)
 
+        # Step 6b: Generate and store chunk-level embeddings
+        chunks_embedded = 0
+        log_progress(f"[Step 6b] Chunk embeddings: Generating embeddings for {total_chunks} chunks", log_callback)
+        if VECTOR_DB_AVAILABLE and EmbeddingService and vector_db_service:
+            try:
+                chunk_embedding_service = _create_embedding_service(
+                    embedding_provider, embedding_model, log_callback
+                )
+                if chunk_embedding_service:
+                    for chunk_info in chunks:
+                        chunk_idx = chunk_info["chunk_index"]
+                        chunk_text = chunk_info["text"]
+                        chunk_id = f"{doc_id}_chunk_{chunk_idx}"
+                        try:
+                            chunk_embedding = chunk_embedding_service.generate_embedding(chunk_text)
+                            vector_db_service.add_chunk(
+                                chunk_id=chunk_id,
+                                text=chunk_text,
+                                embedding=chunk_embedding,
+                                metadata={
+                                    "doc_id": doc_id,
+                                    "doc_name": doc_name,
+                                    "doc_key": doc_key,
+                                    "case_id": case_id,
+                                    "chunk_index": chunk_idx,
+                                    "total_chunks": total_chunks,
+                                    "page_start": chunk_info.get("page_start") if chunk_info.get("page_start") is not None else -1,
+                                    "page_end": chunk_info.get("page_end") if chunk_info.get("page_end") is not None else -1,
+                                }
+                            )
+                            chunks_embedded += 1
+                        except Exception as e:
+                            log_warning(f"[Step 6b] Chunk embedding failed for chunk {chunk_idx}: {e}", log_callback)
+                    log_progress(f"[Step 6b] Chunk embeddings: {chunks_embedded}/{total_chunks} chunks embedded successfully", log_callback)
+                else:
+                    log_progress(f"[Step 6b] Chunk embeddings: Skipped (embedding service not available)", log_callback)
+            except Exception as e:
+                log_warning(f"[Step 6b] Chunk embeddings: FAILED - {e}", log_callback)
+        else:
+            log_progress(f"[Step 6b] Chunk embeddings: Skipped (Vector DB not available)", log_callback)
+
         # Generate and store document embedding (after all chunks processed)
         embedding_stored = False
         log_progress(f"[Step 7] Document embedding: Starting embedding generation", log_callback)
         if VECTOR_DB_AVAILABLE and text and text.strip() and EmbeddingService:
             try:
-                # Create embedding service instance based on profile's LLM config
-                # This ensures embedding provider matches LLM provider
-                if embedding_provider:
-                    try:
-                        profile_embedding_service = EmbeddingService(
-                            provider=embedding_provider,
-                            model=embedding_model
-                        )
-                    except ValueError as e:
-                        # Handle missing API key or configuration errors
-                        error_msg = str(e)
-                        if "OPENAI_API_KEY" in error_msg:
-                            log_warning(
-                                f"[Step 7] Document embedding: Cannot use OpenAI embedding - OPENAI_API_KEY not set in environment variables. "
-                                f"Please set OPENAI_API_KEY in your .env file or switch to Ollama provider in the profile.",
-                                log_callback
-                            )
-                        else:
-                            log_warning(f"[Step 7] Document embedding: Configuration error - {error_msg}", log_callback)
-                        profile_embedding_service = None
-                    except Exception as e:
-                        log_warning(f"[Step 7] Document embedding: Failed to initialize embedding service - {e}", log_callback)
-                        profile_embedding_service = None
-                else:
-                    # Fall back to default embedding service
-                    try:
-                        profile_embedding_service = EmbeddingService()
-                    except Exception as e:
-                        log_warning(f"[Step 7] Document embedding: Failed to initialize default embedding service - {e}", log_callback)
-                        profile_embedding_service = None
+                # Create embedding service instance using shared helper
+                profile_embedding_service = _create_embedding_service(
+                    embedding_provider, embedding_model, log_callback
+                )
                 
                 if not profile_embedding_service:
                     log_progress(f"[Step 7] Document embedding: Skipped (embedding service not available)", log_callback)
@@ -882,12 +942,14 @@ Provide a concise summary that captures the essential information:"""
         log_progress(f"[Final] Summary: Document embedding: Stored successfully", log_callback)
     else:
         log_progress(f"[Final] Summary: Document embedding: Not stored", log_callback)
+    log_progress(f"[Final] Summary: Chunk embeddings: {chunks_embedded}/{len(chunks)} stored", log_callback)
     log_progress(f"{'='*60}", log_callback)
 
     return {
         "status": "complete",
         "document": doc_name,
         "chunks": len(chunks),
+        "chunks_embedded": chunks_embedded,
         "entities_processed": total_entities,
         "relationships_processed": total_relationships,
         "embedding_stored": embedding_stored,

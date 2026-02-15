@@ -14,6 +14,9 @@ import {
   Eye,
   EyeOff,
   Users,
+  BarChart3,
+  Layers,
+  Tag,
 } from 'lucide-react';
 import { databaseAPI, backfillAPI } from '../services/api';
 
@@ -31,6 +34,13 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
   const [selectedDocs, setSelectedDocs] = useState(new Set()); // Selected document IDs for backfill
   const [viewMode, setViewMode] = useState('status'); // 'status' or 'vector' - status shows all docs, vector shows only backfilled
   const [dataType, setDataType] = useState('documents'); // 'documents' or 'entities'
+  const [showGapAnalysis, setShowGapAnalysis] = useState(false);
+  const [gapAnalysis, setGapAnalysis] = useState(null);
+  const [gapLoading, setGapLoading] = useState(false);
+  const [chunkBackfilling, setChunkBackfilling] = useState(false);
+  const [chunkBackfillResult, setChunkBackfillResult] = useState(null);
+  const [entityMetaBackfilling, setEntityMetaBackfilling] = useState(false);
+  const [entityMetaBackfillResult, setEntityMetaBackfillResult] = useState(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -85,6 +95,19 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
     } catch (err) {
       console.error('Failed to load retrieval history:', err);
       setRetrievalHistory(prev => ({ ...prev, [docId]: [] }));
+    }
+  }, []);
+
+  const loadGapAnalysis = useCallback(async () => {
+    setGapLoading(true);
+    try {
+      const result = await backfillAPI.getStatus();
+      setGapAnalysis(result);
+    } catch (err) {
+      console.error('Failed to load gap analysis:', err);
+      setGapAnalysis(null);
+    } finally {
+      setGapLoading(false);
     }
   }, []);
 
@@ -257,12 +280,28 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
             {dataType === 'documents' && (
               <button
                 onClick={() => setShowBackfill(!showBackfill)}
-                className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors flex items-center gap-2"
+                className={`px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
+                  showBackfill ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white hover:bg-blue-600'
+                }`}
               >
                 <Upload className="w-4 h-4" />
-                Backfill Documents
+                Backfill Docs
               </button>
             )}
+            <button
+              onClick={() => {
+                setShowGapAnalysis(!showGapAnalysis);
+                if (!showGapAnalysis && !gapAnalysis) {
+                  loadGapAnalysis();
+                }
+              }}
+              className={`px-3 py-1.5 text-sm rounded transition-colors flex items-center gap-2 ${
+                showGapAnalysis ? 'bg-purple-600 text-white' : 'bg-purple-500 text-white hover:bg-purple-600'
+              }`}
+            >
+              <BarChart3 className="w-4 h-4" />
+              RAG Pipeline
+            </button>
             <button
               onClick={loadData}
               disabled={loading}
@@ -364,6 +403,274 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                   )}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* RAG Pipeline / Gap Analysis Section */}
+        {showGapAnalysis && (
+          <div className="p-4 border-b border-light-200 bg-purple-50">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-purple-600" />
+                  <h3 className="text-sm font-semibold text-purple-900">RAG Pipeline Status</h3>
+                </div>
+                <button
+                  onClick={loadGapAnalysis}
+                  disabled={gapLoading}
+                  className="px-2 py-1 text-xs border border-purple-300 rounded hover:bg-purple-100 transition-colors flex items-center gap-1 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${gapLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+
+              {gapLoading && !gapAnalysis ? (
+                <div className="flex items-center justify-center py-4">
+                  <RefreshCw className="w-5 h-5 animate-spin text-purple-500" />
+                  <span className="ml-2 text-sm text-purple-600">Loading gap analysis...</span>
+                </div>
+              ) : gapAnalysis ? (
+                <>
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {/* Chunk Embeddings Card */}
+                    <div className="bg-white rounded-lg border border-purple-200 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Layers className="w-4 h-4 text-blue-600" />
+                        <span className="text-xs font-semibold text-light-700">Chunk Embeddings</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">Total documents</span>
+                          <span className="font-medium">{gapAnalysis.documents?.total || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-600">With chunks</span>
+                          <span className="font-medium text-green-700">{gapAnalysis.documents?.with_chunks || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-orange-600">Missing chunks</span>
+                          <span className="font-medium text-orange-700">{gapAnalysis.documents?.missing_chunks || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs border-t border-light-200 pt-1 mt-1">
+                          <span className="text-light-600">Total chunks</span>
+                          <span className="font-medium">{gapAnalysis.chunks?.total || 0}</span>
+                        </div>
+                      </div>
+                      {/* Progress bar */}
+                      {gapAnalysis.documents?.total > 0 && (
+                        <div className="mt-2">
+                          <div className="w-full bg-light-200 rounded-full h-1.5">
+                            <div
+                              className="bg-blue-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${Math.round((gapAnalysis.documents.with_chunks / gapAnalysis.documents.total) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-light-500 mt-0.5 text-right">
+                            {Math.round((gapAnalysis.documents.with_chunks / gapAnalysis.documents.total) * 100)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Entity Embeddings Card */}
+                    <div className="bg-white rounded-lg border border-purple-200 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Users className="w-4 h-4 text-purple-600" />
+                        <span className="text-xs font-semibold text-light-700">Entity Embeddings</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">In Neo4j</span>
+                          <span className="font-medium">{gapAnalysis.entities?.total_neo4j || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-600">In ChromaDB</span>
+                          <span className="font-medium text-green-700">{gapAnalysis.entities?.total_chromadb || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-orange-600">Missing embeddings</span>
+                          <span className="font-medium text-orange-700">{gapAnalysis.entities?.missing_embeddings || 0}</span>
+                        </div>
+                      </div>
+                      {gapAnalysis.entities?.total_neo4j > 0 && (
+                        <div className="mt-2">
+                          <div className="w-full bg-light-200 rounded-full h-1.5">
+                            <div
+                              className="bg-purple-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${Math.round((gapAnalysis.entities.total_chromadb / gapAnalysis.entities.total_neo4j) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-light-500 mt-0.5 text-right">
+                            {Math.round((gapAnalysis.entities.total_chromadb / gapAnalysis.entities.total_neo4j) * 100)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Entity Metadata Card */}
+                    <div className="bg-white rounded-lg border border-purple-200 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Tag className="w-4 h-4 text-amber-600" />
+                        <span className="text-xs font-semibold text-light-700">Entity Metadata</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">In ChromaDB</span>
+                          <span className="font-medium">{gapAnalysis.entities?.total_chromadb || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-600">With case_id</span>
+                          <span className="font-medium text-green-700">{gapAnalysis.entities?.with_case_id_metadata || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-orange-600">Missing case_id</span>
+                          <span className="font-medium text-orange-700">{gapAnalysis.entities?.missing_case_id || 0}</span>
+                        </div>
+                      </div>
+                      {gapAnalysis.entities?.total_chromadb > 0 && (
+                        <div className="mt-2">
+                          <div className="w-full bg-light-200 rounded-full h-1.5">
+                            <div
+                              className="bg-amber-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${Math.round((gapAnalysis.entities.with_case_id_metadata / gapAnalysis.entities.total_chromadb) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-light-500 mt-0.5 text-right">
+                            {Math.round((gapAnalysis.entities.with_case_id_metadata / gapAnalysis.entities.total_chromadb) * 100)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-3">
+                    {/* Backfill Chunks Button */}
+                    <div className="flex-1">
+                      <button
+                        onClick={async () => {
+                          setChunkBackfilling(true);
+                          setChunkBackfillResult(null);
+                          try {
+                            const result = await backfillAPI.backfillChunks({
+                              skip_existing: true,
+                              dry_run: false,
+                            });
+                            setChunkBackfillResult({
+                              status: result.status,
+                              message: result.message || 'Chunk backfill completed',
+                            });
+                            await loadGapAnalysis();
+                          } catch (err) {
+                            setChunkBackfillResult({
+                              status: 'error',
+                              message: err.message || 'Chunk backfill failed',
+                            });
+                          } finally {
+                            setChunkBackfilling(false);
+                          }
+                        }}
+                        disabled={chunkBackfilling || entityMetaBackfilling || (gapAnalysis.documents?.missing_chunks === 0)}
+                        className="w-full px-3 py-2 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {chunkBackfilling ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Creating Chunks...
+                          </>
+                        ) : (
+                          <>
+                            <Layers className="w-4 h-4" />
+                            Backfill Chunk Embeddings
+                            {gapAnalysis.documents?.missing_chunks > 0 && (
+                              <span className="bg-blue-400 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                {gapAnalysis.documents.missing_chunks}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                      {chunkBackfillResult && (
+                        <div className={`mt-1 p-2 rounded text-xs ${
+                          chunkBackfillResult.status === 'complete'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          {chunkBackfillResult.message}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Backfill Entity Metadata Button */}
+                    <div className="flex-1">
+                      <button
+                        onClick={async () => {
+                          setEntityMetaBackfilling(true);
+                          setEntityMetaBackfillResult(null);
+                          try {
+                            const result = await backfillAPI.backfillEntityMetadata({
+                              dry_run: false,
+                            });
+                            setEntityMetaBackfillResult({
+                              status: result.status,
+                              message: result.message || 'Entity metadata backfill completed',
+                            });
+                            await loadGapAnalysis();
+                          } catch (err) {
+                            setEntityMetaBackfillResult({
+                              status: 'error',
+                              message: err.message || 'Entity metadata backfill failed',
+                            });
+                          } finally {
+                            setEntityMetaBackfilling(false);
+                          }
+                        }}
+                        disabled={entityMetaBackfilling || chunkBackfilling || (gapAnalysis.entities?.missing_case_id === 0)}
+                        className="w-full px-3 py-2 text-sm bg-amber-500 text-white rounded hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {entityMetaBackfilling ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Updating Metadata...
+                          </>
+                        ) : (
+                          <>
+                            <Tag className="w-4 h-4" />
+                            Backfill Entity Metadata
+                            {gapAnalysis.entities?.missing_case_id > 0 && (
+                              <span className="bg-amber-400 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                {gapAnalysis.entities.missing_case_id}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                      {entityMetaBackfillResult && (
+                        <div className={`mt-1 p-2 rounded text-xs ${
+                          entityMetaBackfillResult.status === 'complete'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          {entityMetaBackfillResult.message}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Info text */}
+                  <p className="text-[11px] text-purple-600 leading-relaxed">
+                    <strong>Chunk embeddings</strong> enable passage-level semantic search (no LLM cost, only embedding cost).
+                    <strong> Entity metadata</strong> adds case_id to existing entity vectors for filtered search (zero cost, metadata-only update).
+                  </p>
+                </>
+              ) : (
+                <div className="text-sm text-purple-600 py-2">
+                  Failed to load gap analysis. Click Refresh to try again.
+                </div>
+              )}
             </div>
           </div>
         )}

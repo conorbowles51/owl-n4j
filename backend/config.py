@@ -63,6 +63,25 @@ VECTOR_SEARCH_TOP_K = int(os.getenv("VECTOR_SEARCH_TOP_K", "10"))  # Number of d
 VECTOR_SEARCH_CONFIDENCE_THRESHOLD = float(os.getenv("VECTOR_SEARCH_CONFIDENCE_THRESHOLD", "2.0"))  # Maximum distance for L2 metric (lower = more strict, typical range 0.0-3.0)
 HYBRID_FILTERING_ENABLED = os.getenv("HYBRID_FILTERING_ENABLED", "true").lower() == "true"
 
+# Chunk-level search configuration
+CHUNK_SEARCH_ENABLED = os.getenv("CHUNK_SEARCH_ENABLED", "true").lower() == "true"
+CHUNK_SEARCH_TOP_K = int(os.getenv("CHUNK_SEARCH_TOP_K", "15"))
+
+# Hybrid retrieval configuration
+ENTITY_SEARCH_ENABLED = os.getenv("ENTITY_SEARCH_ENABLED", "true").lower() == "true"
+ENTITY_SEARCH_TOP_K = int(os.getenv("ENTITY_SEARCH_TOP_K", "10"))
+GRAPH_TRAVERSAL_DEPTH = int(os.getenv("GRAPH_TRAVERSAL_DEPTH", "1"))
+
+# Question classification
+QUESTION_CLASSIFICATION_ENABLED = os.getenv("QUESTION_CLASSIFICATION_ENABLED", "true").lower() == "true"
+
+# Re-ranking configuration
+RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
+RERANK_METHOD = os.getenv("RERANK_METHOD", "score")  # "score" (fast) or "llm" (accurate)
+RERANK_TOP_CHUNKS = int(os.getenv("RERANK_TOP_CHUNKS", "8"))
+RERANK_TOP_ENTITIES = int(os.getenv("RERANK_TOP_ENTITIES", "6"))
+CONTEXT_TOKEN_BUDGET = int(os.getenv("CONTEXT_TOKEN_BUDGET", "12000"))  # Approximate char budget
+
 # Ingestion chunking configuration
 # Keep these in sync with ingestion/scripts/config.py so the ingestion
 # pipeline can safely import them from the shared `config` module.

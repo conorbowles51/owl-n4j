@@ -57,11 +57,30 @@ class BackfillRequest(BaseModel):
     dry_run: bool = False
 
 
+class ChunkBackfillRequest(BaseModel):
+    """Request model for chunk backfill endpoint."""
+    case_id: Optional[str] = None
+    skip_existing: bool = True
+    dry_run: bool = False
+
+
+class EntityMetadataBackfillRequest(BaseModel):
+    """Request model for entity metadata backfill endpoint."""
+    dry_run: bool = False
+
+
 class BackfillResponse(BaseModel):
     """Response model for backfill endpoint."""
     status: str
     message: str
     task_id: Optional[str] = None
+
+
+class BackfillStatusResponse(BaseModel):
+    """Response model for gap analysis / status endpoint."""
+    documents: dict
+    entities: dict
+    chunks: dict
 
 
 def extract_text_from_file(file_path: Path) -> Optional[str]:
@@ -482,5 +501,238 @@ async def backfill_embeddings(
             success=False,
             error=str(e),
         )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chunks", response_model=BackfillResponse)
+async def backfill_chunks(
+    request: ChunkBackfillRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Backfill chunk-level embeddings for existing documents.
+
+    Reads original files from disk, re-chunks them (pure text splitting, no LLM cost),
+    and embeds each chunk into the ChromaDB chunks collection.
+
+    This is much cheaper than re-ingestion since no entity extraction is needed.
+    """
+    current_username = user.get("username", "unknown")
+
+    system_log_service.log(
+        log_type=LogType.DOCUMENT_INGESTION,
+        origin=LogOrigin.FRONTEND,
+        action=f"Chunk Backfill Request: case_id={request.case_id or 'all'}",
+        details={
+            "case_id": request.case_id,
+            "skip_existing": request.skip_existing,
+            "dry_run": request.dry_run,
+            "requested_by": current_username,
+        },
+        user=current_username,
+        success=True,
+    )
+
+    try:
+        # Import the backfill function
+        from scripts.backfill_chunk_embeddings import backfill_chunk_embeddings
+
+        def log_callback(level, message):
+            system_log_service.log(
+                log_type=LogType.DOCUMENT_INGESTION,
+                origin=LogOrigin.BACKEND,
+                action=f"Chunk Backfill Progress: {message}",
+                details={
+                    "case_id": request.case_id,
+                    "level": level,
+                },
+                user=current_username,
+                success=level != "error",
+            )
+
+        result = backfill_chunk_embeddings(
+            dry_run=request.dry_run,
+            skip_existing=request.skip_existing,
+            case_id=request.case_id,
+            log_callback=log_callback,
+        )
+
+        stats = result.get("stats", {})
+        message = (
+            f"Chunk backfill {'(dry run) ' if request.dry_run else ''}"
+            f"complete: {stats.get('processed', 0)} documents processed, "
+            f"{stats.get('total_chunks_created', 0)} chunks created, "
+            f"{stats.get('already_has_chunks', 0)} already had chunks, "
+            f"{stats.get('file_not_found', 0)} files not found"
+        )
+
+        return BackfillResponse(
+            status=result.get("status", "complete"),
+            message=message,
+        )
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.DOCUMENT_INGESTION,
+            origin=LogOrigin.BACKEND,
+            action="Chunk Backfill Failed",
+            details={"error": str(e)},
+            user=current_username,
+            success=False,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/entity-metadata", response_model=BackfillResponse)
+async def backfill_entity_metadata(
+    request: EntityMetadataBackfillRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Backfill entity metadata (case_id) in ChromaDB.
+
+    Updates entity embeddings in ChromaDB to include case_id metadata from Neo4j.
+    No re-embedding needed — purely a metadata update.
+    """
+    current_username = user.get("username", "unknown")
+
+    system_log_service.log(
+        log_type=LogType.DOCUMENT_INGESTION,
+        origin=LogOrigin.FRONTEND,
+        action="Entity Metadata Backfill Request",
+        details={
+            "dry_run": request.dry_run,
+            "requested_by": current_username,
+        },
+        user=current_username,
+        success=True,
+    )
+
+    try:
+        from scripts.backfill_entity_metadata import backfill_entity_metadata as run_backfill
+
+        def log_callback(level, message):
+            system_log_service.log(
+                log_type=LogType.DOCUMENT_INGESTION,
+                origin=LogOrigin.BACKEND,
+                action=f"Entity Metadata Backfill Progress: {message}",
+                details={"level": level},
+                user=current_username,
+                success=level != "error",
+            )
+
+        result = run_backfill(
+            dry_run=request.dry_run,
+            log_callback=log_callback,
+        )
+
+        stats = result.get("stats", {})
+        message = (
+            f"Entity metadata backfill {'(dry run) ' if request.dry_run else ''}"
+            f"complete: {stats.get('updated', 0)} updated, "
+            f"{stats.get('already_has_case_id', 0)} already had case_id, "
+            f"{stats.get('no_case_id_in_neo4j', 0)} missing in Neo4j"
+        )
+
+        return BackfillResponse(
+            status=result.get("status", "complete"),
+            message=message,
+        )
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.DOCUMENT_INGESTION,
+            origin=LogOrigin.BACKEND,
+            action="Entity Metadata Backfill Failed",
+            details={"error": str(e)},
+            user=current_username,
+            success=False,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/status", response_model=BackfillStatusResponse)
+async def get_backfill_status(
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get gap analysis showing what data needs backfilling.
+
+    Returns counts of:
+    - Documents with/without chunk embeddings
+    - Entities with/without case_id metadata in ChromaDB
+    - Total chunks in the chunks collection
+    """
+    try:
+        # Document stats
+        doc_cypher = """
+        MATCH (d:Document)
+        RETURN count(d) AS total
+        """
+        doc_result = neo4j_service.run_cypher(doc_cypher)
+        total_docs = doc_result[0]["total"] if doc_result else 0
+
+        # Count documents that have chunks
+        try:
+            chunk_collection = vector_db_service.chunk_collection
+            all_chunks = chunk_collection.get(include=["metadatas"])
+            chunk_ids = all_chunks.get("ids", [])
+            chunk_metadatas = all_chunks.get("metadatas", [])
+
+            # Count unique doc_ids that have chunks
+            docs_with_chunks = set()
+            for metadata in chunk_metadatas:
+                if metadata and metadata.get("doc_id"):
+                    docs_with_chunks.add(metadata["doc_id"])
+
+            total_chunks = len(chunk_ids)
+            docs_with_chunk_count = len(docs_with_chunks)
+        except Exception:
+            total_chunks = 0
+            docs_with_chunk_count = 0
+
+        # Entity stats
+        entity_cypher = """
+        MATCH (e)
+        WHERE NOT e:Document
+        RETURN count(e) AS total
+        """
+        entity_result = neo4j_service.run_cypher(entity_cypher)
+        total_entities_neo4j = entity_result[0]["total"] if entity_result else 0
+
+        # Check ChromaDB entity metadata for case_id
+        try:
+            entity_collection = vector_db_service.entity_collection
+            all_entities = entity_collection.get(include=["metadatas"])
+            entity_ids = all_entities.get("ids", [])
+            entity_metadatas = all_entities.get("metadatas", [])
+
+            total_entities_chromadb = len(entity_ids)
+            entities_with_case_id = sum(
+                1 for m in entity_metadatas if m and m.get("case_id")
+            )
+        except Exception:
+            total_entities_chromadb = 0
+            entities_with_case_id = 0
+
+        return BackfillStatusResponse(
+            documents={
+                "total": total_docs,
+                "with_chunks": docs_with_chunk_count,
+                "missing_chunks": total_docs - docs_with_chunk_count,
+            },
+            entities={
+                "total_neo4j": total_entities_neo4j,
+                "total_chromadb": total_entities_chromadb,
+                "with_case_id_metadata": entities_with_case_id,
+                "missing_case_id": total_entities_chromadb - entities_with_case_id,
+                "missing_embeddings": total_entities_neo4j - total_entities_chromadb,
+            },
+            chunks={
+                "total": total_chunks,
+            },
+        )
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

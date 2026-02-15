@@ -151,6 +151,7 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             question=question,
             selected_keys=request.selected_keys,
             confidence_threshold=request.confidence_threshold,
+            case_id=request.case_id,
         )
         
         # Clear cost tracking context after use

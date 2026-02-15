@@ -1696,6 +1696,50 @@ export const backfillAPI = {
       }),
       timeout: 600000, // 10 minutes for backfill operations (can process many documents)
     }),
+
+  /**
+   * Backfill chunk-level embeddings for existing documents
+   * @param {Object} options - Chunk backfill options
+   * @param {string} [options.case_id] - Optional case_id to filter documents
+   * @param {boolean} [options.skip_existing=true] - Skip documents that already have chunk embeddings
+   * @param {boolean} [options.dry_run=false] - If true, only report what would be done
+   */
+  backfillChunks: (options = {}) =>
+    fetchAPI('/backfill/chunks', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        case_id: options.case_id || null,
+        skip_existing: options.skip_existing !== false,
+        dry_run: options.dry_run || false,
+      }),
+      timeout: 600000, // 10 minutes for chunk backfill
+    }),
+
+  /**
+   * Backfill entity metadata (case_id) in ChromaDB
+   * @param {Object} options - Entity metadata backfill options
+   * @param {boolean} [options.dry_run=false] - If true, only report what would be done
+   */
+  backfillEntityMetadata: (options = {}) =>
+    fetchAPI('/backfill/entity-metadata', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        dry_run: options.dry_run || false,
+      }),
+      timeout: 600000, // 10 minutes for entity metadata backfill
+    }),
+
+  /**
+   * Get gap analysis / backfill status
+   * Returns counts of what needs backfilling
+   */
+  getStatus: () => fetchAPI('/backfill/status'),
 };
 
 /**

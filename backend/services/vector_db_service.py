@@ -58,6 +58,12 @@ class VectorDBService:
             name="entities",
             metadata={"description": "Entity embeddings for semantic search"}
         )
+
+        # Get or create collection for chunks (passage-level embeddings)
+        self.chunk_collection = self.client.get_or_create_collection(
+            name="chunks",
+            metadata={"description": "Chunk embeddings for passage-level semantic search"}
+        )
     
     def add_document(
         self,
@@ -313,6 +319,124 @@ class VectorDBService:
         except Exception as e:
             print(f"[VectorDB] Entity count error: {e}")
             return 0
+
+    # =====================
+    # Chunk Methods
+    # =====================
+
+    def add_chunk(
+        self,
+        chunk_id: str,
+        text: str,
+        embedding: List[float],
+        metadata: Optional[Dict] = None
+    ) -> None:
+        """
+        Add or update a chunk embedding.
+
+        Args:
+            chunk_id: Unique chunk identifier (format: "{doc_id}_chunk_{index}")
+            text: Chunk text content
+            embedding: Vector embedding (list of floats)
+            metadata: Metadata including doc_id, doc_name, case_id, chunk_index, etc.
+        """
+        # Check dimension consistency with existing embeddings
+        if self.chunk_collection.count() > 0:
+            sample = self.chunk_collection.peek(1)
+            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+                expected = len(sample["embeddings"][0])
+                actual = len(embedding)
+                if expected != actual:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: chunk collection has {expected} dims, "
+                        f"new embedding has {actual} dims. "
+                        f"Delete data/chromadb/ and re-ingest with consistent embedding model."
+                    )
+
+        metadata = metadata or {}
+        metadata["chunk_id"] = chunk_id
+
+        # Filter out None values - ChromaDB only accepts str, int, float, bool
+        cleaned_metadata = {}
+        for k, v in metadata.items():
+            if v is None:
+                cleaned_metadata[k] = ""
+            elif isinstance(v, (str, int, float, bool)):
+                cleaned_metadata[k] = v
+            else:
+                cleaned_metadata[k] = str(v)
+
+        self.chunk_collection.upsert(
+            ids=[chunk_id],
+            embeddings=[embedding],
+            documents=[text],
+            metadatas=[cleaned_metadata]
+        )
+
+    def search_chunks(
+        self,
+        query_embedding: List[float],
+        top_k: int = 15,
+        filter_metadata: Optional[Dict] = None
+    ) -> List[Dict]:
+        """
+        Search for similar chunks.
+
+        Args:
+            query_embedding: Query vector embedding
+            top_k: Number of results to return
+            filter_metadata: Optional metadata filters (e.g., {"case_id": "case_123"})
+
+        Returns:
+            List of dicts with: id (chunk_id), text, metadata, distance
+        """
+        where = filter_metadata if filter_metadata else None
+
+        try:
+            results = self.chunk_collection.query(
+                query_embeddings=[query_embedding],
+                n_results=top_k,
+                where=where
+            )
+
+            formatted = []
+            if results["ids"] and len(results["ids"][0]) > 0:
+                for i in range(len(results["ids"][0])):
+                    formatted.append({
+                        "id": results["ids"][0][i],
+                        "text": results["documents"][0][i],
+                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                        "distance": results["distances"][0][i] if "distances" in results and results["distances"] else None
+                    })
+
+            return formatted
+        except Exception as e:
+            print(f"[VectorDB] Chunk search error: {e}")
+            return []
+
+    def count_chunks(self) -> int:
+        """Get the total number of chunks in the collection."""
+        try:
+            return self.chunk_collection.count()
+        except Exception as e:
+            print(f"[VectorDB] Chunk count error: {e}")
+            return 0
+
+    def delete_chunks_by_doc(self, doc_id: str) -> None:
+        """Delete all chunks belonging to a document."""
+        try:
+            results = self.chunk_collection.get(where={"doc_id": doc_id})
+            if results and results["ids"]:
+                self.chunk_collection.delete(ids=results["ids"])
+        except Exception as e:
+            print(f"[VectorDB] Delete chunks error: {e}")
+
+    def delete_chunk(self, chunk_id: str) -> None:
+        """Delete a single chunk embedding."""
+        try:
+            self.chunk_collection.delete(ids=[chunk_id])
+        except Exception as e:
+            print(f"[VectorDB] Chunk delete error: {e}")
 
 
 # Lazy singleton instance - only create when accessed

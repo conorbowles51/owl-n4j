@@ -2,18 +2,26 @@
 RAG Service - orchestrates context retrieval and AI question answering.
 
 Handles:
-- Context-aware responses (full graph vs. selected nodes)
-- Cypher query generation and execution
-- Vector-based semantic document search
-- Hybrid filtering (vector search + Cypher filtering)
-- Answer synthesis
+- Hybrid retrieval: chunk search + entity search + graph traversal
+- Cypher query generation and execution for structural questions
+- Question classification (semantic vs structural vs hybrid)
+- Re-ranking of retrieved results
+- Answer synthesis with citation support
 """
 
+import json
 from typing import Dict, List, Optional, Any
 
 from services.neo4j_service import neo4j_service
 from services.llm_service import llm_service
-from config import VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K, VECTOR_SEARCH_CONFIDENCE_THRESHOLD, HYBRID_FILTERING_ENABLED
+from config import (
+    VECTOR_SEARCH_ENABLED, VECTOR_SEARCH_TOP_K, VECTOR_SEARCH_CONFIDENCE_THRESHOLD,
+    HYBRID_FILTERING_ENABLED,
+    CHUNK_SEARCH_ENABLED, CHUNK_SEARCH_TOP_K,
+    ENTITY_SEARCH_ENABLED, ENTITY_SEARCH_TOP_K, GRAPH_TRAVERSAL_DEPTH,
+    QUESTION_CLASSIFICATION_ENABLED,
+    RERANK_ENABLED, RERANK_METHOD, RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, CONTEXT_TOKEN_BUDGET,
+)
 from utils.prompt_trace import log_section
 
 # Try to import vector DB services (optional)
@@ -33,6 +41,10 @@ class RAGService:
     def __init__(self):
         self.neo4j = neo4j_service
         self.llm = llm_service
+
+    # =====================
+    # Schema & Context Builders (preserved from original)
+    # =====================
 
     def _build_schema_info(self, graph_summary: Dict) -> str:
         """Build schema description for Cypher generation."""
@@ -88,13 +100,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 """
 
     def _build_full_context(self, graph_summary: Dict, max_entities: int = 200) -> str:
-        """
-        Build context string from full graph summary.
-        
-        Args:
-            graph_summary: Graph summary dictionary
-            max_entities: Maximum number of entities to include (to prevent context bloat)
-        """
+        """Build context string from full graph summary."""
         lines = [
             "=== INVESTIGATION GRAPH OVERVIEW ===",
             f"Total Entities: {graph_summary.get('total_nodes', 0)}",
@@ -116,46 +122,36 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
         entities = graph_summary.get("entities", [])
         total_entities = len(entities)
-        
-        # Limit entities to prevent context bloat
+
         if total_entities > max_entities:
             lines.append(f"Showing {max_entities} of {total_entities} entities (most relevant):")
-            # Prioritize entities with summaries and notes
             entities_with_content = [e for e in entities if e.get("summary") or e.get("notes")]
             entities_without_content = [e for e in entities if not (e.get("summary") or e.get("notes"))]
-            
-            # Prioritize entities with more detailed information (longer summaries/notes)
             entities_with_content.sort(key=lambda e: len(e.get("summary", "") + e.get("notes", "")), reverse=True)
-            
-            # Take entities with content first, then fill remaining slots
             entities_to_show = entities_with_content[:max_entities]
             if len(entities_to_show) < max_entities:
                 remaining = max_entities - len(entities_to_show)
                 entities_to_show.extend(entities_without_content[:remaining])
-            
             entities = entities_to_show
         else:
-            # Even if under limit, prioritize entities with more content
             entities.sort(key=lambda e: len(e.get("summary", "") + e.get("notes", "")), reverse=True)
             entities = entities[:max_entities]
 
         for entity in entities:
             lines.append(f"\n[{entity['type']}] {entity['name']} (key: {entity['key']})")
             if entity.get("summary"):
-                # Include full summary, but truncate if extremely long
                 summary = entity["summary"]
                 if len(summary) > 1000:
                     summary = summary[:1000] + "..."
                 lines.append(f"  Summary: {summary}")
             if entity.get("notes"):
-                # Include more notes content for better context
                 notes = entity["notes"]
                 if len(notes) > 800:
                     notes = notes[:800] + "..."
                 lines.append(f"  Notes: {notes}")
 
         if total_entities > max_entities:
-            lines.append(f"\n... and {total_entities - max_entities} more entities (use specific questions or select nodes for focused context)")
+            lines.append(f"\n... and {total_entities - max_entities} more entities")
 
         return "\n".join(lines)
 
@@ -172,7 +168,6 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 lines.append(f"  Summary: {entity['summary']}")
 
             if entity.get("notes"):
-                # Truncate notes if too long
                 notes = entity["notes"]
                 if len(notes) > 500:
                     notes = notes[:500] + "..."
@@ -181,7 +176,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             if entity.get("connections"):
                 lines.append("  Connections:")
                 for conn in entity["connections"]:
-                    direction = "→" if conn["direction"] == "outgoing" else "←"
+                    direction = "\u2192" if conn["direction"] == "outgoing" else "\u2190"
                     lines.append(
                         f"    {direction} [{conn['relationship']}] {conn['name']} ({conn['type']})"
                     )
@@ -189,173 +184,49 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                         lines.append(f"       Summary: {conn['summary'][:200]}")
 
         return "\n".join(lines)
-    
-    def _build_document_context(self, doc_results: List[Dict]) -> str:
-        """
-        Build context string from document search results.
-        
-        Args:
-            doc_results: List of document results from vector search
-                Each result has: id, text, metadata, distance
-        
-        Returns:
-            Formatted context string with full document texts
-        """
-        if not doc_results:
-            return "No relevant documents found."
-        
-        lines = [
-            "=== RELEVANT DOCUMENTS ===",
-            f"Found {len(doc_results)} relevant document(s) via vector search:",
-            ""
-        ]
-        
-        for i, doc in enumerate(doc_results, 1):
-            doc_id = doc.get("id", "Unknown")
-            metadata = doc.get("metadata", {})
-            filename = metadata.get("filename", doc_id)
-            distance = doc.get("distance")
-            text = doc.get("text", "")
-            
-            lines.append(f"--- Document {i}: {filename} ---")
-            if distance is not None:
-                lines.append(f"Relevance Score: {1 - distance:.4f} (distance: {distance:.4f})")
-            lines.append(f"Document ID: {doc_id}")
-            lines.append("")
-            lines.append("Full Text:")
-            lines.append(text)
-            lines.append("")
-        
-        return "\n".join(lines)
-    
+
     def _format_document_summary(self, doc_results: List[Dict]) -> str:
-        """
-        Format a summary of document search results for display in the answer.
-        
-        Args:
-            doc_results: List of document results from vector search
-        
-        Returns:
-            Formatted summary string
-        """
+        """Format a summary of document search results for display in the answer."""
         if not doc_results:
             return ""
-        
+
         lines = [
-            "**📄 Relevant Documents Found:**",
+            "**\U0001f4c4 Relevant Documents Found:**",
             ""
         ]
-        
+
         for i, doc in enumerate(doc_results, 1):
             metadata = doc.get("metadata", {})
-            filename = metadata.get("filename", doc.get("id", "Unknown"))
+            filename = metadata.get("filename", metadata.get("doc_name", doc.get("id", "Unknown")))
             distance = doc.get("distance")
-            
+
             relevance_score = (1 - distance) * 100 if distance is not None else None
-            
+
             line = f"{i}. **{filename}**"
             if relevance_score is not None:
                 line += f" (Relevance: {relevance_score:.1f}%)"
             lines.append(line)
-        
+
         lines.append("")
-        lines.append("These documents were found via vector search and their full text has been analyzed to answer your question.")
+        lines.append("These sources were analyzed to answer your question.")
         lines.append("")
-        
+
         return "\n".join(lines)
-    
-    def _build_result_graph(
-        self,
-        doc_results: List[Dict],
-        answer_text: str,
-        top_k_entities: int = 50,
-        top_k_documents: int = 50,
-    ) -> Dict[str, List]:
-        """
-        Build a result graph containing only semantically relevant entities (not documents).
-        Searches the answer text against entities, gets all results, and includes relevance scores.
-        Documents are used for context in the prompt but not added to the graph to reduce noise.
-        
-        Args:
-            doc_results: List of document results from original query search (for backward compatibility, not used in graph)
-                Each result has: id (vector_db_id), metadata, distance
-            answer_text: The AI assistant's answer text (used for semantic search)
-            top_k_entities: Number of entities to retrieve via vector search (no threshold filtering)
-            top_k_documents: Number of documents to retrieve via vector search (not used in graph, kept for compatibility)
-            
-        Returns:
-            Dict with 'nodes' and 'links' arrays for graph visualization
-            Nodes include 'confidence' property (relevance score: 1 - distance)
-            Only entities are included, not documents
-        """
-        nodes = []
-        node_keys = set()
-        links = []
-        
-        if not VECTOR_DB_AVAILABLE:
-            return {"nodes": nodes, "links": links}
-        
-        try:
-            if not answer_text or not answer_text.strip():
-                return {"nodes": nodes, "links": links}
-            
-            # Generate embedding for answer text
-            answer_embedding = embedding_service.generate_embedding(answer_text)
-            print(f"[RAG] Building result graph from answer text ({len(answer_text)} chars) - entities only (no documents)")
-            
-            # Search entities using answer text (no threshold filtering - get all results)
-            all_entity_results = []
-            try:
-                all_entity_results = vector_db_service.search_entities(
-                    query_embedding=answer_embedding,
-                    top_k=top_k_entities
-                )
-                print(f"[RAG] Found {len(all_entity_results)} entities via answer text search")
-            except Exception as e:
-                print(f"[RAG] Error searching entities: {e}")
-            
-            # Create a mapping of entity keys to distances
-            entity_distance_map = {r["id"]: r.get("distance", 1.0) for r in all_entity_results if r.get("id")}
-            
-            # Get entity nodes from Neo4j and add confidence scores
-            entity_keys = list(entity_distance_map.keys())
-            if entity_keys:
-                entity_nodes = self._get_entity_nodes_from_neo4j(entity_keys)
-                for node in entity_nodes:
-                    if node["key"] and node["key"] not in node_keys:
-                        node_keys.add(node["key"])
-                        # Add confidence score (relevance: 1 - distance, higher is better)
-                        distance = entity_distance_map.get(node.get("key"), 1.0)
-                        confidence = 1.0 - distance if distance is not None else 0.0
-                        node["confidence"] = max(0.0, min(1.0, confidence))  # Clamp to 0-1
-                        node["distance"] = distance
-                        nodes.append(node)
-            
-            # Get relationships between entities
-            if len(node_keys) > 1:
-                all_keys = list(node_keys)
-                entity_links = self._get_relationships_between_nodes(all_keys)
-                links.extend(entity_links)
-            
-            print(f"[RAG] Result graph built: {len(nodes)} entities (with confidence scores), {len(links)} links (documents excluded to reduce noise)")
-            
-        except Exception as e:
-            print(f"[RAG] Error building result graph: {e}")
-            import traceback
-            traceback.print_exc()
-        
-        return {"nodes": nodes, "links": links}
-    
+
+    # =====================
+    # Neo4j Helpers (preserved from original)
+    # =====================
+
     def _get_document_nodes_from_neo4j(self, doc_ids: List[str]) -> List[Dict]:
         """Get Document nodes from Neo4j by vector_db_id."""
         if not doc_ids:
             return []
-        
+
         try:
             cypher = """
             MATCH (d:Document)
             WHERE d.vector_db_id IN $doc_ids
-            RETURN 
+            RETURN
                 id(d) AS neo4j_id,
                 d.id AS id,
                 d.key AS key,
@@ -366,7 +237,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 properties(d) AS properties
             """
             results = self.neo4j.run_cypher(cypher, params={"doc_ids": doc_ids})
-            
+
             nodes = []
             for record in results:
                 props = record.get("properties") or {}
@@ -381,24 +252,23 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     "properties": props,
                 }
                 nodes.append(node)
-            
+
             return nodes
         except Exception as e:
             print(f"[RAG] Error getting document nodes: {e}")
             return []
-    
+
     def _get_entity_nodes_from_neo4j(self, entity_keys: List[str]) -> List[Dict]:
         """Get entity nodes from Neo4j by keys."""
         if not entity_keys:
             return []
-        
+
         try:
-            # Use the existing get_subgraph method pattern
             with self.neo4j._driver.session() as session:
                 query = """
                 MATCH (n)
                 WHERE n.key IN $keys AND NOT n:Document
-                RETURN 
+                RETURN
                     id(n) AS neo4j_id,
                     n.id AS id,
                     n.key AS key,
@@ -409,9 +279,8 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     properties(n) AS properties
                 """
                 results = session.run(query, keys=entity_keys)
-                
+
                 nodes = []
-                # Import parse_json_field from neo4j_service
                 from services.neo4j_service import parse_json_field
                 for record in results:
                     props = record.get("properties") or {}
@@ -428,30 +297,30 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                         "properties": props,
                     }
                     nodes.append(node)
-                
+
                 return nodes
         except Exception as e:
             print(f"[RAG] Error getting entity nodes: {e}")
             return []
-    
+
     def _get_relationships_between_nodes(self, node_keys: List[str]) -> List[Dict]:
         """Get relationships between given nodes."""
         if not node_keys or len(node_keys) < 2:
             return []
-        
+
         try:
             with self.neo4j._driver.session() as session:
                 query = """
                 MATCH (a)-[r]->(b)
                 WHERE a.key IN $keys AND b.key IN $keys
-                RETURN 
+                RETURN
                     a.key AS source,
                     b.key AS target,
                     type(r) AS type,
                     properties(r) AS properties
                 """
                 results = session.run(query, keys=node_keys)
-                
+
                 links = []
                 for record in results:
                     link = {
@@ -461,11 +330,15 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                         "properties": record.get("properties") or {},
                     }
                     links.append(link)
-                
+
                 return links
         except Exception as e:
             print(f"[RAG] Error getting relationships: {e}")
             return []
+
+    # =====================
+    # Cypher Query (preserved from original)
+    # =====================
 
     def _try_cypher_query(
         self,
@@ -475,21 +348,15 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
     ) -> Optional[str]:
         """
         Try to generate and execute a Cypher query for specific questions.
-
         Returns query results as formatted string, or None if not applicable.
         """
-        # Build schema info
         schema_info = self._build_schema_info(graph_summary)
-
-        # Try to generate Cypher
         cypher = self.llm.generate_cypher(question, schema_info)
         print("Cypher: ", cypher)
         if not cypher:
             return None
 
-        # Validate and execute
         try:
-            # Basic safety check
             cypher_upper = cypher.upper()
             if any(
                 dangerous in cypher_upper
@@ -510,18 +377,17 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     debug_log["cypher_answer_query"]["results"] = "No results"
                 return None
 
-            # Format results
             lines = [f"Query executed: {cypher}", "", "Results:"]
-            for i, row in enumerate(results[:20]):  # Limit to 20 rows
+            for i, row in enumerate(results[:20]):
                 lines.append(f"  {i + 1}. {row}")
 
             if len(results) > 20:
                 lines.append(f"  ... and {len(results) - 20} more results")
-            
+
             if debug_log is not None:
                 debug_log["cypher_answer_query"]["results"] = {
                     "rows_returned": len(results),
-                    "sample_results": results[:10],  # First 10 for debug log
+                    "sample_results": results[:10],
                 }
 
             return "\n".join(lines)
@@ -530,690 +396,725 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"Cypher execution error: {e}")
             return None
 
-    def _find_relevant_documents(
+    # =====================
+    # NEW: Hybrid Retrieval Helpers
+    # =====================
+
+    def _retrieve_chunks(
         self,
         question: str,
-        top_k: Optional[int] = None,
+        case_id: Optional[str] = None,
+        confidence_threshold: Optional[float] = None,
         debug_log: Optional[Dict] = None,
-    ) -> List[str]:
+    ) -> List[Dict]:
         """
-        Use vector search to find documents relevant to the question.
-        
-        Args:
-            question: User's question
-            top_k: Number of documents to retrieve (defaults to config value)
-            debug_log: Optional dict to store debug information
-            
+        Retrieve relevant text chunks via vector search.
+        Falls back to document-level search if chunks collection is empty.
+
         Returns:
-            List of document IDs (Neo4j Document.id values)
+            List of result dicts with: id, text, metadata, distance
         """
         if not VECTOR_DB_AVAILABLE:
             if debug_log is not None:
-                debug_log["vector_search"] = {
-                    "enabled": False,
-                    "reason": "Vector DB not available"
-                }
-            return []
-        
-        if top_k is None:
-            top_k = VECTOR_SEARCH_TOP_K
-        
-        try:
-            # Generate embedding for question
-            query_embedding = embedding_service.generate_embedding(question)
-            
-            if debug_log is not None:
-                debug_log["vector_search"] = {
-                    "enabled": True,
-                    "question": question,
-                    "embedding_dimensions": len(query_embedding),
-                    "top_k": top_k,
-                }
-            
-            # Search for similar documents
-            results = vector_db_service.search(
-                query_embedding=query_embedding,
-                top_k=top_k
-            )
-            
-            # Extract document IDs
-            doc_ids = [r["id"] for r in results]
-            
-            if debug_log is not None:
-                debug_log["vector_search"]["results"] = [
-                    {
-                        "document_id": r["id"],
-                        "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                        "distance": r.get("distance"),
-                        "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
-                    }
-                    for r in results
-                ]
-                debug_log["vector_search"]["documents_found"] = len(doc_ids)
-            
-            return doc_ids
-        
-        except Exception as e:
-            print(f"[RAG] Vector search error: {e}")
-            if debug_log is not None:
-                debug_log["vector_search"] = {
-                    "enabled": True,
-                    "error": str(e),
-                }
-            return []
-    
-    def _get_nodes_from_documents(
-        self,
-        doc_ids: List[str],
-        debug_log: Optional[Dict] = None,
-    ) -> List[str]:
-        """
-        Query Neo4j to find nodes cited by the given documents.
-        
-        Args:
-            doc_ids: List of document IDs from vector search
-            debug_log: Optional dict to store debug information
-            
-        Returns:
-            List of node keys
-        """
-        if not doc_ids:
-            return []
-        
-        try:
-            # Query Neo4j for nodes related to these documents
-            # Documents can be linked via MENTIONED_IN or CITED_IN relationships
-            # Also check vector_db_id field for compatibility
-            cypher = """
-            MATCH (n)-[:MENTIONED_IN|CITED_IN]->(d:Document)
-            WHERE d.id IN $doc_ids OR d.vector_db_id IN $doc_ids
-            RETURN DISTINCT n.key AS key, n.name AS name, labels(n)[0] AS type
-            """
-            
-            if debug_log is not None:
-                debug_log["neo4j_document_query"] = {
-                    "cypher": cypher,
-                    "parameters": {"doc_ids": doc_ids},
-                }
-            
-            results = self.neo4j.run_cypher(cypher, params={"doc_ids": doc_ids})
-            node_keys = []
-            nodes_info = []
-            for row in results:
-                if isinstance(row, dict):
-                    key = row.get('key')
-                    name = row.get('name', 'Unknown')
-                    node_type = row.get('type', 'Unknown')
-                else:
-                    key = row[0] if len(row) > 0 else None
-                    name = row[1] if len(row) > 1 else 'Unknown'
-                    node_type = row[2] if len(row) > 2 else 'Unknown'
-                if key:
-                    node_keys.append(key)
-                    nodes_info.append({
-                        "key": key,
-                        "name": name,
-                        "type": node_type,
-                    })
-            
-            if debug_log is not None:
-                debug_log["neo4j_document_query"]["results"] = {
-                    "nodes_found": len(node_keys),
-                    "nodes": nodes_info,
-                }
-            
-            return node_keys
-        except Exception as e:
-            print(f"[RAG] Error querying nodes from documents: {e}")
-            if debug_log is not None:
-                debug_log["neo4j_document_query"] = {
-                    "error": str(e),
-                }
+                debug_log["chunk_search"] = {"enabled": False, "reason": "Vector DB not available"}
             return []
 
-    def _generate_relevance_filter_query(
+        try:
+            query_embedding = embedding_service.generate_embedding(question)
+            vector_filter = {"case_id": case_id} if case_id else None
+            threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
+
+            # Try chunk-level search first
+            chunk_count = vector_db_service.count_chunks()
+            if CHUNK_SEARCH_ENABLED and chunk_count > 0:
+                all_results = vector_db_service.search_chunks(
+                    query_embedding=query_embedding,
+                    top_k=CHUNK_SEARCH_TOP_K,
+                    filter_metadata=vector_filter,
+                )
+                # Fallback: if case_id filter yielded nothing but chunks exist, retry without filter
+                if not all_results and case_id and chunk_count > 0:
+                    all_results = vector_db_service.search_chunks(
+                        query_embedding=query_embedding,
+                        top_k=CHUNK_SEARCH_TOP_K,
+                    )
+                source = "chunks"
+            else:
+                # Fallback to document-level search
+                all_results = vector_db_service.search(
+                    query_embedding=query_embedding,
+                    top_k=VECTOR_SEARCH_TOP_K,
+                    filter_metadata=vector_filter,
+                )
+                # Fallback without filter
+                if not all_results and case_id:
+                    all_results = vector_db_service.search(
+                        query_embedding=query_embedding,
+                        top_k=VECTOR_SEARCH_TOP_K,
+                    )
+                source = "documents"
+
+            # Apply confidence threshold
+            filtered = []
+            for r in all_results:
+                distance = r.get("distance")
+                if distance is not None and distance <= threshold:
+                    filtered.append(r)
+                elif distance is None:
+                    filtered.append(r)
+
+            print(f"[RAG] Chunk search ({source}): {len(all_results)} total, {len(filtered)} after threshold ({threshold})")
+
+            if debug_log is not None:
+                debug_log["chunk_search"] = {
+                    "enabled": True,
+                    "source": source,
+                    "chunks_in_db": chunk_count,
+                    "top_k": CHUNK_SEARCH_TOP_K if source == "chunks" else VECTOR_SEARCH_TOP_K,
+                    "confidence_threshold": threshold,
+                    "total_results": len(all_results),
+                    "filtered_results": len(filtered),
+                    "results": [
+                        {
+                            "id": r["id"],
+                            "doc_name": r.get("metadata", {}).get("doc_name", r.get("metadata", {}).get("filename", "Unknown")),
+                            "distance": r.get("distance"),
+                            "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
+                        }
+                        for r in filtered[:10]
+                    ],
+                }
+
+            return filtered
+
+        except Exception as e:
+            print(f"[RAG] Chunk search error: {e}")
+            import traceback
+            traceback.print_exc()
+            if debug_log is not None:
+                debug_log["chunk_search"] = {"enabled": True, "error": str(e)}
+            return []
+
+    def _retrieve_entities(
         self,
         question: str,
-        graph_summary: Dict,
-        max_nodes: int = 100,
+        case_id: Optional[str] = None,
+        top_k: Optional[int] = None,
         debug_log: Optional[Dict] = None,
-    ) -> Optional[List[str]]:
+    ) -> List[Dict]:
         """
-        Generate a Cypher query to find nodes relevant to the question.
-        This reduces context size by filtering to only relevant entities.
-        
-        Args:
-            question: User's question
-            graph_summary: Graph summary for schema info
-            max_nodes: Maximum number of nodes to return
-            
+        Retrieve relevant entities via vector search, then enrich from Neo4j.
+
         Returns:
-            List of relevant node keys, or None if filtering not applicable
+            List of entity dicts from Neo4j with verified_facts, ai_insights, and distance scores.
         """
-        # Skip filtering if graph is small
-        total_nodes = graph_summary.get('total_nodes', 0)
-        if total_nodes < 50:
-            return None
-        
-        schema_info = self._build_schema_info(graph_summary)
-        
-        # Generate a Cypher query to find relevant nodes
-        prompt = f"""Based on this question: "{question}"
+        if not VECTOR_DB_AVAILABLE or not ENTITY_SEARCH_ENABLED:
+            if debug_log is not None:
+                debug_log["entity_search"] = {"enabled": False, "reason": "Disabled or unavailable"}
+            return []
 
-Generate a Cypher query that finds nodes most relevant to answering this question.
-The query should:
-1. Match nodes that are likely to contain information needed to answer the question
-2. Use WHERE clauses to filter by:
-   - Node names containing relevant keywords
-   - Summaries containing relevant concepts
-   - Notes containing relevant information
-   - Entity types that are relevant to the question
-3. Return DISTINCT node keys
-4. Limit results to {max_nodes} nodes
+        top_k = top_k or ENTITY_SEARCH_TOP_K
 
-{schema_info}
-
-Return ONLY a Cypher query in this format:
-MATCH (n)
-WHERE [relevant conditions]
-RETURN DISTINCT n.key AS key
-LIMIT {max_nodes}
-
-Example for question "Who are the suspects?":
-MATCH (n)
-WHERE (n.name CONTAINS 'suspect' OR n.summary CONTAINS 'suspect' OR 
-       labels(n)[0] IN ['Person', 'Entity'] AND n.summary IS NOT NULL)
-RETURN DISTINCT n.key AS key
-LIMIT {max_nodes}
-"""
-
-        log_section(
-            source_file=__file__,
-            source_func="_generate_relevance_filter_query",
-            title="Prompt: relevance filter (LLM-generated Cypher)",
-            content={
-                "question": question,
-                "max_nodes": max_nodes,
-                "prompt": prompt,
-            },
-            as_json=True,
-        )
-        
         try:
-            # Use LLM to generate the filtering query
-            # For filtering queries, we want a simpler, more focused approach
-            # Use a direct prompt instead of the full Cypher generation method
-            cypher = self.llm.call(
-                prompt=prompt,
-                temperature=0.2,  # Lower temperature for more consistent queries
-                json_mode=False,
+            query_embedding = embedding_service.generate_embedding(question)
+            vector_filter = {"case_id": case_id} if case_id else None
+
+            entity_results = vector_db_service.search_entities(
+                query_embedding=query_embedding,
+                top_k=top_k,
+                filter_metadata=vector_filter,
             )
-            
-            # Extract Cypher query from response (might be wrapped in markdown or text)
-            if not cypher:
-                return None
-            
-            # Clean up the response - remove markdown code blocks if present
-            cypher = cypher.strip()
-            if cypher.startswith("```"):
-                # Remove markdown code blocks
-                lines = cypher.split("\n")
-                cypher = "\n".join([l for l in lines if not l.strip().startswith("```")])
-            cypher = cypher.strip()
-            
-            # Basic validation - ensure it looks like a Cypher query
-            if not cypher.upper().startswith("MATCH"):
-                return None
-            
-            # Safety check - ensure it's a read-only query
-            cypher_upper = cypher.upper()
-            if any(
-                dangerous in cypher_upper
-                for dangerous in ["DELETE", "REMOVE", "SET", "CREATE", "MERGE", "DROP"]
-            ):
-                print(f"Blocked potentially dangerous relevance filter query: {cypher}")
-                return None
-            
-            if debug_log is not None:
-                debug_log["cypher_filter_query"] = {
-                    "generated_cypher": cypher,
-                    "max_nodes": max_nodes,
-                }
-            
-            # Execute the query to get relevant node keys
-            results = self.neo4j.run_cypher(cypher)
-            if not results:
+
+            # Fallback for old data without case_id metadata
+            if not entity_results and case_id:
+                entity_results = vector_db_service.search_entities(
+                    query_embedding=query_embedding,
+                    top_k=top_k,
+                )
+
+            # Get full entity details from Neo4j (including verified_facts, connections)
+            entity_keys = [r["id"] for r in entity_results if r.get("id")]
+            if not entity_keys:
                 if debug_log is not None:
-                    debug_log["cypher_filter_query"]["results"] = "No results"
-                return None
-            
-            # Extract node keys from results
-            node_keys = []
-            nodes_info = []
-            for row in results:
-                if isinstance(row, dict):
-                    key = row.get('key') or row.get('n.key')
-                else:
-                    # Handle tuple results
-                    key = row[0] if len(row) > 0 else None
-                
-                if key:
-                    node_keys.append(key)
-                    nodes_info.append({"key": key})
-            
+                    debug_log["entity_search"] = {"enabled": True, "vector_results": 0, "enriched_entities": 0}
+                return []
+
+            enriched_entities = self._get_entity_nodes_from_neo4j(entity_keys)
+
+            # Attach distance scores from vector search
+            distance_map = {r["id"]: r.get("distance", 1.0) for r in entity_results}
+            for entity in enriched_entities:
+                entity["distance"] = distance_map.get(entity.get("key"), 1.0)
+
+            print(f"[RAG] Entity search: {len(entity_results)} vector matches, {len(enriched_entities)} enriched from Neo4j")
+
             if debug_log is not None:
-                debug_log["cypher_filter_query"]["results"] = {
-                    "nodes_found": len(node_keys),
-                    "node_keys": node_keys[:20],  # Limit to first 20 for readability
+                debug_log["entity_search"] = {
+                    "enabled": True,
+                    "vector_results": len(entity_results),
+                    "enriched_entities": len(enriched_entities),
+                    "entity_keys": [e.get("key") for e in enriched_entities[:20]],
                 }
-            
-            # Only use filtered results if they're significantly smaller than full graph
-            if len(node_keys) < total_nodes * 0.7 and len(node_keys) > 0:
-                print(f"[RAG] Filtered graph from {total_nodes} to {len(node_keys)} relevant nodes")
-                return node_keys[:max_nodes]
-            
-            return None
-            
+
+            return enriched_entities
+
         except Exception as e:
-            print(f"[RAG] Error generating relevance filter: {e}")
-            return None
+            print(f"[RAG] Entity search error: {e}")
+            import traceback
+            traceback.print_exc()
+            if debug_log is not None:
+                debug_log["entity_search"] = {"enabled": True, "error": str(e)}
+            return []
+
+    def _traverse_graph(
+        self,
+        entity_keys: List[str],
+        case_id: Optional[str] = None,
+        debug_log: Optional[Dict] = None,
+    ) -> Dict:
+        """
+        Traverse the graph from matched entities to pull connected context.
+        Uses existing neo4j_service.get_context_for_nodes() for 1-hop neighbors.
+
+        Returns:
+            Dict with 'selected_entities' list (same format as get_context_for_nodes)
+        """
+        if not entity_keys or not case_id:
+            return {"selected_entities": []}
+
+        try:
+            context = self.neo4j.get_context_for_nodes(entity_keys, case_id)
+
+            if debug_log is not None:
+                debug_log["graph_traversal"] = {
+                    "input_keys": entity_keys[:20],
+                    "depth": GRAPH_TRAVERSAL_DEPTH,
+                    "entities_returned": len(context.get("selected_entities", [])),
+                }
+
+            print(f"[RAG] Graph traversal: {len(entity_keys)} input keys -> {len(context.get('selected_entities', []))} entities with connections")
+            return context
+
+        except Exception as e:
+            print(f"[RAG] Graph traversal error: {e}")
+            if debug_log is not None:
+                debug_log["graph_traversal"] = {"error": str(e)}
+            return {"selected_entities": []}
+
+    # =====================
+    # NEW: Hybrid Context Builder
+    # =====================
+
+    def _build_hybrid_context(
+        self,
+        chunk_results: List[Dict],
+        entity_results: List[Dict],
+        graph_context: Dict,
+        cypher_context: Optional[str] = None,
+    ) -> str:
+        """
+        Build a structured context string with multiple sections:
+        - RELEVANT TEXT PASSAGES (from chunk/document search)
+        - RELEVANT ENTITIES (from entity vector search with verified facts)
+        - GRAPH CONNECTIONS (from graph traversal)
+        - GRAPH QUERY RESULTS (from Cypher, if applicable)
+        """
+        sections = []
+
+        # Section 1: Relevant Text Passages
+        if chunk_results:
+            lines = ["=== RELEVANT TEXT PASSAGES ===", ""]
+            for i, chunk in enumerate(chunk_results, 1):
+                metadata = chunk.get("metadata", {})
+                doc_name = metadata.get("doc_name", metadata.get("filename", "Unknown"))
+                page_start = metadata.get("page_start")
+                page_end = metadata.get("page_end")
+                page_info = ""
+                if page_start and page_start != -1 and page_start != "-1":
+                    page_start = int(page_start) if isinstance(page_start, str) else page_start
+                    if page_end and page_end != -1 and page_end != "-1":
+                        page_end = int(page_end) if isinstance(page_end, str) else page_end
+                        if page_end != page_start:
+                            page_info = f" (pages {page_start}-{page_end})"
+                        else:
+                            page_info = f" (page {page_start})"
+                    else:
+                        page_info = f" (page {page_start})"
+                distance = chunk.get("distance")
+                lines.append(f"--- Passage {i}: {doc_name}{page_info} ---")
+                if distance is not None:
+                    lines.append(f"Relevance: {1 - distance:.4f}")
+                lines.append(chunk.get("text", ""))
+                lines.append("")
+            sections.append("\n".join(lines))
+
+        # Section 2: Relevant Entities (with verified facts for citations)
+        if entity_results:
+            lines = ["=== RELEVANT ENTITIES ===", ""]
+            for entity in entity_results:
+                name = entity.get("name", "Unknown")
+                etype = entity.get("type", "Unknown")
+                lines.append(f"[{etype}] {name} (key: {entity.get('key', '')})")
+                if entity.get("summary"):
+                    lines.append(f"  Summary: {entity['summary']}")
+
+                # Include verified facts with citations
+                verified_facts = entity.get("verified_facts")
+                if verified_facts:
+                    lines.append("  Verified Facts:")
+                    for fact in verified_facts[:10]:  # Limit to top 10 facts per entity
+                        fact_text = fact.get("text", "")
+                        source = fact.get("source_doc", "")
+                        quote = fact.get("quote", "")
+                        page = fact.get("page", "")
+                        citation = []
+                        if source:
+                            citation.append(source)
+                        if page:
+                            citation.append(f"p.{page}")
+                        citation_str = f" [{', '.join(citation)}]" if citation else ""
+                        lines.append(f"    - {fact_text}{citation_str}")
+                        if quote:
+                            lines.append(f'      Quote: "{quote}"')
+
+                # Include AI insights
+                ai_insights = entity.get("ai_insights")
+                if ai_insights:
+                    lines.append("  AI Insights:")
+                    for insight in ai_insights[:5]:
+                        insight_text = insight.get("text", "")
+                        confidence = insight.get("confidence", "")
+                        conf_str = f" (confidence: {confidence})" if confidence else ""
+                        lines.append(f"    - {insight_text}{conf_str}")
+
+                lines.append("")
+            sections.append("\n".join(lines))
+
+        # Section 3: Graph Connections
+        graph_entities = graph_context.get("selected_entities", [])
+        if graph_entities:
+            lines = ["=== GRAPH CONNECTIONS ===", ""]
+            for entity in graph_entities:
+                connections = entity.get("connections", [])
+                if connections:
+                    lines.append(f"[{entity.get('type', '?')}] {entity.get('name', '?')}:")
+                    for conn in connections[:15]:
+                        direction = "->" if conn.get("direction") == "outgoing" else "<-"
+                        lines.append(
+                            f"  {direction} [{conn.get('relationship', '?')}] "
+                            f"{conn.get('name', '?')} ({conn.get('type', '?')})"
+                        )
+                        if conn.get("summary"):
+                            lines.append(f"     Summary: {conn['summary'][:200]}")
+                    lines.append("")
+            sections.append("\n".join(lines))
+
+        # Section 4: Cypher Query Results (if available)
+        if cypher_context:
+            sections.append(f"=== GRAPH QUERY RESULTS ===\n\n{cypher_context}")
+
+        if not sections:
+            return "No relevant context found."
+
+        return "\n\n".join(sections)
+
+    # =====================
+    # NEW: Re-ranking
+    # =====================
+
+    def _rerank_results(
+        self,
+        question: str,
+        chunk_results: List[Dict],
+        entity_results: List[Dict],
+        debug_log: Optional[Dict] = None,
+    ) -> tuple:
+        """
+        Re-rank and filter retrieval results before sending to LLM.
+
+        Returns:
+            Tuple of (filtered_chunks, filtered_entities)
+        """
+        if not RERANK_ENABLED:
+            return chunk_results, entity_results
+
+        if RERANK_METHOD == "llm":
+            return self._rerank_by_llm(
+                question, chunk_results, entity_results,
+                RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, debug_log,
+            )
+        else:
+            # Default: score-based (fast, no LLM call)
+            return self._rerank_by_score(
+                chunk_results, entity_results,
+                RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, CONTEXT_TOKEN_BUDGET,
+                debug_log,
+            )
+
+    def _rerank_by_score(
+        self,
+        chunk_results: List[Dict],
+        entity_results: List[Dict],
+        top_chunks: int,
+        top_entities: int,
+        token_budget: int,
+        debug_log: Optional[Dict] = None,
+    ) -> tuple:
+        """Fast re-ranking: sort by distance, apply top-k and token budget."""
+        # Sort chunks by distance (ascending = more relevant)
+        sorted_chunks = sorted(
+            chunk_results,
+            key=lambda r: r.get("distance", float("inf"))
+        )[:top_chunks]
+
+        # Sort entities by distance
+        sorted_entities = sorted(
+            entity_results,
+            key=lambda r: r.get("distance", float("inf"))
+        )[:top_entities]
+
+        # Apply token budget (approximate 1 token ~ 4 chars)
+        total_chars = 0
+        budget_chunks = []
+        for chunk in sorted_chunks:
+            chunk_len = len(chunk.get("text", ""))
+            if total_chars + chunk_len > token_budget:
+                break
+            budget_chunks.append(chunk)
+            total_chars += chunk_len
+
+        # Entities are smaller, include within remaining budget (with 20% overflow allowance)
+        budget_entities = []
+        for entity in sorted_entities:
+            entity_len = len(str(entity.get("summary", ""))) + len(str(entity.get("verified_facts", "")))
+            if total_chars + entity_len > token_budget * 1.2:
+                break
+            budget_entities.append(entity)
+            total_chars += entity_len
+
+        if debug_log is not None:
+            debug_log["rerank"] = {
+                "method": "score",
+                "input_chunks": len(chunk_results),
+                "input_entities": len(entity_results),
+                "output_chunks": len(budget_chunks),
+                "output_entities": len(budget_entities),
+                "total_chars": total_chars,
+                "token_budget": token_budget,
+            }
+
+        print(f"[RAG] Re-rank (score): chunks {len(chunk_results)}->{len(budget_chunks)}, entities {len(entity_results)}->{len(budget_entities)}, chars={total_chars}")
+        return budget_chunks, budget_entities
+
+    def _rerank_by_llm(
+        self,
+        question: str,
+        chunk_results: List[Dict],
+        entity_results: List[Dict],
+        top_chunks: int,
+        top_entities: int,
+        debug_log: Optional[Dict] = None,
+    ) -> tuple:
+        """LLM-based re-ranking: score each result for relevance."""
+        candidates = []
+        for i, chunk in enumerate(chunk_results):
+            preview = chunk.get("text", "")[:300]
+            candidates.append(f"CHUNK-{i}: {preview}")
+        for i, entity in enumerate(entity_results):
+            name = entity.get("name", "Unknown")
+            summary = (entity.get("summary") or "")[:200]
+            candidates.append(f"ENTITY-{i}: {name} - {summary}")
+
+        if not candidates:
+            return chunk_results, entity_results
+
+        prompt = f"""Rate each candidate's relevance to the question on a scale of 0-10.
+
+Question: "{question}"
+
+Candidates:
+{chr(10).join(candidates)}
+
+Return JSON array of objects: [{{"id": "CHUNK-0", "score": 8}}, ...]
+Only include candidates with score >= 5."""
+
+        try:
+            response = self.llm.call(prompt, temperature=0.1, json_mode=True)
+            scores = json.loads(response)
+            if not isinstance(scores, list):
+                scores = scores.get("results", scores.get("candidates", []))
+
+            score_map = {s["id"]: s["score"] for s in scores if isinstance(s, dict)}
+
+            scored_chunks = [
+                (chunk, score_map.get(f"CHUNK-{i}", 0))
+                for i, chunk in enumerate(chunk_results)
+            ]
+            filtered_chunks = [
+                c for c, s in sorted(scored_chunks, key=lambda x: -x[1])
+                if s >= 5
+            ][:top_chunks]
+
+            scored_entities = [
+                (entity, score_map.get(f"ENTITY-{i}", 0))
+                for i, entity in enumerate(entity_results)
+            ]
+            filtered_entities = [
+                e for e, s in sorted(scored_entities, key=lambda x: -x[1])
+                if s >= 5
+            ][:top_entities]
+
+            if debug_log is not None:
+                debug_log["rerank"] = {
+                    "method": "llm",
+                    "input_chunks": len(chunk_results),
+                    "input_entities": len(entity_results),
+                    "output_chunks": len(filtered_chunks),
+                    "output_entities": len(filtered_entities),
+                    "scores": score_map,
+                }
+
+            print(f"[RAG] Re-rank (llm): chunks {len(chunk_results)}->{len(filtered_chunks)}, entities {len(entity_results)}->{len(filtered_entities)}")
+            return filtered_chunks, filtered_entities
+
+        except Exception as e:
+            print(f"[RAG] LLM re-ranking failed, falling back to score: {e}")
+            return self._rerank_by_score(
+                chunk_results, entity_results,
+                top_chunks, top_entities, CONTEXT_TOKEN_BUDGET,
+                debug_log,
+            )
+
+    # =====================
+    # NEW: Result Graph Builder
+    # =====================
+
+    def _build_result_graph(
+        self,
+        doc_results: List[Dict],
+        answer_text: str,
+        top_k_entities: int = 50,
+        top_k_documents: int = 50,
+    ) -> Dict[str, List]:
+        """
+        Build a result graph containing semantically relevant entities.
+        Searches the answer text against entities and includes relevance scores.
+        """
+        nodes = []
+        node_keys = set()
+        links = []
+
+        if not VECTOR_DB_AVAILABLE:
+            return {"nodes": nodes, "links": links}
+
+        try:
+            if not answer_text or not answer_text.strip():
+                return {"nodes": nodes, "links": links}
+
+            answer_embedding = embedding_service.generate_embedding(answer_text)
+            print(f"[RAG] Building result graph from answer text ({len(answer_text)} chars)")
+
+            all_entity_results = []
+            try:
+                all_entity_results = vector_db_service.search_entities(
+                    query_embedding=answer_embedding,
+                    top_k=top_k_entities
+                )
+                print(f"[RAG] Found {len(all_entity_results)} entities via answer text search")
+            except Exception as e:
+                print(f"[RAG] Error searching entities: {e}")
+
+            entity_distance_map = {r["id"]: r.get("distance", 1.0) for r in all_entity_results if r.get("id")}
+
+            entity_keys = list(entity_distance_map.keys())
+            if entity_keys:
+                entity_nodes = self._get_entity_nodes_from_neo4j(entity_keys)
+                for node in entity_nodes:
+                    if node["key"] and node["key"] not in node_keys:
+                        node_keys.add(node["key"])
+                        distance = entity_distance_map.get(node.get("key"), 1.0)
+                        confidence = 1.0 - distance if distance is not None else 0.0
+                        node["confidence"] = max(0.0, min(1.0, confidence))
+                        node["distance"] = distance
+                        nodes.append(node)
+
+            if len(node_keys) > 1:
+                all_keys = list(node_keys)
+                entity_links = self._get_relationships_between_nodes(all_keys)
+                links.extend(entity_links)
+
+            print(f"[RAG] Result graph: {len(nodes)} entities, {len(links)} links")
+
+        except Exception as e:
+            print(f"[RAG] Error building result graph: {e}")
+            import traceback
+            traceback.print_exc()
+
+        return {"nodes": nodes, "links": links}
+
+    # =====================
+    # MAIN: answer_question (unified hybrid pipeline)
+    # =====================
 
     def answer_question(
         self,
         question: str,
         selected_keys: Optional[List[str]] = None,
         confidence_threshold: Optional[float] = None,
+        case_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Answer a question using the appropriate context.
+        Answer a question using hybrid retrieval:
+        1. Classify question type (semantic/structural/hybrid)
+        2. Retrieve relevant text chunks via vector search
+        3. Retrieve relevant entities via vector search + Neo4j enrichment
+        4. Merge user-selected entities (if any)
+        5. Traverse graph for connected context
+        6. Optionally run Cypher for structural questions
+        7. Re-rank results
+        8. Build combined context and generate answer
 
         Args:
             question: User's question
             selected_keys: Optional list of selected node keys for focused context
+            confidence_threshold: Optional confidence threshold for vector search
+            case_id: Optional case ID for scoping search and graph traversal
 
         Returns:
             Dict with answer and metadata including debug_log
         """
-        # Initialize debug log
+        from datetime import datetime
         debug_log = {
-            "timestamp": None,
+            "timestamp": datetime.now().isoformat(),
             "question": question,
             "selected_keys": selected_keys,
-            "graph_summary": None,
-            "vector_search": None,
-            "neo4j_document_query": None,
-            "cypher_filter_query": None,
+            "case_id": case_id,
+            "question_type": None,
+            "chunk_search": None,
+            "entity_search": None,
+            "graph_traversal": None,
             "cypher_answer_query": None,
+            "rerank": None,
             "context_mode": None,
             "context_preview": None,
             "final_prompt": None,
         }
-        
-        from datetime import datetime
-        debug_log["timestamp"] = datetime.now().isoformat()
-        
-        # Use confidence threshold from request, or fall back to config default
-        threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
-        
-        # Graph summary no longer needed - using vector search only
 
-        # Track which node keys were actually used to generate the answer
-        used_node_keys = []
-        
-        # Store document results for focused-documents mode
-        doc_results = []
+        context_mode = "hybrid"
+        context_description = ""
+        cypher_context = None
 
-        # Determine context mode
-        if selected_keys and len(selected_keys) > 0:
-            # Focused context: Use vector search to find relevant documents
-            context_mode = "focused-documents"
-            used_node_keys = []
-            
-            # Get node details (including summaries and notes) for selected nodes
-            selected_node_context = None
-            node_context_str = None
-            selected_entities = []
+        # Step 0: Classify question type
+        question_type = "hybrid"
+        if QUESTION_CLASSIFICATION_ENABLED and case_id:
+            try:
+                question_type = self.llm.classify_question(question)
+                print(f"[RAG] Question classified as: {question_type}")
+            except Exception as e:
+                print(f"[RAG] Question classification failed: {e}")
+                question_type = "hybrid"
+        debug_log["question_type"] = question_type
+
+        # Step 0b: For structural/hybrid questions, try Cypher
+        if question_type in ("structural", "hybrid") and case_id:
+            try:
+                graph_summary = self.neo4j.get_graph_summary(case_id)
+                cypher_context = self._try_cypher_query(question, graph_summary, debug_log)
+                if cypher_context:
+                    print(f"[RAG] Cypher query returned results")
+            except Exception as e:
+                print(f"[RAG] Cypher query failed: {e}")
+
+        # Step 1: Retrieve chunks (or documents as fallback)
+        chunk_results = []
+        if question_type != "structural" or not cypher_context:
+            # For pure structural with successful cypher, skip vector search
+            chunk_results = self._retrieve_chunks(
+                question, case_id,
+                confidence_threshold=confidence_threshold,
+                debug_log=debug_log,
+            )
+
+        # Step 2: Retrieve entities via vector search
+        entity_results = self._retrieve_entities(question, case_id, debug_log=debug_log)
+
+        # Step 3: If selected_keys provided, merge those entities
+        if selected_keys:
             try:
                 selected_entities = self._get_entity_nodes_from_neo4j(selected_keys)
-                if selected_entities:
-                    selected_node_context = {
-                        "selected_entities": selected_entities
-                    }
-                    # Build focused context from selected nodes (includes summaries and notes)
-                    node_context_str = self._build_focused_context(selected_node_context)
-                    print(f"[RAG] Built focused context from {len(selected_entities)} selected nodes")
+                existing_keys = {e.get("key") for e in entity_results}
+                for se in selected_entities:
+                    if se.get("key") not in existing_keys:
+                        se["distance"] = 0.0  # Selected entities get best distance
+                        entity_results.append(se)
+                        existing_keys.add(se.get("key"))
+                print(f"[RAG] Merged {len(selected_entities)} selected entities")
             except Exception as e:
-                print(f"[RAG] Error getting selected node details: {e}")
-                import traceback
-                traceback.print_exc()
-                selected_node_context = None
-                node_context_str = None
-            
-            # Use vector search to find relevant documents based on the question
-            if VECTOR_DB_AVAILABLE:
-                try:
-                    # Check if vector DB has any documents
-                    doc_count = vector_db_service.count_documents()
-                    print(f"[RAG] Vector DB contains {doc_count} documents")
-                    
-                    if doc_count == 0:
-                        print(f"[RAG] WARNING: Vector database is empty. No documents have been embedded.")
-                        context = "Vector database is empty. No documents have been embedded yet."
-                        context_description = "Vector database empty - no documents found"
-                        doc_results = []
-                        if debug_log is not None:
-                            debug_log["vector_search"] = {
-                                "enabled": True,
-                                "question": question,
-                                "documents_in_db": 0,
-                                "error": "Vector database is empty",
-                            }
-                    else:
-                        # Perform vector search on the question
-                        query_embedding = embedding_service.generate_embedding(question)
-                        print(f"[RAG] Generated query embedding with {len(query_embedding)} dimensions")
-                        all_doc_results = vector_db_service.search(
-                            query_embedding=query_embedding,
-                            top_k=VECTOR_SEARCH_TOP_K
-                        )
-                        
-                        # Filter results by confidence threshold (distance must be <= threshold)
-                        # Handle cases where distance might be None or missing
-                        doc_results = []
-                        for r in all_doc_results:
-                            distance = r.get("distance")
-                            if distance is not None and distance <= threshold:
-                                doc_results.append(r)
-                            elif distance is None:
-                                # If distance is missing, include the result (could be a bug in vector_db_service)
-                                print(f"[RAG] WARNING: Document {r.get('id', 'unknown')} has no distance value, including anyway")
-                                doc_results.append(r)
-                        print(f"[RAG] Vector search returned {len(all_doc_results)} documents, {len(doc_results)} above confidence threshold (distance <= {threshold})")
-                        if len(all_doc_results) > 0 and len(doc_results) == 0:
-                            # Log distances for debugging
-                            distances = [r.get("distance") for r in all_doc_results if r.get("distance") is not None]
-                            if distances:
-                                print(f"[RAG] DEBUG: All {len(all_doc_results)} results filtered out. Distance range: min={min(distances):.4f}, max={max(distances):.4f}, threshold={threshold}")
-                        
-                        if debug_log is not None:
-                            debug_log["vector_search"] = {
-                                "enabled": True,
-                                "question": question,
-                                "documents_in_db": doc_count,
-                                "embedding_dimensions": len(query_embedding),
-                                "top_k": VECTOR_SEARCH_TOP_K,
-                                "confidence_threshold": threshold,
-                                "total_results": len(all_doc_results),
-                                "filtered_results": len(doc_results),
-                                "results": [
-                                    {
-                                        "document_id": r["id"],
-                                        "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                                        "distance": r.get("distance"),
-                                        "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
-                                    }
-                                    for r in doc_results
-                                ],
-                                "documents_found": len(doc_results),
-                            }
-                        
-                        # Build context from full document texts
-                        doc_context = self._build_document_context(doc_results)
-                        
-                        # Combine document context with selected node context (summaries and notes)
-                        if selected_node_context and node_context_str:
-                            context = node_context_str + "\n\n" + doc_context
-                            context_description = f"Found {len(doc_results)} relevant document(s) via vector search, plus {len(selected_entities)} selected entities with summaries and notes"
-                        else:
-                            context = doc_context
-                            context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
-                    
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"[RAG] Vector search error in focused mode: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # Fallback to empty context, but include selected node context if available
-                    if selected_node_context and node_context_str:
-                        context = node_context_str + "\n\nNo relevant documents found."
-                        # Provide more specific error message
-                        if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
-                            context_description = f"Vector search unavailable: Ollama connection failed. Using {len(selected_entities)} selected entities with summaries and notes."
-                        else:
-                            context_description = f"Vector search unavailable: {error_msg}. Using {len(selected_entities)} selected entities with summaries and notes."
-                    else:
-                        context = "No relevant documents found."
-                        # Provide more specific error message
-                        if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
-                            context_description = f"Vector search unavailable: Ollama connection failed. Please start Ollama or switch to OpenAI embeddings."
-                        else:
-                            context_description = f"Vector search unavailable: {error_msg}"
-                    doc_results = []
-                    if debug_log is not None:
-                        debug_log["vector_search"] = {
-                            "enabled": True,
-                            "error": error_msg,
-                            "error_type": type(e).__name__,
-                        }
-            else:
-                # Vector DB not available, but include selected node context if available
-                if selected_node_context and node_context_str:
-                    context = node_context_str + "\n\nVector database not available."
-                    context_description = f"Vector search unavailable, but using {len(selected_entities)} selected entities with summaries and notes"
-                else:
-                    context = "Vector database not available."
-                    context_description = "Vector search unavailable"
-                if debug_log is not None:
-                    debug_log["vector_search"] = {
-                        "enabled": False,
-                        "reason": "Vector DB not available",
-                    }
-            
-            log_section(
-                source_file=__file__,
-                source_func="answer_question",
-                title="Context: focused (vector search)",
-                content={
-                    "selected_keys": selected_keys,
-                    "documents_found": len(doc_results),
-                    "context_length": len(context),
-                    "documents": [
-                        {
-                            "id": r["id"],
-                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                            "distance": r.get("distance"),
-                        }
-                        for r in doc_results
-                    ],
-                },
-                as_json=True,
-            )
-            
-            if debug_log is not None:
-                debug_log["context_mode"] = context_mode
-                debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
-                debug_log["focused_context"] = {
-                    "selected_node_keys": selected_keys,
-                    "documents_count": len(doc_results),
-                    "documents": [
-                        {
-                            "id": r["id"],
-                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                            "distance": r.get("distance"),
-                        }
-                        for r in doc_results
-                    ],
-                }
-        else:
-            # No nodes selected: Use vector search to find relevant documents
-            context_mode = "vector-search-documents"
-            used_node_keys = []
-            
-            # Use vector search to find relevant documents based on the question
-            if VECTOR_DB_AVAILABLE:
-                try:
-                    # Check if vector DB has any documents
-                    doc_count = vector_db_service.count_documents()
-                    print(f"[RAG] Vector DB contains {doc_count} documents")
-                    
-                    if doc_count == 0:
-                        print(f"[RAG] WARNING: Vector database is empty. No documents have been embedded.")
-                        context = "Vector database is empty. No documents have been embedded yet."
-                        context_description = "Vector database empty - no documents found"
-                        doc_results = []
-                        if debug_log is not None:
-                            debug_log["vector_search"] = {
-                                "enabled": True,
-                                "question": question,
-                                "documents_in_db": 0,
-                                "error": "Vector database is empty",
-                            }
-                    else:
-                        # Perform vector search on the question
-                        query_embedding = embedding_service.generate_embedding(question)
-                        print(f"[RAG] Generated query embedding with {len(query_embedding)} dimensions")
-                        all_doc_results = vector_db_service.search(
-                            query_embedding=query_embedding,
-                            top_k=VECTOR_SEARCH_TOP_K
-                        )
-                        
-                        # Filter results by confidence threshold (distance must be <= threshold)
-                        # Handle cases where distance might be None or missing
-                        doc_results = []
-                        for r in all_doc_results:
-                            distance = r.get("distance")
-                            if distance is not None and distance <= threshold:
-                                doc_results.append(r)
-                            elif distance is None:
-                                # If distance is missing, include the result (could be a bug in vector_db_service)
-                                print(f"[RAG] WARNING: Document {r.get('id', 'unknown')} has no distance value, including anyway")
-                                doc_results.append(r)
-                        print(f"[RAG] Vector search returned {len(all_doc_results)} documents, {len(doc_results)} above confidence threshold (distance <= {threshold})")
-                        if len(all_doc_results) > 0 and len(doc_results) == 0:
-                            # Log distances for debugging
-                            distances = [r.get("distance") for r in all_doc_results if r.get("distance") is not None]
-                            if distances:
-                                print(f"[RAG] DEBUG: All {len(all_doc_results)} results filtered out. Distance range: min={min(distances):.4f}, max={max(distances):.4f}, threshold={threshold}")
-                        
-                        if debug_log is not None:
-                            debug_log["vector_search"] = {
-                                "enabled": True,
-                                "question": question,
-                                "documents_in_db": doc_count,
-                                "embedding_dimensions": len(query_embedding),
-                                "top_k": VECTOR_SEARCH_TOP_K,
-                                "confidence_threshold": threshold,
-                                "total_results": len(all_doc_results),
-                                "filtered_results": len(doc_results),
-                                "results": [
-                                    {
-                                        "document_id": r["id"],
-                                        "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                                        "distance": r.get("distance"),
-                                        "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
-                                    }
-                                    for r in doc_results
-                                ],
-                                "documents_found": len(doc_results),
-                            }
-                        
-                        # Build context from full document texts
-                        context = self._build_document_context(doc_results)
-                        context_description = f"Found {len(doc_results)} relevant document(s) via vector search"
-                    
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"[RAG] Vector search error: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    # Fallback to empty context
-                    context = "No relevant documents found."
-                    # Provide more specific error message
-                    if "Failed to connect to Ollama" in error_msg or "Connection refused" in error_msg:
-                        context_description = f"Vector search unavailable: Ollama connection failed. Please start Ollama or switch to OpenAI embeddings."
-                    else:
-                        context_description = f"Vector search unavailable: {error_msg}"
-                    doc_results = []
-                    if debug_log is not None:
-                        debug_log["vector_search"] = {
-                            "enabled": True,
-                            "error": error_msg,
-                            "error_type": type(e).__name__,
-                        }
-            else:
-                context = "Vector database not available."
-                context_description = "Vector search unavailable"
-                doc_results = []
-                if debug_log is not None:
-                    debug_log["vector_search"] = {
-                        "enabled": False,
-                        "reason": "Vector DB not available",
-                    }
-            
-            log_section(
-                source_file=__file__,
-                source_func="answer_question",
-                title="Context: vector search (no nodes selected)",
-                content={
-                    "documents_found": len(doc_results),
-                    "context_length": len(context),
-                    "documents": [
-                        {
-                            "id": r["id"],
-                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                            "distance": r.get("distance"),
-                        }
-                        for r in doc_results
-                    ],
-                },
-                as_json=True,
-            )
-            
-            if debug_log is not None:
-                debug_log["context_mode"] = context_mode
-                debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
-                debug_log["vector_search_context"] = {
-                    "documents_count": len(doc_results),
-                    "documents": [
-                        {
-                            "id": r["id"],
-                            "filename": r.get("metadata", {}).get("filename", "Unknown"),
-                            "distance": r.get("distance"),
-                        }
-                        for r in doc_results
-                    ],
-                }
+                print(f"[RAG] Error getting selected entities: {e}")
 
-        # Generate answer - capture the prompt
-        answer, final_prompt = self.llm.answer_question_with_prompt(
-            question=question,
-            context=context,
+        # Step 4: Graph traversal from matched entities
+        all_entity_keys = [e.get("key") for e in entity_results if e.get("key")]
+        graph_context = self._traverse_graph(all_entity_keys, case_id, debug_log=debug_log)
+
+        # Step 5: Re-rank
+        chunk_results, entity_results = self._rerank_results(
+            question, chunk_results, entity_results, debug_log
         )
-        
-        # Store clean answer text for entity search (before prepending document summary)
-        clean_answer_text = answer
-        
-        # If using document-based context modes, prepend document summary to answer
-        if context_mode in ["focused-documents", "vector-search-documents"] and doc_results:
-            doc_summary = self._format_document_summary(doc_results)
-            answer = doc_summary + "\n\n" + answer
+
+        # Step 6: Build combined context
+        context = self._build_hybrid_context(
+            chunk_results, entity_results, graph_context, cypher_context
+        )
+
+        # Build context description
+        parts = []
+        if chunk_results:
+            source = debug_log.get("chunk_search", {}).get("source", "unknown")
+            parts.append(f"{len(chunk_results)} text passages ({source})")
+        if entity_results:
+            parts.append(f"{len(entity_results)} entities")
+        graph_entity_count = len(graph_context.get("selected_entities", []))
+        if graph_entity_count:
+            parts.append(f"{graph_entity_count} graph connections")
+        if cypher_context:
+            parts.append("Cypher query results")
+        context_description = "Hybrid retrieval: " + ", ".join(parts) if parts else "No relevant context found"
+
+        debug_log["context_mode"] = context_mode
+        debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
 
         log_section(
             source_file=__file__,
             source_func="answer_question",
-            title="Prompt: final (answer synthesis)",
+            title="Context: hybrid retrieval",
             content={
-                "prompt": final_prompt,
-                "prompt_length": len(final_prompt),
+                "question_type": question_type,
+                "chunks": len(chunk_results),
+                "entities": len(entity_results),
+                "graph_entities": graph_entity_count,
+                "cypher_used": cypher_context is not None,
+                "context_length": len(context),
             },
             as_json=True,
         )
-        
-        if debug_log is not None:
-            debug_log["final_prompt"] = final_prompt
-            debug_log["context_mode"] = context_mode
 
-        # Store debug log in system logs (instead of downloading)
+        # Step 7: Generate answer
+        answer, final_prompt = self.llm.answer_question_with_prompt(
+            question=question,
+            context=context,
+        )
+
+        debug_log["final_prompt"] = final_prompt
+
+        # Store clean answer text for entity search (before prepending document summary)
+        clean_answer_text = answer
+
+        # Prepend document/chunk summary to answer
+        if chunk_results:
+            doc_summary = self._format_document_summary(chunk_results)
+            answer = doc_summary + "\n\n" + answer
+
+        # Store debug log in system logs
         try:
             from services.system_log_service import system_log_service, LogType, LogOrigin
             system_log_service.log(
@@ -1222,44 +1123,51 @@ LIMIT {max_nodes}
                 action="AI Assistant Response Generated",
                 details={
                     "question": question,
+                    "question_type": question_type,
                     "context_mode": context_mode,
                     "context_description": context_description,
-                    "cypher_used": False,
+                    "cypher_used": cypher_context is not None,
                     "answer_length": len(answer),
-                    "used_node_keys_count": len(used_node_keys),
-                    "debug_log": debug_log,  # Include full debug log in system logs
+                    "chunks_used": len(chunk_results),
+                    "entities_used": len(entity_results),
+                    "debug_log": debug_log,
                 },
                 success=True,
             )
         except Exception as e:
             print(f"[RAG] Failed to log to system logs: {e}")
 
-        # Build result graph with documents and relevant entities
-        # Search answer text against both documents and entities (no threshold filtering)
+        # Step 8: Build result graph (for visualization)
         result_graph = {"nodes": [], "links": []}
         if clean_answer_text:
             try:
                 result_graph = self._build_result_graph(
-                    doc_results=[],  # Not used - we search based on answer text
+                    doc_results=[],
                     answer_text=clean_answer_text,
-                    top_k_entities=50,  # Get more results
-                    top_k_documents=50,  # Get more results
+                    top_k_entities=50,
+                    top_k_documents=50,
                 )
-                print(f"[RAG] Result graph built: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
+                print(f"[RAG] Result graph: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
             except Exception as e:
                 print(f"[RAG] Error building result graph: {e}")
                 import traceback
                 traceback.print_exc()
 
+        used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
+
         return {
             "answer": answer,
             "context_mode": context_mode,
             "context_description": context_description,
-            "cypher_used": False,
+            "cypher_used": cypher_context is not None,
             "debug_log": debug_log,
-            "used_node_keys": used_node_keys,  # Node keys actually used to generate the answer
-            "result_graph": result_graph,  # Graph with documents and relevant entities
+            "used_node_keys": used_node_keys,
+            "result_graph": result_graph,
         }
+
+    # =====================
+    # Extract Nodes from Answer (preserved from original)
+    # =====================
 
     def extract_nodes_from_answer(
         self,
@@ -1267,29 +1175,17 @@ LIMIT {max_nodes}
         graph_summary: Optional[Dict] = None,
     ) -> List[str]:
         """
-        Generate a Cypher query from the answer summary to extract relevant nodes and relationships.
-        
-        Uses the LLM to analyze the answer and generate a Cypher query that will retrieve
-        the nodes and relationships discussed in the answer.
-        
-        Args:
-            answer: AI-generated answer text
-            graph_summary: Optional graph summary (will fetch if not provided)
-            
-        Returns:
-            List of node keys from the generated Cypher query
+        Generate a Cypher query from the answer to extract relevant nodes.
         """
         if not answer or not answer.strip():
             return []
-        
+
         if graph_summary is None:
             graph_summary = self.neo4j.get_graph_summary()
-        
-        # Get schema information
+
         entity_types = list(graph_summary.get("entity_types", {}).keys())
         relationship_types = list(graph_summary.get("relationship_types", {}).keys())
-        
-        # Create prompt for LLM to generate Cypher query
+
         prompt = f"""Given this AI assistant answer about an investigation:
 
 "{answer}"
@@ -1325,82 +1221,50 @@ Return ONLY the Cypher query, nothing else. Do not include markdown code blocks.
         try:
             cypher = self.llm.call(
                 prompt=prompt,
-                temperature=0.2,  # Low temperature for consistent queries
+                temperature=0.2,
                 json_mode=False,
             )
-            
+
             if not cypher:
                 print("[RAG] No Cypher query generated from answer")
                 return []
-            
-            # Clean up the response - remove markdown code blocks if present
+
             cypher = cypher.strip()
             if cypher.startswith("```"):
-                # Remove markdown code blocks
                 lines = cypher.split("\n")
                 cypher = "\n".join([l for l in lines if not l.strip().startswith("```")])
                 cypher = cypher.strip()
-            
-            # Remove leading/trailing whitespace
-            cypher = cypher.strip()
-            
-            # If the query doesn't return keys, modify it to return keys
+
             if "RETURN" not in cypher.upper():
-                # Try to add RETURN clause
                 if "MATCH" in cypher.upper():
-                    # Find all node variables
                     import re
                     node_vars = re.findall(r'\((\w+)[:\)]', cypher)
                     if node_vars:
                         unique_vars = list(set(node_vars))
                         return_clause = "RETURN DISTINCT " + ", ".join([f"{v}.key AS key" for v in unique_vars])
                         cypher = f"{cypher}\n{return_clause}"
-            
-            # Ensure we're returning keys
-            if "RETURN" in cypher.upper() and ".key" not in cypher:
-                # Modify RETURN to include keys
-                cypher = cypher.replace("RETURN", "RETURN DISTINCT").replace("return", "RETURN DISTINCT")
-                # Try to add .key to node variables
-                import re
-                # Find RETURN clause and add .key
-                return_match = re.search(r'RETURN\s+(.+?)(?:\s|$)', cypher, re.IGNORECASE)
-                if return_match:
-                    return_vars = return_match.group(1).split(",")
-                    new_return = "RETURN DISTINCT " + ", ".join([
-                        f"{v.strip()}.key AS key" if "." not in v.strip() else v.strip()
-                        for v in return_vars
-                    ])
-                    cypher = re.sub(r'RETURN\s+.+?(?:\s|$)', new_return + " ", cypher, flags=re.IGNORECASE)
-            
+
             print(f"[RAG] Generated Cypher query from answer:\n{cypher}")
-            
-            # Execute the query
+
             try:
                 results = self.neo4j.run_cypher(cypher)
-                
-                # Extract node keys from results
                 node_keys = []
                 for row in results:
-                    # Try different possible key field names
                     key = row.get("key") or row.get("node_key") or row.get("n.key") or row.get("m.key")
                     if key:
                         node_keys.append(key)
-                    # If no key field, try to get all values that look like keys
                     for value in row.values():
                         if isinstance(value, str) and value:
                             node_keys.append(value)
-                
-                # Remove duplicates
+
                 node_keys = list(set(node_keys))
-                
                 print(f"[RAG] Extracted {len(node_keys)} node keys from Cypher query results")
                 return node_keys
-                
+
             except Exception as query_error:
                 print(f"[RAG] Error executing Cypher query: {query_error}")
-                print(f"[RAG] Query was: {cypher}")
                 return []
-            
+
         except Exception as e:
             print(f"[RAG] Error generating Cypher query from answer: {e}")
             import traceback
@@ -1412,18 +1276,8 @@ Return ONLY the Cypher query, nothing else. Do not include markdown code blocks.
         case_id: str,
         selected_keys: Optional[List[str]] = None,
     ) -> List[str]:
-        """
-        Generate suggested questions based on current context.
-
-        Args:
-            case_id: The case ID to scope the query to
-            selected_keys: Optional selected node keys
-
-        Returns:
-            List of suggested question strings
-        """
+        """Generate suggested questions based on current context."""
         if selected_keys and len(selected_keys) > 0:
-            # Get details for selected nodes
             node_context = self.neo4j.get_context_for_nodes(selected_keys, case_id)
             entities = node_context.get("selected_entities", [])
 
@@ -1437,7 +1291,6 @@ Return ONLY the Cypher query, nothing else. Do not include markdown code blocks.
                     "Summarize the relationships between these entities.",
                 ]
 
-        # Full graph suggestions
         return [
             "Summarize the key findings in this investigation.",
             "Who are the main suspects?",

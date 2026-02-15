@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 import requests
 import json
 
-from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OPENAI_MODEL, LLM_PROVIDER, LLM_MODEL, OPENAI_API_KEY
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL, OPENAI_MODEL, LLM_PROVIDER, LLM_MODEL, OPENAI_API_KEY, QUESTION_CLASSIFICATION_ENABLED
 from profile_loader import get_chat_config
 
 import sys
@@ -328,6 +328,49 @@ class LLMService:
         json_str = response_text[start:end + 1]
         return json.loads(json_str)
 
+    def classify_question(self, question: str) -> str:
+        """
+        Classify a question as semantic, structural, or hybrid.
+
+        - semantic: Questions about content, meaning, descriptions, summaries
+          (e.g., "What did John say about the transaction?", "Describe the evidence")
+        - structural: Questions about counts, connections, patterns, graph structure
+          (e.g., "How many transactions involve X?", "Who is connected to Y?")
+        - hybrid: Questions that benefit from both approaches
+          (e.g., "What are the suspicious connections between X and Y?")
+
+        Args:
+            question: The user's question
+
+        Returns:
+            One of "semantic", "structural", or "hybrid"
+        """
+        if not QUESTION_CLASSIFICATION_ENABLED:
+            return "hybrid"
+
+        prompt = f"""Classify this investigation question into exactly one category.
+
+Categories:
+- "semantic": Questions about content, meaning, descriptions, what someone said or did, summaries of events or documents
+- "structural": Questions about counts, lists of connections, network patterns, who is connected to whom, how many, which entities
+- "hybrid": Questions that need both text understanding AND graph/structural information
+
+Question: "{question}"
+
+Return ONLY valid JSON:
+{{"classification": "semantic" or "structural" or "hybrid"}}"""
+
+        try:
+            response = self.call(prompt, temperature=0.0, json_mode=True)
+            result = self.parse_json_response(response)
+            classification = result.get("classification", "hybrid").lower().strip()
+            if classification in ("semantic", "structural", "hybrid"):
+                return classification
+            return "hybrid"
+        except Exception as e:
+            print(f"[LLM] Question classification failed: {e}")
+            return "hybrid"
+
     def generate_cypher(
         self,
         question: str,
@@ -415,25 +458,27 @@ Return ONLY valid JSON with this structure:
         try:
             prompt = f"""{system_context}
 
-You have access to the following documents:
+You have access to the following investigation context:
 
 {context}
 
-Based on these documents, please answer the question:
+Based on this investigation context, please answer the question:
 "{question}"
 
 Guidelines:
 - {analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
+- CITE SOURCES: When referencing specific facts, cite the document name and page number in [brackets] (e.g., [Financial Report, p.3])
+- When verified facts are provided with quotes, reference the original quote to support your answer
 - Be specific and cite document names when relevant
 - If you identify patterns or important information, explain them
-- Use ALL available information from the documents above - extract and synthesize details
-- If specific details (like exact dates, amounts, or names) are mentioned in the documents, include them in your answer
-- Only say "insufficient information" if the documents truly contain NO relevant information about the question
-- If the documents have related information (even if incomplete), provide what you can find and note what additional details would be helpful
+- Use ALL available information from the context above - extract and synthesize details from text passages, entity information, graph connections, and any query results
+- If specific details (like exact dates, amounts, or names) are mentioned, include them in your answer
+- Only say "insufficient information" if the context truly contains NO relevant information about the question
+- If the context has related information (even if incomplete), provide what you can find and note what additional details would be helpful
 - Keep your response focused and professional
-- Highlight any connections or patterns you notice
+- Highlight any connections or patterns you notice across different sources of information
 
 Answer:"""
 
