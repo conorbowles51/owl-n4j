@@ -18,6 +18,7 @@ import {
   Layers,
   Tag,
   Sparkles,
+  Link,
 } from 'lucide-react';
 import { databaseAPI, backfillAPI } from '../services/api';
 
@@ -44,6 +45,8 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
   const [entityMetaBackfillResult, setEntityMetaBackfillResult] = useState(null);
   const [summaryBackfilling, setSummaryBackfilling] = useState(false);
   const [summaryBackfillResult, setSummaryBackfillResult] = useState(null);
+  const [caseIdBackfilling, setCaseIdBackfilling] = useState(false);
+  const [caseIdBackfillResult, setCaseIdBackfillResult] = useState(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -437,7 +440,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
               ) : gapAnalysis ? (
                 <>
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-4 gap-3">
+                  <div className="grid grid-cols-5 gap-3">
                     {/* Chunk Embeddings Card */}
                     <div className="bg-white rounded-lg border border-purple-200 p-3">
                       <div className="flex items-center gap-2 mb-2">
@@ -578,6 +581,41 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                           </div>
                           <div className="text-[10px] text-light-500 mt-0.5 text-right">
                             {Math.round(((gapAnalysis.documents.with_summary || 0) / gapAnalysis.documents.total) * 100)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Case IDs Card */}
+                    <div className="bg-white rounded-lg border border-purple-200 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Link className="w-4 h-4 text-rose-600" />
+                        <span className="text-xs font-semibold text-light-700">Case IDs</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">Docs missing</span>
+                          <span className="font-medium text-orange-700">{gapAnalysis.documents?.missing_case_id || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">Entities missing</span>
+                          <span className="font-medium text-orange-700">{gapAnalysis.entities?.neo4j_missing_case_id || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-600">Docs with case_id</span>
+                          <span className="font-medium text-green-700">{gapAnalysis.documents?.with_case_id || 0}</span>
+                        </div>
+                      </div>
+                      {gapAnalysis.documents?.total > 0 && (
+                        <div className="mt-2">
+                          <div className="w-full bg-light-200 rounded-full h-1.5">
+                            <div
+                              className="bg-rose-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${Math.round(((gapAnalysis.documents.with_case_id || 0) / gapAnalysis.documents.total) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-light-500 mt-0.5 text-right">
+                            {Math.round(((gapAnalysis.documents.with_case_id || 0) / gapAnalysis.documents.total) * 100)}%
                           </div>
                         </div>
                       )}
@@ -752,6 +790,62 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                         </div>
                       )}
                     </div>
+
+                    {/* Backfill Case IDs Button */}
+                    <div className="flex-1">
+                      <button
+                        onClick={async () => {
+                          setCaseIdBackfilling(true);
+                          setCaseIdBackfillResult(null);
+                          try {
+                            const result = await backfillAPI.backfillCaseIds({
+                              include_entities: true,
+                              dry_run: false,
+                            });
+                            setCaseIdBackfillResult({
+                              status: result.status,
+                              message: result.message || 'Case ID backfill completed',
+                            });
+                            await loadGapAnalysis();
+                          } catch (err) {
+                            setCaseIdBackfillResult({
+                              status: 'error',
+                              message: err.message || 'Case ID backfill failed',
+                            });
+                          } finally {
+                            setCaseIdBackfilling(false);
+                          }
+                        }}
+                        disabled={caseIdBackfilling || chunkBackfilling || entityMetaBackfilling || summaryBackfilling || ((gapAnalysis.documents?.missing_case_id === 0) && (gapAnalysis.entities?.neo4j_missing_case_id === 0))}
+                        className="w-full px-3 py-2 text-sm bg-rose-500 text-white rounded hover:bg-rose-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {caseIdBackfilling ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Assigning Case IDs...
+                          </>
+                        ) : (
+                          <>
+                            <Link className="w-4 h-4" />
+                            Backfill Case IDs
+                            {((gapAnalysis.documents?.missing_case_id || 0) + (gapAnalysis.entities?.neo4j_missing_case_id || 0)) > 0 && (
+                              <span className="bg-rose-400 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                {(gapAnalysis.documents?.missing_case_id || 0) + (gapAnalysis.entities?.neo4j_missing_case_id || 0)}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                      {caseIdBackfillResult && (
+                        <div className={`mt-1 p-2 rounded text-xs ${
+                          caseIdBackfillResult.status === 'complete'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          {caseIdBackfillResult.message}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Info text */}
@@ -759,6 +853,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                     <strong>Chunk embeddings</strong> enable passage-level semantic search (no LLM cost, only embedding cost).
                     <strong> Entity metadata</strong> adds case_id to existing entity vectors for filtered search (zero cost, metadata-only update).
                     <strong> Doc summaries</strong> generate AI summaries for documents (uses LLM — small cost per document).
+                    <strong> Case IDs</strong> assigns case_id to documents &amp; entities from evidence records (zero cost, Neo4j-only update).
                   </p>
                 </>
               ) : (

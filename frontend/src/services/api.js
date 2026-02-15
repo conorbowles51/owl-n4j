@@ -1757,6 +1757,25 @@ export const backfillAPI = {
     }),
 
   /**
+   * Backfill case_id for documents and entities in Neo4j
+   * @param {Object} options - Case ID backfill options
+   * @param {boolean} [options.include_entities=true] - Also backfill entities via relationship traversal
+   * @param {boolean} [options.dry_run=false] - If true, only report what would be done
+   */
+  backfillCaseIds: (options = {}) =>
+    fetchAPI('/backfill/case-ids', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        include_entities: options.include_entities !== false,
+        dry_run: options.dry_run || false,
+      }),
+      timeout: 600000, // 10 minutes for case_id backfill
+    }),
+
+  /**
    * Get gap analysis / backfill status
    * Returns counts of what needs backfilling
    */

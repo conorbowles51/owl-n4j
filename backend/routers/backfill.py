@@ -76,6 +76,12 @@ class DocumentSummaryBackfillRequest(BaseModel):
     dry_run: bool = False
 
 
+class CaseIdBackfillRequest(BaseModel):
+    """Request model for case_id backfill endpoint."""
+    include_entities: bool = True
+    dry_run: bool = False
+
+
 class BackfillResponse(BaseModel):
     """Response model for backfill endpoint."""
     status: str
@@ -737,6 +743,85 @@ async def backfill_document_summaries_endpoint(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/case-ids", response_model=BackfillResponse)
+async def backfill_case_ids_endpoint(
+    request: CaseIdBackfillRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Backfill case_id for documents and entities in Neo4j.
+
+    Documents: Resolves case_id from evidence storage records or file path.
+    Entities: Inherits case_id from connected Document nodes.
+
+    No LLM calls. No re-embedding. Pure metadata update in Neo4j.
+    """
+    current_username = user.get("username", "unknown")
+
+    system_log_service.log(
+        log_type=LogType.DOCUMENT_INGESTION,
+        origin=LogOrigin.FRONTEND,
+        action=f"Case ID Backfill Request: include_entities={request.include_entities}",
+        details={
+            "include_entities": request.include_entities,
+            "dry_run": request.dry_run,
+            "requested_by": current_username,
+        },
+        user=current_username,
+        success=True,
+    )
+
+    try:
+        from scripts.backfill_case_ids import backfill_case_ids
+
+        def log_callback(level, message):
+            system_log_service.log(
+                log_type=LogType.DOCUMENT_INGESTION,
+                origin=LogOrigin.BACKEND,
+                action=f"Case ID Backfill Progress: {message}",
+                details={"level": level},
+                user=current_username,
+                success=level != "error",
+            )
+
+        result = backfill_case_ids(
+            dry_run=request.dry_run,
+            include_entities=request.include_entities,
+            log_callback=log_callback,
+        )
+
+        stats = result.get("stats", {})
+        doc_stats = stats.get("documents", {})
+        entity_stats = stats.get("entities", {})
+
+        parts = [
+            f"Case ID backfill {'(dry run) ' if request.dry_run else ''}complete:",
+            f"{doc_stats.get('updated', 0)} documents updated",
+            f"{doc_stats.get('not_resolved', 0)} documents unresolved",
+        ]
+        if request.include_entities:
+            parts.append(f"{entity_stats.get('updated', 0)} entities updated")
+            parts.append(f"{entity_stats.get('not_resolved', 0)} entities unresolved")
+
+        message = ", ".join(parts)
+
+        return BackfillResponse(
+            status=result.get("status", "complete"),
+            message=message,
+        )
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.DOCUMENT_INGESTION,
+            origin=LogOrigin.BACKEND,
+            action="Case ID Backfill Failed",
+            details={"error": str(e)},
+            user=current_username,
+            success=False,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/status", response_model=BackfillStatusResponse)
 async def get_backfill_status(
     user: dict = Depends(get_current_user),
@@ -750,15 +835,17 @@ async def get_backfill_status(
     - Total chunks in the chunks collection
     """
     try:
-        # Document stats (total + summary counts)
+        # Document stats (total + summary + case_id counts)
         doc_cypher = """
         MATCH (d:Document)
         RETURN count(d) AS total,
-               count(CASE WHEN d.summary IS NOT NULL AND d.summary <> '' THEN 1 END) AS with_summary
+               count(CASE WHEN d.summary IS NOT NULL AND d.summary <> '' THEN 1 END) AS with_summary,
+               count(CASE WHEN d.case_id IS NOT NULL AND d.case_id <> '' THEN 1 END) AS with_case_id
         """
         doc_result = neo4j_service.run_cypher(doc_cypher)
         total_docs = doc_result[0]["total"] if doc_result else 0
         docs_with_summary = doc_result[0]["with_summary"] if doc_result else 0
+        docs_with_case_id = doc_result[0]["with_case_id"] if doc_result else 0
 
         # Count documents that have chunks
         try:
@@ -779,14 +866,16 @@ async def get_backfill_status(
             total_chunks = 0
             docs_with_chunk_count = 0
 
-        # Entity stats
+        # Entity stats (including case_id in Neo4j)
         entity_cypher = """
         MATCH (e)
         WHERE NOT e:Document
-        RETURN count(e) AS total
+        RETURN count(e) AS total,
+               count(CASE WHEN e.case_id IS NOT NULL AND e.case_id <> '' THEN 1 END) AS with_case_id
         """
         entity_result = neo4j_service.run_cypher(entity_cypher)
         total_entities_neo4j = entity_result[0]["total"] if entity_result else 0
+        entities_neo4j_with_case_id = entity_result[0]["with_case_id"] if entity_result else 0
 
         # Check ChromaDB entity metadata for case_id
         try:
@@ -810,6 +899,8 @@ async def get_backfill_status(
                 "missing_chunks": total_docs - docs_with_chunk_count,
                 "with_summary": docs_with_summary,
                 "missing_summary": total_docs - docs_with_summary,
+                "with_case_id": docs_with_case_id,
+                "missing_case_id": total_docs - docs_with_case_id,
             },
             entities={
                 "total_neo4j": total_entities_neo4j,
@@ -817,6 +908,8 @@ async def get_backfill_status(
                 "with_case_id_metadata": entities_with_case_id,
                 "missing_case_id": total_entities_chromadb - entities_with_case_id,
                 "missing_embeddings": total_entities_neo4j - total_entities_chromadb,
+                "neo4j_with_case_id": entities_neo4j_with_case_id,
+                "neo4j_missing_case_id": total_entities_neo4j - entities_neo4j_with_case_id,
             },
             chunks={
                 "total": total_chunks,
