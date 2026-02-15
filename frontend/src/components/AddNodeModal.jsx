@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Plus, Loader2, Link2, Trash2 } from 'lucide-react';
 import { graphAPI } from '../services/api';
 import CreateRelationshipModal from './CreateRelationshipModal';
@@ -34,6 +34,10 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
   const [typeFieldValues, setTypeFieldValues] = useState({}); // Values for type-specific fields
   const [customFields, setCustomFields] = useState([]); // Array of { name: '', value: '' } for new fields
 
+  // Use a ref to hold the latest tableNodes so callbacks don't need it as a dependency
+  const tableNodesRef = useRef(tableNodes);
+  tableNodesRef.current = tableNodes;
+
   // Helper function to flatten node (same as GraphTableView)
   const flattenNode = useCallback((node) => {
     const out = {};
@@ -54,10 +58,12 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
   }, []);
 
   // Define loadTypeFields first (before useEffect that uses it)
+  // Uses tableNodesRef to avoid re-creating when tableNodes array reference changes
   const loadTypeFields = useCallback((selectedType) => {
+    const currentTableNodes = tableNodesRef.current;
     console.log(`[AddNodeModal] loadTypeFields called with type: "${selectedType}"`);
-    console.log(`[AddNodeModal] tableNodes.length: ${tableNodes.length}`);
-    
+    console.log(`[AddNodeModal] tableNodes.length: ${currentTableNodes.length}`);
+
     if (!selectedType) {
       console.log(`[AddNodeModal] No selectedType, clearing fields`);
       setTypeFields([]);
@@ -66,10 +72,10 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
     }
 
     // Filter table nodes by type
-    const nodesOfType = tableNodes.filter(n => n.type === selectedType);
+    const nodesOfType = currentTableNodes.filter(n => n.type === selectedType);
     console.log(`[AddNodeModal] Found ${nodesOfType.length} nodes of type "${selectedType}"`);
-    console.log(`[AddNodeModal] All node types in tableNodes:`, tableNodes.map(n => n.type));
-    
+    console.log(`[AddNodeModal] All node types in tableNodes:`, currentTableNodes.map(n => n.type));
+
     if (nodesOfType.length === 0) {
       // No existing nodes of this type in table, use default fields
       console.log(`[AddNodeModal] No nodes of type "${selectedType}" found, clearing fields`);
@@ -83,7 +89,7 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
     const fieldSet = new Set();
     const allFieldsFound = new Set(); // Track all fields found (including standard ones)
     const excludedFields = new Set(); // Track fields that were excluded
-    
+
     // For each node of this type, flatten it and collect all fields
     nodesOfType.forEach((node, index) => {
       console.log(`[AddNodeModal] Node ${index + 1}/${nodesOfType.length} RAW:`, {
@@ -98,7 +104,7 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
         flattened: flat,
         flattenedKeys: Object.keys(flat)
       });
-      
+
       // Track all fields found
       Object.keys(flat).forEach(key => {
         allFieldsFound.add(key);
@@ -114,35 +120,36 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
     const fields = Array.from(fieldSet).sort();
     const allFieldsArray = Array.from(allFieldsFound).sort();
     const excludedFieldsArray = Array.from(excludedFields).sort();
-    
+
     console.log(`[AddNodeModal] ===== Type "${selectedType}" Field Analysis =====`);
     console.log(`[AddNodeModal] Total nodes of this type: ${nodesOfType.length}`);
     console.log(`[AddNodeModal] All fields found (${allFieldsArray.length}):`, allFieldsArray);
     console.log(`[AddNodeModal] Excluded (standard) fields (${excludedFieldsArray.length}):`, excludedFieldsArray);
     console.log(`[AddNodeModal] Type-specific fields to display (${fields.length}):`, fields);
     console.log(`[AddNodeModal] ================================================`);
-    
+
     setTypeFields(fields);
-    
+
     // Initialize field values (clear previous values)
     const initialValues = {};
     fields.forEach(field => {
       initialValues[field] = '';
     });
     setTypeFieldValues(initialValues);
-  }, [tableNodes, flattenNode]);
+  }, [flattenNode]);
 
-  const loadEntityTypes = () => {
+  const loadEntityTypes = useCallback(() => {
+    const currentTableNodes = tableNodesRef.current;
     // Extract unique types from table nodes
     const typeMap = new Map();
-    tableNodes.forEach(node => {
+    currentTableNodes.forEach(node => {
       const nodeType = node.type;
       if (nodeType) {
         const count = typeMap.get(nodeType) || 0;
         typeMap.set(nodeType, count + 1);
       }
     });
-    
+
     // Convert to array format
     const typesList = Array.from(typeMap.entries()).map(([type, count]) => ({
       type,
@@ -152,13 +159,13 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
       if (b.count !== a.count) return b.count - a.count;
       return a.type.localeCompare(b.type);
     });
-    
+
     setEntityTypes(typesList);
     // Set first entity type as default if available
     if (typesList.length > 0) {
       setType(typesList[0].type);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -179,23 +186,24 @@ export default function AddNodeModal({ isOpen, onClose, onNodeCreated, caseId, o
       // Load entity types (this will set the first type if available)
       loadEntityTypes();
     }
-  }, [isOpen, tableNodes]);
+  }, [isOpen, loadEntityTypes]);
 
   // Load fields for selected type - automatically updates when type changes
   useEffect(() => {
     const selectedType = useCustomType ? customType : type;
-    console.log(`[AddNodeModal] useEffect triggered - type: "${type}", customType: "${customType}", selectedType: "${selectedType}", isOpen: ${isOpen}, caseId: ${caseId}, tableNodes.length: ${tableNodes.length}`);
-    
+    const currentTableNodes = tableNodesRef.current;
+    console.log(`[AddNodeModal] useEffect triggered - type: "${type}", customType: "${customType}", selectedType: "${selectedType}", isOpen: ${isOpen}, caseId: ${caseId}, tableNodes.length: ${currentTableNodes.length}`);
+
     // Don't require caseId for loading fields - we only need it when creating the node
-    if (isOpen && selectedType && tableNodes.length > 0) {
+    if (isOpen && selectedType && currentTableNodes.length > 0) {
       console.log(`[AddNodeModal] All conditions met, calling loadTypeFields("${selectedType}")`);
       loadTypeFields(selectedType);
     } else {
-      console.log(`[AddNodeModal] Conditions not met - isOpen: ${isOpen}, selectedType: ${!!selectedType}, tableNodes.length: ${tableNodes.length}`);
+      console.log(`[AddNodeModal] Conditions not met - isOpen: ${isOpen}, selectedType: ${!!selectedType}, tableNodes.length: ${currentTableNodes.length}`);
       setTypeFields([]);
       setTypeFieldValues({});
     }
-  }, [type, customType, useCustomType, isOpen, loadTypeFields, tableNodes]);
+  }, [type, customType, useCustomType, isOpen, loadTypeFields]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
