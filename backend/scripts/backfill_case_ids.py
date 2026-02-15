@@ -1,19 +1,28 @@
 """
-Backfill case_id for documents and entities in Neo4j.
+Backfill case_id for documents and entities in Neo4j and ChromaDB.
 
-This script finds Document and entity nodes in Neo4j that are missing the case_id
-property and attempts to resolve it from:
+This script finds Document and entity nodes missing the case_id property and
+attempts to resolve it from:
 
   1. Evidence storage records (evidence.json) — maps original_filename → case_id
   2. File path parsing — files stored under ingestion/data/<case_id>/filename
   3. Relationship traversal — entities inherit case_id from connected Documents
 
-No LLM calls. No re-embedding. Pure metadata update in Neo4j.
+Phases:
+  1. Neo4j Documents — resolve case_id from evidence storage
+  2. Neo4j Entities — inherit case_id from connected Documents
+  3. ChromaDB Documents — update metadata with case_id (matched via doc_id/filename)
+  4. ChromaDB Chunks — update metadata with case_id (inherited from parent doc)
+  5. ChromaDB Entities — update metadata with case_id (from Neo4j)
+
+No LLM calls. No re-embedding. Pure metadata updates.
 
 Usage:
     python backend/scripts/backfill_case_ids.py --dry-run
     python backend/scripts/backfill_case_ids.py
     python backend/scripts/backfill_case_ids.py --include-entities
+    python backend/scripts/backfill_case_ids.py --include-vector-db
+    python backend/scripts/backfill_case_ids.py --neo4j-only
 """
 
 import sys
@@ -101,18 +110,23 @@ def _scan_evidence_dirs() -> Dict[str, str]:
 def backfill_case_ids(
     dry_run: bool = False,
     include_entities: bool = True,
+    include_vector_db: bool = True,
     log_callback=None,
 ) -> Dict:
     """
-    Backfill case_id for documents and entities missing it in Neo4j.
+    Backfill case_id for documents and entities missing it in Neo4j and ChromaDB.
 
     Strategy:
-    1. Documents: Look up case_id from evidence storage or file path
-    2. Entities: Inherit case_id from connected Document nodes
+    1. Neo4j Documents: Look up case_id from evidence storage or file path
+    2. Neo4j Entities: Inherit case_id from connected Document nodes
+    3. ChromaDB Documents: Update metadata with case_id (matched via doc_id/filename)
+    4. ChromaDB Chunks: Update metadata with case_id (inherited from parent doc)
+    5. ChromaDB Entities: Update metadata with case_id (from Neo4j)
 
     Args:
         dry_run: If True, only report what would be done without making changes
         include_entities: If True, also backfill entities (default True)
+        include_vector_db: If True, also backfill ChromaDB metadata (default True)
         log_callback: Optional callback for progress updates (level, message)
 
     Returns:
@@ -280,20 +294,310 @@ def backfill_case_ids(
         except Exception as e:
             log("error", f"Error querying Neo4j for entities: {e}")
 
+    # ── Phase 3–5: ChromaDB (Vector DB) ─────────────────────────────────
+    vector_doc_stats = {
+        "total": 0,
+        "already_has_case_id": 0,
+        "updated": 0,
+        "not_resolved": 0,
+    }
+    vector_chunk_stats = {
+        "total": 0,
+        "already_has_case_id": 0,
+        "updated": 0,
+        "not_resolved": 0,
+    }
+    vector_entity_stats = {
+        "total": 0,
+        "already_has_case_id": 0,
+        "updated": 0,
+        "not_resolved": 0,
+    }
+
+    if include_vector_db:
+        try:
+            from services.vector_db_service import vector_db_service
+            if vector_db_service is None:
+                log("warning", "\nChromaDB not available — skipping vector DB phases")
+            else:
+                # Build a doc_id → case_id lookup from Neo4j (the source of truth after phases 1-2)
+                log("info", "\nBuilding doc_id → case_id lookup from Neo4j...")
+                try:
+                    neo4j_doc_lookup_cypher = """
+                    MATCH (d:Document)
+                    WHERE d.case_id IS NOT NULL AND d.case_id <> ''
+                    RETURN d.id AS id, d.name AS name, d.case_id AS case_id
+                    """
+                    neo4j_docs = neo4j_service.run_cypher(neo4j_doc_lookup_cypher)
+                    doc_id_to_case_id = {}
+                    doc_name_to_case_id = {}
+                    for doc in neo4j_docs:
+                        did = doc.get("id")
+                        dname = doc.get("name", "")
+                        cid = doc.get("case_id", "")
+                        if did and cid:
+                            doc_id_to_case_id[did] = cid
+                        if dname and cid:
+                            doc_name_to_case_id[dname] = cid
+                    log("info", f"  {len(doc_id_to_case_id)} doc_id→case_id mappings from Neo4j")
+                    log("info", f"  {len(doc_name_to_case_id)} doc_name→case_id mappings from Neo4j")
+                except Exception as e:
+                    log("error", f"Failed to build Neo4j doc lookup: {e}")
+                    doc_id_to_case_id = {}
+                    doc_name_to_case_id = {}
+
+                # Also build entity_key → case_id from Neo4j
+                entity_key_to_case_id = {}
+                if include_entities:
+                    try:
+                        neo4j_entity_cypher = """
+                        MATCH (e)
+                        WHERE NOT e:Document AND e.case_id IS NOT NULL AND e.case_id <> ''
+                        RETURN e.key AS key, e.case_id AS case_id
+                        """
+                        neo4j_entities = neo4j_service.run_cypher(neo4j_entity_cypher)
+                        for ent in neo4j_entities:
+                            ekey = ent.get("key")
+                            ecid = ent.get("case_id")
+                            if ekey and ecid:
+                                entity_key_to_case_id[ekey] = ecid
+                        log("info", f"  {len(entity_key_to_case_id)} entity_key→case_id mappings from Neo4j")
+                    except Exception as e:
+                        log("error", f"Failed to build Neo4j entity lookup: {e}")
+
+                # ── Phase 3: ChromaDB Documents ──────────────────────────
+                log("info", "\n" + "-" * 60)
+                log("info", "Phase 3: Backfilling case_id on ChromaDB Document metadata")
+                log("info", "-" * 60)
+
+                try:
+                    doc_collection = vector_db_service.collection
+                    all_docs = doc_collection.get(include=["metadatas"])
+                    chroma_doc_ids = all_docs.get("ids", [])
+                    chroma_doc_metas = all_docs.get("metadatas", [])
+                    vector_doc_stats["total"] = len(chroma_doc_ids)
+                    log("info", f"Found {len(chroma_doc_ids)} documents in ChromaDB")
+
+                    batch_ids = []
+                    batch_metas = []
+                    BATCH_SIZE = 50
+
+                    for i, (doc_id, meta) in enumerate(zip(chroma_doc_ids, chroma_doc_metas), 1):
+                        meta = meta or {}
+
+                        if meta.get("case_id") and meta["case_id"] != "":
+                            vector_doc_stats["already_has_case_id"] += 1
+                            continue
+
+                        # Resolve case_id: try doc_id directly, then filename from metadata
+                        resolved = doc_id_to_case_id.get(doc_id)
+                        if not resolved:
+                            filename = meta.get("filename", "")
+                            if filename:
+                                resolved = doc_name_to_case_id.get(filename) or combined_lookup.get(filename)
+
+                        if not resolved:
+                            vector_doc_stats["not_resolved"] += 1
+                            continue
+
+                        batch_ids.append(doc_id)
+                        batch_metas.append({**meta, "case_id": resolved})
+
+                        if len(batch_ids) >= BATCH_SIZE:
+                            if dry_run:
+                                vector_doc_stats["updated"] += len(batch_ids)
+                            else:
+                                try:
+                                    doc_collection.update(ids=batch_ids, metadatas=batch_metas)
+                                    vector_doc_stats["updated"] += len(batch_ids)
+                                except Exception as e:
+                                    log("error", f"  Failed to update doc batch: {e}")
+                            batch_ids = []
+                            batch_metas = []
+
+                    # Final batch
+                    if batch_ids:
+                        if dry_run:
+                            vector_doc_stats["updated"] += len(batch_ids)
+                        else:
+                            try:
+                                doc_collection.update(ids=batch_ids, metadatas=batch_metas)
+                                vector_doc_stats["updated"] += len(batch_ids)
+                            except Exception as e:
+                                log("error", f"  Failed to update final doc batch: {e}")
+
+                    log("info", f"  Updated: {vector_doc_stats['updated']}, Already had: {vector_doc_stats['already_has_case_id']}, Unresolved: {vector_doc_stats['not_resolved']}")
+
+                except Exception as e:
+                    log("error", f"Error processing ChromaDB documents: {e}")
+
+                # ── Phase 4: ChromaDB Chunks ─────────────────────────────
+                log("info", "\n" + "-" * 60)
+                log("info", "Phase 4: Backfilling case_id on ChromaDB Chunk metadata")
+                log("info", "-" * 60)
+
+                try:
+                    chunk_collection = vector_db_service.chunk_collection
+                    all_chunks = chunk_collection.get(include=["metadatas"])
+                    chroma_chunk_ids = all_chunks.get("ids", [])
+                    chroma_chunk_metas = all_chunks.get("metadatas", [])
+                    vector_chunk_stats["total"] = len(chroma_chunk_ids)
+                    log("info", f"Found {len(chroma_chunk_ids)} chunks in ChromaDB")
+
+                    batch_ids = []
+                    batch_metas = []
+
+                    for i, (chunk_id, meta) in enumerate(zip(chroma_chunk_ids, chroma_chunk_metas), 1):
+                        meta = meta or {}
+
+                        if meta.get("case_id") and meta["case_id"] != "":
+                            vector_chunk_stats["already_has_case_id"] += 1
+                            continue
+
+                        # Resolve case_id from parent doc_id or doc_name
+                        parent_doc_id = meta.get("doc_id", "")
+                        parent_doc_name = meta.get("doc_name", "")
+
+                        resolved = None
+                        if parent_doc_id:
+                            resolved = doc_id_to_case_id.get(parent_doc_id)
+                        if not resolved and parent_doc_name:
+                            resolved = doc_name_to_case_id.get(parent_doc_name) or combined_lookup.get(parent_doc_name)
+
+                        if not resolved:
+                            vector_chunk_stats["not_resolved"] += 1
+                            continue
+
+                        batch_ids.append(chunk_id)
+                        batch_metas.append({**meta, "case_id": resolved})
+
+                        if len(batch_ids) >= BATCH_SIZE:
+                            if dry_run:
+                                vector_chunk_stats["updated"] += len(batch_ids)
+                            else:
+                                try:
+                                    chunk_collection.update(ids=batch_ids, metadatas=batch_metas)
+                                    vector_chunk_stats["updated"] += len(batch_ids)
+                                except Exception as e:
+                                    log("error", f"  Failed to update chunk batch: {e}")
+                            batch_ids = []
+                            batch_metas = []
+
+                        if i % 500 == 0:
+                            log("info", f"  Progress: {i}/{len(chroma_chunk_ids)} chunks processed")
+
+                    # Final batch
+                    if batch_ids:
+                        if dry_run:
+                            vector_chunk_stats["updated"] += len(batch_ids)
+                        else:
+                            try:
+                                chunk_collection.update(ids=batch_ids, metadatas=batch_metas)
+                                vector_chunk_stats["updated"] += len(batch_ids)
+                            except Exception as e:
+                                log("error", f"  Failed to update final chunk batch: {e}")
+
+                    log("info", f"  Updated: {vector_chunk_stats['updated']}, Already had: {vector_chunk_stats['already_has_case_id']}, Unresolved: {vector_chunk_stats['not_resolved']}")
+
+                except Exception as e:
+                    log("error", f"Error processing ChromaDB chunks: {e}")
+
+                # ── Phase 5: ChromaDB Entities ───────────────────────────
+                if include_entities:
+                    log("info", "\n" + "-" * 60)
+                    log("info", "Phase 5: Backfilling case_id on ChromaDB Entity metadata")
+                    log("info", "-" * 60)
+
+                    try:
+                        entity_collection = vector_db_service.entity_collection
+                        all_ents = entity_collection.get(include=["metadatas"])
+                        chroma_ent_ids = all_ents.get("ids", [])
+                        chroma_ent_metas = all_ents.get("metadatas", [])
+                        vector_entity_stats["total"] = len(chroma_ent_ids)
+                        log("info", f"Found {len(chroma_ent_ids)} entities in ChromaDB")
+
+                        batch_ids = []
+                        batch_metas = []
+
+                        for i, (ent_id, meta) in enumerate(zip(chroma_ent_ids, chroma_ent_metas), 1):
+                            meta = meta or {}
+
+                            if meta.get("case_id") and meta["case_id"] != "":
+                                vector_entity_stats["already_has_case_id"] += 1
+                                continue
+
+                            # Resolve from Neo4j entity lookup (entity_id in ChromaDB = entity key)
+                            resolved = entity_key_to_case_id.get(ent_id)
+
+                            if not resolved:
+                                vector_entity_stats["not_resolved"] += 1
+                                continue
+
+                            batch_ids.append(ent_id)
+                            batch_metas.append({**meta, "case_id": resolved})
+
+                            if len(batch_ids) >= BATCH_SIZE:
+                                if dry_run:
+                                    vector_entity_stats["updated"] += len(batch_ids)
+                                else:
+                                    try:
+                                        entity_collection.update(ids=batch_ids, metadatas=batch_metas)
+                                        vector_entity_stats["updated"] += len(batch_ids)
+                                    except Exception as e:
+                                        log("error", f"  Failed to update entity batch: {e}")
+                                batch_ids = []
+                                batch_metas = []
+
+                        # Final batch
+                        if batch_ids:
+                            if dry_run:
+                                vector_entity_stats["updated"] += len(batch_ids)
+                            else:
+                                try:
+                                    entity_collection.update(ids=batch_ids, metadatas=batch_metas)
+                                    vector_entity_stats["updated"] += len(batch_ids)
+                                except Exception as e:
+                                    log("error", f"  Failed to update final entity batch: {e}")
+
+                        log("info", f"  Updated: {vector_entity_stats['updated']}, Already had: {vector_entity_stats['already_has_case_id']}, Unresolved: {vector_entity_stats['not_resolved']}")
+
+                    except Exception as e:
+                        log("error", f"Error processing ChromaDB entities: {e}")
+
+        except ImportError as e:
+            log("warning", f"\nChromaDB import failed — skipping vector DB phases: {e}")
+
     # ── Final Summary ────────────────────────────────────────────────────
     elapsed = time.time() - start_time
     log("info", "\n" + "=" * 60)
     log("info", "Case ID Backfill Complete")
     log("info", "=" * 60)
-    log("info", f"Documents:")
+    log("info", f"Neo4j Documents:")
     log("info", f"  Missing case_id:     {doc_stats['total_missing']}")
     log("info", f"  Updated:             {doc_stats['updated']}")
     log("info", f"  Not resolved:        {doc_stats['not_resolved']}")
     if include_entities:
-        log("info", f"Entities:")
+        log("info", f"Neo4j Entities:")
         log("info", f"  Missing case_id:     {entity_stats['total_missing']}")
         log("info", f"  Updated:             {entity_stats['updated']}")
         log("info", f"  Not resolved:        {entity_stats['not_resolved']}")
+    if include_vector_db:
+        log("info", f"ChromaDB Documents:")
+        log("info", f"  Total:               {vector_doc_stats['total']}")
+        log("info", f"  Updated:             {vector_doc_stats['updated']}")
+        log("info", f"  Already had case_id: {vector_doc_stats['already_has_case_id']}")
+        log("info", f"  Not resolved:        {vector_doc_stats['not_resolved']}")
+        log("info", f"ChromaDB Chunks:")
+        log("info", f"  Total:               {vector_chunk_stats['total']}")
+        log("info", f"  Updated:             {vector_chunk_stats['updated']}")
+        log("info", f"  Already had case_id: {vector_chunk_stats['already_has_case_id']}")
+        log("info", f"  Not resolved:        {vector_chunk_stats['not_resolved']}")
+        if include_entities:
+            log("info", f"ChromaDB Entities:")
+            log("info", f"  Total:               {vector_entity_stats['total']}")
+            log("info", f"  Updated:             {vector_entity_stats['updated']}")
+            log("info", f"  Already had case_id: {vector_entity_stats['already_has_case_id']}")
+            log("info", f"  Not resolved:        {vector_entity_stats['not_resolved']}")
     log("info", f"\nTime elapsed: {elapsed:.1f} seconds")
 
     if doc_stats["not_resolved_names"]:
@@ -308,6 +612,9 @@ def backfill_case_ids(
         "stats": {
             "documents": doc_stats,
             "entities": entity_stats,
+            "vector_documents": vector_doc_stats,
+            "vector_chunks": vector_chunk_stats,
+            "vector_entities": vector_entity_stats,
         },
         "elapsed_seconds": elapsed,
     }
@@ -318,7 +625,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Backfill case_id for documents and entities in Neo4j"
+        description="Backfill case_id for documents and entities in Neo4j and ChromaDB"
     )
     parser.add_argument(
         "--dry-run",
@@ -336,14 +643,27 @@ def main():
         action="store_true",
         help="Only backfill documents, skip entities"
     )
+    parser.add_argument(
+        "--include-vector-db",
+        action="store_true",
+        default=True,
+        help="Also backfill case_id metadata in ChromaDB (default: True)"
+    )
+    parser.add_argument(
+        "--neo4j-only",
+        action="store_true",
+        help="Only backfill Neo4j, skip ChromaDB"
+    )
 
     args = parser.parse_args()
 
     include_entities = not args.docs_only
+    include_vector_db = not args.neo4j_only
 
     result = backfill_case_ids(
         dry_run=args.dry_run,
         include_entities=include_entities,
+        include_vector_db=include_vector_db,
     )
 
     if result.get("status") == "error":

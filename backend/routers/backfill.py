@@ -79,6 +79,7 @@ class DocumentSummaryBackfillRequest(BaseModel):
 class CaseIdBackfillRequest(BaseModel):
     """Request model for case_id backfill endpoint."""
     include_entities: bool = True
+    include_vector_db: bool = True
     dry_run: bool = False
 
 
@@ -749,21 +750,23 @@ async def backfill_case_ids_endpoint(
     user: dict = Depends(get_current_user),
 ):
     """
-    Backfill case_id for documents and entities in Neo4j.
+    Backfill case_id for documents and entities in Neo4j and ChromaDB.
 
-    Documents: Resolves case_id from evidence storage records or file path.
-    Entities: Inherits case_id from connected Document nodes.
+    Neo4j Documents: Resolves case_id from evidence storage records or file path.
+    Neo4j Entities: Inherits case_id from connected Document nodes.
+    ChromaDB Documents/Chunks/Entities: Updates metadata with resolved case_id.
 
-    No LLM calls. No re-embedding. Pure metadata update in Neo4j.
+    No LLM calls. No re-embedding. Pure metadata updates.
     """
     current_username = user.get("username", "unknown")
 
     system_log_service.log(
         log_type=LogType.DOCUMENT_INGESTION,
         origin=LogOrigin.FRONTEND,
-        action=f"Case ID Backfill Request: include_entities={request.include_entities}",
+        action=f"Case ID Backfill Request: include_entities={request.include_entities}, include_vector_db={request.include_vector_db}",
         details={
             "include_entities": request.include_entities,
+            "include_vector_db": request.include_vector_db,
             "dry_run": request.dry_run,
             "requested_by": current_username,
         },
@@ -787,21 +790,29 @@ async def backfill_case_ids_endpoint(
         result = backfill_case_ids(
             dry_run=request.dry_run,
             include_entities=request.include_entities,
+            include_vector_db=request.include_vector_db,
             log_callback=log_callback,
         )
 
         stats = result.get("stats", {})
         doc_stats = stats.get("documents", {})
         entity_stats = stats.get("entities", {})
+        vdoc_stats = stats.get("vector_documents", {})
+        vchunk_stats = stats.get("vector_chunks", {})
+        vent_stats = stats.get("vector_entities", {})
 
         parts = [
             f"Case ID backfill {'(dry run) ' if request.dry_run else ''}complete:",
-            f"{doc_stats.get('updated', 0)} documents updated",
-            f"{doc_stats.get('not_resolved', 0)} documents unresolved",
+            f"Neo4j: {doc_stats.get('updated', 0)} docs",
         ]
         if request.include_entities:
-            parts.append(f"{entity_stats.get('updated', 0)} entities updated")
-            parts.append(f"{entity_stats.get('not_resolved', 0)} entities unresolved")
+            parts.append(f"{entity_stats.get('updated', 0)} entities")
+        if request.include_vector_db:
+            parts.append(
+                f"ChromaDB: {vdoc_stats.get('updated', 0)} docs, "
+                f"{vchunk_stats.get('updated', 0)} chunks, "
+                f"{vent_stats.get('updated', 0)} entities"
+            )
 
         message = ", ".join(parts)
 
@@ -892,6 +903,29 @@ async def get_backfill_status(
             total_entities_chromadb = 0
             entities_with_case_id = 0
 
+        # Check ChromaDB document metadata for case_id
+        try:
+            doc_collection = vector_db_service.collection
+            all_chroma_docs = doc_collection.get(include=["metadatas"])
+            chroma_doc_ids = all_chroma_docs.get("ids", [])
+            chroma_doc_metadatas = all_chroma_docs.get("metadatas", [])
+
+            total_docs_chromadb = len(chroma_doc_ids)
+            docs_chromadb_with_case_id = sum(
+                1 for m in chroma_doc_metadatas if m and m.get("case_id") and m["case_id"] != ""
+            )
+        except Exception:
+            total_docs_chromadb = 0
+            docs_chromadb_with_case_id = 0
+
+        # Check ChromaDB chunk metadata for case_id
+        try:
+            chunks_with_case_id = sum(
+                1 for m in chunk_metadatas if m and m.get("case_id") and m["case_id"] != ""
+            )
+        except Exception:
+            chunks_with_case_id = 0
+
         return BackfillStatusResponse(
             documents={
                 "total": total_docs,
@@ -901,6 +935,9 @@ async def get_backfill_status(
                 "missing_summary": total_docs - docs_with_summary,
                 "with_case_id": docs_with_case_id,
                 "missing_case_id": total_docs - docs_with_case_id,
+                "chromadb_total": total_docs_chromadb,
+                "chromadb_with_case_id": docs_chromadb_with_case_id,
+                "chromadb_missing_case_id": total_docs_chromadb - docs_chromadb_with_case_id,
             },
             entities={
                 "total_neo4j": total_entities_neo4j,
@@ -913,6 +950,8 @@ async def get_backfill_status(
             },
             chunks={
                 "total": total_chunks,
+                "with_case_id": chunks_with_case_id,
+                "missing_case_id": total_chunks - chunks_with_case_id,
             },
         )
     except Exception as e:

@@ -594,31 +594,69 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                       </div>
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs">
-                          <span className="text-light-600">Docs missing</span>
-                          <span className="font-medium text-orange-700">{gapAnalysis.documents?.missing_case_id || 0}</span>
+                          <span className="text-light-600">Neo4j docs</span>
+                          <span className="font-medium">
+                            <span className="text-green-700">{gapAnalysis.documents?.with_case_id || 0}</span>
+                            {(gapAnalysis.documents?.missing_case_id || 0) > 0 && (
+                              <span className="text-orange-700"> / {gapAnalysis.documents?.missing_case_id} missing</span>
+                            )}
+                          </span>
                         </div>
                         <div className="flex justify-between text-xs">
-                          <span className="text-light-600">Entities missing</span>
-                          <span className="font-medium text-orange-700">{gapAnalysis.entities?.neo4j_missing_case_id || 0}</span>
+                          <span className="text-light-600">Neo4j entities</span>
+                          <span className="font-medium">
+                            <span className="text-green-700">{gapAnalysis.entities?.neo4j_with_case_id || 0}</span>
+                            {(gapAnalysis.entities?.neo4j_missing_case_id || 0) > 0 && (
+                              <span className="text-orange-700"> / {gapAnalysis.entities?.neo4j_missing_case_id} missing</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs border-t border-light-200 pt-1 mt-1">
+                          <span className="text-light-600">Chroma docs</span>
+                          <span className="font-medium">
+                            <span className="text-green-700">{gapAnalysis.documents?.chromadb_with_case_id || 0}</span>
+                            {(gapAnalysis.documents?.chromadb_missing_case_id || 0) > 0 && (
+                              <span className="text-orange-700"> / {gapAnalysis.documents?.chromadb_missing_case_id} missing</span>
+                            )}
+                          </span>
                         </div>
                         <div className="flex justify-between text-xs">
-                          <span className="text-green-600">Docs with case_id</span>
-                          <span className="font-medium text-green-700">{gapAnalysis.documents?.with_case_id || 0}</span>
+                          <span className="text-light-600">Chroma chunks</span>
+                          <span className="font-medium">
+                            <span className="text-green-700">{gapAnalysis.chunks?.with_case_id || 0}</span>
+                            {(gapAnalysis.chunks?.missing_case_id || 0) > 0 && (
+                              <span className="text-orange-700"> / {gapAnalysis.chunks?.missing_case_id} missing</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">Chroma entities</span>
+                          <span className="font-medium">
+                            <span className="text-green-700">{gapAnalysis.entities?.with_case_id_metadata || 0}</span>
+                            {(gapAnalysis.entities?.missing_case_id || 0) > 0 && (
+                              <span className="text-orange-700"> / {gapAnalysis.entities?.missing_case_id} missing</span>
+                            )}
+                          </span>
                         </div>
                       </div>
-                      {gapAnalysis.documents?.total > 0 && (
-                        <div className="mt-2">
-                          <div className="w-full bg-light-200 rounded-full h-1.5">
-                            <div
-                              className="bg-rose-500 h-1.5 rounded-full transition-all"
-                              style={{ width: `${Math.round(((gapAnalysis.documents.with_case_id || 0) / gapAnalysis.documents.total) * 100)}%` }}
-                            />
+                      {(() => {
+                        const totalItems = (gapAnalysis.documents?.total || 0) + (gapAnalysis.entities?.total_neo4j || 0) + (gapAnalysis.documents?.chromadb_total || 0) + (gapAnalysis.chunks?.total || 0) + (gapAnalysis.entities?.total_chromadb || 0);
+                        const withCaseId = (gapAnalysis.documents?.with_case_id || 0) + (gapAnalysis.entities?.neo4j_with_case_id || 0) + (gapAnalysis.documents?.chromadb_with_case_id || 0) + (gapAnalysis.chunks?.with_case_id || 0) + (gapAnalysis.entities?.with_case_id_metadata || 0);
+                        const pct = totalItems > 0 ? Math.round((withCaseId / totalItems) * 100) : 0;
+                        return totalItems > 0 ? (
+                          <div className="mt-2">
+                            <div className="w-full bg-light-200 rounded-full h-1.5">
+                              <div
+                                className="bg-rose-500 h-1.5 rounded-full transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <div className="text-[10px] text-light-500 mt-0.5 text-right">
+                              {pct}%
+                            </div>
                           </div>
-                          <div className="text-[10px] text-light-500 mt-0.5 text-right">
-                            {Math.round(((gapAnalysis.documents.with_case_id || 0) / gapAnalysis.documents.total) * 100)}%
-                          </div>
-                        </div>
-                      )}
+                        ) : null;
+                      })()}
                     </div>
                   </div>
 
@@ -816,7 +854,13 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                             setCaseIdBackfilling(false);
                           }
                         }}
-                        disabled={caseIdBackfilling || chunkBackfilling || entityMetaBackfilling || summaryBackfilling || ((gapAnalysis.documents?.missing_case_id === 0) && (gapAnalysis.entities?.neo4j_missing_case_id === 0))}
+                        disabled={caseIdBackfilling || chunkBackfilling || entityMetaBackfilling || summaryBackfilling || (
+                          (gapAnalysis.documents?.missing_case_id === 0) &&
+                          (gapAnalysis.entities?.neo4j_missing_case_id === 0) &&
+                          (gapAnalysis.documents?.chromadb_missing_case_id === 0) &&
+                          (gapAnalysis.chunks?.missing_case_id === 0) &&
+                          (gapAnalysis.entities?.missing_case_id === 0)
+                        )}
                         className="w-full px-3 py-2 text-sm bg-rose-500 text-white rounded hover:bg-rose-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                       >
                         {caseIdBackfilling ? (
@@ -828,11 +872,18 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                           <>
                             <Link className="w-4 h-4" />
                             Backfill Case IDs
-                            {((gapAnalysis.documents?.missing_case_id || 0) + (gapAnalysis.entities?.neo4j_missing_case_id || 0)) > 0 && (
-                              <span className="bg-rose-400 text-white text-xs px-1.5 py-0.5 rounded-full">
-                                {(gapAnalysis.documents?.missing_case_id || 0) + (gapAnalysis.entities?.neo4j_missing_case_id || 0)}
-                              </span>
-                            )}
+                            {(() => {
+                              const totalMissing = (gapAnalysis.documents?.missing_case_id || 0) +
+                                (gapAnalysis.entities?.neo4j_missing_case_id || 0) +
+                                (gapAnalysis.documents?.chromadb_missing_case_id || 0) +
+                                (gapAnalysis.chunks?.missing_case_id || 0) +
+                                (gapAnalysis.entities?.missing_case_id || 0);
+                              return totalMissing > 0 ? (
+                                <span className="bg-rose-400 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                  {totalMissing}
+                                </span>
+                              ) : null;
+                            })()}
                           </>
                         )}
                       </button>
@@ -853,7 +904,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                     <strong>Chunk embeddings</strong> enable passage-level semantic search (no LLM cost, only embedding cost).
                     <strong> Entity metadata</strong> adds case_id to existing entity vectors for filtered search (zero cost, metadata-only update).
                     <strong> Doc summaries</strong> generate AI summaries for documents (uses LLM — small cost per document).
-                    <strong> Case IDs</strong> assigns case_id to documents &amp; entities from evidence records (zero cost, Neo4j-only update).
+                    <strong> Case IDs</strong> assigns case_id across Neo4j and ChromaDB (docs, chunks, entities) from evidence records (zero cost, metadata-only).
                   </p>
                 </>
               ) : (

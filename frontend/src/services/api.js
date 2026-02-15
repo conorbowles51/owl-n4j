@@ -1757,9 +1757,10 @@ export const backfillAPI = {
     }),
 
   /**
-   * Backfill case_id for documents and entities in Neo4j
+   * Backfill case_id for documents and entities in Neo4j and ChromaDB
    * @param {Object} options - Case ID backfill options
    * @param {boolean} [options.include_entities=true] - Also backfill entities via relationship traversal
+   * @param {boolean} [options.include_vector_db=true] - Also backfill ChromaDB metadata
    * @param {boolean} [options.dry_run=false] - If true, only report what would be done
    */
   backfillCaseIds: (options = {}) =>
@@ -1770,6 +1771,7 @@ export const backfillAPI = {
       },
       body: JSON.stringify({
         include_entities: options.include_entities !== false,
+        include_vector_db: options.include_vector_db !== false,
         dry_run: options.dry_run || false,
       }),
       timeout: 600000, // 10 minutes for case_id backfill
