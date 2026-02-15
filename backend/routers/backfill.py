@@ -69,6 +69,13 @@ class EntityMetadataBackfillRequest(BaseModel):
     dry_run: bool = False
 
 
+class DocumentSummaryBackfillRequest(BaseModel):
+    """Request model for document summary backfill endpoint."""
+    case_id: Optional[str] = None
+    skip_existing: bool = True
+    dry_run: bool = False
+
+
 class BackfillResponse(BaseModel):
     """Response model for backfill endpoint."""
     status: str
@@ -652,6 +659,84 @@ async def backfill_entity_metadata(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/document-summaries", response_model=BackfillResponse)
+async def backfill_document_summaries_endpoint(
+    request: DocumentSummaryBackfillRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Backfill AI summaries for documents that don't have one.
+
+    Reads original files from disk, sends first 5000 chars to LLM,
+    and stores the resulting summary on the Document node.
+
+    NOTE: This uses LLM calls and has a per-document cost.
+    """
+    current_username = user.get("username", "unknown")
+
+    system_log_service.log(
+        log_type=LogType.DOCUMENT_INGESTION,
+        origin=LogOrigin.FRONTEND,
+        action=f"Document Summary Backfill Request: case_id={request.case_id or 'all'}",
+        details={
+            "case_id": request.case_id,
+            "skip_existing": request.skip_existing,
+            "dry_run": request.dry_run,
+            "requested_by": current_username,
+        },
+        user=current_username,
+        success=True,
+    )
+
+    try:
+        from scripts.backfill_document_summaries import backfill_document_summaries
+
+        def log_callback(level, message):
+            system_log_service.log(
+                log_type=LogType.DOCUMENT_INGESTION,
+                origin=LogOrigin.BACKEND,
+                action=f"Document Summary Backfill Progress: {message}",
+                details={
+                    "case_id": request.case_id,
+                    "level": level,
+                },
+                user=current_username,
+                success=level != "error",
+            )
+
+        result = backfill_document_summaries(
+            dry_run=request.dry_run,
+            skip_existing=request.skip_existing,
+            case_id=request.case_id,
+            log_callback=log_callback,
+        )
+
+        stats = result.get("stats", {})
+        message = (
+            f"Document summary backfill {'(dry run) ' if request.dry_run else ''}"
+            f"complete: {stats.get('processed', 0)} summaries generated, "
+            f"{stats.get('already_has_summary', 0)} already had summaries, "
+            f"{stats.get('file_not_found', 0)} files not found, "
+            f"{stats.get('llm_failed', 0)} LLM failures"
+        )
+
+        return BackfillResponse(
+            status=result.get("status", "complete"),
+            message=message,
+        )
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.DOCUMENT_INGESTION,
+            origin=LogOrigin.BACKEND,
+            action="Document Summary Backfill Failed",
+            details={"error": str(e)},
+            user=current_username,
+            success=False,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/status", response_model=BackfillStatusResponse)
 async def get_backfill_status(
     user: dict = Depends(get_current_user),
@@ -660,18 +745,20 @@ async def get_backfill_status(
     Get gap analysis showing what data needs backfilling.
 
     Returns counts of:
-    - Documents with/without chunk embeddings
+    - Documents with/without chunk embeddings and summaries
     - Entities with/without case_id metadata in ChromaDB
     - Total chunks in the chunks collection
     """
     try:
-        # Document stats
+        # Document stats (total + summary counts)
         doc_cypher = """
         MATCH (d:Document)
-        RETURN count(d) AS total
+        RETURN count(d) AS total,
+               count(CASE WHEN d.summary IS NOT NULL AND d.summary <> '' THEN 1 END) AS with_summary
         """
         doc_result = neo4j_service.run_cypher(doc_cypher)
         total_docs = doc_result[0]["total"] if doc_result else 0
+        docs_with_summary = doc_result[0]["with_summary"] if doc_result else 0
 
         # Count documents that have chunks
         try:
@@ -721,6 +808,8 @@ async def get_backfill_status(
                 "total": total_docs,
                 "with_chunks": docs_with_chunk_count,
                 "missing_chunks": total_docs - docs_with_chunk_count,
+                "with_summary": docs_with_summary,
+                "missing_summary": total_docs - docs_with_summary,
             },
             entities={
                 "total_neo4j": total_entities_neo4j,

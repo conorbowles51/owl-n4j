@@ -17,6 +17,7 @@ import {
   BarChart3,
   Layers,
   Tag,
+  Sparkles,
 } from 'lucide-react';
 import { databaseAPI, backfillAPI } from '../services/api';
 
@@ -41,6 +42,8 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
   const [chunkBackfillResult, setChunkBackfillResult] = useState(null);
   const [entityMetaBackfilling, setEntityMetaBackfilling] = useState(false);
   const [entityMetaBackfillResult, setEntityMetaBackfillResult] = useState(null);
+  const [summaryBackfilling, setSummaryBackfilling] = useState(false);
+  const [summaryBackfillResult, setSummaryBackfillResult] = useState(null);
 
   const loadDocuments = useCallback(async () => {
     setLoading(true);
@@ -434,7 +437,7 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
               ) : gapAnalysis ? (
                 <>
                   {/* Stats Grid */}
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-4 gap-3">
                     {/* Chunk Embeddings Card */}
                     <div className="bg-white rounded-lg border border-purple-200 p-3">
                       <div className="flex items-center gap-2 mb-2">
@@ -540,6 +543,42 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                           </div>
                           <div className="text-[10px] text-light-500 mt-0.5 text-right">
                             {Math.round((gapAnalysis.entities.with_case_id_metadata / gapAnalysis.entities.total_chromadb) * 100)}%
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                    {/* Document Summaries Card */}
+                    <div className="bg-white rounded-lg border border-purple-200 p-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Sparkles className="w-4 h-4 text-emerald-600" />
+                        <span className="text-xs font-semibold text-light-700">Doc Summaries</span>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-light-600">Total documents</span>
+                          <span className="font-medium">{gapAnalysis.documents?.total || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-600">With summary</span>
+                          <span className="font-medium text-green-700">{gapAnalysis.documents?.with_summary || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-orange-600">Missing summary</span>
+                          <span className="font-medium text-orange-700">{gapAnalysis.documents?.missing_summary || 0}</span>
+                        </div>
+                      </div>
+                      {gapAnalysis.documents?.total > 0 && (
+                        <div className="mt-2">
+                          <div className="w-full bg-light-200 rounded-full h-1.5">
+                            <div
+                              className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${Math.round(((gapAnalysis.documents.with_summary || 0) / gapAnalysis.documents.total) * 100)}%` }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-light-500 mt-0.5 text-right">
+                            {Math.round(((gapAnalysis.documents.with_summary || 0) / gapAnalysis.documents.total) * 100)}%
                           </div>
                         </div>
                       )}
@@ -658,12 +697,69 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                         </div>
                       )}
                     </div>
+
+                    {/* Backfill Document Summaries Button */}
+                    <div className="flex-1">
+                      <button
+                        onClick={async () => {
+                          setSummaryBackfilling(true);
+                          setSummaryBackfillResult(null);
+                          try {
+                            const result = await backfillAPI.backfillDocumentSummaries({
+                              skip_existing: true,
+                              dry_run: false,
+                            });
+                            setSummaryBackfillResult({
+                              status: result.status,
+                              message: result.message || 'Document summary backfill completed',
+                            });
+                            await loadGapAnalysis();
+                          } catch (err) {
+                            setSummaryBackfillResult({
+                              status: 'error',
+                              message: err.message || 'Document summary backfill failed',
+                            });
+                          } finally {
+                            setSummaryBackfilling(false);
+                          }
+                        }}
+                        disabled={summaryBackfilling || chunkBackfilling || entityMetaBackfilling || (gapAnalysis.documents?.missing_summary === 0)}
+                        className="w-full px-3 py-2 text-sm bg-emerald-500 text-white rounded hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                      >
+                        {summaryBackfilling ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Generating Summaries...
+                          </>
+                        ) : (
+                          <>
+                            <Sparkles className="w-4 h-4" />
+                            Backfill Summaries
+                            {gapAnalysis.documents?.missing_summary > 0 && (
+                              <span className="bg-emerald-400 text-white text-xs px-1.5 py-0.5 rounded-full">
+                                {gapAnalysis.documents.missing_summary}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </button>
+                      {summaryBackfillResult && (
+                        <div className={`mt-1 p-2 rounded text-xs ${
+                          summaryBackfillResult.status === 'complete'
+                            ? 'bg-green-50 text-green-700'
+                            : 'bg-red-50 text-red-700'
+                        }`}>
+                          {summaryBackfillResult.message}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Info text */}
                   <p className="text-[11px] text-purple-600 leading-relaxed">
                     <strong>Chunk embeddings</strong> enable passage-level semantic search (no LLM cost, only embedding cost).
                     <strong> Entity metadata</strong> adds case_id to existing entity vectors for filtered search (zero cost, metadata-only update).
+                    <strong> Doc summaries</strong> generate AI summaries for documents (uses LLM — small cost per document).
                   </p>
                 </>
               ) : (

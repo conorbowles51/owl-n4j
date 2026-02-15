@@ -1736,6 +1736,27 @@ export const backfillAPI = {
     }),
 
   /**
+   * Backfill AI summaries for documents that don't have one
+   * @param {Object} options - Document summary backfill options
+   * @param {string} [options.case_id] - Optional case_id to filter documents
+   * @param {boolean} [options.skip_existing=true] - Skip documents that already have summaries
+   * @param {boolean} [options.dry_run=false] - If true, only report what would be done
+   */
+  backfillDocumentSummaries: (options = {}) =>
+    fetchAPI('/backfill/document-summaries', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        case_id: options.case_id || null,
+        skip_existing: options.skip_existing !== false,
+        dry_run: options.dry_run || false,
+      }),
+      timeout: 600000, // 10 minutes for document summary backfill (uses LLM)
+    }),
+
+  /**
    * Get gap analysis / backfill status
    * Returns counts of what needs backfilling
    */
