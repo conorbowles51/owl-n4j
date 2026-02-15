@@ -54,6 +54,10 @@ class LLMService:
         
         # Context for cost tracking (set by caller)
         self._cost_tracking_context = None
+
+        # Pipeline trace: store last prompt and raw response for observability
+        self._last_prompt = None
+        self._last_raw_response = None
     
     def get_current_config(self) -> tuple[str, str]:
         """Get current provider and model ID."""
@@ -97,12 +101,20 @@ class LLMService:
         Returns:
             Model response text
         """
+        # Track prompt for pipeline trace observability
+        self._last_prompt = prompt
+        self._last_raw_response = None
+
         if self.provider == "ollama":
-            return self._call_ollama(prompt, temperature, json_mode, timeout)
+            result = self._call_ollama(prompt, temperature, json_mode, timeout)
         elif self.provider == "openai":
-            return self._call_openai(prompt, temperature, json_mode, timeout)
+            result = self._call_openai(prompt, temperature, json_mode, timeout)
         else:
             raise ValueError(f"Unknown provider: {self.provider}")
+
+        # Track response for pipeline trace
+        self._last_raw_response = result
+        return result
     
     def _call_ollama(
         self,

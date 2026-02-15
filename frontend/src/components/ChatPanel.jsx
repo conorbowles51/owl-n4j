@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  MessageSquare, 
-  Send, 
-  X, 
-  ChevronRight, 
-  Loader2, 
+import {
+  MessageSquare,
+  Send,
+  X,
+  ChevronRight,
+  Loader2,
   Sparkles,
   Target,
   Globe,
@@ -13,280 +13,278 @@ import {
   Settings,
   ChevronDown,
   ChevronUp,
-  Info
+  Info,
+  Code,
+  Clock,
+  Search,
+  Zap,
+  Copy,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { chatAPI, llmConfigAPI } from '../services/api';
 import ChatHistoryList from './ChatHistoryList';
 
 /**
- * Format debug log as markdown
+ * Format debug log as markdown — supports both new stages[] format and legacy format.
  */
 function formatDebugLogAsMarkdown(debugLog, question) {
   const lines = [];
-  
-  // Header
-  lines.push('# AI Assistant Debug Log');
+
+  lines.push('# RAG Pipeline Execution Trace');
   lines.push('');
-  
-  // Timestamp
+
   const timestamp = debugLog.timestamp || new Date().toISOString();
   lines.push(`**Timestamp:** ${timestamp}`);
+  if (debugLog.total_duration_ms) {
+    lines.push(`**Total Duration:** ${debugLog.total_duration_ms}ms`);
+  }
   lines.push('');
-  
-  // Question
+
   lines.push('## Question');
-  lines.push(question);
+  lines.push(question || debugLog.question || '');
   lines.push('');
-  
-  // Selected Keys
+
   if (debugLog.selected_keys && debugLog.selected_keys.length > 0) {
     lines.push(`**Selected Node Keys:** ${debugLog.selected_keys.join(', ')}`);
     lines.push('');
   }
-  
-  // Graph Summary
-  if (debugLog.graph_summary) {
-    lines.push('## Graph Summary');
-    lines.push(`- **Total Nodes:** ${debugLog.graph_summary.total_nodes || 0}`);
-    lines.push(`- **Total Relationships:** ${debugLog.graph_summary.total_relationships || 0}`);
-    lines.push(`- **Entity Types:** ${(debugLog.graph_summary.entity_types || []).join(', ')}`);
-    lines.push(`- **Relationship Types:** ${(debugLog.graph_summary.relationship_types || []).join(', ')}`);
+
+  if (debugLog.pipeline_summary) {
+    lines.push('## Pipeline Summary');
+    lines.push(debugLog.pipeline_summary);
     lines.push('');
   }
-  
-  // Vector Search
-  if (debugLog.vector_search) {
-    lines.push('## Vector Search (Semantic Document Search)');
-    if (debugLog.vector_search.enabled) {
-      lines.push('- **Status:** Enabled');
-      lines.push(`- **Question:** ${debugLog.vector_search.question || 'N/A'}`);
-      lines.push(`- **Embedding Dimensions:** ${debugLog.vector_search.embedding_dimensions || 'N/A'}`);
-      lines.push(`- **Top K:** ${debugLog.vector_search.top_k || 'N/A'}`);
-      
-      const results = debugLog.vector_search.results || [];
-      if (results.length > 0) {
-        lines.push(`- **Documents Found:** ${results.length}`);
-        lines.push('');
-        lines.push('### Vector Search Results');
-        results.forEach((result, i) => {
-          lines.push(`\n#### Document ${i + 1}`);
-          lines.push(`- **Document ID:** \`${result.document_id || 'N/A'}\``);
-          lines.push(`- **Filename:** ${result.filename || 'N/A'}`);
-          lines.push(`- **Distance:** ${result.distance !== undefined ? result.distance.toFixed(4) : 'N/A'}`);
-          lines.push(`- **Text Preview:** ${result.text_preview || 'N/A'}`);
-        });
-      } else {
-        lines.push('- **Documents Found:** 0');
-      }
-    } else {
-      lines.push('- **Status:** Disabled');
-      lines.push(`- **Reason:** ${debugLog.vector_search.reason || 'Unknown'}`);
-    }
-    
-    if (debugLog.vector_search.error) {
-      lines.push(`- **Error:** ${debugLog.vector_search.error}`);
-    }
-    
+
+  // New stages[] format
+  if (debugLog.stages && debugLog.stages.length > 0) {
+    lines.push('---');
     lines.push('');
-  }
-  
-  // Neo4j Document Query
-  if (debugLog.neo4j_document_query) {
-    lines.push('## Neo4j Query: Nodes from Documents');
-    lines.push('');
-    lines.push('### Cypher Query');
-    lines.push('```cypher');
-    lines.push(debugLog.neo4j_document_query.cypher || 'N/A');
-    lines.push('```');
-    lines.push('');
-    
-    if (debugLog.neo4j_document_query.parameters) {
-      lines.push('### Parameters');
-      Object.entries(debugLog.neo4j_document_query.parameters).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          lines.push(`- **${key}:** \`${JSON.stringify(value)}\` (${value.length} items)`);
-        } else {
-          lines.push(`- **${key}:** \`${value}\``);
-        }
-      });
+
+    debugLog.stages.forEach((stage) => {
+      lines.push(`## Stage #${stage.step}: ${stage.stage} (${stage.duration_ms}ms)`);
       lines.push('');
-    }
-    
-    if (debugLog.neo4j_document_query.results) {
-      lines.push('### Query Results');
-      lines.push(`- **Nodes Found:** ${debugLog.neo4j_document_query.results.nodes_found || 0}`);
-      const nodes = debugLog.neo4j_document_query.results.nodes || [];
-      if (nodes.length > 0) {
+
+      if (stage.input && Object.keys(stage.input).length > 0) {
+        lines.push('### Input');
+        lines.push('```json');
+        lines.push(JSON.stringify(stage.input, null, 2));
+        lines.push('```');
         lines.push('');
-        lines.push('#### Nodes');
-        nodes.slice(0, 20).forEach(node => {
-          lines.push(`- **${node.name || 'Unknown'}** (\`${node.key || 'N/A'}\`) - ${node.type || 'Unknown'}`);
-        });
-        if (nodes.length > 20) {
-          lines.push(`\n... and ${nodes.length - 20} more nodes`);
-        }
       }
-    }
-    
-    if (debugLog.neo4j_document_query.error) {
-      lines.push(`**Error:** ${debugLog.neo4j_document_query.error}`);
-    }
-    
-    lines.push('');
-  }
-  
-  // Cypher Filter Query
-  if (debugLog.cypher_filter_query) {
-    lines.push('## Cypher Filter Query (LLM-Generated)');
-    lines.push('');
-    lines.push('### Generated Cypher Query');
-    lines.push('```cypher');
-    lines.push(debugLog.cypher_filter_query.generated_cypher || 'N/A');
-    lines.push('```');
-    lines.push('');
-    
-    if (debugLog.cypher_filter_query.results) {
-      if (typeof debugLog.cypher_filter_query.results === 'object') {
-        lines.push('### Query Results');
-        lines.push(`- **Nodes Found:** ${debugLog.cypher_filter_query.results.nodes_found || 0}`);
-        if (debugLog.cypher_filter_query.results.node_keys) {
-          lines.push(`- **Node Keys:** ${debugLog.cypher_filter_query.results.node_keys.join(', ')}`);
-        }
-      } else {
-        lines.push(`### Query Results: ${debugLog.cypher_filter_query.results}`);
+
+      if (stage.output && Object.keys(stage.output).length > 0) {
+        lines.push('### Output');
+        lines.push('```json');
+        lines.push(JSON.stringify(stage.output, null, 2));
+        lines.push('```');
+        lines.push('');
       }
-    }
-    
-    if (debugLog.cypher_filter_query.error) {
-      lines.push(`**Error:** ${debugLog.cypher_filter_query.error}`);
-    }
-    
-    lines.push('');
-  }
-  
-  // Cypher Answer Query
-  if (debugLog.cypher_answer_query) {
-    lines.push('## Cypher Answer Query (Direct Question Query)');
-    lines.push('');
-    lines.push('### Generated Cypher Query');
-    lines.push('```cypher');
-    lines.push(debugLog.cypher_answer_query.generated_cypher || 'N/A');
-    lines.push('```');
-    lines.push('');
-    
-    if (debugLog.cypher_answer_query.results) {
-      if (typeof debugLog.cypher_answer_query.results === 'object') {
-        lines.push('### Query Results');
-        lines.push(`- **Rows Returned:** ${debugLog.cypher_answer_query.results.rows_returned || 0}`);
-        const sample = debugLog.cypher_answer_query.results.sample_results || [];
-        if (sample.length > 0) {
+
+      if (stage.details && Object.keys(stage.details).length > 0) {
+        lines.push('### Details');
+        Object.entries(stage.details).forEach(([key, value]) => {
+          if (value === null || value === undefined) return;
+          lines.push(`#### ${key}`);
+          if (typeof value === 'string') {
+            lines.push('```');
+            lines.push(value);
+            lines.push('```');
+          } else {
+            lines.push('```json');
+            lines.push(JSON.stringify(value, null, 2));
+            lines.push('```');
+          }
           lines.push('');
-          lines.push('#### Sample Results');
-          sample.slice(0, 10).forEach((row, i) => {
-            lines.push(`${i + 1}. ${JSON.stringify(row)}`);
-          });
-        }
-      } else {
-        lines.push(`### Query Results: ${debugLog.cypher_answer_query.results}`);
+        });
       }
-    }
-    
-    lines.push('');
-  }
-  
-  // Focused Context Query
-  if (debugLog.focused_context_query) {
-    lines.push('## Focused Context Query (User-Selected Nodes)');
-    lines.push('');
-    lines.push('### Cypher Query');
-    lines.push('```cypher');
-    lines.push(debugLog.focused_context_query.cypher || 'N/A');
-    lines.push('```');
-    lines.push('');
-    if (debugLog.focused_context_query.parameters) {
-      lines.push('### Parameters');
-      Object.entries(debugLog.focused_context_query.parameters).forEach(([key, value]) => {
-        if (Array.isArray(value)) {
-          lines.push(`- **${key}:** \`${JSON.stringify(value)}\` (${value.length} items)`);
-        } else {
-          lines.push(`- **${key}:** \`${value}\``);
-        }
-      });
+
       lines.push('');
-    }
-    lines.push(`- **Selected Node Keys:** ${(debugLog.focused_context_query.selected_node_keys || []).join(', ')}`);
-    lines.push('');
+    });
   }
-  
-  // Focused Context Results
-  if (debugLog.focused_context) {
-    lines.push('## Focused Context Results');
-    lines.push('');
-    lines.push(`- **Entities Count:** ${debugLog.focused_context.entities_count || 0}`);
-    const entities = debugLog.focused_context.entities || [];
-    if (entities.length > 0) {
-      lines.push('');
-      lines.push('### Selected Entities');
-      entities.forEach(entity => {
-        lines.push(`- **${entity.name || 'Unknown'}** (\`${entity.key || 'N/A'}\`) - ${entity.type || 'Unknown'}`);
-      });
-    }
-    lines.push('');
-  }
-  
-  // Hybrid Filtering
-  if (debugLog.hybrid_filtering) {
-    lines.push('## Hybrid Filtering Summary');
-    lines.push('');
-    lines.push(`- **Vector Document IDs:** ${JSON.stringify(debugLog.hybrid_filtering.vector_doc_ids || [])}`);
-    lines.push(`- **Vector Node Keys:** ${(debugLog.hybrid_filtering.vector_node_keys || []).length} nodes`);
-    lines.push(`- **Cypher Node Keys:** ${(debugLog.hybrid_filtering.cypher_node_keys || []).length} nodes`);
-    lines.push(`- **Combined Node Keys:** ${debugLog.hybrid_filtering.total_combined || 0} nodes`);
-    lines.push('');
-    const combined = debugLog.hybrid_filtering.combined_node_keys || [];
-    if (combined.length > 0) {
-      lines.push('### Combined Node Keys (First 50)');
-      lines.push(combined.join(', '));
-      lines.push('');
-    }
-  }
-  
-  // Context Mode
-  if (debugLog.context_mode) {
+
+  // Legacy fields (backward compat for older debug logs)
+  if (debugLog.context_mode && !debugLog.stages) {
     lines.push('## Context Mode');
     lines.push(`**Mode:** \`${debugLog.context_mode}\``);
     lines.push('');
   }
-  
-  // Context Preview
-  if (debugLog.context_preview) {
+
+  if (debugLog.context_preview && !debugLog.stages) {
     lines.push('## Context Preview');
-    lines.push('');
     lines.push('```');
     lines.push(debugLog.context_preview);
     lines.push('```');
     lines.push('');
   }
-  
-  // Final Prompt
-  if (debugLog.final_prompt) {
+
+  if (debugLog.final_prompt && !debugLog.stages) {
     lines.push('## Final Prompt Sent to LLM');
-    lines.push('');
     lines.push('```');
     lines.push(debugLog.final_prompt);
     lines.push('```');
     lines.push('');
   }
-  
+
   return lines.join('\n');
 }
 
-// Debug logs are now stored in system logs (no need to download)
+/**
+ * PipelineStageDetail - Renders a single expandable stage in the trace
+ */
+function PipelineStageDetail({ stage, isExpanded, onToggle }) {
+  const durationColor = stage.duration_ms < 500 ? 'text-green-600 bg-green-50' :
+    stage.duration_ms < 2000 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50';
+
+  const hasDetails = stage.details && Object.keys(stage.details).length > 0;
+
+  return (
+    <div className="border border-light-200 rounded-md overflow-hidden">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-light-50 transition-colors"
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <span className="text-xs font-mono text-light-500 w-6 shrink-0">#{stage.step}</span>
+          <span className="text-xs font-semibold text-light-800 truncate">{stage.stage}</span>
+        </div>
+        <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${durationColor} shrink-0`}>
+          {stage.duration_ms}ms
+        </span>
+        {isExpanded ? <ChevronUp className="w-3 h-3 text-light-400 shrink-0" /> : <ChevronDown className="w-3 h-3 text-light-400 shrink-0" />}
+      </button>
+
+      {isExpanded && (
+        <div className="px-3 pb-3 space-y-2 border-t border-light-100 bg-light-50">
+          {/* Input */}
+          {stage.input && Object.keys(stage.input).length > 0 && (
+            <div className="mt-2">
+              <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-1">Input</div>
+              <pre className="text-[11px] text-light-700 bg-white border border-light-200 rounded p-2 overflow-x-auto max-h-40 whitespace-pre-wrap break-words">
+                {JSON.stringify(stage.input, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Output */}
+          {stage.output && Object.keys(stage.output).length > 0 && (
+            <div>
+              <div className="text-[10px] font-semibold text-green-600 uppercase tracking-wide mb-1">Output</div>
+              <pre className="text-[11px] text-light-700 bg-white border border-light-200 rounded p-2 overflow-x-auto max-h-40 whitespace-pre-wrap break-words">
+                {JSON.stringify(stage.output, null, 2)}
+              </pre>
+            </div>
+          )}
+
+          {/* Details (prompts, queries, full data) */}
+          {hasDetails && (
+            <div>
+              <div className="text-[10px] font-semibold text-purple-600 uppercase tracking-wide mb-1">Details</div>
+              {Object.entries(stage.details).map(([key, value]) => {
+                if (value === null || value === undefined) return null;
+                const isLongText = typeof value === 'string' && value.length > 200;
+                const isArray = Array.isArray(value);
+                const isObject = typeof value === 'object' && !isArray;
+
+                return (
+                  <div key={key} className="mb-2">
+                    <div className="text-[10px] text-light-500 font-mono mb-0.5">{key}</div>
+                    <pre className="text-[11px] text-light-700 bg-white border border-light-200 rounded p-2 overflow-x-auto max-h-60 whitespace-pre-wrap break-words">
+                      {typeof value === 'string' ? value : JSON.stringify(value, null, 2)}
+                    </pre>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * PipelineTrace - Full pipeline execution trace viewer
+ */
+function PipelineTrace({ debugLog, messageId, expandedStages, setExpandedStages }) {
+  if (!debugLog || !debugLog.stages || debugLog.stages.length === 0) {
+    return (
+      <div className="text-xs text-light-500 italic p-2">No pipeline trace data available.</div>
+    );
+  }
+
+  const [copied, setCopied] = React.useState(false);
+
+  const handleCopyTrace = () => {
+    const text = formatDebugLogAsMarkdown(debugLog, debugLog.question || '');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const toggleStage = (stageKey) => {
+    setExpandedStages(prev => {
+      const next = new Set(prev);
+      if (next.has(stageKey)) {
+        next.delete(stageKey);
+      } else {
+        next.add(stageKey);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <div className="mt-2 space-y-2">
+      {/* Header with summary */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Clock className="w-3 h-3 text-purple-500" />
+          <span className="text-[11px] text-purple-700 font-medium">
+            Total: {debugLog.total_duration_ms || '?'}ms
+          </span>
+          <span className="text-[11px] text-light-500">
+            ({debugLog.stages.length} stages)
+          </span>
+        </div>
+        <button
+          onClick={handleCopyTrace}
+          className="flex items-center gap-1 text-[10px] text-light-500 hover:text-light-700 transition-colors"
+          title="Copy trace as markdown"
+        >
+          <Copy className="w-3 h-3" />
+          {copied ? 'Copied!' : 'Copy'}
+        </button>
+      </div>
+
+      {/* Pipeline summary */}
+      {debugLog.pipeline_summary && (
+        <div className="text-[11px] text-light-600 bg-purple-50 border border-purple-100 rounded px-2 py-1.5 font-mono">
+          {debugLog.pipeline_summary}
+        </div>
+      )}
+
+      {/* Stage timeline */}
+      <div className="space-y-1">
+        {debugLog.stages.map((stage, idx) => {
+          const stageKey = `${messageId}-stage-${idx}`;
+          return (
+            <PipelineStageDetail
+              key={stageKey}
+              stage={stage}
+              isExpanded={expandedStages.has(stageKey)}
+              onToggle={() => toggleStage(stageKey)}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /**
  * ChatPanel Component
- * 
+ *
  * AI chat interface for asking questions about the investigation
  */
 export default function ChatPanel({ 
@@ -316,6 +314,8 @@ export default function ChatPanel({
   const [confidenceThreshold, setConfidenceThreshold] = useState(2.0);
   const [includeGraphNodes, setIncludeGraphNodes] = useState(true); // Toggle for including graph nodes
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [expandedTraces, setExpandedTraces] = useState(new Set()); // Track which message traces are expanded
+  const [expandedStages, setExpandedStages] = useState(new Set()); // Track which stages are expanded within traces
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -454,6 +454,7 @@ export default function ChatPanel({
         usedNodeKeys: nodeKeys, // Store node keys used to generate answer (from multiple sources)
         modelInfo: response.model_info, // Store model info
         resultGraph: response.result_graph || null, // Store result graph with documents and entities
+        debugLog: response.debug_log || null, // Full pipeline execution trace
         timestamp: new Date().toISOString(),
       };
       
@@ -823,7 +824,44 @@ export default function ChatPanel({
                         {msg.modelInfo.model_name} ({msg.modelInfo.server})
                       </span>
                     )}
+                    {/* Pipeline Trace toggle */}
+                    {msg.debugLog && msg.debugLog.stages && (
+                      <button
+                        onClick={() => {
+                          setExpandedTraces(prev => {
+                            const next = new Set(prev);
+                            if (next.has(msg.id)) {
+                              next.delete(msg.id);
+                            } else {
+                              next.add(msg.id);
+                            }
+                            return next;
+                          });
+                        }}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors ${
+                          expandedTraces.has(msg.id)
+                            ? 'bg-purple-100 text-purple-700'
+                            : 'bg-light-100 text-light-500 hover:bg-purple-50 hover:text-purple-600'
+                        }`}
+                        title="Toggle pipeline execution trace"
+                      >
+                        <Code className="w-3 h-3" />
+                        Pipeline Trace
+                        {msg.debugLog.total_duration_ms && (
+                          <span className="font-mono">({msg.debugLog.total_duration_ms}ms)</span>
+                        )}
+                      </button>
+                    )}
                   </div>
+                  {/* Pipeline Trace Panel */}
+                  {msg.debugLog && expandedTraces.has(msg.id) && (
+                    <PipelineTrace
+                      debugLog={msg.debugLog}
+                      messageId={msg.id}
+                      expandedStages={expandedStages}
+                      setExpandedStages={setExpandedStages}
+                    />
+                  )}
                 </div>
               )}
             </div>

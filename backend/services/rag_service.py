@@ -10,6 +10,7 @@ Handles:
 """
 
 import json
+import time
 from typing import Dict, List, Optional, Any
 
 from services.neo4j_service import neo4j_service
@@ -21,6 +22,7 @@ from config import (
     ENTITY_SEARCH_ENABLED, ENTITY_SEARCH_TOP_K, GRAPH_TRAVERSAL_DEPTH,
     QUESTION_CLASSIFICATION_ENABLED,
     RERANK_ENABLED, RERANK_METHOD, RERANK_TOP_CHUNKS, RERANK_TOP_ENTITIES, CONTEXT_TOKEN_BUDGET,
+    EMBEDDING_PROVIDER, EMBEDDING_MODEL,
 )
 from utils.prompt_trace import log_section
 
@@ -984,6 +986,9 @@ Only include candidates with score >= 5."""
             Dict with answer and metadata including debug_log
         """
         from datetime import datetime
+
+        pipeline_start = time.time()
+
         debug_log = {
             "timestamp": datetime.now().isoformat(),
             "question": question,
@@ -998,70 +1003,228 @@ Only include candidates with score >= 5."""
             "context_mode": None,
             "context_preview": None,
             "final_prompt": None,
+            "stages": [],
         }
+
+        def _add_stage(stage_name, step, t_start, **kwargs):
+            """Helper to record a pipeline stage with timing."""
+            duration_ms = int((time.time() - t_start) * 1000)
+            stage_entry = {
+                "stage": stage_name,
+                "step": step,
+                "started_at": datetime.fromtimestamp(t_start).isoformat(),
+                "duration_ms": duration_ms,
+            }
+            stage_entry.update(kwargs)
+            debug_log["stages"].append(stage_entry)
+            return duration_ms
 
         context_mode = "hybrid"
         context_description = ""
         cypher_context = None
 
-        # Step 0: Classify question type
+        # ── Stage 0: Classify question type ──────────────────────────────
+        t0 = time.time()
         question_type = "hybrid"
+        stage0_details = {}
         if QUESTION_CLASSIFICATION_ENABLED and case_id:
             try:
                 question_type = self.llm.classify_question(question)
+                stage0_details["llm_prompt"] = self.llm._last_prompt
+                stage0_details["llm_response"] = self.llm._last_raw_response
                 print(f"[RAG] Question classified as: {question_type}")
             except Exception as e:
                 print(f"[RAG] Question classification failed: {e}")
                 question_type = "hybrid"
+                stage0_details["error"] = str(e)
         debug_log["question_type"] = question_type
+        _add_stage(
+            "Question Classification", 0, t0,
+            input={"question": question, "enabled": QUESTION_CLASSIFICATION_ENABLED, "case_id": case_id},
+            output={"classification": question_type},
+            details=stage0_details,
+        )
 
-        # Step 0b: For structural/hybrid questions, try Cypher
+        # ── Stage 0b: Cypher query generation ────────────────────────────
+        t0b = time.time()
+        graph_summary = None
+        stage0b_details = {}
         if question_type in ("structural", "hybrid") and case_id:
             try:
                 graph_summary = self.neo4j.get_graph_summary(case_id)
+                stage0b_details["graph_summary"] = {
+                    "total_nodes": graph_summary.get("total_nodes", 0),
+                    "total_relationships": graph_summary.get("total_relationships", 0),
+                    "entity_types": graph_summary.get("entity_types", []),
+                    "relationship_types": graph_summary.get("relationship_types", []),
+                    "entities_count": len(graph_summary.get("entities", [])),
+                }
+                schema_info = self._build_schema_info(graph_summary)
+                stage0b_details["schema_info"] = schema_info
                 cypher_context = self._try_cypher_query(question, graph_summary, debug_log)
+                stage0b_details["llm_prompt"] = self.llm._last_prompt
+                stage0b_details["llm_response"] = self.llm._last_raw_response
                 if cypher_context:
                     print(f"[RAG] Cypher query returned results")
             except Exception as e:
                 print(f"[RAG] Cypher query failed: {e}")
+                stage0b_details["error"] = str(e)
 
-        # Step 1: Retrieve chunks (or documents as fallback)
+        cypher_query_info = debug_log.get("cypher_answer_query", {})
+        _add_stage(
+            "Cypher Query Generation", "0b", t0b,
+            input={"question": question, "question_type": question_type, "case_id": case_id},
+            output={
+                "cypher_generated": bool(cypher_query_info.get("generated_cypher")),
+                "cypher_query": cypher_query_info.get("generated_cypher"),
+                "result_rows": cypher_query_info.get("results", {}).get("rows_returned") if isinstance(cypher_query_info.get("results"), dict) else None,
+                "results_preview": cypher_query_info.get("results", {}).get("sample_results", [])[:5] if isinstance(cypher_query_info.get("results"), dict) else None,
+            },
+            details=stage0b_details,
+        )
+
+        # ── Stage 1: Retrieve chunks (or documents) ─────────────────────
+        t1 = time.time()
         chunk_results = []
         if question_type != "structural" or not cypher_context:
-            # For pure structural with successful cypher, skip vector search
             chunk_results = self._retrieve_chunks(
                 question, case_id,
                 confidence_threshold=confidence_threshold,
                 debug_log=debug_log,
             )
+        chunk_search_info = debug_log.get("chunk_search", {})
+        _add_stage(
+            "Chunk/Document Retrieval", 1, t1,
+            input={
+                "question": question[:200],
+                "case_id": case_id,
+                "confidence_threshold": confidence_threshold or VECTOR_SEARCH_CONFIDENCE_THRESHOLD,
+                "skipped": question_type == "structural" and bool(cypher_context),
+            },
+            output={
+                "source": chunk_search_info.get("source", "skipped"),
+                "total_results": chunk_search_info.get("total_results", 0),
+                "after_threshold": chunk_search_info.get("filtered_results", 0),
+            },
+            details={
+                "top_k": chunk_search_info.get("top_k"),
+                "chunks_in_db": chunk_search_info.get("chunks_in_db"),
+                "embedding_provider": EMBEDDING_PROVIDER if VECTOR_DB_AVAILABLE else None,
+                "embedding_model": EMBEDDING_MODEL if VECTOR_DB_AVAILABLE else None,
+                "results": chunk_search_info.get("results", []),
+            },
+        )
 
-        # Step 2: Retrieve entities via vector search
+        # ── Stage 2: Retrieve entities ───────────────────────────────────
+        t2 = time.time()
         entity_results = self._retrieve_entities(question, case_id, debug_log=debug_log)
+        entity_search_info = debug_log.get("entity_search", {})
+        _add_stage(
+            "Entity Retrieval", 2, t2,
+            input={"question": question[:200], "case_id": case_id, "top_k": ENTITY_SEARCH_TOP_K},
+            output={
+                "vector_results": entity_search_info.get("vector_results", 0),
+                "enriched_from_neo4j": entity_search_info.get("enriched_entities", 0),
+            },
+            details={
+                "entity_keys": entity_search_info.get("entity_keys", []),
+                "results": [
+                    {
+                        "key": e.get("key"),
+                        "name": e.get("name"),
+                        "type": e.get("type"),
+                        "distance": e.get("distance"),
+                        "has_verified_facts": bool(e.get("verified_facts")),
+                        "has_ai_insights": bool(e.get("ai_insights")),
+                    }
+                    for e in entity_results[:20]
+                ],
+            },
+        )
 
-        # Step 3: If selected_keys provided, merge those entities
+        # ── Stage 3: Merge selected entities ─────────────────────────────
+        t3 = time.time()
+        merged_count = 0
         if selected_keys:
             try:
                 selected_entities = self._get_entity_nodes_from_neo4j(selected_keys)
                 existing_keys = {e.get("key") for e in entity_results}
                 for se in selected_entities:
                     if se.get("key") not in existing_keys:
-                        se["distance"] = 0.0  # Selected entities get best distance
+                        se["distance"] = 0.0
                         entity_results.append(se)
                         existing_keys.add(se.get("key"))
+                        merged_count += 1
                 print(f"[RAG] Merged {len(selected_entities)} selected entities")
             except Exception as e:
                 print(f"[RAG] Error getting selected entities: {e}")
+        _add_stage(
+            "Selected Entity Merge", 3, t3,
+            input={"selected_keys": selected_keys or []},
+            output={"merged_count": merged_count, "total_entities": len(entity_results)},
+        )
 
-        # Step 4: Graph traversal from matched entities
+        # ── Stage 4: Graph traversal ─────────────────────────────────────
+        t4 = time.time()
         all_entity_keys = [e.get("key") for e in entity_results if e.get("key")]
         graph_context = self._traverse_graph(all_entity_keys, case_id, debug_log=debug_log)
+        graph_traversal_info = debug_log.get("graph_traversal", {})
+        total_connections = 0
+        connection_list = []
+        for ge in graph_context.get("selected_entities", []):
+            conns = ge.get("connections", [])
+            total_connections += len(conns)
+            for conn in conns[:5]:
+                connection_list.append({
+                    "from": ge.get("name"),
+                    "relationship": conn.get("relationship"),
+                    "to": conn.get("name"),
+                    "to_type": conn.get("type"),
+                    "direction": conn.get("direction"),
+                })
+        _add_stage(
+            "Graph Traversal", 4, t4,
+            input={"entity_keys": all_entity_keys[:20], "case_id": case_id, "depth": GRAPH_TRAVERSAL_DEPTH},
+            output={
+                "entities_with_connections": graph_traversal_info.get("entities_returned", 0),
+                "total_connections": total_connections,
+            },
+            details={
+                "connections": connection_list[:30],
+            },
+        )
 
-        # Step 5: Re-rank
+        # ── Stage 5: Re-ranking ──────────────────────────────────────────
+        t5 = time.time()
         chunk_results, entity_results = self._rerank_results(
             question, chunk_results, entity_results, debug_log
         )
+        rerank_info = debug_log.get("rerank", {})
+        stage5_details = {
+            "method": rerank_info.get("method", "disabled"),
+            "token_budget": rerank_info.get("token_budget"),
+        }
+        if rerank_info.get("scores"):
+            stage5_details["scores"] = rerank_info["scores"]
+        if rerank_info.get("method") == "llm":
+            stage5_details["llm_prompt"] = self.llm._last_prompt
+        _add_stage(
+            "Re-ranking", 5, t5,
+            input={
+                "method": RERANK_METHOD if RERANK_ENABLED else "disabled",
+                "input_chunks": rerank_info.get("input_chunks", len(chunk_results)),
+                "input_entities": rerank_info.get("input_entities", len(entity_results)),
+            },
+            output={
+                "output_chunks": rerank_info.get("output_chunks", len(chunk_results)),
+                "output_entities": rerank_info.get("output_entities", len(entity_results)),
+                "total_chars": rerank_info.get("total_chars"),
+            },
+            details=stage5_details,
+        )
 
-        # Step 6: Build combined context
+        # ── Stage 6: Context building ────────────────────────────────────
+        t6 = time.time()
         context = self._build_hybrid_context(
             chunk_results, entity_results, graph_context, cypher_context
         )
@@ -1083,6 +1246,33 @@ Only include candidates with score >= 5."""
         debug_log["context_mode"] = context_mode
         debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
 
+        context_sections = []
+        if chunk_results:
+            context_sections.append("TEXT PASSAGES")
+        if entity_results:
+            context_sections.append("ENTITIES")
+        if graph_context.get("selected_entities"):
+            context_sections.append("GRAPH CONNECTIONS")
+        if cypher_context:
+            context_sections.append("CYPHER RESULTS")
+
+        _add_stage(
+            "Context Building", 6, t6,
+            input={
+                "chunks": len(chunk_results),
+                "entities": len(entity_results),
+                "graph_entities": graph_entity_count,
+                "has_cypher": cypher_context is not None,
+            },
+            output={
+                "context_length_chars": len(context),
+                "sections": context_sections,
+            },
+            details={
+                "full_context": context,
+            },
+        )
+
         log_section(
             source_file=__file__,
             source_func="answer_question",
@@ -1098,13 +1288,23 @@ Only include candidates with score >= 5."""
             as_json=True,
         )
 
-        # Step 7: Generate answer
+        # ── Stage 7: Answer generation ───────────────────────────────────
+        t7 = time.time()
         answer, final_prompt = self.llm.answer_question_with_prompt(
             question=question,
             context=context,
         )
-
         debug_log["final_prompt"] = final_prompt
+        _add_stage(
+            "Answer Generation", 7, t7,
+            input={"question": question[:200], "context_length": len(context)},
+            output={"answer_length": len(answer)},
+            details={
+                "full_prompt": final_prompt,
+                "model": {"provider": self.llm.provider, "model_id": self.llm.model_id},
+                "temperature": 0.3,
+            },
+        )
 
         # Store clean answer text for entity search (before prepending document summary)
         clean_answer_text = answer
@@ -1113,6 +1313,38 @@ Only include candidates with score >= 5."""
         if chunk_results:
             doc_summary = self._format_document_summary(chunk_results)
             answer = doc_summary + "\n\n" + answer
+
+        # ── Stage 8: Result graph building ───────────────────────────────
+        t8 = time.time()
+        result_graph = {"nodes": [], "links": []}
+        if clean_answer_text:
+            try:
+                result_graph = self._build_result_graph(
+                    doc_results=[],
+                    answer_text=clean_answer_text,
+                    top_k_entities=50,
+                    top_k_documents=50,
+                )
+                print(f"[RAG] Result graph: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
+            except Exception as e:
+                print(f"[RAG] Error building result graph: {e}")
+                import traceback
+                traceback.print_exc()
+        _add_stage(
+            "Result Graph Building", 8, t8,
+            input={"answer_length": len(clean_answer_text)},
+            output={"nodes": len(result_graph.get("nodes", [])), "links": len(result_graph.get("links", []))},
+        )
+
+        # ── Pipeline summary ─────────────────────────────────────────────
+        total_duration_ms = int((time.time() - pipeline_start) * 1000)
+        debug_log["total_duration_ms"] = total_duration_ms
+        debug_log["pipeline_summary"] = (
+            f"{question_type} query → {len(chunk_results)} chunks, {len(entity_results)} entities, "
+            f"{graph_entity_count} graph connections"
+            f"{', Cypher' if cypher_context else ''}"
+            f" → {len(answer)} char answer in {total_duration_ms}ms"
+        )
 
         # Store debug log in system logs
         try:
@@ -1130,28 +1362,13 @@ Only include candidates with score >= 5."""
                     "answer_length": len(answer),
                     "chunks_used": len(chunk_results),
                     "entities_used": len(entity_results),
-                    "debug_log": debug_log,
+                    "total_duration_ms": total_duration_ms,
+                    "pipeline_summary": debug_log["pipeline_summary"],
                 },
                 success=True,
             )
         except Exception as e:
             print(f"[RAG] Failed to log to system logs: {e}")
-
-        # Step 8: Build result graph (for visualization)
-        result_graph = {"nodes": [], "links": []}
-        if clean_answer_text:
-            try:
-                result_graph = self._build_result_graph(
-                    doc_results=[],
-                    answer_text=clean_answer_text,
-                    top_k_entities=50,
-                    top_k_documents=50,
-                )
-                print(f"[RAG] Result graph: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
-            except Exception as e:
-                print(f"[RAG] Error building result graph: {e}")
-                import traceback
-                traceback.print_exc()
 
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
