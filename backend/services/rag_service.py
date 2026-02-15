@@ -1052,25 +1052,28 @@ Only include candidates with score >= 5."""
         if question_type in ("structural", "hybrid") and case_id:
             try:
                 graph_summary = self.neo4j.get_graph_summary(case_id)
-                stage0b_details["graph_summary"] = {
-                    "total_nodes": graph_summary.get("total_nodes", 0),
-                    "total_relationships": graph_summary.get("total_relationships", 0),
-                    "entity_types": graph_summary.get("entity_types", []),
-                    "relationship_types": graph_summary.get("relationship_types", []),
-                    "entities_count": len(graph_summary.get("entities", [])),
-                }
-                schema_info = self._build_schema_info(graph_summary)
-                stage0b_details["schema_info"] = schema_info
-                cypher_context = self._try_cypher_query(question, graph_summary, debug_log)
-                stage0b_details["llm_prompt"] = self.llm._last_prompt
-                stage0b_details["llm_response"] = self.llm._last_raw_response
-                if cypher_context:
-                    print(f"[RAG] Cypher query returned results")
+                if graph_summary:
+                    stage0b_details["graph_summary"] = {
+                        "total_nodes": graph_summary.get("total_nodes", 0),
+                        "total_relationships": graph_summary.get("total_relationships", 0),
+                        "entity_types": graph_summary.get("entity_types", []),
+                        "relationship_types": graph_summary.get("relationship_types", []),
+                        "entities_count": len(graph_summary.get("entities", [])),
+                    }
+                    schema_info = self._build_schema_info(graph_summary)
+                    stage0b_details["schema_info"] = schema_info
+                    cypher_context = self._try_cypher_query(question, graph_summary, debug_log)
+                    stage0b_details["llm_prompt"] = self.llm._last_prompt
+                    stage0b_details["llm_response"] = self.llm._last_raw_response
+                    if cypher_context:
+                        print(f"[RAG] Cypher query returned results")
+                else:
+                    stage0b_details["error"] = "get_graph_summary returned None"
             except Exception as e:
                 print(f"[RAG] Cypher query failed: {e}")
                 stage0b_details["error"] = str(e)
 
-        cypher_query_info = debug_log.get("cypher_answer_query", {})
+        cypher_query_info = debug_log.get("cypher_answer_query") or {}
         _add_stage(
             "Cypher Query Generation", "0b", t0b,
             input={"question": question, "question_type": question_type, "case_id": case_id},
@@ -1092,7 +1095,7 @@ Only include candidates with score >= 5."""
                 confidence_threshold=confidence_threshold,
                 debug_log=debug_log,
             )
-        chunk_search_info = debug_log.get("chunk_search", {})
+        chunk_search_info = debug_log.get("chunk_search") or {}
         _add_stage(
             "Chunk/Document Retrieval", 1, t1,
             input={
@@ -1118,7 +1121,7 @@ Only include candidates with score >= 5."""
         # ── Stage 2: Retrieve entities ───────────────────────────────────
         t2 = time.time()
         entity_results = self._retrieve_entities(question, case_id, debug_log=debug_log)
-        entity_search_info = debug_log.get("entity_search", {})
+        entity_search_info = debug_log.get("entity_search") or {}
         _add_stage(
             "Entity Retrieval", 2, t2,
             input={"question": question[:200], "case_id": case_id, "top_k": ENTITY_SEARCH_TOP_K},
@@ -1168,7 +1171,7 @@ Only include candidates with score >= 5."""
         t4 = time.time()
         all_entity_keys = [e.get("key") for e in entity_results if e.get("key")]
         graph_context = self._traverse_graph(all_entity_keys, case_id, debug_log=debug_log)
-        graph_traversal_info = debug_log.get("graph_traversal", {})
+        graph_traversal_info = debug_log.get("graph_traversal") or {}
         total_connections = 0
         connection_list = []
         for ge in graph_context.get("selected_entities", []):
@@ -1199,7 +1202,7 @@ Only include candidates with score >= 5."""
         chunk_results, entity_results = self._rerank_results(
             question, chunk_results, entity_results, debug_log
         )
-        rerank_info = debug_log.get("rerank", {})
+        rerank_info = debug_log.get("rerank") or {}
         stage5_details = {
             "method": rerank_info.get("method", "disabled"),
             "token_budget": rerank_info.get("token_budget"),
