@@ -547,7 +547,6 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                         </div>
                       )}
                     </div>
-                  </div>
 
                     {/* Document Summaries Card */}
                     <div className="bg-white rounded-lg border border-purple-200 p-3">
