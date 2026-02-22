@@ -111,3 +111,9 @@ zipp==3.23.0
 alembic==1.14.0
 psycopg[binary]==3.2.13
 email-validator==2.2.0
+SQLAlchemy==2.0.46
+weasyprint==68.1
+Pillow==12.1.1
+pytesseract>=0.3.10
+openai-whisper>=20231117
+striprtf>=0.0.26
