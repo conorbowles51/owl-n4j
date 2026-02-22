@@ -18,6 +18,20 @@ from audio_processor import (
 )
 from logging_utils import log_progress, log_error, log_warning
 
+# Image processor (optional — only needed when folders contain images)
+try:
+    from image_processor import process_image
+    IMAGE_PROCESSOR_AVAILABLE = True
+except ImportError:
+    IMAGE_PROCESSOR_AVAILABLE = False
+
+# Video processor (optional — only needed when folders contain videos)
+try:
+    from video_processor import process_video
+    VIDEO_PROCESSOR_AVAILABLE = True
+except ImportError:
+    VIDEO_PROCESSOR_AVAILABLE = False
+
 # Try to import OpenAI client
 try:
     from openai import OpenAI
@@ -277,6 +291,110 @@ def process_interpretation_files(
     return results
 
 
+def process_image_files(
+    image_files: List[Path],
+    file_rule: Dict,
+    log_callback: Optional[Callable[[str], None]] = None,
+) -> Dict[str, str]:
+    """
+    Process image files in folder context using image_processor.
+
+    Args:
+        image_files: List of image file paths
+        file_rule: File rule dict with provider config
+        log_callback: Optional logging callback
+
+    Returns:
+        Dict with 'image_descriptions' key containing combined OCR/Vision text
+    """
+    results = {}
+
+    if not image_files:
+        return results
+
+    if not IMAGE_PROCESSOR_AVAILABLE:
+        log_warning("Image processor not available, skipping image files", log_callback)
+        return results
+
+    provider = file_rule.get("provider", None)  # "tesseract" or "openai"
+    descriptions = []
+
+    for img_file in image_files:
+        log_progress(f"  Processing image: {img_file.name}", log_callback)
+        try:
+            result = process_image(
+                image_path=img_file,
+                provider=provider,
+                log_callback=log_callback,
+                doc_name=img_file.name,
+            )
+            text = result.get("text", "").strip()
+            if text:
+                descriptions.append(f"--- Image: {img_file.name} ---\n{text}")
+                log_progress(
+                    f"  Image processed: {len(text)} chars via {result['provider']}",
+                    log_callback,
+                )
+        except Exception as e:
+            log_error(f"  Failed to process image {img_file.name}: {e}", log_callback)
+
+    if descriptions:
+        results["image_descriptions"] = "\n\n".join(descriptions)
+
+    return results
+
+
+def process_video_files(
+    video_files: List[Path],
+    file_rule: Dict,
+    log_callback: Optional[Callable[[str], None]] = None,
+) -> Dict[str, str]:
+    """
+    Process video files in folder context using video_processor.
+
+    Args:
+        video_files: List of video file paths
+        file_rule: File rule dict with processing config
+        log_callback: Optional logging callback
+
+    Returns:
+        Dict with 'video_analysis' key containing combined transcription + frame descriptions
+    """
+    results = {}
+
+    if not video_files:
+        return results
+
+    if not VIDEO_PROCESSOR_AVAILABLE:
+        log_warning("Video processor not available, skipping video files", log_callback)
+        return results
+
+    analyses = []
+
+    for vid_file in video_files:
+        log_progress(f"  Processing video: {vid_file.name}", log_callback)
+        try:
+            result = process_video(
+                video_path=vid_file,
+                log_callback=log_callback,
+                doc_name=vid_file.name,
+            )
+            text = result.get("text", "").strip()
+            if text:
+                analyses.append(text)
+                log_progress(
+                    f"  Video processed: {len(text)} chars",
+                    log_callback,
+                )
+        except Exception as e:
+            log_error(f"  Failed to process video {vid_file.name}: {e}", log_callback)
+
+    if analyses:
+        results["video_analysis"] = "\n\n".join(analyses)
+
+    return results
+
+
 def prepare_structured_text(
     folder_name: str,
     file_results: Dict[str, Any],
@@ -353,10 +471,63 @@ def prepare_structured_text(
             parts.append(file_results["english_transcription"])
         if file_results.get("interpretation"):
             parts.append(file_results["interpretation"])
-    
+        if file_results.get("image_descriptions"):
+            parts.append(file_results["image_descriptions"])
+        if file_results.get("video_analysis"):
+            parts.append(file_results["video_analysis"])
+
+    elif output_format == "media_structured":
+        # Structured format for folders containing mixed media types
+        parts.append(f"=== EVIDENCE FOLDER: {folder_name} ===")
+        parts.append("")
+
+        # Metadata section
+        metadata = file_results.get("metadata", {})
+        if metadata:
+            parts.append("=== METADATA ===")
+            for key, value in metadata.items():
+                if value is not None:
+                    parts.append(f"{key}: {value}")
+            parts.append("")
+
+        # Audio transcriptions
+        for key in sorted(file_results.keys()):
+            if key.endswith("_transcription") and file_results[key]:
+                lang = key.replace("_transcription", "").upper()
+                parts.append(f"=== AUDIO TRANSCRIPTION ({lang}) ===")
+                parts.append(file_results[key])
+                parts.append("")
+
+        # Translations
+        for key in sorted(file_results.keys()):
+            if key.endswith("_translation") and file_results[key]:
+                lang = key.replace("_translation", "").upper()
+                parts.append(f"=== TRANSLATION ({lang}) ===")
+                parts.append(file_results[key])
+                parts.append("")
+
+        # Interpretation
+        if file_results.get("interpretation"):
+            parts.append("=== INTERPRETATION ===")
+            parts.append(file_results["interpretation"])
+            parts.append("")
+
+        # Image descriptions
+        if file_results.get("image_descriptions"):
+            parts.append("=== IMAGE ANALYSIS ===")
+            parts.append(file_results["image_descriptions"])
+            parts.append("")
+
+        # Video analysis
+        if file_results.get("video_analysis"):
+            parts.append("=== VIDEO ANALYSIS ===")
+            parts.append(file_results["video_analysis"])
+            parts.append("")
+
     else:
         # Default: combine all available text
-        for key in ["spanish_transcription", "english_transcription", "interpretation"]:
+        for key in ["spanish_transcription", "english_transcription", "interpretation",
+                     "image_descriptions", "video_analysis"]:
             if file_results.get(key):
                 parts.append(file_results[key])
     
@@ -451,6 +622,14 @@ def process_folder_with_profile(
             file_results.update(interpretation_results)
             if "participants" in interpretation_results:
                 file_results["participants"] = interpretation_results["participants"]
+
+        elif role == "image":
+            image_results = process_image_files(files, rule, log_callback)
+            file_results.update(image_results)
+
+        elif role == "video":
+            video_results = process_video_files(files, rule, log_callback)
+            file_results.update(video_results)
     
     # Prepare structured text for ingestion
     structured_text = prepare_structured_text(folder_name, file_results, output_format)
@@ -498,6 +677,8 @@ def process_folder_with_profile(
         "has_audio": len(role_files.get("audio", [])) > 0,
         "has_metadata": len(role_files.get("metadata", [])) > 0,
         "has_interpretation": len(role_files.get("interpretation", [])) > 0,
+        "has_images": len(role_files.get("image", [])) > 0,
+        "has_video": len(role_files.get("video", [])) > 0,
     }
     
     log(f"  Processing complete. Generated text: {len(structured_text)} characters")

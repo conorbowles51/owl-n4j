@@ -5,12 +5,13 @@ import ClientProfileSection from './ClientProfileSection';
 import WitnessMatrixSection from './WitnessMatrixSection';
 import CaseDeadlinesSection from './CaseDeadlinesSection';
 import TasksSection from './TasksSection';
-import DocumentsSection from './DocumentsSection';
 import AuditLogSection from './AuditLogSection';
 import SnapshotsSection from './SnapshotsSection';
 import TheoriesSection from './TheoriesSection';
 import InvestigativeNotesSection from './InvestigativeNotesSection';
-import AllEvidenceSection from './AllEvidenceSection';
+import CaseFilesSection from './CaseFilesSection';
+import EntitySummarySection from './EntitySummarySection';
+import InsightsPanel from './InsightsPanel';
 import GraphView from '../GraphView';
 import TimelineView from '../timeline/TimelineView';
 import MapView from '../MapView';
@@ -26,14 +27,15 @@ const OVERVIEW_SECTION_KEYS = [
   'theories',
   'pinned-evidence',
   'witnesses',
+  'entity-summary',
+  'insights',
   'deadlines',
   'notes',
   'tasks',
   'graph',
   'graph-timeline',
   'graph-map',
-  'evidence',
-  'documents',
+  'case-files',
   'audit-log',
   'snapshots',
 ];
@@ -194,6 +196,24 @@ export default function CaseOverviewView({
 
         <div className="flex-shrink-0 w-96 flex flex-col" style={{ height: '100%' }}>
           <div className="bg-white border border-light-200 rounded-lg flex flex-col overflow-hidden shadow-sm h-full">
+            <IncludeBar sectionKey="entity-summary" />
+            <div className="flex-1 min-h-0 overflow-auto">
+              <EntitySummarySection caseId={caseId} />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-shrink-0 w-96 flex flex-col" style={{ height: '100%' }}>
+          <div className="bg-white border border-light-200 rounded-lg flex flex-col overflow-hidden shadow-sm h-full">
+            <IncludeBar sectionKey="insights" />
+            <div className="flex-1 min-h-0 overflow-auto">
+              <InsightsPanel caseId={caseId} authUsername={authUsername} />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex-shrink-0 w-96 flex flex-col" style={{ height: '100%' }}>
+          <div className="bg-white border border-light-200 rounded-lg flex flex-col overflow-hidden shadow-sm h-full">
             <IncludeBar sectionKey="deadlines" />
             <div className="flex-1 min-h-0 overflow-auto">
               <CaseDeadlinesSection
@@ -303,25 +323,13 @@ export default function CaseOverviewView({
           </div>
         </div>
 
-        <div className="flex-shrink-0 w-96 flex flex-col" style={{ height: '100%' }}>
+        <div className="flex-shrink-0 w-[420px] flex flex-col" style={{ height: '100%' }}>
           <div className="bg-white border border-light-200 rounded-lg flex flex-col overflow-hidden shadow-sm h-full">
-            <IncludeBar sectionKey="evidence" />
+            <IncludeBar sectionKey="case-files" />
             <div className="flex-1 min-h-0 overflow-auto">
-              <AllEvidenceSection
+              <CaseFilesSection
                 caseId={caseId}
                 fullHeight={true}
-                {...commonProps}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className="flex-shrink-0 w-96 flex flex-col" style={{ height: '100%' }}>
-          <div className="bg-white border border-light-200 rounded-lg flex flex-col overflow-hidden shadow-sm h-full">
-            <IncludeBar sectionKey="documents" />
-            <div className="flex-1 min-h-0 overflow-auto">
-              <DocumentsSection
-                caseId={caseId}
                 {...commonProps}
               />
             </div>

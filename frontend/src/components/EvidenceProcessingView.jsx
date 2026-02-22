@@ -96,6 +96,9 @@ export default function EvidenceProcessingView({
   // Parallel processing configuration
   const [maxWorkers, setMaxWorkers] = useState(4);
 
+  // Image processing provider: "tesseract" (local OCR) or "openai" (GPT-4 Vision)
+  const [imageProvider, setImageProvider] = useState('tesseract');
+
   // Simple polling for ingestion logs while on this screen
   const loadLogs = useCallback(async () => {
     if (!caseId) return;
@@ -858,7 +861,7 @@ export default function EvidenceProcessingView({
     
     // Always use background processing - ingestion with AI extraction can take a long time
     try {
-      const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile, maxWorkers);
+      const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile, maxWorkers, imageProvider);
       alert(`Processing ${fileIds.length} file(s) in the background with ${maxWorkers} parallel worker(s). Check the Background Tasks panel for progress.`);
       clearSelection();
       await loadFiles();
@@ -893,10 +896,10 @@ export default function EvidenceProcessingView({
 
   // Helper function to get file type from extension
   const getFileType = (extension) => {
-    const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
+    const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp', 'tiff', 'tif'];
     const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
-    const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
-    const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
+    const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'];
+    const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'webm'];
     const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
 
     if (imageTypes.includes(extension)) return 'Image';
@@ -1441,6 +1444,18 @@ export default function EvidenceProcessingView({
               )}
             </div>
             <div className="flex items-center gap-3">
+              {/* Image provider selector */}
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-light-600 whitespace-nowrap">Image OCR:</label>
+                <select
+                  value={imageProvider}
+                  onChange={(e) => setImageProvider(e.target.value)}
+                  className="px-2 py-1 border border-light-300 rounded text-sm bg-white focus:outline-none focus:border-owl-blue-500"
+                >
+                  <option value="tesseract">Local (Tesseract)</option>
+                  <option value="openai">AI Vision (GPT-4o)</option>
+                </select>
+              </div>
               {/* Parallel files selector */}
               <div className="flex items-center gap-2">
                 <label className="text-xs text-light-600 whitespace-nowrap">Parallel:</label>

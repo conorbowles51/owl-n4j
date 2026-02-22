@@ -2,9 +2,9 @@
 """
 Ingest Data CLI - Entry point for batch document ingestion.
 
-Scans the data/ directory for .txt, .pdf, .docx, .csv, .xls, and .xlsx files
-
-and ingests them into the Neo4j knowledge graph.
+Scans the data/ directory for .txt, .pdf, .docx, .csv, .xls, .xlsx,
+audio (.mp3, .wav, etc.), image (.jpg, .png, etc.), and video (.mp4, .avi, etc.)
+files and ingests them into the Neo4j knowledge graph.
 
 Usage:
     python ingest_data.py              # Ingest all files in data/
@@ -22,6 +22,9 @@ from text_ingestion import ingest_text_file
 from pdf_ingestion import ingest_pdf_file
 from word_ingestion import ingest_word_file
 from excel_ingestion import ingest_excel_file
+from audio_ingestion import ingest_audio_file, AUDIO_EXTENSIONS
+from image_ingestion import ingest_image_file, IMAGE_EXTENSIONS
+from video_ingestion import ingest_video_file, VIDEO_EXTENSIONS
 from neo4j_client import Neo4jClient
 
 from logging_utils import log_progress, log_error, log_warning
@@ -77,6 +80,12 @@ def ingest_file(
         return ingest_word_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix in (".csv", ".xls", ".xlsx"):
         return ingest_excel_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
+    elif suffix in AUDIO_EXTENSIONS:
+        return ingest_audio_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
+    elif suffix in IMAGE_EXTENSIONS:
+        return ingest_image_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
+    elif suffix in VIDEO_EXTENSIONS:
+        return ingest_video_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     else:
         log_warning(f"Unsupported file type: {suffix}", log_callback)
         return {"status": "skipped", "reason": "unsupported_type", "file": str(path)}
@@ -113,11 +122,20 @@ def ingest_all_in_data(
     xls_files = sorted(data_dir.glob("*.xls"))
     xlsx_files = sorted(data_dir.glob("*.xlsx"))
 
-    all_files = text_files + pdf_files + docx_files + csv_files + xls_files + xlsx_files
+    # Collect media files
+    audio_files = sorted(f for f in data_dir.iterdir() if f.suffix.lower() in AUDIO_EXTENSIONS)
+    image_files = sorted(f for f in data_dir.iterdir() if f.suffix.lower() in IMAGE_EXTENSIONS)
+    video_files = sorted(f for f in data_dir.iterdir() if f.suffix.lower() in VIDEO_EXTENSIONS)
+
+    all_files = (
+        text_files + pdf_files + docx_files + csv_files + xls_files + xlsx_files
+        + audio_files + image_files + video_files
+    )
 
     log_progress(
         f"Found {len(text_files)} text, {len(pdf_files)} PDF, {len(docx_files)} Word, "
-        f"{len(csv_files)} CSV, {len(xls_files) + len(xlsx_files)} Excel file(s)"
+        f"{len(csv_files)} CSV, {len(xls_files) + len(xlsx_files)} Excel, "
+        f"{len(audio_files)} audio, {len(image_files)} image, {len(video_files)} video file(s)"
     )
 
     log_progress(f"Processing with max_workers={max_workers}")

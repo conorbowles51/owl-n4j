@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OWL Platform — Feature Guide</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm;
+  }
+  @media print {
+    body { font-size: 10pt; }
+    h1 { page-break-before: avoid; }
+    h2 { page-break-before: always; }
+    h2:first-of-type { page-break-before: avoid; }
+    table { page-break-inside: avoid; }
+    pre { page-break-inside: avoid; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    color: #1a1a2e;
+    line-height: 1.65;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 40px 20px;
+    background: #fff;
+  }
+  h1 {
+    font-size: 26pt;
+    color: #0f3460;
+    border-bottom: 3px solid #0f3460;
+    padding-bottom: 12px;
+    margin-bottom: 6px;
+  }
+  h2 {
+    font-size: 16pt;
+    color: #16213e;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 8px;
+    margin-top: 40px;
+  }
+  h3 {
+    font-size: 12pt;
+    color: #533483;
+    margin-top: 24px;
+  }
+  blockquote {
+    border-left: 4px solid #0f3460;
+    background: #f0f4ff;
+    margin: 0 0 20px 0;
+    padding: 12px 18px;
+    color: #333;
+    font-size: 10pt;
+  }
+  blockquote p { margin: 4px 0; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 16px 0;
+    font-size: 9.5pt;
+  }
+  th {
+    background: #0f3460;
+    color: white;
+    padding: 8px 12px;
+    text-align: left;
+    font-weight: 600;
+  }
+  td {
+    padding: 7px 12px;
+    border-bottom: 1px solid #e0e0e0;
+  }
+  tr:nth-child(even) td {
+    background: #f8f9fc;
+  }
+  code {
+    background: #f0f0f5;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9pt;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+  }
+  strong { color: #16213e; }
+  em { color: #555; }
+  hr {
+    border: none;
+    border-top: 1px solid #d0d0d0;
+    margin: 30px 0;
+  }
+  ol, ul {
+    padding-left: 24px;
+  }
+  li {
+    margin-bottom: 5px;
+  }
+  a {
+    color: #0f3460;
+    text-decoration: none;
+  }
+  .footer {
+    margin-top: 40px;
+    text-align: center;
+    font-size: 9pt;
+    color: #999;
+  }
+</style>
+</head>
+<body>
+<h1 id="owl-platform-feature-guide-verification-walkthrough">OWL Platform — Feature Guide &amp; Verification Walkthrough</h1>
+<blockquote>
+<p><strong>Purpose:</strong> Step-by-step guide for using and verifying the 14 features recently implemented in the OWL Investigation Platform. Each section explains what was built, where to find it, exactly how to use it, and how to confirm it's working.</p>
+<p><strong>Prerequisites:</strong> You should be logged in as <code>neil.byrne@gmail.com</code> with the "Operation Silver Bridge" case loaded.</p>
+</blockquote>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#1-correct-transaction-amounts-in-financial-dashboard">Correct Transaction Amounts in Financial Dashboard</a></li>
+<li><a href="#2-bulk-categorization-in-financial-dashboard">Bulk Categorization in Financial Dashboard</a></li>
+<li><a href="#3-sub-transaction-grouping">Sub-Transaction Grouping</a></li>
+<li><a href="#4-filter-by-entity-in-financial-dashboard">Filter by Entity in Financial Dashboard</a></li>
+<li><a href="#5-entity-summary-on-case-dashboard">Entity Summary on Case Dashboard</a></li>
+<li><a href="#6-ai-chat-analyses-more-documents">AI Chat Analyses More Documents</a></li>
+<li><a href="#7-faster-table-with-bulk-merge--edit">Faster Table with Bulk Merge &amp; Edit</a></li>
+<li><a href="#8-fix--remove-locations-on-map">Fix / Remove Locations on Map</a></li>
+<li><a href="#9-document-viewer-opens-in-front-portal-fix">Document Viewer Opens in Front (Portal Fix)</a></li>
+<li><a href="#10-ai-creates-fewer--less-noisy-entities">AI Creates Fewer / Less Noisy Entities</a></li>
+<li><a href="#11-ai-insights--generate-accept--reject">AI Insights — Generate, Accept &amp; Reject</a></li>
+<li><a href="#12-clarified-case-files-vs-all-evidence-sections">Clarified "Case Files" vs "All Evidence" Sections</a></li>
+<li><a href="#13-export-financial-transactions-to-pdf">Export Financial Transactions to PDF</a></li>
+<li><a href="#14-save-ai-chat-responses-as-case-notes">Save AI Chat Responses as Case Notes</a></li>
+</ol>
+<hr />
+<h2 id="1-correct-transaction-amounts-in-financial-dashboard">1. Correct Transaction Amounts in Financial Dashboard</h2>
+<p><strong>What it does:</strong> Lets you fix incorrect dollar amounts on any transaction directly in the table, with a full audit trail (original amount preserved, correction reason recorded, visual indicator).</p>
+<p><strong>Where to find it:</strong> Financial Dashboard → Transaction table → any Amount cell.</p>
+<h3 id="how-to-use-it">How to use it</h3>
+<ol>
+<li>Navigate to the <strong>Financial</strong> view (click the dollar icon in the left sidebar).</li>
+<li>Find any transaction in the table and <strong>click on its dollar amount</strong>.</li>
+<li>The amount cell transforms into an <strong>editable number input</strong>.</li>
+<li>Type the corrected amount and press <strong>Enter</strong> (or click the green checkmark).</li>
+<li>A small prompt appears asking: <strong>"Why is this being corrected?"</strong> — type your reason (e.g., "Typo in source document, actual amount was $500K").</li>
+<li>Click <strong>Save</strong>.</li>
+</ol>
+<h3 id="how-to-verify-it-worked">How to verify it worked</h3>
+<ul>
+<li>The amount cell now shows the new value.</li>
+<li>A small <strong>amber pencil icon</strong> (✏️) appears next to the corrected amount.</li>
+<li><strong>Hover over the pencil icon</strong> — a tooltip shows:</li>
+<li>Original amount (e.g., "$3,850,000")</li>
+<li>Your correction reason</li>
+<li>Who made the correction</li>
+<li>The original amount is preserved in the database and never lost.</li>
+</ul>
+<hr />
+<h2 id="2-bulk-categorization-in-financial-dashboard">2. Bulk Categorization in Financial Dashboard</h2>
+<p><strong>What it does:</strong> Lets you select multiple transactions at once and assign them all to the same category in one action.</p>
+<p><strong>Where to find it:</strong> Financial Dashboard → Transaction table → row checkboxes → batch toolbar.</p>
+<h3 id="how-to-use-it_1">How to use it</h3>
+<ol>
+<li>In the <strong>Financial</strong> view, use the <strong>checkboxes</strong> on the left side of the table to select two or more transactions.</li>
+<li>A <strong>batch action toolbar</strong> appears above the table showing how many transactions are selected.</li>
+<li>In the toolbar, click the <strong>category dropdown</strong> (it has a Tag icon).</li>
+<li>Select the category you want to assign (e.g., "Wire Transfer", "Shell Company", "Legitimate").</li>
+<li>All selected transactions are immediately updated with the new category.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_1">How to verify it worked</h3>
+<ul>
+<li>Each selected transaction's category badge updates to the new category with its colour.</li>
+<li>You can also use the <strong>"Set From"</strong> / <strong>"Set To"</strong> buttons in the batch toolbar to bulk-assign the from-entity or to-entity on multiple transactions at once.</li>
+<li>Click <strong>"Clear selection"</strong> to deselect all rows when done.</li>
+</ul>
+<hr />
+<h2 id="3-sub-transaction-grouping">3. Sub-Transaction Grouping</h2>
+<p><strong>What it does:</strong> Lets you group related transactions under a parent transaction. For example, a $1.3M house purchase can be the parent, with $900K loan, $200K gift, and $200K fees as children.</p>
+<p><strong>Where to find it:</strong> Financial Dashboard → right-click any transaction → "Group as Sub-Transaction", OR expand a parent row with the chevron.</p>
+<h3 id="how-to-use-it_2">How to use it</h3>
+<p><strong>To create a group:</strong></p>
+<ol>
+<li>In the <strong>Financial</strong> table, <strong>right-click</strong> on the transaction you want to be the <strong>parent</strong> (e.g., the $1.3M house purchase).</li>
+<li>In the context menu, click <strong>"Group as Sub-Transaction"</strong> (has a link icon).</li>
+<li>The <strong>Sub-Transaction Modal</strong> opens showing:</li>
+<li>The parent transaction at the top with its amount.</li>
+<li>A <strong>searchable list</strong> of all other transactions in the case.</li>
+<li><strong>Check the boxes</strong> next to the transactions you want as children (e.g., the $900K loan, $200K gift, $200K fees).</li>
+<li>As you select children, a <strong>running total</strong> is shown at the bottom. If the children's total doesn't match the parent amount, a <strong>yellow warning</strong> appears.</li>
+<li>Click <strong>"Link X Transaction(s)"</strong> to save.</li>
+</ol>
+<p><strong>To view a group:</strong></p>
+<ol>
+<li>Parent transactions now show a <strong>▶ chevron</strong> on the left side of their row.</li>
+<li>Click the <strong>chevron</strong> to expand — it becomes <strong>▼</strong> and the child transactions appear as <strong>indented rows</strong> below, each prefixed with <strong>↳</strong>.</li>
+</ol>
+<p><strong>To remove a child from a group:</strong></p>
+<ol>
+<li>Right-click on any <strong>child transaction</strong> (one with the ↳ prefix).</li>
+<li>Click <strong>"Remove from group"</strong> (shown in red).</li>
+<li>The child becomes an independent transaction again.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_2">How to verify it worked</h3>
+<ul>
+<li>Parent rows show the ▶ expand chevron.</li>
+<li>Expanding shows indented child rows with ↳ prefix.</li>
+<li>The running total in the modal updates as you select/deselect children.</li>
+<li>Removing a child makes it a standalone row again.</li>
+</ul>
+<hr />
+<h2 id="4-filter-by-entity-in-financial-dashboard">4. Filter by Entity in Financial Dashboard</h2>
+<p><strong>What it does:</strong> Lets you filter the transaction table to only show transactions involving a specific person, company, or account.</p>
+<p><strong>Where to find it:</strong> Financial Dashboard → Filter panel (top of the view).</p>
+<h3 id="how-to-use-it_3">How to use it</h3>
+<ol>
+<li>In the <strong>Financial</strong> view, look at the <strong>filter panel</strong> at the top of the page (if collapsed, click the filter toggle to expand it).</li>
+<li>Find the <strong>Entity filter</strong> field.</li>
+<li>Start typing an entity name (e.g., "Marco Delgado" or "Solaris Property Group").</li>
+<li>Select the entity from the dropdown suggestions.</li>
+<li>The table immediately filters to show only transactions where that entity appears as a From or To party.</li>
+</ol>
+<p>You can also filter the <strong>From</strong> and <strong>To</strong> entities on individual transactions:</p>
+<ol>
+<li>Click the <strong>pencil icon</strong> (✏️) on any transaction's From or To cell.</li>
+<li>An entity editor opens with a search field.</li>
+<li>Search for and select the correct entity.</li>
+<li>The cell updates with the new entity.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_3">How to verify it worked</h3>
+<ul>
+<li>The table row count decreases to show only matching transactions.</li>
+<li>Clear the filter to see all transactions again.</li>
+<li>The pencil icon on From/To cells opens the entity editor.</li>
+</ul>
+<hr />
+<h2 id="5-entity-summary-on-case-dashboard">5. Entity Summary on Case Dashboard</h2>
+<p><strong>What it does:</strong> Adds a "Key Entities" section to the Case Overview dashboard showing all entities in the case, grouped by type (People, Companies, Organisations, Banks, Bank Accounts, etc.) with their summaries, fact counts, and insight counts.</p>
+<p><strong>Where to find it:</strong> Case Dashboard (Workspace view) → scroll down to the <strong>"Key Entities"</strong> section.</p>
+<h3 id="how-to-use-it_4">How to use it</h3>
+<ol>
+<li>Navigate to the <strong>Workspace</strong> / <strong>Case Overview</strong> view (click the briefcase icon in the sidebar).</li>
+<li>Scroll down past the Client Profile and Uploaded Documents sections.</li>
+<li>You'll see the <strong>Key Entities</strong> section with:</li>
+<li><strong>Tabs</strong> across the top: "All", "People" (👥), "Companies" (🏢), and other entity types — each tab shows a count.</li>
+<li>A <strong>search bar</strong> to filter entities by name.</li>
+<li>A <strong>sort dropdown</strong> (top-right) to sort by: Name, Type, Facts, or Insights.</li>
+<li>Click any <strong>tab</strong> to filter to that entity type.</li>
+<li>Each entity card shows:</li>
+<li>Entity name and type badge</li>
+<li>Summary text</li>
+<li>Number of verified facts</li>
+<li>Number of AI insights</li>
+</ol>
+<h3 id="how-to-verify-it-worked_4">How to verify it worked</h3>
+<ul>
+<li>The tabs show accurate counts per entity type.</li>
+<li>Clicking "People" shows only Person entities.</li>
+<li>Search filters in real time as you type.</li>
+<li>Sorting by "Facts" puts entities with the most verified facts first.</li>
+</ul>
+<hr />
+<h2 id="6-ai-chat-analyses-more-documents">6. AI Chat Analyses More Documents</h2>
+<p><strong>What it does:</strong> The AI chat now retrieves and analyses up to <strong>50 documents</strong> (up from 10) and considers up to <strong>25 verified facts</strong> (up from 10) when answering questions. The context budget was increased from 12K to 80K tokens.</p>
+<p><strong>Where to find it:</strong> AI Chat panel (right sidebar).</p>
+<h3 id="how-to-use-it_5">How to use it</h3>
+<ol>
+<li>Open the <strong>AI Chat</strong> panel (click the chat bubble icon in the sidebar, or it may already be in a side panel).</li>
+<li>Ask a <strong>cross-document question</strong> like:</li>
+<li><em>"What connections exist between Solaris Property Group and the Cayman Islands across all evidence?"</em></li>
+<li><em>"Summarize all financial irregularities found across every document in this case."</em></li>
+<li>The AI now pulls from <strong>all 10 documents</strong> in the case (previously it might have only used the top 10 most relevant chunks).</li>
+</ol>
+<h3 id="how-to-verify-it-worked_5">How to verify it worked</h3>
+<ul>
+<li>Ask a question that requires knowledge from multiple documents.</li>
+<li>The response should reference entities and facts from different source files.</li>
+<li>If the response includes a pipeline trace or debug info (expand the trace section), you'll see more retrieved passages than before.</li>
+<li>Responses should be more comprehensive and accurate than before the change.</li>
+</ul>
+<hr />
+<h2 id="7-faster-table-with-bulk-merge-edit">7. Faster Table with Bulk Merge &amp; Edit</h2>
+<p><strong>What it does:</strong> The entity table now uses <strong>pagination</strong> for large datasets (instead of rendering all 170+ rows at once) and supports <strong>bulk merge</strong> (select 2 entities → merge) and <strong>bulk edit</strong> (select multiple → change a property on all).</p>
+<p><strong>Where to find it:</strong> Graph view → Table View tab (the table icon).</p>
+<h3 id="how-to-use-it_6">How to use it</h3>
+<p><strong>Pagination:</strong></p>
+<ol>
+<li>Switch to <strong>Table View</strong> in the graph panel.</li>
+<li>At the bottom of the table, you'll see <strong>pagination controls</strong>: first/prev/next/last page buttons and a "Showing X–Y of Z entities" indicator.</li>
+<li>Click the page navigation buttons to move through pages.</li>
+</ol>
+<p><strong>Bulk Merge (exactly 2 entities):</strong></p>
+<ol>
+<li>Use the <strong>checkboxes</strong> on the left of each row to select <strong>exactly 2</strong> entities that you believe are duplicates.</li>
+<li>A toolbar appears at the top. The <strong>"Merge 2"</strong> button (with a merge icon) becomes active.</li>
+<li>Click <strong>"Merge 2"</strong>.</li>
+<li>The <strong>Merge Entities Modal</strong> opens with a side-by-side comparison:</li>
+<li>Choose which entity's <strong>name</strong> to keep (Entity 1, Entity 2, or Both).</li>
+<li>Choose which entity's <strong>summary</strong> to keep.</li>
+<li>Check/uncheck individual <strong>facts</strong> and <strong>insights</strong> to include in the merged entity.</li>
+<li>Add any <strong>custom fields</strong>.</li>
+<li>Click <strong>"Merge Entities"</strong> to combine them into one.</li>
+</ol>
+<p><strong>Bulk Edit (2+ entities):</strong></p>
+<ol>
+<li>Select <strong>2 or more</strong> entities using the checkboxes.</li>
+<li>Click the <strong>"Bulk Edit"</strong> button (pencil icon) in the toolbar.</li>
+<li>A modal opens with:</li>
+<li>A <strong>property dropdown</strong> — select which field to change (name, summary, notes, type, description).</li>
+<li>A <strong>new value input</strong> — type the new value.</li>
+<li>A <strong>preview</strong> showing what will change.</li>
+<li>Click <strong>"Apply"</strong> to update all selected entities at once.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_6">How to verify it worked</h3>
+<ul>
+<li>Pagination: the table loads instantly even with 170+ entities. Page controls work.</li>
+<li>Merge: after merging, only one entity remains. Search for the old name — it should be gone.</li>
+<li>Bulk Edit: after editing, all selected entities show the new value in the chosen field.</li>
+</ul>
+<hr />
+<h2 id="8-fix-remove-locations-on-map">8. Fix / Remove Locations on Map</h2>
+<p><strong>What it does:</strong> Lets you correct inaccurate AI-extracted location coordinates or remove bogus locations from the map entirely, using a right-click context menu.</p>
+<p><strong>Where to find it:</strong> Map View → right-click any location pin.</p>
+<h3 id="how-to-use-it_7">How to use it</h3>
+<p><strong>To edit a location:</strong></p>
+<ol>
+<li>Navigate to the <strong>Map</strong> view (click the map icon in the sidebar).</li>
+<li>Find the location pin you want to correct.</li>
+<li><strong>Right-click</strong> on the pin.</li>
+<li>A context menu appears with two options:</li>
+<li><strong>"Edit Location"</strong> (pencil icon)</li>
+<li><strong>"Remove from Map"</strong> (trash icon)</li>
+<li>Click <strong>"Edit Location"</strong>.</li>
+<li>A modal appears with three fields:</li>
+<li><strong>Location Name</strong> — the display name for this pin.</li>
+<li><strong>Latitude</strong> — the latitude coordinate.</li>
+<li><strong>Longitude</strong> — the longitude coordinate.</li>
+<li>Correct the values (e.g., change latitude from 0 to 25.7617 for Miami).</li>
+<li>Click <strong>"Save"</strong> (green checkmark button).</li>
+</ol>
+<p><strong>To remove a location:</strong></p>
+<ol>
+<li>Right-click the pin.</li>
+<li>Click <strong>"Remove from Map"</strong> (trash icon).</li>
+<li>The pin disappears from the map. The entity still exists in the graph — only its location data is removed.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_7">How to verify it worked</h3>
+<ul>
+<li>After editing: the pin moves to the correct position on the map.</li>
+<li>After removing: the pin disappears. The entity still shows up in graph/table views — only the map pin is gone.</li>
+<li>Refresh the map to confirm changes persisted.</li>
+</ul>
+<hr />
+<h2 id="9-document-viewer-opens-in-front-portal-fix">9. Document Viewer Opens in Front (Portal Fix)</h2>
+<p><strong>What it does:</strong> Previously, when viewing a document from inside a modal (like the Merge Entities modal or the Map view), the document viewer would open <em>behind</em> the modal, forcing you to close the modal and lose your place. Now the document viewer uses a <strong>React portal</strong> to always render on top of everything.</p>
+<p><strong>Where to find it:</strong> Anywhere you click to view a source document — especially from the Merge Entities modal or Map view.</p>
+<h3 id="how-to-use-it_8">How to use it</h3>
+<ol>
+<li>Go to the <strong>Graph</strong> view and run a <strong>duplicate entity scan</strong> (Entity Resolution tab).</li>
+<li>When comparing two entities for merging, click on any <strong>source document link</strong> (e.g., "View in corporate_records.pdf").</li>
+<li>The <strong>Document Viewer</strong> opens as a <strong>full-screen overlay</strong> that appears <em>on top of</em> the merge modal.</li>
+<li>You can read the document, navigate pages, then <strong>close it</strong> (click X or press Escape).</li>
+<li>You're returned to the merge modal exactly where you left off — no need to re-run the duplicate scan.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_8">How to verify it worked</h3>
+<ul>
+<li>Open any modal (merge, map edit, etc.) and then open a document from within it.</li>
+<li>The document viewer should appear <strong>on top</strong> of the modal, not behind it.</li>
+<li>Closing the document viewer should return you to the modal.</li>
+<li>The same fix applies when viewing documents from the Map view.</li>
+</ul>
+<hr />
+<h2 id="10-ai-creates-fewer-less-noisy-entities">10. AI Creates Fewer / Less Noisy Entities</h2>
+<p><strong>What it does:</strong> The entity extraction prompts were tightened with strict quality rules, and a <code>max_entities_per_chunk</code> limit of 25 was added across all extraction profiles. The fuzzy matching threshold was raised from 0.7 to 0.88 to reduce false-positive duplicate suggestions.</p>
+<p><strong>Where to find it:</strong> This is a behind-the-scenes improvement. You'll notice it when ingesting <strong>new</strong> documents.</p>
+<h3 id="how-to-verify-it-on-next-ingestion">How to verify it (on next ingestion)</h3>
+<ol>
+<li>When you next ingest a new document, compare the number of entities extracted to previous ingestions.</li>
+<li>You should see <strong>fewer, higher-quality entities</strong> — less noise from:</li>
+<li>Table headers or column names being extracted as entities.</li>
+<li>Generic terms like "the investigation" or "the transaction" becoming entities.</li>
+<li>Duplicates with slightly different names.</li>
+<li>The entity extraction now follows strict rules:</li>
+<li>Minimum 3 words for a name (except proper nouns).</li>
+<li>Must be a real-world entity, not a category or concept.</li>
+<li>No duplicates within the same chunk.</li>
+<li>Only significant entities (mentioned 2+ times or central to the narrative).</li>
+</ol>
+<p><strong>Note:</strong> This improvement only applies to <strong>newly ingested</strong> documents. Previously extracted entities are not retroactively cleaned up (though you can use the merge and delete tools to clean them manually).</p>
+<hr />
+<h2 id="11-ai-insights-generate-accept-reject">11. AI Insights — Generate, Accept &amp; Reject</h2>
+<p><strong>What it does:</strong> A new Insights Panel lets the AI analyse your case entities and generate investigative insights (inconsistencies, hidden connections, defense opportunities, Brady/Giglio material, patterns). You can then accept insights (promoting them to verified facts) or reject them.</p>
+<p><strong>Where to find it:</strong> Case Dashboard → <strong>Insights</strong> section (scroll down), or the Insights panel in the workspace sidebar.</p>
+<h3 id="how-to-use-it_9">How to use it</h3>
+<p><strong>Generate insights:</strong></p>
+<ol>
+<li>Navigate to the <strong>Case Dashboard</strong> (Workspace view).</li>
+<li>Scroll to the <strong>Insights</strong> section.</li>
+<li>Click the <strong>"Generate"</strong> button (has a sparkle ✨ icon).</li>
+<li>Wait while the AI analyses your top entities (this may take 30–60 seconds as it calls the LLM for each entity).</li>
+<li>Insight cards appear, grouped by entity.</li>
+</ol>
+<p><strong>Review an insight:</strong></p>
+<p>Each insight card shows:
+- <strong>Entity name</strong> and type badge at the top.
+- <strong>Insight text</strong> — the AI's finding.
+- <strong>Confidence badge</strong> — High (green), Medium (amber), or Low (red).
+- <strong>Category badge</strong> — inconsistency, connection, defense_opportunity, brady_giglio, or pattern.
+- <strong>Expandable reasoning</strong> — click to see why the AI generated this insight.</p>
+<p><strong>Accept an insight (promote to verified fact):</strong></p>
+<ol>
+<li>Find an insight you agree with.</li>
+<li>Click the <strong>✅ Accept</strong> button (green checkmark) on the insight card.</li>
+<li>The insight is converted into a <strong>verified fact</strong> on that entity, attributed to you as the verifier.</li>
+</ol>
+<p><strong>Reject an insight:</strong></p>
+<ol>
+<li>Find an insight you disagree with or find unhelpful.</li>
+<li>Click the <strong>❌ Reject</strong> button (red X) on the insight card.</li>
+<li>The insight is permanently removed.</li>
+</ol>
+<p><strong>Bulk actions:</strong></p>
+<ul>
+<li><strong>"Accept X High"</strong> — accepts all high-confidence insights at once.</li>
+<li><strong>"Reject X Low"</strong> — rejects all low-confidence insights at once.</li>
+</ul>
+<h3 id="how-to-verify-it-worked_9">How to verify it worked</h3>
+<ul>
+<li>After accepting: go to the entity's detail panel (click it in the graph). The insight text now appears in the <strong>Verified Facts</strong> section with your name as verifier.</li>
+<li>After rejecting: the insight card disappears. Re-fetch insights to confirm it's gone.</li>
+<li>After generating: insight cards appear with valid confidence levels and categories.</li>
+</ul>
+<hr />
+<h2 id="12-clarified-case-files-vs-all-evidence-sections">12. Clarified "Case Files" vs "All Evidence" Sections</h2>
+<p><strong>What it does:</strong> The confusing section labels on the Case Dashboard were renamed:
+- <strong>"Case Documents"</strong> → <strong>"Uploaded Documents"</strong> with subtitle: <em>"Files you have added to this case and processed for analysis"</em>
+- <strong>"All Evidence"</strong> → <strong>"Evidence Files"</strong> with subtitle: <em>"Prosecution discovery and other evidence documents uploaded for analysis"</em></p>
+<p><strong>Where to find it:</strong> Case Dashboard (Workspace view) → scroll through the sections.</p>
+<h3 id="how-to-verify-it-worked_10">How to verify it worked</h3>
+<ol>
+<li>Navigate to the <strong>Workspace / Case Overview</strong>.</li>
+<li>Look for the <strong>"Uploaded Documents"</strong> section — this shows supplementary files you've manually added to the case (notes, reports, etc.).</li>
+<li>Look for the <strong>"Evidence Files"</strong> section — this shows the core evidence files that have been processed through the AI extraction pipeline.</li>
+<li>Each section now has a clear subtitle explaining what it contains.</li>
+</ol>
+<hr />
+<h2 id="13-export-financial-transactions-to-pdf">13. Export Financial Transactions to PDF</h2>
+<p><strong>What it does:</strong> Generates a formatted PDF report of the financial transactions in the case, including summary cards, a detailed transaction table, and notes on any corrected amounts or sub-transaction groupings.</p>
+<p><strong>Where to find it:</strong> Financial Dashboard → <strong>"Export PDF"</strong> button (download icon) in the top-right header area.</p>
+<h3 id="how-to-use-it_10">How to use it</h3>
+<ol>
+<li>Navigate to the <strong>Financial</strong> view.</li>
+<li>Apply any <strong>filters</strong> you want (by type, category, date range, entity) — the PDF will export what's currently visible.</li>
+<li>Click the <strong>Download icon</strong> (📥) in the toolbar area next to the Refresh button.</li>
+<li>A new browser tab opens with the generated PDF, or your browser's download dialog appears.</li>
+</ol>
+<p>The PDF includes:
+- <strong>Branded header</strong> with case name and generation date.
+- <strong>Summary cards</strong> — total transaction count, total amount, etc.
+- <strong>Full transaction table</strong> — A4 landscape format with all visible transactions.
+- <strong>Corrected amount indicators</strong> — transactions with corrected amounts show a pencil icon and footnote with the original amount and reason.
+- <strong>Sub-transaction formatting</strong> — child transactions are indented with ↳ prefix.</p>
+<h3 id="how-to-verify-it-worked_11">How to verify it worked</h3>
+<ul>
+<li>The PDF opens and displays correctly.</li>
+<li>Transaction data matches what's shown in the table.</li>
+<li>Corrected amounts are flagged in the PDF.</li>
+<li>Sub-transactions appear as indented children under their parent.</li>
+</ul>
+<p><strong>Note:</strong> This feature requires the WeasyPrint system libraries to be installed. If you see an error, run <code>brew install pango glib gobject-introspection</code> in your terminal and restart the backend.</p>
+<hr />
+<h2 id="14-save-ai-chat-responses-as-case-notes">14. Save AI Chat Responses as Case Notes</h2>
+<p><strong>What it does:</strong> Lets you save any useful AI chat response directly as an investigative note in the Case Dashboard, so you don't lose valuable analysis.</p>
+<p><strong>Where to find it:</strong> AI Chat panel → below any assistant message.</p>
+<h3 id="how-to-use-it_11">How to use it</h3>
+<ol>
+<li>Open the <strong>AI Chat</strong> panel and ask a question.</li>
+<li>After the AI responds, look <strong>below the response</strong> for a small <strong>"Save as note"</strong> button (has a bookmark/plus icon 🔖).</li>
+<li>Click <strong>"Save as note"</strong>.</li>
+<li>A <strong>modal</strong> appears with:</li>
+<li><strong>Title</strong> — pre-filled with a summary of the question (editable).</li>
+<li><strong>Content</strong> — pre-filled with the AI's full response (editable).</li>
+<li>Edit the title or content if you want to trim or annotate it.</li>
+<li>Click <strong>"Save"</strong>.</li>
+<li>A brief <strong>green checkmark</strong> (✅) confirmation appears where the save button was, confirming the note was saved.</li>
+</ol>
+<h3 id="how-to-verify-it-worked_12">How to verify it worked</h3>
+<ul>
+<li>After saving, navigate to the <strong>Case Dashboard</strong> (Workspace view).</li>
+<li>Scroll to the <strong>Notes</strong> section.</li>
+<li>Your saved note should appear with the title you gave it and the AI's response as the content.</li>
+<li>The note is a full investigative note — you can edit, categorize, or delete it like any other note.</li>
+</ul>
+<hr />
+<h2 id="quick-reference-where-to-find-each-feature">Quick Reference: Where to Find Each Feature</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Feature</th>
+<th>Location</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Correct amounts</td>
+<td>Financial → click any amount cell</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Bulk categorize</td>
+<td>Financial → select rows → batch toolbar → category dropdown</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Sub-transactions</td>
+<td>Financial → right-click row → "Group as Sub-Transaction"</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Filter by entity</td>
+<td>Financial → filter panel → entity filter field</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Entity summary</td>
+<td>Workspace → "Key Entities" section</td>
+</tr>
+<tr>
+<td>6</td>
+<td>AI analyses more docs</td>
+<td>AI Chat → ask cross-document questions</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Bulk merge/edit</td>
+<td>Table View → select rows → "Merge 2" or "Bulk Edit" buttons</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Fix/remove map pins</td>
+<td>Map → right-click pin → "Edit Location" or "Remove from Map"</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Doc viewer on top</td>
+<td>Any modal → click document link → viewer opens on top</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Less noisy extraction</td>
+<td>Automatic on next ingestion</td>
+</tr>
+<tr>
+<td>11</td>
+<td>AI insights</td>
+<td>Workspace → "Insights" section → "Generate" button</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Clarified sections</td>
+<td>Workspace → "Uploaded Documents" / "Evidence Files"</td>
+</tr>
+<tr>
+<td>13</td>
+<td>PDF export</td>
+<td>Financial → Download icon (top-right)</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Save chat as note</td>
+<td>AI Chat → "Save as note" button below any AI response</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Guide created for OWL Investigation Platform — February 2026</em></p>
+<div class="footer">
+  OWL Investigation Platform — Feature Guide — Generated February 2026
+</div>
+</body>
+</html>

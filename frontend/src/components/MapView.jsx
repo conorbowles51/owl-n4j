@@ -19,7 +19,10 @@ import {
   Target,
   TrendingUp,
   Timer,
-  Route
+  Route,
+  Pencil,
+  Trash2,
+  Check,
 } from 'lucide-react';
 import { graphAPI } from '../services/api';
 import HeatmapLayer from './map/HeatmapLayer';
@@ -442,6 +445,11 @@ export default function MapView({
   const [showTimeControl, setShowTimeControl] = useState(false);
   const [animationTime, setAnimationTime] = useState(null);
   const [showRouteAnalysis, setShowRouteAnalysis] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, entity }
+  const [editLocationModal, setEditLocationModal] = useState(null); // { entity, locationName, latitude, longitude }
+  const [savingLocation, setSavingLocation] = useState(false);
+  const [rescanRunning, setRescanRunning] = useState(false);
+  const [rescanResult, setRescanResult] = useState(null);
 
   const selectedKeys = useMemo(() =>
     selectedNodes.map(n => n.key),
@@ -462,6 +470,24 @@ export default function MapView({
       setIsLoading(false);
     }
   }, [caseId]);
+
+  const handleRescanLocations = useCallback(async () => {
+    if (!caseId || rescanRunning) return;
+    setRescanRunning(true);
+    setRescanResult(null);
+    try {
+      const result = await graphAPI.rescanLocations(caseId);
+      setRescanResult(result);
+      if (result?.success) {
+        await loadLocations();
+      }
+    } catch (err) {
+      setRescanResult({ success: false, error: err.message || 'Rescan failed' });
+    } finally {
+      setRescanRunning(false);
+      setTimeout(() => setRescanResult(null), 12000);
+    }
+  }, [caseId, rescanRunning, loadLocations]);
 
   // Use external locations if provided, otherwise load from API
   useEffect(() => {
@@ -512,6 +538,62 @@ export default function MapView({
       });
     }
   }, [onNodeClick]);
+
+  // Handle right-click context menu on markers
+  const handleMarkerContextMenu = useCallback((entity, e) => {
+    e.originalEvent.preventDefault();
+    setContextMenu({
+      x: e.originalEvent.clientX,
+      y: e.originalEvent.clientY,
+      entity,
+    });
+  }, []);
+
+  const handleEditLocation = useCallback((entity) => {
+    setContextMenu(null);
+    setEditLocationModal({
+      entity,
+      locationName: entity.location_formatted || entity.location_raw || '',
+      latitude: entity.latitude,
+      longitude: entity.longitude,
+    });
+  }, []);
+
+  const handleSaveLocation = useCallback(async () => {
+    if (!editLocationModal || !caseId) return;
+    setSavingLocation(true);
+    try {
+      await graphAPI.updateLocation(editLocationModal.entity.key, {
+        caseId,
+        locationName: editLocationModal.locationName,
+        latitude: parseFloat(editLocationModal.latitude),
+        longitude: parseFloat(editLocationModal.longitude),
+      });
+      setLocations(prev => prev.map(loc =>
+        loc.key === editLocationModal.entity.key
+          ? { ...loc, latitude: parseFloat(editLocationModal.latitude), longitude: parseFloat(editLocationModal.longitude), location_formatted: editLocationModal.locationName }
+          : loc
+      ));
+      setEditLocationModal(null);
+    } catch (err) {
+      console.error('Failed to update location:', err);
+      alert('Failed to update location: ' + err.message);
+    } finally {
+      setSavingLocation(false);
+    }
+  }, [editLocationModal, caseId]);
+
+  const handleRemoveLocation = useCallback(async (entity) => {
+    setContextMenu(null);
+    if (!caseId) return;
+    try {
+      await graphAPI.removeLocation(entity.key, caseId);
+      setLocations(prev => prev.filter(loc => loc.key !== entity.key));
+    } catch (err) {
+      console.error('Failed to remove location:', err);
+      alert('Failed to remove location: ' + err.message);
+    }
+  }, [caseId]);
 
   // Handle map click (background)
   const handleMapClick = useCallback((e) => {
@@ -612,15 +694,71 @@ export default function MapView({
 
   if (locations.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-light-50">
-        <div className="flex flex-col items-center gap-3 text-center max-w-md px-4">
+      <div className="h-full flex items-center justify-center bg-light-50 relative">
+        <div className="flex flex-col items-center gap-4 text-center max-w-md px-4">
           <MapPin className="w-12 h-12 text-light-400" />
-          <span className="text-light-800">No geocoded entities</span>
+          <span className="text-light-800 font-medium">No geocoded entities</span>
           <span className="text-light-600 text-sm">
-            Entities need location data to appear on the map. 
-            Ingest documents with location information to use this feature.
+            Entities need location data to appear on the map.
+            Use AI Rescan to extract and geocode locations from your case documents.
           </span>
+          <button
+            onClick={handleRescanLocations}
+            disabled={rescanRunning}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg shadow-md border-2 transition-colors text-sm font-medium ${
+              rescanRunning
+                ? 'bg-emerald-100 border-emerald-400 text-emerald-800 cursor-wait'
+                : 'bg-emerald-500 border-emerald-600 text-white hover:bg-emerald-600'
+            }`}
+          >
+            {rescanRunning ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <MapPin className="w-4 h-4" />
+            )}
+            {rescanRunning ? 'Scanning documents…' : 'AI Rescan Locations'}
+          </button>
+          <button
+            onClick={loadLocations}
+            className="text-xs text-light-500 hover:text-light-700 underline"
+          >
+            Refresh
+          </button>
         </div>
+
+        {/* Rescan result toast */}
+        {rescanResult && (
+          <div className={`absolute top-4 right-4 z-10 max-w-sm rounded-lg shadow-lg border p-4 ${
+            rescanResult.success
+              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+              : 'bg-red-50 border-red-300 text-red-900'
+          }`}>
+            <div className="flex items-start gap-2">
+              <div className="flex-1">
+                {rescanResult.success ? (
+                  <>
+                    <p className="text-sm font-semibold">Location Rescan Complete</p>
+                    <div className="text-xs mt-1 space-y-0.5">
+                      <p>{rescanResult.chunks_scanned || 0} chunks scanned</p>
+                      <p>{rescanResult.locations_geocoded || 0} locations geocoded</p>
+                      <p>{rescanResult.entities_updated || 0} entities updated</p>
+                      <p>{rescanResult.location_nodes_created || 0} new location nodes</p>
+                      <p>{rescanResult.relationships_created || 0} relationships created</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold">Rescan Failed</p>
+                    <p className="text-xs mt-1">{rescanResult.error || rescanResult.message || 'Unknown error'}</p>
+                  </>
+                )}
+              </div>
+              <button onClick={() => setRescanResult(null)} className="p-0.5 hover:bg-black/10 rounded">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -689,6 +827,7 @@ export default function MapView({
                 entityType={entity.type}
                 eventHandlers={{
                   click: (e) => handleMarkerClick(entity, e),
+                  contextmenu: (e) => handleMarkerContextMenu(entity, e),
                   mouseover: () => setHoveredEntityKey(entity.key),
                   mouseout: () => setHoveredEntityKey(null),
                 }}
@@ -854,7 +993,7 @@ export default function MapView({
       </MapContainer>
       
       {/* Controls overlay */}
-      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
+      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2 max-h-[calc(100%-2rem)] overflow-y-auto pr-1">
         {/* Stats badge */}
         <div className="bg-white/90 backdrop-blur-sm rounded-lg px-3 py-2 shadow-md border border-light-200">
           <div className="flex items-center gap-2 text-sm">
@@ -998,6 +1137,28 @@ export default function MapView({
         >
           <Route className={`w-4 h-4 ${showRouteAnalysis ? 'text-indigo-600' : ''}`} />
           <span className="text-sm">Routes</span>
+        </button>
+
+        {/* Divider */}
+        <div className="border-t border-light-300 my-0.5" />
+
+        {/* AI Rescan Locations */}
+        <button
+          onClick={handleRescanLocations}
+          disabled={rescanRunning}
+          className={`flex items-center gap-2 px-3 py-2 rounded-lg shadow-md border-2 transition-colors ${
+            rescanRunning
+              ? 'bg-emerald-100 border-emerald-400 text-emerald-800 cursor-wait'
+              : 'bg-emerald-50 border-emerald-400 text-emerald-800 hover:bg-emerald-100'
+          }`}
+          title="Rescan all case documents with GPT to extract and geocode locations"
+        >
+          {rescanRunning ? (
+            <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+          ) : (
+            <MapPin className="w-4 h-4 text-emerald-600" />
+          )}
+          <span className="text-sm font-medium">{rescanRunning ? 'Scanning…' : 'AI Rescan Locations'}</span>
         </button>
 
         {/* Refresh button */}
@@ -1144,6 +1305,43 @@ export default function MapView({
         </div>
       )}
 
+      {/* Rescan result toast */}
+      {rescanResult && (
+        <div className={`absolute top-4 right-4 z-[1001] max-w-sm rounded-lg shadow-lg border p-4 ${
+          rescanResult.success
+            ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+            : 'bg-red-50 border-red-300 text-red-900'
+        }`}>
+          <div className="flex items-start gap-2">
+            <div className="flex-1">
+              {rescanResult.success ? (
+                <>
+                  <p className="text-sm font-semibold">Location Rescan Complete</p>
+                  <div className="text-xs mt-1 space-y-0.5">
+                    <p>{rescanResult.chunks_scanned || 0} chunks scanned</p>
+                    <p>{rescanResult.locations_geocoded || 0} locations geocoded</p>
+                    <p>{rescanResult.entities_updated || 0} entities updated</p>
+                    <p>{rescanResult.location_nodes_created || 0} new location nodes</p>
+                    <p>{rescanResult.relationships_created || 0} relationships created</p>
+                    {rescanResult.locations_failed_geocode > 0 && (
+                      <p className="text-amber-700">{rescanResult.locations_failed_geocode} failed to geocode</p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-semibold">Rescan Failed</p>
+                  <p className="text-xs mt-1">{rescanResult.error || rescanResult.message || 'Unknown error'}</p>
+                </>
+              )}
+            </div>
+            <button onClick={() => setRescanResult(null)} className="p-0.5 hover:bg-black/10 rounded">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Legend */}
       <div className="absolute bottom-4 right-4 z-[1000] bg-white/90 backdrop-blur-sm rounded-lg shadow-md border border-light-200 p-3">
         <div className="text-xs text-light-600 mb-2">Legend</div>
@@ -1173,6 +1371,102 @@ export default function MapView({
             <span className="text-light-500 text-xs ml-2">
               (Ctrl+click for multi-select)
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-light-200 py-1 min-w-[160px]"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseLeave={() => setContextMenu(null)}
+        >
+          <div className="px-3 py-1.5 text-xs text-light-500 font-medium border-b border-light-100 truncate max-w-[200px]">
+            {contextMenu.entity.name}
+          </div>
+          <button
+            onClick={() => handleEditLocation(contextMenu.entity)}
+            className="w-full text-left px-3 py-2 text-sm text-light-700 hover:bg-light-50 flex items-center gap-2 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Edit Location
+          </button>
+          <button
+            onClick={() => handleRemoveLocation(contextMenu.entity)}
+            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Remove from Map
+          </button>
+        </div>
+      )}
+
+      {/* Edit Location Modal */}
+      {editLocationModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999]" onClick={() => setEditLocationModal(null)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-light-200">
+              <h3 className="font-semibold text-owl-blue-900 flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-owl-blue-600" />
+                Edit Location
+              </h3>
+              <button onClick={() => setEditLocationModal(null)} className="p-1 hover:bg-light-100 rounded transition-colors">
+                <X className="w-4 h-4 text-light-600" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3">
+              <div className="text-sm text-light-600">
+                {editLocationModal.entity.name} <span className="text-light-400">({editLocationModal.entity.type})</span>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-light-700 block mb-1">Location Name</label>
+                <input
+                  type="text"
+                  value={editLocationModal.locationName}
+                  onChange={(e) => setEditLocationModal(prev => ({ ...prev, locationName: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-light-700 block mb-1">Latitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editLocationModal.latitude}
+                    onChange={(e) => setEditLocationModal(prev => ({ ...prev, latitude: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-light-700 block mb-1">Longitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editLocationModal.longitude}
+                    onChange={(e) => setEditLocationModal(prev => ({ ...prev, longitude: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-light-200">
+              <button
+                onClick={() => setEditLocationModal(null)}
+                className="px-4 py-2 text-sm text-light-700 hover:bg-light-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveLocation}
+                disabled={savingLocation}
+                className="px-4 py-2 text-sm bg-owl-blue-600 hover:bg-owl-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Check className="w-3.5 h-3.5" />
+                {savingLocation ? 'Saving...' : 'Save'}
+              </button>
+            </div>
           </div>
         </div>
       )}

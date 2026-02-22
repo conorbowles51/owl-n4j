@@ -664,7 +664,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 verified_facts = entity.get("verified_facts")
                 if verified_facts:
                     lines.append("  Verified Facts:")
-                    for fact in verified_facts[:10]:  # Limit to top 10 facts per entity
+                    for fact in verified_facts[:25]:  # Raised from 10→25 for full case analysis
                         fact_text = fact.get("text", "")
                         source = fact.get("source_doc", "")
                         quote = fact.get("quote", "")

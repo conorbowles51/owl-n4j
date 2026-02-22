@@ -2,11 +2,15 @@
 Financial Router - endpoints for financial analysis and transaction visualization.
 """
 
+from datetime import datetime
 from typing import List, Optional
+
 from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from services import neo4j_service
+from services.financial_export_service import generate_financial_pdf
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
 
@@ -255,5 +259,118 @@ async def create_category(body: CreateCategoryRequest):
         return result
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class UpdateAmountRequest(BaseModel):
+    case_id: str
+    new_amount: float
+    correction_reason: str
+
+
+@router.put("/transactions/{node_key}/amount")
+async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
+    """Update a transaction amount with audit trail."""
+    if body.new_amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+    try:
+        result = neo4j_service.update_transaction_amount(
+            node_key=node_key,
+            case_id=body.case_id,
+            new_amount=body.new_amount,
+            correction_reason=body.correction_reason,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class LinkSubTransactionRequest(BaseModel):
+    case_id: str
+    child_key: str
+
+
+@router.post("/transactions/{parent_key}/sub-transactions")
+async def link_sub_transaction(parent_key: str, body: LinkSubTransactionRequest):
+    """Link a child transaction to a parent."""
+    if parent_key == body.child_key:
+        raise HTTPException(status_code=400, detail="Cannot link a transaction to itself")
+    try:
+        result = neo4j_service.link_sub_transaction(parent_key, body.child_key, body.case_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/transactions/{child_key}/parent")
+async def unlink_sub_transaction(
+    child_key: str,
+    case_id: str = Query(..., description="REQUIRED: Case ID"),
+):
+    """Remove a child transaction from its parent group."""
+    try:
+        result = neo4j_service.unlink_sub_transaction(child_key, case_id)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/transactions/{parent_key}/sub-transactions")
+async def get_transaction_children(
+    parent_key: str,
+    case_id: str = Query(..., description="REQUIRED: Case ID"),
+):
+    """Get all child sub-transactions for a parent."""
+    try:
+        children = neo4j_service.get_transaction_children(parent_key, case_id)
+        return {"children": children, "count": len(children)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/export/pdf")
+async def export_financial_pdf(
+    case_id: str = Query(..., description="REQUIRED: Case ID"),
+    case_name: str = Query("Case", description="Case name for the header"),
+    categories: Optional[str] = Query(None, description="Comma-separated categories to filter"),
+    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+):
+    """Export filtered financial transactions as a PDF report."""
+    try:
+        result = neo4j_service.get_financial_transactions(case_id=case_id)
+        transactions = result.get("transactions", []) if isinstance(result, dict) else result
+
+        filters = []
+        if categories:
+            cat_list = [c.strip() for c in categories.split(",")]
+            transactions = [t for t in transactions if t.get("financial_category") in cat_list]
+            filters.append(f"Categories: {', '.join(cat_list)}")
+        if start_date:
+            transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
+            filters.append(f"From: {start_date}")
+        if end_date:
+            transactions = [t for t in transactions if t.get("date") and t["date"] <= end_date]
+            filters.append(f"To: {end_date}")
+
+        filters_description = " | ".join(filters) if filters else ""
+
+        pdf_bytes = generate_financial_pdf(transactions, case_name, filters_description)
+
+        safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
+        filename = f"Financial_Report_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

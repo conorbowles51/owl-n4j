@@ -526,6 +526,13 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
   ]
 }}
 
+ENTITY QUALITY RULES — FOLLOW STRICTLY:
+1. SIGNIFICANCE THRESHOLD: Only extract entities that play an active, named role in events. Skip passing mentions, generic job titles without names, background references.
+2. TABLES: Do NOT create one entity per row. Identify the 2-3 key parties in the table, create entities only for them, summarize the table in their verified_facts.
+3. IMPORTANCE: Before extracting, ask "Would an attorney need to click on this entity?" If no, skip it.
+4. DEDUPLICATION: Same person with slightly different names = ONE entity with aliases in verified_facts. Do not create separate entities.
+5. MINIMUM: Entity must be a named party to a transaction, agreement, communication, or legal proceeding. Generic references do not qualify.
+
 IMPORTANT REMINDERS:
 1. verified_facts must have direct quotes from the document. If you can't quote it, it's an ai_insight.
 2. For event-type entities (Transaction, Payment, Meeting, etc.), dates are REQUIRED - convert any date format to YYYY-MM-DD.

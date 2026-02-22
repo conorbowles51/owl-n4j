@@ -1755,7 +1755,7 @@ class Neo4jService:
         self,
         case_id: str,
         entity_types: Optional[List[str]] = None,
-        name_similarity_threshold: float = 0.7,
+        name_similarity_threshold: float = 0.88,
         max_results: int = 50,
     ) -> List[Dict]:
         """
@@ -1856,7 +1856,7 @@ class Neo4jService:
         self,
         case_id: str,
         entity_types: Optional[List[str]] = None,
-        name_similarity_threshold: float = 0.7,
+        name_similarity_threshold: float = 0.88,
         max_results: int = 1000,
         rejected_pairs: Optional[Set[Tuple[str, str]]] = None,
     ):
@@ -2712,7 +2712,12 @@ class Neo4jService:
                     collect(DISTINCT rf_entity.key)[0] AS rf_key,
                     collect(DISTINCT rf_entity.name)[0] AS rf_name,
                     collect(DISTINCT initiator.key)[0] AS initiator_key,
-                    collect(DISTINCT initiator.name)[0] AS initiator_name
+                    collect(DISTINCT initiator.name)[0] AS initiator_name,
+                    n.is_parent AS is_parent,
+                    n.parent_transaction_key AS parent_transaction_key,
+                    n.amount_corrected AS amount_corrected,
+                    n.original_amount AS original_amount,
+                    n.correction_reason AS correction_reason
                 ORDER BY n.date ASC, n.time ASC
             """
 
@@ -2745,6 +2750,11 @@ class Neo4jService:
                     "to_entity": {"key": to_key, "name": to_name} if to_key else None,
                     "has_manual_from": record["from_entity_key"] is not None,
                     "has_manual_to": record["to_entity_key"] is not None,
+                    "is_parent": record["is_parent"] or False,
+                    "parent_transaction_key": record["parent_transaction_key"],
+                    "amount_corrected": record["amount_corrected"] or False,
+                    "original_amount": record["original_amount"],
+                    "correction_reason": record["correction_reason"],
                 })
             return transactions
 
@@ -3086,6 +3096,485 @@ class Neo4jService:
             results.append(result)
         success_count = sum(1 for r in results if r.get("success"))
         return {"success": True, "updated": success_count, "total": len(node_keys)}
+
+
+    def update_entity_location(self, node_key: str, case_id: str, location_name: str, latitude: float, longitude: float) -> Dict:
+        """Update the location properties of an entity node."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                SET n.location_name = $location_name,
+                    n.location_formatted = $location_name,
+                    n.latitude = $latitude,
+                    n.longitude = $longitude
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
+                """,
+                key=node_key,
+                case_id=case_id,
+                location_name=location_name,
+                latitude=latitude,
+                longitude=longitude,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key} in case {case_id}")
+            return {
+                "success": True,
+                "node": {"key": record["key"], "name": record["name"], "type": record["type"]},
+                "location": {"location_name": location_name, "latitude": latitude, "longitude": longitude},
+            }
+
+    def remove_entity_location(self, node_key: str, case_id: str) -> Dict:
+        """Remove location properties from an entity node (node stays in graph)."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                REMOVE n.latitude, n.longitude, n.location_name, n.location_formatted,
+                       n.location_raw, n.geocoding_confidence
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key} in case {case_id}")
+            return {
+                "success": True,
+                "node": {"key": record["key"], "name": record["name"], "type": record["type"]},
+            }
+
+    def get_case_entity_summary(self, case_id: str) -> list:
+        """Get a structured summary of all key entities in a case."""
+        with self._driver.session() as session:
+            query = """
+                MATCH (n {case_id: $case_id})
+                WHERE (n:Person OR n:Company OR n:Organisation OR n:Bank OR n:BankAccount)
+                  AND n.name IS NOT NULL
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
+                       n.summary AS summary,
+                       n.verified_facts AS verified_facts,
+                       n.ai_insights AS ai_insights
+                ORDER BY labels(n)[0], n.name
+            """
+            result = session.run(query, case_id=case_id)
+            entities = []
+            for record in result:
+                vf = record["verified_facts"]
+                ai = record["ai_insights"]
+                if isinstance(vf, str):
+                    try:
+                        import json
+                        vf = json.loads(vf)
+                    except Exception:
+                        vf = []
+                if isinstance(ai, str):
+                    try:
+                        import json
+                        ai = json.loads(ai)
+                    except Exception:
+                        ai = []
+                entities.append({
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "summary": record["summary"],
+                    "facts_count": len(vf) if isinstance(vf, list) else 0,
+                    "insights_count": len(ai) if isinstance(ai, list) else 0,
+                })
+            return entities
+
+    def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str) -> Dict:
+        """Update a transaction amount, preserving the original value for audit trail."""
+        with self._driver.session() as session:
+            # First fetch current amount
+            fetch_result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                RETURN n.amount AS amount, n.original_amount AS original_amount
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+            record = fetch_result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key} in case {case_id}")
+
+            current_amount = record["amount"]
+            original_amount = record["original_amount"]
+
+            # Build SET clause: preserve original amount only on first correction
+            set_parts = [
+                "n.amount = $new_amount",
+                "n.amount_corrected = true",
+                "n.correction_reason = $correction_reason",
+            ]
+            params = {
+                "key": node_key,
+                "case_id": case_id,
+                "new_amount": new_amount,
+                "correction_reason": correction_reason,
+            }
+
+            if original_amount is None and current_amount is not None:
+                set_parts.append("n.original_amount = $current_amount")
+                params["current_amount"] = current_amount
+
+            query = f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                SET {', '.join(set_parts)}
+                RETURN n.key AS key, n.amount AS amount, n.original_amount AS original_amount
+            """
+            result = session.run(query, **params).single()
+            return {
+                "success": True,
+                "key": result["key"],
+                "amount": result["amount"],
+                "original_amount": result["original_amount"],
+            }
+
+
+    def link_sub_transaction(self, parent_key: str, child_key: str, case_id: str) -> Dict:
+        """Link a child transaction to a parent transaction."""
+        with self._driver.session() as session:
+            check = session.run(
+                """
+                MATCH (parent {key: $parent_key, case_id: $case_id})
+                MATCH (child {key: $child_key, case_id: $case_id})
+                RETURN parent.key AS pk, child.key AS ck
+                """,
+                parent_key=parent_key, child_key=child_key, case_id=case_id,
+            ).single()
+            if not check:
+                raise ValueError(f"One or both nodes not found in case {case_id}")
+
+            session.run(
+                """
+                MATCH (parent {key: $parent_key, case_id: $case_id})
+                MATCH (child {key: $child_key, case_id: $case_id})
+                MERGE (child)-[:PART_OF]->(parent)
+                SET child.parent_transaction_key = $parent_key,
+                    parent.is_parent = true
+                """,
+                parent_key=parent_key, child_key=child_key, case_id=case_id,
+            )
+            return {"success": True, "parent_key": parent_key, "child_key": child_key}
+
+    def unlink_sub_transaction(self, child_key: str, case_id: str) -> Dict:
+        """Remove a child transaction from its parent group."""
+        with self._driver.session() as session:
+            parent_result = session.run(
+                """
+                MATCH (child {key: $child_key, case_id: $case_id})-[:PART_OF]->(parent)
+                RETURN parent.key AS parent_key
+                """,
+                child_key=child_key, case_id=case_id,
+            ).single()
+
+            if not parent_result:
+                raise ValueError(f"Child node {child_key} has no parent relationship")
+
+            parent_key = parent_result["parent_key"]
+
+            session.run(
+                """
+                MATCH (child {key: $child_key, case_id: $case_id})-[r:PART_OF]->(parent)
+                DELETE r
+                REMOVE child.parent_transaction_key
+                """,
+                child_key=child_key, case_id=case_id,
+            )
+
+            remaining = session.run(
+                """
+                MATCH (child)-[:PART_OF]->(parent {key: $parent_key, case_id: $case_id})
+                RETURN count(child) AS count
+                """,
+                parent_key=parent_key, case_id=case_id,
+            ).single()
+
+            if remaining and remaining["count"] == 0:
+                session.run(
+                    "MATCH (n {key: $key, case_id: $case_id}) SET n.is_parent = false",
+                    key=parent_key, case_id=case_id,
+                )
+
+            return {"success": True, "child_key": child_key, "parent_key": parent_key}
+
+    def get_transaction_children(self, parent_key: str, case_id: str) -> list:
+        """Get all child sub-transactions for a parent."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (child)-[:PART_OF]->(parent {key: $parent_key, case_id: $case_id})
+                RETURN child.key AS key, child.name AS name, child.date AS date,
+                       child.time AS time, child.amount AS amount, child.type AS type,
+                       child.financial_category AS financial_category,
+                       child.from_entity_name AS from_name, child.to_entity_name AS to_name,
+                       child.purpose AS purpose, child.notes AS notes,
+                       child.amount_corrected AS amount_corrected,
+                       child.original_amount AS original_amount,
+                       child.correction_reason AS correction_reason
+                ORDER BY child.date
+                """,
+                parent_key=parent_key, case_id=case_id,
+            )
+            children = []
+            for record in result:
+                children.append({k: record[k] for k in record.keys()})
+            return children
+
+    def batch_update_entities(self, updates: list, case_id: str) -> int:
+        """Batch update properties on multiple entity nodes.
+
+        Args:
+            updates: List of dicts with {key, property, value}
+            case_id: Case ID for security validation
+        Returns:
+            Number of successfully updated entities
+        """
+        allowed_properties = {"name", "summary", "notes", "type", "description"}
+        with self._driver.session() as session:
+            count = 0
+            for update in updates[:500]:
+                prop = update.get("property")
+                if prop not in allowed_properties:
+                    continue
+                result = session.run(
+                    f"MATCH (n {{key: $key, case_id: $case_id}}) SET n.`{prop}` = $value RETURN n.key AS key",
+                    key=update["key"],
+                    case_id=case_id,
+                    value=update["value"],
+                )
+                if result.single():
+                    count += 1
+            return count
+
+    def get_entities_for_insights(self, case_id: str, max_entities: int = 10) -> list:
+        """Get top entities with verified facts for insight generation."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE (n:Person OR n:Company OR n:Organisation OR n:Bank OR n:BankAccount)
+                  AND n.name IS NOT NULL
+                  AND n.verified_facts IS NOT NULL
+                OPTIONAL MATCH (n)-[r]-(related)
+                WHERE NOT related:Document AND related.case_id = $case_id
+                WITH n, collect(DISTINCT {
+                    name: related.name,
+                    type: labels(related)[0],
+                    relationship: type(r)
+                })[..15] AS related_entities
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
+                       n.summary AS summary, n.verified_facts AS verified_facts,
+                       n.ai_insights AS ai_insights, related_entities
+                ORDER BY size(COALESCE(n.verified_facts, '[]')) DESC
+                LIMIT $max_entities
+                """,
+                case_id=case_id, max_entities=max_entities,
+            )
+            entities = []
+            for record in result:
+                entities.append({
+                    "key": record["key"],
+                    "name": record["name"],
+                    "type": record["type"],
+                    "summary": record["summary"],
+                    "verified_facts": parse_json_field(record["verified_facts"]) or [],
+                    "ai_insights": parse_json_field(record["ai_insights"]) or [],
+                    "related_entities": [r for r in record["related_entities"] if r.get("name")],
+                })
+            return entities
+
+    def save_entity_insights(self, node_key: str, case_id: str, new_insights: list) -> Dict:
+        """Append new insights to an entity's ai_insights array."""
+        with self._driver.session() as session:
+            result = session.run(
+                "MATCH (n {key: $key, case_id: $case_id}) RETURN n.ai_insights AS ai_insights",
+                key=node_key, case_id=case_id,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key}")
+            existing = parse_json_field(record["ai_insights"]) or []
+            existing.extend(new_insights)
+            session.run(
+                "MATCH (n {key: $key, case_id: $case_id}) SET n.ai_insights = $insights",
+                key=node_key, case_id=case_id, insights=json.dumps(existing),
+            )
+            return {"success": True, "total_insights": len(existing)}
+
+    def reject_entity_insight(self, node_key: str, case_id: str, insight_index: int) -> Dict:
+        """Remove an insight from the ai_insights array."""
+        with self._driver.session() as session:
+            result = session.run(
+                "MATCH (n {key: $key, case_id: $case_id}) RETURN n.ai_insights AS ai_insights",
+                key=node_key, case_id=case_id,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Node not found: {node_key}")
+            insights = parse_json_field(record["ai_insights"]) or []
+            if insight_index < 0 or insight_index >= len(insights):
+                raise ValueError(f"Invalid insight index: {insight_index}")
+            removed = insights.pop(insight_index)
+            session.run(
+                "MATCH (n {key: $key, case_id: $case_id}) SET n.ai_insights = $insights",
+                key=node_key, case_id=case_id, insights=json.dumps(insights),
+            )
+            return {"success": True, "removed": removed, "remaining": len(insights)}
+
+    def get_all_pending_insights(self, case_id: str) -> list:
+        """Get all pending insights across all entities in a case."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE n.ai_insights IS NOT NULL AND n.name IS NOT NULL
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
+                       n.ai_insights AS ai_insights
+                ORDER BY n.name
+                """,
+                case_id=case_id,
+            )
+            all_insights = []
+            for record in result:
+                insights = parse_json_field(record["ai_insights"]) or []
+                for idx, insight in enumerate(insights):
+                    if isinstance(insight, dict) and insight.get("status", "pending") == "pending":
+                        all_insights.append({
+                            "entity_key": record["key"],
+                            "entity_name": record["name"],
+                            "entity_type": record["type"],
+                            "insight_index": idx,
+                            **insight,
+                        })
+            return all_insights
+
+    # -------------------------------------------------------------------------
+    # Geo Rescan helpers
+    # -------------------------------------------------------------------------
+
+    def get_all_nodes(self, case_id: str) -> List[Dict]:
+        """Return every non-Document node for a case with key properties."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE NOT n:Document
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
+                       n.latitude AS latitude, n.longitude AS longitude,
+                       n.location_raw AS location_raw
+                """,
+                case_id=case_id,
+            )
+            return [dict(r) for r in result]
+
+    def update_entity_location_full(
+        self,
+        node_key: str,
+        case_id: str,
+        location_raw: str,
+        latitude: float,
+        longitude: float,
+        location_formatted: str,
+        geocoding_confidence: str,
+    ) -> Dict:
+        """Set all location properties on an entity node."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                SET n.location_raw = $location_raw,
+                    n.latitude = $latitude,
+                    n.longitude = $longitude,
+                    n.location_formatted = $location_formatted,
+                    n.location_name = $location_formatted,
+                    n.geocoding_status = 'success',
+                    n.geocoding_confidence = $geocoding_confidence
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
+                """,
+                key=node_key,
+                case_id=case_id,
+                location_raw=location_raw,
+                latitude=latitude,
+                longitude=longitude,
+                location_formatted=location_formatted,
+                geocoding_confidence=geocoding_confidence,
+            )
+            record = result.single()
+            return dict(record) if record else {}
+
+    def create_location_node(
+        self,
+        case_id: str,
+        name: str,
+        latitude: float,
+        longitude: float,
+        location_formatted: str,
+        geocoding_confidence: str,
+        context: str = "",
+    ) -> Optional[str]:
+        """Create a new Location node in the graph and return its key."""
+        import uuid
+        node_key = f"loc_{uuid.uuid4().hex[:12]}"
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                CREATE (n:Location {
+                    key: $key,
+                    name: $name,
+                    case_id: $case_id,
+                    latitude: $latitude,
+                    longitude: $longitude,
+                    location_raw: $name,
+                    location_formatted: $location_formatted,
+                    location_name: $location_formatted,
+                    geocoding_status: 'success',
+                    geocoding_confidence: $geocoding_confidence,
+                    summary: $context,
+                    source: 'geo_rescan'
+                })
+                RETURN n.key AS key
+                """,
+                key=node_key,
+                name=name,
+                case_id=case_id,
+                latitude=latitude,
+                longitude=longitude,
+                location_formatted=location_formatted,
+                geocoding_confidence=geocoding_confidence,
+                context=context,
+            )
+            record = result.single()
+            return record["key"] if record else None
+
+    def ensure_located_at_relationship(
+        self,
+        source_key: str,
+        target_key: str,
+        case_id: str,
+        context: str = "",
+    ) -> bool:
+        """Create a LOCATED_AT relationship if it doesn't exist. Returns True if created."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (a {key: $source_key, case_id: $case_id})
+                MATCH (b {key: $target_key, case_id: $case_id})
+                WHERE NOT (a)-[:LOCATED_AT]->(b)
+                CREATE (a)-[r:LOCATED_AT {context: $context, source: 'geo_rescan'}]->(b)
+                RETURN type(r) AS rel_type
+                """,
+                source_key=source_key,
+                target_key=target_key,
+                case_id=case_id,
+                context=context,
+            )
+            return result.single() is not None
 
 
 # Singleton instance

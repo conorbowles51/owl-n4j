@@ -102,9 +102,14 @@ export default function CaseExportModal({
 
   /** Include flags for export: from Case Overview panel checkboxes, with defaults for timeline/snapshots */
   const includeInExport = useMemo(() => {
+    const merged = { ...includeBySection };
+    if ('case-files' in merged) {
+      merged.evidence = merged['case-files'];
+      merged.documents = merged['case-files'];
+    }
     const o = {};
     SECTION_KEYS.forEach((k) => {
-      o[k] = includeBySection[k] !== false;
+      o[k] = merged[k] !== false;
     });
     return o;
   }, [includeBySection]);

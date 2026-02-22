@@ -26,9 +26,33 @@
 
 ---
 
+# Timesheet Entry - February 10–20, 2026
+
+## Day 9: Monday, February 16, 2026
+**9.0 hours** — Built a dedicated financial analysis dashboard and introduced document summary and case backup capabilities. Defense attorneys handling cases with significant financial evidence — bank records, wire transfers, business payments, expense accounts — previously had no way to interrogate that data in isolation. Every transaction the AI extracted existed somewhere in the system but was mixed in amongst all other case entities, with no financial-specific tools to organise or analyse it. This session delivered a complete financial dashboard as a new standalone view, featuring summary cards showing total transaction volume and inflow/outflow breakdowns relative to any selected entity, interactive charts plotting financial activity over time and by category, and a detailed transaction table with simultaneous filtering by date range, transaction type, category, and named entity. Each transaction row can be expanded to add notes on purpose, counterparty context, and case narrative — turning the table into a working document as well as a reference view.
+
+Also implemented a full category management system with standard and custom categories so attorneys can classify transactions in ways meaningful to the specific case, with bulk re-categorisation and bulk from/to reassignment for when the AI attributes a series of transactions to the wrong party. Added automatic plain-English summary generation for each uploaded document and folder, allowing attorneys to scan large productions and identify which files warrant detailed attention without opening every one. Built the case backup and restore system so investigators can save a complete named snapshot of the entire case at any point — all entities, relationships, documents, and annotations — and restore to it if subsequent work needs to be reversed, which is an important safeguard in legal work where evidence record integrity matters.
+
+## Day 10: Tuesday, February 17, 2026
+**6.0 hours** — Fixed a critical error in the AI cost tracking system and expanded the cost ledger into a fully functional expense management tool. The cost tracking system records what is spent on AI processing for each case — document ingestion, AI assistant queries, entity analysis — so that costs can be monitored, allocated to the right cases and clients, and reported accurately. A bug was discovered where certain categories of cost records were being silently dropped rather than saved, meaning the ledger was systematically understating actual AI usage without any visible error. Diagnosed the root cause as an enum type conversion failure during database writes, traced it through all affected parts of the system, and applied a consistent fix so that every AI operation is now reliably recorded.
+
+With that resolved, substantially expanded the cost ledger's analytical capabilities. Case managers can now filter costs simultaneously by date range, activity type, AI model, and individual case, with the ledger automatically displaying subtotals broken down by each dimension — so the split between document ingestion costs and AI assistant query costs is immediately visible without any manual calculation. Added column sorting so the most expensive operations surface to the top instantly, improved pagination for cases with large cost histories, and standardised currency formatting throughout. The result is a ledger that gives case managers the visibility needed to manage AI spend, forecast costs on active matters, and report AI processing charges to clients with the level of detail a billing conversation requires.
+
+## Day 11: Wednesday, February 18, 2026
+**10.5 hours** — Substantially improved the accuracy and transparency of the AI assistant, and built a suite of data maintenance tools to bring all previously ingested case documents into alignment with the platform's updated architecture. The previous retrieval approach found the most relevant whole documents to a question and provided their full text as context — which works for broad questions but fails for precise ones. A question like "What was the exact wire amount on March 14th?" might retrieve the right document but bury the relevant line in thousands of words of surrounding content, diluting the AI's answer and increasing the risk of inaccuracy. Rebuilt the retrieval system so documents are now broken into smaller overlapping sections during ingestion, each independently searchable, and when a question is asked the system finds the most relevant specific passages across all case documents rather than the most relevant whole files. Those passages are then combined with structured data from the knowledge graph — verified facts, entity relationships, and timeline information — before the AI formulates its response, producing answers that are more precise, better evidenced, and less likely to miss details buried deep in a long document.
+
+Implementing this change revealed that all previously ingested documents were missing the new section-level search index, and in some cases were also missing case identifiers and document summaries the system depends on. Built a suite of data maintenance tools accessible from the Database Management panel — no technical access required — that allow administrators to retroactively apply all missing data to existing cases, running progressively with detailed progress reporting and safe to run multiple times without creating duplicates. Also added a pipeline trace panel to the AI assistant so attorneys can see exactly how any answer was constructed — which passages were retrieved and at what relevance score, what graph queries were run, which verified facts were included, and the full context sent to the AI. In legal work where the source of every claim matters, this transparency allows attorneys to verify or challenge AI responses with confidence. Fixed two bugs found during testing: a crash in the trace panel when a case had no graph summary yet, and an Add Node form that was resetting itself on every keystroke due to a stale initialisation dependency.
+
+## Day 12: Thursday, February 19 – Thursday, February 20, 2026
+**12.0 hours** — Delivered a full sprint of thirteen platform improvements prioritised by the primary user, spanning UX fixes, new analytical tools, and two new major systems. Sprint 1 addressed quick wins: fixed a z-index bug that caused the document viewer to appear beneath the merge modal, making document review during entity merging unusable; raised the entity extraction fuzzy-match threshold to suppress low-quality noise entities extracted from non-entity text; added a "Save as note" button to every AI assistant response so attorneys can preserve AI findings directly into the case workspace's Investigative Notes; built bulk category selection in the financial table with checkbox-per-row and a bulk action toolbar; and implemented right-click edit and remove controls for location pins on the map.
+
+Sprint 2 delivered medium-complexity features: added an editable amount field to each transaction with a mandatory correction reason for audit trail purposes; built an Entity Summary panel on the case dashboard showing all extracted entities filtered and sorted by type, name, fact count, and insight count; raised the AI assistant's document retrieval limit and confirmed hybrid retrieval (7 text passages + 6 graph entities per query) via the pipeline trace; clarified the file management terminology so "Evidence Files" and "Uploaded Documents" are distinct labelled sections with descriptive subtitles; and added a PDF export for the financial transaction table via a dedicated backend endpoint. Sprint 3 implemented sub-transaction grouping using a PART_OF Neo4j relationship with a SubTransactionModal for creating and viewing transaction hierarchies, and delivered the full Insights system — an AI-powered scanner that analyses all entities in the case, generates structured insights categorised as inconsistencies, connections, defense opportunities, Brady/Giglio disclosures, and patterns, each with a confidence level and expandable reasoning, and allows attorneys to accept or reject individual insights or bulk-action all high- or low-confidence findings.
+
+---
+
 ## Summary
 
-**Total Hours: 67.0 hours**
+**Total Hours: 104.5 hours**
 
 **Work Completed:**
 - Enhanced knowledge graph management with entity resolution and merge/delete capabilities
@@ -38,12 +62,32 @@
 - Built comprehensive user management system with role-based access control
 - Created collaboration system with case membership and permission management
 - Extended file format support (Excel, CSV, Word documents)
-- Built financial information viewer with charts, tables, and filtering
+- Built financial information viewer with charts, tables, filtering, and batch operations
+- Built financial category management with custom categories and colour coding
 - Implemented multi-folder upload and processing with parallel background tasks
 - Enhanced wiretap processing with status tracking and dual-language node creation
 - Optimized table view performance with pagination and advanced filtering
 - Added comprehensive table editing tools (merge, delete, add, edit) with dynamic fields
-- Built complete cost tracking and billing system for AI processing expenses
+- Built complete cost tracking and billing system for AI processing expenses with enhanced filtering
+- Added folder and document summary generation with file preview improvements
+- Built case backup and restore system for investigation state snapshots
+- Rebuilt RAG pipeline with hybrid vector + graph retrieval for higher quality AI responses
+- Added chunk-level embeddings to ingestion pipeline for more precise document retrieval
+- Built comprehensive backfill system to apply case ID metadata across Neo4j and ChromaDB
+- Added AI assistant pipeline execution trace for full transparency into AI reasoning
+- Fixed infinite re-render loop in Add Node modal and NoneType crash in pipeline trace
+- Added database management UI controls for administrator-triggered backfill operations
+- Fixed document viewer z-index bug in merge modal
+- Added entity extraction noise reduction via raised fuzzy-match threshold
+- Built "Save as note" from AI assistant responses directly into case workspace
+- Implemented bulk categorization toolbar in financial table with per-row checkboxes
+- Added right-click edit and remove controls for map location pins
+- Added editable transaction amounts with mandatory audit reason field
+- Built Entity Summary panel on case dashboard with type tabs, search, and sort
+- Clarified Evidence Files vs Uploaded Documents terminology with descriptive labels
+- Added PDF export for financial transaction table
+- Implemented sub-transaction grouping with PART_OF relationships and SubTransactionModal
+- Built full Insights system with AI-generated case insights, confidence levels, and accept/reject workflow
 
 **Key Benefits for Clients:**
 - Secure multi-user access with role-based permissions and collaboration features
@@ -51,8 +95,14 @@
 - Better data organization with entity resolution and merge capabilities
 - Improved security with case-based data isolation and permission controls
 - More file types supported (spreadsheets, Word documents)
-- Enhanced financial analysis with dedicated viewer and visualization tools
+- Enhanced financial analysis with dedicated viewer, visualisation tools, bulk operations, and PDF export
 - Improved wiretap analysis with separate transcription and translation nodes
-- Efficient data management with optimized table view and editing tools
-- Transparent cost tracking for AI processing with detailed billing reports
+- Efficient data management with optimised table view and editing tools
+- Transparent cost tracking for AI processing with detailed billing reports and filtering
 - Team collaboration capabilities allowing multiple investigators to work on cases together
+- Case backup and restore enabling safe snapshots of investigation states
+- More accurate and trustworthy AI responses through hybrid retrieval and pipeline tracing
+- Administrators can maintain data integrity with self-service backfill tooling
+- AI-generated case insights with structured categories and attorney-controlled accept/reject workflow
+- Transaction data integrity with audited amount corrections and sub-transaction hierarchy support
+- Improved map usability with location pin editing and removal directly from the map

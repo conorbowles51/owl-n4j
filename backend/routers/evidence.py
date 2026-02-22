@@ -65,6 +65,7 @@ class ProcessRequest(BaseModel):
     file_ids: List[str]
     profile: Optional[str] = None  # LLM profile name (e.g., "fraud", "generic")
     max_workers: Optional[int] = None  # Maximum parallel files to process
+    image_provider: Optional[str] = None  # "tesseract" (local OCR) or "openai" (GPT-4 Vision)
 
 
 class ProcessResponse(BaseModel):
@@ -294,6 +295,7 @@ async def process_evidence_background(
             owner=current_user.email,
             profile=request.profile,
             max_workers=request.max_workers,
+            image_provider=request.image_provider,
         )
         return {"task_id": task_id, "message": "Processing started in background"}
     except Exception as e:
@@ -993,12 +995,14 @@ Generate a JSON profile structure that defines how to process this folder. The p
    - "type": "special" (to indicate files are related)
    - "file_rules": Array of rules, each with:
      - "pattern": File pattern (e.g., "*.wav,*.mp3" or "*.sri")
-     - "role": Role of the file ("audio", "metadata", "interpretation", "document", etc.)
+     - "role": Role of the file ("audio", "metadata", "interpretation", "document", "image", "video", etc.)
      - For audio: "actions": ["transcribe", "translate"], "transcribe_languages": [...], "translate_languages": [...], "whisper_model": "base"
      - For metadata: "parser": "sri" (or other), "metadata_extraction": {{...}}
      - For interpretation: "parser": "rtf", "extract_participants": true, "extract_interpretation": true
+     - For image: "provider": "tesseract" (local OCR) or "openai" (GPT-4 Vision for rich scene descriptions)
+     - For video: "actions": ["transcribe", "analyze_frames"] (transcribe audio + extract/analyze key frames)
    - "processing_rules": Text description explaining how files relate and how to process them
-   - "output_format": "wiretap_structured" or "combined" or "custom"
+   - "output_format": "wiretap_structured" or "combined" or "media_structured" or "custom"
    - "related_files_indicator": true
 
 Respond with valid JSON only, matching this structure:

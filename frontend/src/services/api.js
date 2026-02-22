@@ -597,6 +597,26 @@ export const graphAPI = {
     return fetchAPI(`/graph/locations?${params.toString()}`);
   },
 
+  updateLocation: (nodeKey, { caseId, locationName, latitude, longitude }) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/location`, {
+      method: 'PUT',
+      body: { case_id: caseId, location_name: locationName, latitude, longitude },
+    }),
+
+  removeLocation: (nodeKey, caseId) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/location?case_id=${encodeURIComponent(caseId)}`, {
+      method: 'DELETE',
+    }),
+
+  rescanLocations: (caseId, { forceRegeocode = false } = {}) =>
+    fetchAPI(`/graph/cases/${encodeURIComponent(caseId)}/rescan-locations?force_regeocode=${forceRegeocode}`, {
+      method: 'POST',
+      timeout: 300000,
+    }),
+
+  getEntitySummary: (caseId) =>
+    fetchAPI(`/graph/cases/${encodeURIComponent(caseId)}/entity-summary`),
+
   /**
    * Toggle pin status for a verified fact
    * @param {string} nodeKey - Node key
@@ -634,6 +654,25 @@ export const graphAPI = {
         page: page,
       }),
     }),
+
+  batchUpdate: (caseId, updates) =>
+    fetchAPI('/graph/batch-update', {
+      method: 'PUT',
+      body: JSON.stringify({ case_id: caseId, updates }),
+    }),
+
+  generateInsights: (caseId, maxEntities = 10) =>
+    fetchAPI(`/graph/cases/${encodeURIComponent(caseId)}/generate-insights?max_entities=${maxEntities}`, {
+      method: 'POST',
+    }),
+
+  rejectInsight: (nodeKey, insightIndex, caseId) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}/insights/${insightIndex}?case_id=${encodeURIComponent(caseId)}`, {
+      method: 'DELETE',
+    }),
+
+  getCaseInsights: (caseId) =>
+    fetchAPI(`/graph/cases/${encodeURIComponent(caseId)}/insights`),
 };
 
 /**
@@ -879,6 +918,30 @@ export const financialAPI = {
       body: { name, color, case_id: caseId },
     });
   },
+
+  updateAmount: (nodeKey, { caseId, newAmount, correctionReason }) =>
+    fetchAPI(`/financial/transactions/${encodeURIComponent(nodeKey)}/amount`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        case_id: caseId,
+        new_amount: newAmount,
+        correction_reason: correctionReason,
+      }),
+    }),
+
+  linkSubTransaction: (parentKey, childKey, caseId) =>
+    fetchAPI(`/financial/transactions/${encodeURIComponent(parentKey)}/sub-transactions`, {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId, child_key: childKey }),
+    }),
+
+  unlinkSubTransaction: (childKey, caseId) =>
+    fetchAPI(`/financial/transactions/${encodeURIComponent(childKey)}/parent?case_id=${encodeURIComponent(caseId)}`, {
+      method: 'DELETE',
+    }),
+
+  getSubTransactions: (parentKey, caseId) =>
+    fetchAPI(`/financial/transactions/${encodeURIComponent(parentKey)}/sub-transactions?case_id=${encodeURIComponent(caseId)}`),
 };
 
 /**
@@ -1401,8 +1464,9 @@ export const evidenceAPI = {
    * @param {string[]} fileIds - Array of file IDs to process
    * @param {string} [profile] - Optional LLM profile name (e.g., "fraud", "generic")
    * @param {number} [maxWorkers] - Maximum parallel files to process (default: 4)
+   * @param {string} [imageProvider] - Image processing provider: "tesseract" (local OCR) or "openai" (GPT-4 Vision)
    */
-  processBackground: (caseId, fileIds, profile = null, maxWorkers = 4) =>
+  processBackground: (caseId, fileIds, profile = null, maxWorkers = 4, imageProvider = null) =>
     fetchAPI('/evidence/process/background', {
       method: 'POST',
       body: JSON.stringify({
@@ -1410,6 +1474,7 @@ export const evidenceAPI = {
         file_ids: fileIds,
         profile: profile,
         max_workers: maxWorkers,
+        image_provider: imageProvider,
       }),
     }),
 

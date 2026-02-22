@@ -837,10 +837,13 @@ def ingest_document(
                     log_progress(f"[Step 7] Document embedding: Skipped (embedding service not available)", log_callback)
                 else:
                     log_progress(f"[Step 7] Document embedding: Using {profile_embedding_service.provider} provider with model '{profile_embedding_service.model}'", log_callback)
-                    log_progress(f"[Step 7] Document embedding: Generating embedding for document text ({len(text)} characters)", log_callback)
-                    
-                    # Generate embedding for full document text
-                    embedding = profile_embedding_service.generate_embedding(text)
+                    # Truncate text to stay within embedding model token limits
+                    # text-embedding-3-small max is ~8191 tokens (~30K chars)
+                    embedding_text = text[:25000] if len(text) > 25000 else text
+                    log_progress(f"[Step 7] Document embedding: Generating embedding for document text ({len(embedding_text)} characters{' (truncated)' if len(text) > 25000 else ''})", log_callback)
+
+                    # Generate embedding for document text
+                    embedding = profile_embedding_service.generate_embedding(embedding_text)
                 log_progress(f"[Step 7] Document embedding: Embedding generated successfully (dimension: {len(embedding)})", log_callback)
                 
                 # Store in vector DB

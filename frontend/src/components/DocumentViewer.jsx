@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { X, ExternalLink, FileText, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 
 /**
@@ -63,8 +64,8 @@ export default function DocumentViewer({
     }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[9999]">
       <div className="bg-white rounded-lg w-full max-w-5xl h-[90vh] flex flex-col border border-light-200 shadow-2xl mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-light-200 bg-light-50 rounded-t-lg">
@@ -197,7 +198,8 @@ export default function DocumentViewer({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

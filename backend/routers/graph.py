@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 
 from services.neo4j_service import neo4j_service
 from services.last_graph_storage import last_graph_storage
+from services.insights_service import generate_entity_insights
+from services.llm_service import LLMService
+from services.geo_rescan_service import rescan_case_locations
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.rejected_pairs_service import RejectedPairsService
 from routers.auth import get_current_user
@@ -1726,4 +1729,211 @@ async def delete_node(
             success=False,
             error=str(e),
         )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Location management endpoints ---
+
+class UpdateLocationRequest(BaseModel):
+    case_id: str
+    location_name: str
+    latitude: float
+    longitude: float
+
+
+@router.put("/node/{node_key}/location")
+async def update_entity_location(
+    node_key: str,
+    request: UpdateLocationRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Update the location of an entity node on the map."""
+    try:
+        result = neo4j_service.update_entity_location(
+            node_key=node_key,
+            case_id=request.case_id,
+            location_name=request.location_name,
+            latitude=request.latitude,
+            longitude=request.longitude,
+        )
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Location Updated",
+            details={
+                "node_key": node_key,
+                "location_name": request.location_name,
+                "latitude": request.latitude,
+                "longitude": request.longitude,
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/node/{node_key}/location")
+async def remove_entity_location(
+    node_key: str,
+    case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
+    user: dict = Depends(get_current_user),
+):
+    """Remove location data from an entity node (node stays in graph)."""
+    try:
+        result = neo4j_service.remove_entity_location(node_key=node_key, case_id=case_id)
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Location Removed",
+            details={"node_key": node_key, "case_id": case_id},
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cases/{case_id}/entity-summary")
+async def get_case_entity_summary(case_id: str):
+    """Get structured entity summary for the case dashboard."""
+    try:
+        entities = neo4j_service.get_case_entity_summary(case_id)
+        return {"entities": entities, "total": len(entities)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class BatchUpdateRequest(BaseModel):
+    case_id: str
+    updates: list  # [{key, property, value}]
+
+
+@router.put("/batch-update")
+async def batch_update_entities(
+    request: BatchUpdateRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Batch update properties on multiple entity nodes."""
+    if len(request.updates) > 500:
+        raise HTTPException(status_code=400, detail="Maximum 500 updates per call")
+    allowed = {"name", "summary", "notes", "type", "description"}
+    for u in request.updates:
+        if u.get("property") not in allowed:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Property '{u.get('property')}' not allowed",
+            )
+    try:
+        count = neo4j_service.batch_update_entities(request.updates, request.case_id)
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Batch Update",
+            details={
+                "case_id": request.case_id,
+                "updates_requested": len(request.updates),
+                "updates_applied": count,
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        return {"success": True, "updated": count}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cases/{case_id}/generate-insights")
+async def generate_insights(
+    case_id: str,
+    max_entities: int = Query(10, description="Maximum entities to process"),
+    user: dict = Depends(get_current_user),
+):
+    """Generate AI insights for top entities in a case."""
+    try:
+        llm = LLMService()
+        entities = neo4j_service.get_entities_for_insights(case_id, max_entities)
+
+        total_insights = 0
+        entities_processed = 0
+
+        for entity in entities:
+            new_insights = generate_entity_insights(
+                entity_data={"name": entity["name"], "type": entity["type"], "summary": entity.get("summary")},
+                verified_facts=entity.get("verified_facts", []),
+                related_entities=entity.get("related_entities", []),
+                llm_call_fn=llm.call,
+            )
+            if new_insights:
+                neo4j_service.save_entity_insights(entity["key"], case_id, new_insights)
+                total_insights += len(new_insights)
+            entities_processed += 1
+
+        return {"entities_processed": entities_processed, "insights_generated": total_insights}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/node/{node_key}/insights/{insight_index}")
+async def reject_insight(
+    node_key: str,
+    insight_index: int,
+    case_id: str = Query(..., description="REQUIRED: Case ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Reject (delete) an insight from an entity."""
+    try:
+        result = neo4j_service.reject_entity_insight(node_key, case_id, insight_index)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cases/{case_id}/insights")
+async def get_case_insights(case_id: str):
+    """Get all pending insights across a case."""
+    try:
+        insights = neo4j_service.get_all_pending_insights(case_id)
+        return {"insights": insights, "total": len(insights)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/cases/{case_id}/rescan-locations")
+async def rescan_locations(
+    case_id: str,
+    force_regeocode: bool = Query(False, description="Re-geocode entities that already have coordinates"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Rescan all document chunks for a case, extract geographic locations
+    using GPT-5.2, geocode them, and link them to graph entities.
+    """
+    try:
+        result = rescan_case_locations(case_id, force_regeocode=force_regeocode)
+
+        if result.get("success"):
+            system_log_service.log(
+                case_id=case_id,
+                log_type=LogType.GRAPH_UPDATE,
+                message=f"Geo-location rescan completed: {result.get('locations_geocoded', 0)} locations geocoded, "
+                        f"{result.get('entities_updated', 0)} entities updated, "
+                        f"{result.get('location_nodes_created', 0)} new location nodes, "
+                        f"{result.get('relationships_created', 0)} relationships created",
+                origin=LogOrigin.AI_SERVICE,
+                details=result,
+                user=user.get("username", "unknown"),
+                success=True,
+            )
+
+        return result
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

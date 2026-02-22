@@ -206,9 +206,12 @@ export default function AllEvidenceSection({
       <div className={`${fullHeight ? 'flex-shrink-0' : ''} p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between`}
         onClick={(e) => onToggle && onToggle(e)}
       >
-        <h3 className="text-sm font-semibold text-owl-blue-900">
-          All Evidence ({allEvidence.length})
-        </h3>
+        <div>
+          <h3 className="text-sm font-semibold text-owl-blue-900">
+            Evidence Files ({allEvidence.length})
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">Prosecution discovery and other evidence documents uploaded for analysis</p>
+        </div>
         <div className="flex items-center gap-2">
           {onFocus && (
             <button

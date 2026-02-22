@@ -439,6 +439,7 @@ class EvidenceService:
         case_id: Optional[str] = None,
         owner: Optional[str] = None,
         profile: Optional[str] = None,
+        image_provider: Optional[str] = None,
     ) -> Dict:
         """
         Process selected evidence files using ingest_data.ingest_file.
@@ -545,6 +546,11 @@ class EvidenceService:
                         message=message,
                     )
             
+            # Set image provider environment variable if specified
+            if image_provider:
+                import os
+                os.environ["IMAGE_PROVIDER"] = image_provider
+
             # Capture console output from ingest_file so the UI can display it
             buf = io.StringIO()
             try:
@@ -652,6 +658,7 @@ class EvidenceService:
         owner: Optional[str] = None,
         profile: Optional[str] = None,
         max_workers: Optional[int] = None,
+        image_provider: Optional[str] = None,
     ) -> str:
         """
         Process files in the background, returning a task ID immediately.
@@ -696,6 +703,7 @@ class EvidenceService:
                 "evidence_ids": evidence_ids,
                 "file_count": len(records),
                 "profile": profile,
+                "image_provider": image_provider,
             },
         )
         task_id = task["id"]
@@ -703,10 +711,11 @@ class EvidenceService:
         # Start background processing (this will run in a separate thread)
         import threading
 
-        # Store owner, profile, and max_workers in closure for use in background thread
+        # Store owner, profile, max_workers, and image_provider in closure for use in background thread
         task_owner = owner
         task_profile = profile
         task_max_workers = max_workers if max_workers else MAX_INGESTION_WORKERS
+        task_image_provider = image_provider
 
         def process_task():
             """Background task function."""
@@ -787,6 +796,11 @@ class EvidenceService:
                                 level="info",
                                 message=message,
                             )
+
+                    # Set image provider environment variable if specified
+                    if task_image_provider:
+                        import os
+                        os.environ["IMAGE_PROVIDER"] = task_image_provider
 
                     # Process the file
                     try:

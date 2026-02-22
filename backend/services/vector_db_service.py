@@ -84,7 +84,7 @@ class VectorDBService:
         # Check dimension consistency with existing embeddings
         if self.collection.count() > 0:
             sample = self.collection.peek(1)
-            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+            if sample and sample.get("embeddings") is not None and len(sample["embeddings"]) > 0:
                 expected = len(sample["embeddings"][0])
                 actual = len(embedding)
                 if expected != actual:
@@ -124,7 +124,7 @@ class VectorDBService:
     def search(
         self,
         query_embedding: List[float],
-        top_k: int = 10,
+        top_k: int = 50,
         filter_metadata: Optional[Dict] = None
     ) -> List[Dict]:
         """
@@ -216,7 +216,7 @@ class VectorDBService:
         # Check dimension consistency with existing embeddings
         if self.entity_collection.count() > 0:
             sample = self.entity_collection.peek(1)
-            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+            if sample and sample.get("embeddings") is not None and len(sample["embeddings"]) > 0:
                 expected = len(sample["embeddings"][0])
                 actual = len(embedding)
                 if expected != actual:
@@ -252,7 +252,7 @@ class VectorDBService:
     def search_entities(
         self,
         query_embedding: List[float],
-        top_k: int = 10,
+        top_k: int = 50,
         filter_metadata: Optional[Dict] = None
     ) -> List[Dict]:
         """
@@ -343,7 +343,7 @@ class VectorDBService:
         # Check dimension consistency with existing embeddings
         if self.chunk_collection.count() > 0:
             sample = self.chunk_collection.peek(1)
-            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
+            if sample and sample.get("embeddings") is not None and len(sample["embeddings"]) > 0:
                 expected = len(sample["embeddings"][0])
                 actual = len(embedding)
                 if expected != actual:
@@ -376,7 +376,7 @@ class VectorDBService:
     def search_chunks(
         self,
         query_embedding: List[float],
-        top_k: int = 15,
+        top_k: int = 50,
         filter_metadata: Optional[Dict] = None
     ) -> List[Dict]:
         """

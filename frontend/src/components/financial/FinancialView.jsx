@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, DollarSign, RefreshCw, AlertCircle } from 'lucide-react';
+import { Loader2, DollarSign, RefreshCw, AlertCircle, Download } from 'lucide-react';
 import { financialAPI } from '../../services/api';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
@@ -235,6 +235,28 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     }
   }, [caseId]);
 
+  const handleAmountChange = useCallback(async (nodeKey, newAmount, correctionReason) => {
+    try {
+      await financialAPI.updateAmount(nodeKey, {
+        caseId: caseId,
+        newAmount,
+        correctionReason,
+      });
+      setTransactions(prev =>
+        prev.map(t => t.key === nodeKey ? {
+          ...t,
+          amount: newAmount,
+          amount_corrected: true,
+          original_amount: t.original_amount ?? t.amount,
+          correction_reason: correctionReason,
+        } : t)
+      );
+    } catch (err) {
+      console.error('Failed to update amount:', err);
+      alert('Failed to update amount: ' + err.message);
+    }
+  }, [caseId]);
+
   // Handle batch from/to change
   const handleBatchFromTo = useCallback(async (nodeKeys, side, entity) => {
     try {
@@ -276,6 +298,18 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       return next;
     });
   }, [caseId]);
+
+  const handleExportPDF = () => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('case_name', 'Case');
+    if (selectedCategories.size > 0 && selectedCategories.size < categoryNames.length) {
+      params.append('categories', [...selectedCategories].join(','));
+    }
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    window.open(`/api/financial/export/pdf?${params.toString()}`, '_blank');
+  };
 
   // Filter handlers
   const toggleType = (type) => {
@@ -344,13 +378,22 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             {filteredTransactions.length} of {transactions.length} transactions
           </span>
         </div>
-        <button
-          onClick={loadData}
-          className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
-          title="Refresh"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleExportPDF}
+            className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
+            title="Export PDF"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={loadData}
+            className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
+            title="Refresh"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Top: Filters + Summary Cards */}
@@ -394,10 +437,12 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             onCategoryChange={handleCategoryChange}
             onFromToChange={handleFromToChange}
             onDetailsChange={handleDetailsChange}
+            onAmountChange={handleAmountChange}
             onBatchFromTo={handleBatchFromTo}
             selectedKeys={selectedKeys}
             onSelectionChange={setSelectedKeys}
             onBatchCategorize={handleBatchCategorize}
+            onTransactionsRefresh={loadData}
           />
         </div>
         {/* Right: Charts */}

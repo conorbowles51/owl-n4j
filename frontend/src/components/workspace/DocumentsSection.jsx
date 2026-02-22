@@ -199,9 +199,12 @@ export default function DocumentsSection({
         className="p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between"
         onClick={(e) => onToggle && onToggle(e)}
       >
-        <h3 className="text-sm font-semibold text-owl-blue-900">
-          Case Documents ({documents.length})
-        </h3>
+        <div>
+          <h3 className="text-sm font-semibold text-owl-blue-900">
+            Uploaded Documents ({documents.length})
+          </h3>
+          <p className="text-xs text-gray-500 mt-0.5">Files you have added to this case and processed for analysis</p>
+        </div>
         <div className="flex items-center gap-2">
           {onFocus && (
             <button

@@ -19,9 +19,11 @@ import {
   Search,
   Zap,
   Copy,
+  BookmarkPlus,
+  CheckCircle,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { chatAPI, llmConfigAPI } from '../services/api';
+import { chatAPI, llmConfigAPI, workspaceAPI } from '../services/api';
 import ChatHistoryList from './ChatHistoryList';
 
 /**
@@ -314,8 +316,11 @@ export default function ChatPanel({
   const [confidenceThreshold, setConfidenceThreshold] = useState(2.0);
   const [includeGraphNodes, setIncludeGraphNodes] = useState(true); // Toggle for including graph nodes
   const [loadingConfig, setLoadingConfig] = useState(false);
-  const [expandedTraces, setExpandedTraces] = useState(new Set()); // Track which message traces are expanded
-  const [expandedStages, setExpandedStages] = useState(new Set()); // Track which stages are expanded within traces
+  const [expandedTraces, setExpandedTraces] = useState(new Set());
+  const [expandedStages, setExpandedStages] = useState(new Set());
+  const [saveNoteModal, setSaveNoteModal] = useState(null); // { title, content } when open
+  const [savingNote, setSavingNote] = useState(false);
+  const [noteSavedId, setNoteSavedId] = useState(null); // msg.id of recently saved note for feedback
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -509,6 +514,38 @@ export default function ChatPanel({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  // Save AI response as case note
+  const handleOpenSaveNote = (msg) => {
+    const prevUserMsg = messages.find((m, i) => {
+      const nextMsg = messages[i + 1];
+      return m.role === 'user' && nextMsg && nextMsg.id === msg.id;
+    });
+    const title = prevUserMsg
+      ? prevUserMsg.content.substring(0, 60) + (prevUserMsg.content.length > 60 ? '...' : '')
+      : 'AI Chat Note';
+    setSaveNoteModal({ msgId: msg.id, title, content: msg.content });
+  };
+
+  const handleSaveNote = async () => {
+    if (!saveNoteModal || !currentCaseId) return;
+    setSavingNote(true);
+    try {
+      await workspaceAPI.createNote(currentCaseId, {
+        title: saveNoteModal.title,
+        content: saveNoteModal.content,
+        tags: ['ai-chat'],
+      });
+      setNoteSavedId(saveNoteModal.msgId);
+      setSaveNoteModal(null);
+      setTimeout(() => setNoteSavedId(null), 3000);
+    } catch (err) {
+      console.error('Failed to save note:', err);
+      alert('Failed to save note: ' + err.message);
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -801,6 +838,25 @@ export default function ChatPanel({
                       </p>
                     </div>
                   )}
+                  {/* Save as note button */}
+                  {!msg.isError && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        onClick={() => handleOpenSaveNote(msg)}
+                        className="flex items-center gap-1 text-xs text-light-500 hover:text-owl-purple-600 transition-colors"
+                        title="Save as case note"
+                      >
+                        <BookmarkPlus className="w-3.5 h-3.5" />
+                        Save as note
+                      </button>
+                      {noteSavedId === msg.id && (
+                        <span className="flex items-center gap-1 text-xs text-green-600">
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          Saved
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
               
@@ -914,6 +970,61 @@ export default function ChatPanel({
           </button>
         </div>
       </div>
+
+      {/* Save as Note Modal */}
+      {saveNoteModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999]" onClick={() => setSaveNoteModal(null)}>
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-light-200">
+              <h3 className="font-semibold text-owl-blue-900 flex items-center gap-2">
+                <BookmarkPlus className="w-4 h-4 text-owl-purple-500" />
+                Save as Case Note
+              </h3>
+              <button onClick={() => setSaveNoteModal(null)} className="p-1 hover:bg-light-100 rounded transition-colors">
+                <X className="w-4 h-4 text-light-600" />
+              </button>
+            </div>
+            <div className="p-4 space-y-3 overflow-y-auto flex-1">
+              <div>
+                <label className="text-xs font-medium text-light-700 block mb-1">Title</label>
+                <input
+                  type="text"
+                  value={saveNoteModal.title}
+                  onChange={(e) => setSaveNoteModal(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-purple-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-light-700 block mb-1">Content</label>
+                <textarea
+                  value={saveNoteModal.content}
+                  onChange={(e) => setSaveNoteModal(prev => ({ ...prev, content: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-light-300 rounded-lg focus:outline-none focus:border-owl-purple-500 resize-none"
+                  rows={8}
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-xs bg-owl-purple-100 text-owl-purple-700 px-2 py-0.5 rounded">ai-chat</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-light-200">
+              <button
+                onClick={() => setSaveNoteModal(null)}
+                className="px-4 py-2 text-sm text-light-700 hover:bg-light-100 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveNote}
+                disabled={savingNote || !saveNoteModal.content.trim()}
+                className="px-4 py-2 text-sm bg-owl-purple-500 hover:bg-owl-purple-600 text-white rounded-lg transition-colors disabled:opacity-50"
+              >
+                {savingNote ? 'Saving...' : 'Save Note'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Chat History List Modal */}
       <ChatHistoryList

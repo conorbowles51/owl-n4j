@@ -4,11 +4,11 @@ import ClientProfileSection from './ClientProfileSection';
 import WitnessMatrixSection from './WitnessMatrixSection';
 import CaseDeadlinesSection from './CaseDeadlinesSection';
 import TasksSection from './TasksSection';
-import DocumentsSection from './DocumentsSection';
 import AuditLogSection from './AuditLogSection';
 import TheoriesSection from './TheoriesSection';
 import InvestigativeNotesSection from './InvestigativeNotesSection';
-import AllEvidenceSection from './AllEvidenceSection';
+import CaseFilesSection from './CaseFilesSection';
+import EntitySummarySection from './EntitySummarySection';
 import SnapshotsSection from './SnapshotsSection';
 import InvestigationTimelineSection from './InvestigationTimelineSection';
 
@@ -139,26 +139,23 @@ export default function SectionContentPanel({
         </div>
       );
     
-    case 'all-evidence':
+    case 'entity-summary':
       return (
         <div className="h-full flex flex-col p-4">
-          <AllEvidenceSection
-            caseId={caseId}
-            pinnedItems={pinnedItems}
-            onRefreshPinned={onRefreshPinned}
-            isCollapsed={false} // Always expanded in content panel
-            onToggle={() => {}} // No-op in content panel
-            fullHeight={true} // Indicate this is in the content panel
-            {...commonProps}
-          />
+          <EntitySummarySection caseId={caseId} />
         </div>
       );
     
-    case 'documents':
+    case 'case-files':
       return (
-        <div className="h-full overflow-y-auto p-4">
-          <DocumentsSection
+        <div className="h-full flex flex-col p-4">
+          <CaseFilesSection
             caseId={caseId}
+            pinnedItems={pinnedItems}
+            onRefreshPinned={onRefreshPinned}
+            isCollapsed={false}
+            onToggle={() => {}}
+            fullHeight={true}
             {...commonProps}
           />
         </div>

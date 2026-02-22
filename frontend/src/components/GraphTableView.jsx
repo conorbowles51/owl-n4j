@@ -8,6 +8,7 @@ import EditNodeModal from './EditNodeModal';
 import AddNodeModal from './AddNodeModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import CreateRelationshipModal from './CreateRelationshipModal';
+import { graphAPI } from '../services/api';
 
 const PREFERRED_COLUMN_ORDER = ['key', 'name', 'type', 'summary', 'notes'];
 const RELATIONS_COLUMN_WIDTH = '7rem';
@@ -200,6 +201,7 @@ export default function GraphTableView({
   const [mergeEntity1, setMergeEntity1] = useState(null);
   const [mergeEntity2, setMergeEntity2] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [relationshipSourceNodes, setRelationshipSourceNodes] = useState([]);
   
   // Restore selectedPanels from persisted state
@@ -240,7 +242,8 @@ export default function GraphTableView({
   const filterDropdownRef = useRef(null); // Ref for filter dropdown to handle outside clicks
   const prevResultGraphDataRef = useRef(null); // Track previous result graph to detect changes
   const prevPanelsLengthRef = useRef(0);
-  const lastClickWasFromRelationsRef = useRef(false); // So we can re-apply scroll-right after Selected panel appears
+  const lastClickWasFromRelationsRef = useRef(false);
+  const lastCheckboxClickedKeyRef = useRef(null); // So we can re-apply scroll-right after Selected panel appears
   
   // Initialize default pagination for panels that don't have it
   useEffect(() => {
@@ -1008,8 +1011,24 @@ export default function GraphTableView({
     return Array.from(nodeMap.values());
   }, [panels]);
 
-  // Handle checkbox toggle
-  const handleCheckboxToggle = useCallback((nodeKey, checked) => {
+  const handleCheckboxToggle = useCallback((nodeKey, checked, shiftKey = false, orderedKeys = []) => {
+    if (shiftKey && lastCheckboxClickedKeyRef.current && checked && orderedKeys.length > 0) {
+      const lastKey = lastCheckboxClickedKeyRef.current;
+      const lastIdx = orderedKeys.indexOf(lastKey);
+      const curIdx = orderedKeys.indexOf(nodeKey);
+      if (lastIdx !== -1 && curIdx !== -1) {
+        const [start, end] = lastIdx < curIdx ? [lastIdx, curIdx] : [curIdx, lastIdx];
+        const rangeKeys = orderedKeys.slice(start, end + 1);
+        setCheckboxSelectedKeys(prev => {
+          const next = new Set(prev);
+          rangeKeys.forEach(k => next.add(k));
+          return next;
+        });
+        lastCheckboxClickedKeyRef.current = nodeKey;
+        return;
+      }
+    }
+    lastCheckboxClickedKeyRef.current = nodeKey;
     setCheckboxSelectedKeys(prev => {
       const next = new Set(prev);
       if (checked) {
@@ -1021,14 +1040,24 @@ export default function GraphTableView({
     });
   }, []);
 
-  // Handle select all / deselect all
   const handleSelectAll = useCallback((panelNodes) => {
-    const allKeys = new Set(panelNodes.map(n => n.key));
-    setCheckboxSelectedKeys(allKeys);
+    setCheckboxSelectedKeys(prev => {
+      const next = new Set(prev);
+      panelNodes.forEach(n => next.add(n.key));
+      return next;
+    });
   }, []);
 
-  const handleDeselectAll = useCallback(() => {
-    setCheckboxSelectedKeys(new Set());
+  const handleDeselectAll = useCallback((panelNodes) => {
+    if (panelNodes) {
+      setCheckboxSelectedKeys(prev => {
+        const next = new Set(prev);
+        panelNodes.forEach(n => next.delete(n.key));
+        return next;
+      });
+    } else {
+      setCheckboxSelectedKeys(new Set());
+    }
   }, []);
 
   // Handle merge action
@@ -1067,6 +1096,25 @@ export default function GraphTableView({
   const handleAdd = useCallback(() => {
     setShowAddModal(true);
   }, []);
+
+  const handleBulkEdit = useCallback(() => {
+    const selected = getSelectedNodes();
+    if (selected.length === 0) return;
+    setShowBulkEditModal(true);
+  }, [getSelectedNodes]);
+
+  const handleBulkEditApply = useCallback(async (property, value) => {
+    const selected = getSelectedNodes();
+    if (selected.length === 0) return;
+    const updates = selected.map(n => ({ key: n.key, property, value }));
+    const result = await graphAPI.batchUpdate(caseId, updates);
+    if (result.success) {
+      setCheckboxSelectedKeys(new Set());
+      setShowBulkEditModal(false);
+      if (onGraphRefresh) await onGraphRefresh();
+    }
+    return result;
+  }, [getSelectedNodes, caseId, onGraphRefresh]);
 
   // Handle merge confirmation
   const handleMergeConfirm = useCallback(async (sourceKey, targetKey, mergedData) => {
@@ -1254,8 +1302,16 @@ export default function GraphTableView({
       <div className="flex-shrink-0 px-4 py-2 bg-light-50 border-b border-light-200 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="text-sm text-light-700 font-medium">
-            {checkboxSelectedKeys.size > 0 ? `${checkboxSelectedKeys.size} selected` : 'Table Tools'}
+            {checkboxSelectedKeys.size > 0 ? `${checkboxSelectedKeys.size} entities selected` : 'Table Tools'}
           </span>
+          {checkboxSelectedKeys.size > 0 && (
+            <button
+              onClick={() => handleDeselectAll()}
+              className="text-xs text-light-500 hover:text-light-700 underline"
+            >
+              Clear
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1276,13 +1332,22 @@ export default function GraphTableView({
             Edit
           </button>
           <button
-            onClick={handleMerge}
+            onClick={handleBulkEdit}
             disabled={checkboxSelectedKeys.size < 2}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Bulk edit a property on all selected entities"
+          >
+            <Edit className="w-4 h-4" />
+            Bulk Edit
+          </button>
+          <button
+            onClick={handleMerge}
+            disabled={checkboxSelectedKeys.size !== 2}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Merge selected nodes (requires 2+ selected)"
+            title="Merge exactly 2 selected entities"
           >
             <Merge className="w-4 h-4" />
-            Merge
+            Merge 2
           </button>
           <button
             onClick={handleDelete}
@@ -1521,6 +1586,14 @@ export default function GraphTableView({
         onRelationshipCreated={handleRelationshipCreated}
         caseId={caseId}
       />
+
+      {showBulkEditModal && (
+        <BulkEditModal
+          selectedNodes={getSelectedNodes()}
+          onApply={handleBulkEditApply}
+          onClose={() => setShowBulkEditModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1861,16 +1934,16 @@ function PanelTable({
                   <div className="flex items-center justify-center gap-1">
                     <input
                       type="checkbox"
-                      checked={panelNodes.length > 0 && panelNodes.every(n => checkboxSelectedKeys.includes(n.key))}
+                      checked={panelNodesFiltered.length > 0 && panelNodesFiltered.every(n => checkboxSelectedKeys.includes(n.key))}
                       onChange={(e) => {
                         if (e.target.checked && onSelectAll) {
-                          onSelectAll(panelNodes);
+                          onSelectAll(panelNodesFiltered);
                         } else if (!e.target.checked && onDeselectAll) {
-                          onDeselectAll();
+                          onDeselectAll(panelNodesFiltered);
                         }
                       }}
                       className="w-4 h-4 text-owl-blue-600 border-light-300 rounded focus:ring-owl-blue-500"
-                      title={panelNodes.length > 0 && panelNodes.every(n => checkboxSelectedKeys.includes(n.key)) ? 'Deselect all' : 'Select all'}
+                      title={panelNodesFiltered.length > 0 && panelNodesFiltered.every(n => checkboxSelectedKeys.includes(n.key)) ? 'Deselect all filtered' : `Select all ${panelNodesFiltered.length} filtered`}
                     />
                   </div>
                 </th>
@@ -2041,7 +2114,7 @@ function PanelTable({
                       <input
                         type="checkbox"
                         checked={checkboxSelectedKeys.includes(node.key)}
-                        onChange={(e) => onCheckboxToggle(node.key, e.target.checked)}
+                        onChange={(e) => onCheckboxToggle(node.key, e.target.checked, e.nativeEvent.shiftKey, panelNodesFiltered.map(n => n.key))}
                         className="w-4 h-4 text-owl-blue-600 border-light-300 rounded focus:ring-owl-blue-500"
                         onClick={(e) => e.stopPropagation()}
                       />
@@ -2397,5 +2470,109 @@ function ColumnFilterDropdown({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Bulk Edit Modal - set a single property across multiple entities
+ */
+function BulkEditModal({ selectedNodes, onApply, onClose }) {
+  const [property, setProperty] = useState('name');
+  const [value, setValue] = useState('');
+  const [isApplying, setIsApplying] = useState(false);
+  const [error, setError] = useState(null);
+
+  const properties = [
+    { value: 'name', label: 'Name' },
+    { value: 'summary', label: 'Summary' },
+    { value: 'notes', label: 'Notes' },
+    { value: 'type', label: 'Type' },
+    { value: 'description', label: 'Description' },
+  ];
+
+  const handleApply = async () => {
+    if (!value.trim()) return;
+    setIsApplying(true);
+    setError(null);
+    try {
+      await onApply(property, value);
+    } catch (err) {
+      setError(err.message || 'Bulk edit failed');
+    } finally {
+      setIsApplying(false);
+    }
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
+      <div
+        className="bg-white rounded-lg shadow-xl w-[480px] max-w-[90vw]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-4 border-b border-light-200 flex items-center justify-between">
+          <h3 className="font-semibold text-light-900">Bulk Edit Property</h3>
+          <button onClick={onClose} className="p-1 hover:bg-light-100 rounded transition-colors">
+            <X className="w-4 h-4 text-light-600" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-light-700 mb-1">Property</label>
+            <select
+              value={property}
+              onChange={(e) => setProperty(e.target.value)}
+              className="w-full px-3 py-2 border border-light-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-owl-blue-500"
+            >
+              {properties.map((p) => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-light-700 mb-1">New Value</label>
+            {property === 'notes' || property === 'summary' || property === 'description' ? (
+              <textarea
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className="w-full px-3 py-2 border border-light-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-owl-blue-500 min-h-[80px]"
+                placeholder="Enter new value..."
+              />
+            ) : (
+              <input
+                type="text"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className="w-full px-3 py-2 border border-light-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-owl-blue-500"
+                placeholder="Enter new value..."
+              />
+            )}
+          </div>
+          <div className="bg-light-50 rounded p-3 text-sm text-light-600">
+            Will update <strong className="text-light-900">{selectedNodes.length}</strong> entities&apos;{' '}
+            <strong className="text-light-900">{properties.find(p => p.value === property)?.label}</strong>{' '}
+            to &ldquo;{value || '...'}&rdquo;
+          </div>
+          {error && (
+            <div className="bg-red-50 text-red-700 rounded p-3 text-sm">{error}</div>
+          )}
+        </div>
+        <div className="p-4 border-t border-light-200 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-light-600 hover:bg-light-100 rounded transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleApply}
+            disabled={!value.trim() || isApplying}
+            className="px-4 py-2 text-sm bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isApplying ? 'Applying...' : `Apply to ${selectedNodes.length} entities`}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }

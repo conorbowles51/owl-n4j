@@ -42,6 +42,43 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL") or "qwen2.5:7b"
 MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
 
 # ---------------------------------------------------------------------------
+# Image Processing Configuration
+# ---------------------------------------------------------------------------
+
+# Provider for image analysis: "tesseract" (local OCR) or "openai" (GPT-4 Vision)
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "tesseract")
+
+# Tesseract OCR language(s) - e.g. "eng", "eng+spa"
+TESSERACT_LANG = os.getenv("TESSERACT_LANG", "eng")
+
+# OpenAI Vision model for image/video frame analysis
+OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
+
+# ---------------------------------------------------------------------------
+# Video Processing Configuration
+# ---------------------------------------------------------------------------
+
+# FFmpeg binary paths (must be installed system-wide)
+FFMPEG_CMD = os.getenv("FFMPEG_CMD", "ffmpeg")
+FFPROBE_CMD = os.getenv("FFPROBE_CMD", "ffprobe")
+
+# Key frame extraction interval in seconds
+VIDEO_FRAME_INTERVAL = int(os.getenv("VIDEO_FRAME_INTERVAL", "30"))
+
+# Maximum number of frames to extract per video
+VIDEO_MAX_FRAMES = int(os.getenv("VIDEO_MAX_FRAMES", "50"))
+
+# ---------------------------------------------------------------------------
+# Audio Standalone Processing Configuration
+# ---------------------------------------------------------------------------
+
+# Whisper model size for standalone audio transcription (tiny, base, small, medium, large)
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
+
+# Language for audio transcription (None = auto-detect)
+AUDIO_LANGUAGE = os.getenv("AUDIO_LANGUAGE", None)
+
+# ---------------------------------------------------------------------------
 # Chunking Configuration
 # ---------------------------------------------------------------------------
 

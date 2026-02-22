@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 import { CATEGORY_COLORS } from './constants';
 import { graphAPI, financialAPI } from '../../services/api';
+import SubTransactionModal from './SubTransactionModal';
 
 const TYPE_COLORS = {
   Transaction: '#06b6d4',
@@ -188,6 +189,59 @@ function CategoryDropdown({ categories = [], categoryColorMap = {}, onSelect }) 
   );
 }
 
+function RowActionsDropdown({ txn, onGroupAsSubTransaction, onRemoveFromGroup }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    }
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
+
+  const isChild = !!txn.parent_transaction_key;
+
+  return (
+    <div className="relative inline-block" ref={dropdownRef}>
+      <button
+        onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+        className="p-1 text-light-500 hover:text-owl-blue-700 rounded hover:bg-owl-blue-50 transition-colors"
+        title="Transaction actions"
+      >
+        <MoreHorizontal className="w-4 h-4" />
+      </button>
+      {isOpen && (
+        <div className="absolute z-50 mt-1 right-0 w-48 bg-white rounded-lg shadow-lg border border-light-200 py-1">
+          {!isChild && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onGroupAsSubTransaction(txn); setIsOpen(false); }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-light-50 flex items-center gap-2"
+            >
+              <Link2 className="w-3 h-3" />
+              Group Sub-Transactions
+            </button>
+          )}
+          {isChild && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemoveFromGroup(txn.key); setIsOpen(false); }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-light-50 flex items-center gap-2 text-red-600"
+            >
+              <Unlink className="w-3 h-3" />
+              Remove from Group
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TransactionDetailRow({ txn, onDetailsChange }) {
   const [purpose, setPurpose] = useState(txn.purpose || '');
   const [counterpartyDetails, setCounterpartyDetails] = useState(txn.counterparty_details || '');
@@ -204,7 +258,7 @@ function TransactionDetailRow({ txn, onDetailsChange }) {
 
   return (
     <tr className="bg-light-50 border-b border-light-200">
-      <td colSpan={9} className="px-4 py-3">
+      <td colSpan={10} className="px-4 py-3">
         <div className="space-y-2 max-w-2xl">
           {txn.summary && (
             <div>
@@ -269,12 +323,22 @@ export default function FinancialTable({
   selectedKeys = [],
   onSelectionChange,
   onBatchCategorize,
+  onAmountChange,
+  onTransactionsRefresh,
 }) {
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState('asc');
   const [editingFromTo, setEditingFromTo] = useState(null); // { key, side: 'from'|'to' }
   const [expandedKey, setExpandedKey] = useState(null);
   const [batchFromToSide, setBatchFromToSide] = useState(null); // 'from' | 'to' | null
+  const [editingAmount, setEditingAmount] = useState(null); // { key, value, step: 'amount'|'reason', reason }
+
+  // Sub-transaction grouping state
+  const [expandedParentKeys, setExpandedParentKeys] = useState(new Set());
+  const [childrenCache, setChildrenCache] = useState({}); // { parentKey: [children] }
+  const [loadingChildren, setLoadingChildren] = useState(new Set());
+  const [subTxnModalOpen, setSubTxnModalOpen] = useState(false);
+  const [subTxnModalParent, setSubTxnModalParent] = useState(null);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -340,6 +404,70 @@ export default function FinancialTable({
     setBatchFromToSide(null);
   };
 
+  const toggleParentExpand = useCallback(async (parentKey) => {
+    setExpandedParentKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(parentKey)) {
+        next.delete(parentKey);
+      } else {
+        next.add(parentKey);
+      }
+      return next;
+    });
+
+    if (!childrenCache[parentKey]) {
+      setLoadingChildren(prev => new Set(prev).add(parentKey));
+      try {
+        const res = await financialAPI.getSubTransactions(parentKey, caseId);
+        setChildrenCache(prev => ({ ...prev, [parentKey]: res.children || [] }));
+      } catch (err) {
+        console.error('Failed to fetch sub-transactions:', err);
+      }
+      setLoadingChildren(prev => {
+        const next = new Set(prev);
+        next.delete(parentKey);
+        return next;
+      });
+    }
+  }, [caseId, childrenCache]);
+
+  const handleGroupAsSubTransaction = (txn) => {
+    setSubTxnModalParent(txn);
+    setSubTxnModalOpen(true);
+  };
+
+  const handleSubTxnSave = useCallback(async (childKeys) => {
+    if (!subTxnModalParent) return;
+    for (const childKey of childKeys) {
+      await financialAPI.linkSubTransaction(subTxnModalParent.key, childKey, caseId);
+    }
+    // Invalidate cache and refresh
+    setChildrenCache(prev => {
+      const next = { ...prev };
+      delete next[subTxnModalParent.key];
+      return next;
+    });
+    setExpandedParentKeys(prev => new Set(prev).add(subTxnModalParent.key));
+    if (onTransactionsRefresh) onTransactionsRefresh();
+  }, [subTxnModalParent, caseId, onTransactionsRefresh]);
+
+  const handleRemoveFromGroup = useCallback(async (childKey) => {
+    try {
+      const result = await financialAPI.unlinkSubTransaction(childKey, caseId);
+      // Invalidate parent's cache
+      if (result.parent_key) {
+        setChildrenCache(prev => {
+          const next = { ...prev };
+          delete next[result.parent_key];
+          return next;
+        });
+      }
+      if (onTransactionsRefresh) onTransactionsRefresh();
+    } catch (err) {
+      console.error('Failed to unlink sub-transaction:', err);
+    }
+  }, [caseId, onTransactionsRefresh]);
+
   return (
     <div className="flex flex-col h-full">
       {/* Batch actions toolbar */}
@@ -400,6 +528,7 @@ export default function FinancialTable({
                 { key: 'amount', label: 'Amount' },
                 { key: 'type', label: 'Type' },
                 { key: 'financial_category', label: 'Category' },
+                { key: 'actions', label: 'Actions', sortable: false },
               ].map(col => (
                 <th
                   key={col.key}
@@ -420,11 +549,16 @@ export default function FinancialTable({
               const amountColor = amount >= 0 ? '#22c55e' : '#ef4444';
               const typeColor = TYPE_COLORS[txn.type] || TYPE_COLORS.Other;
               const isExpanded = expandedKey === txn.key;
+              const isParent = txn.is_parent;
+              const isChild = !!txn.parent_transaction_key;
+              const isParentExpanded = expandedParentKeys.has(txn.key);
+              const isLoadingChildren = loadingChildren.has(txn.key);
+              const children = childrenCache[txn.key] || [];
 
               return (
                 <React.Fragment key={txn.key}>
                   <tr
-                    className={`border-b border-light-100 hover:bg-light-50 cursor-pointer group ${isSelected(txn.key) ? 'bg-owl-blue-50' : ''}`}
+                    className={`border-b border-light-100 hover:bg-light-50 cursor-pointer group ${isSelected(txn.key) ? 'bg-owl-blue-50' : ''} ${isChild ? 'bg-indigo-50/30' : ''}`}
                     onClick={() => onNodeSelect && onNodeSelect(txn.key)}
                   >
                     <td className="px-2 py-1.5">
@@ -436,16 +570,35 @@ export default function FinancialTable({
                       />
                     </td>
                     <td className="px-1 py-1.5">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setExpandedKey(isExpanded ? null : txn.key); }}
-                        className="p-0.5 text-light-400 hover:text-light-700 rounded"
-                      >
-                        {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                      </button>
+                      <div className="flex items-center gap-0.5">
+                        {isParent && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleParentExpand(txn.key); }}
+                            className="p-0.5 text-owl-blue-500 hover:text-owl-blue-700 rounded"
+                            title="Expand sub-transactions"
+                          >
+                            {isParentExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                        {!isParent && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setExpandedKey(isExpanded ? null : txn.key); }}
+                            className="p-0.5 text-light-400 hover:text-light-700 rounded"
+                          >
+                            {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-2 py-1.5 text-light-700 whitespace-nowrap">{txn.date || '-'}</td>
                     <td className="px-2 py-1.5 text-light-500 whitespace-nowrap">{txn.time || '-'}</td>
-                    <td className="px-2 py-1.5 text-light-900 font-medium truncate max-w-[180px]" title={txn.name}>{txn.name}</td>
+                    <td className="px-2 py-1.5 text-light-900 font-medium truncate max-w-[180px]" title={txn.name}>
+                      <span className="flex items-center gap-1">
+                        {isChild && <CornerDownRight className="w-3 h-3 text-light-400 flex-shrink-0" />}
+                        {isParent && <Link2 className="w-3 h-3 text-owl-blue-500 flex-shrink-0" title="Parent transaction" />}
+                        <span className="truncate">{txn.name}</span>
+                      </span>
+                    </td>
                     <td className="px-2 py-1.5 relative">
                       <div className="flex items-center gap-1">
                         <EntityCell
@@ -471,7 +624,76 @@ export default function FinancialTable({
                       )}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap font-mono font-medium" style={{ color: amountColor }}>
-                      {formatAmount(txn.amount)}
+                      {editingAmount && editingAmount.key === txn.key ? (
+                        editingAmount.step === 'amount' ? (
+                          <input
+                            type="number"
+                            step="0.01"
+                            autoFocus
+                            value={editingAmount.value}
+                            onChange={(e) => setEditingAmount({ ...editingAmount, value: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const num = parseFloat(editingAmount.value);
+                                if (num > 0) setEditingAmount({ ...editingAmount, step: 'reason', reason: '' });
+                              }
+                              if (e.key === 'Escape') setEditingAmount(null);
+                            }}
+                            className="w-24 text-xs px-1.5 py-0.5 border border-owl-blue-400 rounded font-mono bg-dark-800 text-light-100 focus:outline-none"
+                          />
+                        ) : (
+                          <div className="flex flex-col gap-1">
+                            <input
+                              type="text"
+                              autoFocus
+                              placeholder="Correction reason…"
+                              value={editingAmount.reason}
+                              onChange={(e) => setEditingAmount({ ...editingAmount, reason: e.target.value })}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && editingAmount.reason.trim()) {
+                                  onAmountChange(txn.key, parseFloat(editingAmount.value), editingAmount.reason.trim());
+                                  setEditingAmount(null);
+                                }
+                                if (e.key === 'Escape') setEditingAmount(null);
+                              }}
+                              className="w-32 text-xs px-1.5 py-0.5 border border-amber-400 rounded bg-dark-800 text-light-100 focus:outline-none"
+                            />
+                            <div className="flex gap-1">
+                              <button
+                                onClick={() => {
+                                  if (editingAmount.reason.trim()) {
+                                    onAmountChange(txn.key, parseFloat(editingAmount.value), editingAmount.reason.trim());
+                                    setEditingAmount(null);
+                                  }
+                                }}
+                                disabled={!editingAmount.reason.trim()}
+                                className="text-[10px] px-1.5 py-0.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-500 disabled:opacity-30"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => setEditingAmount(null)}
+                                className="text-[10px] px-1.5 py-0.5 bg-dark-600 text-light-300 rounded hover:bg-dark-500"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )
+                      ) : (
+                        <span
+                          className="cursor-pointer hover:underline inline-flex items-center gap-1"
+                          onClick={() => setEditingAmount({ key: txn.key, value: parseFloat(txn.amount) || 0, step: 'amount' })}
+                          title="Click to edit amount"
+                        >
+                          {formatAmount(txn.amount)}
+                          {txn.amount_corrected && (
+                            <span title={`Original: ${formatAmount(txn.original_amount)} — ${txn.correction_reason || ''}`}>
+                              <Pencil className="w-3 h-3 text-amber-400 inline" />
+                            </span>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="px-2 py-1.5">
                       <span
@@ -489,19 +711,96 @@ export default function FinancialTable({
                         onCategoryChange={(cat) => onCategoryChange(txn.key, cat)}
                       />
                     </td>
+                    <td className="px-1 py-1.5">
+                      <RowActionsDropdown
+                        txn={txn}
+                        onGroupAsSubTransaction={handleGroupAsSubTransaction}
+                        onRemoveFromGroup={handleRemoveFromGroup}
+                      />
+                    </td>
                   </tr>
-                  {isExpanded && (
+                  {isExpanded && !isParent && (
                     <TransactionDetailRow
                       txn={txn}
                       onDetailsChange={onDetailsChange}
                     />
+                  )}
+                  {/* Sub-transaction children rows */}
+                  {isParent && isParentExpanded && (
+                    <>
+                      {isLoadingChildren && (
+                        <tr className="bg-indigo-50/30 border-b border-light-100">
+                          <td colSpan={10} className="px-6 py-2 text-xs text-light-500">
+                            Loading sub-transactions...
+                          </td>
+                        </tr>
+                      )}
+                      {!isLoadingChildren && children.length === 0 && (
+                        <tr className="bg-indigo-50/30 border-b border-light-100">
+                          <td colSpan={10} className="px-6 py-2 text-xs text-light-500">
+                            No sub-transactions linked yet
+                          </td>
+                        </tr>
+                      )}
+                      {!isLoadingChildren && children.map(child => {
+                        const childAmount = parseFloat(child.amount);
+                        const childAmountColor = childAmount >= 0 ? '#22c55e' : '#ef4444';
+                        const childTypeColor = TYPE_COLORS[child.type] || TYPE_COLORS.Other;
+                        return (
+                          <tr
+                            key={`child-${child.key}`}
+                            className="bg-indigo-50/30 border-b border-light-100 hover:bg-indigo-50/50 cursor-pointer group"
+                            onClick={() => onNodeSelect && onNodeSelect(child.key)}
+                          >
+                            <td className="px-2 py-1.5"></td>
+                            <td className="px-1 py-1.5"></td>
+                            <td className="px-2 py-1.5 text-light-700 whitespace-nowrap">{child.date || '-'}</td>
+                            <td className="px-2 py-1.5 text-light-500 whitespace-nowrap">{child.time || '-'}</td>
+                            <td className="px-2 py-1.5 text-light-800 truncate max-w-[180px]" title={child.name}>
+                              <span className="flex items-center gap-1">
+                                <CornerDownRight className="w-3 h-3 text-light-400 flex-shrink-0" />
+                                <span className="truncate">{child.name}</span>
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-xs text-light-500">
+                              {child.from_name && child.to_name
+                                ? `${child.from_name} → ${child.to_name}`
+                                : child.from_name || child.to_name || '-'}
+                            </td>
+                            <td className="px-2 py-1.5 whitespace-nowrap font-mono font-medium" style={{ color: childAmountColor }}>
+                              {formatAmount(child.amount)}
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <span
+                                className="text-xs px-1.5 py-0.5 rounded"
+                                style={{ backgroundColor: `${childTypeColor}20`, color: childTypeColor }}
+                              >
+                                {child.type}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-xs text-light-500">
+                              {child.financial_category || '-'}
+                            </td>
+                            <td className="px-1 py-1.5">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleRemoveFromGroup(child.key); }}
+                                className="p-0.5 text-light-400 hover:text-red-500 rounded hover:bg-light-100"
+                                title="Remove from group"
+                              >
+                                <Unlink className="w-3 h-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </>
                   )}
                 </React.Fragment>
               );
             })}
             {sorted.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-light-500">
+                <td colSpan={10} className="px-4 py-8 text-center text-light-500">
                   No transactions match the current filters
                 </td>
               </tr>
@@ -509,6 +808,16 @@ export default function FinancialTable({
           </tbody>
         </table>
       </div>
+
+      {/* Sub-Transaction Grouping Modal */}
+      <SubTransactionModal
+        isOpen={subTxnModalOpen}
+        onClose={() => { setSubTxnModalOpen(false); setSubTxnModalParent(null); }}
+        parentTransaction={subTxnModalParent}
+        allTransactions={transactions}
+        caseId={caseId}
+        onSave={handleSubTxnSave}
+      />
     </div>
   );
 }

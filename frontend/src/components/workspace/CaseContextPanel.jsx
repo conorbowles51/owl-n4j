@@ -7,11 +7,11 @@ import ClientProfileSection from './ClientProfileSection';
 import WitnessMatrixSection from './WitnessMatrixSection';
 import CaseDeadlinesSection from './CaseDeadlinesSection';
 import TasksSection from './TasksSection';
-import DocumentsSection from './DocumentsSection';
 import AuditLogSection from './AuditLogSection';
 import TheoriesSection from './TheoriesSection';
 import InvestigativeNotesSection from './InvestigativeNotesSection';
-import AllEvidenceSection from './AllEvidenceSection';
+import CaseFilesSection from './CaseFilesSection';
+import EntitySummarySection from './EntitySummarySection';
 import SnapshotsSection from './SnapshotsSection';
 import InvestigationTimelineSection from './InvestigationTimelineSection';
 
@@ -40,8 +40,8 @@ export default function CaseContextPanel({
     'deadlines',
     'investigative-notes',
     'tasks',
-    'all-evidence',
-    'documents',
+    'entity-summary',
+    'case-files',
     'audit-log',
     'snapshots',
     'investigation-timeline',
@@ -172,6 +172,40 @@ export default function CaseContextPanel({
         />
       </div>
 
+      {/* Key Entities */}
+      <div className={selectedSection === 'entity-summary' ? 'bg-owl-blue-50' : ''}>
+        <div className="border-b border-light-200">
+          <div
+            className="p-4 cursor-pointer hover:bg-light-50 transition-colors flex items-center justify-between"
+            onClick={(e) => toggleSection('entity-summary', e)}
+          >
+            <div>
+              <h3 className="text-sm font-semibold text-owl-blue-900">Key Entities</h3>
+              <p className="text-xs text-gray-500 mt-0.5">People, companies, banks, and accounts in this case</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); focusSection('entity-summary', e); }}
+                className="p-1 hover:bg-light-100 rounded"
+                title="Focus on this section"
+              >
+                <Focus className="w-4 h-4 text-owl-blue-600" />
+              </button>
+              {isCollapsed('entity-summary') ? (
+                <ChevronRight className="w-4 h-4 text-light-600" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-light-600" />
+              )}
+            </div>
+          </div>
+          {!isCollapsed('entity-summary') && (
+            <div className="max-h-96 overflow-hidden">
+              <EntitySummarySection caseId={caseId} />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Client Profile & Exposure */}
       <div className={selectedSection === 'client-profile' ? 'bg-owl-blue-50' : ''}>
         <ClientProfileSection
@@ -235,28 +269,18 @@ export default function CaseContextPanel({
         />
       </div>
 
-      {/* All Evidence */}
-      <div className={selectedSection === 'all-evidence' ? 'bg-owl-blue-50' : ''}>
-        <AllEvidenceSection
+      {/* Case Documents */}
+      <div className={selectedSection === 'case-files' ? 'bg-owl-blue-50' : ''}>
+        <CaseFilesSection
           caseId={caseId}
           pinnedItems={externalPinnedItems !== undefined ? externalPinnedItems : pinnedItems}
           onRefreshPinned={externalOnRefreshPinned || (async () => {
             const data = await workspaceAPI.getPinnedItems(caseId);
             setPinnedItems(data.pinned_items || []);
           })}
-          isCollapsed={isCollapsed('all-evidence')}
-          onToggle={(e) => toggleSection('all-evidence', e)}
-          onFocus={(e) => focusSection('all-evidence', e)}
-        />
-      </div>
-
-      {/* Case Documents */}
-      <div className={selectedSection === 'documents' ? 'bg-owl-blue-50' : ''}>
-        <DocumentsSection
-          caseId={caseId}
-          isCollapsed={isCollapsed('documents')}
-          onToggle={(e) => toggleSection('documents', e)}
-          onFocus={(e) => focusSection('documents', e)}
+          isCollapsed={isCollapsed('case-files')}
+          onToggle={(e) => toggleSection('case-files', e)}
+          onFocus={(e) => focusSection('case-files', e)}
         />
       </div>
 
