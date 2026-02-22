@@ -1,242 +1,431 @@
-# Installation Instructions
+# Owl Investigation Console — Installation Guide
 
-This document provides step-by-step instructions for setting up the Owl Investigation Console with all its dependencies.
+Complete setup instructions for deploying the Owl Investigation Console with all services and dependencies.
+
+---
+
+## Architecture Overview
+
+```
+┌────────────────┐    ┌────────────────┐    ┌────────────────┐
+│   Frontend     │    │   Backend      │    │   Databases    │
+│   React/Vite   │───▶│   FastAPI      │───▶│   Neo4j 5      │
+│   Port 5173    │    │   Port 8000    │    │   Port 7687    │
+└────────────────┘    │                │    ├────────────────┤
+                      │                │───▶│   PostgreSQL   │
+                      │                │    │   Port 5432    │
+                      │                │    ├────────────────┤
+                      │                │───▶│   ChromaDB     │
+                      │                │    │   (embedded)   │
+                      └───────┬────────┘    └────────────────┘
+                              │
+                      ┌───────┴────────┐
+                      │   LLM Layer    │
+                      │   OpenAI API   │
+                      │   — or —       │
+                      │   Ollama local │
+                      └────────────────┘
+```
+
+---
 
 ## Prerequisites
 
-- Python 3.8 or higher
-- Node.js 16 or higher (for frontend)
-- Neo4j database (running locally or accessible)
-- Ollama (optional, for local LLM support)
-- OpenAI API key (optional, for OpenAI models)
+| Requirement         | Minimum        | Recommended     |
+|---------------------|----------------|-----------------|
+| Python              | 3.11+          | 3.13            |
+| Node.js             | 18+            | 20 LTS          |
+| RAM                 | 16 GB          | 32 GB+          |
+| CPU                 | 4 cores        | 8+ cores        |
+| Disk                | 10 GB free     | 50 GB+          |
+| GPU (Ollama only)   | —              | NVIDIA w/ CUDA  |
 
-## Backend Installation
+---
 
-### 1. Create a Virtual Environment
-
-```bash
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 2. Install Python Dependencies
+## 1. Clone & Environment Setup
 
 ```bash
-pip install -r requirements.txt
+git clone <repo-url> owl-n4j
+cd owl-n4j
+
+# Create Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 ```
 
-### 3. Install Ollama (Optional - for Local LLM)
+---
 
-If you want to use local LLM models via Ollama:
+## 2. Database Services
 
-1. **Download and Install Ollama:**
-   - Visit https://ollama.ai/download
-   - Download and install Ollama for your operating system
-   - Start the Ollama service
+### Option A — Docker Compose (recommended)
 
-2. **Pull Required Models:**
-   ```bash
-   # Default model (recommended)
-   ollama pull qwen2.5:32b-instruct
-   
-   # Alternative models (optional)
-   ollama pull qwen2.5:14b-instruct
-   ollama pull qwen2.5:7b-instruct
-   ollama pull llama3:70b
-   ollama pull llama3:8b
-   ```
+Start Neo4j and PostgreSQL with a single command:
 
-3. **Verify Ollama is Running:**
-   ```bash
-   ollama list
-   ```
+```bash
+docker compose up -d
+```
 
-### 4. Configure Environment Variables
+This launches:
 
-Create a `.env` file in the project root with the following variables:
+| Service    | Container   | Port(s)            | Credentials              |
+|------------|-------------|--------------------|--------------------------|
+| Neo4j 5    | `owl-n4j`   | 7474 (HTTP), 7687 (Bolt) | `neo4j` / `testpassword` |
+| PostgreSQL | `owl-pg`    | 5432               | `owl_us` / `owl_pw` / DB: `owl_db` |
+
+### Option B — Manual Installation
+
+**Neo4j:**
+- Download from https://neo4j.com/download/ (Community Edition v5+)
+- Enable APOC plugin: set `NEO4J_PLUGINS=["apoc"]`
+- Start and change default password at http://localhost:7474
+
+**PostgreSQL:**
+- Install PostgreSQL 16+ via your package manager
+- Create database: `createdb owl_db`
+
+### ChromaDB
+
+No setup required — ChromaDB runs embedded within the backend process. Data is stored at `data/chromadb/` by default.
+
+---
+
+## 3. Environment Configuration
+
+Copy the example and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with the full configuration:
 
 ```env
-# Neo4j Configuration
+# ─── Database ─────────────────────────────────────────────
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
-NEO4J_PASSWORD=your_password
+NEO4J_PASSWORD=testpassword
 
-# LLM Configuration
-LLM_PROVIDER=ollama  # or "openai"
-LLM_MODEL=qwen2.5:32b-instruct  # or your preferred model
+DATABASE_URL=postgresql://owl_us:owl_pw@localhost:5432/owl_db
+
+# ─── LLM Provider ────────────────────────────────────────
+# Choose "openai" or "ollama"
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o
+
+# OpenAI (required if LLM_PROVIDER=openai or for geo rescan/insights)
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o
+
+# Ollama (required if LLM_PROVIDER=ollama)
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:32b-instruct
 
-# OpenAI Configuration (if using OpenAI)
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4o  # or gpt-4-turbo, gpt-3.5-turbo
+# ─── Embeddings ───────────────────────────────────────────
+# Defaults to same provider as LLM_PROVIDER if not set
+EMBEDDING_PROVIDER=openai
+EMBEDDING_MODEL=text-embedding-3-small
 
-# Embedding Configuration
-# Note: If EMBEDDING_PROVIDER is not set, it automatically matches LLM_PROVIDER
-# If EMBEDDING_MODEL is not set, defaults are:
-#   - OpenAI: text-embedding-3-small
-#   - Ollama: nomic-embed-text
-EMBEDDING_PROVIDER=openai  # Optional: "openai" or "ollama" (defaults to LLM_PROVIDER)
-EMBEDDING_MODEL=text-embedding-3-small  # Optional: defaults based on provider
-OPENAI_API_KEY=your_openai_api_key  # Required if using OpenAI (for LLM or embeddings)
-
-# Vector DB Configuration
+# ─── Vector DB / RAG ─────────────────────────────────────
 CHROMADB_PATH=data/chromadb
-
-# RAG Configuration
 VECTOR_SEARCH_ENABLED=true
-VECTOR_SEARCH_TOP_K=10
+VECTOR_SEARCH_TOP_K=50
 HYBRID_FILTERING_ENABLED=true
+CHUNK_SEARCH_ENABLED=true
+CHUNK_SEARCH_TOP_K=50
+ENTITY_SEARCH_ENABLED=true
+ENTITY_SEARCH_TOP_K=50
+CONTEXT_TOKEN_BUDGET=80000
 
-# Ingestion Configuration
-CHUNK_SIZE=2500
-CHUNK_OVERLAP=200
+# ─── Chunking ────────────────────────────────────────────
+CHUNK_SIZE=8000
+CHUNK_OVERLAP=1600
 
-# Authentication
+# ─── Ingestion ───────────────────────────────────────────
+MAX_INGESTION_WORKERS=4
+
+# ─── Media Processing (optional) ─────────────────────────
+IMAGE_PROVIDER=tesseract          # "tesseract" (local OCR) or "openai" (GPT-4 Vision)
+TESSERACT_LANG=eng                # OCR language(s), e.g. "eng+spa"
+OPENAI_VISION_MODEL=gpt-4o       # Model for image/video frame analysis
+VIDEO_FRAME_INTERVAL=30           # Seconds between extracted frames
+VIDEO_MAX_FRAMES=50               # Max frames per video
+WHISPER_MODEL_SIZE=base           # tiny, base, small, medium, large
+AUDIO_LANGUAGE=                   # Blank = auto-detect
+
+# ─── Authentication ──────────────────────────────────────
 AUTH_USERNAME=admin
 AUTH_PASSWORD=owlinvestigates
-AUTH_SECRET_KEY=supersecretchange
+AUTH_SECRET_KEY=change-this-to-a-random-secret
 AUTH_ALGORITHM=HS256
 AUTH_TOKEN_EXPIRE_MINUTES=1440
 
-# API Configuration
+# ─── API ─────────────────────────────────────────────────
 API_HOST=0.0.0.0
 API_PORT=8000
 CORS_ORIGINS=http://localhost:5173,http://localhost:3000
 ```
 
-### 5. Start the Backend Server
+> **Note for Ollama users:** If running Ollama with models that have smaller context windows (< 32K), reduce `VECTOR_SEARCH_TOP_K`, `CHUNK_SEARCH_TOP_K`, `ENTITY_SEARCH_TOP_K` to `15` and `CONTEXT_TOKEN_BUDGET` to `15000`.
+
+---
+
+## 4. Backend Installation
+
+```bash
+# Install Python dependencies
+pip install -r backend/requirements.txt
+```
+
+### System-Level Dependencies
+
+Some features require native libraries installed on the host OS:
+
+#### WeasyPrint (financial PDF export)
+
+```bash
+# macOS
+brew install pango libffi
+
+# Ubuntu / Debian
+sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 \
+    libgdk-pixbuf2.0-0 libffi-dev libgobject-2.0-0
+
+# Fedora / RHEL
+sudo dnf install -y pango gdk-pixbuf2 libffi-devel
+```
+
+#### Tesseract OCR (image text extraction — optional)
+
+Only needed if `IMAGE_PROVIDER=tesseract`.
+
+```bash
+# macOS
+brew install tesseract
+
+# Ubuntu / Debian
+sudo apt-get install -y tesseract-ocr
+
+# Fedora / RHEL
+sudo dnf install -y tesseract
+```
+
+#### FFmpeg (video processing — optional)
+
+Only needed if ingesting video files.
+
+```bash
+# macOS
+brew install ffmpeg
+
+# Ubuntu / Debian
+sudo apt-get install -y ffmpeg
+
+# Fedora / RHEL
+sudo dnf install -y ffmpeg
+```
+
+### Run Database Migrations
 
 ```bash
 cd backend
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+alembic upgrade head
 ```
 
-## Frontend Installation
+### Start the Backend
 
-### 1. Install Node Dependencies
+```bash
+cd backend
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+---
+
+## 5. Frontend Installation
 
 ```bash
 cd frontend
 npm install
-```
-
-### 2. Start the Development Server
-
-```bash
 npm run dev
 ```
 
-The frontend will be available at `http://localhost:5173`
+The app will be available at **http://localhost:5173**.
 
-## Database Setup
+For a production build:
 
-### Neo4j
+```bash
+npm run build
+npm run preview
+```
 
-1. **Install Neo4j:**
-   - Download from https://neo4j.com/download/
-   - Or use Docker: `docker run -p 7474:7474 -p 7687:7687 neo4j:latest`
+---
 
-2. **Start Neo4j:**
-   - Default web interface: http://localhost:7474
-   - Default credentials: neo4j/neo4j (change on first login)
+## 6. Ollama Setup (Optional — Local LLM)
 
-3. **Update `.env`** with your Neo4j credentials
+If you prefer local models instead of OpenAI:
 
-### ChromaDB (Vector Database)
+```bash
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
 
-ChromaDB is automatically initialized when the backend starts. The database is stored at `data/chromadb` (or the path specified in `CHROMADB_PATH`).
+# Pull models
+ollama pull qwen2.5:32b-instruct    # Recommended
+ollama pull qwen3-embedding:4b      # For local embeddings
 
-No additional setup is required - the backend will create the database on first use.
+# Verify
+ollama list
+```
 
-## Verification
+Then set in `.env`:
 
-### Test Backend
+```env
+LLM_PROVIDER=ollama
+LLM_MODEL=qwen2.5:32b-instruct
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_MODEL=qwen3-embedding:4b
+```
 
-1. Check if the API is running:
-   ```bash
-   curl http://localhost:8000/api/health
-   ```
+---
 
-2. Test Ollama connection (if using Ollama):
-   ```bash
-   python backend/scripts/test_ollama_simple.py
-   ```
+## 7. Verification
 
-### Test Frontend
+### Backend Health Check
 
-1. Open http://localhost:5173 in your browser
-2. Log in with credentials from `.env`
-3. Verify you can access the graph view
+```bash
+curl http://localhost:8000/api/health
+```
 
-## Troubleshooting
+### Full Stack Checklist
 
-### Ollama Connection Issues
+| Check | How |
+|-------|-----|
+| Backend API | `curl http://localhost:8000/api/health` returns `200` |
+| Neo4j connected | No connection errors in backend logs |
+| PostgreSQL connected | Backend starts without DB errors |
+| Frontend loads | Open http://localhost:5173 in browser |
+| Login works | Use credentials from `AUTH_USERNAME` / `AUTH_PASSWORD` |
+| LLM responds | Open AI Chat panel and send a test message |
+| Graph view | Navigate to Graph tab — should render (empty if no data) |
+| Financial view | Navigate to Financial tab — table and charts render |
+| Map view | Navigate to Map tab — Leaflet map renders |
 
-- **Error: "Connection refused"**: Make sure Ollama is running (`ollama serve` or start the Ollama application)
-- **Error: "Model not found"**: Pull the model first (`ollama pull qwen2.5:32b-instruct`)
-- **Error: "Read timeout"**: Large models may take time to load. The timeout has been increased to 10 minutes, but you may need to wait for the model to load into memory on first use.
+---
 
-### Neo4j Connection Issues
+## 8. Docker Deployment (Full Stack)
 
-- **Error: "Connection refused"**: Ensure Neo4j is running and accessible at the URI in `.env`
-- **Error: "Authentication failed"**: Check your `NEO4J_USER` and `NEO4J_PASSWORD` in `.env`
+If deploying everything via Docker, update `backend/Dockerfile` to include system dependencies:
 
-### OpenAI API Issues
+```dockerfile
+FROM python:3.11-slim
 
-- **Error: "Invalid API key"**: Verify your `OPENAI_API_KEY` in `.env` is correct
-- **Error: "Rate limit exceeded"**: You may have hit OpenAI's rate limits. Wait a moment and try again.
+# System dependencies for WeasyPrint, Tesseract, FFmpeg
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf2.0-0 \
+    libffi-dev libgobject-2.0-0 \
+    tesseract-ocr \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
-### Vector DB Issues
+WORKDIR /app
 
-- **Error: "ChromaDB not initialized"**: The database will be created automatically on first use. Ensure the `CHROMADB_PATH` directory is writable.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-## Model Selection
+COPY . .
 
-The system supports both Ollama (local) and OpenAI (remote) models. You can:
+EXPOSE 8000
 
-1. **Select in UI**: Use the Settings icon in the AI Assistant or Profile Editor to choose your provider and model
-2. **Configure in `.env`**: Set `LLM_PROVIDER` and `LLM_MODEL` for default behavior
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
 
-### Available Models
+Then build and run:
 
-**Ollama Models:**
-- `qwen2.5:32b-instruct` (Default, recommended for best quality)
-- `qwen2.5:14b-instruct` (Good balance)
-- `qwen2.5:7b-instruct` (Faster, lower resource usage)
-- `llama3:70b` (Very large, high quality)
-- `llama3:8b` (Efficient)
+```bash
+docker compose up -d --build
+```
 
-**OpenAI Models:**
-- `gpt-4o` (Latest, best quality)
-- `gpt-4-turbo` (High quality)
-- `gpt-3.5-turbo` (Cost-effective)
+---
 
-## System Requirements
+## 9. Feature-Specific Notes
 
-### Minimum Requirements
+### AI Geo Rescan (Map View)
 
-- **CPU**: 4 cores
-- **RAM**: 16GB (8GB for smaller models, 32GB+ recommended for qwen2.5:32b-instruct)
-- **Storage**: 10GB free space
-- **Network**: Internet connection (for OpenAI or downloading Ollama models)
+- Requires `OPENAI_API_KEY` — uses GPT-5.2 for location extraction
+- Geocoding uses OpenStreetMap Nominatim (free, rate-limited to 1 req/sec)
+- Access via the "AI Rescan Locations" button in the Map view
 
-### Recommended Requirements
+### Financial Sub-Transactions
 
-- **CPU**: 8+ cores
-- **RAM**: 32GB+ (for large models like qwen2.5:32b-instruct)
-- **Storage**: 50GB+ free space (for models and data)
-- **GPU**: NVIDIA GPU with CUDA support (optional, but significantly speeds up Ollama models)
+- Access via the **⋯** (three-dot) menu on any transaction row
+- "Group Sub-Transactions" opens a modal to link child transactions
+- Parent rows show a ▶/▼ expand toggle to reveal children
 
-## Next Steps
+### AI Insights
 
-After installation:
+- Access via the Insights panel in the workspace
+- Generates LLM-powered insights for top entities in a case
+- Requires `OPENAI_API_KEY`
 
-1. **Create your first case** in the Evidence Processing view
-2. **Upload documents** for processing
-3. **Select an LLM profile** that matches your investigation type
-4. **Start asking questions** in the AI Assistant
-5. **Explore the graph** to visualize relationships
+### Media Ingestion
 
-For more information, see the main README.md or USER_GUIDE.md files.
+- **Images:** Set `IMAGE_PROVIDER=tesseract` for local OCR or `IMAGE_PROVIDER=openai` for GPT-4 Vision
+- **Video:** Requires FFmpeg installed. Extracts frames at configurable intervals
+- **Audio:** Requires `openai-whisper` Python package. Transcribes audio files via Whisper
 
+---
+
+## 10. Troubleshooting
+
+### Connection Errors
+
+| Error | Fix |
+|-------|-----|
+| Neo4j "Connection refused" | Ensure Neo4j is running: `docker compose ps` or check service status |
+| Neo4j "Authentication failed" | Verify `NEO4J_USER` / `NEO4J_PASSWORD` in `.env` match the database |
+| PostgreSQL "Connection refused" | Ensure Postgres is running and `DATABASE_URL` is correct |
+| "ChromaDB not initialized" | Ensure `CHROMADB_PATH` directory is writable; it auto-creates on first use |
+
+### LLM Errors
+
+| Error | Fix |
+|-------|-----|
+| "Invalid API key" | Check `OPENAI_API_KEY` in `.env` |
+| "Rate limit exceeded" | Wait and retry, or reduce `MAX_INGESTION_WORKERS` |
+| Ollama "Connection refused" | Start Ollama: `ollama serve` |
+| Ollama "Model not found" | Pull the model: `ollama pull <model-name>` |
+| Ollama read timeout | Large models take time to load on first use — wait and retry |
+
+### WeasyPrint / PDF Errors
+
+| Error | Fix |
+|-------|-----|
+| "cannot load library libgobject" | Install system libs: `brew install pango` (macOS) or `apt-get install libgobject-2.0-0` (Linux) |
+| PDF export returns 500 | Check backend logs for missing native library details |
+
+### Media Processing Errors
+
+| Error | Fix |
+|-------|-----|
+| "tesseract not found" | Install Tesseract: `brew install tesseract` or `apt-get install tesseract-ocr` |
+| "ffmpeg not found" | Install FFmpeg: `brew install ffmpeg` or `apt-get install ffmpeg` |
+| "whisper not installed" | `pip install openai-whisper` (requires ~1 GB download for model weights) |
+
+---
+
+## 11. Updating
+
+To update to the latest version:
+
+```bash
+git pull origin main
+
+# Backend
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+cd backend && alembic upgrade head && cd ..
+
+# Frontend
+cd frontend && npm install && npm run build && cd ..
+
+# Restart services
+# (restart your backend process / Docker containers)
+```

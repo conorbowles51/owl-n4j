@@ -4,6 +4,8 @@ Evidence Router
 Handles uploading evidence files and triggering ingestion processing.
 """
 
+import subprocess
+import shutil
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
@@ -711,6 +713,23 @@ async def get_evidence_file(
             ".png": "image/png",
             ".jpg": "image/jpeg",
             ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".svg": "image/svg+xml",
+            ".mp4": "video/mp4",
+            ".webm": "video/webm",
+            ".mov": "video/quicktime",
+            ".avi": "video/x-msvideo",
+            ".mkv": "video/x-matroska",
+            ".flv": "video/x-flv",
+            ".wmv": "video/x-ms-wmv",
+            ".mp3": "audio/mpeg",
+            ".wav": "audio/wav",
+            ".ogg": "audio/ogg",
+            ".flac": "audio/flac",
+            ".aac": "audio/aac",
+            ".m4a": "audio/mp4",
         }
         
         content_type = content_type_map.get(extension, "application/octet-stream")
@@ -727,6 +746,126 @@ async def get_evidence_file(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+FRAMES_CACHE_DIR = BASE_DIR / "data" / "video_frames"
+
+
+def _extract_video_frames(video_path: Path, output_dir: Path, interval: int = 30, max_frames: int = 50) -> List[dict]:
+    """Extract key frames from a video file using ffmpeg."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    ffmpeg_cmd = shutil.which("ffmpeg") or "ffmpeg"
+    ffprobe_cmd = shutil.which("ffprobe") or "ffprobe"
+
+    # Get duration
+    duration = 0.0
+    try:
+        probe = subprocess.run(
+            [ffprobe_cmd, "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+            capture_output=True, text=True, timeout=30,
+        )
+        duration = float(probe.stdout.strip() or 0)
+    except Exception:
+        pass
+
+    if duration > 0 and interval > duration:
+        interval = max(1, int(duration / 5))
+
+    try:
+        subprocess.run(
+            [ffmpeg_cmd, "-i", str(video_path), "-vf", f"fps=1/{interval}",
+             "-frames:v", str(max_frames), "-q:v", "2", "-y",
+             str(output_dir / "frame_%04d.jpg")],
+            capture_output=True, text=True, timeout=300,
+        )
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="ffmpeg not found. Install ffmpeg to extract video frames.")
+
+    frames = []
+    for idx, fp in enumerate(sorted(output_dir.glob("frame_*.jpg"))):
+        ts = idx * interval
+        mins, secs = divmod(ts, 60)
+        hrs, mins = divmod(mins, 60)
+        frames.append({
+            "frame_number": idx + 1,
+            "timestamp_seconds": ts,
+            "timestamp_str": f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs else f"{mins:02d}:{secs:02d}",
+            "filename": fp.name,
+        })
+    return frames
+
+
+@router.get("/{evidence_id}/frames")
+async def get_video_frames(
+    evidence_id: str,
+    interval: int = Query(30, description="Seconds between frame captures"),
+    max_frames: int = Query(50, description="Maximum number of frames"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Extract and return key frames from a video evidence file.
+    Frames are cached so subsequent requests are instant.
+    """
+    record = evidence_storage.get(evidence_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    stored_path = record.get("stored_path")
+    if not stored_path:
+        raise HTTPException(status_code=404, detail="File path not found")
+
+    video_path = Path(stored_path)
+    if not video_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found on disk")
+
+    video_exts = {".mp4", ".webm", ".mov", ".avi", ".mkv", ".flv", ".wmv"}
+    if video_path.suffix.lower() not in video_exts:
+        raise HTTPException(status_code=400, detail="File is not a video")
+
+    cache_dir = FRAMES_CACHE_DIR / evidence_id
+    frames_meta = []
+
+    if cache_dir.exists() and any(cache_dir.glob("frame_*.jpg")):
+        for idx, fp in enumerate(sorted(cache_dir.glob("frame_*.jpg"))):
+            ts = idx * interval
+            mins, secs = divmod(ts, 60)
+            hrs, mins = divmod(mins, 60)
+            frames_meta.append({
+                "frame_number": idx + 1,
+                "timestamp_seconds": ts,
+                "timestamp_str": f"{hrs:02d}:{mins:02d}:{secs:02d}" if hrs else f"{mins:02d}:{secs:02d}",
+                "filename": fp.name,
+            })
+    else:
+        frames_meta = await run_in_threadpool(
+            _extract_video_frames, video_path, cache_dir, interval, max_frames
+        )
+
+    return {
+        "evidence_id": evidence_id,
+        "filename": record.get("original_filename", video_path.name),
+        "frame_count": len(frames_meta),
+        "frames": frames_meta,
+    }
+
+
+@router.get("/{evidence_id}/frames/{filename}")
+async def get_video_frame_image(
+    evidence_id: str,
+    filename: str,
+    user: dict = Depends(get_current_user),
+):
+    """Serve an individual extracted frame image."""
+    if not filename.startswith("frame_") or not filename.endswith(".jpg"):
+        raise HTTPException(status_code=400, detail="Invalid frame filename")
+
+    frame_path = FRAMES_CACHE_DIR / evidence_id / filename
+    if not frame_path.exists():
+        raise HTTPException(status_code=404, detail="Frame not found. Extract frames first via GET /{evidence_id}/frames")
+
+    return FileResponse(frame_path, media_type="image/jpeg")
 
 
 @router.get("/wiretap/processed")

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { FileText, X, Loader2, AlertCircle, Image, Music, Film, File as FileIcon, Play, Pause, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { FileText, X, Loader2, AlertCircle, Image, Music, Film, File as FileIcon, Sparkles, Grid, ChevronLeft, ChevronRight, Clock, Camera } from 'lucide-react';
 import { evidenceAPI, filesystemAPI } from '../services/api';
 
 /**
@@ -18,10 +18,15 @@ export default function FilePreview({
   const [content, setContent] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [previewType, setPreviewType] = useState(null); // 'text', 'image', 'binary'
+  const [previewType, setPreviewType] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loadingSummary, setLoadingSummary] = useState(false);
-  const [activeTab, setActiveTab] = useState('content'); // 'content' or 'summary'
+  const [activeTab, setActiveTab] = useState('content');
+  const [evidenceId, setEvidenceId] = useState(null);
+  const [frames, setFrames] = useState(null);
+  const [framesLoading, setFramesLoading] = useState(false);
+  const [framesError, setFramesError] = useState(null);
+  const [selectedFrame, setSelectedFrame] = useState(null);
 
   useEffect(() => {
     if (filePath && fileName && caseId) {
@@ -71,20 +76,20 @@ export default function FilePreview({
       const textExts = ['txt', 'md', 'json', 'xml', 'csv', 'log', 'rtf', 'sri'];
       const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
       const audioExts = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'WAV', 'MP3', 'M4A', 'FLAC'];
+      const videoExts = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv'];
       
-      // Try to get evidence_id - first try findByFilename, but handle errors gracefully
-      let evidenceId = null;
+      let foundEvidenceId = null;
       let fileUrl = null;
       let relativePath = null;
       
       try {
         const fileInfo = await evidenceAPI.findByFilename(fileName, caseId);
         if (fileInfo.found && fileInfo.evidence_id) {
-          evidenceId = fileInfo.evidence_id;
-          fileUrl = `/api/evidence/${evidenceId}/file`;
+          foundEvidenceId = fileInfo.evidence_id;
+          setEvidenceId(foundEvidenceId);
+          fileUrl = `/api/evidence/${foundEvidenceId}/file`;
         }
       } catch (err) {
-        // findByFilename failed - this is OK, we'll try alternative methods
         console.warn('findByFilename failed, trying alternative methods:', err);
       }
       
@@ -196,12 +201,18 @@ export default function FilePreview({
       } else if (audioExts.includes(ext)) {
         setPreviewType('audio');
         if (fileUrl) {
-          setContent(fileUrl); // Store URL for audio src (browser handles auth via cookies)
+          setContent(fileUrl);
         } else if (relativePath && caseId) {
-          // Note: filesystem API doesn't support binary files, so we'll need evidence API
           setError('Audio file not found in evidence records. The file may need to be uploaded first.');
         } else {
           setError('File not found in evidence records. The file may need to be uploaded first.');
+        }
+      } else if (videoExts.includes(ext)) {
+        setPreviewType('video');
+        if (fileUrl) {
+          setContent(fileUrl);
+        } else {
+          setError('Video file not found in evidence records. The file may need to be uploaded first.');
         }
       } else {
         setPreviewType('binary');
@@ -216,16 +227,33 @@ export default function FilePreview({
 
   if (!fileName) return null;
 
+  const loadFrames = useCallback(async () => {
+    if (!evidenceId || framesLoading) return;
+    setFramesLoading(true);
+    setFramesError(null);
+    try {
+      const result = await evidenceAPI.getVideoFrames(evidenceId);
+      setFrames(result.frames || []);
+    } catch (err) {
+      setFramesError(err.message || 'Failed to extract frames');
+    } finally {
+      setFramesLoading(false);
+    }
+  }, [evidenceId, framesLoading]);
+
   const ext = fileName.split('.').pop()?.toLowerCase() || '';
   const isImage = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'].includes(ext);
   const isText = ['txt', 'md', 'json', 'xml', 'csv', 'log', 'rtf', 'sri'].includes(ext);
   const isAudio = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext);
+  const isVideo = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(ext);
 
   return (
     <div className="border border-light-300 rounded-lg bg-white mt-2">
       <div className="flex items-center justify-between p-2 bg-light-50 border-b border-light-200">
         <div className="flex items-center gap-2">
-          {isImage ? (
+          {isVideo ? (
+            <Film className="w-4 h-4 text-owl-blue-600" />
+          ) : isImage ? (
             <Image className="w-4 h-4 text-owl-blue-600" />
           ) : isAudio ? (
             <Music className="w-4 h-4 text-owl-blue-600" />
@@ -258,10 +286,27 @@ export default function FilePreview({
           }`}
         >
           <div className="flex items-center justify-center gap-1.5">
-            <FileText className="w-3 h-3" />
-            Content
+            {isVideo ? <Film className="w-3 h-3" /> : <FileText className="w-3 h-3" />}
+            {isVideo ? 'Player' : 'Content'}
           </div>
         </button>
+        {isVideo && (
+          <button
+            onClick={() => { setActiveTab('frames'); if (!frames && !framesLoading) loadFrames(); }}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
+              activeTab === 'frames'
+                ? 'border-owl-blue-500 text-owl-blue-700 bg-white'
+                : 'border-transparent text-light-600 hover:text-light-800 hover:bg-light-100'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-1.5">
+              <Grid className="w-3 h-3" />
+              Frames
+              {framesLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+              {frames && <span className="text-[10px] bg-light-200 px-1 rounded">{frames.length}</span>}
+            </div>
+          </button>
+        )}
         <button
           onClick={() => setActiveTab('summary')}
           className={`flex-1 px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
@@ -279,7 +324,7 @@ export default function FilePreview({
         </button>
       </div>
       
-      <div className="p-3 max-h-64 overflow-auto">
+      <div className={`p-3 overflow-auto ${activeTab === 'frames' ? 'max-h-96' : 'max-h-64'}`}>
         {/* Content Tab */}
         {activeTab === 'content' && (
           <>
@@ -299,7 +344,24 @@ export default function FilePreview({
             
             {content && !error && (
               <>
-                {previewType === 'image' && typeof content === 'string' ? (
+                {previewType === 'video' && typeof content === 'string' ? (
+                  <div className="flex flex-col gap-2">
+                    <video
+                      controls
+                      src={content}
+                      className="w-full rounded border border-light-200 bg-black"
+                      style={{ maxHeight: '320px' }}
+                      onError={() => setError('Failed to load video. The format may not be supported by your browser.')}
+                      preload="metadata"
+                    >
+                      Your browser does not support the video element.
+                    </video>
+                    <p className="text-xs text-light-500 flex items-center gap-1">
+                      <Film className="w-3 h-3" />
+                      {fileName}
+                    </p>
+                  </div>
+                ) : previewType === 'image' && typeof content === 'string' ? (
                   <img 
                     src={content} 
                     alt={fileName}
@@ -329,6 +391,138 @@ export default function FilePreview({
             {!loading && !content && !error && (
               <div className="text-xs text-light-600 italic">
                 Preview not available for this file type
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Frames Tab (video only) */}
+        {activeTab === 'frames' && (
+          <>
+            {framesLoading && (
+              <div className="flex flex-col items-center justify-center py-8 gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-owl-blue-500" />
+                <span className="text-xs text-light-600">Extracting video frames...</span>
+                <span className="text-[10px] text-light-400">This may take a moment for longer videos</span>
+              </div>
+            )}
+
+            {framesError && (
+              <div className="flex items-start gap-2 text-xs text-light-600">
+                <AlertCircle className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <span>{framesError}</span>
+                  <button onClick={loadFrames} className="ml-2 text-owl-blue-600 hover:underline">Retry</button>
+                </div>
+              </div>
+            )}
+
+            {/* Lightbox for selected frame */}
+            {selectedFrame && evidenceId && (
+              <div className="mb-3 bg-black rounded-lg overflow-hidden border border-light-300">
+                <div className="relative">
+                  <img
+                    src={evidenceAPI.getVideoFrameUrl(evidenceId, selectedFrame.filename)}
+                    alt={`Frame at ${selectedFrame.timestamp_str}`}
+                    className="w-full h-auto"
+                    style={{ maxHeight: '240px', objectFit: 'contain' }}
+                  />
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-white text-xs">
+                      <Clock className="w-3 h-3" />
+                      <span>{selectedFrame.timestamp_str}</span>
+                      <span className="text-white/60">— Frame {selectedFrame.frame_number}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          const idx = frames.findIndex(f => f.frame_number === selectedFrame.frame_number);
+                          if (idx > 0) setSelectedFrame(frames[idx - 1]);
+                        }}
+                        disabled={selectedFrame.frame_number === 1}
+                        className="p-1 text-white/80 hover:text-white disabled:text-white/30 rounded"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          const idx = frames.findIndex(f => f.frame_number === selectedFrame.frame_number);
+                          if (idx < frames.length - 1) setSelectedFrame(frames[idx + 1]);
+                        }}
+                        disabled={!frames || selectedFrame.frame_number === frames.length}
+                        className="p-1 text-white/80 hover:text-white disabled:text-white/30 rounded"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setSelectedFrame(null)}
+                        className="p-1 text-white/80 hover:text-white rounded ml-1"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Frame grid */}
+            {frames && frames.length > 0 && !framesLoading && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-light-600 flex items-center gap-1">
+                    <Camera className="w-3 h-3" />
+                    {frames.length} extracted frame{frames.length !== 1 ? 's' : ''}
+                  </span>
+                  {selectedFrame && (
+                    <button onClick={() => setSelectedFrame(null)} className="text-[10px] text-owl-blue-600 hover:underline">
+                      Show all
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {frames.map(frame => (
+                    <button
+                      key={frame.frame_number}
+                      onClick={() => setSelectedFrame(frame)}
+                      className={`group relative rounded overflow-hidden border transition-all ${
+                        selectedFrame?.frame_number === frame.frame_number
+                          ? 'border-owl-blue-500 ring-1 ring-owl-blue-300'
+                          : 'border-light-200 hover:border-owl-blue-300'
+                      }`}
+                    >
+                      <img
+                        src={evidenceAPI.getVideoFrameUrl(evidenceId, frame.filename)}
+                        alt={`Frame ${frame.frame_number}`}
+                        className="w-full aspect-video object-cover"
+                        loading="lazy"
+                      />
+                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-1 py-0.5">
+                        <span className="text-[9px] text-white font-mono">{frame.timestamp_str}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {frames && frames.length === 0 && !framesLoading && (
+              <div className="text-xs text-light-500 italic text-center py-4">
+                No frames could be extracted. FFmpeg may not be installed on the server.
+              </div>
+            )}
+
+            {!frames && !framesLoading && !framesError && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <Grid className="w-8 h-8 text-light-300" />
+                <p className="text-xs text-light-600">Extract key frames from this video</p>
+                <button
+                  onClick={loadFrames}
+                  className="text-xs px-3 py-1.5 bg-owl-blue-500 text-white rounded hover:bg-owl-blue-600 transition-colors flex items-center gap-1.5"
+                >
+                  <Camera className="w-3 h-3" />
+                  Extract Frames
+                </button>
               </div>
             )}
           </>

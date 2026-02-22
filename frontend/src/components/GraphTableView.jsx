@@ -1412,7 +1412,6 @@ export default function GraphTableView({
                 searchHighlightTerms={searchHighlightTerms}
                 paginationState={paginationState}
                 onPaginationChange={setPaginationState}
-                columns={columns}
                 checkboxSelectedKeys={Array.from(checkboxSelectedKeys)}
                 onCheckboxToggle={handleCheckboxToggle}
                 onSelectAll={handleSelectAll}
@@ -1514,11 +1513,10 @@ export default function GraphTableView({
                 openFilterDropdown={openFilterDropdown}
                 getUniqueValuesForColumn={getUniqueValuesForColumn}
                 applyFiltersToNodes={applyFiltersToNodes}
-                isResultsPanel={true} // Mark as results panel for special styling
+                isResultsPanel={true}
                 searchHighlightTerms={searchHighlightTerms}
                 paginationState={paginationState}
                 onPaginationChange={setPaginationState}
-                columns={columns}
                 checkboxSelectedKeys={Array.from(checkboxSelectedKeys)}
                 onCheckboxToggle={handleCheckboxToggle}
                 onSelectAll={handleSelectAll}

@@ -38,6 +38,11 @@ class MeResponse(BaseModel):
     role: str | None = None
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 def _extract_token(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -109,3 +114,28 @@ def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     return MeResponse(email=db_user.email, name=db_user.name, username=db_user.email, role=db_user.global_role.value)
 
 
+@router.put("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Change password for the currently authenticated user."""
+    from postgres.models.user import User
+    from routers.users import verify_password, hash_password
+
+    if len(request.new_password) < 6:
+        raise HTTPException(status_code=400, detail="New password must be at least 6 characters")
+
+    email = user["username"]
+    db_user = db.query(User).filter(User.email == email).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not verify_password(request.current_password, db_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    db_user.password_hash = hash_password(request.new_password)
+    db.commit()
+
+    return {"success": True, "message": "Password updated successfully"}

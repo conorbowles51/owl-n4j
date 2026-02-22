@@ -1511,6 +1511,14 @@ export const evidenceAPI = {
     const qs = params.toString();
     return fetchAPI(`/evidence/by-filename/${encodeURIComponent(filename)}${qs ? `?${qs}` : ''}`);
   },
+
+  getVideoFrames: (evidenceId, { interval = 30, maxFrames = 50 } = {}) =>
+    fetchAPI(`/evidence/${encodeURIComponent(evidenceId)}/frames?interval=${interval}&max_frames=${maxFrames}`, {
+      timeout: 120000,
+    }),
+
+  getVideoFrameUrl: (evidenceId, filename) =>
+    `/api/evidence/${encodeURIComponent(evidenceId)}/frames/${encodeURIComponent(filename)}`,
 };
 
 /**
@@ -1599,7 +1607,13 @@ export const authAPI = {
   me: () =>
     fetchAPI('/auth/me', {
       method: 'GET',
-      timeout: 5000, // 5 second timeout for me
+      timeout: 5000,
+    }),
+
+  changePassword: (currentPassword, newPassword) =>
+    fetchAPI('/auth/change-password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
 };
 

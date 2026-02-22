@@ -91,6 +91,21 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 # Parallel Processing Configuration
 MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
 
+# Image Processing Configuration
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "tesseract")
+TESSERACT_LANG = os.getenv("TESSERACT_LANG", "eng")
+OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
+
+# Video Processing Configuration
+FFMPEG_CMD = os.getenv("FFMPEG_CMD", "ffmpeg")
+FFPROBE_CMD = os.getenv("FFPROBE_CMD", "ffprobe")
+VIDEO_FRAME_INTERVAL = int(os.getenv("VIDEO_FRAME_INTERVAL", "30"))
+VIDEO_MAX_FRAMES = int(os.getenv("VIDEO_MAX_FRAMES", "50"))
+
+# Audio Processing Configuration
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
+AUDIO_LANGUAGE = os.getenv("AUDIO_LANGUAGE", None)
+
 # Authentication configuration
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "owlinvestigates")
