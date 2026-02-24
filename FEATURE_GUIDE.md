@@ -1,4 +1,10 @@
-# OWL Platform — Feature Guide & Verification Walkthrough
+<p align="center">
+  <img src="frontend/public/owl-logo.webp" alt="Owl Logo" width="100" />
+</p>
+
+<h1 align="center">OWL Platform — Feature Guide & Verification Walkthrough</h1>
+
+<p align="center"><strong>Owl Consultancy Group</strong> — Intelligence Analysis Platform</p>
 
 > **Purpose:** Step-by-step guide for using and verifying the 14 features recently implemented in the OWL Investigation Platform. Each section explains what was built, where to find it, exactly how to use it, and how to confirm it's working.
 >
@@ -30,6 +36,9 @@
 **What it does:** Lets you fix incorrect dollar amounts on any transaction directly in the table, with a full audit trail (original amount preserved, correction reason recorded, visual indicator).
 
 **Where to find it:** Financial Dashboard → Transaction table → any Amount cell.
+
+![Financial Dashboard](docs/guide-assets/financial-dashboard.png)
+*Financial Dashboard — click any amount cell to correct it. The amber pencil icon indicates previously corrected amounts.*
 
 ### How to use it
 
@@ -148,6 +157,9 @@ You can also filter the **From** and **To** entities on individual transactions:
 
 **Where to find it:** Case Dashboard (Workspace view) → scroll down to the **"Key Entities"** section.
 
+![Entity Detail Panel](docs/guide-assets/entity-detail-panel.png)
+*Entity detail panel — shows entity summary, verified facts, AI insights, and source document references.*
+
 ### How to use it
 
 1. Navigate to the **Workspace** / **Case Overview** view (click the briefcase icon in the sidebar).
@@ -178,6 +190,9 @@ You can also filter the **From** and **To** entities on individual transactions:
 
 **Where to find it:** AI Chat panel (right sidebar).
 
+![AI Chat Panel](docs/guide-assets/ai-chat-panel.png)
+*AI Chat panel — ask cross-document questions and get comprehensive answers drawing from all evidence in the case.*
+
 ### How to use it
 
 1. Open the **AI Chat** panel (click the chat bubble icon in the sidebar, or it may already be in a side panel).
@@ -200,6 +215,9 @@ You can also filter the **From** and **To** entities on individual transactions:
 **What it does:** The entity table now uses **pagination** for large datasets (instead of rendering all 170+ rows at once) and supports **bulk merge** (select 2 entities → merge) and **bulk edit** (select multiple → change a property on all).
 
 **Where to find it:** Graph view → Table View tab (the table icon).
+
+![Table View](docs/guide-assets/table-view.png)
+*Table View — paginated entity list with checkboxes for bulk merge and bulk edit operations.*
 
 ### How to use it
 
@@ -244,6 +262,9 @@ You can also filter the **From** and **To** entities on individual transactions:
 **What it does:** Lets you correct inaccurate AI-extracted location coordinates or remove bogus locations from the map entirely, using a right-click context menu.
 
 **Where to find it:** Map View → right-click any location pin.
+
+![Map View](docs/guide-assets/map-view.png)
+*Map View — right-click any pin to edit its coordinates or remove it from the map.*
 
 ### How to use it
 
@@ -329,6 +350,9 @@ You can also filter the **From** and **To** entities on individual transactions:
 
 **Where to find it:** Case Dashboard → **Insights** section (scroll down), or the Insights panel in the workspace sidebar.
 
+![AI Insights Panel](docs/guide-assets/ai-insights-panel.png)
+*AI Insights panel — generated insight cards with confidence badges, categories, and accept/reject actions.*
+
 ### How to use it
 
 **Generate insights:**
@@ -380,6 +404,9 @@ Each insight card shows:
 - **"All Evidence"** → **"Evidence Files"** with subtitle: *"Prosecution discovery and other evidence documents uploaded for analysis"*
 
 **Where to find it:** Case Dashboard (Workspace view) → scroll through the sections.
+
+![Case Detail Evidence](docs/guide-assets/case-detail-evidence.png)
+*Case detail view — clearly labelled "Uploaded Documents" and "Evidence Files" sections with descriptive subtitles.*
 
 ### How to verify it worked
 
@@ -469,4 +496,6 @@ The PDF includes:
 
 ---
 
-*Guide created for OWL Investigation Platform — February 2026*
+---
+
+**Owl Consultancy Group** — Intelligence Analysis Platform — Feature Guide — February 2026
