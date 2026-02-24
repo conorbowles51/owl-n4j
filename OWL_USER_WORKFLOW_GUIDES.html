@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OWL Platform &mdash; User Workflow Guides</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm;
+  }
+  @media print {
+    body { font-size: 10pt; }
+    .cover-page { min-height: 100vh; }
+    h2 { page-break-before: always; }
+    h2:first-of-type { page-break-before: avoid; }
+    table { page-break-inside: avoid; }
+    pre { page-break-inside: avoid; }
+    .screenshot-container { page-break-inside: avoid; }
+    .no-print { display: none; }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1f2937;
+    line-height: 1.7;
+    background: #f9fafb;
+  }
+
+  /* Cover Page */
+  .cover-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #0f2f4a 0%, #1d4d76 50%, #245e8f 100%);
+    color: white;
+    text-align: center;
+    padding: 4rem 2rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover-page::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(ellipse at 30% 50%, rgba(53, 125, 190, 0.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 70% 30%, rgba(147, 51, 234, 0.08) 0%, transparent 50%);
+    pointer-events: none;
+  }
+  .cover-logo {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 2rem;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+    position: relative;
+    z-index: 1;
+  }
+  .cover-title {
+    font-size: 2.8rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-bottom: 0.5rem;
+    position: relative;
+    z-index: 1;
+  }
+  .cover-subtitle {
+    font-size: 1.3rem;
+    opacity: 0.9;
+    font-weight: 300;
+    letter-spacing: 0.5px;
+    margin-bottom: 3rem;
+    position: relative;
+    z-index: 1;
+  }
+  .cover-meta {
+    font-size: 0.9rem;
+    opacity: 0.7;
+    position: relative;
+    z-index: 1;
+  }
+  .cover-divider {
+    width: 80px;
+    height: 3px;
+    background: rgba(249, 115, 22, 0.8);
+    border-radius: 2px;
+    margin: 1.5rem 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Content Container */
+  .content {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 3rem 2rem;
+    background: #fff;
+  }
+
+  /* Header Bar */
+  .header-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 24px;
+    background: linear-gradient(135deg, #0f2f4a, #1d4d76);
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    color: white;
+  }
+  .header-bar img {
+    width: 36px;
+    height: 36px;
+  }
+  .header-bar-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .header-bar-subtitle {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    font-weight: 300;
+  }
+
+  /* Typography */
+  h1 {
+    font-size: 1.8rem;
+    color: #0f2f4a;
+    border-bottom: 3px solid #0f2f4a;
+    padding-bottom: 12px;
+    margin-bottom: 8px;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    color: #0f2f4a;
+    margin-top: 3rem;
+    margin-bottom: 1rem;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #e8f0f7;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  h2 .section-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: #0f2f4a;
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  h3 {
+    font-size: 1rem;
+    color: #6b21a8;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    color: #0f2f4a;
+    margin-top: 1.2rem;
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+  }
+
+  p { margin-bottom: 0.8rem; }
+
+  /* Badges */
+  .section-meta {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.2rem;
+    flex-wrap: wrap;
+  }
+  .section-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .badge-learn {
+    background: #e8f0f7;
+    color: #0f2f4a;
+    border: 1px solid #c5d9ec;
+  }
+  .badge-where {
+    background: #f3e8ff;
+    color: #6b21a8;
+    border: 1px solid #e9d5ff;
+  }
+
+  /* Blockquote */
+  blockquote {
+    border-left: 4px solid #0f2f4a;
+    background: #e8f0f7;
+    margin: 0 0 1.5rem 0;
+    padding: 1rem 1.25rem;
+    color: #1f2937;
+    font-size: 0.92rem;
+    border-radius: 0 6px 6px 0;
+  }
+  blockquote p { margin: 4px 0; }
+
+  /* Tables */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.2rem 0;
+    font-size: 0.88rem;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+  }
+  thead {
+    background: linear-gradient(135deg, #0f2f4a, #1d4d76);
+  }
+  th {
+    color: white;
+    padding: 10px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.3px;
+  }
+  td {
+    padding: 9px 14px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  tr:nth-child(even) td { background: #f9fafb; }
+  tr:hover td { background: #e8f0f7; }
+
+  /* Code */
+  code {
+    background: #f3f4f6;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    color: #0f2f4a;
+  }
+
+  /* Lists */
+  ol, ul {
+    padding-left: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  li { margin-bottom: 6px; }
+
+  /* Links */
+  a {
+    color: #357dbe;
+    text-decoration: none;
+    font-weight: 500;
+  }
+  a:hover {
+    color: #0f2f4a;
+    text-decoration: underline;
+  }
+
+  /* Horizontal Rules */
+  hr {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 2.5rem 0;
+  }
+
+  strong { color: #0f2f4a; }
+  em { color: #6b7280; }
+
+  /* Screenshots */
+  .screenshot-container {
+    margin: 1.5rem 0;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .screenshot-container img {
+    width: 100%;
+    display: block;
+  }
+  .screenshot-caption {
+    background: #f9fafb;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    color: #6b7280;
+    border-top: 1px solid #e5e7eb;
+    font-style: italic;
+  }
+
+  /* TOC */
+  .toc {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem 2rem;
+    margin: 1.5rem 0 2rem 0;
+  }
+  .toc-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #0f2f4a;
+    margin-bottom: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .toc ol { padding-left: 1.2rem; }
+  .toc li { margin-bottom: 4px; }
+  .toc a { font-size: 0.92rem; }
+
+  /* Cheat Sheet */
+  .cheat-sheet {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin: 1rem 0;
+  }
+  .cheat-sheet h4 {
+    color: #6b21a8;
+    margin-top: 0.5rem;
+  }
+  .cheat-sheet code {
+    background: #e8f0f7;
+    color: #0f2f4a;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    display: inline-block;
+    margin: 4px 0;
+  }
+
+  /* Tip Cards */
+  .tip-card {
+    display: flex;
+    gap: 12px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 8px 0;
+    font-size: 0.9rem;
+  }
+  .tip-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #f97316;
+    color: white;
+    font-size: 0.75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  /* Footer */
+  .footer {
+    margin-top: 3rem;
+    padding: 1.5rem;
+    text-align: center;
+    font-size: 0.82rem;
+    color: #9ca3af;
+    border-top: 2px solid #e8f0f7;
+  }
+  .footer-brand {
+    font-weight: 600;
+    color: #0f2f4a;
+  }
+</style>
+</head>
+<body>
+
+<!-- COVER PAGE -->
+<div class="cover-page">
+  <img src="frontend/public/owl-logo.webp" alt="Owl Logo" class="cover-logo" />
+  <div class="cover-title">User Workflow Guides</div>
+  <div class="cover-subtitle">Step-by-Step Investigation Workflows</div>
+  <div class="cover-divider"></div>
+  <div class="cover-meta">
+    Owl Consultancy Group &mdash; Intelligence Analysis Platform<br/>
+    February 2026
+  </div>
+</div>
+
+<!-- CONTENT -->
+<div class="content">
+
+<!-- Header bar -->
+<div class="header-bar">
+  <img src="frontend/public/owl-logo.webp" alt="Owl" />
+  <div>
+    <div class="header-bar-title">Owl Consultancy Group</div>
+    <div class="header-bar-subtitle">Intelligence Analysis Platform</div>
+  </div>
+</div>
+
+<blockquote>
+<p><strong>About this guide:</strong> These guides walk you through common investigation workflows step by step. Each workflow builds on the previous one, so we recommend reading them in order the first time through.</p>
+<p><strong>Version:</strong> February 2026</p>
+</blockquote>
+
+<!-- Table of Contents -->
+<div class="toc">
+  <div class="toc-title">Contents</div>
+  <ol>
+    <li><a href="#section-1">Getting Started &mdash; Your First Case</a></li>
+    <li><a href="#section-2">Uploading Evidence Files</a></li>
+    <li><a href="#section-3">Processing Evidence with the LLM</a></li>
+    <li><a href="#section-4">Working with the Knowledge Graph</a></li>
+    <li><a href="#section-5">Investigating Entities &mdash; Facts, Insights &amp; Source Documents</a></li>
+    <li><a href="#section-6">Building Investigation Theories</a></li>
+    <li><a href="#section-7">Marking Evidence as Relevant</a></li>
+    <li><a href="#section-8">Finding &amp; Merging Duplicate Entities</a></li>
+    <li><a href="#section-9">Using the Investigation Workspace</a></li>
+    <li><a href="#section-10">Saving &amp; Comparing Snapshots</a></li>
+    <li><a href="#section-11">Financial Transaction Analysis</a></li>
+    <li><a href="#section-12">Wiretap Folder Processing</a></li>
+    <li><a href="#section-13">Using the AI Chat Assistant</a></li>
+    <li><a href="#section-14">Exporting &amp; Reporting</a></li>
+    <li><a href="#section-15">Backfilling Summaries &amp; Embeddings</a></li>
+    <li><a href="#section-16">Administration &amp; User Management</a></li>
+    <li><a href="#cheat-sheet">Workflow Cheat Sheet</a></li>
+    <li><a href="#tips">Tips &amp; Best Practices</a></li>
+  </ol>
+</div>
+
+<hr />
+
+<!-- ═══════ SECTION 1 ═══════ -->
+<h2 id="section-1"><span class="section-num">1</span> Getting Started &mdash; Your First Case</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Create, configure &amp; enter a case</span>
+  <span class="section-badge badge-where">Case Management view</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to create a new investigation case, set it up with context, and invite collaborators.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/case-management.png" alt="Case Management view showing case cards" />
+  <div class="screenshot-caption">Case Management &mdash; view all your cases, create new ones, and open existing investigations.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Sign In</h4>
+<p>When you first open OWL, you&rsquo;ll see the sign-in panel. Enter your username and password and click <strong>Sign In</strong>. To change your password later, click <strong>Change Password</strong> from the account dropdown (your initials icon in the top-left corner).</p>
+
+<h4>Step 2 &mdash; Create a Case</h4>
+<p>After signing in, you land on the <strong>Case Management</strong> view. Click the <strong>+ Create</strong> button in the top-right. Fill in:</p>
+<ul>
+  <li><strong>Title</strong> &mdash; Give your case a name (e.g., &ldquo;Smith Financial Fraud Investigation&rdquo;)</li>
+  <li><strong>Description</strong> &mdash; Briefly describe the case</li>
+  <li><strong>Save Notes</strong> &mdash; Optional internal notes</li>
+</ul>
+<p>Click <strong>Save</strong> to create the case.</p>
+
+<h4>Step 3 &mdash; Add Collaborators (Optional)</h4>
+<p>On your case card, click the <strong>people icon</strong> to open the <strong>Collaborators</strong> modal. You can invite other users by email and set permission levels: <strong>Owner</strong>, <strong>Editor</strong>, <strong>Viewer</strong>, or <strong>Guest</strong>.</p>
+
+<h4>Step 4 &mdash; Enter the Case</h4>
+<p>Click <strong>Load Case</strong> on the case card. A progress dialog shows while the case loads. You&rsquo;ll arrive at the <strong>Workspace View</strong> &mdash; the main investigation screen.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 2 ═══════ -->
+<h2 id="section-2"><span class="section-num">2</span> Uploading Evidence Files</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Upload files, folders &amp; bulk evidence</span>
+  <span class="section-badge badge-where">Evidence Processing view</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to upload individual files, folders, and large batches of evidence into a case.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/evidence-processing.png" alt="Evidence Processing view with file navigator and upload controls" />
+  <div class="screenshot-caption">Evidence Processing &mdash; upload files, browse the file navigator, and track processing status.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Open Evidence Processing</h4>
+<p>From the Case Management screen, click the <strong>Evidence Processing</strong> button on your case card. This opens the full-screen Evidence Processing view.</p>
+
+<h4>Step 2 &mdash; Upload Individual Files</h4>
+<p>Click <strong>Upload Files</strong> and select one or more files. Supported formats include:</p>
+<table>
+  <thead><tr><th>Category</th><th>Formats</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Documents</strong></td><td>PDF, Word (.doc/.docx), text, RTF</td></tr>
+    <tr><td><strong>Images</strong></td><td>JPG, PNG, GIF, WebP, BMP, SVG</td></tr>
+    <tr><td><strong>Audio</strong></td><td>MP3, WAV, OGG, FLAC, AAC, M4A</td></tr>
+    <tr><td><strong>Video</strong></td><td>MP4, WebM, MOV, AVI, MKV</td></tr>
+    <tr><td><strong>Data</strong></td><td>CSV, Excel, JSON</td></tr>
+  </tbody>
+</table>
+<p>Files appear in the <strong>Unprocessed Files</strong> section after upload.</p>
+
+<h4>Step 3 &mdash; Upload a Folder</h4>
+<p>Click <strong>Upload Folder</strong> to upload an entire directory. This preserves the folder structure, which is important for wiretap processing workflows. Large folder uploads run as background tasks.</p>
+
+<h4>Step 4 &mdash; Browse with the File Navigator</h4>
+<p>The <strong>File Navigator</strong> on the left shows your case&rsquo;s file tree. Click folders to expand them. Look for these indicators:</p>
+<ul>
+  <li><strong>Green radio icon</strong> &mdash; Wiretap-processed folder</li>
+  <li><strong>Checkmark</strong> &mdash; Processed file</li>
+</ul>
+
+<h4>Step 5 &mdash; Understand File Status</h4>
+<p>Each file has a processing status: <strong>Unprocessed</strong> (uploaded, not analysed), <strong>Processing</strong> (currently analysed), <strong>Processed</strong> (LLM complete, entities extracted), or <strong>Failed</strong> (error encountered).</p>
+
+<hr />
+
+<!-- ═══════ SECTION 3 ═══════ -->
+<h2 id="section-3"><span class="section-num">3</span> Processing Evidence with the LLM</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Run LLM analysis &amp; extract entities</span>
+  <span class="section-badge badge-where">Evidence Processing &rarr; Process Selected</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to run LLM analysis on your evidence files to extract entities and relationships into the knowledge graph.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/evidence-processing.png" alt="Evidence Processing with file selection and processing controls" />
+  <div class="screenshot-caption">Evidence Processing &mdash; select files, choose a profile, and start LLM processing.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Select Files to Process</h4>
+<p>In the Unprocessed Files section, use the checkboxes to select files. You can <strong>Select All</strong>, select individually, or <strong>filter by type</strong> (Image, Document, Audio, etc.).</p>
+
+<h4>Step 2 &mdash; Choose a Processing Profile</h4>
+<p>Select a <strong>Processing Profile</strong> from the dropdown:</p>
+<ul>
+  <li><strong>generic</strong> &mdash; General-purpose entity extraction</li>
+  <li><strong>fraud</strong> &mdash; Optimised for financial fraud investigations</li>
+  <li>Custom profiles you&rsquo;ve created</li>
+</ul>
+
+<h4>Step 3 &mdash; Start Processing</h4>
+<p>Click <strong>Process Selected</strong>. Processing runs in the background &mdash; watch the <strong>Ingestion Log</strong> at the bottom or check the <strong>Background Tasks</strong> panel.</p>
+
+<h4>Step 4 &mdash; What Happens During Processing</h4>
+<table>
+  <thead><tr><th>File Type</th><th>Processing Steps</th></tr></thead>
+  <tbody>
+    <tr><td><strong>PDF / Word / Text</strong></td><td>Text extraction &rarr; chunking &rarr; entity extraction &rarr; graph</td></tr>
+    <tr><td><strong>Images</strong></td><td>OCR or GPT-4 Vision analysis &rarr; text &rarr; entity extraction &rarr; graph</td></tr>
+    <tr><td><strong>Audio</strong></td><td>Whisper transcription &rarr; text &rarr; entity extraction &rarr; graph</td></tr>
+    <tr><td><strong>Video</strong></td><td>Audio extraction + transcription + frame analysis &rarr; text &rarr; entity extraction &rarr; graph</td></tr>
+  </tbody>
+</table>
+<p>Every entity extracted links back to its source document &mdash; if an entity was found in a phone recording, you can click through and listen to the original audio.</p>
+
+<h4>Step 5 &mdash; Verify Processing</h4>
+<p>Processed files move to the <strong>LLM Processed Files</strong> section. The graph view now shows the entities and relationships extracted from your evidence.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 4 ═══════ -->
+<h2 id="section-4"><span class="section-num">4</span> Working with the Knowledge Graph</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Navigate, search, filter &amp; interact</span>
+  <span class="section-badge badge-where">Workspace &rarr; Graph view</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to navigate, search, filter, and interact with the knowledge graph that the LLM builds from your evidence.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/knowledge-graph.png" alt="Interactive knowledge graph showing entities and relationships" />
+  <div class="screenshot-caption">Knowledge Graph &mdash; entities shown as coloured nodes with connecting relationship lines.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; View the Graph</h4>
+<p>From the Workspace, the centre panel shows the interactive knowledge graph. Entities appear as coloured nodes, relationships as connecting lines. Each colour represents an entity type (Person, Company, Account, Transaction, etc.). The <strong>Entity Legend</strong> at the bottom shows the colour mapping.</p>
+
+<h4>Step 2 &mdash; Navigate the Graph</h4>
+<table>
+  <thead><tr><th>Action</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Select a node</strong></td><td>Click on it</td></tr>
+    <tr><td><strong>Select multiple nodes</strong></td><td>Hold <code>Ctrl/Cmd</code> and click each</td></tr>
+    <tr><td><strong>Drag-select</strong></td><td>Switch to drag mode (crosshair icon), drag a rectangle</td></tr>
+    <tr><td><strong>Zoom in/out</strong></td><td>Mouse wheel</td></tr>
+    <tr><td><strong>Pan</strong></td><td>Click and drag the background</td></tr>
+    <tr><td><strong>Centre view</strong></td><td>Click the centre button (crosshair icon)</td></tr>
+  </tbody>
+</table>
+
+<h4>Step 3 &mdash; Search &amp; Filter</h4>
+<p>The search bar supports two modes:</p>
+<ul>
+  <li><strong>Filter Mode</strong> (default): Matching nodes remain visible; non-matches fade. Results update as you type.</li>
+  <li><strong>Search Mode</strong>: Manually click &ldquo;Search&rdquo; to find matches.</li>
+</ul>
+<p><strong>Advanced query syntax:</strong></p>
+<ul>
+  <li><code>john AND smith</code> &mdash; Both terms must match</li>
+  <li><code>bank OR financial</code> &mdash; Either term matches</li>
+  <li><code>NOT closed</code> &mdash; Exclude matches</li>
+  <li><code>smith*</code> &mdash; Wildcard: starts with &ldquo;smith&rdquo;</li>
+  <li><code>~john</code> &mdash; Fuzzy match: similar to &ldquo;john&rdquo;</li>
+</ul>
+
+<h4>Step 4 &mdash; Expand Relationships</h4>
+<p><strong>Right-click</strong> a node and select <strong>Expand</strong> from the context menu. Choose the number of hops (1&ndash;5) to follow. You can also double-click a node to expand its immediate connections.</p>
+
+<h4>Step 5 &mdash; Use the Spotlight Graph</h4>
+<p>The <strong>Spotlight Graph</strong> lets you build a focused subgraph: select nodes, right-click &rarr; <strong>Add to Spotlight Graph</strong>. A split panel shows only your selected nodes and their connections. Add more nodes as you investigate.</p>
+
+<h4>Step 6 &mdash; Switch View Modes</h4>
+<p>Use the view mode switcher to see your data differently:</p>
+<ul>
+  <li><strong>Graph</strong> &mdash; Force-directed network visualization</li>
+  <li><strong>Table</strong> &mdash; Tabular view with expandable panels</li>
+  <li><strong>Timeline</strong> &mdash; Events arranged chronologically</li>
+  <li><strong>Map</strong> &mdash; Geographic visualization (when location data exists)</li>
+  <li><strong>Financial</strong> &mdash; Transaction analysis view</li>
+</ul>
+
+<hr />
+
+<!-- ═══════ SECTION 5 ═══════ -->
+<h2 id="section-5"><span class="section-num">5</span> Investigating Entities &mdash; Facts, Insights &amp; Source Documents</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Examine details, verify insights, view sources</span>
+  <span class="section-badge badge-where">Click any node &rarr; Node Details panel</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to examine entity details, verify AI insights, pin important facts, and view source documents for any file type.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/entity-detail-panel.png" alt="Entity detail panel showing summary, facts, and insights" />
+  <div class="screenshot-caption">Entity Detail Panel &mdash; shows entity summary, verified facts, AI insights, and source document references.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Open Entity Details</h4>
+<p>Click any node in the graph. The <strong>Node Details</strong> panel appears on the right showing: entity name and type, AI-generated summary, verified facts, and AI insights.</p>
+
+<h4>Step 2 &mdash; View Source Documents</h4>
+<p>Every fact and insight has a source citation. Click the <strong>source document link</strong> to preview the original document. The Document Viewer supports all file types:</p>
+<table>
+  <thead><tr><th>Source Type</th><th>What You See</th></tr></thead>
+  <tbody>
+    <tr><td><strong>PDF</strong></td><td>Full PDF viewer with page navigation</td></tr>
+    <tr><td><strong>Image</strong></td><td>Image viewer (photos, scanned documents, screenshots)</td></tr>
+    <tr><td><strong>Audio</strong></td><td>Audio player with playback controls</td></tr>
+    <tr><td><strong>Video</strong></td><td>Video player with playback controls</td></tr>
+    <tr><td><strong>Text</strong></td><td>Formatted text content</td></tr>
+  </tbody>
+</table>
+
+<h4>Step 3 &mdash; Verify AI Insights</h4>
+<p>AI Insights are observations the LLM made but hasn&rsquo;t confirmed. Each shows a <strong>confidence level</strong> (High, Medium, Low). Click <strong>Mark as Verified</strong> to convert an insight to a verified fact.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/ai-insights-panel.png" alt="AI Insights panel showing insight cards with confidence badges" />
+  <div class="screenshot-caption">AI Insights &mdash; confidence-rated insight cards with accept/reject actions.</div>
+</div>
+
+<h4>Step 4 &mdash; Pin Important Facts</h4>
+<p>Click the <strong>star icon</strong> next to any verified fact to pin it. Pinned facts appear in the <strong>Pinned Evidence</strong> section of your workspace and are highlighted in exports.</p>
+
+<h4>Step 5 &mdash; View Relationships</h4>
+<p>Scroll down in the Node Details panel to see the entity&rsquo;s relationships. Click any related entity to navigate to it in the graph.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 6 ═══════ -->
+<h2 id="section-6"><span class="section-num">6</span> Building Investigation Theories</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Create theories &amp; attach evidence</span>
+  <span class="section-badge badge-where">Workspace &rarr; Theories section</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to create theories, attach evidence, and use the AI to find entities that support your theory.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/workspace-sidebar.png" alt="Workspace sidebar showing theories and investigation sections" />
+  <div class="screenshot-caption">Workspace Sidebar &mdash; theories, witnesses, tasks, deadlines, notes, and all investigation tools.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Create a Theory</h4>
+<p>In the Workspace, open the <strong>Theories</strong> section in the left sidebar. Click the <strong>+</strong> button. Fill in:</p>
+<ul>
+  <li><strong>Title</strong> &mdash; Name your theory</li>
+  <li><strong>Type</strong> &mdash; Primary, Secondary, or Note</li>
+  <li><strong>Hypothesis</strong> &mdash; Describe your theory in detail</li>
+  <li><strong>Confidence Score</strong> &mdash; Rate your confidence (0&ndash;100%)</li>
+  <li><strong>Supporting Evidence</strong> / <strong>Counter Arguments</strong> / <strong>Next Steps</strong></li>
+  <li><strong>Privilege Level</strong> &mdash; Public, Attorney Only, or Private</li>
+</ul>
+
+<h4>Step 2 &mdash; Attach Items to the Theory</h4>
+<p>Click the <strong>link icon</strong> on the theory card to open the <strong>Attached Items</strong> modal. Browse available items (evidence, witnesses, notes, tasks, snapshots) and click <strong>Attach</strong>.</p>
+
+<h4>Step 3 &mdash; Build a Theory Graph</h4>
+<p>Click the <strong>network icon</strong> on your theory card. Choose whether to use <strong>theory text only</strong> or <strong>include attached items</strong>. Click <strong>Build Graph</strong> &mdash; the AI searches the knowledge graph for entities semantically related to your theory.</p>
+
+<h4>Step 4 &mdash; Mark Linked Files as Relevant</h4>
+<p>Click the <strong>star icon</strong> on the theory card to mark all files attached to the theory as <strong>Relevant</strong>.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 7 ═══════ -->
+<h2 id="section-7"><span class="section-num">7</span> Marking Evidence as Relevant</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Classify evidence files</span>
+  <span class="section-badge badge-where">Workspace &rarr; Case Files section</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to classify evidence files as relevant or non-relevant to organise your investigation.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/case-detail-evidence.png" alt="Case detail view with evidence files and relevance indicators" />
+  <div class="screenshot-caption">Evidence Files &mdash; file list with relevance indicators and processing status.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Open Case Files</h4>
+<p>In the Workspace, open the <strong>Case Files</strong> section. You&rsquo;ll see three tabs: <strong>All Files</strong>, <strong>Relevant</strong>, and <strong>Non-Relevant</strong>, each with a count.</p>
+
+<h4>Step 2 &mdash; Mark Files Individually</h4>
+<p>Each file row has a <strong>star icon</strong>: empty star = non-relevant (click to mark as relevant), filled amber star = relevant (click to remove).</p>
+
+<h4>Step 3 &mdash; Bulk Mark from a Theory</h4>
+<p>Find your theory with attached evidence, click the <strong>star button</strong> &mdash; all files linked to the theory are marked as relevant.</p>
+
+<h4>Step 4 &mdash; Filter by Relevance</h4>
+<p>Use the tabs to focus on All Files, Relevant, or Non-Relevant. Within each tab, filter further by Processed or Unprocessed status.</p>
+
+<h4>Step 5 &mdash; Spot Duplicates</h4>
+<p>Files uploaded more than once show a <strong>&times;N</strong> badge (e.g., &ldquo;&times;2&rdquo; means two copies exist).</p>
+
+<hr />
+
+<!-- ═══════ SECTION 8 ═══════ -->
+<h2 id="section-8"><span class="section-num">8</span> Finding &amp; Merging Duplicate Entities</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">AI similarity scan &amp; entity merge</span>
+  <span class="section-badge badge-where">Graph view &rarr; Find Similar Entities</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to use the AI to scan for similar entities and merge duplicates to keep your investigation clean.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/table-view.png" alt="Entity table view with selection checkboxes for merge operations" />
+  <div class="screenshot-caption">Table View &mdash; select entities for comparison and merge operations.</div>
+</div>
+
+<h3>Why this matters</h3>
+<p>When processing many documents, the LLM may create separate entities for the same real-world person or company (e.g., &ldquo;John Smith&rdquo;, &ldquo;J. Smith&rdquo;, &ldquo;Smith, John&rdquo;). Merging these gives you a complete picture.</p>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Launch Similar Entity Scan</h4>
+<p>In the graph view, click the <strong>Find Similar Entities</strong> button in the toolbar (magnifying glass with double arrows).</p>
+
+<h4>Step 2 &mdash; Configure the Scan</h4>
+<p>Select which <strong>entity types</strong> to scan (Person, Company, etc.), set the <strong>similarity threshold</strong>, and click <strong>Start Scan</strong>.</p>
+
+<h4>Step 3 &mdash; Review Results</h4>
+<p>Results show pairs of similar entities with similarity scores (e.g., &ldquo;John Smith&rdquo; &harr; &ldquo;J. Smith&rdquo; at 95%).</p>
+
+<h4>Step 4 &mdash; Compare and Merge</h4>
+<p>Click any pair to open the <strong>Entity Comparison</strong> modal with a side-by-side view. Choose which name to keep, select which facts and insights to include, then click <strong>Merge</strong>. Or click <strong>Reject</strong> if they&rsquo;re genuinely different entities.</p>
+
+<h4>Step 5 &mdash; Manual Merge</h4>
+<p>Select two or more nodes in the graph (<code>Ctrl/Cmd+Click</code>), right-click &rarr; <strong>Merge Selected Entities</strong>.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 9 ═══════ -->
+<h2 id="section-9"><span class="section-num">9</span> Using the Investigation Workspace</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Witnesses, tasks, deadlines, notes &amp; more</span>
+  <span class="section-badge badge-where">Workspace left sidebar</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to use the workspace&rsquo;s many investigation tools.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/workspace-sidebar.png" alt="Workspace with full sidebar showing all investigation sections" />
+  <div class="screenshot-caption">Workspace Layout &mdash; Case Context panel (left), Graph/Data view (centre), Node Details (right).</div>
+</div>
+
+<h3>Quick Actions &mdash; Add Evidence on the Fly</h3>
+<p>At the top of the left panel, three quick action buttons let you add evidence without leaving the workspace:</p>
+<ul>
+  <li><strong>Photo</strong> &mdash; Upload a photo directly from your device</li>
+  <li><strong>Note</strong> &mdash; Create an investigative note with tags</li>
+  <li><strong>Link</strong> &mdash; Save a URL with title and description</li>
+</ul>
+
+<h3>Witnesses</h3>
+<p>Click <strong>Witnesses</strong> in the left sidebar, then <strong>+</strong> to add a witness. Fill in name, role, contact info, risk assessment, strategy notes. Add <strong>interviews</strong> with date, summary, and notes. Attach witnesses to theories.</p>
+
+<h3>Tasks</h3>
+<p>Click <strong>Tasks</strong> to create and manage investigation tasks. Set title, description, assignee, due date, and priority. Mark as <strong>Complete</strong> when done.</p>
+
+<h3>Deadlines</h3>
+<p>Click <strong>Deadlines</strong> to add court dates, filing deadlines, and set the <strong>trial date</strong> to anchor your timeline.</p>
+
+<h3>Investigative Notes</h3>
+<p>Click <strong>Notes</strong> to create timestamped investigative notes with tags. Notes can be attached to theories.</p>
+
+<h3>Key Entities</h3>
+<p>The <strong>Key Entities</strong> section shows all entities grouped by type. Click any entity to navigate to it in the graph.</p>
+
+<h3>Case Overview</h3>
+<p>Click <strong>Case Overview</strong> for a horizontal dashboard showing all sections at a glance. Each section can be toggled for export.</p>
+
+<h3>Investigation Timeline</h3>
+<p>The <strong>Timeline</strong> section shows all investigation events arranged chronologically across threads: Witnesses (blue), Tasks (green), Theories (yellow), Evidence (orange), Deadlines (red), Snapshots (purple).</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/timeline-view.png" alt="Timeline view showing chronological events across multiple threads" />
+  <div class="screenshot-caption">Timeline &mdash; investigation events arranged chronologically with colour-coded categories.</div>
+</div>
+
+<hr />
+
+<!-- ═══════ SECTION 10 ═══════ -->
+<h2 id="section-10"><span class="section-num">10</span> Saving &amp; Comparing Snapshots</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Capture &amp; compare investigation states</span>
+  <span class="section-badge badge-where">Workspace &rarr; Snapshots section</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to save the state of your investigation at key points and compare how it has evolved.</p>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Save a Snapshot</h4>
+<p>Click the <strong>camera icon</strong> in the toolbar or go to <strong>Snapshots</strong> in the sidebar. Click <strong>Save Snapshot</strong>, give it a name (e.g., &ldquo;Pre-interview state&rdquo;), add notes, and click <strong>Save</strong>.</p>
+<p>The snapshot captures: the graph state, selected nodes, node positions, chat history, and table configuration.</p>
+
+<h4>Step 2 &mdash; Load a Previous Snapshot</h4>
+<p>Open the <strong>Snapshots</strong> section. Each snapshot shows name, date, and node/link counts. Click <strong>Load</strong> to restore your workspace to that exact point in time.</p>
+
+<h4>Step 3 &mdash; Compare Two Snapshots</h4>
+<p>Select two snapshots and click <strong>Compare</strong>. A side-by-side view highlights new entities added, entities removed, changed relationships, and modified properties.</p>
+
+<h4>Step 4 &mdash; Export a Snapshot to PDF</h4>
+<p>Click <strong>Export PDF</strong> on any snapshot to generate a PDF report of the graph and entity details at that point in time.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 11 ═══════ -->
+<h2 id="section-11"><span class="section-num">11</span> Financial Transaction Analysis</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Analyse transactions &amp; identify patterns</span>
+  <span class="section-badge badge-where">Workspace &rarr; Financial view</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to use the financial view to analyse transactions, identify patterns, and group related transactions.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/financial-dashboard.png" alt="Financial Dashboard showing transaction table, charts, and summary cards" />
+  <div class="screenshot-caption">Financial Dashboard &mdash; transaction table with summary cards, volume charts, and category filters.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Switch to Financial View</h4>
+<p>Select <strong>Financial</strong> (dollar icon) in the view mode switcher. The view shows summary cards, a transaction table, and volume charts.</p>
+
+<h4>Step 2 &mdash; Filter Transactions</h4>
+<p>Use the category filter pills at the top to focus on specific transaction types. Sort by any column (amount, date, counterparty) or search by text.</p>
+
+<h4>Step 3 &mdash; Group Sub-Transactions</h4>
+<p>When you identify transactions that belong together:</p>
+<ol>
+  <li>Find the <strong>parent transaction</strong> in the table.</li>
+  <li><strong>Right-click</strong> and select <strong>Group as Sub-Transaction</strong>.</li>
+  <li>A modal opens &mdash; search and select the child transactions.</li>
+  <li>Click <strong>Group</strong>.</li>
+</ol>
+<p>The parent row now shows an <strong>expand arrow</strong>. Click it to reveal sub-transactions nested underneath.</p>
+
+<h4>Step 4 &mdash; Edit Transaction Details</h4>
+<p>Click into any transaction to edit purpose, counterparty, and notes. Click the dollar amount to correct it (with audit trail).</p>
+
+<hr />
+
+<!-- ═══════ SECTION 12 ═══════ -->
+<h2 id="section-12"><span class="section-num">12</span> Wiretap Folder Processing</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Process audio, metadata &amp; interpretation files</span>
+  <span class="section-badge badge-where">Evidence Processing &rarr; File Navigator</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to process structured wiretap folders containing audio, metadata, and interpretation files.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/evidence-processing.png" alt="Evidence Processing with file navigator for wiretap folder processing" />
+  <div class="screenshot-caption">Evidence Processing &mdash; file navigator with folder structure for wiretap processing workflows.</div>
+</div>
+
+<h3>Context</h3>
+<p>Wiretap data typically comes in folders containing audio recordings (.mp3, .wav), metadata files (.sri), and interpretation documents (.rtf). OWL can process these as a unit.</p>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Upload Wiretap Folders</h4>
+<p>Use <strong>Upload Folder</strong> in Evidence Processing. Select the parent folder containing your wiretap call folders. The folder structure is preserved.</p>
+
+<h4>Step 2 &mdash; Navigate to a Wiretap Folder</h4>
+<p>In the <strong>File Navigator</strong>, browse to a wiretap folder. The system automatically detects wiretap-suitable files.</p>
+
+<h4>Step 3 &mdash; Create a Processing Profile</h4>
+<p>Click the <strong>info icon</strong> on the folder. In the File Info panel, click <strong>Create Custom Profile</strong>:</p>
+<ul>
+  <li>Choose <strong>Instructions mode</strong> and describe how to process the folder, or</li>
+  <li>Configure manually: assign file roles (audio, metadata, interpretation, ignore), set transcription and translation languages, configure LLM settings</li>
+  <li>Click <strong>Test Profile</strong> to preview results</li>
+  <li>Click <strong>Save Profile</strong> when satisfied</li>
+</ul>
+
+<h4>Step 4 &mdash; Process the Folder</h4>
+<p>Select folders, choose your profile, and click <strong>Process as Wiretap</strong> (or <strong>Process All Folders</strong> for batch). Processing runs as a background task.</p>
+
+<h4>Step 5 &mdash; Monitor Progress</h4>
+<p>Check the <strong>Background Tasks</strong> panel. Processing involves: audio transcription (Whisper), metadata extraction, interpretation parsing, entity extraction, and graph integration. Completed folders show a <strong>green radio icon</strong>.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 13 ═══════ -->
+<h2 id="section-13"><span class="section-num">13</span> Using the AI Chat Assistant</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Ask questions grounded in your evidence</span>
+  <span class="section-badge badge-where">AI Chat panel (right sidebar)</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to ask the AI questions about your case and get answers grounded in your evidence.</p>
+
+<div class="screenshot-container">
+  <img src="docs/guide-assets/ai-chat-panel.png" alt="AI Chat panel showing questions and evidence-grounded answers" />
+  <div class="screenshot-caption">AI Chat Assistant &mdash; ask cross-document questions and get answers with citations to source evidence.</div>
+</div>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Open the Chat Panel</h4>
+<p>Click the <strong>chat icon</strong> in the right sidebar to open the Chat Assistant.</p>
+
+<h4>Step 2 &mdash; Choose a Context Mode</h4>
+<table>
+  <thead><tr><th>Mode</th><th>What the AI Sees</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Full Graph</strong></td><td>All entities and relationships in the case</td></tr>
+    <tr><td><strong>Selected Nodes</strong></td><td>Only the entities you&rsquo;ve selected in the graph</td></tr>
+    <tr><td><strong>Spotlight Graph</strong></td><td>Only entities in your spotlight/subgraph</td></tr>
+    <tr><td><strong>No Context</strong></td><td>General knowledge only (no case data)</td></tr>
+  </tbody>
+</table>
+
+<h4>Step 3 &mdash; Ask Questions</h4>
+<p>Type your question and press Enter. Examples:</p>
+<ul>
+  <li><em>&ldquo;What is the relationship between John Smith and Acme Corp?&rdquo;</em></li>
+  <li><em>&ldquo;Summarise all financial transactions over $10,000&rdquo;</em></li>
+  <li><em>&ldquo;What evidence links the suspect to the offshore accounts?&rdquo;</em></li>
+</ul>
+
+<h4>Step 4 &mdash; Review Answers with Citations</h4>
+<p>The AI&rsquo;s response includes <strong>citations</strong> linking back to source documents. Click any citation to open the Document Viewer and see the original evidence.</p>
+
+<h4>Step 5 &mdash; Use Debug Mode</h4>
+<p>Toggle <strong>Debug</strong> to see the RAG pipeline trace &mdash; which documents were retrieved, how they were ranked, and what context was provided to the LLM.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 14 ═══════ -->
+<h2 id="section-14"><span class="section-num">14</span> Exporting &amp; Reporting</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Generate reports for court &amp; team briefings</span>
+  <span class="section-badge badge-where">Case Overview &amp; Snapshot sections</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to export your investigation findings for reports, court filings, or team briefings.</p>
+
+<h3>Export Options</h3>
+
+<h4>Case Overview Export</h4>
+<ol>
+  <li>Go to <strong>Case Overview</strong> in the workspace.</li>
+  <li>Each section card has an <strong>Include in export</strong> checkbox.</li>
+  <li>Select the sections you want.</li>
+  <li>Click <strong>Export Case</strong>.</li>
+  <li>A PDF is generated with all selected sections.</li>
+</ol>
+
+<h4>Snapshot PDF Export</h4>
+<ol>
+  <li>Go to <strong>Snapshots</strong> in the workspace.</li>
+  <li>Click <strong>Export PDF</strong> on any snapshot.</li>
+  <li>A PDF showing the graph state and entity details at that point is generated.</li>
+</ol>
+
+<h4>Theory Export</h4>
+<ol>
+  <li>Go to <strong>Theories</strong> in the workspace.</li>
+  <li>Open the <strong>Attached Items</strong> modal on a theory.</li>
+  <li>Click <strong>Export</strong>.</li>
+  <li>An HTML report with the theory and all attached evidence is generated.</li>
+</ol>
+
+<h4>Financial PDF Export</h4>
+<ol>
+  <li>Go to the <strong>Financial</strong> view.</li>
+  <li>Apply any filters you want.</li>
+  <li>Click the <strong>Download icon</strong> in the toolbar.</li>
+  <li>A branded PDF report of the visible transactions is generated.</li>
+</ol>
+
+<hr />
+
+<!-- ═══════ SECTION 15 ═══════ -->
+<h2 id="section-15"><span class="section-num">15</span> Backfilling Summaries &amp; Embeddings</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Generate missing AI data for older documents</span>
+  <span class="section-badge badge-where">Settings &rarr; Database modal &rarr; RAG Pipeline tab</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to generate missing AI summaries and embeddings for documents that were uploaded before these features were added.</p>
+
+<h3>When to use this</h3>
+<p>If you notice that some documents or entities are missing summaries, or that the AI chat isn&rsquo;t finding relevant documents, you may need to backfill.</p>
+
+<h3>Steps</h3>
+
+<h4>Step 1 &mdash; Open the Database Modal</h4>
+<p>From the settings or admin area, click <strong>Database</strong>. The Database Modal opens.</p>
+
+<h4>Step 2 &mdash; Run Gap Analysis</h4>
+<p>Click the <strong>RAG Pipeline</strong> tab. Cards show what&rsquo;s missing (e.g., &ldquo;47 chunks need embeddings&rdquo;, &ldquo;12 documents need summaries&rdquo;).</p>
+
+<h4>Step 3 &mdash; Run Backfill Operations</h4>
+<p>Click the appropriate button:</p>
+<ul>
+  <li><strong>Backfill Chunk Embeddings</strong> &mdash; Generates vector embeddings for document chunks (needed for semantic search and RAG)</li>
+  <li><strong>Backfill Document Summaries</strong> &mdash; Generates AI summaries for documents (uses LLM, takes longer)</li>
+  <li><strong>Backfill Entity Metadata</strong> &mdash; Adds case_id to entities missing it</li>
+  <li><strong>Backfill Case IDs</strong> &mdash; Assigns case ownership across Neo4j and ChromaDB</li>
+</ul>
+<p>Monitor progress below each button. Embedding backfill is fast; summary backfill is slower.</p>
+
+<hr />
+
+<!-- ═══════ SECTION 16 ═══════ -->
+<h2 id="section-16"><span class="section-num">16</span> Administration &amp; User Management</h2>
+
+<div class="section-meta">
+  <span class="section-badge badge-learn">Manage users &amp; monitor activity</span>
+  <span class="section-badge badge-where">Admin area</span>
+</div>
+
+<p><strong>What you&rsquo;ll learn:</strong> How to manage users, monitor system activity, and maintain the platform.</p>
+
+<h3>Creating Users</h3>
+<ol>
+  <li>From the admin area, click <strong>Create User</strong>.</li>
+  <li>Fill in: username, email, password, role (admin, investigator, viewer).</li>
+  <li>Click <strong>Create</strong>.</li>
+</ol>
+
+<h3>System Logs</h3>
+<p>The <strong>System Logs</strong> panel shows all platform activity: user logins, evidence uploads and processing, entity modifications, case operations. Filter by user, action type, or date range.</p>
+
+<h3>Case Audit Log</h3>
+<p>Within each case&rsquo;s workspace, the <strong>Audit Log</strong> section shows case-specific activity &mdash; who did what and when.</p>
+
+<hr />
+
+<!-- ═══════ CHEAT SHEET ═══════ -->
+<h2 id="cheat-sheet">Workflow Cheat Sheet</h2>
+
+<div class="cheat-sheet">
+  <h4>New Case Setup</h4>
+  <code>Create Case &rarr; Upload Evidence &rarr; Process with LLM &rarr; Explore Graph &rarr; Save Snapshot</code>
+
+  <h4>Daily Investigation</h4>
+  <code>Load Case &rarr; Review Graph &rarr; Investigate Entities &rarr; Verify Insights &rarr; Pin Facts &rarr; Save Snapshot</code>
+
+  <h4>Building a Theory</h4>
+  <code>Create Theory &rarr; Attach Evidence &rarr; Build Theory Graph &rarr; Review Entities &rarr; Mark Files Relevant &rarr; Export</code>
+
+  <h4>Data Cleanup</h4>
+  <code>Find Similar Entities &rarr; Compare Pairs &rarr; Merge Duplicates &rarr; Backfill Summaries</code>
+
+  <h4>Preparing for Court</h4>
+  <code>Review Relevant Files &rarr; Export Case Overview &rarr; Export Theory Reports &rarr; Export Snapshot PDFs</code>
+
+  <h4>Wiretap Processing</h4>
+  <code>Upload Folders &rarr; Create Profile &rarr; Process Wiretaps &rarr; Review Transcriptions &rarr; Explore Entities in Graph</code>
+</div>
+
+<hr />
+
+<!-- ═══════ TIPS ═══════ -->
+<h2 id="tips">Tips &amp; Best Practices</h2>
+
+<div class="tip-card">
+  <span class="tip-num">1</span>
+  <div><strong>Save snapshots often</strong> &mdash; Before and after major analysis steps. They&rsquo;re your investigation&rsquo;s version history.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">2</span>
+  <div><strong>Use theories as organisational anchors</strong> &mdash; Attach all related evidence, witnesses, and notes to a theory. Then use &ldquo;Build Theory Graph&rdquo; to discover connections you might have missed.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">3</span>
+  <div><strong>Verify AI insights promptly</strong> &mdash; The LLM makes observations but doesn&rsquo;t confirm them. Verified facts carry more weight in exports.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">4</span>
+  <div><strong>Mark relevant files early</strong> &mdash; This makes it much easier to find important evidence later, especially in cases with hundreds of files.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">5</span>
+  <div><strong>Use the spotlight graph</strong> &mdash; When investigating a specific chain (e.g., money flow), add those entities to the spotlight graph to see them in isolation.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">6</span>
+  <div><strong>Check for duplicates after batch uploads</strong> &mdash; Run &ldquo;Find Similar Entities&rdquo; after processing large evidence batches to keep your graph clean.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">7</span>
+  <div><strong>Use context modes in chat</strong> &mdash; &ldquo;Selected Nodes&rdquo; context focuses the AI on exactly what you&rsquo;re looking at. &ldquo;Full Graph&rdquo; gives the broadest answers.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">8</span>
+  <div><strong>Name your snapshots descriptively</strong> &mdash; &ldquo;Before merging entities&rdquo; is much more useful than &ldquo;Snapshot 4&rdquo;.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">9</span>
+  <div><strong>Explore the table view</strong> &mdash; The table view with its expanding relationship panels is often faster for systematic review than the graph.</div>
+</div>
+
+<div class="tip-card">
+  <span class="tip-num">10</span>
+  <div><strong>Run backfill after updates</strong> &mdash; After a platform update, check the Database Modal for any gaps that need backfilling.</div>
+</div>
+
+<hr />
+
+<div class="footer">
+  <span class="footer-brand">Owl Consultancy Group</span> &mdash; Intelligence Analysis Platform &mdash; User Workflow Guides &mdash; February 2026
+</div>
+
+</div><!-- /content -->
+
+</body>
+</html>
