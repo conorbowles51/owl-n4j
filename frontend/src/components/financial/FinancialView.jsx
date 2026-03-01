@@ -179,7 +179,6 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       setTransactions(prev =>
         prev.map(t => nodeKeys.includes(t.key) ? { ...t, financial_category: category } : t)
       );
-      setSelectedKeys([]);
     } catch (err) {
       console.error('Failed to batch categorize:', err);
     }
@@ -278,7 +277,6 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           return { ...t, to_entity: entity, has_manual_to: true };
         })
       );
-      setSelectedKeys([]);
     } catch (err) {
       console.error('Failed to batch update from/to:', err);
     }
