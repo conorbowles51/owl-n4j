@@ -2436,11 +2436,23 @@ export default function App() {
         }
       }
 
+      // Filter timeline events to only include those related to subgraph entities
+      const subgraphKeysSet = new Set(subgraphNodeKeys);
+      const filteredTimeline = (timelineData || []).filter(event => {
+        // Check if the event itself is a subgraph node
+        if (event.key && subgraphKeysSet.has(event.key)) return true;
+        // Check if event is connected to any subgraph nodes via connections array
+        if (event.connections && Array.isArray(event.connections)) {
+          return event.connections.some(conn => conn.key && subgraphKeysSet.has(conn.key));
+        }
+        return false;
+      });
+
       const snapshot = {
         name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
         subgraph: subgraphData,
-        timeline: timelineData || [], // Ensure timeline is always an array
+        timeline: filteredTimeline,
         overview: {
           nodes: selectedNodesDetails,
           nodeCount: subgraphData.nodes.length,
@@ -2453,7 +2465,8 @@ export default function App() {
       console.log('Exporting snapshot to PDF:', {
         name: snapshot.name,
         timelineCount: snapshot.timeline.length,
-        timeline: snapshot.timeline
+        totalTimelineEvents: (timelineData || []).length,
+        subgraphNodeCount: subgraphNodeKeys.length,
       });
 
       // Export to PDF
@@ -2716,16 +2729,30 @@ export default function App() {
         message: 'Collecting complete work state (graph, table, selections)...',
       }));
 
+      // Filter timeline events to only include those related to subgraph entities
+      const snapshotSubgraphKeysSet = new Set(subgraphNodeKeys);
+      const snapshotFilteredTimeline = (timelineData || []).filter(event => {
+        // If no subgraph, include all events
+        if (subgraphNodeKeys.length === 0) return true;
+        // Check if the event itself is a subgraph node
+        if (event.key && snapshotSubgraphKeysSet.has(event.key)) return true;
+        // Check if event is connected to any subgraph nodes via connections array
+        if (event.connections && Array.isArray(event.connections)) {
+          return event.connections.some(conn => conn.key && snapshotSubgraphKeysSet.has(conn.key));
+        }
+        return false;
+      });
+
       // Create a deep copy of all snapshot data to prevent reference issues
       // This ensures that if the original state is modified later, it won't affect the saved snapshot
       const snapshot = {
         name: name || `Snapshot ${new Date().toLocaleString()}`,
         notes: notes || '',
         // Subgraph data (spotlight graph)
-        subgraph: subgraphNodeKeys.length > 0 
-          ? JSON.parse(JSON.stringify(subgraphData)) 
+        subgraph: subgraphNodeKeys.length > 0
+          ? JSON.parse(JSON.stringify(subgraphData))
           : { nodes: [], links: [] }, // Empty if no subgraph
-        timeline: JSON.parse(JSON.stringify(timelineData || [])), // Deep copy timeline
+        timeline: JSON.parse(JSON.stringify(snapshotFilteredTimeline)), // Deep copy filtered timeline
         overview: {
           nodes: JSON.parse(JSON.stringify(allSubgraphNodeDetails)), // Deep copy node details
           nodeCount: subgraphData.nodes.length,
@@ -2737,8 +2764,11 @@ export default function App() {
         ai_overview: aiOverview ? String(aiOverview) : null, // Ensure string, not reference
         // Complete work state
         work_state: {
-          // Graph state
-          full_graph: JSON.parse(JSON.stringify(fullGraphData)), // Full graph data
+          // Graph state — omit full_graph if it's very large (it's already in the case save)
+          // full_graph is restored from the case when loading, so only include if manageable
+          full_graph: (fullGraphData.nodes.length <= 500)
+            ? JSON.parse(JSON.stringify(fullGraphData))
+            : null, // Too large — will be restored from case data instead
           result_graph: resultGraphData ? JSON.parse(JSON.stringify(resultGraphData)) : null, // AI assistant result graph
           selected_nodes: JSON.parse(JSON.stringify(selectedNodes)), // Currently selected nodes
           selected_node_keys: Array.from(selectedNodeKeys), // Selected node keys
@@ -2776,10 +2806,22 @@ export default function App() {
         linkCount: snapshot.subgraph.links.length,
         chatHistoryCount: snapshot.chat_history.length,
         hasAIOverview: !!aiOverview,
+        hasFullGraph: !!snapshot.work_state?.full_graph,
+        fullGraphNodes: fullGraphData.nodes.length,
       });
 
       // Backend will automatically chunk large snapshots
-      const savedSnapshot = await snapshotsAPI.create(snapshot);
+      let savedSnapshot;
+      try {
+        savedSnapshot = await snapshotsAPI.create(snapshot);
+      } catch (saveErr) {
+        console.error('First save attempt failed:', saveErr);
+        // If save fails, try again without work_state (which can be very large)
+        console.log('Retrying save without work_state...');
+        const lightSnapshot = { ...snapshot };
+        delete lightSnapshot.work_state;
+        savedSnapshot = await snapshotsAPI.create(lightSnapshot);
+      }
       
       setSaveSnapshotProgress(prev => ({
         ...prev,
