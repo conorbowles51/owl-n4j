@@ -342,8 +342,17 @@ async def export_financial_pdf(
     categories: Optional[str] = Query(None, description="Comma-separated categories to filter"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    entity_key: Optional[str] = Query(None, description="Filter by entity key (from/to)"),
+    entity_name: Optional[str] = Query(None, description="Entity name for filter display"),
+    search: Optional[str] = Query(None, description="Free-text search term"),
+    include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
 ):
-    """Export filtered financial transactions as a PDF report."""
+    """Export filtered financial transactions as a PDF report.
+
+    Designed for print-friendly output suitable for attorney-client meetings
+    where laptops and internet are unavailable (e.g., jail visits).
+    Includes transaction names, AI summaries, and entity notes appendix.
+    """
     try:
         result = neo4j_service.get_financial_transactions(case_id=case_id)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
@@ -359,10 +368,75 @@ async def export_financial_pdf(
         if end_date:
             transactions = [t for t in transactions if t.get("date") and t["date"] <= end_date]
             filters.append(f"To: {end_date}")
+        if entity_key:
+            display_name = entity_name or entity_key
+            transactions = [
+                t for t in transactions
+                if (isinstance(t.get("from_entity"), dict) and t["from_entity"].get("key") == entity_key)
+                or (isinstance(t.get("to_entity"), dict) and t["to_entity"].get("key") == entity_key)
+                or t.get("from_entity") == entity_key
+                or t.get("to_entity") == entity_key
+            ]
+            filters.append(f"Entity: {display_name}")
+        if search:
+            q = search.lower()
+            def text_match(t):
+                fields = [
+                    t.get("name"), t.get("purpose"), t.get("notes"),
+                    t.get("counterparty_details"), t.get("summary"),
+                    t.get("financial_category"),
+                ]
+                if isinstance(t.get("from_entity"), dict):
+                    fields.append(t["from_entity"].get("name"))
+                if isinstance(t.get("to_entity"), dict):
+                    fields.append(t["to_entity"].get("name"))
+                return any(q in (f or "").lower() for f in fields)
+            transactions = [t for t in transactions if text_match(t)]
+            filters.append(f"Search: \"{search}\"")
 
         filters_description = " | ".join(filters) if filters else ""
 
-        pdf_bytes = generate_financial_pdf(transactions, case_name, filters_description)
+        # Collect entity notes for appendix
+        entity_notes = None
+        if include_entity_notes:
+            try:
+                # Get unique entity keys from filtered transactions
+                entity_keys = set()
+                for t in transactions:
+                    if isinstance(t.get("from_entity"), dict) and t["from_entity"].get("key"):
+                        entity_keys.add(t["from_entity"]["key"])
+                    if isinstance(t.get("to_entity"), dict) and t["to_entity"].get("key"):
+                        entity_keys.add(t["to_entity"]["key"])
+
+                if entity_keys:
+                    # Fetch entity details from Neo4j
+                    entity_notes = []
+                    with neo4j_service._driver.session() as session:
+                        result = session.run(
+                            """
+                            MATCH (n {case_id: $case_id})
+                            WHERE n.key IN $keys AND NOT n:Document
+                            RETURN n.key AS key, n.name AS name,
+                                   labels(n)[0] AS type,
+                                   n.notes AS notes, n.summary AS summary
+                            """,
+                            case_id=case_id,
+                            keys=list(entity_keys),
+                        )
+                        for record in result:
+                            r = dict(record)
+                            if r.get("notes") or r.get("summary"):
+                                entity_notes.append(r)
+                    # Sort by name
+                    entity_notes.sort(key=lambda e: (e.get("name") or "").lower())
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
+
+        pdf_bytes = generate_financial_pdf(
+            transactions, case_name, filters_description,
+            entity_notes=entity_notes,
+        )
 
         safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
         filename = f"Financial_Report_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"

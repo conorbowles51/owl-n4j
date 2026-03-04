@@ -311,12 +311,20 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const handleExportPDF = () => {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
-    params.append('case_name', 'Case');
+    params.append('case_name', caseId); // Case ID used as name if no name prop
     if (selectedCategories.size > 0 && selectedCategories.size < categoryNames.length) {
       params.append('categories', [...selectedCategories].join(','));
     }
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    if (entityFilter) {
+      params.append('entity_key', entityFilter.key);
+      if (entityFilter.name) params.append('entity_name', entityFilter.name);
+    }
+    if (searchQuery && searchQuery.trim()) {
+      params.append('search', searchQuery.trim());
+    }
+    params.append('include_entity_notes', 'true');
     window.open(`/api/financial/export/pdf?${params.toString()}`, '_blank');
   };
 
