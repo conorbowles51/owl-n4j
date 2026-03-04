@@ -263,6 +263,17 @@ async def create_category(body: CreateCategoryRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BulkCorrectionItem(BaseModel):
+    name: str
+    new_amount: float
+    correction_reason: str
+
+
+class BulkCorrectRequest(BaseModel):
+    case_id: str
+    corrections: List[BulkCorrectionItem]
+
+
 class UpdateAmountRequest(BaseModel):
     case_id: str
     new_amount: float
@@ -272,8 +283,8 @@ class UpdateAmountRequest(BaseModel):
 @router.put("/transactions/{node_key}/amount")
 async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
     """Update a transaction amount with audit trail."""
-    if body.new_amount <= 0:
-        raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+    if body.new_amount == 0:
+        raise HTTPException(status_code=400, detail="Amount cannot be zero")
     try:
         result = neo4j_service.update_transaction_amount(
             node_key=node_key,
@@ -284,6 +295,76 @@ async def update_transaction_amount(node_key: str, body: UpdateAmountRequest):
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/transactions/bulk-correct")
+async def bulk_correct_transactions(body: BulkCorrectRequest):
+    """Apply amount corrections in bulk, matching by transaction name."""
+    if not body.corrections:
+        raise HTTPException(status_code=400, detail="No corrections provided")
+    try:
+        # Fetch all transactions for this case to match by name
+        all_txns = neo4j_service.get_financial_transactions(case_id=body.case_id)
+
+        # Build a lookup: lowercase name -> list of transaction dicts
+        name_lookup: dict = {}
+        for t in all_txns:
+            name = (t.get("name") or "").strip().lower()
+            if name:
+                name_lookup.setdefault(name, []).append(t)
+
+        results = []
+        for correction in body.corrections:
+            search_name = correction.name.strip().lower()
+            if not search_name:
+                results.append({"name": correction.name, "status": "skipped", "reason": "Empty name"})
+                continue
+
+            matches = name_lookup.get(search_name)
+            if not matches:
+                results.append({"name": correction.name, "status": "not_found", "reason": "No matching transaction"})
+                continue
+
+            if correction.new_amount == 0:
+                results.append({"name": correction.name, "status": "skipped", "reason": "Amount cannot be zero"})
+                continue
+
+            for match in matches:
+                try:
+                    neo4j_service.update_transaction_amount(
+                        node_key=match["key"],
+                        case_id=body.case_id,
+                        new_amount=correction.new_amount,
+                        correction_reason=correction.correction_reason,
+                    )
+                    results.append({
+                        "name": correction.name,
+                        "key": match["key"],
+                        "status": "corrected",
+                        "old_amount": match.get("amount"),
+                        "new_amount": correction.new_amount,
+                    })
+                except Exception as exc:
+                    results.append({
+                        "name": correction.name,
+                        "key": match["key"],
+                        "status": "error",
+                        "reason": str(exc),
+                    })
+
+        corrected = sum(1 for r in results if r["status"] == "corrected")
+        not_found = sum(1 for r in results if r["status"] == "not_found")
+        errors = sum(1 for r in results if r["status"] == "error")
+        return {
+            "success": True,
+            "corrected": corrected,
+            "not_found": not_found,
+            "errors": errors,
+            "total": len(body.corrections),
+            "results": results,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -344,6 +425,7 @@ async def export_financial_pdf(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     entity_key: Optional[str] = Query(None, description="Filter by entity key (from/to)"),
     entity_name: Optional[str] = Query(None, description="Entity name for filter display"),
+    entity: Optional[str] = Query(None, description="Entity name to filter by from/to (legacy)"),
     search: Optional[str] = Query(None, description="Free-text search term"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
 ):
@@ -378,6 +460,14 @@ async def export_financial_pdf(
                 or t.get("to_entity") == entity_key
             ]
             filters.append(f"Entity: {display_name}")
+        elif entity:
+            # Legacy: filter by entity name
+            transactions = [
+                t for t in transactions
+                if (isinstance(t.get("from_entity"), dict) and t["from_entity"].get("name") == entity)
+                or (isinstance(t.get("to_entity"), dict) and t["to_entity"].get("name") == entity)
+            ]
+            filters.append(f"Entity: {entity}")
         if search:
             q = search.lower()
             def text_match(t):

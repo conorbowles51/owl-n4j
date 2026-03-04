@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 import { CATEGORY_COLORS } from './constants';
@@ -25,7 +25,7 @@ function formatAmount(amount) {
   return num >= 0 ? `$${formatted}` : `-$${formatted}`;
 }
 
-function EntityCell({ entity, isManual, onEdit }) {
+const EntityCell = memo(function EntityCell({ entity, isManual, onEdit }) {
   if (!entity || !entity.name) {
     return (
       <span className="text-light-400 text-xs flex items-center gap-1">
@@ -47,13 +47,13 @@ function EntityCell({ entity, isManual, onEdit }) {
       {isManual && <span className="text-light-400" title="Manually set"><Pencil className="w-2.5 h-2.5" /></span>}
       <button
         onClick={(e) => { e.stopPropagation(); onEdit(); }}
-        className="p-0.5 hover:text-owl-blue-600 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+        className="p-0.5 hover:text-owl-blue-600 rounded opacity-40 group-hover:opacity-100 transition-opacity"
       >
         <Pencil className="w-3 h-3" />
       </button>
     </span>
   );
-}
+});
 
 function EntityEditor({ caseId, side, currentEntity, onSave, onCancel }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -242,7 +242,7 @@ function RowActionsDropdown({ txn, onGroupAsSubTransaction, onRemoveFromGroup })
   );
 }
 
-function TransactionDetailRow({ txn, onDetailsChange }) {
+const TransactionDetailRow = memo(function TransactionDetailRow({ txn, onDetailsChange }) {
   const [purpose, setPurpose] = useState(txn.purpose || '');
   const [counterpartyDetails, setCounterpartyDetails] = useState(txn.counterparty_details || '');
   const [notes, setNotes] = useState(txn.notes || '');
@@ -308,7 +308,7 @@ function TransactionDetailRow({ txn, onDetailsChange }) {
       </td>
     </tr>
   );
-}
+});
 
 export default function FinancialTable({
   transactions = [],
@@ -331,7 +331,11 @@ export default function FinancialTable({
   const [editingFromTo, setEditingFromTo] = useState(null); // { key, side: 'from'|'to' }
   const [expandedKey, setExpandedKey] = useState(null);
   const [batchFromToSide, setBatchFromToSide] = useState(null); // 'from' | 'to' | null
-  const [editingAmount, setEditingAmount] = useState(null); // { key, value, step: 'amount'|'reason', reason }
+  const [editingAmountKey, setEditingAmountKey] = useState(null); // key of transaction being edited
+  const [editingAmountStep, setEditingAmountStep] = useState('amount'); // 'amount' | 'reason'
+  const amountInputRef = useRef(null);
+  const reasonInputRef = useRef(null);
+  const editingAmountValueRef = useRef(0);
 
   // Sub-transaction grouping state
   const [expandedParentKeys, setExpandedParentKeys] = useState(new Set());
@@ -624,55 +628,59 @@ export default function FinancialTable({
                       )}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap font-mono font-medium" style={{ color: amountColor }}>
-                      {editingAmount && editingAmount.key === txn.key ? (
-                        editingAmount.step === 'amount' ? (
+                      {editingAmountKey === txn.key ? (
+                        editingAmountStep === 'amount' ? (
                           <input
                             type="number"
                             step="0.01"
                             autoFocus
-                            value={editingAmount.value}
-                            onChange={(e) => setEditingAmount({ ...editingAmount, value: e.target.value })}
+                            ref={amountInputRef}
+                            defaultValue={parseFloat(txn.amount) || 0}
+                            onClick={(e) => e.stopPropagation()}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                const num = parseFloat(editingAmount.value);
-                                if (num > 0) setEditingAmount({ ...editingAmount, step: 'reason', reason: '' });
+                                const num = parseFloat(e.target.value);
+                                if (!isNaN(num) && num !== 0) {
+                                  editingAmountValueRef.current = num;
+                                  setEditingAmountStep('reason');
+                                }
                               }
-                              if (e.key === 'Escape') setEditingAmount(null);
+                              if (e.key === 'Escape') setEditingAmountKey(null);
                             }}
                             className="w-24 text-xs px-1.5 py-0.5 border border-owl-blue-400 rounded font-mono bg-dark-800 text-light-100 focus:outline-none"
                           />
                         ) : (
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="text"
                               autoFocus
+                              ref={reasonInputRef}
                               placeholder="Correction reason…"
-                              value={editingAmount.reason}
-                              onChange={(e) => setEditingAmount({ ...editingAmount, reason: e.target.value })}
+                              defaultValue=""
                               onKeyDown={(e) => {
-                                if (e.key === 'Enter' && editingAmount.reason.trim()) {
-                                  onAmountChange(txn.key, parseFloat(editingAmount.value), editingAmount.reason.trim());
-                                  setEditingAmount(null);
+                                if (e.key === 'Enter' && e.target.value.trim()) {
+                                  onAmountChange(txn.key, editingAmountValueRef.current, e.target.value.trim());
+                                  setEditingAmountKey(null);
                                 }
-                                if (e.key === 'Escape') setEditingAmount(null);
+                                if (e.key === 'Escape') setEditingAmountKey(null);
                               }}
                               className="w-32 text-xs px-1.5 py-0.5 border border-amber-400 rounded bg-dark-800 text-light-100 focus:outline-none"
                             />
                             <div className="flex gap-1">
                               <button
                                 onClick={() => {
-                                  if (editingAmount.reason.trim()) {
-                                    onAmountChange(txn.key, parseFloat(editingAmount.value), editingAmount.reason.trim());
-                                    setEditingAmount(null);
+                                  const reason = reasonInputRef.current?.value?.trim();
+                                  if (reason) {
+                                    onAmountChange(txn.key, editingAmountValueRef.current, reason);
+                                    setEditingAmountKey(null);
                                   }
                                 }}
-                                disabled={!editingAmount.reason.trim()}
-                                className="text-[10px] px-1.5 py-0.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-500 disabled:opacity-30"
+                                className="text-[10px] px-1.5 py-0.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-500"
                               >
                                 Save
                               </button>
                               <button
-                                onClick={() => setEditingAmount(null)}
+                                onClick={() => setEditingAmountKey(null)}
                                 className="text-[10px] px-1.5 py-0.5 bg-dark-600 text-light-300 rounded hover:bg-dark-500"
                               >
                                 Cancel
@@ -683,7 +691,12 @@ export default function FinancialTable({
                       ) : (
                         <span
                           className="cursor-pointer hover:underline inline-flex items-center gap-1"
-                          onClick={() => setEditingAmount({ key: txn.key, value: parseFloat(txn.amount) || 0, step: 'amount' })}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            editingAmountValueRef.current = parseFloat(txn.amount) || 0;
+                            setEditingAmountStep('amount');
+                            setEditingAmountKey(txn.key);
+                          }}
                           title="Click to edit amount"
                         >
                           {formatAmount(txn.amount)}

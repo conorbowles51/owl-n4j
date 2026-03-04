@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
-import { Camera, FileText, Link2 } from 'lucide-react';
-import AddPhotoModal from './AddPhotoModal';
+import { FileText, Link2 } from 'lucide-react';
 import AddNoteModal from './AddNoteModal';
 import LinkEntityModal from './LinkEntityModal';
 
 /**
  * Quick Actions Buttons
  *
- * Three always-visible buttons (Photo, Note, Link) with their modals.
+ * Quick action buttons (Note, Link) with their modals.
  * Rendered underneath the Case Overview button.
  */
 export default function QuickActionsButtons({ caseId, onUploaded }) {
-  const [showPhotoModal, setShowPhotoModal] = useState(false);
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
 
@@ -22,15 +20,7 @@ export default function QuickActionsButtons({ caseId, onUploaded }) {
 
   return (
     <>
-      <div className="grid grid-cols-3 gap-2 mt-3">
-        <button
-          onClick={() => setShowPhotoModal(true)}
-          className="flex flex-col items-center gap-1 p-2 bg-light-50 hover:bg-light-100 rounded-lg transition-colors"
-          title="Add Photo"
-        >
-          <Camera className="w-4 h-4 text-owl-blue-600" />
-          <span className="text-xs text-light-600">Photo</span>
-        </button>
+      <div className="grid grid-cols-2 gap-2 mt-3">
         <button
           onClick={() => setShowNoteModal(true)}
           className="flex flex-col items-center gap-1 p-2 bg-light-50 hover:bg-light-100 rounded-lg transition-colors"
@@ -49,12 +39,6 @@ export default function QuickActionsButtons({ caseId, onUploaded }) {
         </button>
       </div>
 
-      <AddPhotoModal
-        isOpen={showPhotoModal}
-        onClose={() => setShowPhotoModal(false)}
-        caseId={caseId}
-        onUploaded={handleUploaded}
-      />
       <AddNoteModal
         isOpen={showNoteModal}
         onClose={() => setShowNoteModal(false)}

@@ -48,11 +48,17 @@ Implementing this change revealed that all previously ingested documents were mi
 
 Sprint 2 delivered medium-complexity features: added an editable amount field to each transaction with a mandatory correction reason for audit trail purposes; built an Entity Summary panel on the case dashboard showing all extracted entities filtered and sorted by type, name, fact count, and insight count; raised the AI assistant's document retrieval limit and confirmed hybrid retrieval (7 text passages + 6 graph entities per query) via the pipeline trace; clarified the file management terminology so "Evidence Files" and "Uploaded Documents" are distinct labelled sections with descriptive subtitles; and added a PDF export for the financial transaction table via a dedicated backend endpoint. Sprint 3 implemented sub-transaction grouping using a PART_OF Neo4j relationship with a SubTransactionModal for creating and viewing transaction hierarchies, and delivered the full Insights system — an AI-powered scanner that analyses all entities in the case, generates structured insights categorised as inconsistencies, connections, defense opportunities, Brady/Giglio disclosures, and patterns, each with a confidence level and expandable reasoning, and allows attorneys to accept or reject individual insights or bulk-action all high- or low-confidence findings.
 
+## Day 13: Saturday, February 21, 2026
+**8.0 hours** — Consolidated the case workspace interface and delivered new AI-powered investigative tools for geographic analysis and media evidence. Investigators working cases with many evidence files previously had to navigate between two separate panels — one for original evidence and another for supplementary uploads — which was confusing and slowed down document review. Merged these into a single unified "Case Documents" panel with tabbed navigation (All Documents, Evidence Files, Uploaded) so everything is in one place, and added an Entity Summary section to the workspace sidebar so key people, companies, and accounts are visible at a glance without switching views. Built an AI-powered geolocation scanner that re-reads all case documents using GPT-5.2 to extract geographic references the original ingestion may have missed, geocodes them against OpenStreetMap, and links them to the corresponding entities on the map — addressing the common problem where locations mentioned in evidence are present in the text but never appear on the map because they were not originally identified as geographic data. Added image and video processing pipelines to the evidence ingestion system, supporting local OCR via Tesseract and AI-powered image analysis via GPT-4 Vision, video frame extraction via FFmpeg with Vision analysis of key frames, and standalone audio transcription via Whisper. Also removed an artificial limit on the number of entities the AI could extract per document chunk, which was suppressing legitimate entity discovery. Completed comprehensive platform testing (API + UI) and produced a full test report, testing playbooks, feature guide, and updated installation documentation.
+
+## Day 14: Sunday, February 22, 2026
+**5.0 hours** — Added video preview and frame gallery capabilities, user account security features, and resolved deployment issues. Attorneys and investigators frequently receive video evidence — surveillance footage, body camera recordings, interview recordings — but previously could only see these listed as file names with no way to view them within the platform. Added an inline video player to the file preview component supporting all common formats (MP4, MOV, AVI, MKV, WebM), and built a frame gallery feature that extracts key frames from any video on demand and displays them as a navigable thumbnail grid with timestamps, allowing investigators to quickly scan hours of footage and click into any moment of interest without watching the entire recording. Added a change password option to the user account panel so users can update their credentials without requiring administrator involvement, with current password verification and confirmation validation. Updated the Python dependency manifest with six packages that were in use but not listed, which would have caused installation failures on a fresh deployment. Fixed an import error where the backend could not find media processing configuration when running the ingestion pipeline, and resolved a duplicate property warning in the graph table view. Updated the full installation guide with deployment instructions covering all new system dependencies.
+
 ---
 
 ## Summary
 
-**Total Hours: 104.5 hours**
+**Total Hours: 117.5 hours**
 
 **Work Completed:**
 - Enhanced knowledge graph management with entity resolution and merge/delete capabilities
@@ -88,13 +94,22 @@ Sprint 2 delivered medium-complexity features: added an editable amount field to
 - Added PDF export for financial transaction table
 - Implemented sub-transaction grouping with PART_OF relationships and SubTransactionModal
 - Built full Insights system with AI-generated case insights, confidence levels, and accept/reject workflow
+- Consolidated Evidence Files and Uploaded Documents into unified tabbed Case Documents panel
+- Added AI-powered geolocation rescan using GPT-5.2 with OpenStreetMap geocoding
+- Built image processing pipeline with Tesseract OCR and GPT-4 Vision support
+- Built video processing pipeline with FFmpeg frame extraction and Vision analysis
+- Built standalone audio transcription pipeline via Whisper
+- Added inline video player and frame gallery with on-demand frame extraction
+- Added change password functionality for user self-service credential management
+- Comprehensive platform testing with full test report, playbooks, and feature guide
+- Updated installation documentation with full deployment instructions
 
 **Key Benefits for Clients:**
 - Secure multi-user access with role-based permissions and collaboration features
 - Faster evidence processing with concurrent file handling and multi-folder uploads
 - Better data organization with entity resolution and merge capabilities
 - Improved security with case-based data isolation and permission controls
-- More file types supported (spreadsheets, Word documents)
+- More file types supported (spreadsheets, Word documents, images, video, audio)
 - Enhanced financial analysis with dedicated viewer, visualisation tools, bulk operations, and PDF export
 - Improved wiretap analysis with separate transcription and translation nodes
 - Efficient data management with optimised table view and editing tools
@@ -105,4 +120,6 @@ Sprint 2 delivered medium-complexity features: added an editable amount field to
 - Administrators can maintain data integrity with self-service backfill tooling
 - AI-generated case insights with structured categories and attorney-controlled accept/reject workflow
 - Transaction data integrity with audited amount corrections and sub-transaction hierarchy support
-- Improved map usability with location pin editing and removal directly from the map
+- Improved map usability with location pin editing, removal, and AI-powered geolocation scanning
+- Video evidence can be previewed and frame-scanned directly within the platform
+- Users can manage their own passwords without administrator involvement

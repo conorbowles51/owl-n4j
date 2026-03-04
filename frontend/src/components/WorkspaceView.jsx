@@ -24,6 +24,7 @@ export default function WorkspaceView({
   onBack,
   authUsername,
   onLogoClick,
+  onViewDocument,
 }) {
   const [caseData, setCaseData] = useState(null);
   const [caseContext, setCaseContext] = useState(null);
@@ -619,12 +620,12 @@ export default function WorkspaceView({
                             }
                           }}
                           onSelectNode={(node) => {
-                            // Find node in graphData and select it
                             const graphNode = graphData.nodes.find(n => n.key === node.key);
                             if (graphNode) {
                               setSelectedNode(graphNode);
                             }
                           }}
+                          onViewDocument={onViewDocument}
                           username={authUsername}
                           compact={selectedNodesDetails.length > 1}
                           caseId={caseId}
@@ -662,6 +663,7 @@ export default function WorkspaceView({
                   const data = await workspaceAPI.getPinnedItems(caseId);
                   setPinnedItems(data.pinned_items || []);
                 }}
+                onViewDocument={onViewDocument}
               />
               )}
             </div>

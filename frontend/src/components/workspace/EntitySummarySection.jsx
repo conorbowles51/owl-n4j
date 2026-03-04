@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, Users, Building2, Landmark, CreditCard, ChevronDown } from 'lucide-react';
+import { Loader2, Search, Users, Building2, Landmark, CreditCard, ChevronDown, ChevronRight } from 'lucide-react';
 import { graphAPI } from '../../services/api';
 
 const TABS = [
@@ -34,6 +34,7 @@ export default function EntitySummarySection({ caseId }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('name');
   const [sortOpen, setSortOpen] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState(new Set());
 
   useEffect(() => {
     if (!caseId) return;
@@ -184,32 +185,64 @@ export default function EntitySummarySection({ caseId }) {
           </div>
         ) : (
           <div className="divide-y divide-light-100">
-            {filtered.map((entity) => (
-              <div
-                key={entity.key}
-                className="flex items-center gap-2.5 px-3 py-2 hover:bg-light-50 cursor-pointer transition-colors"
-              >
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TYPE_COLORS[entity.type] || 'bg-gray-400'}`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-owl-blue-900 truncate">{entity.name}</p>
-                  {entity.summary && (
-                    <p className="text-[11px] text-light-500 truncate">{entity.summary}</p>
+            {filtered.map((entity) => {
+              const isExpanded = expandedKeys.has(entity.key);
+              const hasSummary = !!entity.summary;
+              return (
+                <div key={entity.key}>
+                  <div
+                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                      isExpanded ? 'bg-owl-blue-50' : 'hover:bg-light-50'
+                    }`}
+                    onClick={() => {
+                      setExpandedKeys(prev => {
+                        const next = new Set(prev);
+                        if (next.has(entity.key)) next.delete(entity.key);
+                        else next.add(entity.key);
+                        return next;
+                      });
+                    }}
+                  >
+                    {hasSummary ? (
+                      isExpanded
+                        ? <ChevronDown className="w-3.5 h-3.5 text-owl-blue-500 flex-shrink-0" />
+                        : <ChevronRight className="w-3.5 h-3.5 text-light-400 flex-shrink-0" />
+                    ) : (
+                      <span className="w-3.5 flex-shrink-0" />
+                    )}
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${TYPE_COLORS[entity.type] || 'bg-gray-400'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-owl-blue-900 truncate">{entity.name}</p>
+                      {hasSummary && !isExpanded && (
+                        <p className="text-[11px] text-light-500 truncate">{entity.summary}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {entity.facts_count > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full">
+                          {entity.facts_count}F
+                        </span>
+                      )}
+                      {entity.insights_count > 0 && (
+                        <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded-full">
+                          {entity.insights_count}I
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {isExpanded && hasSummary && (
+                    <div className="px-3 pb-3 pt-1 pl-10 bg-owl-blue-50/50">
+                      <p className="text-[11px] text-light-700 leading-relaxed whitespace-pre-wrap">{entity.summary}</p>
+                      {entity.type && (
+                        <span className="inline-block mt-1.5 text-[10px] px-1.5 py-0.5 bg-light-200 text-light-600 rounded">
+                          {entity.type}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  {entity.facts_count > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-full">
-                      {entity.facts_count}F
-                    </span>
-                  )}
-                  {entity.insights_count > 0 && (
-                    <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded-full">
-                      {entity.insights_count}I
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

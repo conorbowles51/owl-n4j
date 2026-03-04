@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, FileText, Focus, Pin, CheckCircle2, Calendar, Filter, Link2, Image as ImageIcon, ExternalLink, ChevronUp, FolderOpen, Upload, Files } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { ChevronDown, ChevronRight, FileText, Focus, Pin, CheckCircle2, Calendar, Filter, Link2, Image as ImageIcon, ExternalLink, Files, Star, StarOff } from 'lucide-react';
 import { evidenceAPI, workspaceAPI } from '../../services/api';
 import FilePreview from '../FilePreview';
 import AttachToTheoryModal from './AttachToTheoryModal';
@@ -65,9 +65,9 @@ const parseLinkContent = (content) => {
 };
 
 const TABS = [
-  { key: 'all', label: 'All Documents', icon: Files },
-  { key: 'evidence', label: 'Evidence Files', icon: FolderOpen },
-  { key: 'uploaded', label: 'Uploaded', icon: Upload },
+  { key: 'all', label: 'All Files', icon: Files },
+  { key: 'relevant', label: 'Relevant', icon: Star },
+  { key: 'non-relevant', label: 'Non-Relevant', icon: StarOff },
 ];
 
 export default function CaseFilesSection({
@@ -78,6 +78,7 @@ export default function CaseFilesSection({
   pinnedItems = [],
   onRefreshPinned,
   fullHeight = false,
+  onViewDocument,
 }) {
   const [allFiles, setAllFiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -119,35 +120,55 @@ export default function CaseFilesSection({
     return () => window.removeEventListener('documents-refresh', handleRefresh);
   }, [caseId]);
 
-  const evidenceFiles = useMemo(() => allFiles.filter(f => !isCaseDocument(f)), [allFiles]);
-  const uploadedFiles = useMemo(() => allFiles.filter(f => isCaseDocument(f)), [allFiles]);
+  const relevantFiles = useMemo(() => allFiles.filter(f => f.is_relevant), [allFiles]);
+  const nonRelevantFiles = useMemo(() => allFiles.filter(f => !f.is_relevant), [allFiles]);
+
+  const hashCopyCount = useMemo(() => {
+    const counts = {};
+    for (const f of allFiles) {
+      if (f.sha256) counts[f.sha256] = (counts[f.sha256] || 0) + 1;
+    }
+    return counts;
+  }, [allFiles]);
 
   const displayFiles = useMemo(() => {
     let base;
-    if (activeTab === 'evidence') base = evidenceFiles;
-    else if (activeTab === 'uploaded') base = uploadedFiles;
+    if (activeTab === 'relevant') base = relevantFiles;
+    else if (activeTab === 'non-relevant') base = nonRelevantFiles;
     else base = allFiles;
 
     if (statusFilter === 'processed') return base.filter(f => f.status === 'processed');
-    if (statusFilter === 'unprocessed') return base.filter(f => f.status !== 'processed' && f.status !== 'duplicate');
+    if (statusFilter === 'unprocessed') return base.filter(f => f.status !== 'processed');
     return base;
-  }, [activeTab, statusFilter, allFiles, evidenceFiles, uploadedFiles]);
+  }, [activeTab, statusFilter, allFiles, relevantFiles, nonRelevantFiles]);
 
   const processedCount = useMemo(() => {
-    const base = activeTab === 'evidence' ? evidenceFiles : activeTab === 'uploaded' ? uploadedFiles : allFiles;
+    const base = activeTab === 'relevant' ? relevantFiles : activeTab === 'non-relevant' ? nonRelevantFiles : allFiles;
     return base.filter(f => f.status === 'processed').length;
-  }, [activeTab, allFiles, evidenceFiles, uploadedFiles]);
+  }, [activeTab, allFiles, relevantFiles, nonRelevantFiles]);
 
   const unprocessedCount = useMemo(() => {
-    const base = activeTab === 'evidence' ? evidenceFiles : activeTab === 'uploaded' ? uploadedFiles : allFiles;
-    return base.filter(f => f.status !== 'processed' && f.status !== 'duplicate').length;
-  }, [activeTab, allFiles, evidenceFiles, uploadedFiles]);
+    const base = activeTab === 'relevant' ? relevantFiles : activeTab === 'non-relevant' ? nonRelevantFiles : allFiles;
+    return base.filter(f => f.status !== 'processed').length;
+  }, [activeTab, allFiles, relevantFiles, nonRelevantFiles]);
 
   const tabCounts = useMemo(() => ({
     all: allFiles.length,
-    evidence: evidenceFiles.length,
-    uploaded: uploadedFiles.length,
-  }), [allFiles, evidenceFiles, uploadedFiles]);
+    relevant: relevantFiles.length,
+    'non-relevant': nonRelevantFiles.length,
+  }), [allFiles, relevantFiles, nonRelevantFiles]);
+
+  const handleToggleRelevance = useCallback(async (file, e) => {
+    e.stopPropagation();
+    const newRelevance = !file.is_relevant;
+    setAllFiles(prev => prev.map(f => f.id === file.id ? { ...f, is_relevant: newRelevance } : f));
+    try {
+      await evidenceAPI.setRelevance([file.id], newRelevance);
+    } catch (err) {
+      console.error('Failed to update relevance:', err);
+      setAllFiles(prev => prev.map(f => f.id === file.id ? { ...f, is_relevant: !newRelevance } : f));
+    }
+  }, []);
 
   const isPinned = (fileId) => pinnedItems.some(item => item.item_type === 'evidence' && item.item_id === fileId);
   const getPinId = (fileId) => pinnedItems.find(item => item.item_type === 'evidence' && item.item_id === fileId)?.pin_id;
@@ -231,9 +252,14 @@ export default function CaseFilesSection({
                   <p className="text-sm font-medium text-owl-blue-900 truncate">
                     {filename || `File ${file.id}`}
                   </p>
-                  {isUploadedDoc && (
-                    <span className="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
-                      Uploaded
+                  {file.is_relevant && (
+                    <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                      Relevant
+                    </span>
+                  )}
+                  {file.sha256 && hashCopyCount[file.sha256] > 1 && (
+                    <span className="text-[10px] text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded font-medium flex-shrink-0" title={`${hashCopyCount[file.sha256]} copies of this file in the system`}>
+                      ×{hashCopyCount[file.sha256]}
                     </span>
                   )}
                   {file.status === 'processed' && (
@@ -285,6 +311,11 @@ export default function CaseFilesSection({
                   ) : null;
                 } catch { return null; }
               })()}
+              <button onClick={e => handleToggleRelevance(file, e)}
+                className={`p-1.5 rounded transition-colors ${file.is_relevant ? 'bg-amber-100 text-amber-700 hover:bg-amber-200' : 'hover:bg-light-200 text-light-500'}`}
+                title={file.is_relevant ? 'Mark as non-relevant' : 'Mark as relevant'}>
+                {file.is_relevant ? <Star className="w-4 h-4 fill-current" /> : <StarOff className="w-4 h-4" />}
+              </button>
               <button onClick={e => { e.stopPropagation(); setAttachModal({ open: true, file }); }}
                 className="p-1.5 hover:bg-owl-blue-100 rounded transition-colors" title="Attach to theory">
                 <Link2 className="w-4 h-4 text-owl-blue-600" />
@@ -322,6 +353,15 @@ export default function CaseFilesSection({
               <FilePreview caseId={caseId} filePath={file.stored_path || ''} fileName={filename} fileType="file"
                 onClose={() => setExpandedFileId(null)} />
             )}
+            {onViewDocument && (
+              <button
+                onClick={() => onViewDocument(file.original_filename || file.filename)}
+                className="mt-2 text-xs text-owl-blue-600 hover:text-owl-blue-800 hover:underline flex items-center gap-1"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Open in Document Viewer
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -335,9 +375,9 @@ export default function CaseFilesSection({
         onClick={e => onToggle?.(e)}>
         <div>
           <h3 className="text-sm font-semibold text-owl-blue-900">
-            Case Documents ({allFiles.length})
+            Case Files ({allFiles.length})
           </h3>
-          <p className="text-xs text-gray-500 mt-0.5">All evidence and supplementary files for this case</p>
+          <p className="text-xs text-gray-500 mt-0.5">All files — mark as relevant to support theories</p>
         </div>
         <div className="flex items-center gap-2">
           {onFocus && (
@@ -382,31 +422,29 @@ export default function CaseFilesSection({
                 })}
               </div>
 
-              {/* Status filter (for evidence tab or all tab) */}
-              {(activeTab === 'evidence' || activeTab === 'all') && (
-                <div className={`mb-3 flex items-center gap-2 ${fullHeight ? 'flex-shrink-0' : ''}`}>
-                  <Filter className="w-3.5 h-3.5 text-light-500" />
-                  <div className="flex gap-1">
-                    {[
-                      { key: 'all', label: `All`, color: 'bg-owl-blue-500' },
-                      { key: 'processed', label: `Processed (${processedCount})`, color: 'bg-green-500' },
-                      { key: 'unprocessed', label: `Unprocessed (${unprocessedCount})`, color: 'bg-orange-500' },
-                    ].map(sf => (
-                      <button key={sf.key} onClick={() => setStatusFilter(sf.key)}
-                        className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
-                          statusFilter === sf.key ? `${sf.color} text-white` : 'text-light-600 hover:bg-light-200'
-                        }`}>{sf.label}</button>
-                    ))}
-                  </div>
+              {/* Status filter */}
+              <div className={`mb-3 flex items-center gap-2 ${fullHeight ? 'flex-shrink-0' : ''}`}>
+                <Filter className="w-3.5 h-3.5 text-light-500" />
+                <div className="flex gap-1">
+                  {[
+                    { key: 'all', label: `All`, color: 'bg-owl-blue-500' },
+                    { key: 'processed', label: `Processed (${processedCount})`, color: 'bg-green-500' },
+                    { key: 'unprocessed', label: `Unprocessed (${unprocessedCount})`, color: 'bg-orange-500' },
+                  ].map(sf => (
+                    <button key={sf.key} onClick={() => setStatusFilter(sf.key)}
+                      className={`px-2 py-0.5 text-[11px] rounded transition-colors ${
+                        statusFilter === sf.key ? `${sf.color} text-white` : 'text-light-600 hover:bg-light-200'
+                      }`}>{sf.label}</button>
+                  ))}
                 </div>
-              )}
+              </div>
 
               {/* File list */}
               {displayFiles.length === 0 ? (
                 <p className="text-xs text-light-500 italic">
-                  {activeTab === 'uploaded' ? 'No supplementary documents. Upload photos, notes, or links via Quick Actions.'
-                    : activeTab === 'evidence' ? 'No evidence files found for this case.'
-                    : 'No documents found for this case.'}
+                  {activeTab === 'relevant' ? 'No files marked as relevant yet. Use the star icon to mark files that support a theory.'
+                    : activeTab === 'non-relevant' ? 'All files have been marked as relevant.'
+                    : 'No files found for this case.'}
                 </p>
               ) : (
                 <div className={`space-y-2 overflow-y-auto ${fullHeight ? 'flex-1 min-h-0' : 'max-h-[500px]'}`}>

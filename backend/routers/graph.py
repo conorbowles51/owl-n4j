@@ -1944,12 +1944,12 @@ async def rescan_locations(
         if result.get("success"):
             system_log_service.log(
                 case_id=case_id,
-                log_type=LogType.GRAPH_UPDATE,
+                log_type=LogType.GRAPH_OPERATION,
                 message=f"Geo-location rescan completed: {result.get('locations_geocoded', 0)} locations geocoded, "
                         f"{result.get('entities_updated', 0)} entities updated, "
                         f"{result.get('location_nodes_created', 0)} new location nodes, "
                         f"{result.get('relationships_created', 0)} relationships created",
-                origin=LogOrigin.AI_SERVICE,
+                origin=LogOrigin.BACKEND,
                 details=result,
                 user=user.get("username", "unknown"),
                 success=True,
@@ -2031,5 +2031,54 @@ async def permanently_delete_recycled(
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Geocoding endpoints ---
+
+
+class GeocodeNodeRequest(BaseModel):
+    case_id: str
+    address: str
+
+
+@router.post("/nodes/{node_key}/geocode")
+async def geocode_node(node_key: str, body: GeocodeNodeRequest):
+    """Geocode a single entity's address and update its location properties."""
+    from services.geo_rescan_service import geocode_with_cache
+
+    if not body.address.strip():
+        raise HTTPException(status_code=400, detail="Address cannot be empty")
+
+    try:
+        result = geocode_with_cache(body.address)
+        if not result:
+            return {"success": False, "error": "Could not geocode address", "address": body.address}
+
+        # Update the node with geocoded coordinates
+        with neo4j_service._driver.session() as session:
+            session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                SET n.latitude = $lat, n.longitude = $lon,
+                    n.formatted_address = $formatted_address,
+                    n.geocode_confidence = $confidence
+                """,
+                key=node_key,
+                case_id=body.case_id,
+                lat=result["latitude"],
+                lon=result["longitude"],
+                formatted_address=result["formatted_address"],
+                confidence=result["confidence"],
+            )
+
+        return {
+            "success": True,
+            "latitude": result["latitude"],
+            "longitude": result["longitude"],
+            "formatted_address": result["formatted_address"],
+            "confidence": result["confidence"],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

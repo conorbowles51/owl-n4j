@@ -31,6 +31,7 @@ export default function SectionContentPanel({
   onRefreshTasks,
   onRefreshDeadlines,
   onRefreshPinned,
+  onViewDocument,
 }) {
   if (!selectedSection) {
     return (
@@ -156,6 +157,7 @@ export default function SectionContentPanel({
             isCollapsed={false}
             onToggle={() => {}}
             fullHeight={true}
+            onViewDocument={onViewDocument}
             {...commonProps}
           />
         </div>

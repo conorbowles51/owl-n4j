@@ -38,6 +38,11 @@ export default function InvestigativeNotesSection({
     };
 
     loadNotes();
+
+    // Listen for notes-refresh events (fired when Quick Action notes are created)
+    const handleNotesRefresh = () => loadNotes();
+    window.addEventListener('notes-refresh', handleNotesRefresh);
+    return () => window.removeEventListener('notes-refresh', handleNotesRefresh);
   }, [caseId]);
 
   const handleAddNote = async (content) => {

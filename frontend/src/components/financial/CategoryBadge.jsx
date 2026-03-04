@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, memo } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { CATEGORY_COLORS } from './constants';
 
-export default function CategoryBadge({ category, categories = [], categoryColorMap = {}, onCategoryChange }) {
+export default memo(function CategoryBadge({ category, categories = [], categoryColorMap = {}, onCategoryChange }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -68,4 +68,4 @@ export default function CategoryBadge({ category, categories = [], categoryColor
       )}
     </div>
   );
-}
+});

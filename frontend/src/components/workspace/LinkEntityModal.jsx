@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Upload, Link2, Loader2 } from 'lucide-react';
-import { evidenceAPI } from '../../services/api';
+import { evidenceAPI, workspaceAPI } from '../../services/api';
 
 /**
  * Link Entity Modal
@@ -39,7 +39,16 @@ export default function LinkEntityModal({ isOpen, onClose, caseId, onUploaded })
       fileList.items.add(file);
 
       await evidenceAPI.upload(caseId, fileList.files);
-      
+
+      // Also create an investigative note so the link appears in the notes section
+      try {
+        const noteContent = `[Quick Action Link]\n${title || 'Untitled Link'}\nURL: ${url}${description ? `\n${description}` : ''}`;
+        await workspaceAPI.createNote(caseId, { content: noteContent });
+        window.dispatchEvent(new Event('notes-refresh'));
+      } catch (noteErr) {
+        console.warn('Created link file but failed to sync to investigative notes:', noteErr);
+      }
+
       // Reset form
       setUrl('');
       setTitle('');

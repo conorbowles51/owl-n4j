@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Calendar, Focus, Edit2, Plus } from 'lucide-react';
+import { ChevronDown, ChevronRight, Calendar, Focus, Edit2, Plus, AlertCircle } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
 import DeadlineEditorModal from './DeadlineEditorModal';
 
@@ -101,14 +101,14 @@ export default function CaseDeadlinesSection({
     }
   };
 
-  const getUrgencyEmoji = (urgencyLevel, daysUntil) => {
+  const getUrgencyIcon = (urgencyLevel, daysUntil) => {
     if (urgencyLevel === 'URGENT' || (daysUntil !== null && daysUntil <= 7)) {
-      return '🔴';
+      return <AlertCircle className="w-4 h-4 text-red-500 inline-block align-text-bottom" />;
     }
     if (urgencyLevel === 'HIGH' || (daysUntil !== null && daysUntil <= 30)) {
-      return '🟡';
+      return <AlertCircle className="w-4 h-4 text-amber-500 inline-block align-text-bottom" />;
     }
-    return '';
+    return null;
   };
 
   const getUrgencyText = (urgencyLevel, daysUntil) => {
@@ -189,7 +189,7 @@ export default function CaseDeadlinesSection({
               {/* Trial Date Section */}
               {config.trial_date && (
                 <div className="text-sm text-owl-blue-900 font-medium">
-                  <span className="text-base">🔴</span> TRIAL DATE: {formatDate(config.trial_date)}
+                  <AlertCircle className="w-4 h-4 text-red-500 inline-block align-text-bottom" /> TRIAL DATE: {formatDate(config.trial_date)}
                   {config.trial_court && ` | ${config.trial_court}`}
                 </div>
               )}
@@ -198,13 +198,13 @@ export default function CaseDeadlinesSection({
               {sortedDeadlines.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-semibold text-owl-blue-900 flex items-center gap-2">
-                    <span className="text-base">📅</span>
+                    <Calendar className="w-4 h-4 text-owl-blue-600 inline-block align-text-bottom" />
                     Upcoming Deadlines:
                   </h4>
                   <div className="space-y-1 text-xs text-light-700">
                     {sortedDeadlines.map((deadline) => {
                       const daysUntil = getDaysUntil(deadline.due_date);
-                      const urgencyEmoji = getUrgencyEmoji(deadline.urgency_level, daysUntil);
+                      const urgencyIcon = getUrgencyIcon(deadline.urgency_level, daysUntil);
                       const urgencyText = getUrgencyText(deadline.urgency_level, daysUntil);
                       const isPastDue = daysUntil !== null && daysUntil < 0;
                       
@@ -221,9 +221,9 @@ export default function CaseDeadlinesSection({
                           )}
                           {' — '}
                           {deadline.title}
-                          {urgencyEmoji && urgencyText && (
+                          {urgencyIcon && urgencyText && (
                             <span className="ml-1">
-                              {urgencyEmoji} {urgencyText}
+                              {urgencyIcon} {urgencyText}
                             </span>
                           )}
                         </div>

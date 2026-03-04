@@ -3352,6 +3352,7 @@ export default function App() {
           onBack={() => setAppView('caseManagement')}
           authUsername={authUsername}
           onLogoClick={() => setIsAccountDropdownOpen(prev => !prev)}
+          onViewDocument={handleViewDocument}
         />
         {isAccountDropdownOpen && (
           <div
@@ -3542,13 +3543,13 @@ export default function App() {
             className="group focus:outline-none relative"
             type="button"
           >
-            <img src="/owl-logo.webp" alt="Owl Consultancy Group" className="w-40 h-40 object-contain" />
+            <img src="/owl-logo.webp" alt="Owl Consultancy Group" className="w-10 h-10 object-contain" />
             
             {isAccountDropdownOpen && (
               <div
                 ref={accountDropdownRef}
                 className="absolute z-50 mt-2 w-48 rounded-lg bg-white shadow-lg border border-light-200 py-2 left-0"
-                style={{ top: '70px' }}
+                style={{ top: '44px' }}
               >
                 {isAuthenticated ? (
                   <div className="px-3 py-1 space-y-1 text-sm text-dark-600">

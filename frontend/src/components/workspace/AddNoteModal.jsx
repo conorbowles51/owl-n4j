@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Upload, FileText, Loader2 } from 'lucide-react';
-import { evidenceAPI } from '../../services/api';
+import { evidenceAPI, workspaceAPI } from '../../services/api';
 
 /**
  * Add Note Modal
@@ -52,8 +52,16 @@ export default function AddNoteModal({ isOpen, onClose, caseId, onUploaded }) {
         fileList.items.add(file);
 
         await evidenceAPI.upload(caseId, fileList.files);
+
+        // Also create an investigative note so it appears in the notes section
+        try {
+          await workspaceAPI.createNote(caseId, { content: `[Quick Action Note]\n${noteText}` });
+          window.dispatchEvent(new Event('notes-refresh'));
+        } catch (noteErr) {
+          console.warn('Created file note but failed to sync to investigative notes:', noteErr);
+        }
       }
-      
+
       // Reset form
       setSelectedFiles([]);
       setNoteText('');

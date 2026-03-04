@@ -1091,8 +1091,8 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                   {file.status === 'processed' && (
                     <CheckCircle2 className="w-4 h-4 text-green-600" />
                   )}
-                  {file.status === 'duplicate' && (
-                    <Copy className="w-4 h-4 text-orange-600" />
+                  {file.is_duplicate && (
+                    <Copy className="w-4 h-4 text-violet-600" />
                   )}
                   {file.status === 'failed' && (
                     <AlertTriangle className="w-4 h-4 text-red-600" />
@@ -1180,7 +1180,7 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                     ))}
                   </div>
                 </div>
-              ) : file.status === 'duplicate' && file.duplicate_of ? (
+              ) : file.is_duplicate && file.duplicate_of ? (
                 <div className="mt-3 pt-3 border-t border-light-200">
                   <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
                     <Copy className="w-3 h-3" />

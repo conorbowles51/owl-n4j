@@ -466,6 +466,12 @@ export const graphAPI = {
       method: 'DELETE',
     }),
 
+  geocodeNode: (nodeKey, caseId, address) =>
+    fetchAPI(`/graph/nodes/${encodeURIComponent(nodeKey)}/geocode`, {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId, address }),
+    }),
+
   /**
    * Get influential nodes using PageRank algorithm
    * @param {string} caseId - REQUIRED: Case ID for case-specific data
@@ -954,6 +960,15 @@ export const financialAPI = {
         case_id: caseId,
         new_amount: newAmount,
         correction_reason: correctionReason,
+      }),
+    }),
+
+  bulkCorrect: (caseId, corrections) =>
+    fetchAPI('/financial/transactions/bulk-correct', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        corrections,
       }),
     }),
 
@@ -1562,6 +1577,17 @@ export const evidenceAPI = {
       method: 'DELETE',
     });
   },
+
+  setRelevance: (evidenceIds, isRelevant) =>
+    fetchAPI('/evidence/relevance', {
+      method: 'PUT',
+      body: JSON.stringify({ evidence_ids: evidenceIds, is_relevant: isRelevant }),
+    }),
+
+  setRelevanceFromTheory: (caseId, theoryId) =>
+    fetchAPI(`/evidence/relevance/from-theory?case_id=${encodeURIComponent(caseId)}&theory_id=${encodeURIComponent(theoryId)}`, {
+      method: 'PUT',
+    }),
 };
 
 /**

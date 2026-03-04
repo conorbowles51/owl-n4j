@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { X, Save } from 'lucide-react';
+import { X, Save, Link as LinkIcon } from 'lucide-react';
 
 /**
  * Add Investigative Note Modal
- * 
+ *
  * Modal for adding investigative notes (thoughts and insights)
+ * Supports optional URL attachment.
  */
 export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
   const [content, setContent] = useState('');
+  const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -16,8 +18,12 @@ export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
 
     setSaving(true);
     try {
-      await onSave(content.trim());
+      const noteContent = url.trim()
+        ? `${content.trim()}\n\nReference: ${url.trim()}`
+        : content.trim();
+      await onSave(noteContent);
       setContent('');
+      setUrl('');
       onClose();
     } catch (err) {
       console.error('Failed to save note:', err);
@@ -60,6 +66,21 @@ export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
             <p className="text-xs text-light-500 mt-1">
               This note will be saved with a timestamp and can be attached to theories.
             </p>
+          </div>
+
+          <div className="mt-3">
+            <label className="block text-sm font-medium text-owl-blue-900 mb-1">
+              <LinkIcon className="w-3.5 h-3.5 inline-block align-text-bottom mr-1" />
+              Reference URL (optional)
+            </label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://..."
+              className="w-full px-3 py-2 border border-light-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-blue-500 text-sm"
+              disabled={saving}
+            />
           </div>
 
           <div className="flex gap-2 pt-4 border-t border-light-200 mt-4">

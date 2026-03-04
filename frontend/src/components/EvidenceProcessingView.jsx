@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import {
   UploadCloud,
   FileText,
@@ -19,6 +19,7 @@ import {
   FolderOpen,
   HardDrive,
   Radio,
+  Copy,
 } from 'lucide-react';
 import { evidenceAPI, profilesAPI, filesystemAPI, backgroundTasksAPI } from '../services/api';
 import { useCasePermissions } from '../contexts/CasePermissionContext';
@@ -59,6 +60,7 @@ export default function EvidenceProcessingView({
   const logContainerRef = useRef(null);
   const completedWiretapTaskIdsRef = useRef(new Set()); // Track completed wiretap task IDs to avoid duplicate refreshes
   const completedUploadTaskIdsRef = useRef(new Set()); // Track completed upload task IDs to avoid duplicate refreshes
+  const completedProcessingTaskIdsRef = useRef(new Set()); // Track completed evidence_processing task IDs to avoid duplicate refreshes
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [lastProcessedVersion, setLastProcessedVersion] = useState(null);
   const [showBackgroundTasksPanel, setShowBackgroundTasksPanel] = useState(false);
@@ -231,6 +233,7 @@ export default function EvidenceProcessingView({
       // Reset completed task IDs when case changes
       completedWiretapTaskIdsRef.current.clear();
       completedUploadTaskIdsRef.current.clear();
+      completedProcessingTaskIdsRef.current.clear();
       return;
     }
     
@@ -280,7 +283,21 @@ export default function EvidenceProcessingView({
           }
         }
         
-        // Refresh files if any new upload tasks completed
+        // Check for evidence processing tasks that just completed
+        const processingTasks = (tasks?.tasks || []).filter(
+          task => task.task_type === 'evidence_processing'
+        );
+
+        for (const task of processingTasks) {
+          if (task.status === 'completed' && !completedProcessingTaskIdsRef.current.has(task.id)) {
+            shouldRefreshFiles = true;
+            completedProcessingTaskIdsRef.current.add(task.id);
+          } else if (task.status === 'completed' || task.status === 'failed') {
+            completedProcessingTaskIdsRef.current.add(task.id);
+          }
+        }
+
+        // Refresh files if any new upload or processing tasks completed
         if (shouldRefreshFiles) {
           await loadFiles();
         }
@@ -492,7 +509,7 @@ export default function EvidenceProcessingView({
         
         // Calculate statistics
         const processedCount = folderEvidenceFiles.filter(f => 
-          f.status === 'processed' || f.status === 'duplicate'
+          f.status === 'processed'
         ).length;
         const unprocessedCount = folderEvidenceFiles.filter(f => 
           f.status === 'unprocessed' || f.status === 'failed'
@@ -721,7 +738,7 @@ export default function EvidenceProcessingView({
           
           // Calculate statistics
           const processedCount = folderEvidenceFiles.filter(f => 
-            f.status === 'processed' || f.status === 'duplicate'
+            f.status === 'processed'
           ).length;
           const unprocessedCount = folderEvidenceFiles.filter(f => 
             f.status === 'unprocessed' || f.status === 'failed'
@@ -862,11 +879,31 @@ export default function EvidenceProcessingView({
     }
     
     const fileIds = Array.from(allSelectedIds);
-    
+    const BATCH_SIZE = 50;
+
+    // Warn if large selection — will be auto-batched
+    if (fileIds.length > BATCH_SIZE) {
+      const batches = Math.ceil(fileIds.length / BATCH_SIZE);
+      if (!window.confirm(
+        `You selected ${fileIds.length} files. Processing will be split into ${batches} batches of up to ${BATCH_SIZE} files each. Continue?`
+      )) {
+        return;
+      }
+    }
+
     // Always use background processing - ingestion with AI extraction can take a long time
     try {
-      const res = await evidenceAPI.processBackground(caseId, fileIds, selectedProfile, maxWorkers, imageProvider);
-      alert(`Processing ${fileIds.length} file(s) in the background with ${maxWorkers} parallel worker(s). Check the Background Tasks panel for progress.`);
+      // Split into batches of BATCH_SIZE
+      const batches = [];
+      for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
+        batches.push(fileIds.slice(i, i + BATCH_SIZE));
+      }
+
+      for (const batch of batches) {
+        await evidenceAPI.processBackground(caseId, batch, selectedProfile, maxWorkers, imageProvider);
+      }
+
+      alert(`Processing ${fileIds.length} file(s) in ${batches.length} batch(es) with ${maxWorkers} parallel worker(s). Check the Background Tasks panel for progress.`);
       clearSelection();
       await loadFiles();
     } catch (err) {
@@ -952,46 +989,34 @@ export default function EvidenceProcessingView({
     return Array.from(types).sort();
   };
 
-  // Filter unprocessed files
+  // Filter unprocessed files (not LLM processed)
   const filterUnprocessed = (fileList) => {
     return fileList.filter((file) => {
-      // Status filter
       if (file.status !== 'unprocessed' && file.status !== 'failed') return false;
-      
-      // Filename filter
       if (unprocessedFilter && !file.original_filename.toLowerCase().includes(unprocessedFilter.toLowerCase())) {
         return false;
       }
-      
-      // Type filter
       if (unprocessedTypeFilter) {
         const ext = getFileExtension(file.original_filename);
         const type = getFileType(ext);
         if (type !== unprocessedTypeFilter) return false;
       }
-      
       return true;
     });
   };
 
-  // Filter processed files
+  // Filter processed files (LLM processed)
   const filterProcessed = (fileList) => {
     return fileList.filter((file) => {
-      // Status filter
-      if (file.status !== 'processed' && file.status !== 'duplicate') return false;
-      
-      // Filename filter
+      if (file.status !== 'processed') return false;
       if (processedFilter && !file.original_filename.toLowerCase().includes(processedFilter.toLowerCase())) {
         return false;
       }
-      
-      // Type filter
       if (processedTypeFilter) {
         const ext = getFileExtension(file.original_filename);
         const type = getFileType(ext);
         if (type !== processedTypeFilter) return false;
       }
-      
       return true;
     });
   };
@@ -1000,8 +1025,17 @@ export default function EvidenceProcessingView({
     (f) => f.status === 'unprocessed' || f.status === 'failed'
   );
   const processed = files.filter(
-    (f) => f.status === 'processed' || f.status === 'duplicate'
+    (f) => f.status === 'processed'
   );
+  const hashCopyCount = useMemo(() => {
+    const counts = {};
+    for (const f of files) {
+      if (f.sha256) {
+        counts[f.sha256] = (counts[f.sha256] || 0) + 1;
+      }
+    }
+    return counts;
+  }, [files]);
 
   const filteredUnprocessed = filterUnprocessed(unprocessed);
   const filteredProcessed = filterProcessed(processed);
@@ -1646,6 +1680,11 @@ export default function EvidenceProcessingView({
                             <span className="font-medium text-sm text-owl-blue-900 truncate">
                               {file.original_filename}
                             </span>
+                            {file.sha256 && hashCopyCount[file.sha256] > 1 && (
+                              <span className="text-[10px] text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded font-medium flex-shrink-0" title={`${hashCopyCount[file.sha256]} copies of this file in the system`}>
+                                ×{hashCopyCount[file.sha256]}
+                              </span>
+                            )}
                           </div>
                           <span className="text-xs text-light-600">
                             {humanSize(file.size)}
@@ -1688,7 +1727,7 @@ export default function EvidenceProcessingView({
             <div className="p-4 border-b border-light-200 bg-white flex-shrink-0">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-owl-blue-900">
-                  Processed & Duplicate Files
+                  LLM Processed Files
                 </h3>
                 <div className="flex items-center gap-2 text-xs text-light-600">
                   <span>
@@ -1742,7 +1781,7 @@ export default function EvidenceProcessingView({
               {filteredProcessed.length === 0 ? (
                 <p className="text-sm text-light-600 italic">
                   {processed.length === 0
-                    ? 'No processed or duplicate files yet.'
+                    ? 'No LLM processed files yet.'
                     : 'No files match the current filters.'}
                 </p>
               ) : (
@@ -1768,9 +1807,16 @@ export default function EvidenceProcessingView({
                         <FileText className="w-4 h-4 text-owl-blue-700 mt-0.5" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
-                            <span className="font-medium text-sm text-owl-blue-900 truncate">
-                              {file.original_filename}
-                            </span>
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="font-medium text-sm text-owl-blue-900 truncate">
+                                {file.original_filename}
+                              </span>
+                              {file.sha256 && hashCopyCount[file.sha256] > 1 && (
+                                <span className="text-[10px] text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded font-medium flex-shrink-0" title={`${hashCopyCount[file.sha256]} copies of this file in the system`}>
+                                  ×{hashCopyCount[file.sha256]}
+                                </span>
+                              )}
+                            </div>
                             <span className="text-xs text-light-600">
                               {humanSize(file.size)}
                             </span>
@@ -1778,19 +1824,13 @@ export default function EvidenceProcessingView({
                           <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-light-600">
                             <span className="inline-flex items-center gap-1 text-green-700">
                               <CheckCircle2 className="w-3 h-3" />
-                              {file.status === 'duplicate' ? 'Duplicate' : 'Processed'}
+                              Processed
                             </span>
                             <span>Uploaded: {formatDateTime(file.created_at)}</span>
                             {file.processed_at && (
                               <>
                                 <span>•</span>
                                 <span>Processed: {formatDateTime(file.processed_at)}</span>
-                              </>
-                            )}
-                            {file.duplicate_of && (
-                              <>
-                                <span>•</span>
-                                <span>Duplicate of {file.duplicate_of}</span>
                               </>
                             )}
                           </div>

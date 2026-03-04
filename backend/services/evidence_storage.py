@@ -64,6 +64,26 @@ class EvidenceStorage:
     def __init__(self) -> None:
         self._records: Dict[str, dict] = _load_evidence()
         self._lock = RLock()  # Reentrant lock for thread-safe operations
+        self._migrate_records()
+
+    def _migrate_records(self) -> None:
+        """Migrate legacy records: separate 'duplicate' status into is_duplicate flag,
+        and ensure is_relevant field exists."""
+        changed = False
+        with self._lock:
+            for rec in self._records.values():
+                if "is_relevant" not in rec:
+                    rec["is_relevant"] = False
+                    changed = True
+                if "is_duplicate" not in rec:
+                    if rec.get("status") == "duplicate":
+                        rec["is_duplicate"] = True
+                        rec["status"] = "processed" if rec.get("processed_at") else "unprocessed"
+                    else:
+                        rec["is_duplicate"] = bool(rec.get("duplicate_of"))
+                    changed = True
+            if changed:
+                self._persist()
 
     # ------------- Basic accessors -------------
 
@@ -175,10 +195,10 @@ class EvidenceStorage:
                     evidence_id = f"ev_{sha256[:12]}_{suffix}"
                     suffix += 1
 
-                status = "unprocessed"
                 duplicate_of = None
+                is_duplicate = False
                 if duplicate_rec:
-                    status = "duplicate"
+                    is_duplicate = True
                     duplicate_of = duplicate_rec.get("id")
 
                 record = {
@@ -189,8 +209,10 @@ class EvidenceStorage:
                     "stored_path": str(stored_path),
                     "size": size,
                     "sha256": sha256,
-                    "status": status,  # unprocessed | processing | processed | duplicate | failed
+                    "status": "unprocessed",  # unprocessed | processing | processed | failed
+                    "is_duplicate": is_duplicate,
                     "duplicate_of": duplicate_of,
+                    "is_relevant": False,
                     "created_at": now,
                     "processed_at": None,
                     "last_error": None,
@@ -246,14 +268,23 @@ class EvidenceStorage:
                     rec["status"] = "failed"
                     rec["last_error"] = error
                 else:
-                    # Preserve 'duplicate' label for duplicate records so the UI
-                    # continues to show them as duplicates even after processing.
-                    # Non-duplicate records are marked as 'processed'.
-                    if rec.get("status") != "duplicate":
-                        rec["status"] = "processed"
+                    rec["status"] = "processed"
                     rec["last_error"] = None
                 rec["processed_at"] = now
             self._persist()
+
+    def set_relevance(self, evidence_ids: List[str], is_relevant: bool) -> int:
+        """Mark evidence files as relevant or non-relevant. Returns count updated."""
+        updated = 0
+        with self._lock:
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if rec:
+                    rec["is_relevant"] = is_relevant
+                    updated += 1
+            if updated:
+                self._persist()
+        return updated
 
 
 # Singleton instance

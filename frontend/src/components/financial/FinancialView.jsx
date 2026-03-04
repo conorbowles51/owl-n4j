@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, DollarSign, RefreshCw, AlertCircle, Download } from 'lucide-react';
+import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload } from 'lucide-react';
 import { financialAPI } from '../../services/api';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
 import FinancialTable from './FinancialTable';
 import FinancialFilterPanel from './FinancialFilterPanel';
 import AddCategoryModal from './AddCategoryModal';
+import BulkCorrectionModal from './BulkCorrectionModal';
 
 export default function FinancialView({ caseId, onNodeSelect }) {
   const [transactions, setTransactions] = useState([]);
@@ -26,8 +27,14 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   // Selection state for batch operations
   const [selectedKeys, setSelectedKeys] = useState([]);
 
+  // Search state
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Add category modal
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+
+  // Bulk correction modal
+  const [showBulkCorrectionModal, setShowBulkCorrectionModal] = useState(false);
 
   // Derived helpers from category objects
   const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
@@ -107,9 +114,18 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         ].filter(Boolean).map(f => f.toLowerCase());
         if (!fields.some(f => f.includes(q))) return false;
       }
+      if (searchTerm.trim()) {
+        const st = searchTerm.toLowerCase();
+        const nameMatch = (t.name || '').toLowerCase().includes(st);
+        const fromMatch = (t.from_entity?.name || '').toLowerCase().includes(st);
+        const toMatch = (t.to_entity?.name || '').toLowerCase().includes(st);
+        const purposeMatch = (t.purpose || '').toLowerCase().includes(st);
+        const notesMatch = (t.notes || '').toLowerCase().includes(st);
+        if (!nameMatch && !fromMatch && !toMatch && !purposeMatch && !notesMatch) return false;
+      }
       return true;
     });
-  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, entityFilter, searchQuery]);
+  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, entityFilter, searchQuery, searchTerm]);
 
   // Compute summary from filtered transactions — context-aware based on entity filter
   const filteredSummary = useMemo(() => {
@@ -323,6 +339,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     }
     if (searchQuery && searchQuery.trim()) {
       params.append('search', searchQuery.trim());
+    } else if (searchTerm.trim()) {
+      params.append('search', searchTerm.trim());
     }
     params.append('include_entity_notes', 'true');
     window.open(`/api/financial/export/pdf?${params.toString()}`, '_blank');
@@ -395,7 +413,33 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             {filteredTransactions.length} of {transactions.length} transactions
           </span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
+            <input
+              type="text"
+              placeholder="Search transactions..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-48 text-xs pl-7 pr-7 py-1.5 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-light-400 hover:text-light-600"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowBulkCorrectionModal(true)}
+            className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
+            title="Import Bulk Corrections"
+          >
+            <Upload className="w-3.5 h-3.5" />
+          </button>
           <button
             onClick={handleExportPDF}
             className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
@@ -410,6 +454,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
+          </div>
         </div>
       </div>
 
@@ -476,6 +521,15 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         onClose={() => setShowAddCategoryModal(false)}
         onSubmit={handleCreateCategory}
         existingNames={categoryNames}
+      />
+
+      {/* Bulk Correction Modal */}
+      <BulkCorrectionModal
+        isOpen={showBulkCorrectionModal}
+        onClose={() => setShowBulkCorrectionModal(false)}
+        caseId={caseId}
+        transactions={transactions}
+        onComplete={loadData}
       />
     </div>
   );

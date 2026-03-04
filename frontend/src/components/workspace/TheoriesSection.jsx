@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, Plus, Edit2, Trash2, Lightbulb, Focus, Link2, Network } from 'lucide-react';
-import { workspaceAPI } from '../../services/api';
+import { ChevronDown, ChevronRight, Plus, Edit2, Trash2, Lightbulb, Focus, Link2, Network, Star, Loader2 } from 'lucide-react';
+import { workspaceAPI, evidenceAPI } from '../../services/api';
 import TheoryEditor from './TheoryEditor';
 import AttachedItemsModal from './AttachedItemsModal';
 import BuildTheoryGraphModal from './BuildTheoryGraphModal';
@@ -25,6 +25,7 @@ export default function TheoriesSection({
   const [showEditor, setShowEditor] = useState(false);
   const [attachedModalTheory, setAttachedModalTheory] = useState(null);
   const [buildGraphTheory, setBuildGraphTheory] = useState(null);
+  const [markingRelevant, setMarkingRelevant] = useState(null);
 
   useEffect(() => {
     const loadTheories = async () => {
@@ -157,6 +158,21 @@ export default function TheoriesSection({
     }
   };
 
+  const handleMarkLinkedRelevant = async (theory) => {
+    setMarkingRelevant(theory.theory_id);
+    try {
+      const result = await evidenceAPI.setRelevanceFromTheory(caseId, theory.theory_id);
+      const count = result?.updated || 0;
+      window.dispatchEvent(new CustomEvent('documents-refresh'));
+      alert(`Marked ${count} linked file${count === 1 ? '' : 's'} as relevant.`);
+    } catch (err) {
+      console.error('Failed to mark files as relevant:', err);
+      alert('Failed to mark linked files as relevant.');
+    } finally {
+      setMarkingRelevant(null);
+    }
+  };
+
   const getConfidenceColor = (score) => {
     if (!score) return 'text-light-600';
     if (score >= 80) return 'text-green-600';
@@ -253,6 +269,16 @@ export default function TheoriesSection({
                       </div>
                     )}
                     <div className="flex items-center gap-2 mt-3">
+                      <button
+                        onClick={() => handleMarkLinkedRelevant(theory)}
+                        disabled={markingRelevant === theory.theory_id}
+                        className="p-1 hover:bg-amber-100 rounded transition-colors disabled:opacity-50"
+                        title="Mark all linked files as relevant"
+                      >
+                        {markingRelevant === theory.theory_id
+                          ? <Loader2 className="w-3 h-3 text-amber-600 animate-spin" />
+                          : <Star className="w-3 h-3 text-amber-600" />}
+                      </button>
                       <button
                         onClick={() => setBuildGraphTheory(theory)}
                         className="p-1 hover:bg-owl-blue-100 rounded transition-colors"

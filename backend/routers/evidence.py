@@ -32,6 +32,10 @@ from config import BASE_DIR
 from datetime import datetime
 
 
+# Hard limit on file IDs per single processing request.
+# Clients must split larger batches into chunks of this size.
+MAX_BATCH_SIZE = 50
+
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
 
 
@@ -281,6 +285,12 @@ async def process_evidence_background(
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
+
+    if len(request.file_ids) > MAX_BATCH_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Too many files ({len(request.file_ids)}). Maximum {MAX_BATCH_SIZE} files per request. Please batch your requests.",
+        )
 
     try:
         if request.case_id:
@@ -994,6 +1004,74 @@ async def get_video_frame_image(
         raise HTTPException(status_code=404, detail="Frame not found. Extract frames first via GET /{evidence_id}/frames")
 
     return FileResponse(frame_path, media_type="image/jpeg")
+
+
+class SetRelevanceRequest(BaseModel):
+    evidence_ids: List[str]
+    is_relevant: bool
+
+
+@router.put("/relevance")
+async def set_evidence_relevance(
+    body: SetRelevanceRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Mark evidence files as relevant or non-relevant."""
+    if not body.evidence_ids:
+        raise HTTPException(status_code=400, detail="No evidence IDs provided")
+    updated = evidence_storage.set_relevance(body.evidence_ids, body.is_relevant)
+    return {"updated": updated, "is_relevant": body.is_relevant}
+
+
+@router.put("/relevance/from-theory")
+async def set_relevance_from_theory(
+    case_id: str = Query(..., description="Case ID"),
+    theory_id: str = Query(..., description="Theory ID"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Mark all evidence files linked to a theory as relevant.
+    Collects IDs from attached_evidence_ids, attached_document_ids,
+    and any evidence files referenced by graph nodes in the theory's snapshot.
+    """
+    from services.workspace_service import workspace_service
+
+    theory = workspace_service.get_theory(case_id, theory_id)
+    if not theory:
+        raise HTTPException(status_code=404, detail="Theory not found")
+
+    evidence_ids = set()
+
+    for field in ("attached_evidence_ids", "attached_document_ids"):
+        for eid in (theory.get(field) or []):
+            evidence_ids.add(eid)
+
+    snapshot_id = theory.get("attached_snapshot_ids", [None])
+    if snapshot_id and isinstance(snapshot_id, list):
+        snapshot_id = snapshot_id[0] if snapshot_id else None
+    if snapshot_id:
+        try:
+            from services.snapshot_storage import snapshot_storage
+            snapshot = snapshot_storage.get(snapshot_id)
+            if snapshot:
+                nodes = snapshot.get("graph_data", {}).get("nodes", [])
+                all_files = evidence_storage.list_files(case_id=case_id)
+                filename_to_id = {f.get("original_filename", "").lower(): f["id"] for f in all_files}
+                for node in nodes:
+                    for prop_key in ("source", "source_doc", "source_document", "file"):
+                        val = node.get("properties", {}).get(prop_key)
+                        if val and isinstance(val, str):
+                            match = filename_to_id.get(val.lower())
+                            if match:
+                                evidence_ids.add(match)
+        except Exception:
+            pass
+
+    updated = 0
+    if evidence_ids:
+        updated = evidence_storage.set_relevance(list(evidence_ids), True)
+
+    return {"updated": updated, "theory_id": theory_id, "evidence_ids_marked": list(evidence_ids)}
 
 
 @router.get("/wiretap/processed")

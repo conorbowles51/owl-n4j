@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   X, User, Building2, Wallet, MapPin, FileText, ArrowRight, ArrowLeft,
   CheckCircle2, AlertTriangle, ExternalLink, Quote, ChevronDown, ChevronUp,
-  Star, CheckSquare, UserCheck
+  Star, CheckSquare, UserCheck, Loader2
 } from 'lucide-react';
 import { graphAPI } from '../services/api';
 import { parseSearchQuery, getHighlightTerms } from '../utils/searchParser';
@@ -368,6 +368,8 @@ export default function NodeDetails({
   const [isVerifying, setIsVerifying] = useState(false);
   const [localFacts, setLocalFacts] = useState(null);
   const [localInsights, setLocalInsights] = useState(null);
+  const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodeResult, setGeocodeResult] = useState(null);
 
   const highlightTerms = useMemo(() => {
     const t = (searchTerm || '').trim();
@@ -465,7 +467,41 @@ export default function NodeDetails({
   React.useEffect(() => {
     setLocalFacts(null);
     setLocalInsights(null);
+    setGeocodeResult(null);
   }, [node.key]);
+
+  // Derive address from node properties for geocoding
+  const entityAddress = useMemo(() => {
+    const props = node.properties || {};
+    // Check common address-related properties
+    if (props.address) return props.address;
+    if (props.location) return props.location;
+    if (props.full_address) return props.full_address;
+    if (props.street_address) return props.street_address;
+    // For Location-type nodes, use the name as the address
+    if (node.type === 'Location' || node.type === 'Address' || node.type === 'Property') {
+      return node.name;
+    }
+    // Check summary for address-like content (only if type suggests it)
+    return null;
+  }, [node]);
+
+  const hasCoordinates = node.latitude || node.properties?.latitude || geocodeResult?.latitude;
+
+  const handleGeocode = async () => {
+    if (!entityAddress || !caseId) return;
+    setIsGeocoding(true);
+    setGeocodeResult(null);
+    try {
+      const result = await graphAPI.geocodeNode(node.key, caseId, entityAddress);
+      setGeocodeResult(result);
+    } catch (err) {
+      console.error('Failed to geocode:', err);
+      setGeocodeResult({ success: false, error: err.message });
+    } finally {
+      setIsGeocoding(false);
+    }
+  };
 
   return (
     <div className={containerClass}>
@@ -515,6 +551,34 @@ export default function NodeDetails({
             <p className="text-sm text-light-800 mt-1 leading-relaxed">
               {highlightTerms.length ? highlightMatchedText(node.summary, highlightTerms, '') : node.summary}
             </p>
+          </div>
+        )}
+
+        {/* Geocode Button - shown for entities with address-like properties */}
+        {entityAddress && (
+          <div>
+            {hasCoordinates ? (
+              <div className="flex items-center gap-1.5 text-xs text-green-700 bg-green-50 px-2 py-1.5 rounded">
+                <MapPin className="w-3.5 h-3.5" />
+                <span>{geocodeResult?.formatted_address || node.properties?.formatted_address || 'Located on map'}</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleGeocode}
+                disabled={isGeocoding}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded border border-light-300 text-light-700 hover:bg-light-50 hover:border-owl-blue-400 transition-colors disabled:opacity-50"
+              >
+                {isGeocoding ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <MapPin className="w-3.5 h-3.5" />
+                )}
+                {isGeocoding ? 'Locating...' : 'Locate on Map'}
+              </button>
+            )}
+            {geocodeResult && !geocodeResult.success && (
+              <p className="text-xs text-red-500 mt-1">{geocodeResult.error}</p>
+            )}
           </div>
         )}
 

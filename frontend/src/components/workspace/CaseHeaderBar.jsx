@@ -43,13 +43,13 @@ export default function CaseHeaderBar({
         <button
           type="button"
           onClick={onLogoClick || undefined}
-          className="group focus:outline-none relative flex-shrink-0"
+          className="group focus:outline-none relative flex-shrink-0 overflow-hidden"
           title="Account"
         >
           <img
             src="/owl-logo.webp"
             alt="Owl Consultancy Group"
-            className="w-40 h-40 object-contain"
+            className="w-10 h-10 object-contain"
           />
         </button>
 

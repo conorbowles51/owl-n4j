@@ -3691,45 +3691,23 @@ class Neo4jService:
     def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str) -> Dict:
         """Update a transaction amount, preserving the original value for audit trail."""
         with self._driver.session() as session:
-            # First fetch current amount
-            fetch_result = session.run(
+            # Single query: conditionally preserve original_amount on first correction
+            result = session.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
-                RETURN n.amount AS amount, n.original_amount AS original_amount
+                SET n.original_amount = CASE WHEN n.original_amount IS NULL THEN n.amount ELSE n.original_amount END,
+                    n.amount = $new_amount,
+                    n.amount_corrected = true,
+                    n.correction_reason = $correction_reason
+                RETURN n.key AS key, n.amount AS amount, n.original_amount AS original_amount
                 """,
                 key=node_key,
                 case_id=case_id,
-            )
-            record = fetch_result.single()
-            if not record:
+                new_amount=new_amount,
+                correction_reason=correction_reason,
+            ).single()
+            if not result:
                 raise ValueError(f"Node not found: {node_key} in case {case_id}")
-
-            current_amount = record["amount"]
-            original_amount = record["original_amount"]
-
-            # Build SET clause: preserve original amount only on first correction
-            set_parts = [
-                "n.amount = $new_amount",
-                "n.amount_corrected = true",
-                "n.correction_reason = $correction_reason",
-            ]
-            params = {
-                "key": node_key,
-                "case_id": case_id,
-                "new_amount": new_amount,
-                "correction_reason": correction_reason,
-            }
-
-            if original_amount is None and current_amount is not None:
-                set_parts.append("n.original_amount = $current_amount")
-                params["current_amount"] = current_amount
-
-            query = f"""
-                MATCH (n {{key: $key, case_id: $case_id}})
-                SET {', '.join(set_parts)}
-                RETURN n.key AS key, n.amount AS amount, n.original_amount AS original_amount
-            """
-            result = session.run(query, **params).single()
             return {
                 "success": True,
                 "key": result["key"],

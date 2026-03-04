@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronDown, ChevronRight, FileText, Focus, Pin, CheckCircle2, Calendar, X, Filter, Link2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Focus, Pin, CheckCircle2, Calendar, X, Filter, Link2, ExternalLink } from 'lucide-react';
 import { evidenceAPI, workspaceAPI } from '../../services/api';
 import FilePreview from '../FilePreview';
 import AttachToTheoryModal from './AttachToTheoryModal';
@@ -18,6 +18,7 @@ export default function AllEvidenceSection({
   pinnedItems = [],
   onRefreshPinned,
   fullHeight = false, // When true, use full height for content panel
+  onViewDocument,
 }) {
   const [allEvidence, setAllEvidence] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -193,13 +194,13 @@ export default function AllEvidenceSection({
     } else if (filter === 'processed') {
       return allEvidence.filter(f => f.status === 'processed');
     } else if (filter === 'unprocessed') {
-      return allEvidence.filter(f => f.status !== 'processed' && f.status !== 'duplicate');
+      return allEvidence.filter(f => f.status !== 'processed');
     }
     return allEvidence;
   }, [allEvidence, filter]);
 
   const processedCount = allEvidence.filter(f => f.status === 'processed').length;
-  const unprocessedCount = allEvidence.filter(f => f.status !== 'processed' && f.status !== 'duplicate').length;
+  const unprocessedCount = allEvidence.filter(f => f.status !== 'processed').length;
 
   return (
     <div className={`border-b border-light-200 ${fullHeight ? 'h-full flex flex-col' : ''}`}>
@@ -385,6 +386,15 @@ export default function AllEvidenceSection({
                           fileType="file"
                           onClose={() => setExpandedFileId(null)}
                         />
+                        {onViewDocument && (
+                          <button
+                            onClick={() => onViewDocument(file.original_filename || file.filename)}
+                            className="mt-2 text-xs text-owl-blue-600 hover:text-owl-blue-800 hover:underline flex items-center gap-1"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            Open in Document Viewer
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
