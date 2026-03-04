@@ -1087,8 +1087,16 @@ const GraphView = forwardRef(function GraphView({
         nodeId="key"
         nodeCanvasObject={paintNode}
         nodePointerAreaPaint={(node, color, ctx) => {
+          // Match visual radius from paintNode so click area covers the rendered node
+          const isNodeSelected = selectedNodes.some(n => n.key === node.key);
+          let baseR = isNodeSelected ? 8 : 6;
+          if (node.confidence !== undefined && node.confidence !== null) {
+            baseR = baseR * (0.75 + node.confidence * 1.25);
+          }
+          // Minimum 12px radius with padding for easier clicking
+          const clickRadius = Math.max(baseR * 1.3, 12);
           ctx.beginPath();
-          ctx.arc(node.x, node.y, 10, 0, 2 * Math.PI);
+          ctx.arc(node.x, node.y, clickRadius, 0, 2 * Math.PI);
           ctx.fillStyle = color;
           ctx.fill();
         }}

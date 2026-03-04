@@ -99,6 +99,10 @@ export default function EvidenceProcessingView({
   // Image processing provider: "tesseract" (local OCR) or "openai" (GPT-4 Vision)
   const [imageProvider, setImageProvider] = useState('tesseract');
 
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, filename } or null
+  const [deleting, setDeleting] = useState(false);
+
   // Simple polling for ingestion logs while on this screen
   const loadLogs = useCallback(async () => {
     if (!caseId) return;
@@ -888,6 +892,33 @@ export default function EvidenceProcessingView({
     return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   };
 
+  // Handle deleting an evidence file
+  const handleDeleteFile = async (fileId, filename) => {
+    setDeleting(true);
+    setError(null);
+    try {
+      const result = await evidenceAPI.delete(fileId, caseId, true);
+      // Refresh file list
+      await loadFiles();
+      setDeleteConfirm(null);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(fileId);
+        return next;
+      });
+      // Log summary
+      const recycledCount = result?.exclusive_entities_recycled?.length || 0;
+      if (recycledCount > 0) {
+        console.log(`Deleted ${filename}: ${recycledCount} exclusive entities moved to recycling bin`);
+      }
+    } catch (err) {
+      console.error('Failed to delete file:', err);
+      setError(err.message || 'Failed to delete file');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   // Helper function to get file extension
   const getFileExtension = (filename) => {
     const parts = filename.split('.');
@@ -1633,6 +1664,18 @@ export default function EvidenceProcessingView({
                           )}
                         </div>
                       </div>
+                      {canUploadEvidence && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirm({ id: file.id, filename: file.original_filename });
+                          }}
+                          className="p-1.5 text-light-400 hover:text-red-500 rounded hover:bg-red-50 transition-colors flex-shrink-0"
+                          title="Delete file"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1753,6 +1796,18 @@ export default function EvidenceProcessingView({
                           </div>
                         </div>
                       </div>
+                      {canUploadEvidence && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirm({ id: file.id, filename: file.original_filename });
+                          }}
+                          className="p-1.5 text-light-400 hover:text-red-500 rounded hover:bg-red-50 transition-colors flex-shrink-0 self-center"
+                          title="Delete file"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1761,6 +1816,59 @@ export default function EvidenceProcessingView({
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="p-2 rounded-full bg-red-100">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-light-900">Delete Evidence File</h3>
+                <p className="text-sm text-light-600 mt-1">
+                  Are you sure you want to delete <strong>{deleteConfirm.filename}</strong>?
+                </p>
+              </div>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-md p-3 mb-4">
+              <p className="text-xs text-amber-800">
+                <strong>This will:</strong>
+              </p>
+              <ul className="text-xs text-amber-700 mt-1 ml-4 list-disc space-y-0.5">
+                <li>Remove the file from the system</li>
+                <li>Delete the document from the knowledge graph</li>
+                <li>Move entities exclusive to this file to the recycling bin</li>
+                <li>Entities shared with other files will be kept</li>
+              </ul>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirm(null)}
+                className="px-4 py-2 text-sm border border-light-300 rounded-md hover:bg-light-100"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteFile(deleteConfirm.id, deleteConfirm.filename)}
+                disabled={deleting}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center gap-2"
+              >
+                {deleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  'Delete File'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ingestion Log */}
       <div className="border-t border-light-200 bg-white px-6 py-4">

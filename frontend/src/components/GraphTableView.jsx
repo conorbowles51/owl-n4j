@@ -8,6 +8,7 @@ import EditNodeModal from './EditNodeModal';
 import AddNodeModal from './AddNodeModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 import CreateRelationshipModal from './CreateRelationshipModal';
+import RecycleBinPanel from './RecycleBinPanel';
 import { graphAPI } from '../services/api';
 
 const PREFERRED_COLUMN_ORDER = ['key', 'name', 'type', 'summary', 'notes'];
@@ -203,6 +204,7 @@ export default function GraphTableView({
   const [isDeleting, setIsDeleting] = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
   const [relationshipSourceNodes, setRelationshipSourceNodes] = useState([]);
+  const [showRecycleBin, setShowRecycleBin] = useState(false);
   
   // Restore selectedPanels from persisted state
   const [selectedPanels, setSelectedPanels] = useState(() => {
@@ -1358,6 +1360,14 @@ export default function GraphTableView({
             <Trash2 className="w-4 h-4" />
             Delete
           </button>
+          <button
+            onClick={() => setShowRecycleBin(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-light-300 text-light-700 rounded hover:bg-light-100 transition-colors text-sm font-medium"
+            title="View recycling bin (deleted entities)"
+          >
+            <Trash2 className="w-4 h-4" />
+            Bin
+          </button>
         </div>
       </div>
       
@@ -1592,6 +1602,15 @@ export default function GraphTableView({
           onClose={() => setShowBulkEditModal(false)}
         />
       )}
+
+      <RecycleBinPanel
+        caseId={caseId}
+        isOpen={showRecycleBin}
+        onClose={() => setShowRecycleBin(false)}
+        onRestored={() => {
+          if (onGraphRefresh) onGraphRefresh();
+        }}
+      />
     </div>
   );
 }

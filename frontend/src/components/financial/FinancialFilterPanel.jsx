@@ -119,6 +119,8 @@ export default function FinancialFilterPanel({
   onToggleExpand,
   categoryColorMap = {},
   onAddCategory,
+  searchQuery = '',
+  onSearchChange,
 }) {
   const selectedTypeCount = selectedTypes.size;
   const totalTypeCount = transactionTypes.length;
@@ -224,8 +226,30 @@ export default function FinancialFilterPanel({
             </div>
           </div>
 
-          {/* Date range + Entity filter */}
+          {/* Search + Date range + Entity filter */}
           <div className="flex items-center gap-4 flex-wrap">
+            {onSearchChange && (
+              <div className="flex items-center gap-2">
+                <div className="relative">
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name, entity, notes..."
+                    value={searchQuery}
+                    onChange={(e) => onSearchChange(e.target.value)}
+                    className="text-xs pl-7 pr-7 py-1.5 w-56 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => onSearchChange('')}
+                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-light-400 hover:text-light-600 rounded"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3">
               <span className="text-xs text-light-600 font-medium">Date range:</span>
               <input

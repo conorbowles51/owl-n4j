@@ -260,16 +260,17 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"[RAG] Error getting document nodes: {e}")
             return []
 
-    def _get_entity_nodes_from_neo4j(self, entity_keys: List[str]) -> List[Dict]:
-        """Get entity nodes from Neo4j by keys."""
+    def _get_entity_nodes_from_neo4j(self, entity_keys: List[str], case_id: str = None) -> List[Dict]:
+        """Get entity nodes from Neo4j by keys, optionally filtered by case_id."""
         if not entity_keys:
             return []
 
         try:
             with self.neo4j._driver.session() as session:
-                query = """
+                case_filter = "AND n.case_id = $case_id" if case_id else ""
+                query = f"""
                 MATCH (n)
-                WHERE n.key IN $keys AND NOT n:Document
+                WHERE n.key IN $keys AND NOT n:Document {case_filter}
                 RETURN
                     id(n) AS neo4j_id,
                     n.id AS id,
@@ -280,7 +281,10 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     n.notes AS notes,
                     properties(n) AS properties
                 """
-                results = session.run(query, keys=entity_keys)
+                params = {"keys": entity_keys}
+                if case_id:
+                    params["case_id"] = case_id
+                results = session.run(query, **params)
 
                 nodes = []
                 from services.neo4j_service import parse_json_field
@@ -527,12 +531,26 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 filter_metadata=vector_filter,
             )
 
-            # Fallback for old data without case_id metadata
+            # Fallback for old data without case_id metadata —
+            # still filter by case_id via Neo4j after retrieval to prevent cross-case leakage
             if not entity_results and case_id:
                 entity_results = vector_db_service.search_entities(
                     query_embedding=query_embedding,
                     top_k=top_k,
                 )
+                # Post-filter: only keep entities that belong to this case in Neo4j
+                if entity_results:
+                    fallback_keys = [r["id"] for r in entity_results if r.get("id")]
+                    try:
+                        with self.neo4j._driver.session() as sess:
+                            case_keys = sess.run(
+                                "MATCH (n) WHERE n.key IN $keys AND n.case_id = $cid RETURN n.key AS k",
+                                keys=fallback_keys, cid=case_id,
+                            )
+                            valid_keys = {rec["k"] for rec in case_keys}
+                        entity_results = [r for r in entity_results if r.get("id") in valid_keys]
+                    except Exception:
+                        entity_results = []
 
             # Get full entity details from Neo4j (including verified_facts, connections)
             entity_keys = [r["id"] for r in entity_results if r.get("id")]
@@ -541,7 +559,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     debug_log["entity_search"] = {"enabled": True, "vector_results": 0, "enriched_entities": 0}
                 return []
 
-            enriched_entities = self._get_entity_nodes_from_neo4j(entity_keys)
+            enriched_entities = self._get_entity_nodes_from_neo4j(entity_keys, case_id=case_id)
 
             # Attach distance scores from vector search
             distance_map = {r["id"]: r.get("distance", 1.0) for r in entity_results}

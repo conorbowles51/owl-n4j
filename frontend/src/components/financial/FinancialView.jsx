@@ -20,6 +20,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [entityFilter, setEntityFilter] = useState(null); // { key, name }
+  const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
   const [filterExpanded, setFilterExpanded] = useState(true);
 
   // Selection state for batch operations
@@ -85,6 +86,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
 
   // Filter transactions client-side
   const filteredTransactions = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
     return transactions.filter(t => {
       if (selectedTypes.size > 0 && !selectedTypes.has(t.type)) return false;
       if (selectedCategories.size > 0 && !selectedCategories.has(t.financial_category || 'Unknown')) return false;
@@ -96,9 +98,18 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         const toMatch = t.to_entity && (t.to_entity.key === matchKey || t.to_entity.name === matchKey);
         if (!fromMatch && !toMatch) return false;
       }
+      // Free-text search across entity names, description, notes, purpose
+      if (q) {
+        const fields = [
+          t.name, t.purpose, t.notes, t.counterparty_details,
+          t.from_entity?.name, t.to_entity?.name,
+          t.financial_category,
+        ].filter(Boolean).map(f => f.toLowerCase());
+        if (!fields.some(f => f.includes(q))) return false;
+      }
       return true;
     });
-  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, entityFilter]);
+  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, entityFilter, searchQuery]);
 
   // Compute summary from filtered transactions — context-aware based on entity filter
   const filteredSummary = useMemo(() => {
@@ -418,6 +429,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           onToggleExpand={() => setFilterExpanded(!filterExpanded)}
           categoryColorMap={categoryColorMap}
           onAddCategory={() => setShowAddCategoryModal(true)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
         />
         <FinancialSummaryCards summary={filteredSummary} entityFilter={entityFilter} />
       </div>

@@ -1682,37 +1682,58 @@ async def undo_rejection(
 async def delete_node(
     node_key: str,
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
+    permanent: bool = Query(False, description="If True, permanently delete. If False, move to recycling bin."),
     user: dict = Depends(get_current_user)
 ):
     """
     Delete a node and all its relationships from the graph.
+    By default, entities are soft-deleted to the recycling bin for later recovery.
+    Pass permanent=true to skip the recycling bin.
 
     Args:
         node_key: Key of the node to delete
         case_id: REQUIRED - Verify node belongs to this case
+        permanent: If True, permanently delete. If False, move to recycling bin.
         user: Current authenticated user
 
     Returns:
         Dict with success status and deletion info
     """
     try:
-        result = neo4j_service.delete_node(node_key, case_id=case_id)
-        
+        if permanent:
+            result = neo4j_service.delete_node(node_key, case_id=case_id)
+            action = "Node Permanently Deleted"
+        else:
+            result = neo4j_service.soft_delete_entity(
+                node_key=node_key,
+                case_id=case_id,
+                deleted_by=user.get("username", "unknown"),
+                reason="manual_delete",
+            )
+            action = "Node Moved to Recycling Bin"
+
+        # Also clean up ChromaDB embeddings
+        try:
+            from services.vector_db_service import get_vector_db_service
+            vector_db = get_vector_db_service()
+            if vector_db:
+                vector_db.delete_entity(node_key)
+        except Exception:
+            pass  # Non-critical
+
         # Log the deletion
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
-            action="Node Deleted",
+            action=action,
             details={
                 "node_key": node_key,
-                "node_name": result.get("deleted_node", {}).get("name"),
-                "node_type": result.get("deleted_node", {}).get("type"),
-                "relationships_deleted": result.get("relationships_deleted", 0),
+                "permanent": permanent,
             },
             user=user.get("username", "unknown"),
             success=True,
         )
-        
+
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -1935,5 +1956,80 @@ async def rescan_locations(
             )
 
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Recycling Bin endpoints ---
+
+
+@router.get("/recycle-bin")
+async def list_recycled_entities(
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+):
+    """List all entities in the recycling bin for a case."""
+    try:
+        items = neo4j_service.list_recycled_entities(case_id)
+        return {"items": items, "total": len(items)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/recycle-bin/{recycle_key}/restore")
+async def restore_recycled_entity(
+    recycle_key: str,
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Restore an entity from the recycling bin back into the graph."""
+    try:
+        result = neo4j_service.restore_recycled_entity(recycle_key, case_id)
+
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Entity Restored from Recycle Bin",
+            details={
+                "recycle_key": recycle_key,
+                "restored_entity": result.get("restored_entity"),
+                "relationships_restored": result.get("relationships_restored", 0),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/recycle-bin/{recycle_key}")
+async def permanently_delete_recycled(
+    recycle_key: str,
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+):
+    """Permanently delete an entity from the recycling bin (no recovery possible)."""
+    try:
+        result = neo4j_service.permanently_delete_recycled(recycle_key, case_id)
+
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Entity Permanently Deleted from Recycle Bin",
+            details={
+                "recycle_key": recycle_key,
+                "entity": result.get("permanently_deleted"),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

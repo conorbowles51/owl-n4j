@@ -78,8 +78,8 @@ QUESTION_CLASSIFICATION_ENABLED = os.getenv("QUESTION_CLASSIFICATION_ENABLED", "
 # Re-ranking configuration
 RERANK_ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
 RERANK_METHOD = os.getenv("RERANK_METHOD", "score")  # "score" (fast) or "llm" (accurate)
-RERANK_TOP_CHUNKS = int(os.getenv("RERANK_TOP_CHUNKS", "8"))
-RERANK_TOP_ENTITIES = int(os.getenv("RERANK_TOP_ENTITIES", "6"))
+RERANK_TOP_CHUNKS = int(os.getenv("RERANK_TOP_CHUNKS", "15"))
+RERANK_TOP_ENTITIES = int(os.getenv("RERANK_TOP_ENTITIES", "10"))
 CONTEXT_TOKEN_BUDGET = int(os.getenv("CONTEXT_TOKEN_BUDGET", "80000"))  # Raised from 12K→80K for GPT-4 128K context. For Ollama <32K context, reduce to 15000.
 
 # Ingestion chunking configuration

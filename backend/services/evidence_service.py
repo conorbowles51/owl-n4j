@@ -677,10 +677,11 @@ class EvidenceService:
             raise ValueError("No evidence_ids provided")
 
         # Get file records to determine task name
+        # Filter by case_id (not owner) so any user with case access can process files
         records = [evidence_storage.get(eid) for eid in evidence_ids]
         records = [
             r for r in records
-            if r is not None and (owner is None or r.get("owner") == owner)
+            if r is not None and (case_id is None or r.get("case_id") == case_id)
         ]
 
         if not records:

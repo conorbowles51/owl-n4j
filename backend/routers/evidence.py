@@ -674,6 +674,134 @@ async def process_wiretap_folders(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/{evidence_id}")
+async def delete_evidence_file(
+    evidence_id: str,
+    case_id: str = Query(..., description="Case ID for scoping"),
+    delete_exclusive_entities: bool = Query(True, description="Also delete entities only mentioned in this file"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Delete an evidence file and optionally its exclusive entities.
+
+    This will:
+    1. Remove the evidence record from storage
+    2. Delete the physical file from disk
+    3. Delete the Document node from Neo4j
+    4. If delete_exclusive_entities=True, delete entities that are ONLY
+       mentioned in this document (not shared with other documents)
+    5. Clean up related embeddings from ChromaDB
+    6. Exclusive entities are soft-deleted to the recycling bin
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        # 1. Get the evidence record
+        record = evidence_storage.get(evidence_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Evidence file not found")
+
+        if record.get("case_id") != case_id:
+            raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
+
+        filename = record.get("original_filename", "")
+        stored_path = record.get("stored_path")
+        result_info = {
+            "evidence_id": evidence_id,
+            "filename": filename,
+            "file_deleted": False,
+            "document_deleted": False,
+            "exclusive_entities_recycled": [],
+            "shared_entities_unlinked": [],
+            "chromadb_cleaned": False,
+        }
+
+        # 2. Delete from Neo4j (Document node + exclusive entities)
+        try:
+            doc_node = neo4j_service.find_document_node(filename, case_id)
+            if doc_node:
+                doc_key = doc_node["key"]
+
+                if delete_exclusive_entities:
+                    # Find exclusive entities BEFORE deleting doc, then soft-delete them
+                    exclusive = neo4j_service.find_exclusive_entities(doc_key, case_id)
+
+                    # Soft-delete exclusive entities to recycling bin first
+                    for entity in exclusive:
+                        try:
+                            neo4j_service.soft_delete_entity(
+                                node_key=entity["key"],
+                                case_id=case_id,
+                                deleted_by=current_user.email,
+                                reason=f"file_delete:{filename}",
+                            )
+                            result_info["exclusive_entities_recycled"].append(entity)
+                        except Exception as e:
+                            logger.warning(f"Failed to recycle entity {entity['key']}: {e}")
+
+                # Find shared entities (for response info) before deleting doc
+                try:
+                    shared = neo4j_service.find_document_node(doc_key, case_id)  # just to verify
+                except Exception:
+                    pass
+
+                # Remove MENTIONED_IN relationships from remaining entities
+                # and delete the Document node itself
+                neo4j_service.delete_node(doc_key, case_id=case_id)
+                result_info["document_deleted"] = True
+
+                # 3. Clean up ChromaDB embeddings
+                try:
+                    from services.vector_db_service import get_vector_db_service
+                    vector_db = get_vector_db_service()
+                    if vector_db:
+                        # Delete document embedding
+                        vector_db.delete_document(doc_key)
+                        # Delete all chunk embeddings for this document
+                        vector_db.delete_chunks_by_doc(doc_key)
+                        # Delete exclusive entity embeddings
+                        for entity in result_info["exclusive_entities_recycled"]:
+                            vector_db.delete_entity(entity["key"])
+                        result_info["chromadb_cleaned"] = True
+                except Exception as e:
+                    logger.warning(f"ChromaDB cleanup error: {e}")
+            else:
+                logger.info(f"No Document node found in Neo4j for {filename}")
+        except ValueError as e:
+            logger.info(f"Neo4j document deletion: {e}")
+        except Exception as e:
+            logger.warning(f"Neo4j cleanup error: {e}")
+
+        # 4. Delete physical file from disk
+        if stored_path:
+            file_path = Path(stored_path)
+            if file_path.exists():
+                try:
+                    file_path.unlink()
+                    result_info["file_deleted"] = True
+                except Exception as e:
+                    logger.warning(f"Failed to delete physical file: {e}")
+
+        # 5. Delete evidence record from JSON storage
+        evidence_storage.delete_record(evidence_id)
+
+        return result_info
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{evidence_id}/file")
 async def get_evidence_file(
     evidence_id: str,

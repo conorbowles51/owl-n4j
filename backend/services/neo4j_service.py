@@ -2294,15 +2294,24 @@ class Neo4jService:
                         )
                     relationships_updated += 1
             
-            # Delete source entity
-            session.run(
-                """
-                MATCH (s {key: $key})
-                DETACH DELETE s
-                """,
-                key=source_key,
-            )
-            
+            # Soft-delete source entity to recycling bin (so it can be recovered)
+            try:
+                self.soft_delete_entity(
+                    node_key=source_key,
+                    case_id=case_id,
+                    deleted_by="system",
+                    reason=f"merge_into:{target_key}",
+                )
+            except Exception:
+                # Fallback: hard-delete if soft-delete fails (e.g., entity already gone)
+                session.run(
+                    """
+                    MATCH (s {key: $key})
+                    DETACH DELETE s
+                    """,
+                    key=source_key,
+                )
+
             # Get the merged node (target node after merge) for return value
             merged_node_result = session.run(
                 """
@@ -2585,6 +2594,499 @@ class Neo4jService:
         if e and e.strip():
             out["english_translation"] = e.strip()
         return out
+
+    # -------------------------------------------------------------------------
+    # Evidence File Deletion
+    # -------------------------------------------------------------------------
+
+    def find_document_node(self, filename: str, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Find a Document node by filename and case_id.
+
+        Returns:
+            Dict with document node info, or None if not found.
+        """
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (d:Document {case_id: $case_id})
+                WHERE d.name = $filename OR d.key = $filename
+                RETURN d.key AS key, d.name AS name, d.case_id AS case_id,
+                       id(d) AS neo4j_id
+                """,
+                filename=filename,
+                case_id=case_id,
+            )
+            record = result.single()
+            if record:
+                return dict(record)
+            return None
+
+    def find_exclusive_entities(self, doc_key: str, case_id: str) -> List[Dict[str, Any]]:
+        """
+        Find entities that are ONLY mentioned in the given document
+        (i.e. they have no MENTIONED_IN relationship to any other Document).
+
+        Args:
+            doc_key: Key of the Document node
+            case_id: Case ID for scoping
+
+        Returns:
+            List of entity dicts with key, name, type
+        """
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (entity)-[:MENTIONED_IN]->(doc:Document {key: $doc_key, case_id: $case_id})
+                WHERE entity.case_id = $case_id
+                WITH entity
+                OPTIONAL MATCH (entity)-[:MENTIONED_IN]->(other:Document {case_id: $case_id})
+                  WHERE other.key <> $doc_key
+                WITH entity, count(other) AS other_doc_count
+                WHERE other_doc_count = 0
+                RETURN DISTINCT entity.key AS key, entity.name AS name,
+                       labels(entity)[0] AS type
+                """,
+                doc_key=doc_key,
+                case_id=case_id,
+            )
+            return [dict(record) for record in result]
+
+    def delete_document_and_exclusive_entities(
+        self, doc_key: str, case_id: str
+    ) -> Dict[str, Any]:
+        """
+        Delete a Document node from the graph, along with any entities
+        exclusively mentioned in that document (not shared with other docs).
+
+        Args:
+            doc_key: Key of the Document node to delete
+            case_id: Case ID for scoping
+
+        Returns:
+            Dict with deleted_document, exclusive_entities_deleted, shared_entities_unlinked
+        """
+        with self._driver.session() as session:
+            # 1. Verify document exists
+            doc_result = session.run(
+                """
+                MATCH (d:Document {key: $doc_key, case_id: $case_id})
+                RETURN d.key AS key, d.name AS name
+                """,
+                doc_key=doc_key,
+                case_id=case_id,
+            )
+            doc_record = doc_result.single()
+            if not doc_record:
+                raise ValueError(f"Document not found: {doc_key} in case {case_id}")
+
+            # 2. Find exclusive entities (only linked to this document)
+            #    An entity is "exclusive" if its only MENTIONED_IN target is this doc.
+            exclusive_result = session.run(
+                """
+                MATCH (entity)-[:MENTIONED_IN]->(doc:Document {key: $doc_key, case_id: $case_id})
+                WHERE entity.case_id = $case_id
+                WITH entity
+                OPTIONAL MATCH (entity)-[:MENTIONED_IN]->(other:Document {case_id: $case_id})
+                  WHERE other.key <> $doc_key
+                WITH entity, count(other) AS other_doc_count
+                WHERE other_doc_count = 0
+                RETURN entity.key AS key, entity.name AS name,
+                       labels(entity)[0] AS type
+                """,
+                doc_key=doc_key,
+                case_id=case_id,
+            )
+            exclusive_entities = [dict(r) for r in exclusive_result]
+
+            # 3. Find shared entities (linked to this doc AND other docs)
+            shared_result = session.run(
+                """
+                MATCH (entity)-[:MENTIONED_IN]->(doc:Document {key: $doc_key, case_id: $case_id})
+                WHERE entity.case_id = $case_id
+                WITH entity
+                OPTIONAL MATCH (entity)-[:MENTIONED_IN]->(other:Document {case_id: $case_id})
+                  WHERE other.key <> $doc_key
+                WITH entity, count(other) AS other_doc_count
+                WHERE other_doc_count > 0
+                RETURN entity.key AS key, entity.name AS name,
+                       labels(entity)[0] AS type
+                """,
+                doc_key=doc_key,
+                case_id=case_id,
+            )
+            shared_entities = [dict(r) for r in shared_result]
+
+            # 4. Delete exclusive entities (DETACH DELETE removes all their rels)
+            exclusive_keys = [e["key"] for e in exclusive_entities]
+            if exclusive_keys:
+                session.run(
+                    """
+                    MATCH (entity {case_id: $case_id})
+                    WHERE entity.key IN $keys
+                    DETACH DELETE entity
+                    """,
+                    case_id=case_id,
+                    keys=exclusive_keys,
+                )
+
+            # 5. Remove MENTIONED_IN rels from shared entities to this doc
+            if shared_entities:
+                session.run(
+                    """
+                    MATCH (entity)-[r:MENTIONED_IN]->(doc:Document {key: $doc_key, case_id: $case_id})
+                    WHERE entity.case_id = $case_id
+                    DELETE r
+                    """,
+                    doc_key=doc_key,
+                    case_id=case_id,
+                )
+
+            # 6. Delete the Document node itself (and all remaining rels)
+            session.run(
+                """
+                MATCH (d:Document {key: $doc_key, case_id: $case_id})
+                DETACH DELETE d
+                """,
+                doc_key=doc_key,
+                case_id=case_id,
+            )
+
+            return {
+                "success": True,
+                "deleted_document": {"key": doc_record["key"], "name": doc_record["name"]},
+                "exclusive_entities_deleted": exclusive_entities,
+                "shared_entities_unlinked": [e["key"] for e in shared_entities],
+            }
+
+    # -------------------------------------------------------------------------
+    # Recycling Bin (Soft Delete)
+    # -------------------------------------------------------------------------
+
+    def soft_delete_entity(
+        self, node_key: str, case_id: str, deleted_by: str, reason: str = "manual_delete"
+    ) -> Dict[str, Any]:
+        """
+        Soft-delete an entity by moving it to the recycling bin.
+        Stores full entity state (properties + relationships) as JSON on the node,
+        then removes it from the active graph.
+
+        Args:
+            node_key: Key of the entity to soft-delete
+            case_id: Case ID for scoping
+            deleted_by: Username of who performed the deletion
+            reason: Reason for deletion (e.g., 'manual_delete', 'merge_discard', 'file_delete')
+
+        Returns:
+            Dict with recycled entity info
+        """
+        import json as json_mod
+        from datetime import datetime as dt
+
+        with self._driver.session() as session:
+            # 1. Fetch full entity properties
+            entity_result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                WHERE NOT n:Document
+                RETURN n.key AS key, n.name AS name, labels(n) AS labels,
+                       properties(n) AS props, id(n) AS neo4j_id
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+            entity_record = entity_result.single()
+            if not entity_record:
+                raise ValueError(f"Entity not found: {node_key} in case {case_id}")
+
+            # 2. Fetch all relationships
+            rels_result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})-[r]-(other)
+                RETURN type(r) AS rel_type, properties(r) AS rel_props,
+                       other.key AS other_key, other.name AS other_name,
+                       labels(other)[0] AS other_type,
+                       CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END AS direction
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+            relationships = [dict(r) for r in rels_result]
+
+            # 3. Build the recycling bin record
+            entity_props = dict(entity_record["props"])
+            recycle_record = {
+                "key": entity_record["key"],
+                "name": entity_record["name"],
+                "labels": list(entity_record["labels"]),
+                "properties": entity_props,
+                "relationships": relationships,
+                "deleted_at": dt.now().isoformat(),
+                "deleted_by": deleted_by,
+                "reason": reason,
+                "case_id": case_id,
+            }
+
+            # 4. Store in RecycleBin node
+            session.run(
+                """
+                CREATE (rb:RecycleBin {
+                    key: $key,
+                    original_key: $original_key,
+                    original_name: $original_name,
+                    case_id: $case_id,
+                    deleted_at: $deleted_at,
+                    deleted_by: $deleted_by,
+                    reason: $reason,
+                    entity_data: $entity_data
+                })
+                """,
+                key=f"recycled_{node_key}_{dt.now().strftime('%Y%m%d%H%M%S')}",
+                original_key=node_key,
+                original_name=entity_record["name"],
+                case_id=case_id,
+                deleted_at=recycle_record["deleted_at"],
+                deleted_by=deleted_by,
+                reason=reason,
+                entity_data=json_mod.dumps(recycle_record, default=str),
+            )
+
+            # 5. Delete the original entity from graph
+            session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                DETACH DELETE n
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+
+            return {
+                "success": True,
+                "recycled_entity": {
+                    "key": entity_record["key"],
+                    "name": entity_record["name"],
+                    "type": entity_record["labels"][0] if entity_record["labels"] else "Unknown",
+                },
+                "relationships_stored": len(relationships),
+                "reason": reason,
+            }
+
+    def list_recycled_entities(self, case_id: str) -> List[Dict[str, Any]]:
+        """
+        List all entities in the recycling bin for a case.
+
+        Returns:
+            List of recycled entity summaries.
+        """
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (rb:RecycleBin {case_id: $case_id})
+                RETURN rb.key AS key, rb.original_key AS original_key,
+                       rb.original_name AS original_name,
+                       rb.deleted_at AS deleted_at,
+                       rb.deleted_by AS deleted_by,
+                       rb.reason AS reason
+                ORDER BY rb.deleted_at DESC
+                """,
+                case_id=case_id,
+            )
+            return [dict(r) for r in result]
+
+    def restore_recycled_entity(self, recycle_key: str, case_id: str) -> Dict[str, Any]:
+        """
+        Restore an entity from the recycling bin back into the graph.
+
+        Args:
+            recycle_key: Key of the RecycleBin node
+            case_id: Case ID for scoping
+
+        Returns:
+            Dict with restored entity info
+        """
+        import json as json_mod
+
+        with self._driver.session() as session:
+            # 1. Get the recycle bin record
+            rb_result = session.run(
+                """
+                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                RETURN rb.entity_data AS entity_data, rb.original_key AS original_key,
+                       rb.original_name AS original_name
+                """,
+                key=recycle_key,
+                case_id=case_id,
+            )
+            rb_record = rb_result.single()
+            if not rb_record:
+                raise ValueError(f"Recycled entity not found: {recycle_key}")
+
+            entity_data = json_mod.loads(rb_record["entity_data"])
+
+            # 2. Check that original key doesn't already exist
+            existing = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                RETURN count(n) AS cnt
+                """,
+                key=entity_data["key"],
+                case_id=case_id,
+            )
+            if existing.single()["cnt"] > 0:
+                raise ValueError(
+                    f"Entity with key '{entity_data['key']}' already exists in the graph. "
+                    "Cannot restore — resolve the conflict first."
+                )
+
+            # 3. Recreate entity node with stored properties
+            props = entity_data.get("properties", {})
+            label = entity_data["labels"][0] if entity_data.get("labels") else "Entity"
+
+            # Build safe property SET
+            safe_props = {}
+            for k, v in props.items():
+                if v is not None and isinstance(v, (str, int, float, bool)):
+                    safe_props[k] = v
+
+            session.run(
+                f"""
+                CREATE (n:`{label}`)
+                SET n = $props
+                """,
+                props=safe_props,
+            )
+
+            # 4. Restore relationships where the other node still exists
+            restored_rels = 0
+            for rel in entity_data.get("relationships", []):
+                other_key = rel.get("other_key")
+                rel_type = rel.get("rel_type")
+                direction = rel.get("direction")
+                rel_props = rel.get("rel_props", {})
+
+                if not other_key or not rel_type:
+                    continue
+
+                # Check if the other node still exists
+                exists_check = session.run(
+                    "MATCH (n {key: $key}) RETURN count(n) AS cnt",
+                    key=other_key,
+                )
+                if exists_check.single()["cnt"] == 0:
+                    continue
+
+                # Filter rel props
+                safe_rel_props = {}
+                for k, v in (rel_props or {}).items():
+                    if v is not None and isinstance(v, (str, int, float, bool)):
+                        safe_rel_props[k] = v
+
+                if direction == "outgoing":
+                    if safe_rel_props:
+                        session.run(
+                            f"""
+                            MATCH (a {{key: $a_key}}), (b {{key: $b_key}})
+                            CREATE (a)-[r:`{rel_type}`]->(b)
+                            SET r = $props
+                            """,
+                            a_key=entity_data["key"],
+                            b_key=other_key,
+                            props=safe_rel_props,
+                        )
+                    else:
+                        session.run(
+                            f"""
+                            MATCH (a {{key: $a_key}}), (b {{key: $b_key}})
+                            CREATE (a)-[r:`{rel_type}`]->(b)
+                            """,
+                            a_key=entity_data["key"],
+                            b_key=other_key,
+                        )
+                else:
+                    if safe_rel_props:
+                        session.run(
+                            f"""
+                            MATCH (a {{key: $a_key}}), (b {{key: $b_key}})
+                            CREATE (a)-[r:`{rel_type}`]->(b)
+                            SET r = $props
+                            """,
+                            a_key=other_key,
+                            b_key=entity_data["key"],
+                            props=safe_rel_props,
+                        )
+                    else:
+                        session.run(
+                            f"""
+                            MATCH (a {{key: $a_key}}), (b {{key: $b_key}})
+                            CREATE (a)-[r:`{rel_type}`]->(b)
+                            """,
+                            a_key=other_key,
+                            b_key=entity_data["key"],
+                        )
+                restored_rels += 1
+
+            # 5. Delete recycle bin record
+            session.run(
+                """
+                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                DELETE rb
+                """,
+                key=recycle_key,
+                case_id=case_id,
+            )
+
+            return {
+                "success": True,
+                "restored_entity": {
+                    "key": entity_data["key"],
+                    "name": entity_data.get("name", ""),
+                    "type": label,
+                },
+                "relationships_restored": restored_rels,
+            }
+
+    def permanently_delete_recycled(self, recycle_key: str, case_id: str) -> Dict[str, Any]:
+        """
+        Permanently delete a recycled entity (remove from recycle bin).
+
+        Args:
+            recycle_key: Key of the RecycleBin node
+            case_id: Case ID for scoping
+
+        Returns:
+            Dict with deletion info
+        """
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                RETURN rb.original_name AS name, rb.original_key AS original_key
+                """,
+                key=recycle_key,
+                case_id=case_id,
+            )
+            record = result.single()
+            if not record:
+                raise ValueError(f"Recycled entity not found: {recycle_key}")
+
+            session.run(
+                """
+                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                DELETE rb
+                """,
+                key=recycle_key,
+                case_id=case_id,
+            )
+
+            return {
+                "success": True,
+                "permanently_deleted": {
+                    "recycle_key": recycle_key,
+                    "original_key": record["original_key"],
+                    "name": record["name"],
+                },
+            }
 
     # -------------------------------------------------------------------------
     # Case Management

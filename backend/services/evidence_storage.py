@@ -204,6 +204,17 @@ class EvidenceStorage:
             self._persist()
             return created_records
 
+    def delete_record(self, evidence_id: str) -> Optional[dict]:
+        """
+        Delete an evidence record by ID. Returns the deleted record or None.
+        Does NOT delete the physical file — caller is responsible for that.
+        """
+        with self._lock:
+            rec = self._records.pop(evidence_id, None)
+            if rec:
+                self._persist()
+            return rec
+
     def mark_processing(self, evidence_ids: List[str]) -> None:
         """Mark selected evidence as 'processing'."""
         with self._lock:

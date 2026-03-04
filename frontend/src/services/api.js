@@ -429,12 +429,40 @@ export const graphAPI = {
     }),
 
   /**
-   * Delete a node and all its relationships
+   * Delete a node (soft-delete to recycling bin by default)
    * @param {string} nodeKey - Node key to delete
    * @param {string} caseId - REQUIRED: Case ID for case-specific data
+   * @param {boolean} permanent - If true, permanently delete (no recycling bin)
    */
-  deleteNode: (nodeKey, caseId) =>
-    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}?case_id=${encodeURIComponent(caseId)}`, {
+  deleteNode: (nodeKey, caseId, permanent = false) =>
+    fetchAPI(`/graph/node/${encodeURIComponent(nodeKey)}?case_id=${encodeURIComponent(caseId)}&permanent=${permanent}`, {
+      method: 'DELETE',
+    }),
+
+  /**
+   * List all entities in the recycling bin for a case
+   * @param {string} caseId - Case ID
+   */
+  listRecycledEntities: (caseId) =>
+    fetchAPI(`/graph/recycle-bin?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
+   * Restore an entity from the recycling bin
+   * @param {string} recycleKey - Recycling bin record key
+   * @param {string} caseId - Case ID
+   */
+  restoreRecycledEntity: (recycleKey, caseId) =>
+    fetchAPI(`/graph/recycle-bin/${encodeURIComponent(recycleKey)}/restore?case_id=${encodeURIComponent(caseId)}`, {
+      method: 'POST',
+    }),
+
+  /**
+   * Permanently delete an entity from the recycling bin
+   * @param {string} recycleKey - Recycling bin record key
+   * @param {string} caseId - Case ID
+   */
+  permanentlyDeleteRecycled: (recycleKey, caseId) =>
+    fetchAPI(`/graph/recycle-bin/${encodeURIComponent(recycleKey)}?case_id=${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
     }),
 
@@ -1519,6 +1547,21 @@ export const evidenceAPI = {
 
   getVideoFrameUrl: (evidenceId, filename) =>
     `/api/evidence/${encodeURIComponent(evidenceId)}/frames/${encodeURIComponent(filename)}`,
+
+  /**
+   * Delete an evidence file and optionally its exclusive entities
+   * @param {string} evidenceId - Evidence ID to delete
+   * @param {string} caseId - Case ID for scoping
+   * @param {boolean} deleteExclusiveEntities - Also delete entities only in this file
+   */
+  delete: (evidenceId, caseId, deleteExclusiveEntities = true) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('delete_exclusive_entities', String(deleteExclusiveEntities));
+    return fetchAPI(`/evidence/${encodeURIComponent(evidenceId)}?${params.toString()}`, {
+      method: 'DELETE',
+    });
+  },
 };
 
 /**
