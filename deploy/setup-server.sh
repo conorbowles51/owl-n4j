@@ -261,14 +261,14 @@ success "Frontend built -> dist/"
 # ============================================================
 step "Starting services"
 
-systemctl start nginx
+systemctl restart nginx
 success "Nginx started"
 
-systemctl start owl-backend
+systemctl restart owl-backend
 success "Backend started"
 
-# Quick health check
-sleep 3
+# Quick health check (backend needs time to load snapshots)
+sleep 10
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8001/health" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     success "Health check passed"
