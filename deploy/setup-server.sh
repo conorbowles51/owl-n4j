@@ -74,10 +74,11 @@ if ! grep -q "$(basename "$NGINX_CONF_DIR")" /etc/nginx/nginx.conf; then
     success "Added include directive to nginx.conf"
 fi
 
-# Remove default sites
+# Remove default sites and any stale owl config (broken symlinks etc)
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true
-success "Removed default Nginx site"
+rm -f "${NGINX_CONF_DIR}/owl.conf" 2>/dev/null || true
+success "Cleaned old Nginx configs"
 
 # Generate Nginx config with correct paths
 cat > "${NGINX_CONF_DIR}/owl.conf" << NGINX_EOF
