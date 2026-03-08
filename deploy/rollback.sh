@@ -26,10 +26,15 @@ FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
 HEALTH_URL="http://127.0.0.1:8000/health"
 
-# Check not root
+# Detect deploy user - if root, use the project dir owner
 if [ "$(id -u)" -eq 0 ]; then
-    fail "Don't run as root. Run as the deploy user."
-    exit 1
+    DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
+    RUN_AS="sudo -u ${DEPLOY_USER}"
+    SYSTEMCTL="systemctl"
+else
+    DEPLOY_USER="$(whoami)"
+    RUN_AS=""
+    SYSTEMCTL="sudo systemctl"
 fi
 
 # Get target commit
@@ -70,23 +75,23 @@ fi
 cd "$PROJECT_DIR"
 
 step "Checking out target commit"
-git checkout "$TARGET_COMMIT" -- .
+$RUN_AS git checkout "$TARGET_COMMIT" -- .
 success "Code reverted to ${TARGET_SHORT}"
 
 step "Reinstalling backend dependencies"
-"${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1
+$RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1
 success "Backend dependencies installed"
 
 step "Rebuilding frontend"
 cd "$FRONTEND_DIR"
-npm ci --silent 2>&1
-npm run build 2>&1
+$RUN_AS npm ci --silent 2>&1
+$RUN_AS npm run build 2>&1
 cd "$PROJECT_DIR"
 success "Frontend rebuilt"
 
 step "Restarting services"
-sudo systemctl restart owl-backend
-sudo systemctl reload nginx
+$SYSTEMCTL restart owl-backend
+$SYSTEMCTL reload nginx
 success "Services restarted"
 
 step "Health check"

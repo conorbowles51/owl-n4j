@@ -48,13 +48,16 @@ DEPLOY_START=$(date +%s)
 # ============================================================
 step "Pre-flight checks"
 
-# Check not root (should run as deploy user)
+# Detect deploy user - if root, use the project dir owner
 if [ "$(id -u)" -eq 0 ]; then
-    fail "Don't run as root. Run as the deploy user (e.g., conor, conorbowles51)."
-    exit 1
+    DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
+    RUN_AS="sudo -u ${DEPLOY_USER}"
+    success "Running as root (will execute app commands as ${DEPLOY_USER})"
+else
+    DEPLOY_USER="$(whoami)"
+    RUN_AS=""
+    success "Running as user: ${DEPLOY_USER}"
 fi
-DEPLOY_USER="$(whoami)"
-success "Running as user: ${DEPLOY_USER}"
 
 # Check disk space (warn if < 2GB free)
 AVAIL_KB=$(df -k "$PROJECT_DIR" | tail -1 | awk '{print $4}')
@@ -94,9 +97,9 @@ success "Current commit: ${PREV_COMMIT_SHORT} (saved for rollback)"
 # ============================================================
 step "Checking for local changes"
 
-if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+if ! $RUN_AS git diff --quiet 2>/dev/null || ! $RUN_AS git diff --cached --quiet 2>/dev/null; then
     warn "Local changes detected - stashing..."
-    git stash push -m "deploy-autostash-$(date +%Y%m%d-%H%M%S)"
+    $RUN_AS git stash push -m "deploy-autostash-$(date +%Y%m%d-%H%M%S)"
     success "Changes stashed safely"
 else
     success "Working directory clean"
@@ -107,7 +110,7 @@ fi
 # ============================================================
 step "Pulling latest from main"
 
-if ! git pull origin main --ff-only; then
+if ! $RUN_AS git pull origin main --ff-only; then
     fail "git pull failed (merge conflict or diverged history)"
     fail "Manual intervention required. Run: git status"
     fail "Stashed changes (if any) are safe. Run: git stash list"
@@ -129,7 +132,7 @@ fi
 # ============================================================
 step "Installing backend dependencies"
 
-"${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1
+$RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1
 success "Backend dependencies installed"
 
 # ============================================================
@@ -138,12 +141,12 @@ success "Backend dependencies installed"
 step "Installing frontend dependencies"
 
 cd "$FRONTEND_DIR"
-npm ci --silent 2>&1
+$RUN_AS npm ci --silent 2>&1
 success "Frontend dependencies installed"
 
 step "Building frontend for production"
 
-npm run build 2>&1
+$RUN_AS npm run build 2>&1
 success "Frontend built -> dist/"
 cd "$PROJECT_DIR"
 
@@ -153,7 +156,7 @@ cd "$PROJECT_DIR"
 step "Running database migrations"
 
 cd "$BACKEND_DIR"
-"${VENV_DIR}/bin/alembic" upgrade head 2>&1
+$RUN_AS "${VENV_DIR}/bin/alembic" upgrade head 2>&1
 success "Database migrations complete"
 cd "$PROJECT_DIR"
 
@@ -163,18 +166,25 @@ cd "$PROJECT_DIR"
 step "Stopping backend service"
 
 # Clean up any legacy screen sessions
-screen -XS frontend quit 2>/dev/null || true
-screen -XS backend quit 2>/dev/null || true
+$RUN_AS screen -XS frontend quit 2>/dev/null || true
+$RUN_AS screen -XS backend quit 2>/dev/null || true
 
-sudo systemctl stop owl-backend 2>/dev/null || true
+# Use sudo for systemctl only when not already root
+if [ "$(id -u)" -eq 0 ]; then
+    SYSTEMCTL="systemctl"
+else
+    SYSTEMCTL="sudo systemctl"
+fi
+
+$SYSTEMCTL stop owl-backend 2>/dev/null || true
 success "Backend stopped"
 
 step "Starting backend service"
-sudo systemctl start owl-backend
+$SYSTEMCTL start owl-backend
 success "Backend started"
 
 step "Reloading Nginx"
-sudo systemctl reload nginx
+$SYSTEMCTL reload nginx
 success "Nginx reloaded"
 
 # ============================================================
@@ -226,21 +236,21 @@ fail "ROLLING BACK to commit ${PREV_COMMIT_SHORT}..."
 echo ""
 
 cd "$PROJECT_DIR"
-git checkout "$PREV_COMMIT" -- .
+$RUN_AS git checkout "$PREV_COMMIT" -- .
 
 # Reinstall old deps
 step "Rollback: reinstalling backend dependencies"
-"${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1 || true
+$RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1 || true
 
 step "Rollback: rebuilding frontend"
 cd "$FRONTEND_DIR"
-npm ci --silent 2>&1 || true
-npm run build 2>&1 || true
+$RUN_AS npm ci --silent 2>&1 || true
+$RUN_AS npm run build 2>&1 || true
 cd "$PROJECT_DIR"
 
 step "Rollback: restarting services"
-sudo systemctl restart owl-backend
-sudo systemctl reload nginx
+$SYSTEMCTL restart owl-backend
+$SYSTEMCTL reload nginx
 
 # Check if rollback worked
 sleep 3
