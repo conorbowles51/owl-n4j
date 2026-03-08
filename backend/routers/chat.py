@@ -45,6 +45,7 @@ class ChatResponse(BaseModel):
     used_node_keys: Optional[List[str]] = None  # Node keys actually used to generate the answer
     model_info: Optional[Dict] = None  # Current model and server information
     result_graph: Optional[Dict] = None  # Graph with documents and relevant entities
+    document_summary: Optional[str] = None  # Document relevance summary (separate from answer)
 
 
 class SuggestionsRequest(BaseModel):

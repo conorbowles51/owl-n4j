@@ -331,16 +331,16 @@ const GraphView = forwardRef(function GraphView({
 
     // Base node radius
     let baseRadius = isSelected ? 8 : 6;
-    
+
     // Adjust node size based on confidence score (for result graph nodes)
-    // Higher confidence = larger node
-    // Range: baseRadius * 0.75 (low confidence) to baseRadius * 2.0 (high confidence)
+    // Much more dramatic range for clear visual hierarchy
     if (node.confidence !== undefined && node.confidence !== null) {
-      // Confidence ranges from 0.0 to 1.0 (1.0 = highest confidence)
-      const confidenceMultiplier = 0.75 + (node.confidence * 1.25); // 0.75 to 2.0
+      // Confidence ranges from 0.0 to 1.0
+      // Size range: 0.4x (barely visible) to 3.0x (very prominent)
+      const confidenceMultiplier = 0.4 + (node.confidence * 2.6);
       baseRadius = baseRadius * confidenceMultiplier;
     }
-    
+
     const nodeRadius = baseRadius;
 
     // Get color - prioritize community_id if present (from Louvain), otherwise use entity type
@@ -353,10 +353,15 @@ const GraphView = forwardRef(function GraphView({
       nodeColor = getNodeColor(node.type, profileColors);
     }
 
-    // Apply opacity modulation for result graph nodes (mentioned vs context-only)
+    // Apply opacity modulation for result graph nodes
+    // Use confidence-based gradient for much more distinct visual separation
     ctx.save();
-    if (node.mentioned === false) {
-      ctx.globalAlpha = 0.4;  // Faded for context-only entities
+    if (node.confidence !== undefined && node.confidence !== null) {
+      // Confidence-based opacity: 0.15 (very faded) to 1.0 (fully solid)
+      const minOpacity = node.mentioned === false ? 0.15 : 0.25;
+      ctx.globalAlpha = minOpacity + (node.confidence * (1.0 - minOpacity));
+    } else if (node.mentioned === false) {
+      ctx.globalAlpha = 0.4;
     }
 
     // Node circle
@@ -372,11 +377,20 @@ const GraphView = forwardRef(function GraphView({
       ctx.stroke();
     }
 
-    // Label - dark text for light theme
-    ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+    // Label - scale font size and opacity with confidence for result graph nodes
+    let labelFontSize = fontSize;
+    let labelColor = '#1f2937'; // light-800 default
+    if (node.confidence !== undefined && node.confidence !== null) {
+      // Scale label: 0.7x to 1.3x of base font size
+      labelFontSize = fontSize * (0.7 + node.confidence * 0.6);
+      // Fade label color for low confidence
+      const labelAlpha = Math.max(0.3, node.confidence);
+      labelColor = `rgba(31, 41, 55, ${labelAlpha})`;
+    }
+    ctx.font = `${labelFontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#1f2937'; // light-800 - dark text for light background
+    ctx.fillStyle = labelColor;
 
     // Truncate long labels
     const maxLabelLength = 20;
@@ -423,6 +437,15 @@ const GraphView = forwardRef(function GraphView({
           linkWidth = 1.0 + (avgConfidence * 3.0); // 1.0 to 4.0
         }
       }
+    }
+
+    // Apply opacity based on connected node confidence (result graph links fade with low-confidence nodes)
+    ctx.save();
+    const startConf = start.confidence !== undefined ? start.confidence : 1.0;
+    const endConf = end.confidence !== undefined ? end.confidence : 1.0;
+    const minConf = Math.min(startConf, endConf);
+    if (minConf < 1.0) {
+      ctx.globalAlpha = Math.max(0.1, minConf);
     }
 
     // Draw the link line
@@ -485,6 +508,7 @@ const GraphView = forwardRef(function GraphView({
       
       ctx.restore();
     }
+    ctx.restore(); // Restore opacity from confidence-based alpha
   }, [showRelationshipLabels]);
 
   // Handle node click
@@ -1123,7 +1147,24 @@ const GraphView = forwardRef(function GraphView({
         d3VelocityDecay={isSubgraph ? 0.4 : 0.3}
         backgroundColor="transparent"
       />
-      
+
+      {/* Relevance tooltip on hover (result graph nodes only) */}
+      {hoveredNode?.relevance_reason && graphRef.current && (() => {
+        const coords = graphRef.current.graph2ScreenCoords(hoveredNode.x, hoveredNode.y);
+        return (
+          <div
+            className="absolute z-50 bg-gray-900/90 text-white text-xs rounded px-2.5 py-1.5 max-w-xs pointer-events-none whitespace-normal shadow-lg"
+            style={{
+              left: `${coords.x + 12}px`,
+              top: `${coords.y - 8}px`,
+              transform: 'translateY(-100%)',
+            }}
+          >
+            {hoveredNode.relevance_reason}
+          </div>
+        );
+      })()}
+
       {/* Legend */}
       <div className={`absolute bottom-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200 ${
         isSubgraph ? 'left-[44px]' : 'left-4'

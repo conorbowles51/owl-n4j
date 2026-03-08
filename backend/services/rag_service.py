@@ -1180,6 +1180,7 @@ Only include candidates with score >= 5."""
                     }
 
             # From graph traversal connections (stage 4)
+            graph_parent_map = {}  # conn_key -> {parent_name, rel_type}
             for graph_entity in graph_context.get("selected_entities", []):
                 # The traversed entity itself
                 key = graph_entity.get("key")
@@ -1193,7 +1194,8 @@ Only include candidates with score >= 5."""
                         "_source": "graph",
                         "_distance": None,
                     }
-                # Its connections
+                # Its connections — also record parent info for relevance reasoning
+                parent_name = graph_entity.get("name", key)
                 for conn in graph_entity.get("connections", []):
                     conn_key = conn.get("key")
                     if conn_key and conn_key not in entity_pool:
@@ -1204,6 +1206,12 @@ Only include candidates with score >= 5."""
                             "summary": conn.get("summary"),
                             "_source": "graph",
                             "_distance": None,
+                        }
+                    # Track how this connection was reached (first parent wins)
+                    if conn_key and conn_key not in graph_parent_map:
+                        graph_parent_map[conn_key] = {
+                            "parent_name": parent_name,
+                            "rel_type": conn.get("relationship", ""),
                         }
 
             print(f"[RAG] Result graph pool: {len(entity_pool)} entities from retrieval stages")
@@ -1267,7 +1275,23 @@ Only include candidates with score >= 5."""
                 name_lower = name.lower()
 
                 # mention_score: how often the entity is named in the answer (0-1)
+                # Negation-aware: discount mentions in negative contexts
                 mention_count = answer_lower.count(name_lower) if name_lower and len(name_lower) > 1 else 0
+                if mention_count > 0 and name_lower:
+                    negation_patterns = [
+                        f"not name {name_lower}", f"not reference {name_lower}",
+                        f"does not name {name_lower}", f"does not mention {name_lower}",
+                        f"no overlap", f"no direct overlap", f"not involved",
+                        f"no evidence", f"not connected", f"no connection",
+                        f"are not mentioned", f"is not mentioned",
+                    ]
+                    neg_sentence_count = 0
+                    for sent in sentences:
+                        if name_lower in sent:
+                            if any(neg in sent for neg in negation_patterns):
+                                neg_sentence_count += 1
+                    # Reduce effective mentions by negation count
+                    mention_count = max(0, mention_count - neg_sentence_count)
                 mention_score = min(mention_count / 3.0, 1.0)
 
                 # retrieval_score: based on vector distance (1.0 - distance)
@@ -1351,6 +1375,10 @@ Only include candidates with score >= 5."""
                     "properties": entity.get("properties", {}),
                     "confidence": max(0.0, min(1.0, entity["_composite"])),
                     "mentioned": entity["_mentioned"],
+                    "relevance_reason": self._generate_relevance_reason(
+                        entity, doc_entity_keys_set, graph_parent_map
+                    ),
+                    "relevance_source": entity.get("_source", "unknown"),
                 }
                 nodes.append(node)
 
@@ -1371,6 +1399,8 @@ Only include candidates with score >= 5."""
                                 "properties": doc_node_data.get("properties", {}),
                                 "confidence": 1.0,
                                 "mentioned": True,
+                                "relevance_reason": "You selected this document",
+                                "relevance_source": "selection",
                             })
                             qualifying_keys.add(dk)
 
@@ -1414,6 +1444,50 @@ Only include candidates with score >= 5."""
             traceback.print_exc()
 
         return {"nodes": nodes, "links": links}
+
+    def _generate_relevance_reason(self, entity, doc_entity_keys_set, graph_parent_map):
+        """
+        Generate a human-readable explanation of why an entity appeared
+        in the result graph, based on its scoring signals.
+        """
+        key = entity.get("key", "")
+        source = entity.get("_source", "unknown")
+        mentioned = entity.get("_mentioned", False)
+        selection_bonus = entity.get("_selection_bonus", 0)
+        doc_affinity = entity.get("_doc_affinity", 0)
+
+        # Priority order: most specific reason first
+        if selection_bonus > 0:
+            return "You selected this entity"
+
+        if doc_affinity > 0 and mentioned:
+            return "Mentioned in the selected document and named in the AI answer"
+
+        if doc_affinity > 0:
+            return "Mentioned in the selected document"
+
+        if mentioned and source == "retrieval":
+            return "Named in the AI answer and found in retrieved evidence"
+
+        if mentioned:
+            return "Named in the AI answer"
+
+        if source == "graph" and key in graph_parent_map:
+            parent_info = graph_parent_map[key]
+            parent_name = parent_info.get("parent_name", "a related entity")
+            rel_type = parent_info.get("rel_type", "").replace("_", " ").title()
+            if rel_type:
+                return f"Connected to {parent_name} via {rel_type}"
+            return f"Connected to {parent_name} in the graph"
+
+        if source == "retrieval":
+            return "Semantically similar to the query (found in evidence passages)"
+
+        if source == "answer_similarity":
+            return "Semantically related to the AI answer"
+
+        # Fallback
+        return "Related through graph connections"
 
     # =====================
     # MAIN: answer_question (unified hybrid pipeline)
@@ -1827,7 +1901,10 @@ Only include candidates with score >= 5."""
                     f'IMPORTANT: The user has selected the following document(s) as their focus: {doc_list}. '
                     f'Passages from these documents are marked with [SELECTED DOCUMENT] in the context. '
                     f'Prioritize information from these selected documents in your answer. '
-                    f'Other documents may be referenced for additional context but should be secondary.'
+                    f'Other documents may be referenced for additional context but should be secondary. '
+                    f'When noting that subjects from OTHER documents are NOT connected to the selected document, '
+                    f'do NOT list those unrelated names individually — instead refer to them collectively '
+                    f'(e.g. "subjects in the other case documents") to keep focus on the selected document.'
                 )
 
         answer, final_prompt = self.llm.answer_question_with_prompt(
@@ -1849,10 +1926,10 @@ Only include candidates with score >= 5."""
         # Store clean answer text for entity search (before prepending document summary)
         clean_answer_text = answer
 
-        # Prepend document/chunk summary to answer
+        # Build document summary as separate field (not prepended to answer)
+        doc_summary_text = ""
         if chunk_results:
-            doc_summary = self._format_document_summary(chunk_results)
-            answer = doc_summary + "\n\n" + answer
+            doc_summary_text = self._format_document_summary(chunk_results)
 
         # ── Stage 8: Result graph building ───────────────────────────────
         t8 = time.time()
@@ -1924,6 +2001,7 @@ Only include candidates with score >= 5."""
             "debug_log": debug_log,
             "used_node_keys": used_node_keys,
             "result_graph": result_graph,
+            "document_summary": doc_summary_text or None,
         }
 
     # =====================

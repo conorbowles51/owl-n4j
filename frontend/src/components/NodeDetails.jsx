@@ -554,6 +554,18 @@ export default function NodeDetails({
           </div>
         )}
 
+        {/* Why This Entity? — shown only for result graph nodes */}
+        {node.relevance_reason && (
+          <div>
+            <label className="text-xs font-medium text-light-600 uppercase tracking-wide">
+              Why This Entity?
+            </label>
+            <p className="text-sm text-light-700 mt-1 leading-relaxed italic">
+              {node.relevance_reason}
+            </p>
+          </div>
+        )}
+
         {/* Geocode Button - shown for entities with address-like properties */}
         {entityAddress && (
           <div>

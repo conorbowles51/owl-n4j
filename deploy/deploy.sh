@@ -225,7 +225,7 @@ fail "ROLLING BACK to commit ${PREV_COMMIT_SHORT}..."
 echo ""
 
 cd "$PROJECT_DIR"
-$RUN_AS git checkout "$PREV_COMMIT" -- .
+$RUN_AS git reset --hard "$PREV_COMMIT"
 
 step "Rollback: reinstalling backend dependencies"
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1 || true

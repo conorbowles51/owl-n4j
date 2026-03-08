@@ -719,6 +719,18 @@ export default function App() {
           }
         }
         
+        // Merge relevance fields from result graph if available
+        if (resultGraphData?.nodes) {
+          const resultNodeMap = new Map(resultGraphData.nodes.map(n => [n.key, n]));
+          details.forEach(detail => {
+            const resultNode = resultNodeMap.get(detail.key);
+            if (resultNode) {
+              detail.relevance_reason = resultNode.relevance_reason;
+              detail.relevance_source = resultNode.relevance_source;
+            }
+          });
+        }
+
         setSelectedNodesDetails(details);
       } catch (err) {
         console.error('Failed to load node details:', err);
@@ -726,7 +738,7 @@ export default function App() {
         setSelectedNodesDetails([]);
       }
     }, debounceDelay);
-  }, [currentCaseId]);
+  }, [currentCaseId, resultGraphData]);
 
   // Handle opening chat from table view with selected nodes
   const handleTableChatOpen = useCallback(async (nodes) => {
@@ -2620,6 +2632,7 @@ export default function App() {
         cypherUsed: msg.cypherUsed,
         usedNodeKeys: msg.usedNodeKeys,
         resultGraph: msg.resultGraph, // Include result graph from AI responses
+        documentSummary: msg.documentSummary, // Document relevance summary
         modelInfo: msg.modelInfo,
         selectedNodes: msg.selectedNodes,
         isError: msg.isError,

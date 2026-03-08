@@ -21,6 +21,7 @@ import {
   Copy,
   BookmarkPlus,
   CheckCircle,
+  FileText,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { chatAPI, llmConfigAPI, workspaceAPI } from '../services/api';
@@ -318,6 +319,7 @@ export default function ChatPanel({
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [expandedTraces, setExpandedTraces] = useState(new Set());
   const [expandedStages, setExpandedStages] = useState(new Set());
+  const [expandedDocSummaries, setExpandedDocSummaries] = useState(new Set());
   const [saveNoteModal, setSaveNoteModal] = useState(null); // { title, content } when open
   const [savingNote, setSavingNote] = useState(false);
   const [noteSavedId, setNoteSavedId] = useState(null); // msg.id of recently saved note for feedback
@@ -460,6 +462,7 @@ export default function ChatPanel({
         modelInfo: response.model_info, // Store model info
         resultGraph: response.result_graph || null, // Store result graph with documents and entities
         debugLog: response.debug_log || null, // Full pipeline execution trace
+        documentSummary: response.document_summary || null, // Document relevance summary
         timestamp: new Date().toISOString(),
       };
       
@@ -880,6 +883,31 @@ export default function ChatPanel({
                         {msg.modelInfo.model_name} ({msg.modelInfo.server})
                       </span>
                     )}
+                    {/* Document Sources toggle */}
+                    {msg.documentSummary && (
+                      <button
+                        onClick={() => {
+                          setExpandedDocSummaries(prev => {
+                            const next = new Set(prev);
+                            if (next.has(msg.id)) {
+                              next.delete(msg.id);
+                            } else {
+                              next.add(msg.id);
+                            }
+                            return next;
+                          });
+                        }}
+                        className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] transition-colors ${
+                          expandedDocSummaries.has(msg.id)
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-light-100 text-light-500 hover:bg-amber-50 hover:text-amber-600'
+                        }`}
+                        title="Toggle document sources"
+                      >
+                        <FileText className="w-3 h-3" />
+                        Sources
+                      </button>
+                    )}
                     {/* Pipeline Trace toggle */}
                     {msg.debugLog && msg.debugLog.stages && (
                       <button
@@ -909,6 +937,16 @@ export default function ChatPanel({
                       </button>
                     )}
                   </div>
+                  {/* Document Sources Panel */}
+                  {msg.documentSummary && expandedDocSummaries.has(msg.id) && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+                      <ReactMarkdown
+                        className="prose prose-xs max-w-none text-amber-900 [&_strong]:text-amber-800 [&_li]:my-0.5"
+                      >
+                        {msg.documentSummary}
+                      </ReactMarkdown>
+                    </div>
+                  )}
                   {/* Pipeline Trace Panel */}
                   {msg.debugLog && expandedTraces.has(msg.id) && (
                     <PipelineTrace
