@@ -32,7 +32,7 @@ fi
 BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
-HEALTH_URL="http://127.0.0.1:8001/health"
+HEALTH_URL="http://127.0.0.1:8000/health"
 
 # Detect deploy user - if root, use the project dir owner
 if [ "$(id -u)" -eq 0 ]; then
@@ -90,20 +90,19 @@ step "Reinstalling backend dependencies"
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1
 success "Backend dependencies installed"
 
-step "Rebuilding frontend"
+step "Reinstalling frontend dependencies"
 cd "$FRONTEND_DIR"
 $RUN_AS npm ci --silent 2>&1
-$RUN_AS npm run build 2>&1
 cd "$PROJECT_DIR"
-success "Frontend rebuilt"
+success "Frontend dependencies installed"
 
 step "Restarting services"
 $SYSTEMCTL restart owl-backend
-$SYSTEMCTL reload nginx
+$SYSTEMCTL restart owl-frontend
 success "Services restarted"
 
 step "Health check"
-sleep 3
+sleep 5
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     success "Health check passed"

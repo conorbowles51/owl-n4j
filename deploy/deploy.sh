@@ -4,7 +4,6 @@ set -euo pipefail
 # ============================================================
 # Owl Investigation Console - Deploy Script
 # Usage: bash deploy/deploy.sh
-# Run as user: conor
 # ============================================================
 
 # --- Configuration ---
@@ -22,7 +21,7 @@ BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
-HEALTH_URL="http://127.0.0.1:8001/health"
+HEALTH_URL="http://127.0.0.1:8000/health"
 HEALTH_RETRIES=15
 HEALTH_DELAY=2
 
@@ -60,10 +59,12 @@ step "Pre-flight checks"
 if [ "$(id -u)" -eq 0 ]; then
     DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
     RUN_AS="sudo -u ${DEPLOY_USER}"
+    SYSTEMCTL="systemctl"
     success "Running as root (will execute app commands as ${DEPLOY_USER})"
 else
     DEPLOY_USER="$(whoami)"
     RUN_AS=""
+    SYSTEMCTL="sudo systemctl"
     success "Running as user: ${DEPLOY_USER}"
 fi
 
@@ -144,18 +145,13 @@ $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --qui
 success "Backend dependencies installed"
 
 # ============================================================
-# Step 6: Install frontend dependencies and build
+# Step 6: Install frontend dependencies
 # ============================================================
 step "Installing frontend dependencies"
 
 cd "$FRONTEND_DIR"
 $RUN_AS npm ci --silent 2>&1
 success "Frontend dependencies installed"
-
-step "Building frontend for production"
-
-$RUN_AS npm run build 2>&1
-success "Frontend built -> dist/"
 cd "$PROJECT_DIR"
 
 # ============================================================
@@ -171,29 +167,17 @@ cd "$PROJECT_DIR"
 # ============================================================
 # Step 8: Restart services
 # ============================================================
-step "Stopping backend service"
+step "Restarting services"
 
 # Clean up any legacy screen sessions
 $RUN_AS screen -XS frontend quit 2>/dev/null || true
 $RUN_AS screen -XS backend quit 2>/dev/null || true
 
-# Use sudo for systemctl only when not already root
-if [ "$(id -u)" -eq 0 ]; then
-    SYSTEMCTL="systemctl"
-else
-    SYSTEMCTL="sudo systemctl"
-fi
+$SYSTEMCTL restart owl-backend
+success "Backend restarted"
 
-$SYSTEMCTL stop owl-backend 2>/dev/null || true
-success "Backend stopped"
-
-step "Starting backend service"
-$SYSTEMCTL start owl-backend
-success "Backend started"
-
-step "Reloading Nginx"
-$SYSTEMCTL reload nginx
-success "Nginx reloaded"
+$SYSTEMCTL restart owl-frontend
+success "Frontend restarted"
 
 # ============================================================
 # Step 9: Health check
@@ -217,9 +201,6 @@ for i in $(seq 1 $HEALTH_RETRIES); do
 done
 
 if [ "$HEALTHY" = true ]; then
-    # ============================================================
-    # Success!
-    # ============================================================
     DEPLOY_END=$(date +%s)
     DEPLOY_DURATION=$(( DEPLOY_END - DEPLOY_START ))
 
@@ -246,22 +227,20 @@ echo ""
 cd "$PROJECT_DIR"
 $RUN_AS git checkout "$PREV_COMMIT" -- .
 
-# Reinstall old deps
 step "Rollback: reinstalling backend dependencies"
 $RUN_AS "${VENV_DIR}/bin/pip" install -r "${BACKEND_DIR}/requirements.txt" --quiet 2>&1 || true
 
-step "Rollback: rebuilding frontend"
+step "Rollback: reinstalling frontend dependencies"
 cd "$FRONTEND_DIR"
 $RUN_AS npm ci --silent 2>&1 || true
-$RUN_AS npm run build 2>&1 || true
 cd "$PROJECT_DIR"
 
 step "Rollback: restarting services"
 $SYSTEMCTL restart owl-backend
-$SYSTEMCTL reload nginx
+$SYSTEMCTL restart owl-frontend
 
 # Check if rollback worked
-sleep 3
+sleep 5
 ROLLBACK_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
 
 if [ "$ROLLBACK_CODE" = "200" ]; then
