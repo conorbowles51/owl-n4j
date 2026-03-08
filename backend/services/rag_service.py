@@ -188,25 +188,58 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         return "\n".join(lines)
 
     def _format_document_summary(self, doc_results: List[Dict]) -> str:
-        """Format a summary of document search results for display in the answer."""
+        """Format a summary of document search results for display in the answer.
+
+        Groups chunks by document, shows best relevance per doc,
+        and lists doc-scoped (selected) documents first.
+        """
         if not doc_results:
             return ""
+
+        # Group by document: track best distance and doc-scoped status
+        doc_info = {}  # filename -> {best_distance, doc_scoped, chunk_count}
+        for chunk in doc_results:
+            metadata = chunk.get("metadata", {})
+            filename = metadata.get("filename", metadata.get("doc_name", chunk.get("id", "Unknown")))
+            distance = chunk.get("distance")
+            is_doc_scoped = chunk.get("_doc_scoped", False)
+
+            if filename not in doc_info:
+                doc_info[filename] = {
+                    "best_distance": distance,
+                    "doc_scoped": is_doc_scoped,
+                    "chunk_count": 1,
+                }
+            else:
+                doc_info[filename]["chunk_count"] += 1
+                if is_doc_scoped:
+                    doc_info[filename]["doc_scoped"] = True
+                if distance is not None:
+                    current_best = doc_info[filename]["best_distance"]
+                    if current_best is None or distance < current_best:
+                        doc_info[filename]["best_distance"] = distance
+
+        # Sort: doc-scoped first, then by best distance
+        sorted_docs = sorted(
+            doc_info.items(),
+            key=lambda x: (not x[1]["doc_scoped"], x[1]["best_distance"] or float("inf"))
+        )
 
         lines = [
             "**\U0001f4c4 Relevant Documents Found:**",
             ""
         ]
 
-        for i, doc in enumerate(doc_results, 1):
-            metadata = doc.get("metadata", {})
-            filename = metadata.get("filename", metadata.get("doc_name", doc.get("id", "Unknown")))
-            distance = doc.get("distance")
-
-            relevance_score = (1 - distance) * 100 if distance is not None else None
+        for i, (filename, info) in enumerate(sorted_docs, 1):
+            distance = info["best_distance"]
+            # Clamp relevance to 0-100% range (L2 distances can exceed 1.0)
+            relevance_score = max(0.0, (1 - distance) * 100) if distance is not None else None
 
             line = f"{i}. **{filename}**"
             if relevance_score is not None:
                 line += f" (Relevance: {relevance_score:.1f}%)"
+            if info["doc_scoped"]:
+                line += " \U0001f4cd"  # 📍 pin emoji for selected doc
             lines.append(line)
 
         lines.append("")
@@ -941,29 +974,33 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
     ) -> tuple:
         """Fast re-ranking: sort by distance, apply top-k and token budget.
 
-        Document boost: doc-scoped chunks get distance reduced by 0.3,
-        doc-associated entities get distance reduced by 0.2, so they
-        float to the top while still allowing cross-document discovery.
+        Document boost: doc-scoped chunks are placed FIRST (sorted by
+        distance within their group), then case-wide chunks fill the
+        remaining budget. This guarantees the selected document's content
+        is prioritized while still allowing cross-document discovery.
+        Doc-associated entities get a -0.2 distance boost.
         """
-        def _effective_distance(result):
-            """Compute effective distance with doc-scoping boost."""
+        # Partition chunks: doc-scoped first, then case-wide
+        doc_scoped = [c for c in chunk_results if c.get("_doc_scoped")]
+        case_wide = [c for c in chunk_results if not c.get("_doc_scoped")]
+
+        # Sort each group by distance independently
+        doc_scoped.sort(key=lambda r: r.get("distance", float("inf")))
+        case_wide.sort(key=lambda r: r.get("distance", float("inf")))
+
+        # Doc-scoped first, then case-wide to fill remaining slots
+        sorted_chunks = (doc_scoped + case_wide)[:top_chunks]
+
+        # Sort entities: doc-associated get a distance boost
+        def _entity_effective_distance(result):
             d = result.get("distance", float("inf"))
-            if result.get("_doc_scoped"):
-                d = max(0.0, d - 0.3)
-            elif result.get("_doc_associated"):
+            if result.get("_doc_associated"):
                 d = max(0.0, d - 0.2)
             return d
 
-        # Sort chunks by effective distance (ascending = more relevant)
-        sorted_chunks = sorted(
-            chunk_results,
-            key=_effective_distance
-        )[:top_chunks]
-
-        # Sort entities by effective distance
         sorted_entities = sorted(
             entity_results,
-            key=_effective_distance
+            key=_entity_effective_distance
         )[:top_entities]
 
         # Apply token budget (approximate 1 token ~ 4 chars)
