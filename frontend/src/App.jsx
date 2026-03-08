@@ -85,6 +85,7 @@ import CollaboratorModal from './components/CollaboratorModal';
 import SimilarEntitiesProgressDialog from './components/SimilarEntitiesProgressDialog';
 import EntityComparisonModal from './components/EntityComparisonModal';
 import EntityTypeSelectorModal from './components/EntityTypeSelectorModal';
+import BuildFooter from './components/BuildFooter';
 import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
 
 /**
@@ -3223,6 +3224,7 @@ export default function App() {
           <Loader2 className="w-8 h-8 animate-spin text-owl-blue-500" />
           <p className="text-light-400">Loading...</p>
         </div>
+        <BuildFooter />
       </div>
     );
   }
@@ -3239,6 +3241,7 @@ export default function App() {
             }}
           />
         </div>
+        <BuildFooter />
       </div>
     );
   }
@@ -3257,6 +3260,7 @@ export default function App() {
             onClose={() => {}}
           />
         </div>
+        <BuildFooter />
       </div>
     );
   }
@@ -3331,6 +3335,7 @@ export default function App() {
             // Optionally refresh the case list or permissions
           }}
         />
+        <BuildFooter />
       </CasePermissionProvider>
     );
   }
@@ -3410,6 +3415,7 @@ export default function App() {
             </div>
           </div>
         )}
+        <BuildFooter />
       </>
     );
   }
@@ -3488,6 +3494,7 @@ export default function App() {
           caseName={loadCaseProgress.caseName}
           version={loadCaseProgress.version}
         />
+        <BuildFooter />
       </CasePermissionProvider>
     );
   }
@@ -5488,15 +5495,7 @@ export default function App() {
         username={authUsername}
       />
 
-      {/* Build identifier footer */}
-      <div className="h-5 bg-light-50 border-t border-light-200/50 flex items-center justify-end px-4 flex-shrink-0">
-        <span
-          className="text-[10px] text-light-400 hover:text-light-600 cursor-default transition-colors"
-          title={`Commit: ${__BUILD_COMMIT__} • Built: ${__BUILD_TIMESTAMP__}`}
-        >
-          {__BUILD_NAME__} ({__BUILD_COMMIT__})
-        </span>
-      </div>
+      <BuildFooter />
     </div>
     </CasePermissionProvider>
   );
