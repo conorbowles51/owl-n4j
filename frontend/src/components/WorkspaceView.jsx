@@ -102,6 +102,17 @@ export default function WorkspaceView({
   }, [caseId]);
 
   // Refresh handlers
+  const handleRefreshGraph = useCallback(async () => {
+    if (!caseId) return;
+    try {
+      const graph = await graphAPI.getGraph({ case_id: caseId });
+      setGraphData(graph);
+      setFullGraphData(graph);
+    } catch (err) {
+      console.error('Failed to refresh graph data:', err);
+    }
+  }, [caseId]);
+
   const handleRefreshPinned = useCallback(async () => {
     try {
       const pinnedData = await workspaceAPI.getPinnedItems(caseId);
@@ -122,7 +133,7 @@ export default function WorkspaceView({
     }
   }, [caseId]);
 
-  // Listen for theory graph built event
+  // Listen for theory graph built event and documents-refresh event
   useEffect(() => {
     const handleTheoryGraphBuilt = (event) => {
       const { entity_keys, theory_title } = event.detail;
@@ -132,11 +143,17 @@ export default function WorkspaceView({
       }
     };
 
+    const handleDocumentsRefresh = () => {
+      handleRefreshGraph();
+    };
+
     window.addEventListener('theory-graph-built', handleTheoryGraphBuilt);
+    window.addEventListener('documents-refresh', handleDocumentsRefresh);
     return () => {
       window.removeEventListener('theory-graph-built', handleTheoryGraphBuilt);
+      window.removeEventListener('documents-refresh', handleDocumentsRefresh);
     };
-  }, []);
+  }, [handleRefreshGraph]);
 
   // Apply search filter to graph data
   // Always creates new array references to ensure React detects changes

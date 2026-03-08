@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   Loader2,
@@ -23,26 +23,43 @@ import { backgroundTasksAPI } from '../services/api';
 export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, onViewCase }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const completedTaskIdsRef = useRef(new Set());
 
   const loadTasks = useCallback(async () => {
-    setLoading(true);
     try {
       // Don't pass owner parameter - let backend default to current_user
       // This ensures tasks are filtered by the authenticated user's session
       const data = await backgroundTasksAPI.list(null, null, null, 50);
-      setTasks(data.tasks || []);
+      const newTasks = data.tasks || [];
+
+      // Detect newly completed tasks and dispatch refresh event
+      const newlyCompleted = newTasks.filter(
+        t => t.status === 'completed' && !completedTaskIdsRef.current.has(t.id)
+      );
+      if (newlyCompleted.length > 0) {
+        newlyCompleted.forEach(t => completedTaskIdsRef.current.add(t.id));
+        // Dispatch documents-refresh so graph and other views update
+        window.dispatchEvent(new Event('documents-refresh'));
+      }
+
+      // Also track already-completed tasks on first load
+      newTasks.forEach(t => {
+        if (t.status === 'completed') {
+          completedTaskIdsRef.current.add(t.id);
+        }
+      });
+
+      setTasks(newTasks);
     } catch (err) {
       console.error('Failed to load background tasks:', err);
-    } finally {
-      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (isOpen) {
       loadTasks();
-      // Poll for updates every 2 seconds while panel is open
-      const interval = setInterval(loadTasks, 2000);
+      // Poll for updates every 3 seconds while panel is open
+      const interval = setInterval(loadTasks, 3000);
       return () => clearInterval(interval);
     }
   }, [isOpen, loadTasks]);
