@@ -31,7 +31,7 @@ class ChatRequest(BaseModel):
     provider: str
     model: str
     confidence_threshold: Optional[float] = None  # Optional confidence threshold for vector search (0.0-1.0)
-    case_id: Optional[str] = None  # Optional case ID for cost tracking
+    case_id: str  # Required case ID for case isolation and cost tracking
 
 
 class ChatResponse(BaseModel):

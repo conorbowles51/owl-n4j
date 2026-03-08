@@ -438,6 +438,97 @@ class VectorDBService:
         except Exception as e:
             print(f"[VectorDB] Chunk delete error: {e}")
 
+    # =====================
+    # Case-level Operations
+    # =====================
+
+    def delete_documents_by_case(self, case_id: str) -> int:
+        """Delete all document embeddings for a case. Returns count deleted."""
+        try:
+            results = self.collection.get(where={"case_id": case_id})
+            if results and results["ids"]:
+                self.collection.delete(ids=results["ids"])
+                return len(results["ids"])
+            return 0
+        except Exception as e:
+            print(f"[VectorDB] Delete docs by case error: {e}")
+            return 0
+
+    def delete_chunks_by_case(self, case_id: str) -> int:
+        """Delete all chunk embeddings for a case. Returns count deleted."""
+        try:
+            results = self.chunk_collection.get(where={"case_id": case_id})
+            if results and results["ids"]:
+                self.chunk_collection.delete(ids=results["ids"])
+                return len(results["ids"])
+            return 0
+        except Exception as e:
+            print(f"[VectorDB] Delete chunks by case error: {e}")
+            return 0
+
+    def delete_entities_by_case(self, case_id: str) -> int:
+        """Delete all entity embeddings for a case. Returns count deleted."""
+        try:
+            results = self.entity_collection.get(where={"case_id": case_id})
+            if results and results["ids"]:
+                self.entity_collection.delete(ids=results["ids"])
+                return len(results["ids"])
+            return 0
+        except Exception as e:
+            print(f"[VectorDB] Delete entities by case error: {e}")
+            return 0
+
+    # =====================
+    # Audit / Maintenance
+    # =====================
+
+    def get_all_metadata(self, collection_name: str) -> list:
+        """
+        Get all IDs and metadata from a collection (for audit).
+
+        Args:
+            collection_name: One of 'documents', 'entities', 'chunks'
+
+        Returns:
+            List of (id, metadata) tuples.
+        """
+        try:
+            col = {
+                "documents": self.collection,
+                "entities": self.entity_collection,
+                "chunks": self.chunk_collection,
+            }[collection_name]
+            results = col.get(include=["metadatas"])
+            return list(zip(results.get("ids", []), results.get("metadatas", [])))
+        except Exception as e:
+            print(f"[VectorDB] get_all_metadata error: {e}")
+            return []
+
+    def delete_by_ids(self, collection_name: str, ids: list) -> int:
+        """
+        Delete specific IDs from a named collection.
+
+        Args:
+            collection_name: One of 'documents', 'entities', 'chunks'
+            ids: List of IDs to delete
+
+        Returns:
+            Count of items deleted.
+        """
+        if not ids:
+            return 0
+        try:
+            col = {
+                "documents": self.collection,
+                "entities": self.entity_collection,
+                "chunks": self.chunk_collection,
+            }[collection_name]
+            col.delete(ids=ids)
+            return len(ids)
+        except Exception as e:
+            print(f"[VectorDB] delete_by_ids error: {e}")
+            return 0
+
 
 # Lazy singleton instance - only create when accessed
 _vector_db_service = None

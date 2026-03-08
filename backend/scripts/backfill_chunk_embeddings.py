@@ -148,7 +148,11 @@ def backfill_chunk_embeddings(
         # Check if this document already has chunks
         if skip_existing:
             try:
-                existing_count = vector_db_service.count_chunks(doc_id)
+                existing_chunks = vector_db_service.chunk_collection.get(
+                    where={"doc_id": doc_id},
+                    include=[],
+                )
+                existing_count = len(existing_chunks.get("ids", [])) if existing_chunks else 0
                 if existing_count > 0:
                     log("info", f"[{i}/{stats['total']}] {doc_name} - Already has {existing_count} chunks (skipping)")
                     stats["already_has_chunks"] += 1

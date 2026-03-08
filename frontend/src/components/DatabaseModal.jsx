@@ -496,21 +496,29 @@ export default function DatabaseModal({ isOpen, onClose, currentUser }) {
                           <span className="text-green-600">In ChromaDB</span>
                           <span className="font-medium text-green-700">{gapAnalysis.entities?.total_chromadb || 0}</span>
                         </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-orange-600">Missing embeddings</span>
-                          <span className="font-medium text-orange-700">{gapAnalysis.entities?.missing_embeddings || 0}</span>
-                        </div>
+                        {(gapAnalysis.entities?.missing_embeddings || 0) > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-orange-600">Missing embeddings</span>
+                            <span className="font-medium text-orange-700">{gapAnalysis.entities.missing_embeddings}</span>
+                          </div>
+                        )}
+                        {(gapAnalysis.entities?.orphaned_embeddings || 0) > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-red-600">Orphaned in ChromaDB</span>
+                            <span className="font-medium text-red-700">{gapAnalysis.entities.orphaned_embeddings}</span>
+                          </div>
+                        )}
                       </div>
                       {gapAnalysis.entities?.total_neo4j > 0 && (
                         <div className="mt-2">
                           <div className="w-full bg-light-200 rounded-full h-1.5">
                             <div
                               className="bg-purple-500 h-1.5 rounded-full transition-all"
-                              style={{ width: `${Math.round((gapAnalysis.entities.total_chromadb / gapAnalysis.entities.total_neo4j) * 100)}%` }}
+                              style={{ width: `${Math.min(100, Math.round((gapAnalysis.entities.total_chromadb / gapAnalysis.entities.total_neo4j) * 100))}%` }}
                             />
                           </div>
                           <div className="text-[10px] text-light-500 mt-0.5 text-right">
-                            {Math.round((gapAnalysis.entities.total_chromadb / gapAnalysis.entities.total_neo4j) * 100)}%
+                            {Math.min(100, Math.round((gapAnalysis.entities.total_chromadb / gapAnalysis.entities.total_neo4j) * 100))}%
                           </div>
                         </div>
                       )}

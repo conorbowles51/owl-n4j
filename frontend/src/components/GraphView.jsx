@@ -353,6 +353,12 @@ const GraphView = forwardRef(function GraphView({
       nodeColor = getNodeColor(node.type, profileColors);
     }
 
+    // Apply opacity modulation for result graph nodes (mentioned vs context-only)
+    ctx.save();
+    if (node.mentioned === false) {
+      ctx.globalAlpha = 0.4;  // Faded for context-only entities
+    }
+
     // Node circle
     ctx.beginPath();
     ctx.arc(node.x, node.y, nodeRadius, 0, 2 * Math.PI);
@@ -371,14 +377,15 @@ const GraphView = forwardRef(function GraphView({
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#1f2937'; // light-800 - dark text for light background
-    
+
     // Truncate long labels
     const maxLabelLength = 20;
-    const displayLabel = label.length > maxLabelLength 
-      ? label.substring(0, maxLabelLength) + '...' 
+    const displayLabel = label.length > maxLabelLength
+      ? label.substring(0, maxLabelLength) + '...'
       : label;
-    
+
     ctx.fillText(displayLabel, node.x, node.y + nodeRadius + 2);
+    ctx.restore();
   }, [selectedNodes, hoveredNode, profileColors]);
 
   // Link rendering - updated for light theme with optional labels
@@ -400,19 +407,21 @@ const GraphView = forwardRef(function GraphView({
 
     // Base link width
     let linkWidth = 1.5;
-    
-    // Adjust link width based on confidence scores of connected nodes
-    // Use average confidence of both nodes
-    const startConfidence = start.confidence !== undefined && start.confidence !== null ? start.confidence : null;
-    const endConfidence = end.confidence !== undefined && end.confidence !== null ? end.confidence : null;
-    
-    if (startConfidence !== null || endConfidence !== null) {
-      // Calculate average confidence
-      const confidences = [startConfidence, endConfidence].filter(c => c !== null);
-      if (confidences.length > 0) {
-        const avgConfidence = confidences.reduce((sum, c) => sum + c, 0) / confidences.length;
-        // Link width ranges from 1.0 (low confidence) to 4.0 (high confidence)
-        linkWidth = 1.0 + (avgConfidence * 3.0); // 1.0 to 4.0
+
+    if (link.weight !== undefined && link.weight !== null) {
+      // Explicit edge weight from result graph (0.3 to 1.0)
+      linkWidth = 1.0 + (link.weight * 3.0); // 1.0 to 4.0
+    } else {
+      // Fallback: average confidence of connected nodes
+      const startConfidence = start.confidence !== undefined && start.confidence !== null ? start.confidence : null;
+      const endConfidence = end.confidence !== undefined && end.confidence !== null ? end.confidence : null;
+
+      if (startConfidence !== null || endConfidence !== null) {
+        const confidences = [startConfidence, endConfidence].filter(c => c !== null);
+        if (confidences.length > 0) {
+          const avgConfidence = confidences.reduce((sum, c) => sum + c, 0) / confidences.length;
+          linkWidth = 1.0 + (avgConfidence * 3.0); // 1.0 to 4.0
+        }
       }
     }
 

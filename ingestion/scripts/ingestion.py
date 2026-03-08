@@ -855,7 +855,7 @@ def ingest_document(
                     metadata={
                         "filename": doc_name,
                         "doc_key": doc_key,
-                        "case_id": metadata.get("case_id"),
+                        "case_id": case_id,
                         "source_type": metadata.get("source_type", "unknown"),
                     }
                 )

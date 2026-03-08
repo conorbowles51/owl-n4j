@@ -119,3 +119,6 @@ celerybeat.pid
 
 # Docker
 docker-compose.override.yml
+
+# Deploy logs
+deploy/logs/

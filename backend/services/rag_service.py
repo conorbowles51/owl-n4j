@@ -427,7 +427,12 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
         try:
             query_embedding = embedding_service.generate_embedding(question)
-            vector_filter = {"case_id": case_id} if case_id else None
+            # Enforce case_id isolation — never search without it
+            if not case_id:
+                if debug_log is not None:
+                    debug_log["chunk_search"] = {"enabled": False, "reason": "No case_id provided"}
+                return []
+            vector_filter = {"case_id": case_id}
             threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
 
             # Try chunk-level search first
@@ -438,12 +443,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     top_k=CHUNK_SEARCH_TOP_K,
                     filter_metadata=vector_filter,
                 )
-                # Fallback: if case_id filter yielded nothing but chunks exist, retry without filter
-                if not all_results and case_id and chunk_count > 0:
-                    all_results = vector_db_service.search_chunks(
-                        query_embedding=query_embedding,
-                        top_k=CHUNK_SEARCH_TOP_K,
-                    )
+                # Log when no chunks found for this case (do NOT fall back to unfiltered search)
+                if not all_results and chunk_count > 0:
+                    print(f"[RAG] No chunks found for case_id={case_id} (total chunks: {chunk_count})")
                 source = "chunks"
             else:
                 # Fallback to document-level search
@@ -452,12 +454,10 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     top_k=VECTOR_SEARCH_TOP_K,
                     filter_metadata=vector_filter,
                 )
-                # Fallback without filter
-                if not all_results and case_id:
-                    all_results = vector_db_service.search(
-                        query_embedding=query_embedding,
-                        top_k=VECTOR_SEARCH_TOP_K,
-                    )
+                # Log when no documents found for this case (do NOT fall back to unfiltered search)
+                if not all_results:
+                    doc_count = vector_db_service.count_documents()
+                    print(f"[RAG] No documents found for case_id={case_id} (total docs: {doc_count})")
                 source = "documents"
 
             # Apply confidence threshold
@@ -523,7 +523,13 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
         try:
             query_embedding = embedding_service.generate_embedding(question)
-            vector_filter = {"case_id": case_id} if case_id else None
+
+            # Enforce case_id isolation — never search without it
+            if not case_id:
+                if debug_log is not None:
+                    debug_log["entity_search"] = {"enabled": False, "reason": "No case_id provided"}
+                return []
+            vector_filter = {"case_id": case_id}
 
             entity_results = vector_db_service.search_entities(
                 query_embedding=query_embedding,
@@ -531,26 +537,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 filter_metadata=vector_filter,
             )
 
-            # Fallback for old data without case_id metadata —
-            # still filter by case_id via Neo4j after retrieval to prevent cross-case leakage
+            # Log when no entities found for this case (do NOT fall back to unfiltered search)
             if not entity_results and case_id:
-                entity_results = vector_db_service.search_entities(
-                    query_embedding=query_embedding,
-                    top_k=top_k,
-                )
-                # Post-filter: only keep entities that belong to this case in Neo4j
-                if entity_results:
-                    fallback_keys = [r["id"] for r in entity_results if r.get("id")]
-                    try:
-                        with self.neo4j._driver.session() as sess:
-                            case_keys = sess.run(
-                                "MATCH (n) WHERE n.key IN $keys AND n.case_id = $cid RETURN n.key AS k",
-                                keys=fallback_keys, cid=case_id,
-                            )
-                            valid_keys = {rec["k"] for rec in case_keys}
-                        entity_results = [r for r in entity_results if r.get("id") in valid_keys]
-                    except Exception:
-                        entity_results = []
+                print(f"[RAG] No entities found for case_id={case_id}")
 
             # Get full entity details from Neo4j (including verified_facts, connections)
             entity_keys = [r["id"] for r in entity_results if r.get("id")]
@@ -631,6 +620,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         entity_results: List[Dict],
         graph_context: Dict,
         cypher_context: Optional[str] = None,
+        question: str = "",
     ) -> str:
         """
         Build a structured context string with multiple sections:
@@ -678,11 +668,24 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 if entity.get("summary"):
                     lines.append(f"  Summary: {entity['summary']}")
 
-                # Include verified facts with citations
+                # Include verified facts with citations (sorted by relevance to question)
                 verified_facts = entity.get("verified_facts")
                 if verified_facts:
+                    # Sort facts by relevance: keyword hits from question, then importance
+                    stop_words = {"the", "a", "an", "is", "are", "was", "were", "what", "who",
+                                  "where", "when", "how", "why", "do", "does", "did", "in", "of",
+                                  "to", "for", "and", "or", "on", "at", "by", "with"}
+                    question_words = set(question.lower().split()) - stop_words if question else set()
+
+                    def _fact_relevance(fact):
+                        text = fact.get("text", "").lower()
+                        keyword_hits = sum(1 for w in question_words if w in text) if question_words else 0
+                        importance = fact.get("importance", 0) or 0
+                        return (keyword_hits, importance)
+
+                    sorted_facts = sorted(verified_facts, key=_fact_relevance, reverse=True)
                     lines.append("  Verified Facts:")
-                    for fact in verified_facts[:25]:  # Raised from 10→25 for full case analysis
+                    for fact in sorted_facts:  # no arbitrary cap — token budget governs
                         fact_text = fact.get("text", "")
                         source = fact.get("source_doc", "")
                         quote = fact.get("quote", "")
@@ -710,15 +713,22 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 lines.append("")
             sections.append("\n".join(lines))
 
-        # Section 3: Graph Connections
+        # Section 3: Graph Connections (sorted by relevance)
+        retrieved_entity_keys = {e.get("key") for e in entity_results if e.get("key")}
         graph_entities = graph_context.get("selected_entities", [])
         if graph_entities:
             lines = ["=== GRAPH CONNECTIONS ===", ""]
             for entity in graph_entities:
                 connections = entity.get("connections", [])
                 if connections:
+                    # Sort: independently retrieved first, then has summary, then alphabetical
+                    connections = sorted(connections, key=lambda c: (
+                        c.get("key") in retrieved_entity_keys,
+                        bool(c.get("summary")),
+                        c.get("name", ""),
+                    ), reverse=True)
                     lines.append(f"[{entity.get('type', '?')}] {entity.get('name', '?')}:")
-                    for conn in connections[:15]:
+                    for conn in connections:  # no arbitrary cap — token budget governs
                         direction = "->" if conn.get("direction") == "outgoing" else "<-"
                         lines.append(
                             f"  {direction} [{conn.get('relationship', '?')}] "
@@ -906,64 +916,256 @@ Only include candidates with score >= 5."""
             )
 
     # =====================
-    # NEW: Result Graph Builder
+    # Result Graph Builder (hybrid: retrieval pool + answer similarity)
     # =====================
 
     def _build_result_graph(
         self,
-        doc_results: List[Dict],
         answer_text: str,
+        entity_results: List[Dict],
+        graph_context: Dict,
+        cypher_context: Optional[str] = None,
+        selected_keys: Optional[List[str]] = None,
+        case_id: Optional[str] = None,
         top_k_entities: int = 50,
-        top_k_documents: int = 50,
     ) -> Dict[str, List]:
         """
-        Build a result graph containing semantically relevant entities.
-        Searches the answer text against entities and includes relevance scores.
-        """
-        nodes = []
-        node_keys = set()
-        links = []
+        Build a result graph from retrieval context + answer-weighted scoring.
 
-        if not VECTOR_DB_AVAILABLE:
-            return {"nodes": nodes, "links": links}
+        Uses entities from stages 1-4 as the primary pool, supplements with
+        answer-similarity search (case_id filtered), then scores each entity
+        with a composite formula based on mention frequency, retrieval distance,
+        graph connectivity, cypher presence, and user selection.
+        """
+        import re
+
+        nodes = []
+        links = []
 
         try:
             if not answer_text or not answer_text.strip():
                 return {"nodes": nodes, "links": links}
 
-            answer_embedding = embedding_service.generate_embedding(answer_text)
-            print(f"[RAG] Building result graph from answer text ({len(answer_text)} chars)")
+            answer_lower = answer_text.lower()
+            selected_keys = selected_keys or []
+            cypher_text_lower = (cypher_context or "").lower()
 
-            all_entity_results = []
-            try:
-                all_entity_results = vector_db_service.search_entities(
-                    query_embedding=answer_embedding,
-                    top_k=top_k_entities
+            # --- Step 1: Collect entity pool from retrieval stages ---
+            entity_pool = {}  # key -> {node_data, source, distance}
+
+            # From entity vector search (stage 3)
+            for entity in entity_results:
+                key = entity.get("key")
+                if key and key not in entity_pool:
+                    entity_pool[key] = {
+                        **entity,
+                        "_source": "retrieval",
+                        "_distance": entity.get("distance", 0.5),
+                    }
+
+            # From graph traversal connections (stage 4)
+            for graph_entity in graph_context.get("selected_entities", []):
+                # The traversed entity itself
+                key = graph_entity.get("key")
+                if key and key not in entity_pool:
+                    entity_pool[key] = {
+                        "key": key,
+                        "name": graph_entity.get("name", key),
+                        "type": graph_entity.get("type"),
+                        "summary": graph_entity.get("summary"),
+                        "notes": graph_entity.get("notes"),
+                        "_source": "graph",
+                        "_distance": None,
+                    }
+                # Its connections
+                for conn in graph_entity.get("connections", []):
+                    conn_key = conn.get("key")
+                    if conn_key and conn_key not in entity_pool:
+                        entity_pool[conn_key] = {
+                            "key": conn_key,
+                            "name": conn.get("name", conn_key),
+                            "type": conn.get("type"),
+                            "summary": conn.get("summary"),
+                            "_source": "graph",
+                            "_distance": None,
+                        }
+
+            print(f"[RAG] Result graph pool: {len(entity_pool)} entities from retrieval stages")
+
+            # --- Step 2: Discover answer-surfaced entities via vector similarity ---
+            if VECTOR_DB_AVAILABLE and case_id:
+                try:
+                    answer_embedding = embedding_service.generate_embedding(answer_text)
+                    answer_entities = vector_db_service.search_entities(
+                        query_embedding=answer_embedding,
+                        top_k=top_k_entities,
+                        filter_metadata={"case_id": case_id},
+                    )
+                    new_count = 0
+                    for ae in answer_entities:
+                        ae_key = ae.get("id") or ae.get("key")
+                        if ae_key and ae_key not in entity_pool:
+                            new_count += 1
+                            entity_pool[ae_key] = {
+                                "key": ae_key,
+                                "name": ae.get("name", ae_key),
+                                "type": ae.get("type"),
+                                "summary": ae.get("summary"),
+                                "_source": "answer_similarity",
+                                "_distance": ae.get("distance", 0.5),
+                            }
+                        elif ae_key and ae_key in entity_pool and entity_pool[ae_key]["_distance"] is None:
+                            # Graph-only entity now has an answer-similarity distance
+                            entity_pool[ae_key]["_distance"] = ae.get("distance", 0.5)
+                    if new_count:
+                        print(f"[RAG] Answer similarity added {new_count} new entities to pool")
+                except Exception as e:
+                    print(f"[RAG] Answer similarity search failed (non-fatal): {e}")
+
+            # --- Step 3: Enrich pool with Neo4j data (for entities missing full data) ---
+            keys_needing_enrichment = [
+                k for k, v in entity_pool.items()
+                if v.get("_source") in ("graph", "answer_similarity") and not v.get("verified_facts")
+            ]
+            if keys_needing_enrichment:
+                enriched = self._get_entity_nodes_from_neo4j(keys_needing_enrichment, case_id=case_id)
+                for node in enriched:
+                    nk = node.get("key")
+                    if nk and nk in entity_pool:
+                        # Preserve _source and _distance, update the rest
+                        entity_pool[nk].update({
+                            k: v for k, v in node.items()
+                            if k not in ("_source", "_distance")
+                        })
+
+            # --- Step 4: Compute composite score per entity ---
+            # Split answer into sentences for edge weight computation later
+            sentences = re.split(r'[.!?]+', answer_text)
+            sentences = [s.strip().lower() for s in sentences if s.strip()]
+
+            pool_keys = set(entity_pool.keys())
+            scored_entities = []
+
+            for key, entity in entity_pool.items():
+                name = entity.get("name", "")
+                name_lower = name.lower()
+
+                # mention_score: how often the entity is named in the answer (0-1)
+                mention_count = answer_lower.count(name_lower) if name_lower and len(name_lower) > 1 else 0
+                mention_score = min(mention_count / 3.0, 1.0)
+
+                # retrieval_score: based on vector distance (1.0 - distance)
+                distance = entity.get("_distance")
+                if distance is not None:
+                    retrieval_score = max(0.0, min(1.0, 1.0 - distance))
+                else:
+                    retrieval_score = 0.3  # default for graph-traversal-only
+
+                # graph_score: connections to other entities in the pool (0-1)
+                # We'll compute this after getting relationships, approximate with 0 for now
+                graph_score = 0.0
+
+                # cypher_bonus: entity appears in cypher results
+                cypher_bonus = 1.0 if name_lower and name_lower in cypher_text_lower else 0.0
+
+                # selection_bonus: user explicitly selected this entity
+                selection_bonus = 1.0 if key in selected_keys else 0.0
+
+                # mentioned flag for frontend opacity
+                mentioned = mention_count > 0
+
+                entity["_mention_score"] = mention_score
+                entity["_retrieval_score"] = retrieval_score
+                entity["_cypher_bonus"] = cypher_bonus
+                entity["_selection_bonus"] = selection_bonus
+                entity["_mentioned"] = mentioned
+
+                scored_entities.append(entity)
+
+            # --- Step 5: Get relationships and compute graph_score ---
+            all_keys = list(entity_pool.keys())
+            all_links = []
+            if len(all_keys) > 1:
+                all_links = self._get_relationships_between_nodes(all_keys)
+
+            # Build adjacency count for graph_score
+            adjacency_count = {}
+            for link in all_links:
+                src, tgt = link.get("source"), link.get("target")
+                if src in pool_keys:
+                    adjacency_count[src] = adjacency_count.get(src, 0) + 1
+                if tgt in pool_keys:
+                    adjacency_count[tgt] = adjacency_count.get(tgt, 0) + 1
+
+            # Final composite scoring
+            for entity in scored_entities:
+                key = entity.get("key")
+                graph_score = min(adjacency_count.get(key, 0) / 5.0, 1.0)
+
+                composite = (
+                    0.35 * entity["_mention_score"]
+                    + 0.30 * entity["_retrieval_score"]
+                    + 0.15 * graph_score
+                    + 0.10 * entity["_cypher_bonus"]
+                    + 0.10 * entity["_selection_bonus"]
                 )
-                print(f"[RAG] Found {len(all_entity_results)} entities via answer text search")
-            except Exception as e:
-                print(f"[RAG] Error searching entities: {e}")
+                entity["_composite"] = composite
 
-            entity_distance_map = {r["id"]: r.get("distance", 1.0) for r in all_entity_results if r.get("id")}
+            # --- Step 6: Filter by minimum score ---
+            qualifying = [e for e in scored_entities if e["_composite"] >= 0.15]
+            qualifying_keys = {e["key"] for e in qualifying}
 
-            entity_keys = list(entity_distance_map.keys())
-            if entity_keys:
-                entity_nodes = self._get_entity_nodes_from_neo4j(entity_keys)
-                for node in entity_nodes:
-                    if node["key"] and node["key"] not in node_keys:
-                        node_keys.add(node["key"])
-                        distance = entity_distance_map.get(node.get("key"), 1.0)
-                        confidence = 1.0 - distance if distance is not None else 0.0
-                        node["confidence"] = max(0.0, min(1.0, confidence))
-                        node["distance"] = distance
-                        nodes.append(node)
+            # --- Step 7: Build nodes ---
+            for entity in qualifying:
+                node = {
+                    "neo4j_id": entity.get("neo4j_id"),
+                    "id": entity.get("id") or entity.get("key"),
+                    "key": entity.get("key"),
+                    "name": entity.get("name") or entity.get("key"),
+                    "type": entity.get("type"),
+                    "summary": entity.get("summary"),
+                    "notes": entity.get("notes"),
+                    "verified_facts": entity.get("verified_facts"),
+                    "ai_insights": entity.get("ai_insights"),
+                    "properties": entity.get("properties", {}),
+                    "confidence": max(0.0, min(1.0, entity["_composite"])),
+                    "mentioned": entity["_mentioned"],
+                }
+                nodes.append(node)
 
-            if len(node_keys) > 1:
-                all_keys = list(node_keys)
-                entity_links = self._get_relationships_between_nodes(all_keys)
-                links.extend(entity_links)
+            # --- Step 8: Build links with edge weights ---
+            for link in all_links:
+                src, tgt = link.get("source"), link.get("target")
+                if src not in qualifying_keys or tgt not in qualifying_keys:
+                    continue
 
-            print(f"[RAG] Result graph: {len(nodes)} entities, {len(links)} links")
+                src_name = entity_pool.get(src, {}).get("name", "").lower()
+                tgt_name = entity_pool.get(tgt, {}).get("name", "").lower()
+
+                # Edge weight based on co-occurrence in answer
+                src_mentioned = src_name and src_name in answer_lower
+                tgt_mentioned = tgt_name and tgt_name in answer_lower
+
+                if src_mentioned and tgt_mentioned:
+                    # Check same-sentence co-occurrence
+                    same_sentence = any(
+                        src_name in sent and tgt_name in sent
+                        for sent in sentences
+                    )
+                    weight = 1.0 if same_sentence else 0.6
+                else:
+                    weight = 0.3
+
+                links.append({
+                    "source": src,
+                    "target": tgt,
+                    "type": link.get("type"),
+                    "properties": link.get("properties", {}),
+                    "weight": weight,
+                })
+
+            print(f"[RAG] Result graph: {len(nodes)} nodes, {len(links)} links "
+                  f"(from pool of {len(entity_pool)}, {len(qualifying)} qualified)")
 
         except Exception as e:
             print(f"[RAG] Error building result graph: {e}")
@@ -1247,7 +1449,8 @@ Only include candidates with score >= 5."""
         # ── Stage 6: Context building ────────────────────────────────────
         t6 = time.time()
         context = self._build_hybrid_context(
-            chunk_results, entity_results, graph_context, cypher_context
+            chunk_results, entity_results, graph_context, cypher_context,
+            question=question,
         )
 
         # Build context description
@@ -1341,10 +1544,12 @@ Only include candidates with score >= 5."""
         if clean_answer_text:
             try:
                 result_graph = self._build_result_graph(
-                    doc_results=[],
                     answer_text=clean_answer_text,
-                    top_k_entities=50,
-                    top_k_documents=50,
+                    entity_results=entity_results,
+                    graph_context=graph_context,
+                    cypher_context=cypher_context,
+                    selected_keys=selected_keys,
+                    case_id=case_id,
                 )
                 print(f"[RAG] Result graph: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
             except Exception as e:

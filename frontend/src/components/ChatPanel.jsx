@@ -410,7 +410,7 @@ export default function ChatPanel({
     setIsLoading(true);
 
     try {
-      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null, selectedModelId, selectedProvider, confidenceThreshold);
+      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null, selectedModelId, selectedProvider, confidenceThreshold, currentCaseId);
 
       // Debug log is now stored in system logs, no need to download
 

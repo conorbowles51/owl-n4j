@@ -202,13 +202,14 @@ def backfill_documents_for_user(
             cypher = """
             MATCH (d:Document)
             WHERE d.id IN $doc_ids
-            RETURN d.id AS id, d.key AS key, d.name AS name, 
-                   COALESCE(d.vector_db_id, null) AS vector_db_id
+            RETURN d.id AS id, d.key AS key, d.name AS name,
+                   COALESCE(d.vector_db_id, null) AS vector_db_id,
+                   COALESCE(d.case_id, '') AS case_id
             ORDER BY d.name
             """
             documents = neo4j_service.run_cypher(cypher, {"doc_ids": document_ids})
             found_count = len(documents) if documents else 0
-            
+
             # If no documents found by ID, try by key as fallback
             if found_count == 0:
                 if log_callback:
@@ -216,8 +217,9 @@ def backfill_documents_for_user(
                 cypher = """
                 MATCH (d:Document)
                 WHERE d.key IN $doc_ids
-                RETURN d.id AS id, d.key AS key, d.name AS name, 
-                       COALESCE(d.vector_db_id, null) AS vector_db_id
+                RETURN d.id AS id, d.key AS key, d.name AS name,
+                       COALESCE(d.vector_db_id, null) AS vector_db_id,
+                       COALESCE(d.case_id, '') AS case_id
                 ORDER BY d.name
                 """
                 documents = neo4j_service.run_cypher(cypher, {"doc_ids": document_ids})
@@ -247,8 +249,9 @@ def backfill_documents_for_user(
                 cypher = """
                 MATCH (d:Document)
                 WHERE d.name IN $doc_names
-                RETURN d.id AS id, d.key AS key, d.name AS name, 
-                       COALESCE(d.vector_db_id, null) AS vector_db_id
+                RETURN d.id AS id, d.key AS key, d.name AS name,
+                       COALESCE(d.vector_db_id, null) AS vector_db_id,
+                       COALESCE(d.case_id, '') AS case_id
                 ORDER BY d.name
                 """
                 documents = neo4j_service.run_cypher(cypher, {"doc_names": doc_names_list})
@@ -261,8 +264,9 @@ def backfill_documents_for_user(
             try:
                 cypher = """
                 MATCH (d:Document)
-                RETURN d.id AS id, d.key AS key, d.name AS name, 
-                       COALESCE(d.vector_db_id, null) AS vector_db_id
+                RETURN d.id AS id, d.key AS key, d.name AS name,
+                       COALESCE(d.vector_db_id, null) AS vector_db_id,
+                       COALESCE(d.case_id, '') AS case_id
                 ORDER BY d.name
                 """
                 documents = neo4j_service.run_cypher(cypher)
@@ -305,6 +309,7 @@ def backfill_documents_for_user(
         doc_id = doc.get("id")
         doc_key = doc.get("key")
         doc_name = doc.get("name")
+        doc_case_id = doc.get("case_id", "")
         vector_db_id = doc.get("vector_db_id")
         
         if not doc_id or not doc_name:
@@ -382,6 +387,7 @@ def backfill_documents_for_user(
                 metadata={
                     "filename": doc_name,
                     "doc_key": doc_key,
+                    "case_id": doc_case_id,
                     "source_type": "backfill",
                     "owner": username,
                 }
@@ -565,25 +571,44 @@ async def backfill_chunks(
                 success=level != "error",
             )
 
-        result = backfill_chunk_embeddings(
-            dry_run=request.dry_run,
-            skip_existing=request.skip_existing,
-            case_id=request.case_id,
-            log_callback=log_callback,
-        )
+        def run_chunk_backfill():
+            """Run chunk backfill in background thread."""
+            try:
+                result = backfill_chunk_embeddings(
+                    dry_run=request.dry_run,
+                    skip_existing=request.skip_existing,
+                    case_id=request.case_id,
+                    log_callback=log_callback,
+                )
+                stats = result.get("stats", {})
+                system_log_service.log(
+                    log_type=LogType.DOCUMENT_INGESTION,
+                    origin=LogOrigin.BACKEND,
+                    action=f"Chunk Backfill Complete: {stats.get('processed', 0)} docs, "
+                           f"{stats.get('total_chunks_created', 0)} chunks created",
+                    details={"stats": stats},
+                    user=current_username,
+                    success=True,
+                )
+            except Exception as e:
+                system_log_service.log(
+                    log_type=LogType.DOCUMENT_INGESTION,
+                    origin=LogOrigin.BACKEND,
+                    action="Chunk Backfill Failed",
+                    details={"error": str(e)},
+                    user=current_username,
+                    success=False,
+                    error=str(e),
+                )
 
-        stats = result.get("stats", {})
-        message = (
-            f"Chunk backfill {'(dry run) ' if request.dry_run else ''}"
-            f"complete: {stats.get('processed', 0)} documents processed, "
-            f"{stats.get('total_chunks_created', 0)} chunks created, "
-            f"{stats.get('already_has_chunks', 0)} already had chunks, "
-            f"{stats.get('file_not_found', 0)} files not found"
-        )
+        # Run in background to avoid frontend timeout
+        background_tasks.add_task(run_chunk_backfill)
 
         return BackfillResponse(
-            status=result.get("status", "complete"),
-            message=message,
+            status="started",
+            message=f"Chunk backfill {'(dry run) ' if request.dry_run else ''}"
+                    f"started in background for case_id={request.case_id or 'all'}. "
+                    f"Check system logs for progress.",
         )
     except Exception as e:
         system_log_service.log(
@@ -944,7 +969,8 @@ async def get_backfill_status(
                 "total_chromadb": total_entities_chromadb,
                 "with_case_id_metadata": entities_with_case_id,
                 "missing_case_id": total_entities_chromadb - entities_with_case_id,
-                "missing_embeddings": total_entities_neo4j - total_entities_chromadb,
+                "missing_embeddings": max(0, total_entities_neo4j - total_entities_chromadb),
+                "orphaned_embeddings": max(0, total_entities_chromadb - total_entities_neo4j),
                 "neo4j_with_case_id": entities_neo4j_with_case_id,
                 "neo4j_missing_case_id": total_entities_neo4j - entities_neo4j_with_case_id,
             },

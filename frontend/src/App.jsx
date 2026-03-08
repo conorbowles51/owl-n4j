@@ -2657,7 +2657,7 @@ export default function App() {
             promptLength: overviewPrompt.length
           });
           
-          const aiResponse = await chatAPI.ask(overviewPrompt, subgraphNodeKeys.slice(0, 10)); // Limit to 10 nodes for context
+          const aiResponse = await chatAPI.ask(overviewPrompt, subgraphNodeKeys.slice(0, 10), undefined, undefined, null, currentCaseId); // Limit to 10 nodes for context
           
           console.log('Raw AI response:', aiResponse);
           
