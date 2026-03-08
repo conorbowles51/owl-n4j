@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { evidenceAPI, profilesAPI, filesystemAPI, backgroundTasksAPI } from '../services/api';
 import { useCasePermissions } from '../contexts/CasePermissionContext';
+import { normalizeStoredPath } from '../utils/pathUtils';
 import BackgroundTasksPanel from './BackgroundTasksPanel';
 import ProfileEditor from './ProfileEditor';
 import FileNavigator from './FileNavigator';
@@ -54,6 +55,7 @@ export default function EvidenceProcessingView({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [fileNavKey, setFileNavKey] = useState(0); // Increment to force FileNavigator refresh
   const [error, setError] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [logs, setLogs] = useState([]);
@@ -220,10 +222,22 @@ export default function EvidenceProcessingView({
   }, [caseId]);
 
   useEffect(() => {
-    loadFiles();
-    loadLogs();
-    loadProcessedWiretaps();
-  }, [loadFiles, loadLogs, loadProcessedWiretaps]);
+    const init = async () => {
+      // Sync filesystem first to create records for any orphaned files
+      if (caseId) {
+        try {
+          await evidenceAPI.syncFilesystem(caseId);
+        } catch (err) {
+          // Non-critical — just log and continue
+          console.warn('Filesystem sync failed:', err);
+        }
+      }
+      loadFiles();
+      loadLogs();
+      loadProcessedWiretaps();
+    };
+    init();
+  }, [caseId, loadFiles, loadLogs, loadProcessedWiretaps]);
 
   // Poll logs every 5 seconds only while actively processing
   // Also check for completed wiretap tasks to refresh processed folders list
@@ -349,17 +363,21 @@ export default function EvidenceProcessingView({
     setError(null);
     try {
       const result = await evidenceAPI.upload(caseId, fileList);
-      
+
       if (result.task_id) {
         // Background task created (for large uploads >5 files)
         setShowBackgroundTasksPanel(true);
         // Refresh files after a short delay
-        setTimeout(() => loadFiles(), 2000);
+        setTimeout(() => {
+          loadFiles();
+          setFileNavKey(k => k + 1);
+        }, 2000);
       } else {
         // Synchronous upload completed
         await loadFiles();
+        setFileNavKey(k => k + 1);
       }
-      
+
       event.target.value = ''; // reset input so same files can be re-selected if needed
     } catch (err) {
       console.error('Failed to upload files:', err);
@@ -382,17 +400,21 @@ export default function EvidenceProcessingView({
     try {
       // Upload folder as background task
       const result = await evidenceAPI.uploadFolder(caseId, fileList);
-      
+
       if (result.task_id) {
         // Background task created - show message and open background tasks panel
         setShowBackgroundTasksPanel(true);
         // Refresh files after a short delay to catch any quick uploads
-        setTimeout(() => loadFiles(), 2000);
+        setTimeout(() => {
+          loadFiles();
+          setFileNavKey(k => k + 1);
+        }, 2000);
       } else {
         // Synchronous upload completed
         await loadFiles();
+        setFileNavKey(k => k + 1);
       }
-      
+
       event.target.value = ''; // reset input
     } catch (err) {
       console.error('Failed to upload folder:', err);
@@ -406,24 +428,15 @@ export default function EvidenceProcessingView({
     setSelectedFilePath(filePath);
     // Normalize the file path from navigator (relative to case root)
     const normalizedFilePath = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    
+
     // Find matching file in the files list if it exists
     const matchingFile = files.find(f => {
       if (!f.stored_path) return false;
-      
-      // Normalize stored_path (remove ingestion/data/ and case_id prefixes)
-      let normalizedStoredPath = f.stored_path.replace(/\\/g, '/');
-      normalizedStoredPath = normalizedStoredPath.replace(/^ingestion\/data\//, '');
-      if (caseId) {
-        const casePrefix = `${caseId}/`;
-        if (normalizedStoredPath.startsWith(casePrefix)) {
-          normalizedStoredPath = normalizedStoredPath.substring(casePrefix.length);
-        }
-      }
-      normalizedStoredPath = normalizedStoredPath.replace(/^\/+|\/+$/g, '');
-      
+
+      const normalizedStoredPath = normalizeStoredPath(f.stored_path, caseId);
+
       // Match by exact path or by filename if paths match
-      return normalizedStoredPath === normalizedFilePath || 
+      return normalizedStoredPath === normalizedFilePath ||
              normalizedStoredPath.endsWith('/' + normalizedFilePath) ||
              normalizedFilePath.endsWith('/' + normalizedStoredPath);
     });
@@ -454,13 +467,14 @@ export default function EvidenceProcessingView({
   const handleFileNavigatorInfo = async (item) => {
     if (item.type === 'file') {
       // Find matching evidence file by path
+      const normalizedItemPath = item.path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
       const matchingFile = files.find(f => {
-        const storedPath = f.stored_path || '';
-        // Try to match the file path
-        return storedPath.includes(item.path) || 
-               item.path.includes(storedPath) ||
-               storedPath.endsWith(item.name) ||
-               item.path.endsWith(f.original_filename);
+        const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
+        // Match by normalized path or by filename
+        return normalizedStored === normalizedItemPath ||
+               normalizedStored.endsWith('/' + normalizedItemPath) ||
+               normalizedItemPath.endsWith('/' + normalizedStored) ||
+               normalizedItemPath.endsWith(f.original_filename);
       });
       
       if (matchingFile) {
@@ -493,17 +507,17 @@ export default function EvidenceProcessingView({
         
         // Match with evidence files
         const folderEvidenceFiles = folderFiles.map(filePath => {
-          // Extract filename from path
-          const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || filePath;
+          const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+          const fileName = normalizedFP.split('/').pop() || normalizedFP;
           // Find matching evidence file
           return files.find(f => {
-            const storedPath = f.stored_path || '';
+            const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
             const originalFilename = f.original_filename || '';
-            return storedPath.includes(filePath) || 
-                   filePath.includes(storedPath) ||
-                   storedPath.endsWith(fileName) ||
+            return normalizedStored === normalizedFP ||
+                   normalizedStored.endsWith('/' + normalizedFP) ||
+                   normalizedFP.endsWith('/' + normalizedStored) ||
                    originalFilename === fileName ||
-                   filePath.endsWith(originalFilename);
+                   normalizedFP.endsWith(originalFilename);
           });
         }).filter(Boolean);
         
@@ -669,24 +683,15 @@ export default function EvidenceProcessingView({
     // Also sync with selectedIds for processing
     // Normalize the file path from navigator (relative to case root)
     const normalizedFilePath = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    
+
     // Find matching file in the files list
     const matchingFile = files.find(f => {
       if (!f.stored_path) return false;
-      
-      // Normalize stored_path (remove ingestion/data/ and case_id prefixes)
-      let normalizedStoredPath = f.stored_path.replace(/\\/g, '/');
-      normalizedStoredPath = normalizedStoredPath.replace(/^ingestion\/data\//, '');
-      if (caseId) {
-        const casePrefix = `${caseId}/`;
-        if (normalizedStoredPath.startsWith(casePrefix)) {
-          normalizedStoredPath = normalizedStoredPath.substring(casePrefix.length);
-        }
-      }
-      normalizedStoredPath = normalizedStoredPath.replace(/^\/+|\/+$/g, '');
-      
+
+      const normalizedStoredPath = normalizeStoredPath(f.stored_path, caseId);
+
       // Match by exact path or by filename if paths match
-      return normalizedStoredPath === normalizedFilePath || 
+      return normalizedStoredPath === normalizedFilePath ||
              normalizedStoredPath.endsWith('/' + normalizedFilePath) ||
              normalizedFilePath.endsWith('/' + normalizedStoredPath);
     });
@@ -724,20 +729,21 @@ export default function EvidenceProcessingView({
           
           // Match with evidence files
           const folderEvidenceFiles = folderFiles.map(filePath => {
-            const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || filePath;
+            const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+            const fileName = normalizedFP.split('/').pop() || normalizedFP;
             return files.find(f => {
-              const storedPath = f.stored_path || '';
+              const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
               const originalFilename = f.original_filename || '';
-              return storedPath.includes(filePath) || 
-                     filePath.includes(storedPath) ||
-                     storedPath.endsWith(fileName) ||
+              return normalizedStored === normalizedFP ||
+                     normalizedStored.endsWith('/' + normalizedFP) ||
+                     normalizedFP.endsWith('/' + normalizedStored) ||
                      originalFilename === fileName ||
-                     filePath.endsWith(originalFilename);
+                     normalizedFP.endsWith(originalFilename);
             });
           }).filter(Boolean);
-          
+
           // Calculate statistics
-          const processedCount = folderEvidenceFiles.filter(f => 
+          const processedCount = folderEvidenceFiles.filter(f =>
             f.status === 'processed'
           ).length;
           const unprocessedCount = folderEvidenceFiles.filter(f => 
@@ -836,28 +842,19 @@ export default function EvidenceProcessingView({
     filePaths.forEach(filePath => {
       // Normalize the file path from navigator (relative to case root)
       const normalizedFilePath = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-      
+
       // Find matching file in the files list
       const matchingFile = files.find(f => {
         if (!f.stored_path) return false;
-        
-        // Normalize stored_path (remove ingestion/data/ and case_id prefixes)
-        let normalizedStoredPath = f.stored_path.replace(/\\/g, '/');
-        normalizedStoredPath = normalizedStoredPath.replace(/^ingestion\/data\//, '');
-        if (caseId) {
-          const casePrefix = `${caseId}/`;
-          if (normalizedStoredPath.startsWith(casePrefix)) {
-            normalizedStoredPath = normalizedStoredPath.substring(casePrefix.length);
-          }
-        }
-        normalizedStoredPath = normalizedStoredPath.replace(/^\/+|\/+$/g, '');
-        
+
+        const normalizedStoredPath = normalizeStoredPath(f.stored_path, caseId);
+
         // Match by exact path or by filename if paths match
-        return normalizedStoredPath === normalizedFilePath || 
+        return normalizedStoredPath === normalizedFilePath ||
                normalizedStoredPath.endsWith('/' + normalizedFilePath) ||
                normalizedFilePath.endsWith('/' + normalizedStoredPath);
       });
-      
+
       if (matchingFile) {
         fileIds.add(matchingFile.id);
       }
@@ -1337,6 +1334,7 @@ export default function EvidenceProcessingView({
               <div className="h-64 border border-light-200 rounded bg-white">
                 {caseId ? (
                   <FileNavigator
+                    key={fileNavKey}
                     caseId={caseId}
                     onFileSelect={handleFileNavigatorSelect}
                     selectedFilePath={selectedFilePath}

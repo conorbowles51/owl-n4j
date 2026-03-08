@@ -1380,6 +1380,17 @@ export const evidenceAPI = {
   },
 
   /**
+   * Sync filesystem with evidence records.
+   * Creates evidence records for files on disk that don't have records yet.
+   * @param {string} caseId - Case ID to sync
+   * @returns {{created: number, message: string}}
+   */
+  syncFilesystem: (caseId) =>
+    fetchAPI(`/evidence/sync-filesystem?case_id=${encodeURIComponent(caseId)}`, {
+      method: 'POST',
+    }),
+
+  /**
    * Find all duplicate files by SHA256 hash
    */
   findDuplicates: (sha256) =>

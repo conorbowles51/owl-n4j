@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from services.evidence_service import evidence_service
-from services.evidence_storage import evidence_storage
+from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
 from services.evidence_log_storage import evidence_log_storage
 from services.wiretap_tracking import list_processed_wiretaps, is_wiretap_processed, mark_wiretap_processed
 from services.wiretap_service import check_wiretap_suitable, process_wiretap_folder_async
@@ -142,6 +142,121 @@ async def list_evidence(
                     logger.warning(f"Failed to load document summaries: {str(e)}")
         
         return {"files": files}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sync-filesystem")
+async def sync_filesystem(
+    case_id: str = Query(..., description="Case ID to sync"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Sync the filesystem with evidence records.
+
+    Scans the case's data directory for files that don't have corresponding
+    evidence records and creates 'unprocessed' records for them.
+    This handles cases where files exist on disk but weren't properly registered.
+    """
+    import hashlib
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        case_dir = EVIDENCE_ROOT_DIR / case_id
+        if not case_dir.exists() or not case_dir.is_dir():
+            return {"created": 0, "message": "Case directory does not exist"}
+
+        # Get existing evidence records for this case
+        existing_records = evidence_storage.list_files(case_id=case_id)
+
+        # Build a set of known filenames (using original_filename) and stored paths
+        known_filenames = set()
+        known_stored_paths = set()
+        for rec in existing_records:
+            known_filenames.add(rec.get("original_filename", ""))
+            sp = rec.get("stored_path", "")
+            if sp:
+                known_stored_paths.add(sp)
+                # Also add just the resolved path in case it was stored differently
+                try:
+                    known_stored_paths.add(str(Path(sp).resolve()))
+                except Exception:
+                    pass
+
+        # Walk the case directory for files without evidence records
+        created_count = 0
+        file_infos = []
+        for file_path in case_dir.rglob("*"):
+            if not file_path.is_file():
+                continue
+            if file_path.name.startswith('.'):
+                continue
+
+            # Check if this file already has an evidence record
+            abs_path_str = str(file_path)
+            resolved_str = str(file_path.resolve())
+            filename = file_path.name
+
+            # Check by stored_path (both absolute and resolved)
+            if abs_path_str in known_stored_paths or resolved_str in known_stored_paths:
+                continue
+
+            # Check by filename (within this case)
+            # Only skip if there's a record with same filename AND same relative path
+            relative_path = str(file_path.relative_to(case_dir)).replace('\\', '/')
+            already_exists = False
+            for rec in existing_records:
+                rec_stored = rec.get("stored_path", "")
+                rec_filename = rec.get("original_filename", "")
+                # Match by filename for root-level files
+                if rec_filename == filename:
+                    # Check if the relative paths match
+                    if '/' not in relative_path and rec_filename == relative_path:
+                        already_exists = True
+                        break
+                    # For nested files, check if stored path ends with same relative path
+                    if rec_stored.replace('\\', '/').endswith(relative_path):
+                        already_exists = True
+                        break
+            if already_exists:
+                continue
+
+            # Read file content for hash computation
+            try:
+                content = file_path.read_bytes()
+            except (OSError, PermissionError) as e:
+                logger.warning(f"Cannot read file {file_path}: {e}")
+                continue
+
+            file_infos.append({
+                "original_filename": filename,
+                "stored_path": file_path,
+                "content": content,
+                "size": len(content),
+            })
+
+        if file_infos:
+            new_records = evidence_storage.add_files(
+                case_id=case_id,
+                files=file_infos,
+                owner=current_user.email,
+            )
+            created_count = len(new_records)
+            logger.info(f"Filesystem sync: created {created_count} evidence records for case {case_id}")
+
+        return {"created": created_count, "message": f"Synced {created_count} file(s)"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

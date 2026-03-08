@@ -17,10 +17,11 @@ import {
 } from 'lucide-react';
 import { filesystemAPI } from '../services/api';
 import FilePreview from './FilePreview';
+import { normalizeStoredPath } from '../utils/pathUtils';
 
 /**
  * FileNavigator Component
- * 
+ *
  * Browses the file system for a specific case, starting from the case's data folder.
  * 
  * Props:
@@ -127,34 +128,18 @@ export default function FileNavigator({ caseId, onFileSelect, selectedFilePath, 
     if (!evidenceFiles || evidenceFiles.length === 0) {
       return map;
     }
-    
+
     evidenceFiles.forEach(file => {
       if (!file.stored_path) return;
-      
-      // stored_path is a full path like "ingestion/data/{case_id}/file.txt" or "{case_id}/subfolder/file.txt"
-      // We need to extract the relative path from the case root
-      let normalizedPath = file.stored_path;
-      
-      // Remove "ingestion/data/" prefix if present
-      normalizedPath = normalizedPath.replace(/^ingestion\/data\//, '');
-      
-      // Remove case_id prefix if present (format: "case_id/path" or just "path")
-      if (caseId) {
-        const casePrefix = `${caseId}/`;
-        if (normalizedPath.startsWith(casePrefix)) {
-          normalizedPath = normalizedPath.substring(casePrefix.length);
-        }
-      }
-      
-      // Normalize path separators and remove leading/trailing slashes
-      normalizedPath = normalizedPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-      
+
+      const normalizedPath = normalizeStoredPath(file.stored_path, caseId);
+
       // Only add to map if path is not empty
       if (normalizedPath) {
         map.set(normalizedPath, file.status === 'processed');
       }
     });
-    
+
     return map;
   }, [evidenceFiles, caseId]);
 
