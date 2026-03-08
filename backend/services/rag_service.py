@@ -260,6 +260,114 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"[RAG] Error getting document nodes: {e}")
             return []
 
+    def _classify_selected_keys(
+        self,
+        selected_keys: List[str],
+        case_id: Optional[str] = None,
+    ) -> tuple:
+        """
+        Classify selected_keys into document keys and entity keys
+        by querying Neo4j for node labels.
+
+        Returns:
+            Tuple of (doc_keys: List[str], entity_keys: List[str])
+        """
+        if not selected_keys:
+            return [], []
+
+        try:
+            with self.neo4j._driver.session() as session:
+                case_filter = "AND n.case_id = $case_id" if case_id else ""
+                query = f"""
+                MATCH (n)
+                WHERE n.key IN $keys {case_filter}
+                RETURN n.key AS key, labels(n) AS labels
+                """
+                params = {"keys": selected_keys}
+                if case_id:
+                    params["case_id"] = case_id
+                results = session.run(query, **params)
+
+                doc_keys = []
+                entity_keys = []
+                for record in results:
+                    key = record["key"]
+                    labels = record["labels"]
+                    if "Document" in labels:
+                        doc_keys.append(key)
+                    else:
+                        entity_keys.append(key)
+
+                return doc_keys, entity_keys
+        except Exception as e:
+            print(f"[RAG] Error classifying selected keys: {e}")
+            # Fall back: treat all as entity keys (backward-compatible)
+            return [], selected_keys
+
+    def _get_entities_for_documents(
+        self,
+        doc_keys: List[str],
+        case_id: str,
+        debug_log: Optional[Dict] = None,
+    ) -> List[str]:
+        """
+        Query Neo4j for entity keys that have MENTIONED_IN relationships
+        to the specified document(s).
+
+        Returns:
+            List of entity keys mentioned in the selected documents.
+        """
+        if not doc_keys or not case_id:
+            return []
+
+        try:
+            with self.neo4j._driver.session() as session:
+                query = """
+                MATCH (entity)-[:MENTIONED_IN]->(doc:Document)
+                WHERE doc.key IN $doc_keys
+                  AND doc.case_id = $case_id
+                  AND entity.case_id = $case_id
+                RETURN DISTINCT entity.key AS key
+                """
+                results = session.run(query, doc_keys=doc_keys, case_id=case_id)
+                entity_keys = [record["key"] for record in results if record["key"]]
+
+                print(f"[RAG] Document-entity discovery: {len(entity_keys)} entities "
+                      f"from {len(doc_keys)} documents")
+
+                if debug_log is not None:
+                    debug_log["doc_entity_discovery"] = {
+                        "doc_keys": doc_keys,
+                        "entity_keys_found": len(entity_keys),
+                        "entity_keys": entity_keys[:30],
+                    }
+
+                return entity_keys
+        except Exception as e:
+            print(f"[RAG] Document-entity discovery error: {e}")
+            return []
+
+    def _get_document_node_by_key(self, doc_key: str, case_id: str) -> Optional[Dict]:
+        """Get a Document node from Neo4j by its key."""
+        try:
+            with self.neo4j._driver.session() as session:
+                result = session.run(
+                    """
+                    MATCH (d:Document {key: $doc_key, case_id: $case_id})
+                    RETURN id(d) AS neo4j_id, d.key AS key, d.name AS name,
+                           d.summary AS summary, d.notes AS notes,
+                           properties(d) AS properties
+                    """,
+                    doc_key=doc_key, case_id=case_id,
+                )
+                record = result.single()
+                if record:
+                    return dict(record)
+            return None
+        except Exception as e:
+            print(f"[RAG] Error getting document node by key: {e}")
+            return None
+
     def _get_entity_nodes_from_neo4j(self, entity_keys: List[str], case_id: str = None) -> List[Dict]:
         """Get entity nodes from Neo4j by keys, optionally filtered by case_id."""
         if not entity_keys:
@@ -410,12 +518,17 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         self,
         question: str,
         case_id: Optional[str] = None,
+        doc_keys: Optional[List[str]] = None,
         confidence_threshold: Optional[float] = None,
         debug_log: Optional[Dict] = None,
     ) -> List[Dict]:
         """
         Retrieve relevant text chunks via vector search.
         Falls back to document-level search if chunks collection is empty.
+
+        When doc_keys is provided, uses two-phase retrieval:
+        Phase 1: Retrieve chunks scoped to the selected document(s)
+        Phase 2: Fill remaining budget from case-wide search
 
         Returns:
             List of result dicts with: id, text, metadata, distance
@@ -437,13 +550,46 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
             # Try chunk-level search first
             chunk_count = vector_db_service.count_chunks()
+            doc_scoped_count = 0
+
             if CHUNK_SEARCH_ENABLED and chunk_count > 0:
-                all_results = vector_db_service.search_chunks(
+                # Phase 1: Document-scoped search (if doc_keys provided)
+                doc_scoped_results = []
+                if doc_keys:
+                    if len(doc_keys) == 1:
+                        doc_filter = {"$and": [{"case_id": case_id}, {"doc_key": doc_keys[0]}]}
+                    else:
+                        doc_filter = {"$and": [{"case_id": case_id}, {"doc_key": {"$in": doc_keys}}]}
+
+                    doc_scoped_results = vector_db_service.search_chunks(
+                        query_embedding=query_embedding,
+                        top_k=CHUNK_SEARCH_TOP_K,
+                        filter_metadata=doc_filter,
+                    )
+                    # Mark as doc-scoped for downstream boosting
+                    for r in doc_scoped_results:
+                        r["_doc_scoped"] = True
+                    doc_scoped_count = len(doc_scoped_results)
+                    print(f"[RAG] Doc-scoped chunk search: {doc_scoped_count} results "
+                          f"from {len(doc_keys)} document(s)")
+
+                # Phase 2: Case-wide search
+                already_retrieved_ids = {r["id"] for r in doc_scoped_results}
+                case_wide_all = vector_db_service.search_chunks(
                     query_embedding=query_embedding,
                     top_k=CHUNK_SEARCH_TOP_K,
                     filter_metadata=vector_filter,
                 )
-                # Log when no chunks found for this case (do NOT fall back to unfiltered search)
+                case_wide_results = []
+                for r in case_wide_all:
+                    if r["id"] not in already_retrieved_ids:
+                        r["_doc_scoped"] = False
+                        case_wide_results.append(r)
+
+                # Combine: doc-scoped first, then case-wide
+                all_results = doc_scoped_results + case_wide_results
+
+                # Log when no chunks found for this case
                 if not all_results and chunk_count > 0:
                     print(f"[RAG] No chunks found for case_id={case_id} (total chunks: {chunk_count})")
                 source = "chunks"
@@ -454,7 +600,6 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     top_k=VECTOR_SEARCH_TOP_K,
                     filter_metadata=vector_filter,
                 )
-                # Log when no documents found for this case (do NOT fall back to unfiltered search)
                 if not all_results:
                     doc_count = vector_db_service.count_documents()
                     print(f"[RAG] No documents found for case_id={case_id} (total docs: {doc_count})")
@@ -469,7 +614,8 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 elif distance is None:
                     filtered.append(r)
 
-            print(f"[RAG] Chunk search ({source}): {len(all_results)} total, {len(filtered)} after threshold ({threshold})")
+            print(f"[RAG] Chunk search ({source}): {len(all_results)} total, {len(filtered)} after threshold ({threshold})"
+                  + (f" ({doc_scoped_count} doc-scoped)" if doc_scoped_count else ""))
 
             if debug_log is not None:
                 debug_log["chunk_search"] = {
@@ -478,6 +624,8 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     "chunks_in_db": chunk_count,
                     "top_k": CHUNK_SEARCH_TOP_K if source == "chunks" else VECTOR_SEARCH_TOP_K,
                     "confidence_threshold": threshold,
+                    "doc_keys": doc_keys or [],
+                    "doc_scoped_count": doc_scoped_count,
                     "total_results": len(all_results),
                     "filtered_results": len(filtered),
                     "results": [
@@ -485,6 +633,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                             "id": r["id"],
                             "doc_name": r.get("metadata", {}).get("doc_name", r.get("metadata", {}).get("filename", "Unknown")),
                             "distance": r.get("distance"),
+                            "doc_scoped": r.get("_doc_scoped", False),
                             "text_preview": r.get("text", "")[:200] + "..." if len(r.get("text", "")) > 200 else r.get("text", ""),
                         }
                         for r in filtered[:10]
@@ -790,17 +939,31 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         token_budget: int,
         debug_log: Optional[Dict] = None,
     ) -> tuple:
-        """Fast re-ranking: sort by distance, apply top-k and token budget."""
-        # Sort chunks by distance (ascending = more relevant)
+        """Fast re-ranking: sort by distance, apply top-k and token budget.
+
+        Document boost: doc-scoped chunks get distance reduced by 0.3,
+        doc-associated entities get distance reduced by 0.2, so they
+        float to the top while still allowing cross-document discovery.
+        """
+        def _effective_distance(result):
+            """Compute effective distance with doc-scoping boost."""
+            d = result.get("distance", float("inf"))
+            if result.get("_doc_scoped"):
+                d = max(0.0, d - 0.3)
+            elif result.get("_doc_associated"):
+                d = max(0.0, d - 0.2)
+            return d
+
+        # Sort chunks by effective distance (ascending = more relevant)
         sorted_chunks = sorted(
             chunk_results,
-            key=lambda r: r.get("distance", float("inf"))
+            key=_effective_distance
         )[:top_chunks]
 
-        # Sort entities by distance
+        # Sort entities by effective distance
         sorted_entities = sorted(
             entity_results,
-            key=lambda r: r.get("distance", float("inf"))
+            key=_effective_distance
         )[:top_entities]
 
         # Apply token budget (approximate 1 token ~ 4 chars)
@@ -928,6 +1091,8 @@ Only include candidates with score >= 5."""
         selected_keys: Optional[List[str]] = None,
         case_id: Optional[str] = None,
         top_k_entities: int = 50,
+        doc_keys: Optional[List[str]] = None,
+        doc_entity_keys: Optional[List[str]] = None,
     ) -> Dict[str, List]:
         """
         Build a result graph from retrieval context + answer-weighted scoring.
@@ -935,7 +1100,7 @@ Only include candidates with score >= 5."""
         Uses entities from stages 1-4 as the primary pool, supplements with
         answer-similarity search (case_id filtered), then scores each entity
         with a composite formula based on mention frequency, retrieval distance,
-        graph connectivity, cypher presence, and user selection.
+        graph connectivity, cypher presence, user selection, and doc affinity.
         """
         import re
 
@@ -948,6 +1113,8 @@ Only include candidates with score >= 5."""
 
             answer_lower = answer_text.lower()
             selected_keys = selected_keys or []
+            doc_keys = doc_keys or []
+            doc_entity_keys_set = set(doc_entity_keys or [])
             cypher_text_lower = (cypher_context or "").lower()
 
             # --- Step 1: Collect entity pool from retrieval stages ---
@@ -1071,6 +1238,9 @@ Only include candidates with score >= 5."""
                 # selection_bonus: user explicitly selected this entity
                 selection_bonus = 1.0 if key in selected_keys else 0.0
 
+                # doc_affinity: entity is mentioned in the selected document
+                doc_affinity = 1.0 if key in doc_entity_keys_set else 0.0
+
                 # mentioned flag for frontend opacity
                 mentioned = mention_count > 0
 
@@ -1078,6 +1248,7 @@ Only include candidates with score >= 5."""
                 entity["_retrieval_score"] = retrieval_score
                 entity["_cypher_bonus"] = cypher_bonus
                 entity["_selection_bonus"] = selection_bonus
+                entity["_doc_affinity"] = doc_affinity
                 entity["_mentioned"] = mentioned
 
                 scored_entities.append(entity)
@@ -1103,11 +1274,12 @@ Only include candidates with score >= 5."""
                 graph_score = min(adjacency_count.get(key, 0) / 5.0, 1.0)
 
                 composite = (
-                    0.35 * entity["_mention_score"]
-                    + 0.30 * entity["_retrieval_score"]
+                    0.30 * entity["_mention_score"]
+                    + 0.25 * entity["_retrieval_score"]
                     + 0.15 * graph_score
                     + 0.10 * entity["_cypher_bonus"]
                     + 0.10 * entity["_selection_bonus"]
+                    + 0.10 * entity["_doc_affinity"]
                 )
                 entity["_composite"] = composite
 
@@ -1132,6 +1304,26 @@ Only include candidates with score >= 5."""
                     "mentioned": entity["_mentioned"],
                 }
                 nodes.append(node)
+
+            # --- Step 7b: Include selected Document nodes in result graph ---
+            if doc_keys and case_id:
+                for dk in doc_keys:
+                    if dk not in qualifying_keys:
+                        doc_node_data = self._get_document_node_by_key(dk, case_id)
+                        if doc_node_data:
+                            nodes.append({
+                                "neo4j_id": doc_node_data.get("neo4j_id"),
+                                "id": dk,
+                                "key": dk,
+                                "name": doc_node_data.get("name") or dk,
+                                "type": "Document",
+                                "summary": doc_node_data.get("summary"),
+                                "notes": doc_node_data.get("notes"),
+                                "properties": doc_node_data.get("properties", {}),
+                                "confidence": 1.0,
+                                "mentioned": True,
+                            })
+                            qualifying_keys.add(dk)
 
             # --- Step 8: Build links with edge weights ---
             for link in all_links:
@@ -1306,21 +1498,37 @@ Only include candidates with score >= 5."""
             details=stage0b_details,
         )
 
+        # ── Stage 0c: Classify selected keys (doc vs entity) ────────────
+        t0c = time.time()
+        doc_keys = []
+        entity_keys = []
+        if selected_keys:
+            doc_keys, entity_keys = self._classify_selected_keys(selected_keys, case_id)
+            print(f"[RAG] Key classification: {len(doc_keys)} doc(s), {len(entity_keys)} entity(ies)")
+        _add_stage(
+            "Key Classification", "0c", t0c,
+            input={"selected_keys": selected_keys or []},
+            output={"doc_keys": doc_keys, "entity_keys": entity_keys},
+        )
+
         # ── Stage 1: Retrieve chunks (or documents) ─────────────────────
         t1 = time.time()
         chunk_results = []
         if question_type != "structural" or not cypher_context:
             chunk_results = self._retrieve_chunks(
                 question, case_id,
+                doc_keys=doc_keys if doc_keys else None,
                 confidence_threshold=confidence_threshold,
                 debug_log=debug_log,
             )
         chunk_search_info = debug_log.get("chunk_search") or {}
+        doc_scoped_count = sum(1 for c in chunk_results if c.get("_doc_scoped"))
         _add_stage(
             "Chunk/Document Retrieval", 1, t1,
             input={
                 "question": question[:200],
                 "case_id": case_id,
+                "doc_keys": doc_keys if doc_keys else None,
                 "confidence_threshold": confidence_threshold or VECTOR_SEARCH_CONFIDENCE_THRESHOLD,
                 "skipped": question_type == "structural" and bool(cypher_context),
             },
@@ -1328,6 +1536,8 @@ Only include candidates with score >= 5."""
                 "source": chunk_search_info.get("source", "skipped"),
                 "total_results": chunk_search_info.get("total_results", 0),
                 "after_threshold": chunk_search_info.get("filtered_results", 0),
+                "doc_scoped_chunks": doc_scoped_count,
+                "case_wide_chunks": len(chunk_results) - doc_scoped_count,
             },
             details={
                 "top_k": chunk_search_info.get("top_k"),
@@ -1365,12 +1575,51 @@ Only include candidates with score >= 5."""
             },
         )
 
+        # ── Stage 2b: Document-Entity Discovery ─────────────────────────
+        t2b = time.time()
+        doc_entity_keys = []
+        doc_entity_merged_count = 0
+        if doc_keys and case_id:
+            try:
+                doc_entity_keys = self._get_entities_for_documents(doc_keys, case_id, debug_log=debug_log)
+                existing_keys = {e.get("key") for e in entity_results}
+                # Fetch full entity data for discovered doc-entities
+                new_doc_entity_keys = [k for k in doc_entity_keys if k not in existing_keys]
+                if new_doc_entity_keys:
+                    doc_entities = self._get_entity_nodes_from_neo4j(new_doc_entity_keys, case_id=case_id)
+                    for de in doc_entities:
+                        de["distance"] = 0.1  # Low distance = high relevance
+                        de["_doc_associated"] = True
+                        entity_results.append(de)
+                        existing_keys.add(de.get("key"))
+                        doc_entity_merged_count += 1
+                # Also tag already-retrieved entities that appear in the document
+                doc_entity_keys_set = set(doc_entity_keys)
+                for e in entity_results:
+                    if e.get("key") in doc_entity_keys_set:
+                        e["_doc_associated"] = True
+                print(f"[RAG] Doc-entity discovery: {len(doc_entity_keys)} entities from docs, "
+                      f"{doc_entity_merged_count} newly merged")
+            except Exception as e:
+                print(f"[RAG] Error in document-entity discovery: {e}")
+        _add_stage(
+            "Document-Entity Discovery", "2b", t2b,
+            input={"doc_keys": doc_keys},
+            output={
+                "doc_entity_keys_found": len(doc_entity_keys),
+                "newly_merged": doc_entity_merged_count,
+                "total_entities": len(entity_results),
+            },
+        )
+
         # ── Stage 3: Merge selected entities ─────────────────────────────
+        # Use entity_keys (not doc_keys) so Document nodes aren't silently dropped
         t3 = time.time()
         merged_count = 0
-        if selected_keys:
+        merge_keys = entity_keys if entity_keys else (selected_keys or [])
+        if merge_keys:
             try:
-                selected_entities = self._get_entity_nodes_from_neo4j(selected_keys)
+                selected_entities = self._get_entity_nodes_from_neo4j(merge_keys, case_id=case_id)
                 existing_keys = {e.get("key") for e in entity_results}
                 for se in selected_entities:
                     if se.get("key") not in existing_keys:
@@ -1383,7 +1632,7 @@ Only include candidates with score >= 5."""
                 print(f"[RAG] Error getting selected entities: {e}")
         _add_stage(
             "Selected Entity Merge", 3, t3,
-            input={"selected_keys": selected_keys or []},
+            input={"entity_keys": merge_keys},
             output={"merged_count": merged_count, "total_entities": len(entity_results)},
         )
 
@@ -1550,6 +1799,8 @@ Only include candidates with score >= 5."""
                     cypher_context=cypher_context,
                     selected_keys=selected_keys,
                     case_id=case_id,
+                    doc_keys=doc_keys,
+                    doc_entity_keys=doc_entity_keys,
                 )
                 print(f"[RAG] Result graph: {len(result_graph['nodes'])} nodes, {len(result_graph['links'])} links")
             except Exception as e:
