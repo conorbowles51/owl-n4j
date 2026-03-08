@@ -22,7 +22,7 @@ BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
-HEALTH_URL="http://127.0.0.1:8000/health"
+HEALTH_URL="http://127.0.0.1:8001/health"
 HEALTH_RETRIES=15
 HEALTH_DELAY=2
 

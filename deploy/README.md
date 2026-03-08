@@ -3,12 +3,12 @@
 ## Architecture
 
 ```
-Browser (port 80)
+Browser (port 80 or 8000)
     |
     v
   Nginx
-    |--- /api/*     -->  Backend (127.0.0.1:8000)
-    |--- /health    -->  Backend (127.0.0.1:8000)
+    |--- /api/*     -->  Backend (127.0.0.1:8001)
+    |--- /health    -->  Backend (127.0.0.1:8001)
     |--- /*         -->  frontend/dist/ (static files, SPA fallback)
 ```
 

@@ -32,7 +32,7 @@ fi
 BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
-HEALTH_URL="http://127.0.0.1:8000/health"
+HEALTH_URL="http://127.0.0.1:8001/health"
 
 # Detect deploy user - if root, use the project dir owner
 if [ "$(id -u)" -eq 0 ]; then

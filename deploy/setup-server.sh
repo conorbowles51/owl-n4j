@@ -95,6 +95,7 @@ success "Cleaned old Nginx configs"
 cat > "${NGINX_CONF_DIR}/owl.conf" << NGINX_EOF
 server {
     listen 80;
+    listen 8000;
     server_name _;
 
     # Frontend - serve production build
@@ -114,7 +115,7 @@ server {
 
     # API proxy to backend
     location /api/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -136,7 +137,7 @@ server {
 
     # Health check proxy
     location /health {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
     }
@@ -175,7 +176,7 @@ Group=${DEPLOY_GROUP}
 WorkingDirectory=${PROJECT_DIR}/backend
 Environment="PATH=${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=${PROJECT_DIR}/.env
-ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 127.0.0.1 --port 8001 --workers 2
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
@@ -268,7 +269,7 @@ success "Backend started"
 
 # Quick health check
 sleep 3
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8000/health" 2>/dev/null || echo "000")
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8001/health" 2>/dev/null || echo "000")
 if [ "$HTTP_CODE" = "200" ]; then
     success "Health check passed"
 else
