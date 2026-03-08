@@ -26,12 +26,23 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
 DEPLOY_GROUP="$(stat -c '%G' "${PROJECT_DIR}")"
 
+# Auto-detect venv directory (.venv or venv)
+if [ -d "${PROJECT_DIR}/.venv" ]; then
+    VENV_DIR="${PROJECT_DIR}/.venv"
+elif [ -d "${PROJECT_DIR}/venv" ]; then
+    VENV_DIR="${PROJECT_DIR}/venv"
+else
+    echo "  No venv found at ${PROJECT_DIR}/.venv or ${PROJECT_DIR}/venv"
+    exit 1
+fi
+
 echo ""
 echo -e "${BOLD}============================================${NC}"
 echo -e "${BOLD}  Owl Server Setup${NC}"
 echo -e "${BOLD}============================================${NC}"
 echo -e "  Project dir:  ${PROJECT_DIR}"
 echo -e "  Deploy user:  ${DEPLOY_USER}"
+echo -e "  Venv:         ${VENV_DIR}"
 
 # Check running as root
 if [ "$(id -u)" -ne 0 ]; then
@@ -162,9 +173,9 @@ Type=simple
 User=${DEPLOY_USER}
 Group=${DEPLOY_GROUP}
 WorkingDirectory=${PROJECT_DIR}/backend
-Environment="PATH=${PROJECT_DIR}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PATH=${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=${PROJECT_DIR}/.env
-ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
+ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

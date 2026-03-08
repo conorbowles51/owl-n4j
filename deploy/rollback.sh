@@ -20,7 +20,15 @@ warn()    { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
 fail()    { echo -e "  ${RED}[FAIL]${NC} $1"; }
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV_DIR="${PROJECT_DIR}/.venv"
+# Auto-detect venv directory (.venv or venv)
+if [ -d "${PROJECT_DIR}/.venv" ]; then
+    VENV_DIR="${PROJECT_DIR}/.venv"
+elif [ -d "${PROJECT_DIR}/venv" ]; then
+    VENV_DIR="${PROJECT_DIR}/venv"
+else
+    echo "No venv found at ${PROJECT_DIR}/.venv or ${PROJECT_DIR}/venv"
+    exit 1
+fi
 BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
