@@ -5487,6 +5487,16 @@ export default function App() {
         onViewDocument={handleViewDocument}
         username={authUsername}
       />
+
+      {/* Build identifier footer */}
+      <div className="h-5 bg-light-50 border-t border-light-200/50 flex items-center justify-end px-4 flex-shrink-0">
+        <span
+          className="text-[10px] text-light-400 hover:text-light-600 cursor-default transition-colors"
+          title={`Commit: ${__BUILD_COMMIT__} • Built: ${__BUILD_TIMESTAMP__}`}
+        >
+          {__BUILD_NAME__} ({__BUILD_COMMIT__})
+        </span>
+      </div>
     </div>
     </CasePermissionProvider>
   );

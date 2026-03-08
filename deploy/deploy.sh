@@ -22,8 +22,8 @@ FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
 HEALTH_URL="http://127.0.0.1:8000/health"
-HEALTH_RETRIES=15
-HEALTH_DELAY=2
+HEALTH_RETRIES=20
+HEALTH_DELAY=3
 
 # --- Colour output ---
 RED='\033[0;31m'
@@ -239,8 +239,8 @@ step "Rollback: restarting services"
 $SYSTEMCTL restart owl-backend
 $SYSTEMCTL restart owl-frontend
 
-# Check if rollback worked
-sleep 5
+# Check if rollback worked (give backend time to load snapshots)
+sleep 15
 ROLLBACK_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
 
 if [ "$ROLLBACK_CODE" = "200" ]; then
