@@ -57,22 +57,30 @@ fi
 # ============================================================
 step "Configuring Nginx"
 
-# Ensure sites-enabled directory exists
-mkdir -p /etc/nginx/sites-enabled
+# Determine Nginx config directory (sites-enabled or conf.d)
+if [ -d /etc/nginx/sites-enabled ]; then
+    NGINX_CONF_DIR="/etc/nginx/sites-enabled"
+elif [ -d /etc/nginx/conf.d ]; then
+    NGINX_CONF_DIR="/etc/nginx/conf.d"
+else
+    NGINX_CONF_DIR="/etc/nginx/conf.d"
+    mkdir -p "$NGINX_CONF_DIR"
+fi
+success "Using Nginx config dir: ${NGINX_CONF_DIR}"
 
-# Check nginx.conf includes sites-enabled
-if ! grep -q "sites-enabled" /etc/nginx/nginx.conf; then
-    # Add include directive inside http block
-    sed -i '/http {/a \    include /etc/nginx/sites-enabled/*.conf;' /etc/nginx/nginx.conf
-    success "Added sites-enabled include to nginx.conf"
+# Ensure nginx.conf includes our config directory
+if ! grep -q "$(basename "$NGINX_CONF_DIR")" /etc/nginx/nginx.conf; then
+    sed -i "/http {/a \\    include ${NGINX_CONF_DIR}/*.conf;" /etc/nginx/nginx.conf
+    success "Added include directive to nginx.conf"
 fi
 
-# Remove default site
-rm -f /etc/nginx/sites-enabled/default
+# Remove default sites
+rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
+rm -f /etc/nginx/conf.d/default.conf 2>/dev/null || true
 success "Removed default Nginx site"
 
 # Generate Nginx config with correct paths
-cat > /etc/nginx/sites-enabled/owl.conf << NGINX_EOF
+cat > "${NGINX_CONF_DIR}/owl.conf" << NGINX_EOF
 server {
     listen 80;
     server_name _;
@@ -127,7 +135,7 @@ server {
     }
 }
 NGINX_EOF
-success "Generated Nginx config at /etc/nginx/sites-enabled/owl.conf"
+success "Generated Nginx config at ${NGINX_CONF_DIR}/owl.conf"
 
 # Test config
 if nginx -t 2>&1; then
