@@ -237,6 +237,14 @@ mkdir -p "${PROJECT_DIR}/deploy/logs"
 chown "${DEPLOY_USER}:${DEPLOY_GROUP}" "${PROJECT_DIR}/deploy/logs"
 success "Deploy log directory created"
 
+# Ensure nginx (www-data) can traverse to frontend/dist
+HOME_DIR="$(dirname "${PROJECT_DIR}")"
+chmod o+x "${HOME_DIR}"
+chmod o+x "${PROJECT_DIR}"
+chmod o+x "${PROJECT_DIR}/frontend"
+chmod o+x "${PROJECT_DIR}/frontend/dist"
+success "Set directory permissions for nginx access"
+
 # ============================================================
 # Step 7: Build frontend (initial production build)
 # ============================================================
