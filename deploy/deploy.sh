@@ -8,7 +8,7 @@ set -euo pipefail
 # ============================================================
 
 # --- Configuration ---
-PROJECT_DIR="/home/conor/owl-console/owl-n4j"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv"
 BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
@@ -48,12 +48,13 @@ DEPLOY_START=$(date +%s)
 # ============================================================
 step "Pre-flight checks"
 
-# Check user
-if [ "$(whoami)" != "conor" ]; then
-    fail "Must run as user 'conor'. Use: sudo su - conor"
+# Check not root (should run as deploy user)
+if [ "$(id -u)" -eq 0 ]; then
+    fail "Don't run as root. Run as the deploy user (e.g., conor, conorbowles51)."
     exit 1
 fi
-success "Running as user: conor"
+DEPLOY_USER="$(whoami)"
+success "Running as user: ${DEPLOY_USER}"
 
 # Check disk space (warn if < 2GB free)
 AVAIL_KB=$(df -k "$PROJECT_DIR" | tail -1 | awk '{print $4}')

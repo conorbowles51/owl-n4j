@@ -19,12 +19,19 @@ success() { echo -e "  ${GREEN}[  OK]${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
 fail()    { echo -e "  ${RED}[FAIL]${NC} $1"; }
 
-PROJECT_DIR="/home/conor/owl-console/owl-n4j"
+# Auto-detect project directory from script location
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Auto-detect the deploy user (owner of the project directory)
+DEPLOY_USER="$(stat -c '%U' "${PROJECT_DIR}")"
+DEPLOY_GROUP="$(stat -c '%G' "${PROJECT_DIR}")"
 
 echo ""
 echo -e "${BOLD}============================================${NC}"
 echo -e "${BOLD}  Owl Server Setup${NC}"
 echo -e "${BOLD}============================================${NC}"
+echo -e "  Project dir:  ${PROJECT_DIR}"
+echo -e "  Deploy user:  ${DEPLOY_USER}"
 
 # Check running as root
 if [ "$(id -u)" -ne 0 ]; then
@@ -46,32 +53,119 @@ else
 fi
 
 # ============================================================
-# Step 2: Configure Nginx
+# Step 2: Generate and install Nginx config
 # ============================================================
 step "Configuring Nginx"
+
+# Ensure sites-enabled directory exists
+mkdir -p /etc/nginx/sites-enabled
+
+# Check nginx.conf includes sites-enabled
+if ! grep -q "sites-enabled" /etc/nginx/nginx.conf; then
+    # Add include directive inside http block
+    sed -i '/http {/a \    include /etc/nginx/sites-enabled/*.conf;' /etc/nginx/nginx.conf
+    success "Added sites-enabled include to nginx.conf"
+fi
 
 # Remove default site
 rm -f /etc/nginx/sites-enabled/default
 success "Removed default Nginx site"
 
-# Symlink Owl config
-ln -sf "${PROJECT_DIR}/deploy/owl-nginx.conf" /etc/nginx/sites-enabled/owl.conf
-success "Linked Owl Nginx config"
+# Generate Nginx config with correct paths
+cat > /etc/nginx/sites-enabled/owl.conf << NGINX_EOF
+server {
+    listen 80;
+    server_name _;
+
+    # Frontend - serve production build
+    root ${PROJECT_DIR}/frontend/dist;
+    index index.html;
+
+    # Gzip compression
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript;
+    gzip_min_length 1000;
+
+    # Static asset caching (Vite uses content-hashed filenames)
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # API proxy to backend
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        # SSE support (streaming entity resolution, chat responses)
+        proxy_set_header Connection '';
+        proxy_buffering off;
+        proxy_cache off;
+
+        # Long timeouts for LLM operations (chat can take minutes)
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+
+        # Large body for evidence uploads
+        client_max_body_size 500M;
+    }
+
+    # Health check proxy
+    location /health {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+    }
+
+    # SPA fallback - all other routes serve index.html for client-side routing
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+NGINX_EOF
+success "Generated Nginx config at /etc/nginx/sites-enabled/owl.conf"
 
 # Test config
 if nginx -t 2>&1; then
     success "Nginx config valid"
 else
-    fail "Nginx config invalid - check deploy/owl-nginx.conf"
+    fail "Nginx config invalid"
     exit 1
 fi
 
 # ============================================================
-# Step 3: Install systemd service
+# Step 3: Generate and install systemd service
 # ============================================================
 step "Installing systemd service"
 
-cp "${PROJECT_DIR}/deploy/owl-backend.service" /etc/systemd/system/owl-backend.service
+cat > /etc/systemd/system/owl-backend.service << SERVICE_EOF
+[Unit]
+Description=Owl Investigation Console - Backend (FastAPI/Uvicorn)
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=${DEPLOY_USER}
+Group=${DEPLOY_GROUP}
+WorkingDirectory=${PROJECT_DIR}/backend
+Environment="PATH=${PROJECT_DIR}/.venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=${PROJECT_DIR}/.env
+ExecStart=${PROJECT_DIR}/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 2
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=owl-backend
+
+[Install]
+WantedBy=multi-user.target
+SERVICE_EOF
+
 systemctl daemon-reload
 success "systemd service installed"
 
@@ -85,21 +179,21 @@ success "Services enabled for auto-start on boot"
 # ============================================================
 step "Configuring sudo permissions"
 
-cat > /etc/sudoers.d/owl-deploy << 'EOF'
-# Allow conor to manage Owl services without password (for deploy script)
-conor ALL=(ALL) NOPASSWD: /bin/systemctl start owl-backend
-conor ALL=(ALL) NOPASSWD: /bin/systemctl stop owl-backend
-conor ALL=(ALL) NOPASSWD: /bin/systemctl restart owl-backend
-conor ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
-conor ALL=(ALL) NOPASSWD: /bin/systemctl status owl-backend
-conor ALL=(ALL) NOPASSWD: /bin/systemctl status nginx
-EOF
+cat > /etc/sudoers.d/owl-deploy << SUDO_EOF
+# Allow ${DEPLOY_USER} to manage Owl services without password (for deploy script)
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /bin/systemctl start owl-backend
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /bin/systemctl stop owl-backend
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /bin/systemctl restart owl-backend
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status owl-backend
+${DEPLOY_USER} ALL=(ALL) NOPASSWD: /bin/systemctl status nginx
+SUDO_EOF
 
 chmod 440 /etc/sudoers.d/owl-deploy
 
 # Validate sudoers file
 if visudo -c -f /etc/sudoers.d/owl-deploy 2>&1; then
-    success "Sudo permissions configured"
+    success "Sudo permissions configured for ${DEPLOY_USER}"
 else
     fail "Sudoers file invalid - removing"
     rm -f /etc/sudoers.d/owl-deploy
@@ -111,8 +205,8 @@ fi
 # ============================================================
 step "Cleaning up legacy screen sessions"
 
-sudo -u conor screen -XS frontend quit 2>/dev/null && success "Killed frontend screen" || success "No frontend screen found"
-sudo -u conor screen -XS backend quit 2>/dev/null && success "Killed backend screen" || success "No backend screen found"
+sudo -u "${DEPLOY_USER}" screen -XS frontend quit 2>/dev/null && success "Killed frontend screen" || success "No frontend screen found"
+sudo -u "${DEPLOY_USER}" screen -XS backend quit 2>/dev/null && success "Killed backend screen" || success "No backend screen found"
 
 # ============================================================
 # Step 6: Create directories
@@ -120,7 +214,7 @@ sudo -u conor screen -XS backend quit 2>/dev/null && success "Killed backend scr
 step "Creating directories"
 
 mkdir -p "${PROJECT_DIR}/deploy/logs"
-chown conor:conor "${PROJECT_DIR}/deploy/logs"
+chown "${DEPLOY_USER}:${DEPLOY_GROUP}" "${PROJECT_DIR}/deploy/logs"
 success "Deploy log directory created"
 
 # ============================================================
@@ -129,8 +223,8 @@ success "Deploy log directory created"
 step "Building frontend for production"
 
 cd "${PROJECT_DIR}/frontend"
-sudo -u conor npm ci --silent 2>&1
-sudo -u conor npm run build 2>&1
+sudo -u "${DEPLOY_USER}" npm ci --silent 2>&1
+sudo -u "${DEPLOY_USER}" npm run build 2>&1
 success "Frontend built -> dist/"
 
 # ============================================================
@@ -172,5 +266,5 @@ echo "    Deploy:   ls ${PROJECT_DIR}/deploy/logs/"
 echo ""
 echo "  Next steps:"
 echo "    1. Verify the app at http://<server-ip>"
-echo "    2. Future deploys: sudo su - conor && bash deploy/deploy.sh"
+echo "    2. Future deploys: bash ${PROJECT_DIR}/deploy/deploy.sh"
 echo ""

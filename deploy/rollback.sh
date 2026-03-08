@@ -19,16 +19,16 @@ success() { echo -e "  ${GREEN}[  OK]${NC} $1"; }
 warn()    { echo -e "  ${YELLOW}[WARN]${NC} $1"; }
 fail()    { echo -e "  ${RED}[FAIL]${NC} $1"; }
 
-PROJECT_DIR="/home/conor/owl-console/owl-n4j"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="${PROJECT_DIR}/.venv"
 BACKEND_DIR="${PROJECT_DIR}/backend"
 FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
 HEALTH_URL="http://127.0.0.1:8000/health"
 
-# Check user
-if [ "$(whoami)" != "conor" ]; then
-    fail "Must run as user 'conor'. Use: sudo su - conor"
+# Check not root
+if [ "$(id -u)" -eq 0 ]; then
+    fail "Don't run as root. Run as the deploy user."
     exit 1
 fi
 
