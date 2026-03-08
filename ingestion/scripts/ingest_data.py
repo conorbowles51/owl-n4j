@@ -3,8 +3,8 @@
 Ingest Data CLI - Entry point for batch document ingestion.
 
 Scans the data/ directory for .txt, .pdf, .docx, .csv, .xls, .xlsx,
-audio (.mp3, .wav, etc.), image (.jpg, .png, etc.), and video (.mp4, .avi, etc.)
-files and ingests them into the Neo4j knowledge graph.
+.html, .htm, .md, audio (.mp3, .wav, etc.), image (.jpg, .png, etc.),
+and video (.mp4, .avi, etc.) files and ingests them into the Neo4j knowledge graph.
 
 Usage:
     python ingest_data.py              # Ingest all files in data/
@@ -22,6 +22,8 @@ from text_ingestion import ingest_text_file
 from pdf_ingestion import ingest_pdf_file
 from word_ingestion import ingest_word_file
 from excel_ingestion import ingest_excel_file
+from html_ingestion import ingest_html_file
+from markdown_ingestion import ingest_markdown_file
 from audio_ingestion import ingest_audio_file, AUDIO_EXTENSIONS
 from image_ingestion import ingest_image_file, IMAGE_EXTENSIONS
 from video_ingestion import ingest_video_file, VIDEO_EXTENSIONS
@@ -80,6 +82,10 @@ def ingest_file(
         return ingest_word_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix in (".csv", ".xls", ".xlsx"):
         return ingest_excel_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
+    elif suffix in (".html", ".htm"):
+        return ingest_html_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
+    elif suffix == ".md":
+        return ingest_markdown_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix in AUDIO_EXTENSIONS:
         return ingest_audio_file(path, case_id=case_id, log_callback=log_callback, profile_name=profile_name)
     elif suffix in IMAGE_EXTENSIONS:
@@ -121,6 +127,8 @@ def ingest_all_in_data(
     csv_files = sorted(data_dir.glob("*.csv"))
     xls_files = sorted(data_dir.glob("*.xls"))
     xlsx_files = sorted(data_dir.glob("*.xlsx"))
+    html_files = sorted(data_dir.glob("*.html")) + sorted(data_dir.glob("*.htm"))
+    md_files = sorted(data_dir.glob("*.md"))
 
     # Collect media files
     audio_files = sorted(f for f in data_dir.iterdir() if f.suffix.lower() in AUDIO_EXTENSIONS)
@@ -129,12 +137,14 @@ def ingest_all_in_data(
 
     all_files = (
         text_files + pdf_files + docx_files + csv_files + xls_files + xlsx_files
+        + html_files + md_files
         + audio_files + image_files + video_files
     )
 
     log_progress(
         f"Found {len(text_files)} text, {len(pdf_files)} PDF, {len(docx_files)} Word, "
         f"{len(csv_files)} CSV, {len(xls_files) + len(xlsx_files)} Excel, "
+        f"{len(html_files)} HTML, {len(md_files)} Markdown, "
         f"{len(audio_files)} audio, {len(image_files)} image, {len(video_files)} video file(s)"
     )
 

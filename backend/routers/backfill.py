@@ -116,7 +116,74 @@ def extract_text_from_file(file_path: Path) -> Optional[str]:
                     raise Exception(f"PDF extraction failed: {str(e)}")
             else:
                 raise Exception("PDF extraction not available (pdf_ingestion module not found)")
-        elif suffix in ['.txt', '.md', '.csv', '.json', '.xml', '.html']:
+        elif suffix in ['.html', '.htm']:
+            try:
+                import re as _re
+                from lxml import html as lxml_html
+                from lxml import etree
+
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    raw = f.read()
+                if not raw or not raw.strip():
+                    raise Exception("File is empty or contains only whitespace")
+
+                try:
+                    doc = lxml_html.fromstring(raw)
+                    to_remove = list(doc.iter("script", "style", "noscript", "head"))
+                    to_remove.extend(doc.iter(etree.Comment))
+                    for el in to_remove:
+                        if el.getparent() is not None:
+                            el.getparent().remove(el)
+                    text = doc.text_content()
+                except Exception:
+                    # Fallback: strip tags with regex
+                    text = _re.sub(r"<script[^>]*>.*?</script>", "", raw, flags=_re.DOTALL | _re.IGNORECASE)
+                    text = _re.sub(r"<style[^>]*>.*?</style>", "", text, flags=_re.DOTALL | _re.IGNORECASE)
+                    text = _re.sub(r"<noscript[^>]*>.*?</noscript>", "", text, flags=_re.DOTALL | _re.IGNORECASE)
+                    text = _re.sub(r"<[^>]+>", " ", text)
+
+                text = _re.sub(r"[ \t]+", " ", text)
+                text = _re.sub(r"\n\s*\n+", "\n\n", text)
+                text = text.strip()
+                if not text:
+                    raise Exception("HTML file contains no text content")
+                return text
+            except Exception as e:
+                raise Exception(f"Error reading HTML file: {str(e)}")
+        elif suffix == '.md':
+            try:
+                import re as _re
+
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    raw = f.read()
+                if not raw or not raw.strip():
+                    raise Exception("File is empty or contains only whitespace")
+
+                try:
+                    from markdown_it import MarkdownIt
+                    md_parser = MarkdownIt()
+                    html_output = md_parser.render(raw)
+                    text = _re.sub(r"<[^>]+>", "", html_output)
+                except ImportError:
+                    # Fallback: strip common markdown syntax
+                    text = raw
+                    text = _re.sub(r"^#{1,6}\s+", "", text, flags=_re.MULTILINE)
+                    text = _re.sub(r"\*{1,3}([^*]+)\*{1,3}", r"\1", text)
+                    text = _re.sub(r"_{1,3}([^_]+)_{1,3}", r"\1", text)
+                    text = _re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+                    text = _re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+                    text = _re.sub(r"`([^`]+)`", r"\1", text)
+                    text = _re.sub(r"```[^\n]*\n", "", text)
+
+                text = _re.sub(r"[ \t]+", " ", text)
+                text = _re.sub(r"\n\s*\n+", "\n\n", text)
+                text = text.strip()
+                if not text:
+                    raise Exception("Markdown file contains no text content")
+                return text
+            except Exception as e:
+                raise Exception(f"Error reading Markdown file: {str(e)}")
+        elif suffix in ['.txt', '.csv', '.json', '.xml']:
             try:
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     text = f.read()
