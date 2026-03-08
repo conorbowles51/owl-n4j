@@ -230,10 +230,21 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             ""
         ]
 
+        # Compute relative relevance: normalise distances to 0-100% range
+        # using the best and worst distances in the result set
+        all_distances = [info["best_distance"] for _, info in sorted_docs if info["best_distance"] is not None]
+        min_dist = min(all_distances) if all_distances else 0
+        max_dist = max(all_distances) if all_distances else 1
+        dist_range = max_dist - min_dist if max_dist > min_dist else 1.0
+
         for i, (filename, info) in enumerate(sorted_docs, 1):
             distance = info["best_distance"]
-            # Clamp relevance to 0-100% range (L2 distances can exceed 1.0)
-            relevance_score = max(0.0, (1 - distance) * 100) if distance is not None else None
+            if distance is not None:
+                # Normalised relevance: closest = 100%, furthest = ~10%
+                normalised = 1.0 - ((distance - min_dist) / dist_range)
+                relevance_score = max(10.0, normalised * 90.0 + 10.0)
+            else:
+                relevance_score = None
 
             line = f"{i}. **{filename}**"
             if relevance_score is not None:
@@ -833,7 +844,8 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     else:
                         page_info = f" (page {page_start})"
                 distance = chunk.get("distance")
-                lines.append(f"--- Passage {i}: {doc_name}{page_info} ---")
+                doc_marker = " [SELECTED DOCUMENT]" if chunk.get("_doc_scoped") else ""
+                lines.append(f"--- Passage {i}: {doc_name}{page_info}{doc_marker} ---")
                 if distance is not None:
                     lines.append(f"Relevance: {1 - distance:.4f}")
                 lines.append(chunk.get("text", ""))
@@ -1800,8 +1812,26 @@ Only include candidates with score >= 5."""
 
         # ── Stage 7: Answer generation ───────────────────────────────────
         t7 = time.time()
+        # Enhance the question with document focus when a document is selected
+        effective_question = question
+        if doc_keys and case_id:
+            doc_names = []
+            for dk in doc_keys:
+                doc_data = self._get_document_node_by_key(dk, case_id)
+                if doc_data and doc_data.get("name"):
+                    doc_names.append(doc_data["name"])
+            if doc_names:
+                doc_list = ", ".join(f'"{n}"' for n in doc_names)
+                effective_question = (
+                    f'{question}\n\n'
+                    f'IMPORTANT: The user has selected the following document(s) as their focus: {doc_list}. '
+                    f'Passages from these documents are marked with [SELECTED DOCUMENT] in the context. '
+                    f'Prioritize information from these selected documents in your answer. '
+                    f'Other documents may be referenced for additional context but should be secondary.'
+                )
+
         answer, final_prompt = self.llm.answer_question_with_prompt(
-            question=question,
+            question=effective_question,
             context=context,
         )
         debug_log["final_prompt"] = final_prompt
