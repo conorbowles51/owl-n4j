@@ -24,8 +24,8 @@ export function EditNodeDialog({ open, onOpenChange, node, caseId, onSaved }: Ed
   useEffect(() => {
     if (node) {
       setName(node.label)
-      setSummary(String(node.properties.summary ?? ""))
-      setNotes(String(node.properties.notes ?? ""))
+      setSummary(String(node.summary ?? node.properties.summary ?? ""))
+      setNotes(String(node.notes ?? node.properties.notes ?? ""))
     }
   }, [node])
 

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { nodeColors, type EntityType } from "@/lib/theme"
+import { nodeColors } from "@/lib/theme"
 import { graphAPI } from "../api"
 
 interface AddNodeDialogProps {
@@ -14,11 +14,11 @@ interface AddNodeDialogProps {
   onCreated?: (key: string) => void
 }
 
-const entityTypes = Object.keys(nodeColors) as EntityType[]
+const entityTypes = Object.keys(nodeColors)
 
 export function AddNodeDialog({ open, onOpenChange, caseId, onCreated }: AddNodeDialogProps) {
   const [name, setName] = useState("")
-  const [type, setType] = useState<EntityType>("person")
+  const [type, setType] = useState("person")
   const [summary, setSummary] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -52,7 +52,7 @@ export function AddNodeDialog({ open, onOpenChange, caseId, onCreated }: AddNode
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium">Type</label>
-            <Select value={type} onValueChange={(v) => setType(v as EntityType)}>
+            <Select value={type} onValueChange={setType}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {entityTypes.map((t) => (

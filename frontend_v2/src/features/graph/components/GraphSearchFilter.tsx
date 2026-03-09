@@ -9,7 +9,7 @@ import { NodeBadge } from "@/components/ui/node-badge"
 import { CypherInput } from "@/components/ui/cypher-input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/cn"
-import { nodeColors, type EntityType } from "@/lib/theme"
+import { nodeColors } from "@/lib/theme"
 import { useGraphStore } from "@/stores/graph.store"
 
 interface GraphSearchFilterProps {
@@ -18,7 +18,7 @@ interface GraphSearchFilterProps {
   className?: string
 }
 
-const allEntityTypes = Object.keys(nodeColors) as EntityType[]
+const allEntityTypes = Object.keys(nodeColors) as string[]
 
 export function GraphSearchFilter({
   entityTypes,

@@ -28,6 +28,7 @@ import { useDeleteEvidence, useSyncFilesystem, useProcessBackground } from "../h
 import { useEvidenceStore } from "../evidence.store"
 import { EvidenceRow } from "./EvidenceRow"
 import { EvidenceToolbar } from "./EvidenceToolbar"
+import { ProcessingStatusBanner } from "./ProcessingStatusBanner"
 import { EvidenceDetailSheet } from "./EvidenceDetailSheet"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
 import { ProcessDialog } from "./ProcessDialog"
@@ -35,6 +36,7 @@ import { UploadProcessTab } from "./UploadProcessTab"
 import { ActivityTab } from "./ActivityTab"
 import { toast } from "sonner"
 import type { EvidenceFile } from "@/types/evidence.types"
+import { getFileTypeCategory } from "../utils/file-types"
 
 const ProfilesTab = lazy(() =>
   import("./ProfilesTab").then((m) => ({ default: m.ProfilesTab }))
@@ -61,6 +63,7 @@ export function EvidencePage() {
     closeDetail,
     searchTerm,
     statusFilter,
+    typeFilter,
   } = useEvidenceStore()
 
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -72,6 +75,7 @@ export function EvidencePage() {
     if (searchTerm && !f.original_filename.toLowerCase().includes(searchTerm.toLowerCase()))
       return false
     if (statusFilter !== "all" && f.status !== statusFilter) return false
+    if (typeFilter && getFileTypeCategory(f.original_filename) !== typeFilter) return false
     return true
   })
 
@@ -113,6 +117,7 @@ export function EvidencePage() {
           toast.success("Processing started")
           setProcessOpen(false)
           clearSelection()
+          setActiveTab("activity")
         },
         onError: (err) => toast.error(err.message),
       }
@@ -235,6 +240,7 @@ export function EvidencePage() {
             onDelete={handleBulkDelete}
             processPending={processMutation.isPending}
           />
+          <ProcessingStatusBanner caseId={caseId!} />
 
           <div className="flex-1 overflow-auto">
             {isLoading ? (

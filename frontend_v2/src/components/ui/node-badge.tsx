@@ -1,14 +1,14 @@
 import { cn } from "@/lib/cn"
-import { nodeColors, type EntityType } from "@/lib/theme"
+import { getNodeColor } from "@/lib/theme"
 
 interface NodeBadgeProps {
-  type: EntityType
+  type: string
   className?: string
   children?: React.ReactNode
 }
 
 export function NodeBadge({ type, className, children }: NodeBadgeProps) {
-  const color = nodeColors[type]
+  const color = getNodeColor(type)
   return (
     <span
       className={cn(

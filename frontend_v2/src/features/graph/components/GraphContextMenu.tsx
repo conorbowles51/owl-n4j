@@ -1,89 +1,156 @@
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu"
-import { Expand, EyeOff, Pin, Pencil, GitMerge, Route, Copy, Trash2 } from "lucide-react"
+import { useEffect, useRef } from "react"
+import {
+  Expand,
+  EyeOff,
+  Pin,
+  PinOff,
+  Pencil,
+  GitMerge,
+  Copy,
+  Trash2,
+  Eye,
+  Network,
+  Sparkles,
+} from "lucide-react"
+import { useGraphStore } from "@/stores/graph.store"
 
 interface GraphContextMenuProps {
-  children: React.ReactNode
-  nodeKey?: string
-  nodeLabel?: string
   onExpand?: (key: string) => void
-  onHide?: (key: string) => void
-  onPin?: (key: string) => void
   onEdit?: (key: string) => void
-  onMerge?: (key: string) => void
-  onFindPaths?: (key: string) => void
-  onCopyDetails?: (key: string) => void
   onDelete?: (key: string) => void
-  canEdit?: boolean
+  onShowDetail?: (key: string) => void
+  onAnalyzeRelationships?: (key: string) => void
+  onMergeSelected?: () => void
 }
 
 export function GraphContextMenu({
-  children,
-  nodeKey,
-  nodeLabel,
   onExpand,
-  onHide,
-  onPin,
   onEdit,
-  onMerge,
-  onFindPaths,
-  onCopyDetails,
   onDelete,
-  canEdit = true,
+  onShowDetail,
+  onAnalyzeRelationships,
+  onMergeSelected,
 }: GraphContextMenuProps) {
-  if (!nodeKey) return <>{children}</>
+  const menuRef = useRef<HTMLDivElement>(null)
+  const {
+    contextMenu,
+    closeContextMenu,
+    hideNode,
+    togglePin,
+    pinnedNodeKeys,
+    selectedNodeKeys,
+    addToSubgraph,
+  } = useGraphStore()
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        closeContextMenu()
+      }
+    }
+    if (contextMenu) {
+      document.addEventListener("mousedown", handler)
+      return () => document.removeEventListener("mousedown", handler)
+    }
+  }, [contextMenu, closeContextMenu])
+
+  if (!contextMenu) return null
+
+  const { x, y, nodeKey, nodeLabel } = contextMenu
+  const isPinned = pinnedNodeKeys.has(nodeKey)
+  const multiSelected = selectedNodeKeys.size > 1
+
+  type MenuItem =
+    | { separator: true }
+    | { icon: typeof Eye; label: string; onClick: () => void; className?: string }
+
+  const items: MenuItem[] = [
+    {
+      icon: Eye,
+      label: "Show Details",
+      onClick: () => { onShowDetail?.(nodeKey); closeContextMenu() },
+    },
+    {
+      icon: Expand,
+      label: "Expand Connections",
+      onClick: () => { onExpand?.(nodeKey); closeContextMenu() },
+    },
+    {
+      icon: Sparkles,
+      label: "Relationship Analysis",
+      onClick: () => { onAnalyzeRelationships?.(nodeKey); closeContextMenu() },
+    },
+    { separator: true },
+    {
+      icon: Network,
+      label: "Add to Spotlight",
+      onClick: () => { addToSubgraph([nodeKey]); closeContextMenu() },
+    },
+    {
+      icon: isPinned ? PinOff : Pin,
+      label: isPinned ? "Unpin Node" : "Pin Node",
+      onClick: () => { togglePin(nodeKey); closeContextMenu() },
+    },
+    {
+      icon: EyeOff,
+      label: "Hide Node",
+      onClick: () => { hideNode(nodeKey); closeContextMenu() },
+    },
+    { separator: true },
+    {
+      icon: Pencil,
+      label: "Edit Node",
+      onClick: () => { onEdit?.(nodeKey); closeContextMenu() },
+    },
+    {
+      icon: Copy,
+      label: "Copy Key",
+      onClick: () => { navigator.clipboard.writeText(nodeKey); closeContextMenu() },
+    },
+    ...(multiSelected
+      ? [
+          {
+            icon: GitMerge,
+            label: "Merge Selected",
+            onClick: () => { onMergeSelected?.(); closeContextMenu() },
+          } as MenuItem,
+        ]
+      : []),
+    { separator: true },
+    {
+      icon: Trash2,
+      label: "Delete Node",
+      className: "text-red-400 hover:text-red-300",
+      onClick: () => { onDelete?.(nodeKey); closeContextMenu() },
+    },
+  ]
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
-        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground truncate">
-          {nodeLabel ?? nodeKey}
-        </div>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onExpand?.(nodeKey)}>
-          <Expand className="mr-2 size-3.5" />
-          Expand Node
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => onHide?.(nodeKey)}>
-          <EyeOff className="mr-2 size-3.5" />
-          Hide Node
-        </ContextMenuItem>
-        <ContextMenuItem onClick={() => onPin?.(nodeKey)}>
-          <Pin className="mr-2 size-3.5" />
-          Pin Node
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        {canEdit && (
-          <>
-            <ContextMenuItem onClick={() => onEdit?.(nodeKey)}>
-              <Pencil className="mr-2 size-3.5" />
-              Edit Entity
-            </ContextMenuItem>
-            <ContextMenuItem onClick={() => onMerge?.(nodeKey)}>
-              <GitMerge className="mr-2 size-3.5" />
-              Merge Entities
-            </ContextMenuItem>
-          </>
-        )}
-        <ContextMenuItem onClick={() => onFindPaths?.(nodeKey)}>
-          <Route className="mr-2 size-3.5" />
-          Find Paths
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={() => onCopyDetails?.(nodeKey)}>
-          <Copy className="mr-2 size-3.5" />
-          Copy Details
-        </ContextMenuItem>
-        {canEdit && (
-          <ContextMenuItem
-            className="text-red-400 focus:text-red-400"
-            onClick={() => onDelete?.(nodeKey)}
+    <div
+      ref={menuRef}
+      className="fixed z-50 min-w-[180px] rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl"
+      style={{ left: x, top: y }}
+    >
+      <div className="px-3 py-1.5 text-xs font-medium text-slate-400 truncate max-w-[200px]">
+        {nodeLabel}
+      </div>
+      <div className="mx-1 border-t border-slate-700/50" />
+      {items.map((item, i) => {
+        if ("separator" in item) {
+          return <div key={i} className="mx-1 my-0.5 border-t border-slate-700/50" />
+        }
+        const Icon = item.icon
+        return (
+          <button
+            key={i}
+            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 ${item.className ?? ""}`}
+            onClick={item.onClick}
           >
-            <Trash2 className="mr-2 size-3.5" />
-            Delete
-          </ContextMenuItem>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
+            <Icon className="size-3.5" />
+            {item.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }

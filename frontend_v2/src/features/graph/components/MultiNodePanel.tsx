@@ -5,7 +5,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/cn"
 import type { GraphNode } from "@/types/graph.types"
-import type { EntityType } from "@/lib/theme"
 
 interface MultiNodePanelProps {
   nodes: GraphNode[]
@@ -43,7 +42,7 @@ export function MultiNodePanel({
           <div className="mt-1 flex flex-wrap gap-1">
             {Object.entries(typeGroups).map(([type, count]) => (
               <div key={type} className="flex items-center gap-1">
-                <NodeBadge type={type as EntityType} />
+                <NodeBadge type={type} />
                 <span className="text-[10px] text-muted-foreground">&times;{count}</span>
               </div>
             ))}

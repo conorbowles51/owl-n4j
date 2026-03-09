@@ -2,7 +2,7 @@ import { useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+
 import { cn } from "@/lib/cn"
 import type { ConnectionGroup } from "@/types/graph.types"
 
@@ -17,8 +17,10 @@ export function ConnectionsList({
   onNodeClick,
   className,
 }: ConnectionsListProps) {
+  const relType = (g: ConnectionGroup) => g.relationshipType ?? "unknown"
+
   const [expanded, setExpanded] = useState<Set<string>>(
-    new Set(connections.map((c) => c.relationshipType))
+    new Set(connections.map((c) => relType(c)))
   )
 
   const toggleGroup = (type: string) => {
@@ -39,30 +41,32 @@ export function ConnectionsList({
   }
 
   return (
-    <ScrollArea className={cn("max-h-[400px]", className)}>
+    <div className={cn(className)}>
       <div className="space-y-1">
-        {connections.map((group) => (
-          <div key={group.relationshipType}>
+        {connections.map((group) => {
+          const type = relType(group)
+          return (
+          <div key={type}>
             <button
               className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted/50"
-              onClick={() => toggleGroup(group.relationshipType)}
+              onClick={() => toggleGroup(type)}
             >
-              {expanded.has(group.relationshipType) ? (
+              {expanded.has(type) ? (
                 <ChevronDown className="size-3 text-muted-foreground" />
               ) : (
                 <ChevronRight className="size-3 text-muted-foreground" />
               )}
-              <span className="flex-1 text-xs font-medium text-foreground uppercase tracking-wider">
-                {group.relationshipType.replace(/_/g, " ")}
+              <span className="flex-1 text-xs font-medium text-foreground uppercase tracking-wider truncate">
+                {type.replace(/_/g, " ")}
               </span>
               <Badge variant="slate" className="text-[10px]">
-                {group.nodes.length}
+                {(group.nodes ?? []).length}
               </Badge>
             </button>
 
-            {expanded.has(group.relationshipType) && (
+            {expanded.has(type) && (
               <div className="ml-5 space-y-0.5">
-                {group.nodes.map((node) => (
+                {(group.nodes ?? []).map((node) => (
                   <button
                     key={node.key}
                     className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50"
@@ -77,8 +81,9 @@ export function ConnectionsList({
               </div>
             )}
           </div>
-        ))}
+          )
+        })}
       </div>
-    </ScrollArea>
+    </div>
   )
 }

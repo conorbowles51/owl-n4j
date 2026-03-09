@@ -12,7 +12,8 @@
       "Bash(npx storybook@latest:*)",
       "Bash(npm install:*)",
       "Bash(npx storybook:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(ls:*)"
     ]
   }
 }

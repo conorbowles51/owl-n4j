@@ -6,4 +6,13 @@ export type {
   NodeDetail,
   ConnectionGroup,
   SourceReference,
+  VerifiedFact,
+  AIInsight,
+  RecycledEntity,
+  SimilarPair,
+  RejectedMergePair,
+  PageRankResult,
+  CommunityResult,
+  BetweennessResult,
+  ShortestPathResult,
 } from "@/types/graph.types"

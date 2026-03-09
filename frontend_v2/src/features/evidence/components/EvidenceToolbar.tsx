@@ -3,6 +3,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useEvidenceStore } from "../evidence.store"
+import { FILE_TYPE_CATEGORIES } from "../utils/file-types"
 
 const STATUS_FILTERS = [
   { value: "all" as const, label: "All" },
@@ -24,6 +25,8 @@ export function EvidenceToolbar({ onProcess, onDelete, processPending }: Evidenc
     setSearchTerm,
     statusFilter,
     setStatusFilter,
+    typeFilter,
+    setTypeFilter,
     selectedFileIds,
     clearSelection,
   } = useEvidenceStore()
@@ -63,6 +66,34 @@ export function EvidenceToolbar({ onProcess, onDelete, processPending }: Evidenc
               }`}
             >
               {f.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="h-4 w-px bg-border" />
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setTypeFilter("")}
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+              !typeFilter
+                ? "bg-amber-500/15 text-amber-500"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            All Types
+          </button>
+          {FILE_TYPE_CATEGORIES.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setTypeFilter(typeFilter === cat ? "" : cat)}
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                typeFilter === cat
+                  ? "bg-amber-500/15 text-amber-500"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              {cat}
             </button>
           ))}
         </div>

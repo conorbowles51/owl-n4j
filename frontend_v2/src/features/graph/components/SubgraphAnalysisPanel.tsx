@@ -4,7 +4,6 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Network, Hash, GitBranch } from "lucide-react"
 import type { GraphData } from "@/types/graph.types"
-import type { EntityType } from "@/lib/theme"
 
 interface SubgraphAnalysisPanelProps {
   data: GraphData
@@ -54,7 +53,7 @@ export function SubgraphAnalysisPanel({ data, className }: SubgraphAnalysisPanel
       <div className="space-y-1">
         {Object.entries(typeDistribution).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
           <div key={type} className="flex items-center justify-between rounded px-2 py-1 hover:bg-muted/50">
-            <NodeBadge type={type as EntityType} />
+            <NodeBadge type={type} />
             <Badge variant="slate" className="text-[10px]">{count}</Badge>
           </div>
         ))}
