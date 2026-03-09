@@ -1169,22 +1169,35 @@ Only include candidates with score >= 5."""
             # --- Step 1: Collect entity pool from retrieval stages ---
             entity_pool = {}  # key -> {node_data, source, distance}
 
+            # When a document is selected, only seed pool with doc-associated
+            # entities — prevents unrelated case entities flooding the graph
+            doc_scoped_pool = bool(doc_entity_keys_set)
+
             # From entity vector search (stage 3)
             for entity in entity_results:
                 key = entity.get("key")
-                if key and key not in entity_pool:
-                    entity_pool[key] = {
-                        **entity,
-                        "_source": "retrieval",
-                        "_distance": entity.get("distance", 0.5),
-                    }
+                if not key or key in entity_pool:
+                    continue
+                # If doc-scoped, only include entities from the selected document
+                if doc_scoped_pool and key not in doc_entity_keys_set:
+                    continue
+                entity_pool[key] = {
+                    **entity,
+                    "_source": "retrieval",
+                    "_distance": entity.get("distance", 0.5),
+                }
 
             # From graph traversal connections (stage 4)
             graph_parent_map = {}  # conn_key -> {parent_name, rel_type}
             for graph_entity in graph_context.get("selected_entities", []):
                 # The traversed entity itself
                 key = graph_entity.get("key")
-                if key and key not in entity_pool:
+                if not key:
+                    continue
+                # If doc-scoped, only traverse from doc-associated entities
+                if doc_scoped_pool and key not in doc_entity_keys_set:
+                    continue
+                if key not in entity_pool:
                     entity_pool[key] = {
                         "key": key,
                         "name": graph_entity.get("name", key),
@@ -1194,7 +1207,8 @@ Only include candidates with score >= 5."""
                         "_source": "graph",
                         "_distance": None,
                     }
-                # Its connections — also record parent info for relevance reasoning
+                # Its connections — allow cross-doc entities via graph traversal
+                # (these get lower scores but provide investigative context)
                 parent_name = graph_entity.get("name", key)
                 for conn in graph_entity.get("connections", []):
                     conn_key = conn.get("key")
