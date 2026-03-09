@@ -1216,40 +1216,17 @@ Only include candidates with score >= 5."""
 
             print(f"[RAG] Result graph pool: {len(entity_pool)} entities from retrieval stages")
 
-            # --- Step 2: Discover answer-surfaced entities via vector similarity ---
-            if VECTOR_DB_AVAILABLE and case_id:
-                try:
-                    answer_embedding = embedding_service.generate_embedding(answer_text)
-                    answer_entities = vector_db_service.search_entities(
-                        query_embedding=answer_embedding,
-                        top_k=top_k_entities,
-                        filter_metadata={"case_id": case_id},
-                    )
-                    new_count = 0
-                    for ae in answer_entities:
-                        ae_key = ae.get("id") or ae.get("key")
-                        if ae_key and ae_key not in entity_pool:
-                            new_count += 1
-                            entity_pool[ae_key] = {
-                                "key": ae_key,
-                                "name": ae.get("name", ae_key),
-                                "type": ae.get("type"),
-                                "summary": ae.get("summary"),
-                                "_source": "answer_similarity",
-                                "_distance": ae.get("distance", 0.5),
-                            }
-                        elif ae_key and ae_key in entity_pool and entity_pool[ae_key]["_distance"] is None:
-                            # Graph-only entity now has an answer-similarity distance
-                            entity_pool[ae_key]["_distance"] = ae.get("distance", 0.5)
-                    if new_count:
-                        print(f"[RAG] Answer similarity added {new_count} new entities to pool")
-                except Exception as e:
-                    print(f"[RAG] Answer similarity search failed (non-fatal): {e}")
+            # --- Step 2: Skipped (answer-similarity entity search removed) ---
+            # Previously this step embedded the full answer text and searched for
+            # semantically similar entities, but it added noise — entities mentioned
+            # in negation ("not involved") or only tangentially related got pulled in.
+            # The result graph now only contains entities from grounded sources:
+            # retrieval chunks, graph traversal, cypher queries, and user selection.
 
             # --- Step 3: Enrich pool with Neo4j data (for entities missing full data) ---
             keys_needing_enrichment = [
                 k for k, v in entity_pool.items()
-                if v.get("_source") in ("graph", "answer_similarity") and not v.get("verified_facts")
+                if v.get("_source") == "graph" and not v.get("verified_facts")
             ]
             if keys_needing_enrichment:
                 enriched = self._get_entity_nodes_from_neo4j(keys_needing_enrichment, case_id=case_id)
@@ -1482,9 +1459,6 @@ Only include candidates with score >= 5."""
 
         if source == "retrieval":
             return "Semantically similar to the query (found in evidence passages)"
-
-        if source == "answer_similarity":
-            return "Semantically related to the AI answer"
 
         # Fallback
         return "Related through graph connections"
