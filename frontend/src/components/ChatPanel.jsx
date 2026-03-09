@@ -939,10 +939,8 @@ export default function ChatPanel({
                   </div>
                   {/* Document Sources Panel */}
                   {msg.documentSummary && expandedDocSummaries.has(msg.id) && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
-                      <ReactMarkdown
-                        className="prose prose-xs max-w-none text-amber-900 [&_strong]:text-amber-800 [&_li]:my-0.5"
-                      >
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs prose prose-xs max-w-none text-amber-900 [&_strong]:text-amber-800 [&_li]:my-0.5">
+                      <ReactMarkdown>
                         {msg.documentSummary}
                       </ReactMarkdown>
                     </div>

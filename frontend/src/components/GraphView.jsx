@@ -333,11 +333,11 @@ const GraphView = forwardRef(function GraphView({
     let baseRadius = isSelected ? 8 : 6;
 
     // Adjust node size based on confidence score (for result graph nodes)
-    // Much more dramatic range for clear visual hierarchy
+    // High confidence = noticeably larger, low confidence = slightly smaller
     if (node.confidence !== undefined && node.confidence !== null) {
       // Confidence ranges from 0.0 to 1.0
-      // Size range: 0.4x (barely visible) to 3.0x (very prominent)
-      const confidenceMultiplier = 0.4 + (node.confidence * 2.6);
+      // Size range: 0.7x (smaller but readable) to 2.5x (very prominent)
+      const confidenceMultiplier = 0.7 + (node.confidence * 1.8);
       baseRadius = baseRadius * confidenceMultiplier;
     }
 
@@ -354,12 +354,14 @@ const GraphView = forwardRef(function GraphView({
     }
 
     // Apply opacity modulation for result graph nodes
-    // Use confidence-based gradient for much more distinct visual separation
+    // Mentioned entities stay solid, non-mentioned fade based on confidence
     ctx.save();
     if (node.confidence !== undefined && node.confidence !== null) {
-      // Confidence-based opacity: 0.15 (very faded) to 1.0 (fully solid)
-      const minOpacity = node.mentioned === false ? 0.15 : 0.25;
-      ctx.globalAlpha = minOpacity + (node.confidence * (1.0 - minOpacity));
+      if (node.mentioned === false) {
+        // Non-mentioned: fade based on confidence (0.25 to 0.7)
+        ctx.globalAlpha = 0.25 + (node.confidence * 0.45);
+      }
+      // Mentioned nodes stay at full opacity (1.0)
     } else if (node.mentioned === false) {
       ctx.globalAlpha = 0.4;
     }
@@ -377,15 +379,17 @@ const GraphView = forwardRef(function GraphView({
       ctx.stroke();
     }
 
-    // Label - scale font size and opacity with confidence for result graph nodes
+    // Label - scale font size with confidence, fade non-mentioned labels
     let labelFontSize = fontSize;
     let labelColor = '#1f2937'; // light-800 default
     if (node.confidence !== undefined && node.confidence !== null) {
-      // Scale label: 0.7x to 1.3x of base font size
-      labelFontSize = fontSize * (0.7 + node.confidence * 0.6);
-      // Fade label color for low confidence
-      const labelAlpha = Math.max(0.3, node.confidence);
-      labelColor = `rgba(31, 41, 55, ${labelAlpha})`;
+      // Scale label: 0.85x to 1.3x of base font size (subtle scaling)
+      labelFontSize = fontSize * (0.85 + node.confidence * 0.45);
+      // Only fade labels for non-mentioned nodes
+      if (node.mentioned === false) {
+        const labelAlpha = Math.max(0.4, 0.4 + node.confidence * 0.4);
+        labelColor = `rgba(31, 41, 55, ${labelAlpha})`;
+      }
     }
     ctx.font = `${labelFontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
@@ -441,11 +445,13 @@ const GraphView = forwardRef(function GraphView({
 
     // Apply opacity based on connected node confidence (result graph links fade with low-confidence nodes)
     ctx.save();
-    const startConf = start.confidence !== undefined ? start.confidence : 1.0;
-    const endConf = end.confidence !== undefined ? end.confidence : 1.0;
-    const minConf = Math.min(startConf, endConf);
-    if (minConf < 1.0) {
-      ctx.globalAlpha = Math.max(0.1, minConf);
+    // Fade links when both connected nodes are non-mentioned (context-only)
+    const startMentioned = start.mentioned !== false;
+    const endMentioned = end.mentioned !== false;
+    if (!startMentioned && !endMentioned) {
+      ctx.globalAlpha = 0.3; // Both faded = faded link
+    } else if (!startMentioned || !endMentioned) {
+      ctx.globalAlpha = 0.5; // One faded = semi-faded link
     }
 
     // Draw the link line
