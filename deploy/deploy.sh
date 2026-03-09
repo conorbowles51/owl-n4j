@@ -184,10 +184,14 @@ success "Frontend restarted"
 # ============================================================
 step "Running health check"
 
+# Initial wait for backend to start (snapshot loading + potential worker respawn)
+echo "  Waiting 10s for backend initialization..."
+sleep 10
+
 HEALTHY=false
 for i in $(seq 1 $HEALTH_RETRIES); do
     sleep "$HEALTH_DELAY"
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" 2>/dev/null || echo "000")
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" 2>/dev/null || echo "000")
 
     if [ "$HTTP_CODE" = "200" ]; then
         RESPONSE=$(curl -s "$HEALTH_URL" 2>/dev/null)
