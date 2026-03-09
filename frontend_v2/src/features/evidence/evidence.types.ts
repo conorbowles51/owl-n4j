@@ -1,2 +1,18 @@
 // Re-export shared types for feature-local imports
-export type { EvidenceFile, IngestionResult } from "@/types/evidence.types"
+export type {
+  EvidenceFile,
+  IngestionResult,
+  ProcessingProfile,
+  ProfileDetail,
+  ProfileSaveData,
+  SpecialEntityType,
+  BackgroundTask,
+  TaskFile,
+  TaskProgress,
+  FilesystemItem,
+  VideoFrame,
+  IngestionLog,
+  WiretapCheckResult,
+  LLMModel,
+  EvidenceSummary,
+} from "@/types/evidence.types"

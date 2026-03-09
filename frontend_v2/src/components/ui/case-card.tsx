@@ -1,32 +1,37 @@
 import { cn } from "@/lib/cn"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Crown, Pencil, Eye, Shield } from "lucide-react"
 
 interface CaseCardProps {
-  name: string
-  description?: string
-  status: "active" | "archived" | "closed"
-  memberCount?: number
+  title: string
+  description?: string | null
+  userRole?: "owner" | "editor" | "viewer" | "admin_access"
+  ownerName?: string | null
   lastUpdated?: string
   className?: string
   onClick?: () => void
 }
 
-const statusVariant = {
-  active: "success",
-  archived: "slate",
-  closed: "amber",
-} as const
+const roleConfig = {
+  owner: { label: "Owner", variant: "amber" as const, icon: Crown },
+  editor: { label: "Editor", variant: "info" as const, icon: Pencil },
+  viewer: { label: "Viewer", variant: "slate" as const, icon: Eye },
+  admin_access: { label: "Admin", variant: "danger" as const, icon: Shield },
+}
 
 export function CaseCard({
-  name,
+  title,
   description,
-  status,
-  memberCount,
+  userRole,
+  ownerName,
   lastUpdated,
   className,
   onClick,
 }: CaseCardProps) {
+  const role = userRole ? roleConfig[userRole] : null
+  const RoleIcon = role?.icon
+
   return (
     <Card
       className={cn(
@@ -38,19 +43,22 @@ export function CaseCard({
     >
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
-          <CardTitle className="truncate">{name}</CardTitle>
-          <Badge variant={statusVariant[status]}>{status}</Badge>
+          <CardTitle className="truncate">{title}</CardTitle>
+          {role && (
+            <Badge variant={role.variant}>
+              {RoleIcon && <RoleIcon className="size-3" />}
+              {role.label}
+            </Badge>
+          )}
         </div>
         {description && <CardDescription>{description}</CardDescription>}
       </CardHeader>
-      {(memberCount !== undefined || lastUpdated) && (
-        <div className="flex items-center gap-3 px-4 text-xs text-muted-foreground">
-          {memberCount !== undefined && (
-            <span>
-              {memberCount} member{memberCount !== 1 ? "s" : ""}
-            </span>
+      {(ownerName || lastUpdated) && (
+        <div className="flex items-center gap-3 px-4 pb-3 text-xs text-muted-foreground">
+          {ownerName && <span>Owner: {ownerName}</span>}
+          {lastUpdated && (
+            <span>{new Date(lastUpdated).toLocaleDateString()}</span>
           )}
-          {lastUpdated && <span>{lastUpdated}</span>}
         </div>
       )}
     </Card>

@@ -1,8 +1,14 @@
 import { fetchAPI } from "@/lib/api-client"
 import type { GraphData, NodeDetail } from "@/types/graph.types"
 
+/** Backend returns { nodes, links } — map to frontend { nodes, edges } */
+type RawGraphData = { nodes: GraphData["nodes"]; links: GraphData["edges"] }
+function toGraphData(raw: RawGraphData): GraphData {
+  return { nodes: raw.nodes ?? [], edges: raw.links ?? [] }
+}
+
 export const graphAPI = {
-  getGraph: (params: {
+  getGraph: async (params: {
     case_id: string
     start_date?: string
     end_date?: string
@@ -10,7 +16,8 @@ export const graphAPI = {
     const qs = new URLSearchParams({ case_id: params.case_id })
     if (params.start_date) qs.set("start_date", params.start_date)
     if (params.end_date) qs.set("end_date", params.end_date)
-    return fetchAPI<GraphData>(`/api/graph?${qs}`)
+    const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
+    return toGraphData(raw)
   },
 
   getNodeDetails: (key: string, caseId: string) =>
@@ -18,15 +25,19 @@ export const graphAPI = {
       `/api/graph/node/${encodeURIComponent(key)}?case_id=${caseId}`
     ),
 
-  getNodeNeighbours: (key: string, depth: number, caseId: string) =>
-    fetchAPI<GraphData>(
+  getNodeNeighbours: async (key: string, depth: number, caseId: string) => {
+    const raw = await fetchAPI<RawGraphData>(
       `/api/graph/node/${encodeURIComponent(key)}/neighbours?depth=${depth}&case_id=${caseId}`
-    ),
+    )
+    return toGraphData(raw)
+  },
 
-  search: (query: string, caseId: string, limit = 20) =>
-    fetchAPI<GraphData>(
+  search: async (query: string, caseId: string, limit = 20) => {
+    const raw = await fetchAPI<RawGraphData>(
       `/api/graph/search?q=${encodeURIComponent(query)}&limit=${limit}&case_id=${caseId}`
-    ),
+    )
+    return toGraphData(raw)
+  },
 
   getSummary: (caseId: string) =>
     fetchAPI<Record<string, number>>(`/api/graph/summary?case_id=${caseId}`),
@@ -65,11 +76,13 @@ export const graphAPI = {
       },
     }),
 
-  expandNodes: (caseId: string, nodeKeys: string[], depth = 1) =>
-    fetchAPI<GraphData>("/api/graph/expand-nodes", {
+  expandNodes: async (caseId: string, nodeKeys: string[], depth = 1) => {
+    const raw = await fetchAPI<RawGraphData>("/api/graph/expand-nodes", {
       method: "POST",
       body: { case_id: caseId, node_keys: nodeKeys, depth },
-    }),
+    })
+    return toGraphData(raw)
+  },
 
   createRelationships: (
     relationships: { source: string; target: string; type: string }[],

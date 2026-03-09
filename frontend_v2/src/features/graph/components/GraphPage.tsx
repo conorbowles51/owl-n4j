@@ -41,13 +41,13 @@ export function GraphPage() {
     <div className="flex h-full flex-col">
       <GraphToolbar caseId={caseId!} />
       <ResizablePanelGroup orientation="horizontal" className="flex-1">
-        <ResizablePanel defaultSize={hasSelection ? 65 : 100} minSize={40}>
+        <ResizablePanel defaultSize={hasSelection ? "65" : "100"} minSize="40">
           <GraphCanvas data={graphData} caseId={caseId!} />
         </ResizablePanel>
         {hasSelection && (
           <>
             <ResizableHandle withHandle />
-            <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+            <ResizablePanel defaultSize="35" minSize="25" maxSize="50">
               <NodeDetailSheet caseId={caseId!} />
             </ResizablePanel>
           </>

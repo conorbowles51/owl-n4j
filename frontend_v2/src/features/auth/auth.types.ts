@@ -1,7 +1,13 @@
 export interface User {
+  id?: string
+  email?: string
   username: string
   name: string
   role: string | null
+  global_role?: string
+  is_active?: boolean
+  created_at?: string
+  updated_at?: string
 }
 
 export interface LoginRequest {

@@ -1,6 +1,7 @@
 import { Checkbox } from "@/components/ui/checkbox"
-import { StatusIndicator } from "@/components/ui/status-indicator"
+import { StatusIndicator, type ProcessingStatus } from "@/components/ui/status-indicator"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
 import { Eye, RotateCcw, Trash2 } from "lucide-react"
 import type { EvidenceFile } from "@/types/evidence.types"
@@ -40,22 +41,27 @@ export function EvidenceRow({
         className="max-w-[300px] cursor-pointer truncate font-medium hover:text-amber-500"
         onClick={() => onView?.(file)}
       >
-        {file.filename}
+        {file.original_filename}
+        {file.duplicate_of && (
+          <Badge variant="warning" className="ml-1.5 text-[9px]">
+            Duplicate
+          </Badge>
+        )}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {file.file_type}
+        {file.original_filename.split(".").pop()?.toUpperCase() ?? "—"}
       </TableCell>
       <TableCell className="font-mono text-xs">
-        {formatSize(file.file_size)}
+        {formatSize(file.size)}
       </TableCell>
       <TableCell>
-        <StatusIndicator status={file.status} />
+        <StatusIndicator status={file.status as ProcessingStatus} />
       </TableCell>
       <TableCell className="font-mono text-xs">
         {file.entity_count ?? "—"}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">
-        {new Date(file.uploaded_at).toLocaleDateString()}
+        {new Date(file.created_at).toLocaleDateString()}
       </TableCell>
       <TableCell>
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

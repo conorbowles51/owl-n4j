@@ -1,11 +1,14 @@
 export interface Case {
   id: string
-  name: string
-  description: string
-  status: "active" | "archived" | "closed"
+  title: string
+  description: string | null
+  created_by_user_id: string
+  owner_user_id: string
   created_at: string
   updated_at: string
-  member_count: number
+  owner_name: string | null
+  user_role: string
+  is_owner: boolean
 }
 
 export interface CaseVersion {
@@ -16,10 +19,11 @@ export interface CaseVersion {
 
 export interface CaseMember {
   user_id: string
-  username: string
-  name: string
-  role: "owner" | "editor" | "viewer"
-  joined_at: string
+  user_name: string
+  user_email: string
+  preset: "owner" | "editor" | "viewer"
+  permissions: Record<string, boolean>
+  joined_at?: string
 }
 
 export interface CasePermissions {

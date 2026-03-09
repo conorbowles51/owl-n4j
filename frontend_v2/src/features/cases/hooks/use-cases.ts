@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { casesAPI } from "../api"
 
-export function useCases() {
+export function useCases(viewMode?: string) {
   return useQuery({
-    queryKey: ["cases"],
-    queryFn: () => casesAPI.list(),
+    queryKey: ["cases", viewMode ?? "default"],
+    queryFn: () => casesAPI.list(viewMode),
   })
 }
 

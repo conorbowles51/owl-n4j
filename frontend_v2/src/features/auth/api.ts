@@ -15,7 +15,10 @@ export const authAPI = {
 
   me: () => fetchAPI<User>("/api/auth/me"),
 
-  getUsers: () => fetchAPI<User[]>("/api/users"),
+  getUsers: () =>
+    fetchAPI<{ users: User[]; total: number }>("/api/users").then(
+      (r) => r.users
+    ),
 
   changePassword: (currentPassword: string, newPassword: string) =>
     fetchAPI<void>("/api/auth/change-password", {

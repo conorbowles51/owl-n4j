@@ -6,7 +6,7 @@ export function AppLayout() {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       <AppSidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-hidden">
         <ErrorBoundary level="page">
           <Outlet />
         </ErrorBoundary>

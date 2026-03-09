@@ -22,15 +22,15 @@ export function CreateCaseDialog({
   open,
   onOpenChange,
 }: CreateCaseDialogProps) {
-  const [name, setName] = useState("")
+  const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const createCase = useCreateCase()
   const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    const result = await createCase.mutateAsync({ name, description })
-    setName("")
+    const result = await createCase.mutateAsync({ title, description })
+    setTitle("")
     setDescription("")
     onOpenChange(false)
     navigate(`/cases/${result.id}/graph`)
@@ -45,11 +45,11 @@ export function CreateCaseDialog({
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              Case Name
+              Case Title
             </label>
             <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. Operation Sunrise"
               autoFocus
             />
@@ -76,7 +76,7 @@ export function CreateCaseDialog({
             <Button
               variant="primary"
               type="submit"
-              disabled={!name.trim() || createCase.isPending}
+              disabled={!title.trim() || createCase.isPending}
             >
               {createCase.isPending ? (
                 <LoadingSpinner size="sm" />

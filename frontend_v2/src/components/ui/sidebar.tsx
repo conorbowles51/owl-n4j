@@ -1,6 +1,5 @@
 import { NavLink, useParams } from "react-router-dom"
 import {
-  LayoutDashboard,
   FolderOpen,
   Network,
   Clock,
@@ -35,7 +34,6 @@ interface NavItem {
 }
 
 const mainNav: NavItem[] = [
-  { label: "Dashboard", icon: LayoutDashboard, to: "/" },
   { label: "Cases", icon: FolderOpen, to: "/cases" },
 ]
 

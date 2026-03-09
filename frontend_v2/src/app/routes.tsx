@@ -6,8 +6,7 @@ import { ProtectedRoute } from "@/features/auth/components/ProtectedRoute"
 import { AppLayout } from "./layouts/AppLayout"
 import { CaseLayout } from "./layouts/CaseLayout"
 import { AdminLayout } from "./layouts/AdminLayout"
-import { DashboardPage } from "@/features/cases/components/DashboardPage"
-import { CaseListPage } from "@/features/cases/components/CaseListPage"
+import { CaseManagementPage } from "@/features/cases/components/CaseManagementPage"
 import { EvidencePage } from "@/features/evidence/components/EvidencePage"
 
 // Lazy-loaded heavy views
@@ -119,8 +118,8 @@ export function AppRoutes() {
       {/* Protected */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/cases" element={<CaseListPage />} />
+          <Route path="/" element={<Navigate to="/cases" replace />} />
+          <Route path="/cases" element={<CaseManagementPage />} />
 
           {/* Case routes */}
           <Route path="/cases/:id" element={<CaseLayout />}>

@@ -20,7 +20,7 @@ export function UserManagementPage() {
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [newUser, setNewUser] = useState({ username: "", name: "", password: "", role: "" })
+  const [newUser, setNewUser] = useState({ email: "", name: "", password: "", role: "" })
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -28,25 +28,25 @@ export function UserManagementPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { username: string; name: string; password: string; role?: string }) =>
+    mutationFn: (data: { email: string; name: string; password: string; role?: string }) =>
       fetchAPI<void>("/api/users", { method: "POST", body: data }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] })
       setCreateOpen(false)
-      setNewUser({ username: "", name: "", password: "", role: "" })
+      setNewUser({ email: "", name: "", password: "", role: "" })
     },
   })
 
   const deleteMutation = useMutation({
-    mutationFn: (username: string) =>
-      fetchAPI<void>(`/api/users/${encodeURIComponent(username)}`, { method: "DELETE" }),
+    mutationFn: (userId: string) =>
+      fetchAPI<void>(`/api/users/${encodeURIComponent(userId)}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
   })
 
   const filtered = users.filter(
     (u) =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.username.toLowerCase().includes(search.toLowerCase())
+      (u.email ?? u.username).toLowerCase().includes(search.toLowerCase())
   )
 
   if (isLoading) {
@@ -86,7 +86,7 @@ export function UserManagementPage() {
           <div className="space-y-2">
             {filtered.map((user) => (
               <div
-                key={user.username}
+                key={user.id ?? user.username}
                 className="group flex items-center gap-3 rounded-lg border border-border p-3"
               >
                 <div className="flex size-8 items-center justify-center rounded-full bg-amber-500/10">
@@ -94,14 +94,14 @@ export function UserManagementPage() {
                 </div>
                 <div className="flex-1">
                   <p className="text-sm font-medium">{user.name}</p>
-                  <p className="text-xs text-muted-foreground">{user.username}</p>
+                  <p className="text-xs text-muted-foreground">{user.email ?? user.username}</p>
                 </div>
-                {user.role && (
-                  <Badge variant={user.role === "super_admin" ? "amber" : "outline"}>
-                    {user.role === "super_admin" ? (
+                {(user.global_role ?? user.role) && (
+                  <Badge variant={(user.global_role ?? user.role) === "super_admin" ? "amber" : "outline"}>
+                    {(user.global_role ?? user.role) === "super_admin" ? (
                       <><Shield className="mr-1 size-3" />Admin</>
                     ) : (
-                      user.role
+                      (user.global_role ?? user.role)
                     )}
                   </Badge>
                 )}
@@ -109,7 +109,7 @@ export function UserManagementPage() {
                   variant="ghost"
                   size="icon-sm"
                   className="opacity-0 group-hover:opacity-100"
-                  onClick={() => deleteMutation.mutate(user.username)}
+                  onClick={() => deleteMutation.mutate(user.id ?? user.username)}
                 >
                   <Trash2 className="size-3.5" />
                 </Button>
@@ -127,9 +127,9 @@ export function UserManagementPage() {
           </DialogHeader>
           <div className="space-y-3">
             <Input
-              placeholder="Username"
-              value={newUser.username}
-              onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+              placeholder="Email"
+              value={newUser.email}
+              onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
             />
             <Input
               placeholder="Display name"
@@ -156,7 +156,7 @@ export function UserManagementPage() {
               variant="primary"
               size="sm"
               onClick={() => createMutation.mutate(newUser)}
-              disabled={!newUser.username || !newUser.name || !newUser.password || createMutation.isPending}
+              disabled={!newUser.email || !newUser.name || !newUser.password || createMutation.isPending}
             >
               Create
             </Button>

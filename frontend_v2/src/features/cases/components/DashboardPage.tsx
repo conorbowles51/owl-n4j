@@ -57,10 +57,10 @@ export function DashboardPage() {
                 {recentCases.map((c) => (
                   <CaseCard
                     key={c.id}
-                    name={c.name}
+                    title={c.title}
                     description={c.description}
-                    status={c.status}
-                    memberCount={c.member_count}
+                    userRole={c.user_role}
+                    ownerName={c.owner_name}
                     lastUpdated={c.updated_at}
                     onClick={() => navigate(`/cases/${c.id}/graph`)}
                   />
