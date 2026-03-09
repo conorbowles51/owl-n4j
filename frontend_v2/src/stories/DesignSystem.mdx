@@ -1,0 +1,192 @@
+import { Meta } from "@storybook/addon-docs/blocks"
+
+<Meta title="Design System/Overview" />
+
+# Owl Design System
+
+The Owl Investigation Console design system built on Tailwind CSS 4 with CSS custom properties for theme tokens.
+
+---
+
+## Color Palette
+
+### Brand Colors — Amber (Primary)
+
+Brand accent used for buttons, focus rings, and active indicators.
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `amber-50` | `#FEFAF0` | Lightest tint |
+| `amber-100` | `#FBF0D0` | Light backgrounds |
+| `amber-200` | `#F7D88A` | Subtle accents |
+| `amber-300` | `#F0BD4F` | Hover states |
+| `amber-400` | `#E5A61B` | Active states |
+| `amber-500` | `#D4920A` | Primary brand color |
+
+### Brand Colors — Slate (Neutral)
+
+Surfaces, text, and borders — the backbone of the UI.
+
+| Token | Hex | Usage |
+|-------|-----|-------|
+| `slate-50` | `#F4F6F8` | Light mode background |
+| `slate-100` | `#E8ECF1` | Light borders |
+| `slate-200` | `#CDD5DF` | Light muted |
+| `slate-300` | `#AAB7C7` | Placeholder text |
+| `slate-400` | `#8494A7` | Muted text |
+| `slate-500` | `#5A6A82` | Secondary text |
+| `slate-600` | `#3E4C63` | Dark mode text |
+| `slate-700` | `#2D3A4F` | Dark borders |
+| `slate-800` | `#1E293B` | Dark surfaces |
+| `slate-900` | `#111827` | Dark backgrounds |
+| `slate-950` | `#0B0F1A` | Darkest background |
+
+### Semantic Colors
+
+| Token | Light | Dark | Usage |
+|-------|-------|------|-------|
+| `--background` | `hsl(0 0% 100%)` | `hsl(224 43% 7%)` | Page background |
+| `--foreground` | `hsl(215 28% 10%)` | `hsl(210 40% 96%)` | Primary text |
+| `--card` | `hsl(0 0% 100%)` | `hsl(222 47% 9%)` | Card surfaces |
+| `--muted` | `hsl(215 16% 95%)` | `hsl(217 25% 18%)` | Muted backgrounds |
+| `--muted-foreground` | `hsl(215 10% 46%)` | `hsl(215 16% 57%)` | Secondary text |
+| `--border` | `hsl(215 16% 85%)` | `hsl(215 25% 22%)` | Borders |
+| `--primary` | `hsl(39 91% 44%)` | `hsl(39 91% 44%)` | Amber accent |
+| `--destructive` | `hsl(0 84% 60%)` | `hsl(0 84% 60%)` | Error/danger |
+| `--ring` | `hsl(39 91% 44%)` | `hsl(39 91% 44%)` | Focus ring |
+
+### Graph Node Palette
+
+Each entity type has a dedicated color:
+
+| Entity Type | Color | Hex |
+|-------------|-------|-----|
+| Person | 🟣 Indigo | `#6366F1` |
+| Organization | 🟣 Violet | `#8B5CF6` |
+| Location | 🟢 Teal | `#14B8A6` |
+| Financial | 🟡 Amber | `#F59E0B` |
+| Document | ⚫ Slate | `#64748B` |
+| Event | 🔴 Pink | `#EC4899` |
+| Communication | 🔵 Cyan | `#06B6D4` |
+| Vehicle | 🟢 Lime | `#84CC16` |
+| Digital | 🟣 Purple | `#A855F7` |
+| Evidence | 🟠 Orange | `#F97316` |
+
+### Status Badge Colors
+
+| Variant | Background | Text | Usage |
+|---------|-----------|------|-------|
+| `success` | `emerald-500/15` | `emerald-400` | Processed, complete |
+| `danger` | `red-500/15` | `red-400` | Failed, error |
+| `warning` | `yellow-500/15` | `yellow-400` | Needs attention |
+| `info` | `blue-500/15` | `blue-400` | Informational |
+| `amber` | `amber-500/15` | `amber-400` | Processing |
+| `slate` | `slate-500/15` | `slate-400` | Queued, inactive |
+
+---
+
+## Typography
+
+### Font Families
+
+- **Sans-serif** (`font-sans`): `Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
+- **Monospace** (`font-mono`): `JetBrains Mono, Fira Code, SF Mono, monospace`
+
+### Font Scale (Data-Dense)
+
+Owl uses a compact type scale optimized for information density:
+
+| Class | Size | Line Height | Usage |
+|-------|------|-------------|-------|
+| `text-xs` | 12px | 16px | Metadata, timestamps, labels |
+| `text-sm` | 13px | 20px | Body text, table cells |
+| `text-base` | 14px | 22px | Default body, inputs |
+| `text-lg` | 16px | 24px | Section headers |
+| `text-xl` | 18px | 26px | Page titles |
+| `text-2xl` | 22px | 28px | Dashboard headings |
+| `text-3xl` | 28px | 34px | Hero text (rare) |
+
+### Font Weight Rules
+
+| Weight | Value | Usage |
+|--------|-------|-------|
+| Regular | 400 | Body text, descriptions |
+| Medium | 500 | Table headers, labels, nav items |
+| Semibold | 600 | Headings, card titles, buttons, badges |
+| Bold | 700 | Rarely used — prefer semibold |
+
+---
+
+## Spacing
+
+### Spacing Conventions
+
+| Context | Spacing | Tailwind Class |
+|---------|---------|---------------|
+| Component internal padding | 12–16px | `p-3` / `p-4` |
+| Card padding | 16px | `p-4` |
+| Between cards/sections | 16px | `gap-4` |
+| Between inline items | 6–8px | `gap-1.5` / `gap-2` |
+| Page content padding | 24px | `p-6` |
+| Dense table cell padding | 8–12px | `px-2 py-1.5` |
+| Badge internal padding | 8px horiz | `px-2 py-0.5` |
+| Button padding (default) | 14px horiz | `px-3.5` |
+
+### Layout Dimensions
+
+| Element | Size |
+|---------|------|
+| Sidebar collapsed | 56px |
+| Sidebar expanded | 240px |
+| Side panels (details, chat) | ~360px, resizable |
+| Max content width | None (full-width) |
+
+---
+
+## Border Radius
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `rounded-sm` | 4px | Badges, checkboxes |
+| `rounded-md` | 6px | Buttons, inputs, cards |
+| `rounded-lg` | 8px | Larger cards, dialogs |
+| `rounded-xl` | 12px | Modals, sheets |
+| `rounded-full` | 9999px | Badges, avatars, dots |
+
+---
+
+## Shadows
+
+| Token | Usage |
+|-------|-------|
+| `shadow-sm` | Inputs, small cards |
+| `shadow-md` | Card elevation, dropdowns |
+| `shadow-lg` | Popovers, floating panels |
+| `shadow-xl` | Modals, dialogs |
+
+---
+
+## Component Rules
+
+### Buttons
+- **Primary** (amber): Main actions — "Save", "Create", "Upload"
+- **Secondary** (slate): Alternate actions — "Cancel" paired with Primary
+- **Outline**: Tertiary actions, less visual weight
+- **Ghost**: Toolbar actions, icon buttons, inline actions
+- **Danger** (red): Destructive actions — "Delete", "Remove"
+- **Link**: Text-style navigation buttons
+
+### Focus States
+All interactive elements use **amber focus ring**: `focus-visible:ring-2 focus-visible:ring-amber-500/40`
+
+### Dark Mode
+- Dark mode is the **default** — design for dark first
+- Every component must look correct in dark mode
+- Use semantic color tokens (`bg-card`, `text-foreground`, `border-border`), not raw colors
+- Exception: node palette colors are fixed (not theme-dependent)
+
+### Data Density
+- Base font size is 14px (not the typical 16px)
+- Use compact spacing — investigators need information density
+- Truncate long text with `truncate` class + tooltip on hover
+- Tables use dense cell padding (`px-2 py-1.5`)

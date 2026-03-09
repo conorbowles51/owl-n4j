@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"C:/Users/35386/Documents/Projects/owl-n4j/frontend/src/components/\"*.jsx)",
+      "Bash(wc:*)",
+      "Bash(mkdir:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npx vite:*)",
+      "Bash(npx shadcn@latest:*)",
+      "Bash(npx vitest:*)",
+      "Bash(grep:*)",
+      "Bash(npx storybook@latest:*)",
+      "Bash(npm install:*)",
+      "Bash(npx storybook:*)"
+    ]
+  }
+}

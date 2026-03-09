@@ -1,0 +1,182 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 0 0% 100%;
+    --foreground: 215 28% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 215 28% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 28% 10%;
+
+    /* Primary (Amber) */
+    --primary: 39 91% 44%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary (Slate) */
+    --secondary: 215 16% 95%;
+    --secondary-foreground: 215 28% 10%;
+
+    /* Muted */
+    --muted: 215 16% 95%;
+    --muted-foreground: 215 10% 46%;
+
+    /* Accent */
+    --accent: 215 16% 95%;
+    --accent-foreground: 215 28% 10%;
+
+    /* Destructive */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Focus ring: Amber */
+    --ring: 39 91% 44%;
+
+    /* Border & Input */
+    --border: 215 16% 85%;
+    --input: 215 16% 85%;
+
+    /* Radius */
+    --radius: 0.375rem;
+  }
+
+  .dark {
+    --background: 224 43% 7%;
+    --foreground: 210 40% 96%;
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 47% 9%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 39 91% 44%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 217 25% 18%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 217 25% 18%;
+    --muted-foreground: 215 16% 57%;
+
+    --accent: 217 25% 18%;
+    --accent-foreground: 210 40% 96%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --ring: 39 91% 44%;
+
+    --border: 215 25% 22%;
+    --input: 215 25% 22%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 0.875rem;
+    line-height: 1.375rem;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Owl theme tokens as Tailwind v4 theme */
+@theme {
+  /* Owl brand slate */
+  --color-slate-50: #F4F6F8;
+  --color-slate-100: #E8ECF1;
+  --color-slate-200: #CDD5DF;
+  --color-slate-300: #AAB7C7;
+  --color-slate-400: #8494A7;
+  --color-slate-500: #5A6A82;
+  --color-slate-600: #3E4C63;
+  --color-slate-700: #2D3A4F;
+  --color-slate-800: #1E293B;
+  --color-slate-900: #111827;
+  --color-slate-950: #0B0F1A;
+
+  /* Owl amber accent */
+  --color-amber-50: #FEFAF0;
+  --color-amber-100: #FBF0D0;
+  --color-amber-200: #F7D88A;
+  --color-amber-300: #F0BD4F;
+  --color-amber-400: #E5A61B;
+  --color-amber-500: #D4920A;
+
+  /* Graph node palette */
+  --color-node-person: #6366F1;
+  --color-node-organization: #8B5CF6;
+  --color-node-location: #14B8A6;
+  --color-node-financial: #F59E0B;
+  --color-node-document: #64748B;
+  --color-node-event: #EC4899;
+  --color-node-communication: #06B6D4;
+  --color-node-vehicle: #84CC16;
+  --color-node-digital: #A855F7;
+  --color-node-evidence: #F97316;
+
+  /* Semantic colors from CSS variables */
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  /* Typography */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+
+  /* Font sizes - Owl data-dense scale */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.75rem;
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: 2.125rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+
+  /* Border radius */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 8px -1px rgba(0, 0, 0, 0.08), 0 1px 3px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 8px 24px -4px rgba(0, 0, 0, 0.10), 0 2px 8px -2px rgba(0, 0, 0, 0.06);
+  --shadow-xl: 0 16px 48px -8px rgba(0, 0, 0, 0.12), 0 4px 16px -4px rgba(0, 0, 0, 0.08);
+
+  /* Transitions */
+  --ease-owl: cubic-bezier(0.25, 0.1, 0.25, 1.0);
+}

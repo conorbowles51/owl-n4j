@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend_v2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend_v2/package-lock.json
+
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type Check
+        run: npm run typecheck
+
+      - name: Unit Tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Bundle Size Check
+        run: |
+          MAX_SIZE_KB=200
+          DIST_SIZE=$(du -sk dist/ | cut -f1)
+          echo "Bundle size: ${DIST_SIZE}KB"
+          if [ "$DIST_SIZE" -gt "$((MAX_SIZE_KB * 4))" ]; then
+            echo "::warning::Bundle size ${DIST_SIZE}KB exceeds ${MAX_SIZE_KB}KB gzipped target (rough estimate)"
+          fi

@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Owl's Eye — Brand Kit</title>
+<style>
+  /* ================================================================
+     OWL'S EYE BRAND KIT
+     Version 2.0 — March 2026
+     ================================================================ */
+
+  :root {
+    /* ── PRIMARY PALETTE ──────────────────────────────────────────
+       Slate-indigo base. Professional, serious, high-trust.
+       Not the generic SaaS blue — darker, more authoritative.
+    ──────────────────────────────────────────────────────────── */
+    --owl-slate-950:  #0A0E1F;
+    --owl-slate-900:  #0F172A;
+    --owl-slate-800:  #1A2540;
+    --owl-slate-700:  #2D3A4F;
+    --owl-slate-600:  #3E4C63;
+    --owl-slate-500:  #5A6A82;
+    --owl-slate-400:  #8494A7;
+    --owl-slate-300:  #AAB7C7;
+    --owl-slate-200:  #CDD5DF;
+    --owl-slate-100:  #E8ECF1;
+    --owl-slate-50:   #F4F6F8;
+
+    /* ── ACCENT: AMBER ────────────────────────────────────────────
+       Warm amber/gold for primary actions, focus states, and
+       key data highlights. Conveys clarity cutting through noise.
+    ──────────────────────────────────────────────────────────── */
+    --owl-amber-500:  #D4920A;
+    --owl-amber-400:  #E5A61B;
+    --owl-amber-300:  #F0BD4F;
+    --owl-amber-200:  #F7D88A;
+    --owl-amber-100:  #FBF0D0;
+    --owl-amber-50:   #FEFAF0;
+
+    /* ── SEMANTIC: STATUS COLORS ──────────────────────────────────
+       For graph nodes, alerts, badges, and system feedback.
+    ──────────────────────────────────────────────────────────── */
+    --owl-success-600: #15803D;
+    --owl-success-500: #22C55E;
+    --owl-success-100: #DCFCE7;
+    --owl-success-50:  #F0FDF4;
+
+    --owl-danger-600:  #B91C1C;
+    --owl-danger-500:  #EF4444;
+    --owl-danger-100:  #FEE2E2;
+    --owl-danger-50:   #FEF2F2;
+
+    --owl-warning-600: #A16207;
+    --owl-warning-500: #EAB308;
+    --owl-warning-100: #FEF9C3;
+    --owl-warning-50:  #FEFCE8;
+
+    --owl-info-600:    #1D4ED8;
+    --owl-info-500:    #3B82F6;
+    --owl-info-100:    #DBEAFE;
+    --owl-info-50:     #EFF6FF;
+
+    /* ── GRAPH NODE PALETTE ───────────────────────────────────────
+       Distinct, accessible hues for entity type differentiation.
+       Designed for visibility on both light and dark backgrounds.
+    ──────────────────────────────────────────────────────────── */
+    --owl-node-person:       #6366F1;  /* Indigo */
+    --owl-node-organization: #8B5CF6;  /* Violet */
+    --owl-node-location:     #14B8A6;  /* Teal */
+    --owl-node-financial:    #F59E0B;  /* Amber */
+    --owl-node-document:     #64748B;  /* Slate */
+    --owl-node-event:        #EC4899;  /* Pink */
+    --owl-node-communication:#06B6D4;  /* Cyan */
+    --owl-node-vehicle:      #84CC16;  /* Lime */
+    --owl-node-digital:      #A855F7;  /* Purple */
+    --owl-node-evidence:     #F97316;  /* Orange */
+
+    /* ── TYPOGRAPHY ───────────────────────────────────────────────
+       Inter for UI. Mono for data, Cypher queries, code.
+    ──────────────────────────────────────────────────────────── */
+    --owl-font-sans:  'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --owl-font-mono:  'JetBrains Mono', 'Fira Code', 'SF Mono', 'Cascadia Code', monospace;
+
+    --owl-text-xs:    0.75rem;    /* 12px */
+    --owl-text-sm:    0.8125rem;  /* 13px */
+    --owl-text-base:  0.875rem;   /* 14px — base for dense UI */
+    --owl-text-lg:    1rem;       /* 16px */
+    --owl-text-xl:    1.125rem;   /* 18px */
+    --owl-text-2xl:   1.375rem;   /* 22px */
+    --owl-text-3xl:   1.75rem;    /* 28px */
+    --owl-text-4xl:   2.25rem;    /* 36px */
+
+    --owl-leading-tight:  1.25;
+    --owl-leading-normal: 1.5;
+    --owl-leading-relaxed:1.625;
+
+    --owl-tracking-tight: -0.01em;
+    --owl-tracking-normal: 0;
+    --owl-tracking-wide:   0.025em;
+
+    /* ── SPACING ──────────────────────────────────────────────────
+       4px base grid.
+    ──────────────────────────────────────────────────────────── */
+    --owl-space-1:  0.25rem;   /* 4px */
+    --owl-space-2:  0.5rem;    /* 8px */
+    --owl-space-3:  0.75rem;   /* 12px */
+    --owl-space-4:  1rem;      /* 16px */
+    --owl-space-5:  1.25rem;   /* 20px */
+    --owl-space-6:  1.5rem;    /* 24px */
+    --owl-space-8:  2rem;      /* 32px */
+    --owl-space-10: 2.5rem;    /* 40px */
+    --owl-space-12: 3rem;      /* 48px */
+    --owl-space-16: 4rem;      /* 64px */
+
+    /* ── RADII ────────────────────────────────────────────────── */
+    --owl-radius-sm:  0.25rem;  /* 4px  — badges, chips */
+    --owl-radius-md:  0.375rem; /* 6px  — buttons, inputs */
+    --owl-radius-lg:  0.5rem;   /* 8px  — cards, panels */
+    --owl-radius-xl:  0.75rem;  /* 12px — modals, sheets */
+    --owl-radius-full: 9999px;  /* pills, avatars */
+
+    /* ── SHADOWS ──────────────────────────────────────────────── */
+    --owl-shadow-sm:  0 1px 2px 0 rgba(0,0,0,0.05);
+    --owl-shadow-md:  0 2px 8px -1px rgba(0,0,0,0.08), 0 1px 3px -1px rgba(0,0,0,0.06);
+    --owl-shadow-lg:  0 8px 24px -4px rgba(0,0,0,0.10), 0 2px 8px -2px rgba(0,0,0,0.06);
+    --owl-shadow-xl:  0 16px 48px -8px rgba(0,0,0,0.12), 0 4px 16px -4px rgba(0,0,0,0.08);
+
+    /* ── TRANSITIONS ─────────────────────────────────────────── */
+    --owl-ease:       cubic-bezier(0.25, 0.1, 0.25, 1.0);
+    --owl-duration-fast:   100ms;
+    --owl-duration-normal: 200ms;
+    --owl-duration-slow:   300ms;
+  }
+
+  /* ── DARK MODE OVERRIDES ─────────────────────────────────────
+     The app should default to dark mode for investigation work.
+     Light mode available as user preference.
+  ──────────────────────────────────────────────────────────── */
+  [data-theme="dark"] {
+    --bg-primary:    var(--owl-slate-950);
+    --bg-secondary:  var(--owl-slate-900);
+    --bg-tertiary:   var(--owl-slate-800);
+    --bg-elevated:   var(--owl-slate-700);
+    --border-default:var(--owl-slate-700);
+    --border-subtle: var(--owl-slate-800);
+    --text-primary:  #F1F5F9;
+    --text-secondary:#94A3B8;
+    --text-tertiary: #64748B;
+    --text-inverse:  var(--owl-slate-950);
+  }
+
+  [data-theme="light"] {
+    --bg-primary:    #FFFFFF;
+    --bg-secondary:  var(--owl-slate-50);
+    --bg-tertiary:   var(--owl-slate-100);
+    --bg-elevated:   #FFFFFF;
+    --border-default:var(--owl-slate-200);
+    --border-subtle: var(--owl-slate-100);
+    --text-primary:  var(--owl-slate-900);
+    --text-secondary:var(--owl-slate-500);
+    --text-tertiary: var(--owl-slate-400);
+    --text-inverse:  #FFFFFF;
+  }
+
+  /* ================================================================
+     DOCUMENT STYLES (brand kit page only)
+     ================================================================ */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--owl-font-sans);
+    font-size: 15px;
+    line-height: 1.6;
+    color: #1A2540;
+    background: #F8FAFC;
+  }
+
+  .kit-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 48px 32px;
+  }
+
+  /* ── HEADER ─────────────────────────────────────────────────── */
+  .kit-hero {
+    background: linear-gradient(135deg, var(--owl-slate-950) 0%, var(--owl-slate-800) 100%);
+    border-radius: var(--owl-radius-xl);
+    padding: 64px;
+    margin-bottom: 48px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .kit-hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(212, 146, 10, 0.18) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .kit-hero-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--owl-amber-400);
+    background: rgba(212, 146, 10, 0.12);
+    border: 1px solid rgba(212, 146, 10, 0.2);
+    padding: 4px 12px;
+    border-radius: var(--owl-radius-full);
+    margin-bottom: 24px;
+  }
+
+  .kit-hero h1 {
+    font-size: 52px;
+    font-weight: 700;
+    color: #F1F5F9;
+    letter-spacing: -0.025em;
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+
+  .kit-hero h1 span {
+    color: var(--owl-amber-400);
+  }
+
+  .kit-hero p {
+    font-size: 18px;
+    color: #94A3B8;
+    max-width: 600px;
+    line-height: 1.6;
+  }
+
+  .kit-hero .version-tag {
+    display: inline-block;
+    margin-top: 24px;
+    font-size: 12px;
+    color: #64748B;
+    font-family: var(--owl-font-mono);
+  }
+
+  /* ── SECTION HEADERS ────────────────────────────────────────── */
+  .kit-section {
+    margin-bottom: 56px;
+  }
+
+  .kit-section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--owl-slate-200);
+  }
+
+  .kit-section-number {
+    font-size: 13px;
+    font-weight: 700;
+    font-family: var(--owl-font-mono);
+    color: var(--owl-amber-500);
+    min-width: 32px;
+  }
+
+  .kit-section-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--owl-slate-900);
+    letter-spacing: -0.01em;
+  }
+
+  .kit-section-desc {
+    color: var(--owl-slate-500);
+    font-size: 14px;
+    margin-bottom: 24px;
+    max-width: 720px;
+    line-height: 1.6;
+  }
+
+  /* ── LOGO & WORDMARK ────────────────────────────────────────── */
+  .logo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+  }
+
+  .logo-card {
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-lg);
+    padding: 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-height: 200px;
+  }
+
+  .logo-card.dark-bg {
+    background: var(--owl-slate-950);
+    border-color: var(--owl-slate-800);
+  }
+
+  .logo-card.light-bg {
+    background: #FFFFFF;
+  }
+
+  .logo-card.amber-bg {
+    background: var(--owl-amber-400);
+    border-color: var(--owl-amber-500);
+  }
+
+  .logo-card-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--owl-slate-400);
+  }
+
+  .logo-card.dark-bg .logo-card-label { color: var(--owl-slate-500); }
+  .logo-card.amber-bg .logo-card-label { color: rgba(0,0,0,0.5); }
+
+  /* SVG Logo Mark */
+  .owl-logomark {
+    width: 48px;
+    height: 48px;
+  }
+
+  .owl-wordmark {
+    font-family: var(--owl-font-sans);
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .owl-wordmark.on-dark { color: #F1F5F9; }
+  .owl-wordmark.on-light { color: var(--owl-slate-900); }
+  .owl-wordmark.on-amber { color: var(--owl-slate-950); }
+
+  .owl-tagline {
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .owl-tagline.on-dark { color: var(--owl-slate-400); }
+  .owl-tagline.on-light { color: var(--owl-slate-400); }
+  .owl-tagline.on-amber { color: rgba(0,0,0,0.45); }
+
+  /* ── COLOR SWATCHES ─────────────────────────────────────────── */
+  .palette-group {
+    margin-bottom: 32px;
+  }
+
+  .palette-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--owl-slate-700);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .palette-label .usage {
+    font-weight: 400;
+    color: var(--owl-slate-400);
+    font-size: 12px;
+  }
+
+  .swatch-row {
+    display: flex;
+    gap: 4px;
+    border-radius: var(--owl-radius-lg);
+    overflow: hidden;
+  }
+
+  .swatch {
+    flex: 1;
+    min-height: 72px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 8px 10px;
+    font-family: var(--owl-font-mono);
+    font-size: 10px;
+    line-height: 1.4;
+    position: relative;
+    transition: transform 0.15s ease;
+  }
+
+  .swatch:hover {
+    transform: scaleY(1.08);
+    z-index: 1;
+  }
+
+  .swatch .swatch-name {
+    font-weight: 600;
+    opacity: 0.9;
+  }
+
+  .swatch .swatch-hex {
+    opacity: 0.7;
+  }
+
+  .swatch.light-text { color: #F1F5F9; }
+  .swatch.dark-text { color: var(--owl-slate-800); }
+
+  /* Semantic status swatches */
+  .status-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+
+  .status-card {
+    border-radius: var(--owl-radius-lg);
+    padding: 16px;
+    border: 1px solid;
+  }
+
+  .status-card .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+  }
+
+  .status-card .status-name {
+    font-weight: 600;
+    font-size: 13px;
+  }
+
+  .status-card .status-use {
+    font-size: 12px;
+    margin-top: 4px;
+    opacity: 0.7;
+  }
+
+  .status-card .status-values {
+    margin-top: 10px;
+    font-family: var(--owl-font-mono);
+    font-size: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    opacity: 0.8;
+  }
+
+  /* ── GRAPH NODE COLORS ──────────────────────────────────────── */
+  .node-palette {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+  }
+
+  .node-chip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    background: var(--owl-slate-50);
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-md);
+  }
+
+  .node-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 3px rgba(0,0,0,0.06);
+  }
+
+  .node-chip-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--owl-slate-700);
+  }
+
+  .node-chip-hex {
+    font-size: 10px;
+    font-family: var(--owl-font-mono);
+    color: var(--owl-slate-400);
+  }
+
+  /* ── TYPOGRAPHY SHOWCASE ────────────────────────────────────── */
+  .type-specimen {
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-lg);
+    overflow: hidden;
+  }
+
+  .type-row {
+    display: grid;
+    grid-template-columns: 140px 1fr 160px;
+    align-items: baseline;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--owl-slate-100);
+  }
+
+  .type-row:last-child { border-bottom: none; }
+
+  .type-row:hover { background: var(--owl-slate-50); }
+
+  .type-meta {
+    font-family: var(--owl-font-mono);
+    font-size: 11px;
+    color: var(--owl-slate-400);
+  }
+
+  .type-sample {
+    font-family: var(--owl-font-sans);
+    color: var(--owl-slate-900);
+  }
+
+  .type-usage {
+    font-size: 11px;
+    color: var(--owl-slate-400);
+    text-align: right;
+  }
+
+  .type-row.mono-row .type-sample {
+    font-family: var(--owl-font-mono);
+  }
+
+  /* ── COMPONENT PREVIEWS ─────────────────────────────────────── */
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+  }
+
+  .preview-card {
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-lg);
+    overflow: hidden;
+  }
+
+  .preview-card-header {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--owl-slate-400);
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--owl-slate-100);
+    background: var(--owl-slate-50);
+  }
+
+  .preview-card-body {
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .preview-card-body.dark {
+    background: var(--owl-slate-950);
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 16px;
+    font-family: var(--owl-font-sans);
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: var(--owl-radius-md);
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all var(--owl-duration-normal) var(--owl-ease);
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--owl-amber-500);
+    color: #FFFFFF;
+    border-color: var(--owl-amber-500);
+  }
+
+  .btn-primary:hover {
+    background: var(--owl-amber-400);
+    border-color: var(--owl-amber-400);
+  }
+
+  .btn-secondary {
+    background: var(--owl-slate-900);
+    color: #F1F5F9;
+  }
+
+  .btn-secondary:hover {
+    background: var(--owl-slate-800);
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--owl-slate-700);
+    border-color: var(--owl-slate-300);
+  }
+
+  .btn-outline:hover {
+    background: var(--owl-slate-50);
+    border-color: var(--owl-slate-400);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--owl-slate-500);
+  }
+
+  .btn-ghost:hover {
+    background: var(--owl-slate-100);
+    color: var(--owl-slate-700);
+  }
+
+  .btn-danger {
+    background: var(--owl-danger-500);
+    color: #FFFFFF;
+  }
+
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-lg { padding: 10px 20px; font-size: 14px; }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  /* Inputs */
+  .input-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .input-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--owl-slate-700);
+  }
+
+  .input-field {
+    padding: 8px 12px;
+    border: 1px solid var(--owl-slate-300);
+    border-radius: var(--owl-radius-md);
+    font-family: var(--owl-font-sans);
+    font-size: 13px;
+    color: var(--owl-slate-900);
+    background: #FFFFFF;
+    outline: none;
+    transition: border-color var(--owl-duration-normal) var(--owl-ease), box-shadow var(--owl-duration-normal) var(--owl-ease);
+  }
+
+  .input-field:focus {
+    border-color: var(--owl-amber-500);
+    box-shadow: 0 0 0 3px rgba(212, 146, 10, 0.12);
+  }
+
+  .input-field::placeholder { color: var(--owl-slate-400); }
+
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border-radius: var(--owl-radius-full);
+  }
+
+  .badge-amber {
+    background: var(--owl-amber-100);
+    color: var(--owl-amber-600, #92610A);
+  }
+
+  .badge-success {
+    background: var(--owl-success-100);
+    color: var(--owl-success-600);
+  }
+
+  .badge-danger {
+    background: var(--owl-danger-100);
+    color: var(--owl-danger-600);
+  }
+
+  .badge-info {
+    background: var(--owl-info-100);
+    color: var(--owl-info-600);
+  }
+
+  .badge-slate {
+    background: var(--owl-slate-100);
+    color: var(--owl-slate-600);
+  }
+
+  .badge-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  /* Cards */
+  .sample-card {
+    background: #FFFFFF;
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-lg);
+    padding: 16px;
+  }
+
+  .sample-card.dark-card {
+    background: var(--owl-slate-900);
+    border-color: var(--owl-slate-700);
+  }
+
+  .sample-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--owl-slate-900);
+    margin-bottom: 4px;
+  }
+
+  .sample-card.dark-card .sample-card-title { color: #F1F5F9; }
+
+  .sample-card-desc {
+    font-size: 12px;
+    color: var(--owl-slate-500);
+    margin-bottom: 12px;
+  }
+
+  .sample-card.dark-card .sample-card-desc { color: #94A3B8; }
+
+  /* ── SPACING & RADIUS SHOWCASE ──────────────────────────────── */
+  .spacing-grid {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 20px;
+    background: var(--owl-slate-50);
+    border-radius: var(--owl-radius-lg);
+    border: 1px solid var(--owl-slate-200);
+  }
+
+  .spacing-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .spacing-bar {
+    background: var(--owl-amber-400);
+    border-radius: 3px;
+    width: 32px;
+  }
+
+  .spacing-label {
+    font-family: var(--owl-font-mono);
+    font-size: 10px;
+    color: var(--owl-slate-400);
+  }
+
+  .radius-grid {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 20px;
+    background: var(--owl-slate-50);
+    border-radius: var(--owl-radius-lg);
+    border: 1px solid var(--owl-slate-200);
+  }
+
+  .radius-sample {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .radius-box {
+    width: 56px;
+    height: 56px;
+    background: var(--owl-slate-800);
+  }
+
+  .radius-label {
+    font-family: var(--owl-font-mono);
+    font-size: 10px;
+    color: var(--owl-slate-400);
+  }
+
+  /* ── DARK MODE PREVIEW ──────────────────────────────────────── */
+  .dark-preview {
+    background: var(--owl-slate-950);
+    border-radius: var(--owl-radius-xl);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .dark-preview .dark-sidebar {
+    display: flex;
+    gap: 24px;
+  }
+
+  .dark-sidebar-nav {
+    width: 220px;
+    background: var(--owl-slate-900);
+    border-radius: var(--owl-radius-lg);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .dark-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #94A3B8;
+    border-radius: var(--owl-radius-md);
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .dark-nav-item:hover { background: var(--owl-slate-800); color: #F1F5F9; }
+
+  .dark-nav-item.active {
+    background: rgba(212, 146, 10, 0.1);
+    color: var(--owl-amber-400);
+  }
+
+  .dark-nav-icon {
+    width: 16px;
+    height: 16px;
+    opacity: 0.7;
+  }
+
+  .dark-content {
+    flex: 1;
+    background: var(--owl-slate-900);
+    border-radius: var(--owl-radius-lg);
+    padding: 20px;
+  }
+
+  .dark-content-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .dark-content-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #F1F5F9;
+  }
+
+  .dark-entity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .dark-entity-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--owl-slate-800);
+    border-radius: var(--owl-radius-md);
+  }
+
+  .dark-entity-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dark-entity-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #F1F5F9;
+    flex: 1;
+  }
+
+  .dark-entity-type {
+    font-size: 11px;
+    color: #64748B;
+    font-family: var(--owl-font-mono);
+  }
+
+  /* ── ICON GRID ──────────────────────────────────────────────── */
+  .icon-note {
+    font-size: 13px;
+    color: var(--owl-slate-500);
+    background: var(--owl-slate-50);
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-md);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .icon-note strong { color: var(--owl-slate-700); }
+
+  /* ── BRAND RULES ────────────────────────────────────────────── */
+  .rules-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .rule-card {
+    border: 1px solid;
+    border-radius: var(--owl-radius-lg);
+    padding: 20px;
+  }
+
+  .rule-card.do {
+    border-color: var(--owl-success-500);
+    background: var(--owl-success-50);
+  }
+
+  .rule-card.dont {
+    border-color: var(--owl-danger-500);
+    background: var(--owl-danger-50);
+  }
+
+  .rule-card-header {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+
+  .rule-card.do .rule-card-header { color: var(--owl-success-600); }
+  .rule-card.dont .rule-card-header { color: var(--owl-danger-600); }
+
+  .rule-card ul {
+    list-style: none;
+    font-size: 13px;
+    color: var(--owl-slate-600);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .rule-card ul li::before {
+    margin-right: 6px;
+  }
+
+  .rule-card.do ul li::before { content: '\2713'; color: var(--owl-success-600); }
+  .rule-card.dont ul li::before { content: '\2717'; color: var(--owl-danger-600); }
+
+  /* ── MOTION / TRANSITION GUIDE ──────────────────────────────── */
+  .motion-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+
+  .motion-card {
+    background: var(--owl-slate-50);
+    border: 1px solid var(--owl-slate-200);
+    border-radius: var(--owl-radius-lg);
+    padding: 20px;
+    text-align: center;
+  }
+
+  .motion-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--owl-slate-700);
+    margin-bottom: 4px;
+  }
+
+  .motion-card-value {
+    font-family: var(--owl-font-mono);
+    font-size: 12px;
+    color: var(--owl-amber-500);
+    margin-bottom: 6px;
+  }
+
+  .motion-card-desc {
+    font-size: 11px;
+    color: var(--owl-slate-400);
+  }
+
+  /* ── CSS VARIABLE EXPORT ────────────────────────────────────── */
+  .code-block {
+    background: var(--owl-slate-900);
+    border-radius: var(--owl-radius-lg);
+    padding: 24px;
+    overflow-x: auto;
+    font-family: var(--owl-font-mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #94A3B8;
+  }
+
+  .code-block .comment { color: #4B5563; }
+  .code-block .prop { color: var(--owl-amber-400); }
+  .code-block .val { color: #7DD3FC; }
+
+  @media print {
+    .kit-container { max-width: 100%; }
+    .swatch:hover { transform: none; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<div class="kit-container">
+
+  <!-- ════════════════════════════════════════════════════════════
+       HERO
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-hero">
+    <div class="kit-hero-badge">Brand Kit v2.0</div>
+    <h1>Owl's <span>Eye</span></h1>
+    <p>AI-powered investigation intelligence platform. Designed for analysts who need clarity in complexity.</p>
+    <div class="version-tag">March 2026 — Confidential</div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       01. BRAND IDENTITY
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">01</span>
+      <h2 class="kit-section-title">Brand Identity</h2>
+    </div>
+    <p class="kit-section-desc">
+      <strong>Owl's Eye</strong> — the vigilant gaze that sees what others miss. Built in partnership with Owl Consultancy Group, the name evokes the owl's legendary ability to see through darkness — precision surveillance and investigation intelligence.
+    </p>
+
+    <div style="background: var(--owl-slate-50); border: 1px solid var(--owl-slate-200); border-radius: var(--owl-radius-lg); padding: 24px; margin-bottom: 24px;">
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; font-size: 13px; color: var(--owl-slate-600);">
+        <div><strong style="color: var(--owl-slate-800);">Name:</strong> Owl's Eye</div>
+        <div><strong style="color: var(--owl-slate-800);">Tagline:</strong> See What Others Miss</div>
+        <div><strong style="color: var(--owl-slate-800);">Tone:</strong> Professional, precise, trustworthy</div>
+        <div><strong style="color: var(--owl-slate-800);">Voice:</strong> Confident but not aggressive</div>
+        <div><strong style="color: var(--owl-slate-800);">Personality:</strong> The vigilant eye that never blinks</div>
+        <div><strong style="color: var(--owl-slate-800);">Audience:</strong> Investigators, analysts, compliance</div>
+      </div>
+    
+    <div style="background: rgba(212, 146, 10, 0.06); border: 1px solid rgba(212, 146, 10, 0.15); border-radius: var(--owl-radius-lg); padding: 16px; margin-bottom: 24px; font-size: 13px; color: var(--owl-slate-600);">
+      <strong style="color: var(--owl-amber-500);">Partnership:</strong> Owl's Eye is developed in collaboration with <strong>Owl Consultancy Group</strong> — a global intelligence and asset tracing consultancy. The brand aligns with their established visual identity: dark, authoritative tones paired with the amber owl eye motif that symbolizes vigilant observation.
+    </div>
+
+    </div>
+
+    <div class="logo-grid">
+      <div class="logo-card dark-bg">
+        <svg class="owl-logomark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer eye shape -->
+  <path d="M4 24C4 24 12 10 24 10C36 10 44 24 44 24C44 24 36 38 24 38C12 38 4 24 4 24Z" stroke="#D4920A" stroke-width="2.5" fill="none" opacity="0.4"/>
+  <!-- Iris -->
+  <circle cx="24" cy="24" r="10" stroke="#D4920A" stroke-width="2" fill="none" opacity="0.7"/>
+  <!-- Pupil -->
+  <circle cx="24" cy="24" r="4.5" fill="#D4920A"/>
+  <!-- Glint -->
+  <circle cx="21" cy="21" r="1.5" fill="#F0BD4F" opacity="0.8"/>
+</svg>
+        <span class="owl-wordmark on-dark">Owl's Eye</span>
+        <span class="owl-tagline on-dark">See What Others Miss</span>
+        <span class="logo-card-label">Primary — Dark Background</span>
+      </div>
+
+      <div class="logo-card light-bg">
+        <svg class="owl-logomark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4 24C4 24 12 10 24 10C36 10 44 24 44 24C44 24 36 38 24 38C12 38 4 24 4 24Z" stroke="#1A2540" stroke-width="2.5" fill="none" opacity="0.2"/>
+  <circle cx="24" cy="24" r="10" stroke="#1A2540" stroke-width="2" fill="none" opacity="0.35"/>
+  <circle cx="24" cy="24" r="4.5" fill="#D4920A"/>
+  <circle cx="21" cy="21" r="1.5" fill="#F0BD4F" opacity="0.8"/>
+</svg>
+        <span class="owl-wordmark on-light">Owl's Eye</span>
+        <span class="owl-tagline on-light">See What Others Miss</span>
+        <span class="logo-card-label">Secondary — Light Background</span>
+      </div>
+
+      <div class="logo-card amber-bg">
+        <svg class="owl-logomark" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4 24C4 24 12 10 24 10C36 10 44 24 44 24C44 24 36 38 24 38C12 38 4 24 4 24Z" stroke="#0A0E1F" stroke-width="2.5" fill="none" opacity="0.25"/>
+  <circle cx="24" cy="24" r="10" stroke="#0A0E1F" stroke-width="2" fill="none" opacity="0.4"/>
+  <circle cx="24" cy="24" r="4.5" fill="#0A0E1F"/>
+  <circle cx="21" cy="21" r="1.5" fill="rgba(255,255,255,0.5)" opacity="0.8"/>
+</svg>
+        <span class="owl-wordmark on-amber">Owl's Eye</span>
+        <span class="owl-tagline on-amber">See What Others Miss</span>
+        <span class="logo-card-label">Accent — Brand Background</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       02. COLOR SYSTEM
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">02</span>
+      <h2 class="kit-section-title">Color System</h2>
+    </div>
+    <p class="kit-section-desc">
+      Slate-based neutrals with navy-blue undertones, grounded by a warm amber accent evoking the owl's piercing eye. The palette is designed for long investigation sessions in dark mode, with a light mode alternative. Every color has a semantic role — no decoration-only colors.
+    </p>
+
+    <!-- Slate -->
+    <div class="palette-group">
+      <div class="palette-label">Slate <span class="usage">— Backgrounds, text, borders, surfaces</span></div>
+      <div class="swatch-row">
+        <div class="swatch light-text" style="background: var(--owl-slate-950);"><span class="swatch-name">950</span><span class="swatch-hex">#0A0E1F</span></div>
+        <div class="swatch light-text" style="background: var(--owl-slate-900);"><span class="swatch-name">900</span><span class="swatch-hex">#0F172A</span></div>
+        <div class="swatch light-text" style="background: var(--owl-slate-800);"><span class="swatch-name">800</span><span class="swatch-hex">#1A2540</span></div>
+        <div class="swatch light-text" style="background: var(--owl-slate-700);"><span class="swatch-name">700</span><span class="swatch-hex">#2D3A4F</span></div>
+        <div class="swatch light-text" style="background: var(--owl-slate-600);"><span class="swatch-name">600</span><span class="swatch-hex">#3E4C63</span></div>
+        <div class="swatch light-text" style="background: var(--owl-slate-500);"><span class="swatch-name">500</span><span class="swatch-hex">#5A6A82</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-slate-400);"><span class="swatch-name">400</span><span class="swatch-hex">#8494A7</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-slate-300);"><span class="swatch-name">300</span><span class="swatch-hex">#AAB7C7</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-slate-200);"><span class="swatch-name">200</span><span class="swatch-hex">#CDD5DF</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-slate-100);"><span class="swatch-name">100</span><span class="swatch-hex">#E8ECF1</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-slate-50);"><span class="swatch-name">50</span><span class="swatch-hex">#F4F6F8</span></div>
+      </div>
+    </div>
+
+    <!-- Amber -->
+    <div class="palette-group">
+      <div class="palette-label">Amber <span class="usage">— Primary actions, focus rings, highlights, active states</span></div>
+      <div class="swatch-row">
+        <div class="swatch light-text" style="background: var(--owl-amber-500);"><span class="swatch-name">500</span><span class="swatch-hex">#D4920A</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-amber-400);"><span class="swatch-name">400</span><span class="swatch-hex">#E5A61B</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-amber-300);"><span class="swatch-name">300</span><span class="swatch-hex">#F0BD4F</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-amber-200);"><span class="swatch-name">200</span><span class="swatch-hex">#F7D88A</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-amber-100);"><span class="swatch-name">100</span><span class="swatch-hex">#FBF0D0</span></div>
+        <div class="swatch dark-text" style="background: var(--owl-amber-50);"><span class="swatch-name">50</span><span class="swatch-hex">#FEFAF0</span></div>
+      </div>
+    </div>
+
+    <!-- Semantic Status -->
+    <div class="palette-group">
+      <div class="palette-label">Semantic Status <span class="usage">— System feedback, alerts, evidence status, badges</span></div>
+      <div class="status-row">
+        <div class="status-card" style="background: var(--owl-success-50); border-color: var(--owl-success-500);">
+          <div><span class="status-dot" style="background: var(--owl-success-500);"></span><span class="status-name" style="color: var(--owl-success-600);">Success</span></div>
+          <div class="status-use" style="color: var(--owl-success-600);">Processed, verified, active</div>
+          <div class="status-values" style="color: var(--owl-success-600);">
+            <span>600: #15803D</span>
+            <span>500: #22C55E</span>
+            <span>100: #DCFCE7</span>
+          </div>
+        </div>
+        <div class="status-card" style="background: var(--owl-danger-50); border-color: var(--owl-danger-500);">
+          <div><span class="status-dot" style="background: var(--owl-danger-500);"></span><span class="status-name" style="color: var(--owl-danger-600);">Danger</span></div>
+          <div class="status-use" style="color: var(--owl-danger-600);">Failed, error, destructive</div>
+          <div class="status-values" style="color: var(--owl-danger-600);">
+            <span>600: #B91C1C</span>
+            <span>500: #EF4444</span>
+            <span>100: #FEE2E2</span>
+          </div>
+        </div>
+        <div class="status-card" style="background: var(--owl-warning-50); border-color: var(--owl-warning-500);">
+          <div><span class="status-dot" style="background: var(--owl-warning-500);"></span><span class="status-name" style="color: var(--owl-warning-600);">Warning</span></div>
+          <div class="status-use" style="color: var(--owl-warning-600);">Processing, low confidence</div>
+          <div class="status-values" style="color: var(--owl-warning-600);">
+            <span>600: #A16207</span>
+            <span>500: #EAB308</span>
+            <span>100: #FEF9C3</span>
+          </div>
+        </div>
+        <div class="status-card" style="background: var(--owl-info-50); border-color: var(--owl-info-500);">
+          <div><span class="status-dot" style="background: var(--owl-info-500);"></span><span class="status-name" style="color: var(--owl-info-600);">Info</span></div>
+          <div class="status-use" style="color: var(--owl-info-600);">AI-generated, informational</div>
+          <div class="status-values" style="color: var(--owl-info-600);">
+            <span>600: #1D4ED8</span>
+            <span>500: #3B82F6</span>
+            <span>100: #DBEAFE</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Graph Node Palette -->
+    <div class="palette-group">
+      <div class="palette-label">Graph Node Palette <span class="usage">— Entity type differentiation in graph visualization</span></div>
+      <div class="node-palette">
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-person);"></div><div><div class="node-chip-label">Person</div><div class="node-chip-hex">#6366F1</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-organization);"></div><div><div class="node-chip-label">Organization</div><div class="node-chip-hex">#8B5CF6</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-location);"></div><div><div class="node-chip-label">Location</div><div class="node-chip-hex">#14B8A6</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-financial);"></div><div><div class="node-chip-label">Financial</div><div class="node-chip-hex">#F59E0B</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-document);"></div><div><div class="node-chip-label">Document</div><div class="node-chip-hex">#64748B</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-event);"></div><div><div class="node-chip-label">Event</div><div class="node-chip-hex">#EC4899</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-communication);"></div><div><div class="node-chip-label">Communication</div><div class="node-chip-hex">#06B6D4</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-vehicle);"></div><div><div class="node-chip-label">Vehicle</div><div class="node-chip-hex">#84CC16</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-digital);"></div><div><div class="node-chip-label">Digital Asset</div><div class="node-chip-hex">#A855F7</div></div></div>
+        <div class="node-chip"><div class="node-dot" style="background: var(--owl-node-evidence);"></div><div><div class="node-chip-label">Evidence</div><div class="node-chip-hex">#F97316</div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       03. TYPOGRAPHY
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">03</span>
+      <h2 class="kit-section-title">Typography</h2>
+    </div>
+    <p class="kit-section-desc">
+      Inter for all UI text — optimized for screens, excellent at small sizes, open source. JetBrains Mono for code, Cypher queries, data values, and technical output. Base size is 14px (dense data UI).
+    </p>
+
+    <div class="type-specimen">
+      <div class="type-row">
+        <div class="type-meta">4xl / 36px<br>Weight 700</div>
+        <div class="type-sample" style="font-size: 36px; font-weight: 700; letter-spacing: -0.025em; line-height: 1.15;">Case Overview</div>
+        <div class="type-usage">Page titles, hero headings</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">3xl / 28px<br>Weight 700</div>
+        <div class="type-sample" style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2;">Entity Analysis</div>
+        <div class="type-usage">Section headings</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">2xl / 22px<br>Weight 600</div>
+        <div class="type-sample" style="font-size: 22px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3;">Evidence Processing</div>
+        <div class="type-usage">Panel headers, modal titles</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">xl / 18px<br>Weight 600</div>
+        <div class="type-sample" style="font-size: 18px; font-weight: 600; line-height: 1.4;">Graph View — Spotlight</div>
+        <div class="type-usage">Card titles, sub-headers</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">lg / 16px<br>Weight 500</div>
+        <div class="type-sample" style="font-size: 16px; font-weight: 500; line-height: 1.5;">Marcus Chen linked to 4 transactions via Nexus Trading Ltd.</div>
+        <div class="type-usage">Emphasized body text</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">base / 14px<br>Weight 400</div>
+        <div class="type-sample" style="font-size: 14px; font-weight: 400; line-height: 1.5;">The forensic accounting report identifies three suspicious payment patterns occurring between March and November 2024.</div>
+        <div class="type-usage">Default body text, inputs</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">sm / 13px<br>Weight 400</div>
+        <div class="type-sample" style="font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--owl-slate-500);">Uploaded 02/03/2026, 19:11:36 &middot; Processed &middot; 12 entities extracted</div>
+        <div class="type-usage">Secondary text, metadata</div>
+      </div>
+      <div class="type-row">
+        <div class="type-meta">xs / 12px<br>Weight 500</div>
+        <div class="type-sample" style="font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--owl-slate-400);">CASE-2024-0847 &middot; 3 COLLABORATORS &middot; LAST UPDATED 2H AGO</div>
+        <div class="type-usage">Badges, labels, captions</div>
+      </div>
+      <div class="type-row mono-row">
+        <div class="type-meta">Mono / 13px<br>Weight 400</div>
+        <div class="type-sample" style="font-size: 13px; font-weight: 400; line-height: 1.5; color: var(--owl-amber-500);">MATCH (p:Person)-[:TRANSFERRED_TO]->(a:Account) WHERE p.case_id = $caseId RETURN p, a</div>
+        <div class="type-usage">Cypher, code, data values</div>
+      </div>
+      <div class="type-row mono-row">
+        <div class="type-meta">Mono / 11px<br>Weight 400</div>
+        <div class="type-sample" style="font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--owl-slate-400);">$42,500.00 &middot; TXN-20240315-A7B2 &middot; 2024-03-15T14:22:00Z</div>
+        <div class="type-usage">Monospaced data, IDs, amounts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       04. SPACING & RADIUS
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">04</span>
+      <h2 class="kit-section-title">Spacing &amp; Radius</h2>
+    </div>
+    <p class="kit-section-desc">4px base grid. Consistent spacing creates visual rhythm across dense data interfaces.</p>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+      <div>
+        <div class="palette-label" style="margin-bottom: 12px;">Spacing Scale</div>
+        <div class="spacing-grid">
+          <div class="spacing-block"><div class="spacing-bar" style="height: 4px;"></div><span class="spacing-label">1 / 4px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 8px;"></div><span class="spacing-label">2 / 8px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 12px;"></div><span class="spacing-label">3 / 12px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 16px;"></div><span class="spacing-label">4 / 16px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 20px;"></div><span class="spacing-label">5 / 20px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 24px;"></div><span class="spacing-label">6 / 24px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 32px;"></div><span class="spacing-label">8 / 32px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 40px;"></div><span class="spacing-label">10 / 40px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 48px;"></div><span class="spacing-label">12 / 48px</span></div>
+          <div class="spacing-block"><div class="spacing-bar" style="height: 64px;"></div><span class="spacing-label">16 / 64px</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="palette-label" style="margin-bottom: 12px;">Border Radius</div>
+        <div class="radius-grid">
+          <div class="radius-sample"><div class="radius-box" style="border-radius: var(--owl-radius-sm);"></div><span class="radius-label">sm / 4px</span></div>
+          <div class="radius-sample"><div class="radius-box" style="border-radius: var(--owl-radius-md);"></div><span class="radius-label">md / 6px</span></div>
+          <div class="radius-sample"><div class="radius-box" style="border-radius: var(--owl-radius-lg);"></div><span class="radius-label">lg / 8px</span></div>
+          <div class="radius-sample"><div class="radius-box" style="border-radius: var(--owl-radius-xl);"></div><span class="radius-label">xl / 12px</span></div>
+          <div class="radius-sample"><div class="radius-box" style="border-radius: var(--owl-radius-full);"></div><span class="radius-label">full</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       05. COMPONENT LANGUAGE
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">05</span>
+      <h2 class="kit-section-title">Component Language</h2>
+    </div>
+    <p class="kit-section-desc">
+      Core component patterns showing how the brand system translates into interactive elements. These map directly to shadcn/ui components with Owl's Eye theming.
+    </p>
+
+    <div class="preview-grid">
+      <!-- Buttons -->
+      <div class="preview-card">
+        <div class="preview-card-header">Buttons</div>
+        <div class="preview-card-body">
+          <div class="btn-row">
+            <button class="btn btn-primary">Process Evidence</button>
+            <button class="btn btn-secondary">Open Case</button>
+            <button class="btn btn-outline">Export</button>
+            <button class="btn btn-ghost">Cancel</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary btn-sm">Small</button>
+            <button class="btn btn-primary">Default</button>
+            <button class="btn btn-primary btn-lg">Large</button>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-danger btn-sm">Delete Case</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Inputs -->
+      <div class="preview-card">
+        <div class="preview-card-header">Form Inputs</div>
+        <div class="preview-card-body">
+          <div class="input-preview">
+            <label class="input-label">Case Title</label>
+            <input type="text" class="input-field" placeholder="Enter case name..." value="Operation Nexus">
+          </div>
+          <div class="input-preview">
+            <label class="input-label">Search Entities</label>
+            <input type="text" class="input-field" placeholder="Search by name, type, or keyword...">
+          </div>
+          <div class="input-preview">
+            <label class="input-label">Cypher Query</label>
+            <input type="text" class="input-field" style="font-family: var(--owl-font-mono); font-size: 12px;" placeholder="MATCH (n) WHERE n.case_id = $id RETURN n">
+          </div>
+        </div>
+      </div>
+
+      <!-- Badges -->
+      <div class="preview-card">
+        <div class="preview-card-header">Badges &amp; Status</div>
+        <div class="preview-card-body">
+          <div class="badge-row">
+            <span class="badge badge-success">Processed</span>
+            <span class="badge badge-amber">Processing</span>
+            <span class="badge badge-danger">Failed</span>
+            <span class="badge badge-info">AI Generated</span>
+            <span class="badge badge-slate">Unprocessed</span>
+          </div>
+          <div class="badge-row">
+            <span class="badge badge-amber">Owner</span>
+            <span class="badge badge-slate">Editor</span>
+            <span class="badge badge-slate">Viewer</span>
+          </div>
+          <div class="badge-row">
+            <span class="badge" style="background: #EEF2FF; color: #4338CA;">Person</span>
+            <span class="badge" style="background: #F0FDFA; color: #0F766E;">Location</span>
+            <span class="badge" style="background: #FFF7ED; color: #C2410C;">Financial</span>
+            <span class="badge" style="background: #FCE7F3; color: #BE185D;">Event</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cards -->
+      <div class="preview-card">
+        <div class="preview-card-header">Cards — Light &amp; Dark</div>
+        <div class="preview-card-body" style="gap: 16px;">
+          <div class="sample-card">
+            <div class="sample-card-title">Operation Nexus</div>
+            <div class="sample-card-desc">Multi-defendant RICO investigation &middot; 47 entities &middot; 12 documents</div>
+            <div class="btn-row">
+              <span class="badge badge-success">Active</span>
+              <span class="badge badge-slate">3 collaborators</span>
+            </div>
+          </div>
+          <div class="sample-card dark-card">
+            <div class="sample-card-title">Marcus Chen</div>
+            <div class="sample-card-desc">Person &middot; Connected to 14 entities &middot; Mentioned in 6 documents</div>
+            <div class="btn-row">
+              <span class="badge" style="background: rgba(99,102,241,0.15); color: #818CF8;">Person</span>
+              <span class="badge" style="background: rgba(212,146,10,0.12); color: #E5A61B;">High Centrality</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       06. DARK MODE PREVIEW
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">06</span>
+      <h2 class="kit-section-title">Dark Mode (Default)</h2>
+    </div>
+    <p class="kit-section-desc">
+      Dark mode is the default for Owl's Eye. Investigators often work in low-light environments and spend long hours analyzing data. The dark palette reduces eye strain while keeping graph visualizations vibrant.
+    </p>
+
+    <div class="dark-preview">
+      <div class="dark-sidebar">
+        <div class="dark-sidebar-nav">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px 16px; border-bottom: 1px solid var(--owl-slate-800); margin-bottom: 8px;">
+            <svg width="24" height="24" viewBox="0 0 48 48" fill="none"><path d="M4 24C4 24 12 10 24 10C36 10 44 24 44 24C44 24 36 38 24 38C12 38 4 24 4 24Z" stroke="#D4920A" stroke-width="2.5" fill="none" opacity="0.4"/><circle cx="24" cy="24" r="10" stroke="#D4920A" stroke-width="2" fill="none" opacity="0.7"/><circle cx="24" cy="24" r="4.5" fill="#D4920A"/></svg>
+            <span style="font-size: 15px; font-weight: 700; color: #F1F5F9; letter-spacing: -0.02em;">Owl's Eye</span>
+          </div>
+          <div class="dark-nav-item active">
+            <svg class="dark-nav-icon" viewBox="0 0 16 16" fill="currentColor"><circle cx="8" cy="8" r="3"/><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+            Graph
+          </div>
+          <div class="dark-nav-item">
+            <svg class="dark-nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="12" x2="14" y2="12"/><line x1="4" y1="8" x2="4" y2="12"/><line x1="8" y1="4" x2="8" y2="12"/><line x1="12" y1="6" x2="12" y2="12"/></svg>
+            Timeline
+          </div>
+          <div class="dark-nav-item">
+            <svg class="dark-nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="7" r="3"/><path d="M2 13c0-3 3-5 6-5s6 2 6 5"/></svg>
+            Map
+          </div>
+          <div class="dark-nav-item">
+            <svg class="dark-nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="2" y1="6" x2="14" y2="6"/><line x1="6" y1="6" x2="6" y2="13"/></svg>
+            Evidence
+          </div>
+          <div class="dark-nav-item">
+            <svg class="dark-nav-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13V3h10v10H3z"/><path d="M3 6h10"/><path d="M6 6v7"/></svg>
+            Reports
+          </div>
+        </div>
+
+        <div class="dark-content">
+          <div class="dark-content-header">
+            <span class="dark-content-title">Entities &middot; Operation Nexus</span>
+            <button class="btn btn-primary btn-sm">+ Add Entity</button>
+          </div>
+          <div class="dark-entity-list">
+            <div class="dark-entity-row">
+              <div class="dark-entity-dot" style="background: var(--owl-node-person);"></div>
+              <span class="dark-entity-name">Marcus Chen</span>
+              <span class="dark-entity-type">Person</span>
+              <span class="badge" style="background: rgba(212,146,10,0.12); color: #E5A61B; font-size: 10px;">High Centrality</span>
+            </div>
+            <div class="dark-entity-row">
+              <div class="dark-entity-dot" style="background: var(--owl-node-organization);"></div>
+              <span class="dark-entity-name">Nexus Trading Ltd</span>
+              <span class="dark-entity-type">Organization</span>
+            </div>
+            <div class="dark-entity-row">
+              <div class="dark-entity-dot" style="background: var(--owl-node-person);"></div>
+              <span class="dark-entity-name">Victoria Blackwood</span>
+              <span class="dark-entity-type">Person</span>
+            </div>
+            <div class="dark-entity-row">
+              <div class="dark-entity-dot" style="background: var(--owl-node-financial);"></div>
+              <span class="dark-entity-name">Payment $42,500 — Mar 2024</span>
+              <span class="dark-entity-type">Financial</span>
+              <span class="badge" style="background: rgba(239,68,68,0.12); color: #F87171; font-size: 10px;">Flagged</span>
+            </div>
+            <div class="dark-entity-row">
+              <div class="dark-entity-dot" style="background: var(--owl-node-location);"></div>
+              <span class="dark-entity-name">Monaco, Monte Carlo</span>
+              <span class="dark-entity-type">Location</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       07. MOTION & TRANSITIONS
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">07</span>
+      <h2 class="kit-section-title">Motion &amp; Transitions</h2>
+    </div>
+    <p class="kit-section-desc">Subtle, purposeful motion. No decorative animations. Every transition communicates a state change or provides spatial orientation.</p>
+
+    <div class="motion-grid">
+      <div class="motion-card">
+        <div class="motion-card-title">Fast</div>
+        <div class="motion-card-value">100ms</div>
+        <div class="motion-card-desc">Hover states, focus rings, toggles, button press feedback</div>
+      </div>
+      <div class="motion-card">
+        <div class="motion-card-title">Normal</div>
+        <div class="motion-card-value">200ms</div>
+        <div class="motion-card-desc">Panel transitions, dropdown menus, tooltips, accordion expand</div>
+      </div>
+      <div class="motion-card">
+        <div class="motion-card-title">Slow</div>
+        <div class="motion-card-value">300ms</div>
+        <div class="motion-card-desc">Modal enter/exit, sidebar open/close, page transitions, graph layout settle</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 16px; background: var(--owl-slate-50); border: 1px solid var(--owl-slate-200); border-radius: var(--owl-radius-lg); padding: 16px; font-size: 13px; color: var(--owl-slate-600);">
+      <strong style="color: var(--owl-slate-800);">Easing:</strong> <code style="font-family: var(--owl-font-mono); font-size: 12px; color: var(--owl-amber-500);">cubic-bezier(0.25, 0.1, 0.25, 1.0)</code> — Standard ease for all UI transitions. Slightly faster ease-out for a responsive feel without being jarring.
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       08. ICONOGRAPHY
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">08</span>
+      <h2 class="kit-section-title">Iconography</h2>
+    </div>
+    <p class="kit-section-desc">Use Lucide icons exclusively. 16px for inline/navigation, 20px for buttons and emphasis, 24px for empty states and headers. Stroke width 1.5px for consistency.</p>
+
+    <div class="icon-note">
+      <strong>Library:</strong> <a href="https://lucide.dev" style="color: var(--owl-amber-500);">Lucide React</a> (lucide-react) — Open source, MIT licensed, consistent 24x24 grid, tree-shakeable. Do not mix with other icon libraries. Stroke width: 1.5px default, 2px for emphasis.
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       09. BRAND RULES
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">09</span>
+      <h2 class="kit-section-title">Brand Rules</h2>
+    </div>
+
+    <div class="rules-grid">
+      <div class="rule-card do">
+        <div class="rule-card-header">Do</div>
+        <ul>
+          <li>Use dark mode as the default experience</li>
+          <li>Prioritize data density — investigators need information, not whitespace</li>
+          <li>Use amber only for primary actions, focus states, and key highlights</li>
+          <li>Keep the UI quiet — let the data speak</li>
+          <li>Use the monospace font for all machine-generated or technical content</li>
+          <li>Maintain consistent spacing on the 4px grid</li>
+          <li>Use the graph node palette consistently across all views</li>
+          <li>Test all color combinations for WCAG AA contrast (4.5:1 minimum)</li>
+        </ul>
+      </div>
+      <div class="rule-card dont">
+        <div class="rule-card-header">Don't</div>
+        <ul>
+          <li>Use amber for large background areas — it's an accent, not a surface</li>
+          <li>Mix icon libraries — Lucide only</li>
+          <li>Add decorative animations — all motion must be functional</li>
+          <li>Use gradients on UI surfaces (reserved for marketing)</li>
+          <li>Put data in light-on-light combinations — ensure contrast</li>
+          <li>Use rounded-full on containers (only pills, avatars, badges)</li>
+          <li>Create new grays — use the slate scale exclusively</li>
+          <li>Override shadcn components without going through the theme layer</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════
+       10. CSS VARIABLE EXPORT
+       ════════════════════════════════════════════════════════════ -->
+  <div class="kit-section">
+    <div class="kit-section-header">
+      <span class="kit-section-number">10</span>
+      <h2 class="kit-section-title">Tailwind / CSS Variable Export</h2>
+    </div>
+    <p class="kit-section-desc">
+      Copy these variables into your Tailwind config or global CSS. All color, spacing, typography, and shadow tokens are defined in the :root block at the top of this file. Below is the Tailwind theme extension format.
+    </p>
+
+    <div class="code-block">
+<span class="comment">// tailwind.config.ts — Owl's Eye theme extension</span>
+<span class="comment">// Import alongside shadcn/ui base config</span>
+
+<span class="prop">colors</span>: {
+  <span class="prop">slate</span>: {
+    <span class="val">950</span>: <span class="val">'#0A0E1F'</span>,  <span class="comment">// Dark mode primary bg</span>
+    <span class="val">900</span>: <span class="val">'#0F172A'</span>,  <span class="comment">// Dark mode secondary bg</span>
+    <span class="val">800</span>: <span class="val">'#1A2540'</span>,  <span class="comment">// Dark mode elevated surfaces</span>
+    <span class="val">700</span>: <span class="val">'#2D3A4F'</span>,  <span class="comment">// Dark mode borders</span>
+    <span class="val">600</span>: <span class="val">'#3E4C63'</span>,
+    <span class="val">500</span>: <span class="val">'#5A6A82'</span>,  <span class="comment">// Secondary text (dark)</span>
+    <span class="val">400</span>: <span class="val">'#8494A7'</span>,
+    <span class="val">300</span>: <span class="val">'#AAB7C7'</span>,
+    <span class="val">200</span>: <span class="val">'#CDD5DF'</span>,  <span class="comment">// Light mode borders</span>
+    <span class="val">100</span>: <span class="val">'#E8ECF1'</span>,
+    <span class="val">50</span>:  <span class="val">'#F4F6F8'</span>,  <span class="comment">// Light mode secondary bg</span>
+  },
+  <span class="prop">amber</span>: {
+    <span class="val">500</span>: <span class="val">'#D4920A'</span>,  <span class="comment">// Primary action</span>
+    <span class="val">400</span>: <span class="val">'#E5A61B'</span>,  <span class="comment">// Hover</span>
+    <span class="val">300</span>: <span class="val">'#F0BD4F'</span>,
+    <span class="val">200</span>: <span class="val">'#F7D88A'</span>,
+    <span class="val">100</span>: <span class="val">'#FBF0D0'</span>,
+    <span class="val">50</span>:  <span class="val">'#FEFAF0'</span>,
+  },
+  <span class="prop">node</span>: {
+    <span class="val">person</span>:       <span class="val">'#6366F1'</span>,
+    <span class="val">organization</span>: <span class="val">'#8B5CF6'</span>,
+    <span class="val">location</span>:     <span class="val">'#14B8A6'</span>,
+    <span class="val">financial</span>:    <span class="val">'#F59E0B'</span>,
+    <span class="val">document</span>:     <span class="val">'#64748B'</span>,
+    <span class="val">event</span>:        <span class="val">'#EC4899'</span>,
+    <span class="val">communication</span>:<span class="val">'#06B6D4'</span>,
+    <span class="val">vehicle</span>:      <span class="val">'#84CC16'</span>,
+    <span class="val">digital</span>:      <span class="val">'#A855F7'</span>,
+    <span class="val">evidence</span>:     <span class="val">'#F97316'</span>,
+  },
+}
+    </div>
+  </div>
+
+</div><!-- /kit-container -->
+
+</body>
+</html>
