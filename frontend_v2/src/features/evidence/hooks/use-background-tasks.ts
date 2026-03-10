@@ -28,7 +28,7 @@ export function useBackgroundTasks(caseId?: string, polling = false) {
         }
       }
 
-      if (hasNew && completedRef.current.size > 0) {
+      if (hasNew) {
         // Invalidate evidence queries so the file list refreshes
         queryClient.invalidateQueries({ queryKey: ["evidence"] })
       }

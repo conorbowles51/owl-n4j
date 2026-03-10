@@ -3,6 +3,7 @@ import { Play, Wand2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { EvidenceUploader } from "./EvidenceUploader"
+import type { UploadResponse } from "../api"
 import { ProcessDialog } from "./ProcessDialog"
 import { FolderProfileWizard } from "./FolderProfileWizard"
 import { useEvidence } from "../hooks/use-evidence"
@@ -61,7 +62,18 @@ export function UploadProcessTab({ caseId }: UploadProcessTabProps) {
         <p className="mb-4 text-xs text-muted-foreground">
           Drag and drop files or folders, or click to browse
         </p>
-        <EvidenceUploader caseId={caseId} />
+        <EvidenceUploader
+          caseId={caseId}
+          onComplete={(result: UploadResponse) => {
+            if (result.files) {
+              toast.success(`${result.files.length} file${result.files.length !== 1 ? "s" : ""} uploaded`)
+              setActiveTab("files")
+            } else if (result.task_id || result.task_ids) {
+              toast.info(result.message ?? "Upload started in background")
+              setActiveTab("activity")
+            }
+          }}
+        />
       </div>
 
       {unprocessed.length > 0 && (

@@ -19,11 +19,20 @@ interface ChatSuggestion {
   question: string
 }
 
+const CHAT_DEFAULTS = {
+  provider: "openai",
+  model: "gpt-4o",
+} as const
+
 export const chatAPI = {
   ask: (params: ChatRequest) =>
     fetchAPI<ChatResponse>("/api/chat", {
       method: "POST",
-      body: params,
+      body: {
+        provider: CHAT_DEFAULTS.provider,
+        model: CHAT_DEFAULTS.model,
+        ...params,
+      },
       timeout: 120000,
     }),
 

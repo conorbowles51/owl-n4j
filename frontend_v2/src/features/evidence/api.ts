@@ -8,6 +8,13 @@ import type {
   LLMModel,
 } from "@/types/evidence.types"
 
+export interface UploadResponse {
+  files?: EvidenceFile[]
+  task_id?: string
+  task_ids?: string[]
+  message?: string
+}
+
 export const evidenceAPI = {
   list: async (caseId: string, status?: string) => {
     const qs = new URLSearchParams({ case_id: caseId })
@@ -21,7 +28,7 @@ export const evidenceAPI = {
     formData.append("case_id", caseId)
     if (isFolder) formData.append("is_folder", "true")
     files.forEach((f) => formData.append("files", f))
-    return fetchAPI<{ uploaded: number }>("/api/evidence/upload", {
+    return fetchAPI<UploadResponse>("/api/evidence/upload", {
       method: "POST",
       body: formData,
     })

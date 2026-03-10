@@ -14,7 +14,7 @@ import { GraphCanvas } from "./GraphCanvas"
 import { GraphToolbar } from "./GraphToolbar"
 import { GraphLegend } from "./GraphLegend"
 import { GraphContextMenu } from "./GraphContextMenu"
-import { NodeDetailSheet } from "./NodeDetailSheet"
+import { GraphSidePanelRail, GraphSidePanelContent } from "./GraphSidePanel"
 import { AddNodeDialog } from "./AddNodeDialog"
 import { EditNodeDialog } from "./EditNodeDialog"
 import { CreateRelationshipDialog } from "./CreateRelationshipDialog"
@@ -25,31 +25,9 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Network } from "lucide-react"
 import { graphAPI } from "../api"
-import type { GraphNode, NodeDetail } from "@/types/graph.types"
-
-/* ------------------------------------------------------------------ */
-/*  Side panel modes                                                    */
-/* ------------------------------------------------------------------ */
-
-type SidePanelMode =
-  | "detail"
-  | "force-controls"
-  | "analysis"
-  | "similar"
-  | "cypher"
-  | "recycle"
-  | null
-
-/* ------------------------------------------------------------------ */
-/*  Lazy-loaded panels (to avoid loading all code upfront)             */
-/* ------------------------------------------------------------------ */
-
-import { ForceControlsPanel } from "./ForceControlsPanel"
-import { GraphAnalysisPanel } from "./GraphAnalysisPanel"
-import { RecycleBinPanel } from "./RecycleBinPanel"
-import { CypherPanel } from "./CypherPanel"
+import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
-import { SimilarEntitiesView } from "./SimilarEntitiesView"
+import type { GraphNode, NodeDetail } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -79,27 +57,34 @@ export function GraphPage() {
   const [expandOpen, setExpandOpen] = useState(false)
   const [compareOpen, setCompareOpen] = useState(false)
 
-  /* ---- Side panel ---- */
-  const [sidePanel, setSidePanel] = useState<SidePanelMode>(null)
+  /* ---- Side panel (store-driven) ---- */
+  const graphPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
+  const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
+  const setGraphPanelToolOverlay = useUIStore((s) => s.setGraphPanelToolOverlay)
+  const graphPanelToolOverlay = useUIStore((s) => s.graphPanelToolOverlay)
 
-  // Auto-show detail panel on selection
+  // Auto-expand to detail tab when selection changes
+  const prevKeysRef = useRef(selectedNodeKeys)
   useEffect(() => {
-    if (hasSelection && sidePanel === null) {
-      setSidePanel("detail")
-    } else if (!hasSelection && sidePanel === "detail") {
-      setSidePanel(null)
+    const prevKeys = prevKeysRef.current
+    prevKeysRef.current = selectedNodeKeys
+    const gained = selectedNodeKeys.size > 0 && selectedNodeKeys !== prevKeys
+    if (gained) {
+      expandGraphPanelTo("detail")
     }
-  }, [hasSelection, sidePanel])
+  }, [selectedNodeKeys, expandGraphPanelTo])
 
   /* ---- Comparison entity details ---- */
   const [compareEntity1, setCompareEntity1] = useState<NodeDetail | null>(null)
   const [compareEntity2, setCompareEntity2] = useState<NodeDetail | null>(null)
 
   /* ---- Helpers ---- */
-  const refreshGraph = () =>
-    queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
+  const refreshGraph = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ["graph", caseId] }),
+    [queryClient, caseId]
+  )
 
-  const handleNodeCreated = useCallback(() => refreshGraph(), [])
+  const handleNodeCreated = useCallback(() => refreshGraph(), [refreshGraph])
 
   const handleExpandNode = useCallback(
     async (key: string) => {
@@ -116,7 +101,7 @@ export function GraphPage() {
       await graphAPI.expandNodes(caseId, keys, depth)
       refreshGraph()
     },
-    [caseId, selectedNodeKeys]
+    [caseId, selectedNodeKeys, refreshGraph]
   )
 
   const handleDeleteNode = useCallback(
@@ -125,7 +110,7 @@ export function GraphPage() {
       await graphAPI.deleteNode(key, caseId, false)
       refreshGraph()
     },
-    [caseId]
+    [caseId, refreshGraph]
   )
 
   const handleCompareSelected = useCallback(async () => {
@@ -209,10 +194,10 @@ export function GraphPage() {
   }
 
   const displayData = filteredData ?? graphData
-  const showRightPanel = sidePanel !== null
 
-  /* Compute default sizes based on active columns */
-  const mainDefault = spotlightActive && showRightPanel ? "40" : spotlightActive || showRightPanel ? "60" : "100"
+  /* Toggle helper for toolbar tool buttons */
+  const toggleToolOverlay = (name: typeof graphPanelToolOverlay) =>
+    setGraphPanelToolOverlay(graphPanelToolOverlay === name ? null : name)
 
   return (
     <div className="flex h-full flex-col">
@@ -221,58 +206,48 @@ export function GraphPage() {
         graphRef={graphRef as any}
         onOpenAddNode={() => setAddNodeOpen(true)}
         onOpenCreateRelationship={() => setCreateRelOpen(true)}
-        onOpenForceControls={() =>
-          setSidePanel(sidePanel === "force-controls" ? null : "force-controls")
-        }
-        onOpenAnalysis={() =>
-          setSidePanel(sidePanel === "analysis" ? null : "analysis")
-        }
-        onOpenSimilarEntities={() =>
-          setSidePanel(sidePanel === "similar" ? null : "similar")
-        }
-        onOpenRecycleBin={() =>
-          setSidePanel(sidePanel === "recycle" ? null : "recycle")
-        }
-        onOpenCypher={() =>
-          setSidePanel(sidePanel === "cypher" ? null : "cypher")
-        }
+        onOpenForceControls={() => toggleToolOverlay("force-controls")}
+        onOpenAnalysis={() => toggleToolOverlay("analysis")}
+        onOpenSimilarEntities={() => toggleToolOverlay("similar")}
+        onOpenRecycleBin={() => toggleToolOverlay("recycle")}
+        onOpenCypher={() => toggleToolOverlay("cypher")}
       />
 
-      <ResizablePanelGroup orientation="horizontal" className="flex-1">
-        {/* Panel 1: Main Graph — always present */}
-        <ResizablePanel
-          id="graph-canvas"
-          order={1}
-          defaultSize={mainDefault}
-          minSize="25"
-        >
-          <div className="relative h-full">
-            <GraphCanvas
-              data={displayData}
-              caseId={caseId!}
-              graphRef={graphRef as any}
-            />
-            <GraphLegend nodes={displayData.nodes} />
-          </div>
-        </ResizablePanel>
+      <div className="flex flex-1 overflow-hidden">
+        <ResizablePanelGroup orientation="horizontal" className="flex-1">
+          {/* Panel 1: Main Graph — always present */}
+          <ResizablePanel
+            id="graph-canvas"
+            order={1}
+            defaultSize={graphPanelCollapsed && !spotlightActive ? "100" : "70"}
+            minSize="25"
+          >
+            <div className="relative h-full">
+              <GraphCanvas
+                data={displayData}
+                caseId={caseId!}
+                graphRef={graphRef as any}
+              />
+              <GraphLegend nodes={displayData.nodes} />
+            </div>
+          </ResizablePanel>
 
-        {/* Panel 2: Spotlight — conditional */}
-        {spotlightActive && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="spotlight-column" order={2} defaultSize="30" minSize="15" maxSize="45">
-              <SubgraphView caseId={caseId!} graphData={graphData} />
-            </ResizablePanel>
-          </>
-        )}
+          {/* Panel 2: Spotlight — conditional */}
+          {spotlightActive && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel id="spotlight-column" order={2} defaultSize="30" minSize="15" maxSize="45">
+                <SubgraphView caseId={caseId!} graphData={graphData} />
+              </ResizablePanel>
+            </>
+          )}
 
-        {/* Panel 3: Detail / Tool panels — conditional */}
-        {showRightPanel && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="graph-side-panel" order={3} defaultSize="30" minSize="15" maxSize="45">
-              {sidePanel === "detail" && (
-                <NodeDetailSheet
+          {/* Panel 3: Expanded side panel — resizable */}
+          {!graphPanelCollapsed && (
+            <>
+              <ResizableHandle withHandle />
+              <ResizablePanel id="graph-side-panel" order={3} defaultSize="30" minSize="15" maxSize="45">
+                <GraphSidePanelContent
                   caseId={caseId!}
                   graphData={graphData}
                   onEditNode={(node) => setEditNode(node)}
@@ -280,35 +255,22 @@ export function GraphPage() {
                   onMergeSelected={() => setMergeOpen(true)}
                   onCompareSelected={handleCompareSelected}
                   onCreateSubgraph={handleCreateSubgraph}
+                  onRefreshGraph={refreshGraph}
                 />
-              )}
-              {sidePanel === "force-controls" && <ForceControlsPanel />}
-              {sidePanel === "analysis" && (
-                <GraphAnalysisPanel caseId={caseId!} />
-              )}
-              {sidePanel === "similar" && (
-                <SimilarEntitiesView
-                  caseId={caseId!}
-                  graphData={graphData}
-                  onRefresh={refreshGraph}
-                />
-              )}
-              {sidePanel === "cypher" && (
-                <CypherPanel caseId={caseId!} className="p-4" />
-              )}
-              {sidePanel === "recycle" && (
-                <RecycleBinPanel caseId={caseId!} />
-              )}
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
+              </ResizablePanel>
+            </>
+          )}
+        </ResizablePanelGroup>
+
+        {/* Collapsed rail — always rendered when collapsed */}
+        {graphPanelCollapsed && <GraphSidePanelRail />}
+      </div>
 
       {/* Context menu (floating, positioned by canvas right-click) */}
       <GraphContextMenu
         onShowDetail={(key) => {
           selectNodes([key])
-          setSidePanel("detail")
+          expandGraphPanelTo("detail")
         }}
         onExpand={handleExpandNode}
         onEdit={(key) => {
@@ -318,7 +280,6 @@ export function GraphPage() {
         onDelete={handleDeleteNode}
         onAnalyzeRelationships={(key) => {
           selectNodes([key])
-          // Could open a relationship analysis modal here
         }}
         onMergeSelected={() => setMergeOpen(true)}
       />

@@ -3,10 +3,11 @@ import { Upload, FolderUp, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/cn"
 import { useUploadEvidence } from "../hooks/use-evidence"
+import type { UploadResponse } from "../api"
 
 interface EvidenceUploaderProps {
   caseId: string
-  onComplete?: () => void
+  onComplete?: (result: UploadResponse) => void
 }
 
 export function EvidenceUploader({ caseId, onComplete }: EvidenceUploaderProps) {
@@ -56,9 +57,9 @@ export function EvidenceUploader({ caseId, onComplete }: EvidenceUploaderProps) 
   const handleUpload = () => {
     if (pendingFiles.length === 0) return
     uploadMutation.mutate(pendingFiles, {
-      onSuccess: () => {
+      onSuccess: (data) => {
         setPendingFiles([])
-        onComplete?.()
+        onComplete?.(data)
       },
     })
   }

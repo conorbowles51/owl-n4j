@@ -69,9 +69,10 @@ function SidebarLink({
       className={({ isActive }) =>
         cn(
           "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-          "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+          "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+          "dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
           isActive &&
-            "border-l-2 border-amber-500 bg-slate-800/50 text-slate-50",
+            "border-l-2 border-amber-500 bg-amber-50 text-slate-900 dark:bg-slate-800/50 dark:text-slate-50",
           !expanded && "justify-center px-0"
         )
       }
@@ -81,7 +82,7 @@ function SidebarLink({
         <span className="flex-1 truncate">{item.label}</span>
       )}
       {expanded && item.shortcut && (
-        <kbd className="text-[10px] text-slate-500">⌘{item.shortcut}</kbd>
+        <kbd className="text-[10px] text-slate-400 dark:text-slate-500">⌘{item.shortcut}</kbd>
       )}
     </NavLink>
   )
@@ -112,7 +113,8 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex h-screen flex-col border-r border-border bg-slate-950 transition-all duration-200",
+        "flex h-screen flex-col border-r border-border transition-all duration-200",
+        "bg-white dark:bg-slate-950",
         sidebarExpanded ? "w-60" : "w-14"
       )}
     >
@@ -123,7 +125,7 @@ export function AppSidebar() {
           !sidebarExpanded && "justify-center px-0"
         )}
       >
-        <span className="text-lg font-bold tracking-tight text-amber-500">
+        <span className="text-lg font-bold tracking-tight text-amber-500 dark:text-amber-500">
           {sidebarExpanded ? "OWL" : "O"}
         </span>
       </div>
@@ -133,7 +135,7 @@ export function AppSidebar() {
         {/* Main */}
         <div className="space-y-0.5">
           {sidebarExpanded && (
-            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               Investigation
             </p>
           )}
@@ -146,7 +148,7 @@ export function AppSidebar() {
         {caseId && (
           <div className="mt-4 space-y-0.5">
             {sidebarExpanded && (
-              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                 Active Case
               </p>
             )}
@@ -163,7 +165,7 @@ export function AppSidebar() {
         {/* Admin */}
         <div className="mt-4 space-y-0.5">
           {sidebarExpanded && (
-            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               Admin
             </p>
           )}

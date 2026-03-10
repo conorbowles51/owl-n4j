@@ -15,7 +15,6 @@ import { DocumentViewer } from "@/components/ui/document-viewer"
 import { ConnectionsList } from "./ConnectionsList"
 import { MultiNodePanel } from "./MultiNodePanel"
 import {
-  X,
   Pencil,
   Expand,
   Star,
@@ -188,9 +187,6 @@ export function NodeDetailSheet({
             onClick={() => onExpandNode?.(detail.key)}
           >
             <Expand className="size-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon-sm" onClick={clearSelection}>
-            <X className="size-3.5" />
           </Button>
         </div>
       </div>

@@ -202,13 +202,14 @@ export function GraphToolbar({
             <Button
               variant={spotlightVisible && subgraphNodeKeys.size > 0 ? "secondary" : "ghost"}
               size="icon-sm"
+              className="relative"
               onClick={toggleSpotlight}
             >
               <Focus className="size-3.5" />
               {subgraphNodeKeys.size > 0 && (
-                <Badge variant="amber" className="ml-0.5 px-1 text-[9px]">
+                <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-semibold text-white">
                   {subgraphNodeKeys.size}
-                </Badge>
+                </span>
               )}
             </Button>
           </TooltipTrigger>
@@ -234,6 +235,7 @@ export function GraphToolbar({
           </Tooltip>
         )}
       </div>
+
     </div>
   )
 }
