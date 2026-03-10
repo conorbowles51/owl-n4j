@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useMemo } from "react"
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { FileText, Settings } from "lucide-react"
-import { evidenceAPI } from "../api"
+import { useFolderFiles } from "../hooks/use-folder-profile"
 import { toast } from "sonner"
 
 const FILE_ROLES = [
@@ -53,30 +53,26 @@ export function FolderProfileAdvancedDialog({
   folderPath,
   onSaved,
 }: FolderProfileAdvancedDialogProps) {
+  const { data: folderFiles, isLoading: loading, dataUpdatedAt } = useFolderFiles(caseId, folderPath, open && !!folderPath)
   const [files, setFiles] = useState<FileConfig[]>([])
-  const [loading, setLoading] = useState(false)
-  const [jsonPreview, setJsonPreview] = useState("")
+  const [jsonPreviewOverride, setJsonPreviewOverride] = useState<string | null>(null)
+  const [appliedAt, setAppliedAt] = useState(0)
 
-  useEffect(() => {
-    if (open && folderPath) {
-      setLoading(true)
-      evidenceAPI
-        .listFolderFiles(caseId, folderPath)
-        .then((res) => {
-          setFiles(
-            (res.files ?? []).map((f: string) => ({
-              filename: f,
-              role: "document",
-            }))
-          )
-        })
-        .catch(() => toast.error("Failed to list folder files"))
-        .finally(() => setLoading(false))
-    }
-  }, [open, caseId, folderPath])
+  // Sync fetched folder files into local state (setState during render, guarded by timestamp)
+  if (dataUpdatedAt > 0 && dataUpdatedAt !== appliedAt && folderFiles) {
+    setAppliedAt(dataUpdatedAt)
+    setFiles(
+      folderFiles.map((f: string) => ({
+        filename: f,
+        role: "document",
+      }))
+    )
+    setJsonPreviewOverride(null)
+  }
 
-  // Build JSON preview
-  useEffect(() => {
+  // Derive JSON preview from files (no setState in effect)
+  const jsonPreview = useMemo(() => {
+    if (jsonPreviewOverride !== null) return jsonPreviewOverride
     const config = {
       type: "special",
       file_rules: files
@@ -95,11 +91,12 @@ export function FolderProfileAdvancedDialog({
           return rule
         }),
     }
-    setJsonPreview(JSON.stringify(config, null, 2))
-  }, [files])
+    return JSON.stringify(config, null, 2)
+  }, [files, jsonPreviewOverride])
 
   const updateFile = (index: number, updates: Partial<FileConfig>) => {
     setFiles((prev) => prev.map((f, i) => (i === index ? { ...f, ...updates } : f)))
+    setJsonPreviewOverride(null)
   }
 
   const handleSave = () => {
@@ -192,7 +189,7 @@ export function FolderProfileAdvancedDialog({
               <label className="mb-1 block text-xs font-medium">JSON Preview</label>
               <Textarea
                 value={jsonPreview}
-                onChange={(e) => setJsonPreview(e.target.value)}
+                onChange={(e) => setJsonPreviewOverride(e.target.value)}
                 className="min-h-[150px] font-mono text-xs"
               />
             </div>

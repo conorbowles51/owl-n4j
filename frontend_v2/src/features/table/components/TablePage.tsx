@@ -27,7 +27,7 @@ export function TablePage() {
 
   const filtered = useMemo(() => {
     if (!graphData) return []
-    let nodes = graphData.nodes.filter(
+    const nodes = graphData.nodes.filter(
       (n) =>
         n.label.toLowerCase().includes(search.toLowerCase()) ||
         n.type.toLowerCase().includes(search.toLowerCase())

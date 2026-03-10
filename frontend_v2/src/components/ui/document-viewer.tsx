@@ -34,13 +34,10 @@ function getFileType(filename: string | undefined) {
   return "unknown"
 }
 
-function getFileIcon(type: string) {
-  switch (type) {
-    case "image": return ImageIcon
-    case "audio": return Music
-    case "video": return Film
-    default: return FileText
-  }
+const FILE_ICONS: Record<string, typeof FileText> = {
+  image: ImageIcon,
+  audio: Music,
+  video: Film,
 }
 
 interface DocumentViewerProps {
@@ -63,37 +60,44 @@ export function DocumentViewer({
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [textContent, setTextContent] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  const fetchIdRef = useRef(0)
 
   const fileType = getFileType(documentName)
-  const IconComponent = getFileIcon(fileType)
+  const IconComp = FILE_ICONS[fileType] ?? FileText
   const isPdf = fileType === "pdf"
 
+  // Reset and fetch when dialog opens
   useEffect(() => {
-    if (open) {
-      setLoading(true)
-      setError(null)
-      setCurrentPage(initialPage)
-      setTextContent(null)
+    if (!open) return
+    setLoading(true)
+    setError(null)
+    setCurrentPage(initialPage)
+    setTextContent(null)
 
-      if (documentUrl && fileType === "text") {
-        fetch(documentUrl)
-          .then((res) => {
-            if (!res.ok) throw new Error("Failed to load")
-            return res.text()
-          })
-          .then((text) => {
+    if (documentUrl && fileType === "text") {
+      const id = ++fetchIdRef.current
+      fetch(documentUrl)
+        .then((res) => {
+          if (!res.ok) throw new Error("Failed to load")
+          return res.text()
+        })
+        .then((text) => {
+          if (id === fetchIdRef.current) {
             setTextContent(text)
             setLoading(false)
-          })
-          .catch(() => {
+          }
+        })
+        .catch(() => {
+          if (id === fetchIdRef.current) {
             setError("Failed to load text document")
             setLoading(false)
-          })
-      } else if (documentUrl && (fileType === "image" || fileType === "audio" || fileType === "video")) {
-        setLoading(false)
-      }
+          }
+        })
+    } else if (documentUrl && (fileType === "image" || fileType === "audio" || fileType === "video")) {
+      setLoading(false)
     }
-  }, [open, documentUrl, initialPage, fileType])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, documentUrl, fileType])
 
   const pdfUrlWithPage = documentUrl && isPdf ? `${documentUrl}#page=${currentPage}` : null
 
@@ -201,7 +205,7 @@ export function DocumentViewer({
       <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 gap-0" showCloseButton={false}>
         <DialogHeader className="flex-row items-center justify-between border-b border-border px-4 py-3 space-y-0">
           <div className="flex items-center gap-3">
-            <IconComponent className="size-5 text-muted-foreground" />
+            <IconComp className="size-5 text-muted-foreground" />
             <DialogTitle className="text-base">
               {documentName || "Document Viewer"}
             </DialogTitle>

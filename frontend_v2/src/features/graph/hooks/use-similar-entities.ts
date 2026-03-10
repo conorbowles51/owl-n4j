@@ -44,15 +44,19 @@ export function useSimilarEntities(caseId: string) {
         onTypeComplete: () => {},
         onComplete: (data) => {
           const rawPairs = data.limited_results ?? []
-          const mapped: SimilarPair[] = rawPairs.map((p: any) => ({
-            key1: p.entity1?.key ?? p.key1,
-            name1: p.entity1?.name ?? p.name1,
-            type1: p.entity1?.type ?? p.type1,
-            key2: p.entity2?.key ?? p.key2,
-            name2: p.entity2?.name ?? p.name2,
-            type2: p.entity2?.type ?? p.type2,
-            similarity: p.similarity,
-          }))
+          const mapped: SimilarPair[] = rawPairs.map((p: Record<string, unknown>) => {
+            const e1 = p.entity1 as Record<string, unknown> | undefined
+            const e2 = p.entity2 as Record<string, unknown> | undefined
+            return {
+              key1: (e1?.key ?? p.key1) as string,
+              name1: (e1?.name ?? p.name1) as string,
+              type1: (e1?.type ?? p.type1) as string,
+              key2: (e2?.key ?? p.key2) as string,
+              name2: (e2?.name ?? p.name2) as string,
+              type2: (e2?.type ?? p.type2) as string,
+              similarity: p.similarity as number,
+            }
+          })
           setResults(mapped)
           setIsScanning(false)
           setCurrentType(null)

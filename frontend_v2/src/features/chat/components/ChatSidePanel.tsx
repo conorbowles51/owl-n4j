@@ -10,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { ChatMessage, type ChatMessageData } from "./ChatMessage"
+import { ChatMessage } from "./ChatMessage"
 import { cn } from "@/lib/cn"
 import { useQuickChat } from "../hooks/use-quick-chat"
 import { useGraphStore } from "@/stores/graph.store"

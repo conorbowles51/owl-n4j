@@ -127,6 +127,41 @@ async def get_chat_history(chat_id: str, user: dict = Depends(get_current_user))
     )
 
 
+class ChatHistoryUpdate(BaseModel):
+    """Request model for updating a chat history."""
+    name: Optional[str] = None
+    messages: Optional[List[dict]] = None
+
+
+@router.put("/{chat_id}", response_model=ChatHistoryResponse)
+async def update_chat_history(chat_id: str, update: ChatHistoryUpdate, user: dict = Depends(get_current_user)):
+    """Update an existing chat history."""
+    chat = chat_history_storage.get(chat_id)
+    if chat is None or chat.get("owner") != user["username"]:
+        raise HTTPException(status_code=404, detail="Chat history not found")
+
+    if update.name is not None:
+        chat["name"] = update.name
+    if update.messages is not None:
+        chat["messages"] = update.messages
+    chat["timestamp"] = datetime.now().isoformat()
+
+    chat_history_storage.save(chat_id, chat)
+
+    return ChatHistoryResponse(
+        id=chat["id"],
+        name=chat["name"],
+        messages=chat["messages"],
+        timestamp=chat["timestamp"],
+        created_at=chat["created_at"],
+        owner=chat["owner"],
+        snapshot_id=chat.get("snapshot_id"),
+        case_id=chat.get("case_id"),
+        case_version=chat.get("case_version"),
+        message_count=len(chat.get("messages", [])),
+    )
+
+
 @router.delete("/{chat_id}")
 async def delete_chat_history(chat_id: str, user: dict = Depends(get_current_user)):
     """Delete a chat history."""

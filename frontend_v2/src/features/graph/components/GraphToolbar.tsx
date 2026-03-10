@@ -17,7 +17,6 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import {
   Tooltip,
   TooltipContent,
@@ -63,14 +62,14 @@ export function GraphToolbar({
   const zoomIn = () => {
     const fg = graphRef?.current
     if (!fg) return
-    const z = (fg as any).zoom?.()
+    const z = fg.zoom()
     if (z) fg.zoom(z * 1.5, 400)
   }
 
   const zoomOut = () => {
     const fg = graphRef?.current
     if (!fg) return
-    const z = (fg as any).zoom?.()
+    const z = fg.zoom()
     if (z) fg.zoom(z / 1.5, 400)
   }
 

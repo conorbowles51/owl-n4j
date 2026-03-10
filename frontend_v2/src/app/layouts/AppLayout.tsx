@@ -16,19 +16,31 @@ export function AppLayout() {
   const caseMatch = useMatch("/cases/:id/*")
   const currentCaseId = caseMatch?.params.id ?? null
   const isGraphRoute = !!useMatch("/cases/:id/graph")
+  const isChatRoute = !!useMatch("/cases/:id/chat")
+  const isCaseRoute = !!caseMatch
 
   const graphPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
   const graphPanelTab = useUIStore((s) => s.graphPanelTab)
   const setGraphPanelCollapsed = useUIStore((s) => s.setGraphPanelCollapsed)
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
 
+  // Routes that manage their own side panel
+  const hasSelfManagedPanel = isGraphRoute || isChatRoute
+
   // Keyboard shortcut: Ctrl+Shift+L — works globally
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.shiftKey && e.key === "L") {
         e.preventDefault()
-        if (isGraphRoute) {
-          // On graph route: toggle graph panel to chat
+        if (hasSelfManagedPanel) {
+          // Graph/chat routes manage their own chat panel
+          if (!graphPanelCollapsed && graphPanelTab === "chat") {
+            setGraphPanelCollapsed(true)
+          } else {
+            expandGraphPanelTo("chat")
+          }
+        } else if (isCaseRoute) {
+          // Other case routes: toggle the CaseLayout side panel to chat
           if (!graphPanelCollapsed && graphPanelTab === "chat") {
             setGraphPanelCollapsed(true)
           } else {
@@ -41,9 +53,10 @@ export function AppLayout() {
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [chatPanelOpen, setChatPanelOpen, isGraphRoute, graphPanelCollapsed, graphPanelTab, setGraphPanelCollapsed, expandGraphPanelTo])
+  }, [chatPanelOpen, setChatPanelOpen, hasSelfManagedPanel, isCaseRoute, graphPanelCollapsed, graphPanelTab, setGraphPanelCollapsed, expandGraphPanelTo])
 
-  const showAppChat = chatPanelOpen && !isGraphRoute && !!currentCaseId
+  // Only show app-level chat for non-case routes
+  const showAppChat = chatPanelOpen && !isCaseRoute && !!currentCaseId
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

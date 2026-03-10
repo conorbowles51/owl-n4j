@@ -46,8 +46,8 @@ export function useTableState() {
   const [state, setState] = useState<TableState>(loadState)
 
   useEffect(() => {
-    const { search: _, ...persist } = state
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persist))
+    const { sortKey, sortAsc, columns } = state
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sortKey, sortAsc, columns }))
   }, [state])
 
   const setSearch = useCallback((search: string) => {

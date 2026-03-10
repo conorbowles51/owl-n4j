@@ -40,8 +40,6 @@ interface UIStore {
   setGraphPanelToolOverlay: (overlay: GraphPanelToolOverlay) => void
 }
 
-const PERSISTED_KEYS = ["graphPanelCollapsed", "graphPanelTab"] as const
-
 export const useUIStore = create<UIStore>()(
   persist(
     (set) => ({

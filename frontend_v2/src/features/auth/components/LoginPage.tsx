@@ -13,6 +13,7 @@ import {
   Search,
   Lock,
 } from "lucide-react"
+import { AnimatedGraphBackground } from "./AnimatedGraphBackground"
 
 export function LoginPage() {
   const [username, setUsername] = useState("")
@@ -62,27 +63,8 @@ export function LoginPage() {
           }}
         />
 
-        {/* Decorative connection lines — abstract graph visualization */}
-        <svg
-          className="absolute inset-0 h-full w-full opacity-[0.07]"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <line x1="20%" y1="25%" x2="45%" y2="40%" stroke="#D4920A" strokeWidth="1" />
-          <line x1="45%" y1="40%" x2="70%" y2="30%" stroke="#6366F1" strokeWidth="1" />
-          <line x1="70%" y1="30%" x2="80%" y2="55%" stroke="#14B8A6" strokeWidth="1" />
-          <line x1="45%" y1="40%" x2="35%" y2="65%" stroke="#8B5CF6" strokeWidth="1" />
-          <line x1="35%" y1="65%" x2="60%" y2="75%" stroke="#EC4899" strokeWidth="1" />
-          <line x1="60%" y1="75%" x2="80%" y2="55%" stroke="#06B6D4" strokeWidth="1" />
-          <line x1="20%" y1="25%" x2="15%" y2="55%" stroke="#F59E0B" strokeWidth="1" />
-          <line x1="15%" y1="55%" x2="35%" y2="65%" stroke="#64748B" strokeWidth="1" />
-          <circle cx="20%" cy="25%" r="3" fill="#6366F1" opacity="0.6" />
-          <circle cx="45%" cy="40%" r="4" fill="#D4920A" opacity="0.6" />
-          <circle cx="70%" cy="30%" r="3" fill="#14B8A6" opacity="0.6" />
-          <circle cx="80%" cy="55%" r="3" fill="#06B6D4" opacity="0.6" />
-          <circle cx="35%" cy="65%" r="3" fill="#8B5CF6" opacity="0.6" />
-          <circle cx="60%" cy="75%" r="3" fill="#EC4899" opacity="0.6" />
-          <circle cx="15%" cy="55%" r="3" fill="#F59E0B" opacity="0.6" />
-        </svg>
+        {/* Animated graph visualization */}
+        <AnimatedGraphBackground />
 
         {/* Ambient glow */}
         <div className="absolute left-1/2 top-1/3 h-[500px] w-[500px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-500/[0.04] blur-[120px]" />

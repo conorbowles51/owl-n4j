@@ -8,6 +8,7 @@ interface ContextNode {
   type: EntityType
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function useChatContext(_caseId: string) {
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
 

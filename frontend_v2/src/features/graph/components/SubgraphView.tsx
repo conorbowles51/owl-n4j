@@ -1,5 +1,5 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from "react"
-import ForceGraph2D, { type ForceGraphMethods } from "react-force-graph-2d"
+import ForceGraph2D, { type ForceGraphMethods, type NodeObject } from "react-force-graph-2d"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Trash2, ChevronDown, ChevronRight } from "lucide-react"
@@ -21,7 +21,7 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
   const [analysisCollapsed, setAnalysisCollapsed] = useState(true)
   const { theme } = useTheme()
 
-  const { subgraphNodeKeys, removeFromSubgraph, clearSubgraph, selectNodes } =
+  const { subgraphNodeKeys, clearSubgraph, selectNodes } =
     useGraphStore()
 
   const isDark =
@@ -68,7 +68,7 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
   )
 
   const handleNodeClick = useCallback(
-    (node: any) => {
+    (node: { key?: string }) => {
       if (node?.key) {
         selectNodes([node.key])
       }
@@ -107,12 +107,12 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
       {/* Force graph — fills available space */}
       <div ref={containerRef} className="flex-1 min-h-0">
         <ForceGraph2D
-          ref={sgRef as any}
+          ref={sgRef as React.RefObject<ForceGraphMethods>}
           graphData={fgData}
           width={dimensions.width}
           height={dimensions.height}
           backgroundColor={isDark ? "#0B0F1A" : "#F8FAFC"}
-          nodeCanvasObject={(node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          nodeCanvasObject={(node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const x = node.x ?? 0
             const y = node.y ?? 0
             const sz = 5

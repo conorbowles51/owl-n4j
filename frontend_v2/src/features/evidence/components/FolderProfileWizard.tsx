@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   Dialog,
   DialogContent,
@@ -85,26 +85,28 @@ export function FolderProfileWizard({
   const testMutation = useTestFolderProfile()
 
   // Initialize file overrides when folder files load
-  useEffect(() => {
-    if (folderFiles?.length) {
-      setFileOverrides(
-        folderFiles.map((f) => ({ filename: f, role: "document" }))
-      )
-    }
-  }, [folderFiles])
+  const [appliedFiles, setAppliedFiles] = useState<string[] | null>(null)
+  if (folderFiles?.length && folderFiles !== appliedFiles) {
+    setAppliedFiles(folderFiles)
+    setFileOverrides(
+      folderFiles.map((f) => ({ filename: f, role: "document" }))
+    )
+  }
 
   // Reset on open
-  useEffect(() => {
-    if (open) {
-      setStep("mode")
-      setMode("generate")
-      setInstructions("")
-      setProfileName("")
-      setSelectedProfile("")
-      setGeneratedJson("")
-      setTestResult(null)
-    }
-  }, [open])
+  const [prevOpen, setPrevOpen] = useState(false)
+  if (open && !prevOpen) {
+    setPrevOpen(true)
+    setStep("mode")
+    setMode("generate")
+    setInstructions("")
+    setProfileName("")
+    setSelectedProfile("")
+    setGeneratedJson("")
+    setTestResult(null)
+  } else if (!open && prevOpen) {
+    setPrevOpen(false)
+  }
 
   const STEPS: WizardStep[] = ["mode", "configure", "preview", "test"]
   const stepIndex = STEPS.indexOf(step)

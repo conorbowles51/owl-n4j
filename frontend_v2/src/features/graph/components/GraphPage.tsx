@@ -203,7 +203,7 @@ export function GraphPage() {
     <div className="flex h-full flex-col">
       <GraphToolbar
         caseId={caseId!}
-        graphRef={graphRef as any}
+        graphRef={graphRef}
         onOpenAddNode={() => setAddNodeOpen(true)}
         onOpenCreateRelationship={() => setCreateRelOpen(true)}
         onOpenForceControls={() => toggleToolOverlay("force-controls")}
@@ -226,7 +226,7 @@ export function GraphPage() {
               <GraphCanvas
                 data={displayData}
                 caseId={caseId!}
-                graphRef={graphRef as any}
+                graphRef={graphRef}
               />
               <GraphLegend nodes={displayData.nodes} />
             </div>

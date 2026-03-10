@@ -1,16 +1,20 @@
 import { useState } from "react"
-import { User, Bot, Copy, Check, ChevronDown, ChevronRight, FileText } from "lucide-react"
+import {
+  User,
+  Bot,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Network,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { CostBadge } from "@/components/ui/cost-badge"
 import { cn } from "@/lib/cn"
-
-export interface ChatMessageData {
-  role: "user" | "assistant"
-  content: string
-  sources?: { filename: string; excerpt?: string }[]
-  cost?: number
-  timestamp?: string
-}
+import { Markdown } from "@/components/ui/markdown"
+import type { ChatMessageData } from "../types"
 
 interface ChatMessageProps {
   message: ChatMessageData
@@ -27,6 +31,8 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
+
+  const entityCount = message.resultGraph?.nodes?.length ?? 0
 
   return (
     <div
@@ -62,11 +68,31 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
             {message.cost != null && message.cost > 0 && (
               <CostBadge amount={message.cost} />
             )}
+            {message.model_info && (
+              <Badge variant="outline" className="text-[10px] py-0">
+                {message.model_info.model}
+              </Badge>
+            )}
           </div>
 
-          <div className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
-            {message.content}
-          </div>
+          {isUser ? (
+            <div className="mt-1 text-sm leading-relaxed whitespace-pre-wrap">
+              {message.content}
+            </div>
+          ) : (
+            <Markdown
+              content={message.content}
+              className="mt-1 text-sm leading-relaxed"
+            />
+          )}
+
+          {/* Result graph indicator */}
+          {!isUser && entityCount > 0 && (
+            <div className="mt-1.5 flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+              <Network className="size-3" />
+              <span>{entityCount} entities found</span>
+            </div>
+          )}
 
           {/* Sources */}
           {message.sources && message.sources.length > 0 && (
@@ -80,7 +106,8 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
                 ) : (
                   <ChevronRight className="size-3" />
                 )}
-                {message.sources.length} source{message.sources.length !== 1 ? "s" : ""}
+                {message.sources.length} source
+                {message.sources.length !== 1 ? "s" : ""}
               </button>
               {showSources && (
                 <div className="mt-1 space-y-1">
@@ -117,3 +144,5 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
     </div>
   )
 }
+
+export type { ChatMessageData }

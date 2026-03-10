@@ -114,7 +114,6 @@ export function EvidenceUploader({ caseId, onComplete }: EvidenceUploaderProps) 
               type="file"
               className="hidden"
               onChange={handleFolderSelect}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
               {...({ webkitdirectory: "", directory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
               multiple
             />

@@ -23,7 +23,6 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
-  MapPin,
 } from "lucide-react"
 import { graphAPI } from "../api"
 import { evidenceAPI } from "@/features/evidence/api"

@@ -4,7 +4,6 @@ import {
   UserPlus,
   Trash2,
   Crown,
-  ChevronDown,
 } from "lucide-react"
 import {
   Dialog,
@@ -14,7 +13,6 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import {

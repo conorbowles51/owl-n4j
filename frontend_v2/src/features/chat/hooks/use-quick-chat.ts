@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react"
 import { chatAPI } from "../api"
-import type { ChatMessageData } from "../components/ChatMessage"
+import type { ChatMessageData } from "../types"
 
 interface QuickChatOptions {
   caseId: string | null

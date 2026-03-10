@@ -15,9 +15,11 @@ import type {
 /*  Raw backend shape → frontend mapping                               */
 /* ------------------------------------------------------------------ */
 
-type RawGraphData = { nodes: any[]; links: any[] }
+type RawNode = Record<string, unknown>
+type RawEdge = Record<string, unknown>
+type RawGraphData = { nodes: RawNode[]; links: RawEdge[] }
 
-function safeParse(val: unknown): any[] | undefined {
+function safeParse(val: unknown): unknown[] | undefined {
   if (Array.isArray(val)) return val
   if (typeof val === "string") {
     try {
@@ -32,7 +34,7 @@ function safeParse(val: unknown): any[] | undefined {
 
 function toGraphData(raw: RawGraphData): GraphData {
   return {
-    nodes: (raw.nodes ?? []).map((n: any) => ({
+    nodes: (raw.nodes ?? []).map((n: RawNode) => ({
       key: n.key,
       label: n.name || n.label || n.key,
       type: (n.type || "").toLowerCase(),
@@ -45,7 +47,7 @@ function toGraphData(raw: RawGraphData): GraphData {
       mentioned: n.mentioned,
       properties: n.properties ?? {},
     })),
-    edges: (raw.links ?? []).map((e: any) => ({
+    edges: (raw.links ?? []).map((e: RawEdge) => ({
       source: e.source,
       target: e.target,
       type: e.type || e.relationship || "",
@@ -75,7 +77,11 @@ export const graphAPI = {
   },
 
   getNodeDetails: async (key: string, caseId: string) => {
-    const raw = await fetchAPI<any>(
+    const raw = await fetchAPI<
+      Record<string, unknown> & {
+        connections?: { relationship?: string; key: string; name: string; type: string }[]
+      }
+    >(
       `/api/graph/node/${encodeURIComponent(key)}?case_id=${caseId}`
     )
     // Group flat connections into ConnectionGroup[]
@@ -344,7 +350,7 @@ export const graphAPI = {
   /* --- Cypher --- */
 
   executeCypher: (caseId: string, query: string) =>
-    fetchAPI<{ columns: string[]; rows: any[][] }>("/api/graph/cypher", {
+    fetchAPI<{ columns: string[]; rows: unknown[][] }>("/api/graph/cypher", {
       method: "POST",
       body: { case_id: caseId, query },
     }),
@@ -411,7 +417,7 @@ export function findSimilarEntitiesStream(
     es.close()
   })
   es.addEventListener("error", (e) => {
-    callbacks.onError?.((e as any).data ?? "Stream error")
+    callbacks.onError?.((e as MessageEvent).data ?? "Stream error")
     es.close()
   })
 

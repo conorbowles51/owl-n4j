@@ -49,7 +49,7 @@ export function ProfileEditorDialog({
   cloneFrom,
   onSaved,
 }: ProfileEditorDialogProps) {
-  const { data: existingProfile, isLoading: profileLoading } = useProfile(
+  const { data: existingProfile, isLoading: profileLoading, dataUpdatedAt } = useProfile(
     editingProfile || cloneFrom || undefined
   )
   useProfiles() // preload profiles list
@@ -68,6 +68,7 @@ export function ProfileEditorDialog({
   const [llmModelId, setLlmModelId] = useState("")
   const [availableModels, setAvailableModels] = useState<LLMModel[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [profileAppliedAt, setProfileAppliedAt] = useState(0)
 
   // Load models
   useEffect(() => {
@@ -77,9 +78,9 @@ export function ProfileEditorDialog({
     }
   }, [open])
 
-  // Populate from existing profile
-  useEffect(() => {
-    if (!existingProfile) return
+  // Populate from existing profile (setState during render, guarded by timestamp)
+  if (existingProfile && dataUpdatedAt > 0 && dataUpdatedAt !== profileAppliedAt) {
+    setProfileAppliedAt(dataUpdatedAt)
     if (editingProfile) setName(existingProfile.name)
     setDescription(existingProfile.description ?? "")
     setCaseType(existingProfile.case_type ?? "")
@@ -91,25 +92,28 @@ export function ProfileEditorDialog({
     setChatTemperature(existingProfile.chat?.temperature ?? 1.0)
     setLlmProvider(existingProfile.llm_config?.provider ?? "openai")
     setLlmModelId(existingProfile.llm_config?.model_id ?? "")
-  }, [existingProfile, editingProfile])
+  }
 
-  // Reset on close
-  useEffect(() => {
-    if (!open) {
-      setName("")
-      setDescription("")
-      setCaseType("")
-      setIngestionSystemContext("")
-      setSpecialEntityTypes([])
-      setIngestionTemperature(1.0)
-      setChatSystemContext("")
-      setChatAnalysisGuidance("")
-      setChatTemperature(1.0)
-      setLlmProvider("openai")
-      setLlmModelId("")
-      setError(null)
-    }
-  }, [open])
+  const resetForm = () => {
+    setProfileAppliedAt(0)
+    setName("")
+    setDescription("")
+    setCaseType("")
+    setIngestionSystemContext("")
+    setSpecialEntityTypes([])
+    setIngestionTemperature(1.0)
+    setChatSystemContext("")
+    setChatAnalysisGuidance("")
+    setChatTemperature(1.0)
+    setLlmProvider("openai")
+    setLlmModelId("")
+    setError(null)
+  }
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) resetForm()
+    onOpenChange(nextOpen)
+  }
 
   const handleSave = () => {
     if (!name.trim()) {
@@ -140,7 +144,7 @@ export function ProfileEditorDialog({
       onSuccess: () => {
         toast.success("Profile saved")
         onSaved?.()
-        onOpenChange(false)
+        handleOpenChange(false)
       },
       onError: (err) => {
         setError(err.message)
@@ -151,7 +155,7 @@ export function ProfileEditorDialog({
   const filteredModels = availableModels.filter((m) => m.provider === llmProvider)
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -400,7 +404,7 @@ export function ProfileEditorDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Cancel
           </Button>
           <Button

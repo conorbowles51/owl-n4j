@@ -2,7 +2,6 @@ import { useState, useMemo } from "react"
 import {
   Camera,
   Trash2,
-  Download,
   ChevronDown,
   ChevronRight,
   Clock,

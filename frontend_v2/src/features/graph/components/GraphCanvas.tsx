@@ -7,7 +7,7 @@ import ForceGraph2D, {
 import { useGraphStore } from "@/stores/graph.store"
 import { getNodeColor, communityColors, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
-import type { GraphData, GraphNode, GraphEdge } from "@/types/graph.types"
+import type { GraphData } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
 /*  Types for react-force-graph-2d                                     */
@@ -36,14 +36,14 @@ interface FGLink extends LinkObject {
 interface GraphCanvasProps {
   data: GraphData
   caseId: string
-  graphRef?: React.MutableRefObject<ForceGraphMethods<FGNode, FGLink> | undefined>
+  graphRef?: React.MutableRefObject<ForceGraphMethods | undefined>
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: GraphCanvasProps) {
+export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const internalRef = useRef<ForceGraphMethods<FGNode, FGLink>>()
   const fgRef = externalRef ?? internalRef
@@ -79,7 +79,8 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
   /* ---- Drag selection state ---- */
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
   const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null)
-  const isDragging = useRef(false)
+  const isDraggingRef = useRef(false)
+  const [isDraggingState, setIsDraggingState] = useState(false)
 
   /* ---- Resize observer ---- */
   useEffect(() => {
@@ -151,7 +152,8 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       hasZoomedToFit.current = true
       setTimeout(() => fgRef.current?.zoomToFit(400, 50), 100)
     }
-  }, [fgRef, fgData.nodes.length])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fgData.nodes.length])
 
   /* ---- Node color logic ---- */
   const getColor = useCallback(
@@ -324,7 +326,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
   )
 
   const handleBackgroundClick = useCallback(() => {
-    if (isDragging.current) return
+    if (isDraggingRef.current) return
     selectNodes([])
     setDragStart(null)
     setDragEnd(null)
@@ -358,7 +360,8 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       const y = e.clientY - rect.top
       setDragStart({ x, y })
       setDragEnd({ x, y })
-      isDragging.current = false
+      isDraggingRef.current = false
+      setIsDraggingState(false)
     },
     [selectionMode]
   )
@@ -370,7 +373,8 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       if (!rect) return
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
-      isDragging.current = true
+      isDraggingRef.current = true
+      setIsDraggingState(true)
       setDragEnd({ x, y })
     },
     [selectionMode, dragStart]
@@ -390,7 +394,8 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       if (dx < 5 && dy < 5) {
         setDragStart(null)
         setDragEnd(null)
-        isDragging.current = false
+        isDraggingRef.current = false
+        setIsDraggingState(false)
         return
       }
 
@@ -398,7 +403,8 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       if (!fg) {
         setDragStart(null)
         setDragEnd(null)
-        isDragging.current = false
+        isDraggingRef.current = false
+        setIsDraggingState(false)
         return
       }
 
@@ -429,9 +435,11 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
 
       setDragStart(null)
       setDragEnd(null)
-      isDragging.current = false
+      isDraggingRef.current = false
+      setIsDraggingState(false)
     },
-    [selectionMode, dragStart, fgData.nodes, selectNodes, fgRef]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectionMode, dragStart, fgData.nodes, selectNodes]
   )
 
   /* ---- Node drag to pin ---- */
@@ -454,7 +462,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       onPointerUp={handlePointerUp}
     >
       <ForceGraph2D
-        ref={fgRef as any}
+        ref={fgRef as React.MutableRefObject<ForceGraphMethods<FGNode, FGLink>>}
         graphData={fgData}
         width={dimensions.width}
         height={dimensions.height}
@@ -482,7 +490,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       />
 
       {/* Drag selection rectangle overlay */}
-      {selectionMode === "drag" && dragStart && dragEnd && isDragging.current && (
+      {selectionMode === "drag" && dragStart && dragEnd && isDraggingState && (
         <div
           className="pointer-events-none absolute border border-blue-500/50 bg-blue-500/10"
           style={{
