@@ -85,7 +85,7 @@ export function EvidenceRow({
               size="icon-sm"
               onClick={() => onDelete(file)}
             >
-              <Trash2 className="size-3.5 text-red-400" />
+              <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
             </Button>
           )}
         </div>

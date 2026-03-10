@@ -135,7 +135,7 @@ export function CypherPanel({ caseId, className }: CypherPanelProps) {
 
       {/* Results */}
       {error && (
-        <div className="rounded-md bg-red-500/10 p-3 text-xs text-red-400">
+        <div className="rounded-md bg-red-50 dark:bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400">
           {error}
         </div>
       )}

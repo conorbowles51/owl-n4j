@@ -29,7 +29,7 @@ export function MapCanvas({
   // For now, render a visual placeholder with location markers
 
   return (
-    <div ref={containerRef} className="relative h-full w-full bg-slate-900">
+    <div ref={containerRef} className="relative h-full w-full bg-slate-100 dark:bg-slate-900">
       {/* Map background placeholder */}
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="text-center">

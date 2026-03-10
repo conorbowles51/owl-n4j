@@ -29,11 +29,11 @@ const STATUS_BADGE: Record<string, "info" | "success" | "danger" | "warning" | "
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case "running":
-      return <Loader2 className="size-4 animate-spin text-blue-400" />
+      return <Loader2 className="size-4 animate-spin text-blue-600 dark:text-blue-400" />
     case "completed":
-      return <CheckCircle2 className="size-4 text-emerald-400" />
+      return <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
     case "failed":
-      return <AlertCircle className="size-4 text-red-400" />
+      return <AlertCircle className="size-4 text-red-600 dark:text-red-400" />
     default:
       return <Clock className="size-4 text-muted-foreground" />
   }
@@ -78,7 +78,7 @@ export function TaskCard({ task, onDelete }: TaskCardProps) {
           onClick={() => onDelete(task.id)}
           className="shrink-0"
         >
-          <Trash2 className="size-3.5 text-red-400" />
+          <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
         </Button>
       </div>
 
@@ -104,7 +104,7 @@ export function TaskCard({ task, onDelete }: TaskCardProps) {
 
       {/* Error */}
       {task.error && (
-        <div className="mt-3 rounded-md bg-red-500/10 px-3 py-2 text-xs text-red-400">
+        <div className="mt-3 rounded-md bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
           {task.error}
         </div>
       )}
@@ -150,7 +150,7 @@ export function TaskCard({ task, onDelete }: TaskCardProps) {
                   </Badge>
                   {file.error && (
                     <span
-                      className="max-w-[150px] truncate text-[10px] text-red-400"
+                      className="max-w-[150px] truncate text-[10px] text-red-600 dark:text-red-400"
                       title={file.error}
                     >
                       {file.error}

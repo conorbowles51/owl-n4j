@@ -168,10 +168,10 @@ export function EvidenceDetailSheet({
             {file.last_error && (
               <>
                 <Separator className="my-3" />
-                <div className="flex items-start gap-2 rounded-md bg-red-500/10 p-3">
-                  <AlertCircle className="mt-0.5 size-4 text-red-400" />
+                <div className="flex items-start gap-2 rounded-md bg-red-50 dark:bg-red-500/10 p-3">
+                  <AlertCircle className="mt-0.5 size-4 text-red-600 dark:text-red-400" />
                   <div>
-                    <p className="text-xs font-medium text-red-400">Processing Error</p>
+                    <p className="text-xs font-medium text-red-600 dark:text-red-400">Processing Error</p>
                     <p className="mt-1 text-xs text-muted-foreground">{file.last_error}</p>
                   </div>
                 </div>

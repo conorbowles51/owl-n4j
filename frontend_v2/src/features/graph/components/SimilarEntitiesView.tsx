@@ -153,7 +153,7 @@ export function SimilarEntitiesView({
       )}
 
       {error && (
-        <div className="mx-4 mt-2 rounded-md bg-red-500/10 p-2 text-xs text-red-400">
+        <div className="mx-4 mt-2 rounded-md bg-red-50 dark:bg-red-500/10 p-2 text-xs text-red-600 dark:text-red-400">
           {error}
         </div>
       )}

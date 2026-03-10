@@ -5,7 +5,8 @@ import ForceGraph2D, {
   type LinkObject,
 } from "react-force-graph-2d"
 import { useGraphStore } from "@/stores/graph.store"
-import { getNodeColor, communityColors } from "@/lib/theme"
+import { getNodeColor, communityColors, getCanvasColors } from "@/lib/theme"
+import { useTheme } from "@/lib/theme-provider"
 import type { GraphData, GraphNode, GraphEdge } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
@@ -65,6 +66,13 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
     selectionMode,
     openContextMenu,
   } = useGraphStore()
+
+  const { theme } = useTheme()
+  const isDark =
+    theme === "dark" ||
+    (theme === "system" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches)
+  const canvasColors = getCanvasColors(isDark)
 
   const [hoveredNode, setHoveredNode] = useState<string | null>(null)
 
@@ -200,7 +208,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       if (isHovered && !isSelected) {
         ctx.beginPath()
         ctx.arc(x, y, sz + 2, 0, 2 * Math.PI)
-        ctx.strokeStyle = "#94A3B8"
+        ctx.strokeStyle = canvasColors.hoverStroke
         ctx.lineWidth = 1.5 / globalScale
         ctx.stroke()
       }
@@ -216,7 +224,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
-      ctx.fillStyle = "#AAB7C7"
+      ctx.fillStyle = canvasColors.labelText
       const label =
         node.label.length > 20
           ? node.label.slice(0, 18) + "..."
@@ -225,7 +233,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
 
       ctx.globalAlpha = 1.0
     },
-    [selectedNodeKeys, hoveredNode, getColor, analysisHighlight, highlightedPaths]
+    [selectedNodeKeys, hoveredNode, getColor, analysisHighlight, highlightedPaths, canvasColors]
   )
 
   /* ---- Custom link renderer ---- */
@@ -243,7 +251,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       ctx.beginPath()
       ctx.moveTo(src.x, src.y!)
       ctx.lineTo(tgt.x, tgt.y!)
-      ctx.strokeStyle = isOnPath ? "#3B82F6" : "#2D3A4F"
+      ctx.strokeStyle = isOnPath ? "#3B82F6" : canvasColors.linkColor
       ctx.lineWidth = isOnPath ? width * 2 : width
       ctx.globalAlpha = isOnPath ? 0.9 : 0.4
       ctx.stroke()
@@ -271,7 +279,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
         endY - arrowLen * Math.sin(angle + 0.4)
       )
       ctx.closePath()
-      ctx.fillStyle = isOnPath ? "#3B82F6" : "#2D3A4F"
+      ctx.fillStyle = isOnPath ? "#3B82F6" : canvasColors.linkColor
       ctx.fill()
 
       // Relationship label
@@ -286,21 +294,21 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
         const text = link.type
         const metrics = ctx.measureText(text)
         const pad = 2 / globalScale
-        ctx.fillStyle = "rgba(11,15,26,0.85)"
+        ctx.fillStyle = canvasColors.labelBg
         ctx.fillRect(
           midX - metrics.width / 2 - pad,
           midY - fontSize / 2 - pad,
           metrics.width + pad * 2,
           fontSize + pad * 2
         )
-        ctx.fillStyle = "#94A3B8"
+        ctx.fillStyle = canvasColors.labelText
         ctx.globalAlpha = 0.8
         ctx.fillText(text, midX, midY)
       }
 
       ctx.globalAlpha = 1.0
     },
-    [showRelationshipLabels, highlightedPaths]
+    [showRelationshipLabels, highlightedPaths, canvasColors]
   )
 
   /* ---- Click handlers ---- */
@@ -440,7 +448,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
   return (
     <div
       ref={containerRef}
-      className="relative h-full w-full bg-slate-950"
+      className="relative h-full w-full bg-slate-100 dark:bg-slate-950"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -450,7 +458,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
         graphData={fgData}
         width={dimensions.width}
         height={dimensions.height}
-        backgroundColor="#0B0F1A"
+        backgroundColor={canvasColors.background}
         nodeCanvasObject={paintNode}
         nodePointerAreaPaint={(node: FGNode, color, ctx) => {
           const sz = 4 + Math.min((node._degree ?? 0) * 0.8, 12)
@@ -487,7 +495,7 @@ export function GraphCanvas({ data, caseId: _caseId, graphRef: externalRef }: Gr
       )}
 
       {/* Stats overlay */}
-      <div className="absolute bottom-3 left-3 rounded-md bg-slate-900/80 px-2 py-1 text-[10px] text-slate-400">
+      <div className="absolute bottom-3 left-3 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400">
         {fgData.nodes.length} nodes · {fgData.links.length} edges
         {hiddenNodeKeys.size > 0 && ` · ${hiddenNodeKeys.size} hidden`}
       </div>

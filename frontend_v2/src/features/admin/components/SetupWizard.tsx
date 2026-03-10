@@ -39,7 +39,7 @@ export function SetupWizard({ onComplete }: SetupWizardProps) {
     <div className="flex h-screen items-center justify-center bg-background">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-amber-500/10">
+          <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-500/10">
             {step === 0 ? (
               <Sparkles className="size-6 text-amber-500" />
             ) : (

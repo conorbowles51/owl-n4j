@@ -101,7 +101,7 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
                 onClick={() => permanentDelete(e.key)}
                 disabled={actionKey === e.key}
                 title="Delete permanently"
-                className="text-red-400 hover:text-red-300"
+                className="text-red-600 dark:text-red-400 hover:text-red-300"
               >
                 <Trash2 className="size-3.5" />
               </Button>

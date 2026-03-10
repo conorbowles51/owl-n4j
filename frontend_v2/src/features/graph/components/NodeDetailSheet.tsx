@@ -343,7 +343,7 @@ export function NodeDetailSheet({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-5 text-[10px] text-green-400"
+                            className="h-5 text-[10px] text-green-600 dark:text-green-400"
                             onClick={() =>
                               verifyInsightMutation.mutate({ insightIndex: i })
                             }
@@ -354,7 +354,7 @@ export function NodeDetailSheet({
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-5 text-[10px] text-red-400"
+                            className="h-5 text-[10px] text-red-600 dark:text-red-400"
                             onClick={() =>
                               rejectInsightMutation.mutate({ insightIndex: i })
                             }
@@ -365,7 +365,7 @@ export function NodeDetailSheet({
                         </div>
                       )}
                       {insight.verified && insight.verified_by && (
-                        <p className="mt-1 text-[10px] text-green-400">
+                        <p className="mt-1 text-[10px] text-green-600 dark:text-green-400">
                           Verified by {insight.verified_by}
                         </p>
                       )}

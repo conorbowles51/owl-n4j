@@ -22,39 +22,47 @@ import {
   X,
 } from "lucide-react"
 import { useState } from "react"
-import type { SimilarPair } from "@/types/graph.types"
+import type { NodeDetail, SimilarPair } from "@/types/graph.types"
 
 interface EntityComparisonDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  pair: SimilarPair | null
+  /** When comparing from similar-entities scan */
+  pair?: SimilarPair | null
+  /** When comparing pre-fetched entities (e.g. from graph selection) */
+  entity1?: NodeDetail | null
+  entity2?: NodeDetail | null
   caseId: string
-  onMerge: (pair: SimilarPair) => void
-  onReject: (pair: SimilarPair) => void
+  onMerge?: (pair: SimilarPair) => void
+  onReject?: (pair: SimilarPair) => void
 }
 
 export function EntityComparisonDialog({
   open,
   onOpenChange,
   pair,
+  entity1: propEntity1,
+  entity2: propEntity2,
   caseId,
   onMerge,
   onReject,
 }: EntityComparisonDialogProps) {
-  const { data: detail1, isLoading: loading1 } = useNodeDetails(
-    pair?.key1 ?? null,
+  const { data: fetchedDetail1, isLoading: loading1 } = useNodeDetails(
+    !propEntity1 ? (pair?.key1 ?? null) : null,
     caseId
   )
-  const { data: detail2, isLoading: loading2 } = useNodeDetails(
-    pair?.key2 ?? null,
+  const { data: fetchedDetail2, isLoading: loading2 } = useNodeDetails(
+    !propEntity2 ? (pair?.key2 ?? null) : null,
     caseId
   )
 
-  const isLoading = loading1 || loading2
+  const detail1 = propEntity1 ?? fetchedDetail1
+  const detail2 = propEntity2 ?? fetchedDetail2
+  const isLoading = !propEntity1 && !propEntity2 && (loading1 || loading2)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[85vh] flex flex-col">
+      <DialogContent className="sm:max-w-7xl w-[90vw] max-h-[85vh] flex flex-col">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <DialogTitle className="text-base">Entity Comparison</DialogTitle>
@@ -87,29 +95,29 @@ export function EntityComparisonDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Close
           </Button>
-          {pair && (
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  onReject(pair)
-                  onOpenChange(false)
-                }}
-              >
-                <X className="size-3.5" />
-                Dismiss
-              </Button>
-              <Button
-                variant="default"
-                onClick={() => {
-                  onMerge(pair)
-                  onOpenChange(false)
-                }}
-              >
-                <GitMerge className="size-3.5" />
-                Merge
-              </Button>
-            </>
+          {pair && onReject && (
+            <Button
+              variant="ghost"
+              onClick={() => {
+                onReject(pair)
+                onOpenChange(false)
+              }}
+            >
+              <X className="size-3.5" />
+              Dismiss
+            </Button>
+          )}
+          {pair && onMerge && (
+            <Button
+              variant="default"
+              onClick={() => {
+                onMerge(pair)
+                onOpenChange(false)
+              }}
+            >
+              <GitMerge className="size-3.5" />
+              Merge
+            </Button>
           )}
         </DialogFooter>
       </DialogContent>

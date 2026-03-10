@@ -39,7 +39,7 @@ export function ReportViewer({ report, onBack }: ReportViewerProps) {
         <div className="mx-auto max-w-3xl p-6">
           {report.content ? (
             <div
-              className="prose prose-sm prose-invert max-w-none"
+              className="prose prose-sm dark:prose-invert max-w-none"
               dangerouslySetInnerHTML={{ __html: report.content }}
             />
           ) : (

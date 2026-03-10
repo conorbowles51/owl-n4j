@@ -67,7 +67,7 @@ export function ProcessingLogViewer({
   }
 
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col rounded-md overflow-hidden bg-[#0d1117]">
       {/* Level filter bar */}
       <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5 bg-[#161b22]">
         <div className="flex gap-1">

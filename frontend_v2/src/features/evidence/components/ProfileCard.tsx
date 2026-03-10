@@ -55,7 +55,7 @@ export function ProfileCard({ profile, onEdit, onDelete, onClone }: ProfileCardP
           variant="ghost"
           size="sm"
           onClick={() => onDelete(profile.name)}
-          className="h-7 text-xs text-red-400 hover:text-red-400"
+          className="h-7 text-xs text-red-600 dark:text-red-400 hover:text-red-600 dark:hover:text-red-400"
         >
           <Trash2 className="size-3" />
           Delete

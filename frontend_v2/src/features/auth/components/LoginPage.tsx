@@ -50,7 +50,7 @@ export function LoginPage() {
       {/* ── Left: Brand hero area ── */}
       <div className="relative hidden flex-1 overflow-hidden lg:flex lg:flex-col">
         {/* Background with subtle graph pattern */}
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950" />
 
         {/* Decorative grid dots */}
         <div
@@ -97,10 +97,10 @@ export function LoginPage() {
               </span>
             </div>
             <div>
-              <span className="text-lg font-semibold tracking-tight text-slate-50">
+              <span className="text-lg font-semibold tracking-tight text-slate-900 dark:text-slate-50">
                 OWL
               </span>
-              <span className="ml-2 text-xs font-medium tracking-widest text-slate-500 uppercase">
+              <span className="ml-2 text-xs font-medium tracking-widest text-slate-400 dark:text-slate-500 uppercase">
                 Investigation Console
               </span>
             </div>
@@ -109,12 +109,12 @@ export function LoginPage() {
           {/* Center: Hero copy */}
           <div className="max-w-lg space-y-8">
             <div className="space-y-4">
-              <h1 className="text-4xl font-bold leading-tight tracking-tight text-slate-50">
+              <h1 className="text-4xl font-bold leading-tight tracking-tight text-slate-900 dark:text-slate-50">
                 Uncover connections.
                 <br />
                 <span className="text-amber-500">Solve faster.</span>
               </h1>
-              <p className="text-base leading-relaxed text-slate-400">
+              <p className="text-base leading-relaxed text-slate-500 dark:text-slate-400">
                 Graph-powered investigation platform for analysts, investigators,
                 and intelligence teams. Map entities, trace relationships, and
                 surface hidden patterns across complex cases.
@@ -147,9 +147,9 @@ export function LoginPage() {
           </div>
 
           {/* Bottom: Footer */}
-          <div className="flex items-center justify-between text-xs text-slate-600">
+          <div className="flex items-center justify-between text-xs text-slate-400 dark:text-slate-600">
             <span>&copy; {new Date().getFullYear()} OWL Platform</span>
-            <span className="font-mono text-[11px] tracking-wider text-slate-700">
+            <span className="font-mono text-[11px] tracking-wider text-slate-400 dark:text-slate-700">
               v2.0
             </span>
           </div>
@@ -157,7 +157,7 @@ export function LoginPage() {
       </div>
 
       {/* ── Right: Login panel — flush top-to-bottom ── */}
-      <div className="relative flex w-full flex-col border-l border-slate-800/60 bg-card lg:w-[480px] xl:w-[520px]">
+      <div className="relative flex w-full flex-col border-l border-slate-200 dark:border-slate-800/60 bg-card lg:w-[480px] xl:w-[520px]">
         {/* Subtle top accent line */}
         <div className="absolute left-0 right-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-500/40 to-transparent" />
 
@@ -169,7 +169,7 @@ export function LoginPage() {
                 O
               </span>
             </div>
-            <span className="text-base font-semibold tracking-tight text-slate-50">
+            <span className="text-base font-semibold tracking-tight text-slate-900 dark:text-slate-50">
               OWL
             </span>
           </div>
@@ -240,7 +240,7 @@ export function LoginPage() {
             </div>
 
             {error && (
-              <div className="rounded-md border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+              <div className="rounded-md border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 px-3 py-2 text-xs text-red-600 dark:text-red-400">
                 {error}
               </div>
             )}
@@ -261,9 +261,9 @@ export function LoginPage() {
           </form>
 
           {/* Security note */}
-          <div className="mt-10 flex items-start gap-2 rounded-md border border-slate-800/60 bg-slate-900/40 px-3.5 py-3">
-            <Shield className="mt-0.5 size-3.5 shrink-0 text-slate-500" />
-            <p className="text-[11px] leading-relaxed text-slate-500">
+          <div className="mt-10 flex items-start gap-2 rounded-md border border-slate-200 dark:border-slate-800/60 bg-slate-50 dark:bg-slate-900/40 px-3.5 py-3">
+            <Shield className="mt-0.5 size-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+            <p className="text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">
               This is a secured system. All access attempts are logged and
               monitored. Unauthorized access is prohibited.
             </p>
@@ -271,8 +271,8 @@ export function LoginPage() {
         </div>
 
         {/* Panel footer */}
-        <div className="border-t border-slate-800/60 px-10 py-4 sm:px-14 xl:px-16">
-          <p className="text-center text-[11px] text-slate-600">
+        <div className="border-t border-slate-200 dark:border-slate-800/60 px-10 py-4 sm:px-14 xl:px-16">
+          <p className="text-center text-[11px] text-slate-400 dark:text-slate-600">
             Protected by enterprise-grade encryption
           </p>
         </div>
@@ -293,11 +293,11 @@ function FeaturePill({
   description: string
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-slate-800/60 bg-slate-900/50 px-3.5 py-3">
+    <div className="flex items-start gap-3 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/50 px-3.5 py-3">
       <div className="mt-0.5 shrink-0">{icon}</div>
       <div className="min-w-0">
-        <div className="text-sm font-medium text-slate-200">{label}</div>
-        <div className="text-[11px] text-slate-500">{description}</div>
+        <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</div>
+        <div className="text-[11px] text-slate-400 dark:text-slate-500">{description}</div>
       </div>
     </div>
   )

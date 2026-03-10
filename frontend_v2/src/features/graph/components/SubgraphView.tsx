@@ -96,7 +96,7 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
         <Button
           variant="ghost"
           size="sm"
-          className="text-xs text-red-400"
+          className="text-xs text-red-600 dark:text-red-400"
           onClick={clearSubgraph}
         >
           <Trash2 className="size-3.5" />

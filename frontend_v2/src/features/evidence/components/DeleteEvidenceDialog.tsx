@@ -33,7 +33,7 @@ export function DeleteEvidenceDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="size-4 text-red-400" />
+            <AlertTriangle className="size-4 text-red-600 dark:text-red-400" />
             Delete Evidence
           </DialogTitle>
           <DialogDescription>

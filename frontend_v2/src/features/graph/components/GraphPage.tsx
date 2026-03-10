@@ -20,7 +20,7 @@ import { EditNodeDialog } from "./EditNodeDialog"
 import { CreateRelationshipDialog } from "./CreateRelationshipDialog"
 import { MergeEntitiesDialog } from "./MergeEntitiesDialog"
 import { ExpandGraphDialog } from "./ExpandGraphDialog"
-import { EntityComparisonSheet } from "./EntityComparisonSheet"
+import { EntityComparisonDialog } from "./EntityComparisonDialog"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Network } from "lucide-react"
@@ -363,11 +363,12 @@ export function GraphPage() {
         nodeCount={selectedNodeKeys.size}
         onExpand={handleDoExpand}
       />
-      <EntityComparisonSheet
+      <EntityComparisonDialog
         open={compareOpen}
         onOpenChange={setCompareOpen}
         entity1={compareEntity1}
         entity2={compareEntity2}
+        caseId={caseId!}
       />
     </div>
   )

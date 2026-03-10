@@ -12,8 +12,8 @@ export function ImagePreview({ evidenceId }: ImagePreviewProps) {
 
   if (error) {
     return (
-      <div className="flex items-start gap-2 rounded-md bg-red-500/10 p-3">
-        <AlertCircle className="mt-0.5 size-4 text-red-400" />
+      <div className="flex items-start gap-2 rounded-md bg-red-50 dark:bg-red-500/10 p-3">
+        <AlertCircle className="mt-0.5 size-4 text-red-600 dark:text-red-400" />
         <p className="text-xs text-muted-foreground">Failed to load image</p>
       </div>
     )

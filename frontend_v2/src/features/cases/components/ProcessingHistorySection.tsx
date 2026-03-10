@@ -17,10 +17,10 @@ interface LogEntry {
 }
 
 const levelColor: Record<string, string> = {
-  error: "text-red-400",
-  warning: "text-yellow-400",
-  info: "text-blue-400",
-  success: "text-emerald-400",
+  error: "text-red-600 dark:text-red-400",
+  warning: "text-yellow-600 dark:text-yellow-400",
+  info: "text-blue-600 dark:text-blue-400",
+  success: "text-emerald-600 dark:text-emerald-400",
 }
 
 export function ProcessingHistorySection({

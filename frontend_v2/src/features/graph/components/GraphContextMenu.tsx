@@ -120,7 +120,7 @@ export function GraphContextMenu({
     {
       icon: Trash2,
       label: "Delete Node",
-      className: "text-red-400 hover:text-red-300",
+      className: "text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300",
       onClick: () => { onDelete?.(nodeKey); closeContextMenu() },
     },
   ]
@@ -128,22 +128,22 @@ export function GraphContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[180px] rounded-lg border border-slate-700 bg-slate-900 py-1 shadow-xl"
+      className="fixed z-50 min-w-[180px] rounded-lg border border-border bg-popover py-1 shadow-xl"
       style={{ left: x, top: y }}
     >
-      <div className="px-3 py-1.5 text-xs font-medium text-slate-400 truncate max-w-[200px]">
+      <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground truncate max-w-[200px]">
         {nodeLabel}
       </div>
-      <div className="mx-1 border-t border-slate-700/50" />
+      <div className="mx-1 border-t border-border" />
       {items.map((item, i) => {
         if ("separator" in item) {
-          return <div key={i} className="mx-1 my-0.5 border-t border-slate-700/50" />
+          return <div key={i} className="mx-1 my-0.5 border-t border-border" />
         }
         const Icon = item.icon
         return (
           <button
             key={i}
-            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800 ${item.className ?? ""}`}
+            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs text-popover-foreground hover:bg-muted ${item.className ?? ""}`}
             onClick={item.onClick}
           >
             <Icon className="size-3.5" />

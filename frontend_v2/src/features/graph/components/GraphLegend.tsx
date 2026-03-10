@@ -58,9 +58,9 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
   }
 
   return (
-    <div className="absolute bottom-3 right-3 z-10 max-h-[60vh] flex flex-col rounded-lg bg-slate-900/90 backdrop-blur-sm border border-slate-700/50 text-xs">
+    <div className="absolute bottom-3 right-3 z-10 max-h-[60vh] flex flex-col rounded-lg bg-popover/95 backdrop-blur-sm border border-border text-xs">
       <button
-        className="flex w-full items-center gap-1 px-3 py-1.5 text-slate-300 hover:text-white shrink-0"
+        className="flex w-full items-center gap-1 px-3 py-1.5 text-popover-foreground hover:text-foreground shrink-0"
         onClick={handleCollapse}
       >
         {collapsed ? (
@@ -69,7 +69,7 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
           <ChevronDown className="size-3" />
         )}
         <span className="font-medium">Legend</span>
-        <span className="ml-auto text-slate-500">{types.length} types</span>
+        <span className="ml-auto text-muted-foreground">{types.length} types</span>
       </button>
 
       {!collapsed && (
@@ -82,17 +82,17 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Filter types..."
-                className="w-full rounded bg-slate-800 border border-slate-700 px-2 py-1 text-xs text-slate-300 placeholder:text-slate-500 outline-none focus:border-slate-500"
+                className="w-full rounded bg-muted border border-border px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground outline-none focus:border-ring"
               />
             </div>
           )}
 
           {/* Scrollable type list */}
-          <div className="overflow-y-auto min-h-0 border-t border-slate-700/50 px-3 py-2 space-y-1">
+          <div className="overflow-y-auto min-h-0 border-t border-border px-3 py-2 space-y-1">
             {filteredTypes.map(([type, count]) => (
               <button
                 key={type}
-                className="flex w-full items-center gap-2 rounded px-1 py-0.5 hover:bg-slate-800/50"
+                className="flex w-full items-center gap-2 rounded px-1 py-0.5 hover:bg-muted/50"
                 onClick={() => selectAllOfType(type)}
                 title={`Select all ${type}`}
               >
@@ -100,21 +100,21 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
                   className="inline-block size-2.5 rounded-full shrink-0"
                   style={{ backgroundColor: getNodeColor(type) }}
                 />
-                <span className="flex-1 text-left capitalize text-slate-300">
+                <span className="flex-1 text-left capitalize text-popover-foreground">
                   {type}
                 </span>
-                <span className="text-slate-500">{count}</span>
+                <span className="text-muted-foreground">{count}</span>
               </button>
             ))}
           </div>
 
           {/* Fixed action buttons footer */}
-          <div className="shrink-0 border-t border-slate-700/50 px-3 py-1.5 space-y-1">
+          <div className="shrink-0 border-t border-border px-3 py-1.5 space-y-1">
             <div className="flex gap-1">
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-5 px-1.5 text-[10px] text-slate-400"
+                className="h-5 px-1.5 text-[10px] text-muted-foreground"
                 onClick={selectAllVisible}
               >
                 Select All
@@ -122,7 +122,7 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-5 px-1.5 text-[10px] text-slate-400"
+                className="h-5 px-1.5 text-[10px] text-muted-foreground"
                 onClick={deselectAll}
               >
                 Deselect
@@ -130,11 +130,11 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
             </div>
 
             {selectedNodeKeys.size > 0 && (
-              <div className="flex gap-1 border-t border-slate-700/50 pt-1.5">
+              <div className="flex gap-1 border-t border-border pt-1.5">
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-5 px-1.5 text-[10px] text-amber-400"
+                  className="h-5 px-1.5 text-[10px] text-amber-600 dark:text-amber-400"
                   onClick={addSelectedToSpotlight}
                 >
                   + Spotlight
@@ -143,7 +143,7 @@ export function GraphLegend({ nodes }: GraphLegendProps) {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-5 px-1.5 text-[10px] text-red-400"
+                    className="h-5 px-1.5 text-[10px] text-red-600 dark:text-red-400"
                     onClick={removeSelectedFromSpotlight}
                   >
                     - Spotlight
