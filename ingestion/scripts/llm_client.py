@@ -428,6 +428,13 @@ When you see tables of transactions, payments, or events:
 - Each entity must have its own date, amount, and description
 - Use descriptive keys like "payment-nexus-2023-03-15" or "transaction-125000-mar-2023"
 
+AMOUNT FORMATTING (CRITICAL):
+- ALWAYS use US number format: period (.) as decimal separator, comma (,) only for thousands
+- Correct: "$1,500.00", "$50,000", "$2,000.00", "1234.56"
+- WRONG: "$1.500,00", "$1,500,00", "1234,56" — NEVER use comma as decimal separator
+- Include the dollar sign ($) prefix when the currency is USD
+- If the source document uses European format (comma as decimal), you MUST convert it to US format
+
 VERIFIED FACTS (REQUIRED) - Facts that are DIRECTLY stated in the document:
 For each entity, provide an array of "verified_facts". Each fact MUST:
 - Be directly stated or clearly evidenced in the text (not inferred)
@@ -497,7 +504,7 @@ Return ONLY valid JSON with this exact structure (no markdown, no explanation):
       "name": "string",
       "date": "string or null (YYYY-MM-DD format)",
       "time": "string or null (HH:MM format)",
-      "amount": "string or null (e.g., '$50,000')",
+      "amount": "string or null - US format with period as decimal separator (e.g., '$1,500.00' or '$50,000'). NEVER use comma as decimal separator.",
       "location": "string or null",
       "verified_facts": [
         {{
@@ -539,6 +546,7 @@ IMPORTANT REMINDERS:
 3. Extract EACH transaction/payment in a table as a SEPARATE entity with its own date and amount.
 4. Use page number {current_page} for facts from this chunk (or the specific page if you can identify it from page markers in the text).
 5. Do NOT skip dates - if you see "March 15, 2023", extract it as "2023-03-15".
+6. Amounts MUST use US format with period as decimal separator. Convert European comma-decimal formats (e.g., "1.500,00") to US format ("1,500.00").
 """
     
     # Save prompt to file for debugging

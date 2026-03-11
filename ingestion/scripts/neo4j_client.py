@@ -10,9 +10,31 @@ Provides functions for:
 
 import uuid
 import time
+import re
 from typing import Dict, List, Optional, Any
 
 from neo4j import GraphDatabase
+
+
+def normalize_amount(raw: str) -> str:
+    """Normalize amount string to US format (period as decimal separator)."""
+    s = str(raw).strip().replace('$', '').replace(' ', '')
+    if not s:
+        return s
+    # Only process pure numeric strings (with commas/periods)
+    if not re.match(r'^-?[\d.,]+$', s):
+        return s
+    # Comma as decimal: ends with ,X or ,XX and no period present
+    if re.search(r',\d{1,2}$', s) and '.' not in s:
+        last_comma = s.rfind(',')
+        return s[:last_comma].replace(',', '') + '.' + s[last_comma + 1:]
+    # European full format: "1.234,56" (period thousands, comma decimal)
+    if ',' in s and '.' in s and s.rfind(',') > s.rfind('.'):
+        return s.replace('.', '').replace(',', '.')
+    # Standard US or plain number — strip thousands commas
+    return s.replace(',', '')
+
+
 from neo4j.exceptions import TransientError, ServiceUnavailable
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
@@ -322,7 +344,7 @@ class Neo4jClient:
         if time:
             props["time"] = time
         if amount:
-            props["amount"] = amount
+            props["amount"] = normalize_amount(str(amount))
 
         if extra_props:
             props.update(extra_props)
@@ -332,7 +354,6 @@ class Neo4jClient:
         # Labels can contain alphanumeric and underscore, but we'll allow common patterns
         sanitized_type = entity_type.strip()
         # Replace spaces and special chars with underscores, but keep alphanumeric
-        import re
         sanitized_type = re.sub(r'[^a-zA-Z0-9_]', '_', sanitized_type)
         # Remove multiple consecutive underscores
         sanitized_type = re.sub(r'_+', '_', sanitized_type)
