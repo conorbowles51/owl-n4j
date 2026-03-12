@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import type { GraphNode, GraphEdge } from "@/types/graph.types"
 import type { SortColumn } from "../stores/table.store"
+import type { RelationshipInfo } from "./use-relationship-nodes"
 
 interface UseFilteredSortedNodesParams {
   nodes: GraphNode[]
@@ -10,6 +11,7 @@ interface UseFilteredSortedNodesParams {
   sortColumns: SortColumn[]
   pageSize: number
   currentPage: number
+  relationshipMap?: Map<string, RelationshipInfo>
 }
 
 interface UseFilteredSortedNodesResult {
@@ -35,9 +37,12 @@ function getNodeSortValue(
   node: GraphNode,
   key: string,
   connectionCounts: Map<string, number>,
-  sourceCounts: Map<string, number>
+  sourceCounts: Map<string, number>,
+  relationshipMap?: Map<string, RelationshipInfo>
 ): string | number {
   switch (key) {
+    case "_relationship":
+      return relationshipMap?.get(node.key)?.relationshipTypes.join(", ") ?? ""
     case "label":
       return node.label.toLowerCase()
     case "type":
@@ -70,6 +75,7 @@ export function useFilteredSortedNodes({
   sortColumns,
   pageSize,
   currentPage,
+  relationshipMap,
 }: UseFilteredSortedNodesParams): UseFilteredSortedNodesResult {
   // Pre-compute connection and source counts
   const connectionCounts = useMemo(() => {
@@ -116,8 +122,8 @@ export function useFilteredSortedNodes({
     if (sortColumns.length > 0) {
       filtered.sort((a, b) => {
         for (const { key, asc } of sortColumns) {
-          const aVal = getNodeSortValue(a, key, connectionCounts, sourceCounts)
-          const bVal = getNodeSortValue(b, key, connectionCounts, sourceCounts)
+          const aVal = getNodeSortValue(a, key, connectionCounts, sourceCounts, relationshipMap)
+          const bVal = getNodeSortValue(b, key, connectionCounts, sourceCounts, relationshipMap)
           let cmp: number
           if (typeof aVal === "number" && typeof bVal === "number") {
             cmp = aVal - bVal
@@ -140,7 +146,7 @@ export function useFilteredSortedNodes({
         : filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
     return { filteredNodes: filtered, pageNodes, filteredCount, pageCount }
-  }, [nodes, searchTerm, selectedTypes, sortColumns, pageSize, currentPage, connectionCounts, sourceCounts])
+  }, [nodes, searchTerm, selectedTypes, sortColumns, pageSize, currentPage, connectionCounts, sourceCounts, relationshipMap])
 
   return {
     ...result,

@@ -6,6 +6,13 @@ export interface SortColumn {
   asc: boolean
 }
 
+export interface RelationshipNavEntry {
+  nodeKey: string
+  nodeLabel: string
+  nodeType: string
+  relationshipTypes: string[] // e.g. ["WORKS_FOR"]
+}
+
 interface TableStoreState {
   // Filters
   searchTerm: string
@@ -27,6 +34,9 @@ interface TableStoreState {
 
   // UI
   typeFilterOpen: boolean
+
+  // Relationship navigation
+  navigationStack: RelationshipNavEntry[]
 }
 
 interface TableStoreActions {
@@ -51,6 +61,10 @@ interface TableStoreActions {
   setColumnOrder: (order: string[]) => void
   setTypeFilterOpen: (open: boolean) => void
 
+  pushNavigation: (entry: RelationshipNavEntry) => void
+  popToIndex: (index: number) => void
+  clearNavigation: () => void
+
   reset: () => void
 }
 
@@ -66,6 +80,7 @@ const initialState: TableStoreState = {
   lastClickedKey: null,
   columnOrder: ["label", "type", "confidence", "summary", "connections", "sources"],
   typeFilterOpen: false,
+  navigationStack: [],
 }
 
 export const useTableStore = create<TableStore>()(
@@ -131,6 +146,28 @@ export const useTableStore = create<TableStore>()(
 
       setColumnOrder: (order) => set({ columnOrder: order }),
       setTypeFilterOpen: (open) => set({ typeFilterOpen: open }),
+
+      pushNavigation: (entry) =>
+        set((s) => ({
+          navigationStack: [...s.navigationStack, entry],
+          currentPage: 0,
+          checkedKeys: new Set<string>(),
+          lastClickedKey: null,
+        })),
+      popToIndex: (index) =>
+        set((s) => ({
+          navigationStack: index < 0 ? [] : s.navigationStack.slice(0, index + 1),
+          currentPage: 0,
+          checkedKeys: new Set<string>(),
+          lastClickedKey: null,
+        })),
+      clearNavigation: () =>
+        set({
+          navigationStack: [],
+          currentPage: 0,
+          checkedKeys: new Set<string>(),
+          lastClickedKey: null,
+        }),
 
       reset: () => set(initialState),
     }),

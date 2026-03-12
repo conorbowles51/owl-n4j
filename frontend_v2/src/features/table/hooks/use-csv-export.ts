@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 import type { GraphNode } from "@/types/graph.types"
 import type { TableColumn } from "./use-table-columns"
+import type { RelationshipInfo } from "./use-relationship-nodes"
 
 function escapeCSV(value: string): string {
   if (value.includes(",") || value.includes('"') || value.includes("\n")) {
@@ -13,9 +14,14 @@ function getCellValue(
   node: GraphNode,
   col: TableColumn,
   connectionCounts: Map<string, number>,
-  sourceCounts: Map<string, number>
+  sourceCounts: Map<string, number>,
+  relationshipMap?: Map<string, RelationshipInfo>
 ): string {
   switch (col.key) {
+    case "_relationship": {
+      const info = relationshipMap?.get(node.key)
+      return info ? info.relationshipTypes.join("; ") : ""
+    }
     case "label":
       return node.label
     case "type":
@@ -46,19 +52,21 @@ export function useCsvExport() {
       connectionCounts,
       sourceCounts,
       filename,
+      relationshipMap,
     }: {
       nodes: GraphNode[]
       columns: TableColumn[]
       connectionCounts: Map<string, number>
       sourceCounts: Map<string, number>
       filename: string
+      relationshipMap?: Map<string, RelationshipInfo>
     }) => {
       const visibleCols = columns.filter((c) => c.key !== "_checkbox")
 
       const header = visibleCols.map((c) => escapeCSV(c.label)).join(",")
       const rows = nodes.map((node) =>
         visibleCols
-          .map((col) => escapeCSV(getCellValue(node, col, connectionCounts, sourceCounts)))
+          .map((col) => escapeCSV(getCellValue(node, col, connectionCounts, sourceCounts, relationshipMap)))
           .join(",")
       )
 

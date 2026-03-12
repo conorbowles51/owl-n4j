@@ -11,10 +11,12 @@ import { graphAPI } from "@/features/graph/api"
 import { useTableStore } from "../stores/table.store"
 import { useTableColumns } from "../hooks/use-table-columns"
 import { useFilteredSortedNodes } from "../hooks/use-filtered-sorted-nodes"
+import { useRelationshipNodes } from "../hooks/use-relationship-nodes"
 import { useCsvExport } from "../hooks/use-csv-export"
 import { useKeyboardNavigation } from "../hooks/use-keyboard-navigation"
 import { TableToolbar } from "./TableToolbar"
 import { TableGrid } from "./TableGrid"
+import { RelationshipBreadcrumb } from "./RelationshipBreadcrumb"
 import { BulkActionsBar } from "./BulkActionsBar"
 import { BulkEditDialog } from "./BulkEditDialog"
 import { TablePagination } from "./TablePagination"
@@ -66,6 +68,9 @@ export function TablePage() {
   const setLastClickedKey = useTableStore((s) => s.setLastClickedKey)
   const setColumnOrder = useTableStore((s) => s.setColumnOrder)
   const setTypeFilterOpen = useTableStore((s) => s.setTypeFilterOpen)
+  const navigationStack = useTableStore((s) => s.navigationStack)
+  const pushNavigation = useTableStore((s) => s.pushNavigation)
+  const popToIndex = useTableStore((s) => s.popToIndex)
 
   // Dialogs
   const [mergeOpen, setMergeOpen] = useState(false)
@@ -82,10 +87,30 @@ export function TablePage() {
   const nodes = graphData?.nodes ?? []
   const edges = graphData?.edges ?? []
 
+  // Relationship exploration
+  const {
+    displayNodes,
+    relationshipMap,
+    isExploring,
+    currentParent,
+  } = useRelationshipNodes(nodes, edges, navigationStack)
+
+  // Guard stale navigation: if focal node no longer exists, auto-pop
+  const nodeKeySet = useMemo(() => new Set(nodes.map((n) => n.key)), [nodes])
+  const staleIdx = useMemo(() => {
+    for (let i = 0; i < navigationStack.length; i++) {
+      if (!nodeKeySet.has(navigationStack[i].nodeKey)) return i
+    }
+    return -1
+  }, [navigationStack, nodeKeySet])
+  if (staleIdx >= 0) {
+    popToIndex(staleIdx - 1)
+  }
+
   // Column discovery
   const { allColumns } = useTableColumns(nodes)
 
-  // Filter pipeline
+  // Filter pipeline — uses displayNodes (relationship-filtered) instead of raw nodes
   const {
     filteredNodes,
     pageNodes,
@@ -96,13 +121,14 @@ export function TablePage() {
     connectionCounts,
     sourceCounts,
   } = useFilteredSortedNodes({
-    nodes,
+    nodes: displayNodes,
     edges,
     searchTerm,
     selectedTypes,
     sortColumns,
     pageSize,
     currentPage,
+    relationshipMap: isExploring ? relationshipMap : undefined,
   })
 
   // Clamp current page
@@ -119,14 +145,23 @@ export function TablePage() {
       (c) => c.key === "_checkbox" || orderSet.has(c.key)
     )
     // Sort by order
-    return cols.sort((a, b) => {
+    cols.sort((a, b) => {
       if (a.key === "_checkbox") return -1
       if (b.key === "_checkbox") return 1
       const aIdx = columnOrder.indexOf(a.key)
       const bIdx = columnOrder.indexOf(b.key)
       return aIdx - bIdx
     })
-  }, [allColumns, columnOrder])
+
+    // Inject relationship column when exploring (after "type")
+    if (isExploring) {
+      const typeIdx = cols.findIndex((c) => c.key === "type")
+      const relCol = { key: "_relationship", label: "Relationship", sortable: true }
+      cols.splice(typeIdx >= 0 ? typeIdx + 1 : 2, 0, relCol)
+    }
+
+    return cols
+  }, [allColumns, columnOrder, isExploring])
 
   // Column config for TableColumnConfig
   const columnConfigs: ColumnConfig[] = useMemo(() => {
@@ -218,6 +253,33 @@ export function TablePage() {
     selectNodes([])
   }, [clearChecked, selectNodes])
 
+  // Explore relationships handler
+  const handleExploreRelationships = useCallback(
+    (key: string) => {
+      const node = nodes.find((n) => n.key === key)
+      if (!node) return
+      // Compute relationship types from this node to current focal (if any)
+      const relTypes: string[] = []
+      if (isExploring && currentParent) {
+        for (const edge of edges) {
+          if (
+            (edge.source === currentParent.nodeKey && edge.target === key) ||
+            (edge.target === currentParent.nodeKey && edge.source === key)
+          ) {
+            if (!relTypes.includes(edge.type)) relTypes.push(edge.type)
+          }
+        }
+      }
+      pushNavigation({
+        nodeKey: key,
+        nodeLabel: node.label,
+        nodeType: node.type,
+        relationshipTypes: relTypes,
+      })
+    },
+    [nodes, edges, isExploring, currentParent, pushNavigation]
+  )
+
   // CSV export
   const { exportCSV } = useCsvExport()
   const handleExportCSV = useCallback(() => {
@@ -229,8 +291,9 @@ export function TablePage() {
       connectionCounts,
       sourceCounts,
       filename: `${name}-entities-${date}.csv`,
+      relationshipMap: isExploring ? relationshipMap : undefined,
     })
-  }, [exportCSV, filteredNodes, visibleColumns, connectionCounts, sourceCounts, caseName])
+  }, [exportCSV, filteredNodes, visibleColumns, connectionCounts, sourceCounts, caseName, isExploring, relationshipMap])
 
   // Bulk actions
   const checkedArray = useMemo(() => Array.from(checkedKeys), [checkedKeys])
@@ -337,6 +400,13 @@ export function TablePage() {
         onExportCSV={handleExportCSV}
         onAddEntity={() => setAddOpen(true)}
         searchInputRef={searchInputRef}
+        isExploring={isExploring}
+        parentLabel={currentParent?.nodeLabel}
+      />
+
+      <RelationshipBreadcrumb
+        navigationStack={navigationStack}
+        onPopToIndex={popToIndex}
       />
 
       <BulkActionsBar
@@ -350,11 +420,13 @@ export function TablePage() {
       {filteredCount === 0 ? (
         <div className="flex flex-1 items-center justify-center">
           <EmptyState
-            title="No entities found"
+            title={isExploring ? "No relationships" : "No entities found"}
             description={
-              searchTerm || selectedTypes.size > 0
-                ? "Try adjusting your filters"
-                : "No data available"
+              isExploring
+                ? `${currentParent?.nodeLabel ?? "This entity"} has no connections`
+                : searchTerm || selectedTypes.size > 0
+                  ? "Try adjusting your filters"
+                  : "No data available"
             }
           />
         </div>
@@ -376,6 +448,9 @@ export function TablePage() {
           sourceCounts={sourceCounts}
           searchTerm={searchTerm}
           containerRef={containerRef}
+          onExploreRelationships={handleExploreRelationships}
+          relationshipMap={isExploring ? relationshipMap : undefined}
+          isExploring={isExploring}
         />
       )}
 

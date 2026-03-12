@@ -27,6 +27,9 @@ interface TableToolbarProps {
   onAddEntity: () => void
   // Ref for keyboard nav
   searchInputRef: React.RefObject<HTMLInputElement | null>
+  // Relationship exploration context
+  isExploring?: boolean
+  parentLabel?: string
 }
 
 export function TableToolbar({
@@ -46,6 +49,8 @@ export function TableToolbar({
   onExportCSV,
   onAddEntity,
   searchInputRef,
+  isExploring,
+  parentLabel,
 }: TableToolbarProps) {
   return (
     <div className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -80,9 +85,11 @@ export function TableToolbar({
       <div className="flex-1" />
 
       <Badge variant="slate" className="text-xs">
-        {filteredCount === totalCount
-          ? `${totalCount} entities`
-          : `${filteredCount} of ${totalCount} entities`}
+        {isExploring && parentLabel
+          ? `${filteredCount} relationship${filteredCount !== 1 ? "s" : ""} of ${parentLabel}`
+          : filteredCount === totalCount
+            ? `${totalCount} entities`
+            : `${filteredCount} of ${totalCount} entities`}
       </Badge>
 
       <Button variant="ghost" size="sm" onClick={onAddEntity}>

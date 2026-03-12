@@ -1,5 +1,5 @@
 import { useCallback } from "react"
-import { ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react"
+import { ChevronUp, ChevronDown, ChevronsUpDown, Network, ArrowRight, ArrowLeft, ArrowLeftRight } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { ConfidenceBar } from "@/components/ui/confidence-bar"
@@ -22,6 +22,7 @@ import type { GraphNode } from "@/types/graph.types"
 import type { EntityType } from "@/lib/theme"
 import type { TableColumn } from "../hooks/use-table-columns"
 import type { SortColumn } from "../stores/table.store"
+import type { RelationshipInfo } from "../hooks/use-relationship-nodes"
 
 interface TableGridProps {
   pageNodes: GraphNode[]
@@ -45,6 +46,10 @@ interface TableGridProps {
   searchTerm: string
   // Container ref for keyboard nav
   containerRef: React.RefObject<HTMLDivElement | null>
+  // Relationship exploration
+  onExploreRelationships?: (key: string) => void
+  relationshipMap?: Map<string, RelationshipInfo>
+  isExploring?: boolean
 }
 
 function HighlightText({ text, term }: { text: string; term: string }) {
@@ -119,29 +124,75 @@ function SortIcon({ column, sortColumns }: { column: TableColumn; sortColumns: S
   )
 }
 
+function RelationshipCell({ info }: { info: RelationshipInfo }) {
+  const DirectionIcon =
+    info.direction === "both"
+      ? ArrowLeftRight
+      : info.direction === "outgoing"
+        ? ArrowRight
+        : ArrowLeft
+
+  return (
+    <span className="inline-flex items-center gap-1 flex-wrap">
+      <DirectionIcon className="size-3 text-muted-foreground shrink-0" />
+      {info.relationshipTypes.map((t) => (
+        <Badge
+          key={t}
+          variant="outline"
+          className="text-[10px] px-1 py-0 h-4 font-mono text-amber-600 dark:text-amber-400 border-amber-500/30"
+        >
+          {t}
+        </Badge>
+      ))}
+    </span>
+  )
+}
+
 function CellRenderer({
   node,
   column,
   connectionCounts,
   sourceCounts,
   searchTerm,
+  onExploreRelationships,
+  relationshipMap,
 }: {
   node: GraphNode
   column: TableColumn
   connectionCounts: Map<string, number>
   sourceCounts: Map<string, number>
   searchTerm: string
+  onExploreRelationships?: (key: string) => void
+  relationshipMap?: Map<string, RelationshipInfo>
 }) {
   switch (column.key) {
-    case "label":
+    case "label": {
+      const connCount = connectionCounts.get(node.key) ?? 0
       return (
-        <TruncatedCell
-          text={node.label}
-          maxLength={60}
-          className="font-medium"
-          searchTerm={searchTerm}
-        />
+        <span className="inline-flex items-center gap-1.5">
+          <TruncatedCell
+            text={node.label}
+            maxLength={60}
+            className="font-medium"
+            searchTerm={searchTerm}
+          />
+          {connCount > 0 && onExploreRelationships && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onExploreRelationships(node.key) }}
+              className="rounded p-0.5 text-muted-foreground/50 hover:text-amber-500 hover:bg-amber-500/10 transition-colors opacity-0 group-hover:opacity-100"
+              title={`Explore ${connCount} relationships`}
+            >
+              <Network className="size-3.5" />
+            </button>
+          )}
+        </span>
       )
+    }
+    case "_relationship": {
+      const info = relationshipMap?.get(node.key)
+      if (!info) return <span className="text-muted-foreground">—</span>
+      return <RelationshipCell info={info} />
+    }
     case "type":
       return <NodeBadge type={node.type as EntityType} />
     case "confidence":
@@ -208,6 +259,8 @@ export function TableGrid({
   sourceCounts,
   searchTerm,
   containerRef,
+  onExploreRelationships,
+  relationshipMap,
 }: TableGridProps) {
   const handleRowClick = useCallback(
     (e: React.MouseEvent, node: GraphNode) => {
@@ -265,7 +318,7 @@ export function TableGrid({
                 data-row-index={idx}
                 tabIndex={0}
                 className={cn(
-                  "h-9 cursor-pointer text-[13px] transition-colors",
+                  "group h-9 cursor-pointer text-[13px] transition-colors",
                   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                   isSelected && "bg-amber-500/10 border-l-2 border-l-amber-500",
                   isChecked && !isSelected && "bg-muted/50",
@@ -289,6 +342,8 @@ export function TableGrid({
                         connectionCounts={connectionCounts}
                         sourceCounts={sourceCounts}
                         searchTerm={searchTerm}
+                        onExploreRelationships={onExploreRelationships}
+                        relationshipMap={relationshipMap}
                       />
                     </TableCell>
                   )
