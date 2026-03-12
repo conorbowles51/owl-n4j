@@ -19,7 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import type { FinancialCategory } from "../api"
 
-interface BulkCorrectionDialogProps {
+interface BulkCategorizeDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   selectedCount: number
@@ -28,14 +28,14 @@ interface BulkCorrectionDialogProps {
   isPending?: boolean
 }
 
-export function BulkCorrectionDialog({
+export function BulkCategorizeDialog({
   open,
   onOpenChange,
   selectedCount,
   categories,
   onApply,
   isPending,
-}: BulkCorrectionDialogProps) {
+}: BulkCategorizeDialogProps) {
   const [category, setCategory] = useState("")
 
   const handleApply = () => {

@@ -84,6 +84,7 @@ export const useUIStore = create<UIStore>()(
           graphPanelToolOverlay: overlay,
           graphPanelCollapsed: overlay ? false : s.graphPanelCollapsed,
         })),
+
     }),
     {
       name: "owl-graph-panel",

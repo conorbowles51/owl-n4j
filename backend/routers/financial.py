@@ -83,6 +83,18 @@ async def get_financial_transactions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/entities")
+async def get_financial_entities(
+    case_id: str = Query(..., description="REQUIRED: Case ID"),
+):
+    """Return all non-transaction entities in a case for from/to pickers."""
+    try:
+        entities = neo4j_service.get_financial_entities(case_id)
+        return {"entities": entities}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/summary")
 async def get_financial_summary(
     case_id: str = Query(..., description="REQUIRED: Case ID"),

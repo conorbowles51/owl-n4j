@@ -13,7 +13,7 @@ export const nodeColors = {
 
 export type EntityType = keyof typeof nodeColors
 
-const typeAliases: Record<string, EntityType> = {
+export const typeAliases: Record<string, EntityType> = {
   company: "organization",
   organisation: "organization",
   org: "organization",

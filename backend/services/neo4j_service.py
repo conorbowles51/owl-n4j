@@ -7,6 +7,10 @@ from neo4j import GraphDatabase
 import math
 import random
 import json
+import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 
@@ -3196,7 +3200,9 @@ class Neo4jService:
                     labels(n)[0] AS type,
                     n.date AS date,
                     n.time AS time,
-                    toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amount,
+                    toFloat(replace(replace(replace(replace(
+                      trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amount,
+                    n.amount AS raw_amount,
                     n.currency AS currency,
                     n.summary AS summary,
                     n.financial_category AS financial_category,
@@ -3234,6 +3240,21 @@ class Neo4jService:
                 to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"]
 
                 amount_val = safe_float(record["amount"])
+                if amount_val == 0:
+                    raw = record.get("raw_amount")
+                    if raw is not None:
+                        cleaned = re.sub(r'[^\d.\-]', '', str(raw))
+                        amount_val = safe_float(cleaned)
+                        if amount_val != 0:
+                            logger.warning(
+                                "Amount fallback used for tx %s: raw=%r → %s",
+                                record["key"], raw, amount_val
+                            )
+                        else:
+                            logger.warning(
+                                "Amount resolved to 0 for tx %s: raw=%r",
+                                record["key"], raw
+                            )
 
                 transactions.append({
                     "key": record["key"],
@@ -3244,12 +3265,12 @@ class Neo4jService:
                     "amount": amount_val,
                     "currency": record["currency"],
                     "summary": record["summary"],
-                    "financial_category": record["financial_category"] or "Uncategorized",
+                    "category": record["financial_category"] or "Uncategorized",
                     "purpose": record["purpose"],
                     "counterparty_details": record["counterparty_details"],
                     "notes": record["notes"],
-                    "from_entity": {"key": from_key, "name": from_name} if from_key else None,
-                    "to_entity": {"key": to_key, "name": to_name} if to_key else None,
+                    "from_entity": {"key": from_key, "name": from_name} if (from_key or from_name) else None,
+                    "to_entity": {"key": to_key, "name": to_name} if (to_key or to_name) else None,
                     "has_manual_from": record["from_entity_key"] is not None,
                     "has_manual_to": record["to_entity_key"] is not None,
                     "is_parent": record["is_parent"] or False,
@@ -3259,6 +3280,22 @@ class Neo4jService:
                     "correction_reason": record["correction_reason"],
                 })
             return transactions
+
+    def get_financial_entities(self, case_id: str) -> List[Dict]:
+        """Return all non-transaction entities in a case for from/to entity pickers."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE NOT n:Document AND NOT n:Case
+                  AND n.amount IS NULL
+                  AND n.name IS NOT NULL
+                RETURN DISTINCT n.key AS key, n.name AS name, labels(n)[0] AS type
+                ORDER BY n.name
+                """,
+                case_id=case_id,
+            )
+            return [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in result]
 
     def get_financial_summary(self, case_id: str, entity_key: str = None) -> Dict:
         """

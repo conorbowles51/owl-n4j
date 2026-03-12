@@ -2,7 +2,6 @@ import { useCallback } from "react"
 import { ChevronUp, ChevronDown, ChevronsUpDown, Network, ArrowRight, ArrowLeft, ArrowLeftRight } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { NodeBadge } from "@/components/ui/node-badge"
-import { ConfidenceBar } from "@/components/ui/confidence-bar"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -195,23 +194,6 @@ function CellRenderer({
     }
     case "type":
       return <NodeBadge type={node.type as EntityType} />
-    case "confidence":
-      return node.confidence != null ? (
-        <ConfidenceBar value={node.confidence} className="w-20" />
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      )
-    case "summary":
-      return node.summary ? (
-        <TruncatedCell
-          text={node.summary}
-          maxLength={120}
-          className="text-muted-foreground"
-          searchTerm={searchTerm}
-        />
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      )
     case "connections":
       return (
         <Badge variant="outline" className="font-mono text-[11px]">

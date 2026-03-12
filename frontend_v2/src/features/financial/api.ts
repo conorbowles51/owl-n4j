@@ -1,21 +1,38 @@
 import { fetchAPI } from "@/lib/api-client"
 
+export interface TransactionEntity {
+  key: string | null
+  name: string | null
+}
+
 export interface Transaction {
   key: string
   date: string
+  time?: string
+  name?: string
+  type?: string
   amount: number
   currency?: string
   category?: string
-  description?: string
-  from_key?: string
-  from_name?: string
-  to_key?: string
-  to_name?: string
+  summary?: string
+  from_entity: TransactionEntity
+  to_entity: TransactionEntity
+  has_manual_from?: boolean
+  has_manual_to?: boolean
+  is_parent?: boolean
+  parent_transaction_key?: string | null
+  amount_corrected?: boolean
+  original_amount?: number | null
+  correction_reason?: string | null
   purpose?: string
   counterparty_details?: string
   notes?: string
-  parent_key?: string
   case_id: string
+}
+
+export interface TransactionsResponse {
+  transactions: Transaction[]
+  total: number
 }
 
 export interface FinancialSummary {
@@ -37,6 +54,13 @@ export interface AmountCorrection {
   correction_reason: string
 }
 
+export interface VolumeDataPoint {
+  date: string
+  category: string
+  total_amount: number
+  count: number
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
@@ -50,14 +74,15 @@ export const financialAPI = {
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
     if (params.categories?.length) qs.set("categories", params.categories.join(","))
-    return fetchAPI<Transaction[]>(`/api/financial?${qs}`)
+    return fetchAPI<{ transactions: Transaction[]; total: number }>(`/api/financial?${qs}`)
+      .then((res) => res.transactions)
   },
 
   getSummary: (caseId: string) =>
     fetchAPI<FinancialSummary>(`/api/financial/summary?case_id=${caseId}`),
 
   getVolume: (caseId: string) =>
-    fetchAPI<unknown>(`/api/financial/volume?case_id=${caseId}`),
+    fetchAPI<{ data: VolumeDataPoint[] }>(`/api/financial/volume?case_id=${caseId}`),
 
   categorize: (nodeKey: string, category: string, caseId: string) =>
     fetchAPI<void>(`/api/financial/categorize/${encodeURIComponent(nodeKey)}`, {
@@ -134,7 +159,8 @@ export const financialAPI = {
     }),
 
   getCategories: (caseId: string) =>
-    fetchAPI<FinancialCategory[]>(`/api/financial/categories?case_id=${caseId}`),
+    fetchAPI<{ categories: FinancialCategory[] }>(`/api/financial/categories?case_id=${caseId}`)
+      .then((res) => res.categories),
 
   createCategory: (name: string, color: string, caseId: string) =>
     fetchAPI<FinancialCategory>("/api/financial/categories", {
@@ -179,8 +205,12 @@ export const financialAPI = {
       { method: "DELETE" }
     ),
 
+  getEntities: (caseId: string) =>
+    fetchAPI<{ entities: TransactionEntity[] }>(`/api/financial/entities?case_id=${caseId}`)
+      .then((res) => res.entities),
+
   getSubTransactions: (parentKey: string, caseId: string) =>
-    fetchAPI<Transaction[]>(
+    fetchAPI<{ children: Transaction[]; count: number }>(
       `/api/financial/transactions/${encodeURIComponent(parentKey)}/sub-transactions?case_id=${caseId}`
-    ),
+    ).then((res) => res.children),
 }

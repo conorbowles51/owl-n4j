@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { EmptyState } from "@/components/ui/empty-state"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import type { MapLocation } from "./MapCanvas"
+import type { MapLocation } from "../hooks/use-map-data"
 
 interface RouteSegment {
   from: MapLocation
@@ -56,10 +56,10 @@ export function RouteAnalysisPanel({ route, onClear }: RouteAnalysisPanelProps) 
             >
               <span className="text-[10px] text-muted-foreground">{i + 1}</span>
               <NodeBadge type={segment.from.type} />
-              <span className="truncate">{segment.from.label}</span>
+              <span className="truncate">{segment.from.name}</span>
               <ArrowRight className="size-3 text-muted-foreground" />
               <NodeBadge type={segment.to.type} />
-              <span className="truncate">{segment.to.label}</span>
+              <span className="truncate">{segment.to.name}</span>
               <Badge variant="outline" className="ml-auto">
                 {segment.distance.toFixed(1)} km
               </Badge>

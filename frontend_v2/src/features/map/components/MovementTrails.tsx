@@ -13,10 +13,10 @@ interface MovementTrailsProps {
   visible: boolean
 }
 
+/** Placeholder — movement trail rendering deferred to later phase */
 export function MovementTrails({ trails, visible }: MovementTrailsProps) {
   if (!visible || trails.length === 0) return null
 
-  // Placeholder — will render as polylines on Leaflet map
   return (
     <div className="absolute bottom-12 left-3 max-h-32 w-48 overflow-auto rounded-lg border border-border bg-card/90 p-2 backdrop-blur">
       <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

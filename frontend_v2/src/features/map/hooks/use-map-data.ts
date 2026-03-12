@@ -5,17 +5,48 @@ import type { EntityType } from "@/lib/theme"
 
 export interface MapLocation {
   key: string
-  label: string
+  name: string
   type: EntityType
   latitude: number
   longitude: number
+  location_raw?: string
+  location_formatted?: string
+  geocoding_confidence?: string
+  summary?: string
+  date?: string
+  connections?: { key: string; name: string; type: string; relationship: string }[]
+}
+
+interface RawMapLocation {
+  key: string
+  label?: string
+  name?: string
+  type: EntityType
+  latitude: number
+  longitude: number
+  location_raw?: string
+  location_formatted?: string
+  geocoding_confidence?: string
+  summary?: string
+  date?: string
+  connections?: { key: string; name: string; type: string; relationship: string }[]
 }
 
 export function useMapData(caseId: string | undefined) {
   return useQuery({
     queryKey: ["map", caseId],
-    queryFn: () =>
-      fetchAPI<MapLocation[]>(`/api/graph/locations?case_id=${caseId}`),
+    queryFn: async () => {
+      const raw = await fetchAPI<RawMapLocation[]>(
+        `/api/graph/locations?case_id=${caseId}`
+      )
+      return raw.map(
+        (loc): MapLocation => ({
+          ...loc,
+          name: loc.name ?? loc.label ?? loc.key,
+          type: loc.type.toLowerCase() as EntityType,
+        })
+      )
+    },
     enabled: !!caseId,
   })
 }

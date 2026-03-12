@@ -1,73 +1,253 @@
-import { useRef } from "react"
-import { MapPin } from "lucide-react"
-import { nodeColors, type EntityType } from "@/lib/theme"
-
-export interface MapLocation {
-  key: string
-  label: string
-  type: EntityType
-  latitude: number
-  longitude: number
-}
+import { useRef, useState, useCallback, useEffect, useMemo } from "react"
+import Map, { Source, Layer, NavigationControl } from "react-map-gl/maplibre"
+import maplibregl from "maplibre-gl"
+import "maplibre-gl/dist/maplibre-gl.css"
+import { useMapTheme } from "../hooks/use-map-theme"
+import { useMapStore } from "../stores/map.store"
+import { useGraphStore } from "@/stores/graph.store"
+import { useMapAnalysis, type MapLocation } from "../hooks/use-map-data"
+import { locationsToGeoJSON, createCircleGeoJSON } from "../lib/geojson"
+import {
+  pointLayer,
+  heatmapLayer,
+  proximityFillLayer,
+  proximityOutlineLayer,
+} from "../lib/map-styles"
+import { EntityPopup } from "./EntityPopup"
+import type { MapRef, MapLayerMouseEvent } from "react-map-gl/maplibre"
 
 interface MapCanvasProps {
   locations: MapLocation[]
-  selectedKey?: string
-  onSelectLocation?: (location: MapLocation) => void
-  showHeatmap?: boolean
-  showClusters?: boolean
 }
 
-export function MapCanvas({
-  locations,
-  selectedKey,
-  onSelectLocation,
-}: MapCanvasProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
+export function MapCanvas({ locations }: MapCanvasProps) {
+  const mapRef = useRef<MapRef>(null)
+  const { styleUrl } = useMapTheme()
+  const { bounds } = useMapAnalysis(locations)
 
-  // Leaflet integration point — will initialize map here when leaflet is added
-  // For now, render a visual placeholder with location markers
+  // Hover state for popup
+  const [hoveredLocationKey, setHoveredLocationKey] = useState<string | null>(null)
+  const hideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showHeatmap = useMapStore((s) => s.showHeatmap)
+  const hiddenTypes = useMapStore((s) => s.hiddenTypes)
+  const proximityMode = useMapStore((s) => s.proximityMode)
+  const proximityAnchorKey = useMapStore((s) => s.proximityAnchorKey)
+  const proximityRadius = useMapStore((s) => s.proximityRadius)
+  const setProximityAnchor = useMapStore((s) => s.setProximityAnchor)
+  const pendingFlyTo = useMapStore((s) => s.pendingFlyTo)
+  const clearFlyTo = useMapStore((s) => s.clearFlyTo)
+  const pendingZoomDelta = useMapStore((s) => s.pendingZoomDelta)
+  const clearZoomDelta = useMapStore((s) => s.clearZoomDelta)
+  const pendingFitBounds = useMapStore((s) => s.pendingFitBounds)
+  const clearFitBounds = useMapStore((s) => s.clearFitBounds)
+
+  // Graph store — selecting a marker selects the node for the shared detail panel
+  const selectNodes = useGraphStore((s) => s.selectNodes)
+
+  // GeoJSON data
+  const visibleLocations = useMemo(
+    () => locations.filter((l) => !hiddenTypes.has(l.type)),
+    [locations, hiddenTypes]
+  )
+  const geojson = useMemo(
+    () => locationsToGeoJSON(visibleLocations),
+    [visibleLocations]
+  )
+
+  // Proximity anchor
+  const proximityAnchor = useMemo(
+    () => locations.find((l) => l.key === proximityAnchorKey) ?? null,
+    [locations, proximityAnchorKey]
+  )
+
+  // Proximity circle GeoJSON
+  const proximityCircle = useMemo(() => {
+    if (!proximityAnchor) return null
+    return createCircleGeoJSON(
+      [proximityAnchor.longitude, proximityAnchor.latitude],
+      proximityRadius
+    )
+  }, [proximityAnchor, proximityRadius])
+
+  // Hovered location for popup
+  const hoveredLocation = useMemo(
+    () => locations.find((l) => l.key === hoveredLocationKey) ?? null,
+    [locations, hoveredLocationKey]
+  )
+
+  // Sticky hover helpers
+  const cancelHide = useCallback(() => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current)
+      hideTimeoutRef.current = null
+    }
+  }, [])
+
+  const startHide = useCallback(() => {
+    cancelHide()
+    hideTimeoutRef.current = setTimeout(() => {
+      setHoveredLocationKey(null)
+      hideTimeoutRef.current = null
+    }, 150)
+  }, [cancelHide])
+
+  // Clean up timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current)
+    }
+  }, [])
+
+  // Fit bounds on initial load
+  const handleLoad = useCallback(() => {
+    if (!bounds || !mapRef.current) return
+    mapRef.current.fitBounds(
+      [
+        [bounds.minLng - 0.01, bounds.minLat - 0.01],
+        [bounds.maxLng + 0.01, bounds.maxLat + 0.01],
+      ],
+      { padding: 60, duration: 1000 }
+    )
+  }, [bounds])
+
+  // Handle pending fly-to
+  useEffect(() => {
+    if (!pendingFlyTo || !mapRef.current) return
+    mapRef.current.flyTo({
+      center: [pendingFlyTo.longitude, pendingFlyTo.latitude],
+      zoom: pendingFlyTo.zoom ?? 14,
+      duration: 1000,
+    })
+    clearFlyTo()
+  }, [pendingFlyTo, clearFlyTo])
+
+  // Handle pending zoom delta
+  useEffect(() => {
+    if (pendingZoomDelta === null || !mapRef.current) return
+    if (pendingZoomDelta > 0) {
+      mapRef.current.zoomIn({ duration: 300 })
+    } else {
+      mapRef.current.zoomOut({ duration: 300 })
+    }
+    clearZoomDelta()
+  }, [pendingZoomDelta, clearZoomDelta])
+
+  // Handle pending fit bounds
+  useEffect(() => {
+    if (!pendingFitBounds || !mapRef.current || !bounds) return
+    mapRef.current.fitBounds(
+      [
+        [bounds.minLng - 0.01, bounds.minLat - 0.01],
+        [bounds.maxLng + 0.01, bounds.maxLat + 0.01],
+      ],
+      { padding: 60, duration: 1000 }
+    )
+    clearFitBounds()
+  }, [pendingFitBounds, clearFitBounds, bounds])
+
+  // Hover handler — show popup on hover over unclustered points
+  const handleMouseMove = useCallback(
+    (e: MapLayerMouseEvent) => {
+      const map = mapRef.current?.getMap()
+      if (!map) return
+
+      const features = map.queryRenderedFeatures(e.point, {
+        layers: ["unclustered-point"],
+      })
+
+      if (features.length > 0) {
+        const key = features[0].properties?.key as string | undefined
+        if (key) {
+          cancelHide()
+          setHoveredLocationKey(key)
+          map.getCanvas().style.cursor = "pointer"
+          return
+        }
+      }
+
+      map.getCanvas().style.cursor = "default"
+      startHide()
+    },
+    [cancelHide, startHide]
+  )
+
+  const handleMouseLeave = useCallback(() => {
+    startHide()
+  }, [startHide])
+
+  // Click handlers
+  const handleClick = useCallback(
+    (e: MapLayerMouseEvent) => {
+      const map = mapRef.current?.getMap()
+      if (!map) return
+
+      // Check for point click
+      const pointFeatures = map.queryRenderedFeatures(e.point, {
+        layers: ["unclustered-point"],
+      })
+      if (pointFeatures.length > 0) {
+        const key = pointFeatures[0].properties?.key
+        if (key) {
+          if (proximityMode && !proximityAnchorKey) {
+            setProximityAnchor(key)
+          } else {
+            selectNodes([key])
+          }
+          return
+        }
+      }
+
+      // Click on empty space — deselect
+      selectNodes([])
+    },
+    [selectNodes, proximityMode, proximityAnchorKey, setProximityAnchor]
+  )
 
   return (
-    <div ref={containerRef} className="relative h-full w-full bg-slate-100 dark:bg-slate-900">
-      {/* Map background placeholder */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="text-center">
-          <MapPin className="mx-auto mb-2 size-12 text-amber-500/30" />
-          <p className="text-sm text-muted-foreground">
-            Map canvas — Leaflet integration pending
-          </p>
-          <p className="text-xs text-muted-foreground">
-            {locations.length} locations ready to render
-          </p>
-        </div>
-      </div>
+    <Map
+      ref={mapRef}
+      mapLib={maplibregl}
+      mapStyle={styleUrl}
+      style={{ width: "100%", height: "100%" }}
+      onClick={handleClick}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      onLoad={handleLoad}
+      attributionControl={false}
+      interactiveLayerIds={["unclustered-point"]}
+    >
+      <NavigationControl position="top-right" showCompass={false} visualizePitch={false} />
 
-      {/* Floating location markers (positioned in a grid as placeholder) */}
-      <div className="absolute inset-0 overflow-hidden p-8">
-        <div className="grid h-full grid-cols-6 gap-2">
-          {locations.slice(0, 24).map((loc) => {
-            const color = nodeColors[loc.type] || "#64748B"
-            const isSelected = selectedKey === loc.key
-            return (
-              <button
-                key={loc.key}
-                onClick={() => onSelectLocation?.(loc)}
-                className="group flex flex-col items-center justify-center gap-1 rounded-lg border border-transparent p-1 transition hover:border-border hover:bg-muted/30"
-                style={isSelected ? { borderColor: color } : undefined}
-              >
-                <div
-                  className="size-3 rounded-full"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="max-w-full truncate text-[9px] text-muted-foreground group-hover:text-foreground">
-                  {loc.label}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </div>
+      {/* Main data source */}
+      <Source id="locations" type="geojson" data={geojson}>
+        {/* Heatmap (below markers) */}
+        {showHeatmap && <Layer {...heatmapLayer} />}
+
+        {/* Individual points */}
+        <Layer {...pointLayer} />
+      </Source>
+
+      {/* Proximity circle */}
+      {proximityCircle && (
+        <Source id="proximity-circle" type="geojson" data={proximityCircle}>
+          <Layer {...proximityFillLayer} />
+          <Layer {...proximityOutlineLayer} />
+        </Source>
+      )}
+
+      {/* Hovered entity popup */}
+      {hoveredLocation && (
+        <EntityPopup
+          location={hoveredLocation}
+          onClose={() => setHoveredLocationKey(null)}
+          onSetProximityAnchor={(key) => {
+            setProximityAnchor(key)
+          }}
+          onMouseEnter={cancelHide}
+          onMouseLeave={startHide}
+        />
+      )}
+    </Map>
   )
 }

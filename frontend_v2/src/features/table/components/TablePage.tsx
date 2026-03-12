@@ -108,7 +108,7 @@ export function TablePage() {
   }
 
   // Column discovery
-  const { allColumns } = useTableColumns(nodes)
+  const { allColumns } = useTableColumns()
 
   // Filter pipeline — uses displayNodes (relationship-filtered) instead of raw nodes
   const {

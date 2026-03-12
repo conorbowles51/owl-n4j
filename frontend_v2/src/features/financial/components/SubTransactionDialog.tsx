@@ -40,14 +40,17 @@ export function SubTransactionDialog({
   const subTotal = subTransactions.reduce((sum, t) => sum + t.amount, 0)
   const remaining = parent.amount - subTotal
 
+  const fromName = parent.from_entity?.name || "Unknown"
+  const toName = parent.to_entity?.name || "Unknown"
+
   const linkable = allTransactions.filter(
     (t) =>
       t.key !== parent.key &&
       !subTransactions.some((s) => s.key === t.key) &&
-      !t.parent_key &&
-      (t.from_name?.toLowerCase().includes(search.toLowerCase()) ||
-        t.to_name?.toLowerCase().includes(search.toLowerCase()) ||
-        t.purpose?.toLowerCase().includes(search.toLowerCase()))
+      !t.parent_transaction_key &&
+      ((t.from_entity?.name || "").toLowerCase().includes(search.toLowerCase()) ||
+        (t.to_entity?.name || "").toLowerCase().includes(search.toLowerCase()) ||
+        (t.purpose || "").toLowerCase().includes(search.toLowerCase()))
   )
 
   return (
@@ -59,8 +62,7 @@ export function SubTransactionDialog({
             Sub-Transactions
           </DialogTitle>
           <DialogDescription className="text-xs">
-            Link child transactions to {parent.from_name || "Unknown"} →{" "}
-            {parent.to_name || "Unknown"}
+            Link child transactions to {fromName} → {toName}
           </DialogDescription>
         </DialogHeader>
 
@@ -85,7 +87,7 @@ export function SubTransactionDialog({
                       className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-xs"
                     >
                       <span className="flex-1 truncate">
-                        {sub.from_name} → {sub.to_name}
+                        {sub.from_entity?.name || "—"} → {sub.to_entity?.name || "—"}
                       </span>
                       <CostBadge amount={sub.amount} />
                       <Button
@@ -128,7 +130,7 @@ export function SubTransactionDialog({
                       {new Date(tx.date).toLocaleDateString()}
                     </span>
                     <span className="flex-1 truncate">
-                      {tx.from_name} → {tx.to_name}
+                      {tx.from_entity?.name || "—"} → {tx.to_entity?.name || "—"}
                     </span>
                     <CostBadge amount={tx.amount} />
                   </button>
