@@ -794,6 +794,13 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     "entities_returned": len(context.get("selected_entities", [])),
                 }
 
+            # Cap connections per entity to prevent memory explosion on hub nodes
+            MAX_CONNECTIONS_PER_ENTITY = 25
+            for entity in context.get("selected_entities", []):
+                conns = entity.get("connections", [])
+                if len(conns) > MAX_CONNECTIONS_PER_ENTITY:
+                    entity["connections"] = conns[:MAX_CONNECTIONS_PER_ENTITY]
+
             print(f"[RAG] Graph traversal: {len(entity_keys)} input keys -> {len(context.get('selected_entities', []))} entities with connections")
             return context
 
@@ -879,7 +886,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
                     sorted_facts = sorted(verified_facts, key=_fact_relevance, reverse=True)
                     lines.append("  Verified Facts:")
-                    for fact in sorted_facts:  # no arbitrary cap — token budget governs
+                    for fact in sorted_facts[:10]:  # Cap per entity to prevent context explosion
                         fact_text = fact.get("text", "")
                         source = fact.get("source_doc", "")
                         quote = fact.get("quote", "")
@@ -898,7 +905,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 ai_insights = entity.get("ai_insights")
                 if ai_insights:
                     lines.append("  AI Insights:")
-                    for insight in ai_insights[:5]:
+                    for insight in ai_insights[:3]:  # Cap to prevent context explosion
                         insight_text = insight.get("text", "")
                         confidence = insight.get("confidence", "")
                         conf_str = f" (confidence: {confidence})" if confidence else ""
@@ -922,7 +929,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                         c.get("name", ""),
                     ), reverse=True)
                     lines.append(f"[{entity.get('type', '?')}] {entity.get('name', '?')}:")
-                    for conn in connections:  # no arbitrary cap — token budget governs
+                    for conn in connections[:25]:  # Cap connections per entity
                         direction = "->" if conn.get("direction") == "outgoing" else "<-"
                         lines.append(
                             f"  {direction} [{conn.get('relationship', '?')}] "
@@ -1229,6 +1236,22 @@ Only include candidates with score >= 5."""
                         }
 
             print(f"[RAG] Result graph pool: {len(entity_pool)} entities from retrieval stages")
+
+            # Cap entity pool to prevent massive graph processing on large cases
+            MAX_ENTITY_POOL = 200
+            if len(entity_pool) > MAX_ENTITY_POOL:
+                # Keep entities with retrieval source (have distance scores) first,
+                # then graph-sourced entities, truncate the rest
+                sorted_pool = sorted(
+                    entity_pool.items(),
+                    key=lambda kv: (
+                        kv[1].get("_source") == "retrieval",  # retrieval first
+                        -(kv[1].get("_distance") or 1.0),     # lower distance = better
+                    ),
+                    reverse=True,
+                )
+                entity_pool = dict(sorted_pool[:MAX_ENTITY_POOL])
+                print(f"[RAG] Entity pool capped to {MAX_ENTITY_POOL}")
 
             # --- Step 2: Skipped (answer-similarity entity search removed) ---
             # Previously this step embedded the full answer text and searched for

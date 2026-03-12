@@ -539,6 +539,7 @@ class Neo4jService:
                     n.summary AS summary,
                     n.notes AS notes
                 ORDER BY n.name
+                LIMIT 500
                 """,
                 **params,
             )
@@ -577,6 +578,8 @@ class Neo4jService:
         """
         with self._driver.session() as session:
             # Get selected nodes with their connections (scoped to case)
+            # Use a subquery to limit connections per node, preventing memory
+            # explosion on hub nodes in large cases.
             result = session.run(
                 """
                 MATCH (n)
@@ -584,20 +587,24 @@ class Neo4jService:
                   AND n.case_id = $case_id
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE connected.case_id = $case_id
+                WITH n, r, connected
+                ORDER BY connected.name
+                WITH n,
+                     collect(DISTINCT {
+                         key: connected.key,
+                         name: connected.name,
+                         type: labels(connected)[0],
+                         summary: connected.summary,
+                         relationship: type(r),
+                         direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
+                     })[0..25] AS connections
                 RETURN
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
                     n.summary AS summary,
                     n.notes AS notes,
-                    collect(DISTINCT {
-                        key: connected.key,
-                        name: connected.name,
-                        type: labels(connected)[0],
-                        summary: connected.summary,
-                        relationship: type(r),
-                        direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
-                    }) AS connections
+                    connections
                 """,
                 keys=keys,
                 case_id=case_id,

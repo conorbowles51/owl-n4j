@@ -85,7 +85,10 @@ class SystemLogService:
                 with open(self.log_file, 'r') as f:
                     for line in f:
                         if line.strip():
-                            logs.append(json.loads(line))
+                            try:
+                                logs.append(json.loads(line))
+                            except json.JSONDecodeError:
+                                continue  # Skip malformed lines from crashes
             
             # Keep only the most recent logs
             if len(logs) > self._max_logs:
