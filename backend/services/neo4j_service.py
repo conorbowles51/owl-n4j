@@ -588,13 +588,13 @@ class Neo4jService:
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE connected.case_id = $case_id
                 WITH n, r, connected
-                ORDER BY connected.name
+                ORDER BY CASE WHEN connected IS NULL THEN 1 ELSE 0 END, connected.name
                 WITH n,
                      collect(DISTINCT {
                          key: connected.key,
                          name: connected.name,
                          type: labels(connected)[0],
-                         summary: connected.summary,
+                         summary: left(connected.summary, 500),
                          relationship: type(r),
                          direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
                      })[0..25] AS connections
@@ -602,9 +602,10 @@ class Neo4jService:
                     n.key AS key,
                     n.name AS name,
                     labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes,
+                    left(n.summary, 1000) AS summary,
+                    left(n.notes, 1000) AS notes,
                     connections
+                LIMIT 50
                 """,
                 keys=keys,
                 case_id=case_id,

@@ -10,6 +10,7 @@ Handles:
 """
 
 import json
+import sys
 import time
 from typing import Dict, List, Optional, Any
 
@@ -418,45 +419,48 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return []
 
         try:
-            with self.neo4j._driver.session() as session:
-                case_filter = "AND n.case_id = $case_id" if case_id else ""
-                query = f"""
-                MATCH (n)
-                WHERE n.key IN $keys AND NOT n:Document {case_filter}
-                RETURN
-                    id(n) AS neo4j_id,
-                    n.id AS id,
-                    n.key AS key,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes,
-                    properties(n) AS properties
-                """
-                params = {"keys": entity_keys}
-                if case_id:
-                    params["case_id"] = case_id
-                results = session.run(query, **params)
+            from services.neo4j_service import parse_json_field
+            case_filter = "AND n.case_id = $case_id" if case_id else ""
+            query = f"""
+            MATCH (n)
+            WHERE n.key IN $keys AND NOT n:Document {case_filter}
+            RETURN
+                id(n) AS neo4j_id,
+                n.id AS id,
+                n.key AS key,
+                n.name AS name,
+                labels(n)[0] AS type,
+                n.summary AS summary,
+                n.notes AS notes,
+                n.verified_facts AS verified_facts,
+                n.ai_insights AS ai_insights
+            """
 
-                nodes = []
-                from services.neo4j_service import parse_json_field
-                for record in results:
-                    props = record.get("properties") or {}
-                    node = {
-                        "neo4j_id": record.get("neo4j_id"),
-                        "id": record.get("id") or record.get("key"),
-                        "key": record.get("key"),
-                        "name": record.get("name") or record.get("key"),
-                        "type": record.get("type"),
-                        "summary": record.get("summary"),
-                        "notes": record.get("notes"),
-                        "verified_facts": parse_json_field(props.get("verified_facts")),
-                        "ai_insights": parse_json_field(props.get("ai_insights")),
-                        "properties": props,
-                    }
-                    nodes.append(node)
+            nodes = []
+            BATCH_SIZE = 10
+            for i in range(0, len(entity_keys), BATCH_SIZE):
+                batch = entity_keys[i:i + BATCH_SIZE]
+                with self.neo4j._driver.session() as session:
+                    params = {"keys": batch}
+                    if case_id:
+                        params["case_id"] = case_id
+                    results = session.run(query, **params)
 
-                return nodes
+                    for record in results:
+                        node = {
+                            "neo4j_id": record.get("neo4j_id"),
+                            "id": record.get("id") or record.get("key"),
+                            "key": record.get("key"),
+                            "name": record.get("name") or record.get("key"),
+                            "type": record.get("type"),
+                            "summary": record.get("summary"),
+                            "notes": record.get("notes"),
+                            "verified_facts": parse_json_field(record.get("verified_facts")),
+                            "ai_insights": parse_json_field(record.get("ai_insights")),
+                        }
+                        nodes.append(node)
+
+            return nodes
         except Exception as e:
             print(f"[RAG] Error getting entity nodes: {e}")
             return []
@@ -583,7 +587,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return []
 
         try:
+            print("[RAG] Generating chunk embedding..."); sys.stdout.flush()
             query_embedding = embedding_service.generate_embedding(question)
+            print("[RAG] Chunk embedding done"); sys.stdout.flush()
             # Enforce case_id isolation — never search without it
             if not case_id:
                 if debug_log is not None:
@@ -593,6 +599,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             threshold = confidence_threshold if confidence_threshold is not None else VECTOR_SEARCH_CONFIDENCE_THRESHOLD
 
             # Try chunk-level search first
+            print("[RAG] Searching chunk vectors (ChromaDB)..."); sys.stdout.flush()
             chunk_count = vector_db_service.count_chunks()
             doc_scoped_count = 0
 
@@ -715,7 +722,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         top_k = top_k or ENTITY_SEARCH_TOP_K
 
         try:
+            print("[RAG] Generating entity embedding..."); sys.stdout.flush()
             query_embedding = embedding_service.generate_embedding(question)
+            print("[RAG] Entity embedding done"); sys.stdout.flush()
 
             # Enforce case_id isolation — never search without it
             if not case_id:
@@ -724,11 +733,13 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                 return []
             vector_filter = {"case_id": case_id}
 
+            print("[RAG] Searching entity vectors (ChromaDB)..."); sys.stdout.flush()
             entity_results = vector_db_service.search_entities(
                 query_embedding=query_embedding,
                 top_k=top_k,
                 filter_metadata=vector_filter,
             )
+            print(f"[RAG] Entity vector search done: {len(entity_results)} results"); sys.stdout.flush()
 
             # Log when no entities found for this case (do NOT fall back to unfiltered search)
             if not entity_results and case_id:
@@ -785,23 +796,31 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return {"selected_entities": []}
 
         try:
-            context = self.neo4j.get_context_for_nodes(entity_keys, case_id)
+            # Process in batches to avoid large Neo4j queries
+            BATCH_SIZE = 10
+            all_entities = []
+            for i in range(0, len(entity_keys), BATCH_SIZE):
+                batch = entity_keys[i:i + BATCH_SIZE]
+                print(f"[RAG] Graph traversal batch {i // BATCH_SIZE + 1}: {len(batch)} keys"); sys.stdout.flush()
+                batch_context = self.neo4j.get_context_for_nodes(batch, case_id)
+                all_entities.extend(batch_context.get("selected_entities", []))
+            context = {"selected_entities": all_entities}
 
             if debug_log is not None:
                 debug_log["graph_traversal"] = {
                     "input_keys": entity_keys[:20],
                     "depth": GRAPH_TRAVERSAL_DEPTH,
-                    "entities_returned": len(context.get("selected_entities", [])),
+                    "entities_returned": len(all_entities),
                 }
 
             # Cap connections per entity to prevent memory explosion on hub nodes
             MAX_CONNECTIONS_PER_ENTITY = 25
-            for entity in context.get("selected_entities", []):
+            for entity in all_entities:
                 conns = entity.get("connections", [])
                 if len(conns) > MAX_CONNECTIONS_PER_ENTITY:
                     entity["connections"] = conns[:MAX_CONNECTIONS_PER_ENTITY]
 
-            print(f"[RAG] Graph traversal: {len(entity_keys)} input keys -> {len(context.get('selected_entities', []))} entities with connections")
+            print(f"[RAG] Graph traversal: {len(entity_keys)} input keys -> {len(all_entities)} entities with connections")
             return context
 
         except Exception as e:
@@ -1646,6 +1665,7 @@ Only include candidates with score >= 5."""
         )
 
         # ── Stage 1: Retrieve chunks (or documents) ─────────────────────
+        print("[RAG] Starting Stage 1: Chunk retrieval..."); sys.stdout.flush()
         t1 = time.time()
         chunk_results = []
         if question_type != "structural" or not cypher_context:
@@ -1683,6 +1703,7 @@ Only include candidates with score >= 5."""
         )
 
         # ── Stage 2: Retrieve entities ───────────────────────────────────
+        print("[RAG] Starting Stage 2: Entity retrieval..."); sys.stdout.flush()
         t2 = time.time()
         entity_results = self._retrieve_entities(question, case_id, debug_log=debug_log)
         entity_search_info = debug_log.get("entity_search") or {}
@@ -1771,6 +1792,7 @@ Only include candidates with score >= 5."""
         )
 
         # ── Stage 4: Graph traversal ─────────────────────────────────────
+        print(f"[RAG] Starting Stage 4: Graph traversal ({len(entity_results)} entities)..."); sys.stdout.flush()
         t4 = time.time()
         all_entity_keys = [e.get("key") for e in entity_results if e.get("key")]
         graph_context = self._traverse_graph(all_entity_keys, case_id, debug_log=debug_log)
