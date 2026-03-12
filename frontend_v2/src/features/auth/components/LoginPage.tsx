@@ -90,7 +90,7 @@ export function LoginPage() {
 
           {/* Center: Hero copy */}
           <div className="max-w-lg space-y-8">
-            <div className="space-y-4">
+            {/* <div className="space-y-4">
               <h1 className="text-4xl font-bold leading-tight tracking-tight text-slate-900 dark:text-slate-50">
                 Uncover connections.
                 <br />
@@ -101,10 +101,10 @@ export function LoginPage() {
                 and intelligence teams. Map entities, trace relationships, and
                 surface hidden patterns across complex cases.
               </p>
-            </div>
+            </div> */}
 
             {/* Feature pills */}
-            <div className="grid grid-cols-2 gap-3">
+            {/* <div className="grid grid-cols-2 gap-3">
               <FeaturePill
                 icon={<Network className="size-4 text-node-person" />}
                 label="Graph Analysis"
@@ -125,7 +125,7 @@ export function LoginPage() {
                 label="Audit Trail"
                 description="Full activity logging"
               />
-            </div>
+            </div> */}
           </div>
 
           {/* Bottom: Footer */}

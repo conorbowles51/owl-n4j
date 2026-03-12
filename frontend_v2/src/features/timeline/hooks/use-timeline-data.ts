@@ -1,32 +1,27 @@
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { timelineAPI } from "../api"
-import type { EntityType } from "@/lib/theme"
+import { getDateRange, deriveEntities } from "../lib/timeline-utils"
+import type { DateRange, DerivedEntity } from "../lib/timeline-utils"
+import type { TimelineEvent } from "../api"
 
 interface UseTimelineDataParams {
   caseId: string | undefined
-  startDate?: string
-  endDate?: string
-  types?: string[]
 }
 
-interface EntityInfo {
-  key: string
-  name: string
-  type: EntityType
-  eventCount: number
+interface UseTimelineDataResult {
+  events: TimelineEvent[]
+  eventTypes: string[]
+  entities: DerivedEntity[]
+  dateRange: DateRange
+  isLoading: boolean
+  totalCount: number
 }
 
-export function useTimelineData({ caseId, startDate, endDate, types }: UseTimelineDataParams) {
+export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineDataResult {
   const eventsQuery = useQuery({
-    queryKey: ["timeline", caseId, startDate, endDate, types],
-    queryFn: () =>
-      timelineAPI.getEvents({
-        caseId: caseId!,
-        startDate,
-        endDate,
-        types,
-      }),
+    queryKey: ["timeline", caseId],
+    queryFn: () => timelineAPI.getEvents({ caseId: caseId! }),
     enabled: !!caseId,
   })
 
@@ -37,36 +32,13 @@ export function useTimelineData({ caseId, startDate, endDate, types }: UseTimeli
 
   const events = eventsQuery.data?.events ?? []
 
-  const entities = useMemo<EntityInfo[]>(() => {
-    const map = new Map<string, EntityInfo>()
-    for (const event of events) {
-      const key = event.entity_key || "__unknown__"
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          name: event.entity_name || "Unknown",
-          type: (event.entity_type || "Unknown") as EntityType,
-          eventCount: 0,
-        })
-      }
-      map.get(key)!.eventCount++
-    }
-    return Array.from(map.values()).sort((a, b) => b.eventCount - a.eventCount)
-  }, [events])
-
-  const dateRange = useMemo(() => {
-    if (events.length === 0) return { min: "", max: "" }
-    const dates = events.map((e) => new Date(e.date).getTime())
-    return {
-      min: new Date(Math.min(...dates)).toISOString().split("T")[0],
-      max: new Date(Math.max(...dates)).toISOString().split("T")[0],
-    }
-  }, [events])
+  const entities = useMemo(() => deriveEntities(events), [events])
+  const dateRange = useMemo(() => getDateRange(events), [events])
 
   return {
     events,
-    entities,
     eventTypes: eventTypesQuery.data ?? [],
+    entities,
     dateRange,
     isLoading: eventsQuery.isLoading,
     totalCount: eventsQuery.data?.total ?? 0,
