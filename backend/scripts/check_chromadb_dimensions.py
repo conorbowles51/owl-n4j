@@ -23,7 +23,12 @@ for name, col in [
         print(f"{name}: empty")
         continue
 
-    results = col.get(include=["embeddings"])
+    try:
+        results = col.get(include=["embeddings"])
+    except Exception as e:
+        print(f"{name}: CORRUPTED - {count} items but cannot read index: {e}")
+        continue
+
     dims = {}
     for emb in results["embeddings"]:
         dims.setdefault(len(emb), 0)
