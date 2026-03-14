@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { timelineAPI } from "../api"
 import { getDateRange, deriveEntities, isValidDate } from "../lib/timeline-utils"
+
 import type { DateRange, DerivedEntity } from "../lib/timeline-utils"
 import type { TimelineEvent } from "../api"
 
@@ -25,11 +26,6 @@ export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineD
     enabled: !!caseId,
   })
 
-  const eventTypesQuery = useQuery({
-    queryKey: ["timeline", "types"],
-    queryFn: () => timelineAPI.getEventTypes(),
-  })
-
   const rawEvents = eventsQuery.data?.events ?? []
   const events = useMemo(() => {
     const valid = rawEvents.filter((e) => isValidDate(e.date))
@@ -41,12 +37,22 @@ export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineD
     return valid
   }, [rawEvents])
 
+  const eventTypes = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const e of events) {
+      counts[e.type] = (counts[e.type] ?? 0) + 1
+    }
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([type]) => type)
+  }, [events])
+
   const entities = useMemo(() => deriveEntities(events), [events])
   const dateRange = useMemo(() => getDateRange(events), [events])
 
   return {
     events,
-    eventTypes: eventTypesQuery.data ?? [],
+    eventTypes,
     entities,
     dateRange,
     isLoading: eventsQuery.isLoading,

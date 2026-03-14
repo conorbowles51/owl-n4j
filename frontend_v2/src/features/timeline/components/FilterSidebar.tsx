@@ -1,4 +1,6 @@
-import { X } from "lucide-react"
+import { useState } from "react"
+import { X, Search } from "lucide-react"
+import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -38,6 +40,12 @@ export function FilterSidebar({
   activeFilterCount,
   onClearAll,
 }: FilterSidebarProps) {
+  const [typeFilter, setTypeFilter] = useState("")
+
+  const filteredEventTypes = typeFilter
+    ? eventTypes.filter((t) => t.toLowerCase().includes(typeFilter.toLowerCase()))
+    : eventTypes
+
   // Group entities by type
   const entityGroups = entities.reduce(
     (acc, entity) => {
@@ -74,8 +82,19 @@ export function FilterSidebar({
               </button>
             </div>
           </div>
-          <div className="space-y-0.5">
-            {eventTypes.map((type) => (
+          {eventTypes.length >= 8 && (
+            <div className="relative mb-1.5">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
+              <Input
+                placeholder="Filter types..."
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="h-6 pl-7 text-xs"
+              />
+            </div>
+          )}
+          <div className="max-h-[240px] overflow-y-auto space-y-0.5">
+            {filteredEventTypes.map((type) => (
               <button
                 key={type}
                 onClick={() => onToggleType(type)}
