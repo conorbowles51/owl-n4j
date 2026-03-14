@@ -10,6 +10,7 @@ interface MapLegendProps {
 
 export function MapLegend({ locations }: MapLegendProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [filter, setFilter] = useState("")
   const hiddenTypes = useMapStore((s) => s.hiddenTypes)
   const toggleType = useMapStore((s) => s.toggleType)
 
@@ -23,6 +24,10 @@ export function MapLegend({ locations }: MapLegendProps) {
   const types = [...typeCounts.entries()]
     .sort((a, b) => b[1] - a[1])
     .map(([type, count]) => ({ type, count, color: getNodeColor(type) }))
+
+  const filteredTypes = filter
+    ? types.filter(({ type }) => type.toLowerCase().includes(filter.toLowerCase()))
+    : types
 
   if (types.length === 0) return null
 
@@ -41,8 +46,16 @@ export function MapLegend({ locations }: MapLegendProps) {
       </button>
 
       {!collapsed && (
-        <div className="flex flex-col gap-0.5 px-2 pb-2">
-          {types.map(({ type, count, color }) => {
+        <div className="px-2 pb-2">
+          <input
+            type="text"
+            placeholder="Filter..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="w-full rounded border border-border bg-background px-2 pt-1 pb-1 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none"
+          />
+          <div className="mt-1 flex max-h-[240px] flex-col gap-0.5 overflow-y-auto">
+          {filteredTypes.map(({ type, count, color }) => {
             const isHidden = hiddenTypes.has(type)
             return (
               <button
@@ -67,6 +80,7 @@ export function MapLegend({ locations }: MapLegendProps) {
               </button>
             )
           })}
+          </div>
         </div>
       )}
     </div>
