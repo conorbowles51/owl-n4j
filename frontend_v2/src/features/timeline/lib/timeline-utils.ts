@@ -1,6 +1,13 @@
 import type { TimelineEvent } from "../api"
 import type { EntityType } from "@/lib/theme"
 
+/** Returns true if the string parses to a valid Date */
+export function isValidDate(dateStr: string | null | undefined): boolean {
+  if (!dateStr) return false
+  const ts = new Date(dateStr).getTime()
+  return !Number.isNaN(ts)
+}
+
 export interface DateRange {
   min: string
   max: string

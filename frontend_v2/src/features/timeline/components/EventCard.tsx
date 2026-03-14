@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { getEventTypeColor } from "../api"
 import type { TimelineEvent } from "../api"
+import { isValidDate } from "../lib/timeline-utils"
 
 interface EventCardProps {
   event: TimelineEvent
@@ -84,10 +85,12 @@ export const EventCard = memo(function EventCard({
             </span>
           )}
           <span>
-            {new Date(event.date).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })}
+            {isValidDate(event.date)
+              ? new Date(event.date).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                })
+              : "—"}
             {event.time && `, ${event.time}`}
           </span>
         </div>

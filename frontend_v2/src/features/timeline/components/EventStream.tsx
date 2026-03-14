@@ -98,14 +98,13 @@ export function EventStream({
                 top: 0,
                 left: 0,
                 width: "100%",
-                height: virtualItem.size,
                 transform: `translateY(${virtualItem.start}px)`,
               }}
               data-index={virtualItem.index}
               ref={virtualizer.measureElement}
             >
               {item.kind === "header" ? (
-                <div className="sticky top-0 z-10 flex items-center gap-2 bg-background/95 backdrop-blur-sm px-3 py-1.5 border-b border-border/50">
+                <div className="flex items-center gap-2 bg-background px-3 py-1.5 border-b border-border/50">
                   <span className="text-xs font-semibold text-foreground">
                     {item.label}
                   </span>
