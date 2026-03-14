@@ -188,42 +188,37 @@ def test_vector_storage():
         test_text = "Test document for Phase 2 integration testing"
         embedding = embedding_service.generate_embedding(test_text)
         
-        # Store in vector DB
+        # Store in vector DB as chunk
         test_doc_id = "test_phase2_integration"
-        vector_db_service.add_document(
-            doc_id=test_doc_id,
+        test_chunk_id = f"{test_doc_id}_chunk_0"
+        vector_db_service.add_chunk(
+            chunk_id=test_chunk_id,
             text=test_text,
             embedding=embedding,
             metadata={
-                "filename": "test_phase2.txt",
+                "doc_id": test_doc_id,
+                "doc_name": "test_phase2.txt",
                 "doc_key": "test-phase2-integration",
                 "source_type": "test",
+                "chunk_index": 0,
             }
         )
-        print("✓ Document stored in vector DB")
-        
-        # Retrieve it
-        doc = vector_db_service.get_document(test_doc_id)
-        if doc and doc["id"] == test_doc_id:
-            print("✓ Document retrieved from vector DB")
-        else:
-            print("✗ Failed to retrieve document")
-            return False
-        
+        print("✓ Chunk stored in vector DB")
+
         # Test search
-        results = vector_db_service.search(
+        results = vector_db_service.search_chunks(
             query_embedding=embedding,
             top_k=1
         )
-        if results and results[0]["id"] == test_doc_id:
-            print("✓ Vector search works correctly")
+        if results and results[0]["id"] == test_chunk_id:
+            print("✓ Vector chunk search works correctly")
         else:
-            print("✗ Vector search failed")
+            print("✗ Vector chunk search failed")
             return False
-        
+
         # Clean up
-        vector_db_service.delete_document(test_doc_id)
-        print("✓ Test document cleaned up")
+        vector_db_service.delete_chunk(test_chunk_id)
+        print("✓ Test chunk cleaned up")
         
         return True
         

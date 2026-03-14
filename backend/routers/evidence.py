@@ -889,8 +889,6 @@ async def delete_evidence_file(
                     from services.vector_db_service import get_vector_db_service
                     vector_db = get_vector_db_service()
                     if vector_db:
-                        # Delete document embedding
-                        vector_db.delete_document(doc_key)
                         # Delete all chunk embeddings for this document
                         vector_db.delete_chunks_by_doc(doc_key)
                         # Delete exclusive entity embeddings

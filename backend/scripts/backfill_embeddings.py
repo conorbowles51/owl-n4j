@@ -188,14 +188,16 @@ def backfill_embeddings(
             stats["skipped"] += 1
             continue
         
-        # Check if already embedded
+        # Check if already embedded (check chunks collection)
         if skip_existing and vector_db_id:
-            # Verify it actually exists in vector DB
-            existing_doc = vector_db_service.get_document(vector_db_id)
-            if existing_doc:
-                print(f"\n[{i}/{stats['total']}] {doc_name} - Already embedded (skipping)")
-                stats["already_embedded"] += 1
-                continue
+            try:
+                chunk_results = vector_db_service.chunk_collection.get(where={"doc_id": doc_id})
+                if chunk_results and chunk_results.get("ids"):
+                    print(f"\n[{i}/{stats['total']}] {doc_name} - Already has chunk embeddings (skipping)")
+                    stats["already_embedded"] += 1
+                    continue
+            except Exception:
+                pass
         
         print(f"\n[{i}/{stats['total']}] Processing: {doc_name}")
         
@@ -237,20 +239,23 @@ def backfill_embeddings(
             stats["failed"] += 1
             continue
         
-        # Store in vector DB
+        # Store as chunk in vector DB
         try:
-            print("  Storing in vector DB...")
-            vector_db_service.add_document(
-                doc_id=doc_id,
-                text=text[:10000],  # Limit text length for storage
+            print("  Storing in vector DB (chunks)...")
+            chunk_id = f"{doc_id}_chunk_0"
+            vector_db_service.add_chunk(
+                chunk_id=chunk_id,
+                text=text[:10000],
                 embedding=embedding,
                 metadata={
-                    "filename": doc_name,
+                    "doc_id": doc_id,
+                    "doc_name": doc_name,
                     "doc_key": doc_key,
+                    "chunk_index": 0,
                     "source_type": file_path.suffix.lower().lstrip('.') or "unknown",
                 }
             )
-            print("  ✓ Stored in vector DB")
+            print("  ✓ Stored in vector DB (chunks)")
         except Exception as e:
             print(f"  ✗ Failed to store in vector DB: {e}")
             stats["failed"] += 1

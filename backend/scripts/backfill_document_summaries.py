@@ -242,18 +242,19 @@ def backfill_document_summaries(
             stats["failed"] += 1
             continue
 
-        # Also update ChromaDB document metadata if the document has an embedding
+        # Also update ChromaDB chunk metadata if chunks exist for this document
         try:
-            existing_docs = vector_db_service.collection.get(ids=[doc_id])
-            if existing_docs and existing_docs.get("ids"):
-                existing_metadata = existing_docs.get("metadatas", [{}])[0] or {}
-                updated_metadata = dict(existing_metadata)
-                updated_metadata["summary"] = summary
-                vector_db_service.collection.update(
-                    ids=[doc_id],
-                    metadatas=[updated_metadata]
-                )
-                log("info", f"  Updated ChromaDB metadata with summary")
+            chunk_results = vector_db_service.chunk_collection.get(where={"doc_id": doc_id})
+            if chunk_results and chunk_results.get("ids"):
+                for idx, cid in enumerate(chunk_results["ids"]):
+                    existing_metadata = chunk_results.get("metadatas", [{}])[idx] or {}
+                    updated_metadata = dict(existing_metadata)
+                    updated_metadata["summary"] = summary
+                    vector_db_service.chunk_collection.update(
+                        ids=[cid],
+                        metadatas=[updated_metadata]
+                    )
+                log("info", f"  Updated ChromaDB chunk metadata with summary ({len(chunk_results['ids'])} chunks)")
         except Exception as e:
             # Non-fatal - the summary is already in Neo4j
             log("warning", f"  Could not update ChromaDB metadata: {e}")

@@ -11,8 +11,8 @@ from config import BASE_DIR, CHROMADB_PATH
 
 
 class VectorDBService:
-    """Service for managing document and entity embeddings in ChromaDB."""
-    
+    """Service for managing entity and chunk embeddings in ChromaDB."""
+
     def __init__(self):
         # Lazy import ChromaDB to avoid Python 3.14 compatibility issues at import time
         # Note: On Python 3.14, chromadb.config will raise ConfigError due to Pydantic v1 incompatibility
@@ -23,7 +23,7 @@ class VectorDBService:
             # Catch any exception during import, including Pydantic v1 ConfigError on Python 3.14
             error_type = type(e).__name__
             error_msg = str(e)
-            
+
             # Check if it's a Pydantic/ConfigError (Python 3.14 compatibility issue)
             if "ConfigError" in error_type or "pydantic" in error_msg.lower() or "infer type" in error_msg.lower():
                 raise RuntimeError(
@@ -36,23 +36,17 @@ class VectorDBService:
                 raise ImportError(
                     f"ChromaDB is not available: {error_type}: {error_msg}"
                 ) from e
-        
+
         # Store ChromaDB data in project data directory
         db_path = BASE_DIR / CHROMADB_PATH
         db_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Initialize ChromaDB client (persistent mode)
         self.client = chromadb.PersistentClient(
             path=str(db_path),
             settings=Settings(anonymized_telemetry=False)
         )
-        
-        # Get or create collection for documents
-        self.collection = self.client.get_or_create_collection(
-            name="documents",
-            metadata={"description": "Document embeddings for semantic search"}
-        )
-        
+
         # Get or create collection for entities
         self.entity_collection = self.client.get_or_create_collection(
             name="entities",
@@ -64,139 +58,83 @@ class VectorDBService:
             name="chunks",
             metadata={"description": "Chunk embeddings for passage-level semantic search"}
         )
-    
-    def add_document(
-        self,
-        doc_id: str,
-        text: str,
-        embedding: List[float],
-        metadata: Optional[Dict] = None
-    ) -> None:
-        """
-        Add or update a document embedding.
 
-        Args:
-            doc_id: Unique document identifier (should match Neo4j Document.id)
-            text: Document text content (for retrieval, truncated to 10k chars)
-            embedding: Vector embedding (list of floats)
-            metadata: Optional metadata (filename, case_id, etc.)
+        # Health flags — set by _validate_collection()
+        self._chunks_healthy = True
+        self._entities_healthy = True
+
+        # Run startup health checks
+        self._chunks_healthy = self._validate_collection("chunks", self.chunk_collection)
+        self._entities_healthy = self._validate_collection("entities", self.entity_collection)
+
+        # Clean up legacy documents collection if it exists
+        self._delete_legacy_documents_collection()
+
+    def _validate_collection(self, name: str, collection) -> bool:
         """
-        # Check dimension consistency with existing embeddings
-        if self.collection.count() > 0:
-            sample = self.collection.peek(1)
-            if sample and sample.get("embeddings") is not None and len(sample["embeddings"]) > 0:
+        Validate that a collection's HNSW index is healthy.
+
+        Returns True if healthy, False otherwise.
+        """
+        try:
+            count = collection.count()
+            if count == 0:
+                return True
+
+            # peek reads from SQLite — should always work
+            peeked = collection.peek(1)
+            embeddings = peeked.get("embeddings")
+            if not peeked or embeddings is None or len(embeddings) == 0:
+                print(f"[VectorDB] WARNING: Collection '{name}' has {count} items but peek() returned no embeddings")
+                return False
+
+            # Attempt a minimal query to exercise the HNSW index
+            sample_embedding = peeked["embeddings"][0]
+            collection.query(query_embeddings=[sample_embedding], n_results=1)
+            return True
+        except Exception as e:
+            print(f"[VectorDB] WARNING: Collection '{name}' failed health check: {e}")
+            print(f"[VectorDB] Run 'python backend/scripts/repair_chromadb.py' to rebuild.")
+            return False
+
+    def _delete_legacy_documents_collection(self):
+        """Delete the legacy 'documents' collection if it exists."""
+        try:
+            existing = [c.name for c in self.client.list_collections()]
+            if "documents" in existing:
+                self.client.delete_collection("documents")
+                print("[VectorDB] Deleted legacy 'documents' collection")
+        except Exception as e:
+            print(f"[VectorDB] Warning: Could not delete legacy documents collection: {e}")
+
+    def _check_dimension(self, collection, collection_name: str, query_embedding: List[float]) -> bool:
+        """
+        Check that query_embedding dimension matches collection's stored dimension.
+
+        Returns True if dimensions match (or collection is empty), False on mismatch.
+        """
+        try:
+            if collection.count() == 0:
+                return True
+            sample = collection.peek(1)
+            if sample and sample.get("embeddings") and len(sample["embeddings"]) > 0:
                 expected = len(sample["embeddings"][0])
-                actual = len(embedding)
+                actual = len(query_embedding)
                 if expected != actual:
-                    raise ValueError(
-                        f"Embedding dimension mismatch: collection has {expected} dims, "
-                        f"new embedding has {actual} dims. "
-                        f"Delete data/chromadb/ and re-ingest with consistent embedding model."
+                    print(
+                        f"[VectorDB] Dimension mismatch in '{collection_name}': "
+                        f"collection has {expected}d, query has {actual}d. "
+                        f"Run 'python backend/scripts/repair_chromadb.py' to fix."
                     )
+                    return False
+            return True
+        except Exception:
+            return True  # If we can't check, let the query proceed
 
-        metadata = metadata or {}
-        metadata["doc_id"] = doc_id
-        
-        # Filter out None values - ChromaDB only accepts str, int, float, bool
-        # Convert None values to empty strings to preserve keys
-        cleaned_metadata = {}
-        for k, v in metadata.items():
-            if v is None:
-                # Convert None to empty string for ChromaDB compatibility
-                cleaned_metadata[k] = ""
-            elif isinstance(v, (str, int, float, bool)):
-                # Keep valid types as-is
-                cleaned_metadata[k] = v
-            else:
-                # Convert other types to string
-                cleaned_metadata[k] = str(v)
-        
-        # Truncate text to avoid storage issues (ChromaDB has limits)
-        text_truncated = text[:10000] if len(text) > 10000 else text
-        
-        self.collection.upsert(
-            ids=[doc_id],
-            embeddings=[embedding],
-            documents=[text_truncated],  # Store text for retrieval
-            metadatas=[cleaned_metadata]
-        )
-    
-    def search(
-        self,
-        query_embedding: List[float],
-        top_k: int = 50,
-        filter_metadata: Optional[Dict] = None
-    ) -> List[Dict]:
-        """
-        Search for similar documents.
-        
-        Args:
-            query_embedding: Query vector embedding
-            top_k: Number of results to return
-            filter_metadata: Optional metadata filters (e.g., {"case_id": "case_123"})
-            
-        Returns:
-            List of dicts with: id, document (text), metadata, distance
-        """
-        where = filter_metadata if filter_metadata else None
-        
-        try:
-            results = self.collection.query(
-                query_embeddings=[query_embedding],
-                n_results=top_k,
-                where=where
-            )
-            
-            # Format results
-            formatted = []
-            if results["ids"] and len(results["ids"][0]) > 0:
-                for i in range(len(results["ids"][0])):
-                    formatted.append({
-                        "id": results["ids"][0][i],
-                        "text": results["documents"][0][i],
-                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                        "distance": results["distances"][0][i] if "distances" in results and results["distances"] else None
-                    })
-            
-            return formatted
-        except Exception as e:
-            print(f"[VectorDB] Search error: {e}")
-            return []
-    
-    def delete_document(self, doc_id: str) -> None:
-        """Delete a document embedding."""
-        try:
-            self.collection.delete(ids=[doc_id])
-        except Exception as e:
-            print(f"[VectorDB] Delete error: {e}")
-    
-    def get_document(self, doc_id: str) -> Optional[Dict]:
-        """Get a document by ID."""
-        try:
-            results = self.collection.get(ids=[doc_id])
-            if results["ids"]:
-                return {
-                    "id": results["ids"][0],
-                    "text": results["documents"][0] if results["documents"] else "",
-                    "metadata": results["metadatas"][0] if results["metadatas"] else {}
-                }
-            return None
-        except Exception as e:
-            print(f"[VectorDB] Get document error: {e}")
-            return None
-    
-    def count_documents(self) -> int:
-        """Get the total number of documents in the collection."""
-        try:
-            return self.collection.count()
-        except Exception as e:
-            print(f"[VectorDB] Count error: {e}")
-            return 0
-    
     # =====================
     # Entity Methods
     # =====================
-    
+
     def add_entity(
         self,
         entity_key: str,
@@ -228,7 +166,7 @@ class VectorDBService:
 
         metadata = metadata or {}
         metadata["entity_key"] = entity_key
-        
+
         # Filter out None values - ChromaDB only accepts str, int, float, bool
         cleaned_metadata = {}
         for k, v in metadata.items():
@@ -238,17 +176,17 @@ class VectorDBService:
                 cleaned_metadata[k] = v
             else:
                 cleaned_metadata[k] = str(v)
-        
+
         # Truncate text to avoid storage issues
         text_truncated = text[:10000] if len(text) > 10000 else text
-        
+
         self.entity_collection.upsert(
             ids=[entity_key],
             embeddings=[embedding],
             documents=[text_truncated],
             metadatas=[cleaned_metadata]
         )
-    
+
     def search_entities(
         self,
         query_embedding: List[float],
@@ -257,24 +195,37 @@ class VectorDBService:
     ) -> List[Dict]:
         """
         Search for similar entities.
-        
+
         Args:
             query_embedding: Query vector embedding
             top_k: Number of results to return
             filter_metadata: Optional metadata filters (e.g., {"entity_type": "Person"})
-            
+
         Returns:
             List of dicts with: id (entity_key), text, metadata, distance
         """
+        if not self._entities_healthy:
+            print("[VectorDB] Entity collection is unhealthy — skipping search. Run repair_chromadb.py.")
+            return []
+
+        if not self._check_dimension(self.entity_collection, "entities", query_embedding):
+            return []
+
         where = filter_metadata if filter_metadata else None
-        
+
+        # Clamp n_results to collection size
+        count = self.entity_collection.count()
+        if count == 0:
+            return []
+        n_results = min(top_k, count)
+
         try:
             results = self.entity_collection.query(
                 query_embeddings=[query_embedding],
-                n_results=top_k,
+                n_results=n_results,
                 where=where
             )
-            
+
             formatted = []
             if results["ids"] and len(results["ids"][0]) > 0:
                 for i in range(len(results["ids"][0])):
@@ -284,19 +235,19 @@ class VectorDBService:
                         "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
                         "distance": results["distances"][0][i] if "distances" in results and results["distances"] else None
                     })
-            
+
             return formatted
         except Exception as e:
             print(f"[VectorDB] Entity search error: {e}")
             return []
-    
+
     def delete_entity(self, entity_key: str) -> None:
         """Delete an entity embedding."""
         try:
             self.entity_collection.delete(ids=[entity_key])
         except Exception as e:
             print(f"[VectorDB] Entity delete error: {e}")
-    
+
     def get_entity(self, entity_key: str) -> Optional[Dict]:
         """Get an entity by key."""
         try:
@@ -311,7 +262,7 @@ class VectorDBService:
         except Exception as e:
             print(f"[VectorDB] Get entity error: {e}")
             return None
-    
+
     def count_entities(self) -> int:
         """Get the total number of entities in the collection."""
         try:
@@ -390,12 +341,25 @@ class VectorDBService:
         Returns:
             List of dicts with: id (chunk_id), text, metadata, distance
         """
+        if not self._chunks_healthy:
+            print("[VectorDB] Chunks collection is unhealthy — skipping search. Run repair_chromadb.py.")
+            return []
+
+        if not self._check_dimension(self.chunk_collection, "chunks", query_embedding):
+            return []
+
         where = filter_metadata if filter_metadata else None
+
+        # Clamp n_results to collection size
+        count = self.chunk_collection.count()
+        if count == 0:
+            return []
+        n_results = min(top_k, count)
 
         try:
             results = self.chunk_collection.query(
                 query_embeddings=[query_embedding],
-                n_results=top_k,
+                n_results=n_results,
                 where=where
             )
 
@@ -442,18 +406,6 @@ class VectorDBService:
     # Case-level Operations
     # =====================
 
-    def delete_documents_by_case(self, case_id: str) -> int:
-        """Delete all document embeddings for a case. Returns count deleted."""
-        try:
-            results = self.collection.get(where={"case_id": case_id})
-            if results and results["ids"]:
-                self.collection.delete(ids=results["ids"])
-                return len(results["ids"])
-            return 0
-        except Exception as e:
-            print(f"[VectorDB] Delete docs by case error: {e}")
-            return 0
-
     def delete_chunks_by_case(self, case_id: str) -> int:
         """Delete all chunk embeddings for a case. Returns count deleted."""
         try:
@@ -487,14 +439,13 @@ class VectorDBService:
         Get all IDs and metadata from a collection (for audit).
 
         Args:
-            collection_name: One of 'documents', 'entities', 'chunks'
+            collection_name: One of 'entities', 'chunks'
 
         Returns:
             List of (id, metadata) tuples.
         """
         try:
             col = {
-                "documents": self.collection,
                 "entities": self.entity_collection,
                 "chunks": self.chunk_collection,
             }[collection_name]
@@ -509,7 +460,7 @@ class VectorDBService:
         Delete specific IDs from a named collection.
 
         Args:
-            collection_name: One of 'documents', 'entities', 'chunks'
+            collection_name: One of 'entities', 'chunks'
             ids: List of IDs to delete
 
         Returns:
@@ -519,7 +470,6 @@ class VectorDBService:
             return 0
         try:
             col = {
-                "documents": self.collection,
                 "entities": self.entity_collection,
                 "chunks": self.chunk_collection,
             }[collection_name]
@@ -555,14 +505,13 @@ except Exception as e:
     # Catch any exception - ImportError, RuntimeError, ConfigError, or any other error
     error_type = type(e).__name__
     error_msg = str(e)
-    
+
     # Check if it's a Python 3.14 / ChromaDB compatibility issue
     if "ConfigError" in error_type or "pydantic" in error_msg.lower() or "infer type" in error_msg.lower() or "Python 3.14" in error_msg:
-        print(f"⚠️  Warning: VectorDBService unavailable due to Python 3.14 / ChromaDB compatibility issue.")
+        print(f"Warning: VectorDBService unavailable due to Python 3.14 / ChromaDB compatibility issue.")
         print(f"   Error: {error_type}")
         print(f"   Vector search will be disabled. Consider using Python 3.13 or earlier.")
     else:
-        print(f"⚠️  Warning: Could not initialize VectorDBService: {error_type}: {error_msg}")
+        print(f"Warning: Could not initialize VectorDBService: {error_type}: {error_msg}")
         print("   Vector search will be disabled.")
     vector_db_service = None
-

@@ -49,8 +49,8 @@ class BackupService:
                 "relationships": []
             },
             "vector_db_data": {
-                "documents": [],
-                "entities": []
+                "entities": [],
+                "chunks": []
             },
             "evidence_records": [],
             "files": [] if include_files else None
@@ -71,48 +71,41 @@ class BackupService:
             print("[Backup] Warning: VectorDBService unavailable, skipping vector DB export")
         else:
             try:
-                # Get all documents and filter by case_id
-                # ChromaDB's get() doesn't reliably support where filters, so we get all and filter
-                try:
-                    all_docs = vector_db_service.collection.get()
-                    if all_docs and all_docs.get("ids"):
-                        for i, doc_id in enumerate(all_docs["ids"]):
-                            metadata = all_docs.get("metadatas", [{}])[i] if all_docs.get("metadatas") else {}
-                            # Filter by case_id
-                            if metadata.get("case_id") == case_id:
-                                embedding = all_docs.get("embeddings", [[]])[i] if all_docs.get("embeddings") else []
-                                text = all_docs.get("documents", [""])[i] if all_docs.get("documents") else ""
-                                
-                                doc_data = {
-                                    "id": doc_id,
-                                    "text": text,
-                                    "embedding": embedding,
-                                    "metadata": metadata
-                                }
-                                backup_data["vector_db_data"]["documents"].append(doc_data)
-                except Exception as e:
-                    print(f"[Backup] Failed to export documents: {e}")
-                
                 # Get all entities and filter by case_id
                 try:
                     all_entities = vector_db_service.entity_collection.get()
                     if all_entities and all_entities.get("ids"):
                         for i, entity_id in enumerate(all_entities["ids"]):
                             metadata = all_entities.get("metadatas", [{}])[i] if all_entities.get("metadatas") else {}
-                            # Filter by case_id
                             if metadata.get("case_id") == case_id:
                                 embedding = all_entities.get("embeddings", [[]])[i] if all_entities.get("embeddings") else []
                                 text = all_entities.get("documents", [""])[i] if all_entities.get("documents") else ""
-                                
-                                entity_data = {
+                                backup_data["vector_db_data"]["entities"].append({
                                     "id": entity_id,
                                     "text": text,
                                     "embedding": embedding,
-                                    "metadata": metadata
-                                }
-                                backup_data["vector_db_data"]["entities"].append(entity_data)
+                                    "metadata": metadata,
+                                })
                 except Exception as e:
                     print(f"[Backup] Failed to export entities: {e}")
+
+                # Get all chunks and filter by case_id
+                try:
+                    all_chunks = vector_db_service.chunk_collection.get()
+                    if all_chunks and all_chunks.get("ids"):
+                        for i, chunk_id in enumerate(all_chunks["ids"]):
+                            metadata = all_chunks.get("metadatas", [{}])[i] if all_chunks.get("metadatas") else {}
+                            if metadata.get("case_id") == case_id:
+                                embedding = all_chunks.get("embeddings", [[]])[i] if all_chunks.get("embeddings") else []
+                                text = all_chunks.get("documents", [""])[i] if all_chunks.get("documents") else ""
+                                backup_data["vector_db_data"]["chunks"].append({
+                                    "id": chunk_id,
+                                    "text": text,
+                                    "embedding": embedding,
+                                    "metadata": metadata,
+                                })
+                except Exception as e:
+                    print(f"[Backup] Failed to export chunks: {e}")
             except Exception as e:
                 print(f"[Backup] Warning: Failed to export vector DB data: {e}")
         
@@ -343,26 +336,6 @@ class BackupService:
             else:
                 vector_data = backup_data.get("vector_db_data", {})
                 
-                # Import documents
-                for doc in vector_data.get("documents", []):
-                    try:
-                        doc_id = doc.get("id")
-                        text = doc.get("text", "")
-                        embedding = doc.get("embedding", [])
-                        metadata = doc.get("metadata", {})
-                        metadata["case_id"] = target_case_id
-                        
-                        if doc_id and embedding:
-                            vector_db_service.collection.upsert(
-                                ids=[doc_id],
-                                embeddings=[embedding],
-                                documents=[text],
-                                metadatas=[metadata]
-                            )
-                            results["documents_imported"] += 1
-                    except Exception as e:
-                        results["errors"].append(f"Failed to import document {doc.get('id')}: {e}")
-                
                 # Import entities
                 for entity in vector_data.get("entities", []):
                     try:
@@ -382,7 +355,26 @@ class BackupService:
                             results["entities_imported"] += 1
                     except Exception as e:
                         results["errors"].append(f"Failed to import entity {entity.get('id')}: {e}")
-            
+
+                # Import chunks
+                for chunk in vector_data.get("chunks", []):
+                    try:
+                        chunk_id = chunk.get("id")
+                        text = chunk.get("text", "")
+                        embedding = chunk.get("embedding", [])
+                        metadata = chunk.get("metadata", {})
+                        metadata["case_id"] = target_case_id
+
+                        if chunk_id and embedding:
+                            vector_db_service.chunk_collection.upsert(
+                                ids=[chunk_id],
+                                embeddings=[embedding],
+                                documents=[text],
+                                metadatas=[metadata]
+                            )
+                    except Exception as e:
+                        results["errors"].append(f"Failed to import chunk {chunk.get('id')}: {e}")
+
             # 4. Import evidence records
             # Note: Evidence records are stored in JSON file, but restoring them properly
             # would require writing to evidence_storage. For now, we'll just count them.

@@ -355,11 +355,10 @@ def delete_case(db: Session, case_id: UUID, user: User) -> None:
         from services.vector_db_service import vector_db_service
         if vector_db_service:
             case_id_str = str(case_id)
-            docs_deleted = vector_db_service.delete_documents_by_case(case_id_str)
             chunks_deleted = vector_db_service.delete_chunks_by_case(case_id_str)
             entities_deleted = vector_db_service.delete_entities_by_case(case_id_str)
             print(f"[CaseService] Cleaned up ChromaDB for case {case_id_str}: "
-                  f"{docs_deleted} docs, {chunks_deleted} chunks, {entities_deleted} entities")
+                  f"{chunks_deleted} chunks, {entities_deleted} entities")
     except Exception as e:
         print(f"[CaseService] Warning: ChromaDB cleanup failed for case {case_id}: {e}")
         # Don't block case deletion if vector cleanup fails

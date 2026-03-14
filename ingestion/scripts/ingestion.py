@@ -846,20 +846,23 @@ def ingest_document(
                     embedding = profile_embedding_service.generate_embedding(embedding_text)
                 log_progress(f"[Step 7] Document embedding: Embedding generated successfully (dimension: {len(embedding)})", log_callback)
                 
-                # Store in vector DB
-                log_progress(f"[Step 7] Document embedding: Storing embedding in vector database", log_callback)
-                vector_db_service.add_document(
-                    doc_id=doc_id,
-                    text=text[:10000],  # Limit text length for storage
+                # Store as chunk in vector DB
+                log_progress(f"[Step 7] Document embedding: Storing embedding in vector database (chunks)", log_callback)
+                chunk_id = f"{doc_id}_chunk_0"
+                vector_db_service.add_chunk(
+                    chunk_id=chunk_id,
+                    text=text[:10000],
                     embedding=embedding,
                     metadata={
-                        "filename": doc_name,
+                        "doc_id": doc_id,
+                        "doc_name": doc_name,
                         "doc_key": doc_key,
                         "case_id": case_id,
+                        "chunk_index": 0,
                         "source_type": metadata.get("source_type", "unknown"),
                     }
                 )
-                log_progress(f"[Step 7] Document embedding: Embedding stored in vector database", log_callback)
+                log_progress(f"[Step 7] Document embedding: Embedding stored in vector database (chunks)", log_callback)
                 
                 # Update Neo4j Document node with vector_db_id
                 log_progress(f"[Step 7] Document embedding: Linking document node to vector database (vector_db_id: {doc_id})", log_callback)
@@ -910,27 +913,23 @@ Provide a concise summary that captures the essential information:"""
                 db.update_document(doc_key, case_id, {"summary": doc_summary})
                 log_progress(f"[Step 8] Document summary: Summary generated and stored in Neo4j successfully", log_callback)
                 
-                # Also store summary in vector DB if embedding was stored
+                # Also store summary in chunk metadata if embedding was stored
                 if embedding_stored and VECTOR_DB_AVAILABLE and vector_db_service:
                     try:
-                        log_progress(f"[Step 8] Document summary: Storing summary in vector database", log_callback)
-                        # Update the document in vector DB to include summary in metadata
-                        # Get the existing document to preserve other metadata
-                        existing_docs = vector_db_service.collection.get(ids=[doc_id])
-                        existing_metadata = existing_docs.get("metadatas", [{}])[0] if existing_docs.get("metadatas") else {}
-                        
-                        # Update metadata with summary
-                        updated_metadata = dict(existing_metadata)
-                        updated_metadata["summary"] = doc_summary
-                        
-                        # Update the document in vector DB
-                        vector_db_service.collection.update(
-                            ids=[doc_id],
-                            metadatas=[updated_metadata]
-                        )
-                        log_progress(f"[Step 8] Document summary: Summary stored in vector database successfully", log_callback)
+                        log_progress(f"[Step 8] Document summary: Storing summary in chunk metadata", log_callback)
+                        chunk_id = f"{doc_id}_chunk_0"
+                        chunk_results = vector_db_service.chunk_collection.get(ids=[chunk_id])
+                        if chunk_results and chunk_results.get("ids"):
+                            existing_metadata = chunk_results.get("metadatas", [{}])[0] or {}
+                            updated_metadata = dict(existing_metadata)
+                            updated_metadata["summary"] = doc_summary
+                            vector_db_service.chunk_collection.update(
+                                ids=[chunk_id],
+                                metadatas=[updated_metadata]
+                            )
+                        log_progress(f"[Step 8] Document summary: Summary stored in chunk metadata successfully", log_callback)
                     except Exception as e:
-                        log_warning(f"[Step 8] Document summary: Failed to store summary in vector DB - {e}", log_callback)
+                        log_warning(f"[Step 8] Document summary: Failed to store summary in chunk metadata - {e}", log_callback)
             else:
                 log_warning(f"[Step 8] Document summary: LLM returned empty summary", log_callback)
         except Exception as e:

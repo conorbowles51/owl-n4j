@@ -14,7 +14,6 @@ if vector_db_service is None:
     sys.exit(1)
 
 for name, col in [
-    ("documents", vector_db_service.collection),
     ("entities", vector_db_service.entity_collection),
     ("chunks", vector_db_service.chunk_collection),
 ]:

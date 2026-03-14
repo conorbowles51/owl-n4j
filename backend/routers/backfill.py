@@ -383,17 +383,17 @@ def backfill_documents_for_user(
             stats["skipped"] += 1
             continue
         
-        # Check if already embedded
+        # Check if already embedded (check chunks collection)
         if skip_existing and vector_db_id:
             try:
-                existing_doc = vector_db_service.get_document(vector_db_id)
-                if existing_doc:
+                # Check if chunks exist for this document
+                chunk_results = vector_db_service.chunk_collection.get(where={"doc_id": doc_id})
+                if chunk_results and chunk_results.get("ids"):
                     stats["already_embedded"] += 1
                     if log_callback:
-                        log_callback("progress", f"Skipping {doc_name} - already has embedding")
+                        log_callback("progress", f"Skipping {doc_name} - already has chunk embeddings")
                     continue
             except Exception as e:
-                # If we can't verify, continue processing
                 if log_callback:
                     log_callback("warning", f"Could not verify existing embedding for {doc_name}, will process: {str(e)}")
         
@@ -445,27 +445,30 @@ def backfill_documents_for_user(
                 log_callback("error", f"Failed to generate embedding for {doc_name}: {str(e)}")
             continue
         
-        # Store in vector DB
+        # Store as a chunk in vector DB
         try:
-            vector_db_id = vector_db_service.add_document(
-                doc_id=doc_id,
-                text=text,
+            chunk_id = f"{doc_id}_chunk_0"
+            vector_db_service.add_chunk(
+                chunk_id=chunk_id,
+                text=text[:10000],
                 embedding=embedding,
                 metadata={
-                    "filename": doc_name,
+                    "doc_id": doc_id,
+                    "doc_name": doc_name,
                     "doc_key": doc_key,
                     "case_id": doc_case_id,
+                    "chunk_index": 0,
                     "source_type": "backfill",
                     "owner": username,
                 }
             )
-            
+
             # Update Neo4j document node
             neo4j_service.run_cypher(
-                "MATCH (d:Document {id: $doc_id}) SET d.vector_db_id = $vector_db_id",
-                {"doc_id": doc_id, "vector_db_id": vector_db_id}
+                "MATCH (d:Document {id: $doc_id}) SET d.vector_db_id = $doc_id",
+                {"doc_id": doc_id}
             )
-            
+
             stats["processed"] += 1
             if log_callback and i % 10 == 0:
                 log_callback("progress", f"Processed {i}/{stats['total']} documents...")
@@ -995,21 +998,6 @@ async def get_backfill_status(
             total_entities_chromadb = 0
             entities_with_case_id = 0
 
-        # Check ChromaDB document metadata for case_id
-        try:
-            doc_collection = vector_db_service.collection
-            all_chroma_docs = doc_collection.get(include=["metadatas"])
-            chroma_doc_ids = all_chroma_docs.get("ids", [])
-            chroma_doc_metadatas = all_chroma_docs.get("metadatas", [])
-
-            total_docs_chromadb = len(chroma_doc_ids)
-            docs_chromadb_with_case_id = sum(
-                1 for m in chroma_doc_metadatas if m and m.get("case_id") and m["case_id"] != ""
-            )
-        except Exception:
-            total_docs_chromadb = 0
-            docs_chromadb_with_case_id = 0
-
         # Check ChromaDB chunk metadata for case_id
         try:
             chunks_with_case_id = sum(
@@ -1027,9 +1015,6 @@ async def get_backfill_status(
                 "missing_summary": total_docs - docs_with_summary,
                 "with_case_id": docs_with_case_id,
                 "missing_case_id": total_docs - docs_with_case_id,
-                "chromadb_total": total_docs_chromadb,
-                "chromadb_with_case_id": docs_chromadb_with_case_id,
-                "chromadb_missing_case_id": total_docs_chromadb - docs_chromadb_with_case_id,
             },
             entities={
                 "total_neo4j": total_entities_neo4j,

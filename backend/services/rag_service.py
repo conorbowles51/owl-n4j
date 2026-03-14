@@ -645,16 +645,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     print(f"[RAG] No chunks found for case_id={case_id} (total chunks: {chunk_count})")
                 source = "chunks"
             else:
-                # Fallback to document-level search
-                all_results = vector_db_service.search(
-                    query_embedding=query_embedding,
-                    top_k=VECTOR_SEARCH_TOP_K,
-                    filter_metadata=vector_filter,
-                )
-                if not all_results:
-                    doc_count = vector_db_service.count_documents()
-                    print(f"[RAG] No documents found for case_id={case_id} (total docs: {doc_count})")
-                source = "documents"
+                # No chunks available — return empty
+                all_results = []
+                source = "chunks"
 
             # Apply confidence threshold
             filtered = []

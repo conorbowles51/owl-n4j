@@ -41,7 +41,7 @@ def test_document_ingestion_with_embedding():
             ("embedding_service", "Embedding service import"),
             ("VECTOR_DB_AVAILABLE", "Vector DB availability check"),
             ("embedding_service.generate_embedding", "Embedding generation"),
-            ("vector_db_service.add_document", "Vector DB storage"),
+            ("vector_db_service.add_chunk", "Vector DB chunk storage"),
             ("db.update_document", "Neo4j document update"),
         ]
         
@@ -128,40 +128,40 @@ def test_vector_search_with_sample_documents():
             }
         ]
         
-        print("Adding sample documents to vector DB...")
+        print("Adding sample documents as chunks to vector DB...")
         for doc in sample_docs:
             embedding = embedding_service.generate_embedding(doc["text"])
-            vector_db_service.add_document(
-                doc_id=doc["id"],
+            vector_db_service.add_chunk(
+                chunk_id=f"{doc['id']}_chunk_0",
                 text=doc["text"],
                 embedding=embedding,
-                metadata=doc["metadata"]
+                metadata={**doc["metadata"], "doc_id": doc["id"], "chunk_index": 0}
             )
-        print(f"✓ Added {len(sample_docs)} sample documents")
-        
+        print(f"✓ Added {len(sample_docs)} sample chunks")
+
         # Test search queries
         test_queries = [
             "What documents discuss fraud?",
             "Tell me about money laundering",
             "What are the suspicious transactions?",
         ]
-        
+
         print("\nTesting vector search queries:")
         for query in test_queries:
             query_embedding = embedding_service.generate_embedding(query)
-            results = vector_db_service.search(query_embedding, top_k=2)
-            
+            results = vector_db_service.search_chunks(query_embedding, top_k=2)
+
             print(f"\n  Query: '{query}'")
-            print(f"  Found {len(results)} documents:")
+            print(f"  Found {len(results)} chunks:")
             for i, result in enumerate(results, 1):
                 print(f"    {i}. {result['metadata'].get('filename', result['id'])}")
                 print(f"       Distance: {result.get('distance', 'N/A'):.4f}")
-        
+
         # Clean up
-        print("\nCleaning up test documents...")
+        print("\nCleaning up test chunks...")
         for doc in sample_docs:
-            vector_db_service.delete_document(doc["id"])
-        print("✓ Test documents cleaned up")
+            vector_db_service.delete_chunk(f"{doc['id']}_chunk_0")
+        print("✓ Test chunks cleaned up")
         
         return True
         
@@ -316,31 +316,32 @@ def test_integration_flow():
             embedding = embedding_service.generate_embedding(doc_text)
             print(f"     ✓ Embedding generated ({len(embedding)} dimensions)")
             
-            # 2. Store in vector DB
-            print("  2. Storing in vector DB...")
-            vector_db_service.add_document(
-                doc_id=doc_id,
+            # 2. Store in vector DB as chunk
+            print("  2. Storing in vector DB (chunks)...")
+            chunk_id = f"{doc_id}_chunk_0"
+            vector_db_service.add_chunk(
+                chunk_id=chunk_id,
                 text=doc_text,
                 embedding=embedding,
-                metadata={"filename": "test.txt", "source_type": "test"}
+                metadata={"doc_id": doc_id, "doc_name": "test.txt", "source_type": "test", "chunk_index": 0}
             )
-            print("     ✓ Document stored")
-            
+            print("     ✓ Chunk stored")
+
             # 3. Search for it
-            print("  3. Searching vector DB...")
+            print("  3. Searching vector DB (chunks)...")
             query = "fraud investigation"
             query_embedding = embedding_service.generate_embedding(query)
-            results = vector_db_service.search(query_embedding, top_k=1)
+            results = vector_db_service.search_chunks(query_embedding, top_k=1)
             print(f"     ✓ Search returned {len(results)} results")
-            
-            if results and results[0]["id"] == doc_id:
-                print("     ✓ Found the correct document")
+
+            if results and results[0]["id"] == chunk_id:
+                print("     ✓ Found the correct chunk")
             else:
-                print("     ⚠ Document not found in search results")
-            
+                print("     ⚠ Chunk not found in search results")
+
             # 4. Clean up
             print("  4. Cleaning up...")
-            vector_db_service.delete_document(doc_id)
+            vector_db_service.delete_chunk(chunk_id)
             print("     ✓ Cleanup complete")
             
             print("\n✓ Complete integration flow works!")
