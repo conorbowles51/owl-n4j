@@ -481,7 +481,7 @@ Guidelines:
 - {analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
-- CITE SOURCES: When referencing specific facts, cite the document name and page number in [brackets] (e.g., [Financial Report, p.3])
+- CITE SOURCES: When referencing specific facts, create a clickable markdown link using the format [document name, p.N](doc://document_filename.pdf/N) where N is the page number. For example: [Financial Report, p.3](doc://Financial_Report.pdf/3). Use the exact filename from the passage headers above (e.g., "USA-ET-000021.pdf"). If no page number is available, use page 1.
 - When verified facts are provided with quotes, reference the original quote to support your answer
 - Be specific and cite document names when relevant
 - If you identify patterns or important information, explain them

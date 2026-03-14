@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   MessageSquare,
   Send,
@@ -302,6 +302,7 @@ export default function ChatPanel({
   currentCaseName, // Current case name
   currentCaseVersion, // Current case version
   isTableMode = false, // Whether we're in table view mode
+  onViewDocument, // Callback to open document viewer: (filename, page, caseId) => void
 }) {
   const [messages, setMessages] = useState(initialMessages);
   const [input, setInput] = useState('');
@@ -325,6 +326,58 @@ export default function ChatPanel({
   const [noteSavedId, setNoteSavedId] = useState(null); // msg.id of recently saved note for feedback
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+
+  // Custom ReactMarkdown URL transform: allow doc:// protocol through
+  // (react-markdown v10 strips non-standard protocols by default)
+  const markdownUrlTransform = useCallback((url) => {
+    if (url.startsWith('doc://')) return url;
+    // Fall back to default safe protocol check for everything else
+    const colon = url.indexOf(':');
+    if (colon === -1) return url;
+    const slash = url.indexOf('/');
+    const questionMark = url.indexOf('?');
+    const numberSign = url.indexOf('#');
+    if (
+      (slash !== -1 && colon > slash) ||
+      (questionMark !== -1 && colon > questionMark) ||
+      (numberSign !== -1 && colon > numberSign) ||
+      /^(https?|ircs?|mailto|xmpp)$/i.test(url.slice(0, colon))
+    ) {
+      return url;
+    }
+    return '';
+  }, []);
+
+  // Custom ReactMarkdown renderer: intercept doc:// links to open document viewer
+  const markdownComponents = useMemo(() => ({
+    a: ({ href, children, ...props }) => {
+      if (href && href.startsWith('doc://')) {
+        const docPath = href.replace('doc://', '');
+        const lastSlash = docPath.lastIndexOf('/');
+        let filename, page;
+        if (lastSlash > 0) {
+          filename = decodeURIComponent(docPath.substring(0, lastSlash));
+          page = parseInt(docPath.substring(lastSlash + 1), 10) || 1;
+        } else {
+          filename = decodeURIComponent(docPath);
+          page = 1;
+        }
+        return (
+          <button
+            onClick={(e) => {
+              e.preventDefault();
+              onViewDocument?.(filename, page, currentCaseId);
+            }}
+            className="text-owl-blue-600 hover:text-owl-blue-800 underline cursor-pointer font-medium inline bg-transparent border-none p-0 text-sm"
+            title={`Open ${filename} at page ${page}`}
+          >
+            {children}
+          </button>
+        );
+      }
+      return <a href={href} {...props} target="_blank" rel="noopener noreferrer">{children}</a>;
+    },
+  }), [onViewDocument, currentCaseId]);
 
   // Update messages when initialMessages changes (e.g., when loading a snapshot)
   useEffect(() => {
@@ -831,7 +884,7 @@ export default function ChatPanel({
               ) : (
                 <>
                   <div className="text-sm prose prose-sm max-w-none prose-p:my-2 prose-ul:my-2 prose-li:my-0.5 prose-headings:my-2 prose-strong:text-owl-blue-700 prose-table:text-xs">
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    <ReactMarkdown components={markdownComponents} urlTransform={markdownUrlTransform}>{msg.content}</ReactMarkdown>
                   </div>
                   {/* Processed By signature */}
                   {msg.modelInfo && (
@@ -940,7 +993,7 @@ export default function ChatPanel({
                   {/* Document Sources Panel */}
                   {msg.documentSummary && expandedDocSummaries.has(msg.id) && (
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs prose prose-xs max-w-none text-amber-900 [&_strong]:text-amber-800 [&_li]:my-0.5">
-                      <ReactMarkdown>
+                      <ReactMarkdown components={markdownComponents} urlTransform={markdownUrlTransform}>
                         {msg.documentSummary}
                       </ReactMarkdown>
                     </div>

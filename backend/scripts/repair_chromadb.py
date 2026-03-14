@@ -147,14 +147,15 @@ def diagnose_collection(client, name: str) -> dict:
     # Check if peek/query work (HNSW index health)
     try:
         peeked = col.peek(1)
-        if not peeked or not peeked.get("embeddings") or len(peeked["embeddings"]) == 0:
+        embeddings = peeked.get("embeddings") if peeked else None
+        if embeddings is None or len(embeddings) == 0:
             return {
                 "exists": True, "count": count, "healthy": False,
                 "dimensions": {}, "error": "peek() returned no embeddings",
             }
 
         # Try a query to exercise HNSW
-        sample_emb = peeked["embeddings"][0]
+        sample_emb = embeddings[0]
         col.query(query_embeddings=[sample_emb], n_results=1)
     except Exception as e:
         return {

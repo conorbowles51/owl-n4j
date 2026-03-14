@@ -125,6 +125,18 @@ export const graphAPI = {
   },
 
   /**
+   * Get details for multiple nodes in a single request
+   * @param {string[]} keys - Array of node keys
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getNodeDetailsBulk: (keys, caseId) => {
+    return fetchAPI('/graph/nodes/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ keys, case_id: caseId }),
+    });
+  },
+
+  /**
    * Get a node and its neighbours
    * @param {string} key - Node key
    * @param {number} [depth=1] - Depth of neighbourhood

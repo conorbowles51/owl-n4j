@@ -77,18 +77,29 @@ async def create_chat_history(chat: ChatHistoryCreate, user: dict = Depends(get_
     )
 
 
-@router.get("", response_model=List[ChatHistoryResponse])
+class ChatHistorySummary(BaseModel):
+    """Lightweight response for listing chat histories (without full messages)."""
+    id: str
+    name: str
+    timestamp: str
+    created_at: str
+    owner: str
+    snapshot_id: Optional[str] = None
+    case_id: Optional[str] = None
+    case_version: Optional[int] = None
+    message_count: int
+
+
+@router.get("", response_model=List[ChatHistorySummary])
 async def list_chat_histories(user: dict = Depends(get_current_user)):
-    """List all chat histories for the current user."""
+    """List all chat histories for the current user (summaries only, no messages)."""
     chats = chat_history_storage.list_by_user(user["username"])
-    
-    # Convert to response format
+
     result = []
     for chat in chats:
-        result.append(ChatHistoryResponse(
+        result.append(ChatHistorySummary(
             id=chat["id"],
             name=chat["name"],
-            messages=chat["messages"],
             timestamp=chat["timestamp"],
             created_at=chat["created_at"],
             owner=chat["owner"],
@@ -97,8 +108,7 @@ async def list_chat_histories(user: dict = Depends(get_current_user)):
             case_version=chat.get("case_version"),
             message_count=len(chat.get("messages", [])),
         ))
-    
-    # Sort by created_at descending (newest first)
+
     result.sort(key=lambda x: x.created_at, reverse=True)
     return result
 

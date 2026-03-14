@@ -278,6 +278,28 @@ async def get_node_details(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class BulkNodeDetailsRequest(BaseModel):
+    """Request model for bulk node details endpoint."""
+    keys: List[str]
+    case_id: str
+
+
+@router.post("/nodes/bulk")
+async def get_bulk_node_details(request: BulkNodeDetailsRequest):
+    """
+    Get detailed information about multiple nodes in a single request.
+    """
+    results = []
+    for key in request.keys:
+        try:
+            node = neo4j_service.get_node_details(key, case_id=request.case_id)
+            if node:
+                results.append(node)
+        except Exception:
+            pass  # skip individual failures
+    return results
+
+
 @router.get("/node/{key}/neighbours")
 async def get_node_neighbours(
     key: str,

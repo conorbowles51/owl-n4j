@@ -83,6 +83,8 @@ import ExpandGraphModal from './components/ExpandGraphModal';
 import MergeEntitiesModal from './components/MergeEntitiesModal';
 import CollaboratorModal from './components/CollaboratorModal';
 import SimilarEntitiesProgressDialog from './components/SimilarEntitiesProgressDialog';
+import GraphOperationStatus from './components/GraphOperationStatus';
+import LargeGraphConfirmDialog from './components/LargeGraphConfirmDialog';
 import EntityComparisonModal from './components/EntityComparisonModal';
 import EntityTypeSelectorModal from './components/EntityTypeSelectorModal';
 import BuildFooter from './components/BuildFooter';
@@ -122,6 +124,15 @@ export default function App() {
   const [fullGraphData, setFullGraphData] = useState({ nodes: [], links: [] }); // Store unfiltered graph
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Rich operation status for graph analysis operations
+  const [graphOperation, setGraphOperation] = useState({
+    active: false, name: '', scope: '', caseName: '', phase: '', progress: null, error: null,
+  });
+  const graphOperationAbortRef = useRef(null);
+  // Large graph confirmation dialog state
+  const [largeGraphConfirm, setLargeGraphConfirm] = useState({
+    isOpen: false, operationName: '', nodeCount: 0, linkCount: 0, scope: '', onConfirm: null,
+  });
   const [dateRange, setDateRange] = useState({ start_date: null, end_date: null });
   const [graphSearchTerm, setGraphSearchTerm] = useState('');
   const [graphSearchFieldScope, setGraphSearchFieldScope] = useState('all'); // 'all' | 'selected'
@@ -486,6 +497,10 @@ export default function App() {
     setAuthDisplayName('');
     setAuthUserRole(null);
     setIsAccountDropdownOpen(false);
+    setChatHistory([]);
+    setCurrentCaseId(null);
+    setCurrentCaseName('');
+    setCurrentCaseVersion(null);
   }, []);
 
 
@@ -503,39 +518,29 @@ export default function App() {
   const [resultGraphData, setResultGraphData] = useState(null);
   const [activeSubgraphTab, setActiveSubgraphTab] = useState('subgraph'); // 'subgraph' or 'result'
   
-  // Track previous result graph to detect when a new one arrives
-  const prevResultGraphRef = useRef(null);
-  
+  // Track the message ID of the last result graph to detect new ones
+  const prevResultGraphMsgIdRef = useRef(null);
+
   // Update result graph when chat messages change
   useEffect(() => {
     // Find the most recent assistant message with a result graph
     const lastMessageWithResultGraph = [...chatHistory]
       .reverse()
       .find(msg => msg.role === 'assistant' && msg.resultGraph && msg.resultGraph.nodes && msg.resultGraph.nodes.length > 0);
-    
+
     if (lastMessageWithResultGraph && lastMessageWithResultGraph.resultGraph) {
-      const newResultGraph = lastMessageWithResultGraph.resultGraph;
-      
-      // Check if this is a new result graph (different from previous)
-      const isNewResultGraph = !prevResultGraphRef.current || 
-        prevResultGraphRef.current.nodes.length !== newResultGraph.nodes.length ||
-        prevResultGraphRef.current.nodes.some((n, i) => n.key !== newResultGraph.nodes[i]?.key);
-      
-      if (isNewResultGraph) {
-        setResultGraphData(newResultGraph);
-        prevResultGraphRef.current = newResultGraph;
-        
-        // Switch to result graph tab only when a new result graph arrives
-        // This happens when AI assistant returns an answer with a result graph
+      // Use message ID to detect new result graphs — each response has a unique ID
+      if (lastMessageWithResultGraph.id !== prevResultGraphMsgIdRef.current) {
+        setResultGraphData(lastMessageWithResultGraph.resultGraph);
+        prevResultGraphMsgIdRef.current = lastMessageWithResultGraph.id;
+
         setActiveSubgraphTab(prev => {
-          // Only switch if we're on subgraph tab (user hasn't manually switched)
           return prev === 'subgraph' ? 'result' : prev;
         });
       }
     } else if (chatHistory.length === 0) {
-      // Clear result graph if chat is cleared
       setResultGraphData(null);
-      prevResultGraphRef.current = null;
+      prevResultGraphMsgIdRef.current = null;
     }
   }, [chatHistory]);
   
@@ -592,6 +597,65 @@ export default function App() {
 
     setGraphData({ nodes: matchingNodes, links: matchingLinks });
   }, [graphSearchFieldScope]);
+
+  // -- Graph operation helpers --
+  const LARGE_GRAPH_THRESHOLD = 500;
+
+  const startGraphOperation = useCallback((name, scope) => {
+    setGraphOperation({
+      active: true, name, scope, caseName: currentCaseName || '', phase: 'Initializing...', progress: null, error: null,
+    });
+  }, [currentCaseName]);
+
+  const updateGraphPhase = useCallback((phase, progress = null) => {
+    setGraphOperation(prev => ({ ...prev, phase, progress }));
+  }, []);
+
+  const endGraphOperation = useCallback((error = null) => {
+    if (error) {
+      setGraphOperation(prev => ({ ...prev, phase: '', progress: null, error }));
+    } else {
+      setGraphOperation({ active: false, name: '', scope: '', caseName: '', phase: '', progress: null, error: null });
+    }
+  }, []);
+
+  const dismissGraphOperation = useCallback(() => {
+    setGraphOperation({ active: false, name: '', scope: '', caseName: '', phase: '', progress: null, error: null });
+  }, []);
+
+  /** Returns the node count for the analysis scope. Used for large-graph warnings. */
+  const getAnalysisScope = useCallback(() => {
+    if (subgraphNodeKeys.length > 0) {
+      return { label: `subgraph (${subgraphNodeKeys.length} nodes)`, nodeCount: subgraphNodeKeys.length, linkCount: null };
+    }
+    if (selectedNodes.length > 0) {
+      return { label: `${selectedNodes.length} selected nodes`, nodeCount: selectedNodes.length, linkCount: null };
+    }
+    return { label: 'full graph', nodeCount: graphData.nodes.length, linkCount: graphData.links.length };
+  }, [subgraphNodeKeys, selectedNodes, graphData]);
+
+  /**
+   * Wraps an analysis handler to show a large-graph confirmation dialog
+   * before running if the scope exceeds the threshold.
+   */
+  const confirmLargeGraph = useCallback((operationName, runFn) => {
+    const scope = getAnalysisScope();
+    if (scope.nodeCount > LARGE_GRAPH_THRESHOLD) {
+      setLargeGraphConfirm({
+        isOpen: true,
+        operationName,
+        nodeCount: scope.nodeCount,
+        linkCount: scope.linkCount,
+        scope: scope.label,
+        onConfirm: () => {
+          setLargeGraphConfirm(prev => ({ ...prev, isOpen: false }));
+          runFn();
+        },
+      });
+    } else {
+      runFn();
+    }
+  }, [getAnalysisScope]);
 
   // Load graph data
   const loadGraph = useCallback(async (caseIdOverride = null) => {
@@ -681,7 +745,7 @@ export default function App() {
   // Debounce timer ref for loadNodeDetails
   const loadNodeDetailsTimerRef = useRef(null);
 
-  // Load node details for multiple nodes with throttling and debouncing
+  // Load node details for multiple nodes using bulk API
   const loadNodeDetails = useCallback(async (keys, onProgress) => {
     if (!keys || keys.length === 0) {
       setSelectedNodesDetails([]);
@@ -697,28 +761,20 @@ export default function App() {
     const debounceDelay = onProgress ? 0 : 100;
     loadNodeDetailsTimerRef.current = setTimeout(async () => {
       try {
-        // Limit concurrent requests to avoid ERR_INSUFFICIENT_RESOURCES
-        const BATCH_SIZE = 10; // Process 10 nodes at a time
+        const BATCH_SIZE = 100;
         const details = [];
-        
+
         for (let i = 0; i < keys.length; i += BATCH_SIZE) {
           const batch = keys.slice(i, i + BATCH_SIZE);
-          const batchPromises = batch.map(key => graphAPI.getNodeDetails(key, currentCaseId));
-          const batchResults = await Promise.all(batchPromises);
+          const batchResults = await graphAPI.getNodeDetailsBulk(batch, currentCaseId);
           details.push(...batchResults);
-          
-          // Update progress if callback provided
+
           if (onProgress) {
             const current = Math.min(i + BATCH_SIZE, keys.length);
             onProgress(current, keys.length);
           }
-          
-          // Small delay between batches to avoid overwhelming the browser
-          if (i + BATCH_SIZE < keys.length) {
-            await new Promise(resolve => setTimeout(resolve, 50));
-          }
         }
-        
+
         // Merge relevance fields from result graph if available
         if (resultGraphData?.nodes) {
           const resultNodeMap = new Map(resultGraphData.nodes.map(n => [n.key, n]));
@@ -734,7 +790,6 @@ export default function App() {
         setSelectedNodesDetails(details);
       } catch (err) {
         console.error('Failed to load node details:', err);
-        // Set empty array on error to avoid stale data
         setSelectedNodesDetails([]);
       }
     }, debounceDelay);
@@ -1877,85 +1932,67 @@ export default function App() {
   }, [selectedNodeKeys.length]);
 
   const handleCreateSubgraphFromPaths = useCallback(async () => {
-    if (selectedNodeKeys.length >= 2) {
-      try {
-        setIsLoading(true);
-        const pathData = await graphAPI.getShortestPaths(currentCaseId, selectedNodeKeys, 10);
-
-        // Check if paths were found
-        if (!pathData || !pathData.nodes || pathData.nodes.length === 0) {
-          alert('No paths found between the selected nodes. They may not be connected.');
-          return;
-        }
-        
-        // Set the path subgraph data
-        setPathSubgraphData(pathData);
-        
-        // Update selected nodes to include all nodes from paths for the sidebar
-        const pathNodeKeys = pathData.nodes.map(n => n.key);
-        const pathNodes = pathData.nodes.map(node => ({
-          key: node.key,
-          id: node.id || node.key,
-          name: node.name,
-          type: node.type,
-        }));
-        setSelectedNodes(pathNodes);
-        setTimelineContextKeys(pathNodeKeys);
-        
-        // Also update subgraphNodeKeys so add/remove buttons work
-        setSubgraphNodeKeys(pathNodeKeys);
-        
-        // Load details for all path nodes
-        await loadNodeDetails(pathNodeKeys);
-        
-        // Enable split view
-        setPaneViewMode('split');
-        setIsSubgraphMenuOpen(false);
-      } catch (err) {
-        console.error('Failed to get shortest paths:', err);
-        const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
-        alert(`Failed to find paths: ${errorMessage}`);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-  }, [selectedNodeKeys.length, loadNodeDetails]);
-
-  const handleCreateSubgraphFromPageRank = useCallback(async () => {
+    if (selectedNodeKeys.length < 2) return;
+    setIsSubgraphMenuOpen(false);
+    startGraphOperation('Shortest Path Analysis', `Finding paths between ${selectedNodeKeys.length} selected nodes`);
     try {
-      setIsLoading(true);
-      // Use selected nodes if available, otherwise analyze full graph
-      const nodeKeysToAnalyze = selectedNodeKeys.length > 0 ? selectedNodeKeys : null;
-      const pagerankData = await graphAPI.getPageRank(currentCaseId, nodeKeysToAnalyze, 20, 20, 0.85);
+      updateGraphPhase('Computing shortest paths...');
+      const pathData = await graphAPI.getShortestPaths(currentCaseId, selectedNodeKeys, 10);
 
-      // Check if nodes were found
-      if (!pagerankData || !pagerankData.nodes || pagerankData.nodes.length === 0) {
-        alert('No influential nodes found. The graph may be too small or disconnected.');
+      if (!pathData || !pathData.nodes || pathData.nodes.length === 0) {
+        endGraphOperation('No paths found between the selected nodes. They may not be connected.');
         return;
       }
-      
-      // Set the path subgraph data (reusing same mechanism)
+
+      setPathSubgraphData(pathData);
+      const pathNodeKeys = pathData.nodes.map(n => n.key);
+      const pathNodes = pathData.nodes.map(node => ({
+        key: node.key, id: node.id || node.key, name: node.name, type: node.type,
+      }));
+      setSelectedNodes(pathNodes);
+      setTimelineContextKeys(pathNodeKeys);
+      setSubgraphNodeKeys(pathNodeKeys);
+
+      updateGraphPhase('Loading node details...', 0);
+      await loadNodeDetails(pathNodeKeys, (current, total) => {
+        updateGraphPhase(`Loading node details (${current}/${total})...`, (current / total) * 100);
+      });
+
+      setPaneViewMode('split');
+      endGraphOperation();
+    } catch (err) {
+      console.error('Failed to get shortest paths:', err);
+      endGraphOperation(err?.message || 'Failed to find paths');
+    }
+  }, [selectedNodeKeys, loadNodeDetails, startGraphOperation, updateGraphPhase, endGraphOperation]);
+
+  const _runPageRank = useCallback(async () => {
+    const nodeKeysToAnalyze = selectedNodeKeys.length > 0 ? selectedNodeKeys : null;
+    const scope = getAnalysisScope();
+    setIsSubgraphMenuOpen(false);
+    startGraphOperation('PageRank Analysis', `Analyzing ${scope.label}`);
+    try {
+      updateGraphPhase('Running PageRank algorithm...');
+      const pagerankData = await graphAPI.getPageRank(currentCaseId, nodeKeysToAnalyze, 20, 20, 0.85);
+
+      if (!pagerankData || !pagerankData.nodes || pagerankData.nodes.length === 0) {
+        endGraphOperation('No influential nodes found. The graph may be too small or disconnected.');
+        return;
+      }
+
       setPathSubgraphData(pagerankData);
-      
-      // Update selected nodes to include top influential nodes
       const pagerankNodeKeys = pagerankData.nodes.map(n => n.key);
       const pagerankNodes = pagerankData.nodes.map(node => ({
-        key: node.key,
-        id: node.id || node.key,
-        name: node.name,
-        type: node.type,
+        key: node.key, id: node.id || node.key, name: node.name, type: node.type,
       }));
       setSelectedNodes(pagerankNodes);
       setTimelineContextKeys(pagerankNodeKeys);
-      
-      // Also update subgraphNodeKeys so add/remove buttons work
       setSubgraphNodeKeys(pagerankNodeKeys);
-      
-      // Generate analysis text for PageRank
-      const topNodes = pagerankData.nodes.slice(0, 10); // Top 10 nodes
+
+      // Generate analysis text
+      const topNodes = pagerankData.nodes.slice(0, 10);
       const topScore = pagerankData.nodes[0]?.pagerank_score || 0;
       const avgScore = pagerankData.nodes.reduce((sum, n) => sum + (n.pagerank_score || 0), 0) / pagerankData.nodes.length;
-      
       let analysisText = `## PageRank Analysis: Influential Nodes\n\n`;
       analysisText += `**Analysis Scope:** ${nodeKeysToAnalyze ? `${nodeKeysToAnalyze.length} selected nodes` : 'Full graph'}\n\n`;
       analysisText += `**Summary:**\n`;
@@ -1963,210 +2000,156 @@ export default function App() {
       analysisText += `- Highest PageRank score: **${topScore.toFixed(6)}**\n`;
       analysisText += `- Average PageRank score: **${avgScore.toFixed(6)}**\n\n`;
       analysisText += `**Top Influential Nodes:**\n\n`;
-      
       topNodes.forEach((node, idx) => {
         analysisText += `${idx + 1}. **${node.name || node.key}** (${node.type || 'Unknown'})\n`;
         analysisText += `   - PageRank Score: ${(node.pagerank_score || 0).toFixed(6)}\n`;
-        if (node.summary) {
-          analysisText += `   - Summary: ${node.summary}\n`;
-        }
+        if (node.summary) analysisText += `   - Summary: ${node.summary}\n`;
         analysisText += `\n`;
       });
-      
-      analysisText += `\n**Interpretation:**\n`;
-      analysisText += `Nodes with higher PageRank scores are more influential in the network. `;
-      analysisText += `These nodes have more connections or are connected to other highly influential nodes. `;
-      analysisText += `Focusing on these nodes can help identify key entities in the investigation.`;
-      
+      analysisText += `\n**Interpretation:**\nNodes with higher PageRank scores are more influential in the network. These nodes have more connections or are connected to other highly influential nodes. Focusing on these nodes can help identify key entities in the investigation.`;
       setSubgraphAnalysis(analysisText);
-      setSubgraphCommunityData(null); // Clear community data (not applicable for PageRank)
-      
-      // Load details for all influential nodes
-      await loadNodeDetails(pagerankNodeKeys);
-      
-      // Enable split view
+      setSubgraphCommunityData(null);
+
+      updateGraphPhase('Loading node details...', 0);
+      await loadNodeDetails(pagerankNodeKeys, (current, total) => {
+        updateGraphPhase(`Loading node details (${current}/${total})...`, (current / total) * 100);
+      });
+
       setPaneViewMode('split');
-      setIsSubgraphMenuOpen(false);
-      
-      console.log(`PageRank analysis complete. Top node score: ${topScore.toFixed(6)}`);
+      endGraphOperation();
     } catch (err) {
       console.error('Failed to get PageRank:', err);
-      const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
-      alert(`Failed to calculate PageRank: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
+      endGraphOperation(err?.message || 'Failed to calculate PageRank');
     }
-  }, [selectedNodeKeys, loadNodeDetails]);
+  }, [selectedNodeKeys, loadNodeDetails, getAnalysisScope, startGraphOperation, updateGraphPhase, endGraphOperation]);
 
-  const handleCreateSubgraphFromLouvain = useCallback(async () => {
+  const handleCreateSubgraphFromPageRank = useCallback(() => {
+    confirmLargeGraph('PageRank Analysis', _runPageRank);
+  }, [confirmLargeGraph, _runPageRank]);
+
+  const _runLouvain = useCallback(async () => {
+    let nodeKeysToAnalyze = null;
+    let analysisScope = 'full graph';
+    if (subgraphNodeKeys.length > 0) {
+      nodeKeysToAnalyze = subgraphNodeKeys;
+      analysisScope = `subgraph (${subgraphNodeKeys.length} nodes)`;
+    } else if (selectedNodeKeys.length > 0) {
+      nodeKeysToAnalyze = selectedNodeKeys;
+      analysisScope = `${selectedNodeKeys.length} selected nodes`;
+    }
+
+    setIsSubgraphMenuOpen(false);
+    startGraphOperation('Community Detection (Louvain)', `Analyzing ${analysisScope}`);
     try {
-      setIsLoading(true);
-      // Priority: subgraph > selected nodes > full graph
-      let nodeKeysToAnalyze = null;
-      let analysisScope = 'full graph';
-      
-      if (subgraphNodeKeys.length > 0) {
-        // Use subgraph nodes if available
-        nodeKeysToAnalyze = subgraphNodeKeys;
-        analysisScope = `subgraph (${subgraphNodeKeys.length} nodes)`;
-      } else if (selectedNodeKeys.length > 0) {
-        // Use selected nodes if available
-        nodeKeysToAnalyze = selectedNodeKeys;
-        analysisScope = `${selectedNodeKeys.length} selected nodes`;
-      }
-
+      updateGraphPhase('Running Louvain community detection...');
       const louvainData = await graphAPI.getLouvainCommunities(currentCaseId, nodeKeysToAnalyze, 1.0, 10);
 
-      // Check if nodes were found
       if (!louvainData || !louvainData.nodes || louvainData.nodes.length === 0) {
-        alert('No communities found. The graph may be too small or disconnected.');
+        endGraphOperation('No communities found. The graph may be too small or disconnected.');
         return;
       }
-      
-      // Set the path subgraph data (reusing same mechanism)
+
       setPathSubgraphData(louvainData);
-      
-      // Update selected nodes to include all nodes from communities
       const louvainNodeKeys = louvainData.nodes.map(n => n.key);
       const louvainNodes = louvainData.nodes.map(node => ({
-        key: node.key,
-        id: node.id || node.key,
-        name: node.name,
-        type: node.type,
+        key: node.key, id: node.id || node.key, name: node.name, type: node.type,
       }));
       setSelectedNodes(louvainNodes);
       setTimelineContextKeys(louvainNodeKeys);
-      
-      // Also update subgraphNodeKeys so add/remove buttons work
       setSubgraphNodeKeys(louvainNodeKeys);
-      
-      // Generate analysis text for Louvain communities
+
+      // Generate analysis text
       const communityCount = louvainData.communities ? Object.keys(louvainData.communities).length : 0;
       const communities = louvainData.communities || {};
-      
-      // Group nodes by community
       const nodesByCommunity = {};
       louvainData.nodes.forEach(node => {
         const commId = node.community_id;
         if (commId !== null && commId !== undefined) {
-          if (!nodesByCommunity[commId]) {
-            nodesByCommunity[commId] = [];
-          }
+          if (!nodesByCommunity[commId]) nodesByCommunity[commId] = [];
           nodesByCommunity[commId].push(node);
         }
       });
-      
+
       let analysisText = `## Louvain Community Detection Analysis\n\n`;
       analysisText += `**Analysis Scope:** ${analysisScope}\n\n`;
       analysisText += `**Summary:**\n`;
       analysisText += `- Total communities detected: **${communityCount}**\n`;
       analysisText += `- Total nodes analyzed: **${louvainData.nodes.length}**\n`;
-      analysisText += `- Average community size: **${(louvainData.nodes.length / communityCount).toFixed(1)}** nodes\n\n`;
-      
-      // Sort communities by size (largest first)
+      analysisText += `- Average community size: **${(louvainData.nodes.length / Math.max(communityCount, 1)).toFixed(1)}** nodes\n\n`;
+
       const sortedCommunities = Object.entries(communities)
         .map(([id, info]) => ({ id: parseInt(id), size: info.size || 0 }))
         .sort((a, b) => b.size - a.size);
-      
+
       analysisText += `**Community Breakdown:**\n\n`;
       sortedCommunities.slice(0, 10).forEach((comm, idx) => {
         const commNodes = nodesByCommunity[comm.id] || [];
         const nodeTypes = {};
-        commNodes.forEach(node => {
-          const type = node.type || 'Unknown';
-          nodeTypes[type] = (nodeTypes[type] || 0) + 1;
-        });
-        const typeBreakdown = Object.entries(nodeTypes)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 3)
-          .map(([type, count]) => `${type} (${count})`)
-          .join(', ');
-        
+        commNodes.forEach(node => { nodeTypes[node.type || 'Unknown'] = (nodeTypes[node.type || 'Unknown'] || 0) + 1; });
+        const typeBreakdown = Object.entries(nodeTypes).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([type, count]) => `${type} (${count})`).join(', ');
         analysisText += `${idx + 1}. **Community ${comm.id}** - ${comm.size} nodes\n`;
         analysisText += `   - Top entity types: ${typeBreakdown || 'N/A'}\n`;
-        if (commNodes.length > 0) {
-          const allNodes = commNodes.map(n => n.name || n.key).join(', ');
-          analysisText += `   - Nodes: ${allNodes}\n`;
-        }
+        if (commNodes.length > 0) analysisText += `   - Nodes: ${commNodes.map(n => n.name || n.key).join(', ')}\n`;
         analysisText += `\n`;
       });
-      
-      if (sortedCommunities.length > 10) {
-        analysisText += `*... and ${sortedCommunities.length - 10} more communities*\n\n`;
-      }
-      
-      analysisText += `\n**Interpretation:**\n`;
-      analysisText += `Communities represent groups of nodes that are more densely connected to each other than to the rest of the network. `;
-      analysisText += `Larger communities may indicate clusters of related entities, while smaller communities might represent isolated groups. `;
-      analysisText += `Nodes within the same community are colored identically in the visualization.`;
-      
+      if (sortedCommunities.length > 10) analysisText += `*... and ${sortedCommunities.length - 10} more communities*\n\n`;
+      analysisText += `\n**Interpretation:**\nCommunities represent groups of nodes that are more densely connected to each other than to the rest of the network. Larger communities may indicate clusters of related entities, while smaller communities might represent isolated groups. Nodes within the same community are colored identically in the visualization.`;
+
       setSubgraphAnalysis(analysisText);
-      setSubgraphCommunityData(nodesByCommunity); // Store community data for click handling
-      
-      // Load details for all community nodes
-      await loadNodeDetails(louvainNodeKeys);
-      
-      // Enable split view
+      setSubgraphCommunityData(nodesByCommunity);
+
+      updateGraphPhase('Loading node details...', 0);
+      await loadNodeDetails(louvainNodeKeys, (current, total) => {
+        updateGraphPhase(`Loading node details (${current}/${total})...`, (current / total) * 100);
+      });
+
       setPaneViewMode('split');
-      setIsSubgraphMenuOpen(false);
-      
-      console.log(`Louvain analysis complete on ${analysisScope}. Found ${communityCount} communities.`);
+      endGraphOperation();
     } catch (err) {
       console.error('Failed to get Louvain communities:', err);
-      const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
-      alert(`Failed to calculate communities: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
+      endGraphOperation(err?.message || 'Failed to calculate communities');
     }
-  }, [selectedNodeKeys, subgraphNodeKeys, loadNodeDetails]);
+  }, [selectedNodeKeys, subgraphNodeKeys, loadNodeDetails, startGraphOperation, updateGraphPhase, endGraphOperation]);
 
-  const handleCreateSubgraphFromBetweenness = useCallback(async () => {
+  const handleCreateSubgraphFromLouvain = useCallback(() => {
+    confirmLargeGraph('Community Detection (Louvain)', _runLouvain);
+  }, [confirmLargeGraph, _runLouvain]);
+
+  const _runBetweenness = useCallback(async () => {
+    let nodeKeysToAnalyze = null;
+    let analysisScope = 'full graph';
+    if (subgraphNodeKeys.length > 0) {
+      nodeKeysToAnalyze = subgraphNodeKeys;
+      analysisScope = `subgraph (${subgraphNodeKeys.length} nodes)`;
+    } else if (selectedNodeKeys.length > 0) {
+      nodeKeysToAnalyze = selectedNodeKeys;
+      analysisScope = `${selectedNodeKeys.length} selected nodes`;
+    }
+
+    setIsSubgraphMenuOpen(false);
+    startGraphOperation('Betweenness Centrality Analysis', `Analyzing ${analysisScope}`);
     try {
-      setIsLoading(true);
-      // Priority: subgraph > selected nodes > full graph
-      let nodeKeysToAnalyze = null;
-      let analysisScope = 'full graph';
-      
-      if (subgraphNodeKeys.length > 0) {
-        // Use subgraph nodes if available
-        nodeKeysToAnalyze = subgraphNodeKeys;
-        analysisScope = `subgraph (${subgraphNodeKeys.length} nodes)`;
-      } else if (selectedNodeKeys.length > 0) {
-        // Use selected nodes if available
-        nodeKeysToAnalyze = selectedNodeKeys;
-        analysisScope = `${selectedNodeKeys.length} selected nodes`;
-      }
-
+      updateGraphPhase('Computing betweenness centrality...');
       const betweennessData = await graphAPI.getBetweennessCentrality(currentCaseId, nodeKeysToAnalyze, 20, true);
 
-      // Check if nodes were found
       if (!betweennessData || !betweennessData.nodes || betweennessData.nodes.length === 0) {
-        alert('No nodes found with betweenness centrality. The graph may be too small or disconnected.');
+        endGraphOperation('No bridge nodes found. The graph may be too small or disconnected.');
         return;
       }
-      
-      // Set the path subgraph data (reusing same mechanism)
+
       setPathSubgraphData(betweennessData);
-      
-      // Update selected nodes to include all nodes from betweenness analysis
       const betweennessNodeKeys = betweennessData.nodes.map(n => n.key);
       const betweennessNodes = betweennessData.nodes.map(node => ({
-        key: node.key,
-        id: node.id || node.key,
-        name: node.name,
-        type: node.type,
+        key: node.key, id: node.id || node.key, name: node.name, type: node.type,
       }));
       setSelectedNodes(betweennessNodes);
       setTimelineContextKeys(betweennessNodeKeys);
-      
-      // Also update subgraphNodeKeys so add/remove buttons work
       setSubgraphNodeKeys(betweennessNodeKeys);
-      
-      // Generate analysis text for Betweenness Centrality
-      const topNodes = betweennessData.nodes.slice(0, 10); // Top 10 nodes
+
+      // Generate analysis text
+      const topNodes = betweennessData.nodes.slice(0, 10);
       const topScore = betweennessData.nodes[0]?.betweenness_centrality || 0;
       const avgScore = betweennessData.nodes.reduce((sum, n) => sum + (n.betweenness_centrality || 0), 0) / betweennessData.nodes.length;
-      
       let analysisText = `## Betweenness Centrality Analysis: Bridge Nodes\n\n`;
       analysisText += `**Analysis Scope:** ${analysisScope}\n\n`;
       analysisText += `**Summary:**\n`;
@@ -2174,41 +2157,32 @@ export default function App() {
       analysisText += `- Highest betweenness centrality: **${topScore.toFixed(6)}**\n`;
       analysisText += `- Average betweenness centrality: **${avgScore.toFixed(6)}**\n\n`;
       analysisText += `**Top Bridge Nodes:**\n\n`;
-      
       topNodes.forEach((node, idx) => {
         analysisText += `${idx + 1}. **${node.name || node.key}** (${node.type || 'Unknown'})\n`;
         analysisText += `   - Betweenness Centrality: ${(node.betweenness_centrality || 0).toFixed(6)}\n`;
-        if (node.summary) {
-          analysisText += `   - Summary: ${node.summary}\n`;
-        }
+        if (node.summary) analysisText += `   - Summary: ${node.summary}\n`;
         analysisText += `\n`;
       });
-      
-      analysisText += `\n**Interpretation:**\n`;
-      analysisText += `Betweenness centrality measures how often a node appears on the shortest path between other nodes. `;
-      analysisText += `Nodes with high betweenness centrality are critical bridges or connectors in the network. `;
-      analysisText += `These nodes control the flow of information or connections between different parts of the graph. `;
-      analysisText += `Removing or disrupting these nodes could significantly impact network connectivity.`;
-      
+      analysisText += `\n**Interpretation:**\nBetweenness centrality measures how often a node appears on the shortest path between other nodes. Nodes with high betweenness centrality are critical bridges or connectors in the network. These nodes control the flow of information or connections between different parts of the graph. Removing or disrupting these nodes could significantly impact network connectivity.`;
       setSubgraphAnalysis(analysisText);
-      setSubgraphCommunityData(null); // Clear community data (not applicable for Betweenness)
-      
-      // Load details for all bridge nodes
-      await loadNodeDetails(betweennessNodeKeys);
-      
-      // Enable split view
+      setSubgraphCommunityData(null);
+
+      updateGraphPhase('Loading node details...', 0);
+      await loadNodeDetails(betweennessNodeKeys, (current, total) => {
+        updateGraphPhase(`Loading node details (${current}/${total})...`, (current / total) * 100);
+      });
+
       setPaneViewMode('split');
-      setIsSubgraphMenuOpen(false);
-      
-      console.log(`Betweenness centrality analysis complete on ${analysisScope}. Top node score: ${topScore.toFixed(6)}`);
+      endGraphOperation();
     } catch (err) {
       console.error('Failed to get betweenness centrality:', err);
-      const errorMessage = err?.message || err?.detail || err?.toString() || 'Unknown error';
-      alert(`Failed to calculate betweenness centrality: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
+      endGraphOperation(err?.message || 'Failed to calculate betweenness centrality');
     }
-  }, [selectedNodeKeys, subgraphNodeKeys, loadNodeDetails]);
+  }, [selectedNodeKeys, subgraphNodeKeys, loadNodeDetails, startGraphOperation, updateGraphPhase, endGraphOperation]);
+
+  const handleCreateSubgraphFromBetweenness = useCallback(() => {
+    confirmLargeGraph('Betweenness Centrality', _runBetweenness);
+  }, [confirmLargeGraph, _runBetweenness]);
   
   // Build subgraph for subgraph node keys
   // Use path-based subgraph if available, otherwise build from subgraph node keys
@@ -3154,10 +3128,10 @@ export default function App() {
         const caseChatHistories = allChatHistories
           .filter(chat => chat.case_id === caseData.id && chat.case_version === versionData.version)
           .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        
+
         if (caseChatHistories.length > 0) {
-          // Use the most recent case-specific chat history
-          const latestChat = caseChatHistories[0];
+          // Fetch the full chat (list endpoint returns summaries without messages)
+          const latestChat = await chatHistoryAPI.get(caseChatHistories[0].id);
           setChatHistory(latestChat.messages);
         } else if (previousCaseId !== caseData.id) {
           // If switching cases and no chat history found, clear it
@@ -4064,6 +4038,7 @@ export default function App() {
                 currentCaseName={currentCaseName}
                 currentCaseVersion={currentCaseVersion}
                 isTableMode={true}
+                onViewDocument={handleViewDocument}
               />
             )}
           </div>
@@ -4093,6 +4068,21 @@ export default function App() {
                 </button>
               </div>
             )}
+            {/* Graph operation status overlay */}
+            <GraphOperationStatus
+              operation={graphOperation}
+              onCancel={graphOperation.error ? dismissGraphOperation : undefined}
+            />
+            {/* Large graph confirmation dialog */}
+            <LargeGraphConfirmDialog
+              isOpen={largeGraphConfirm.isOpen}
+              operationName={largeGraphConfirm.operationName}
+              nodeCount={largeGraphConfirm.nodeCount}
+              linkCount={largeGraphConfirm.linkCount}
+              scope={largeGraphConfirm.scope}
+              onConfirm={largeGraphConfirm.onConfirm}
+              onCancel={() => setLargeGraphConfirm(prev => ({ ...prev, isOpen: false }))}
+            />
             {isLoading && graphData.nodes.length === 0 ? (
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-3">
@@ -4962,6 +4952,7 @@ export default function App() {
             currentCaseName={currentCaseName}
             currentCaseVersion={currentCaseVersion}
             isTableMode={false}
+            onViewDocument={handleViewDocument}
           />
         )}
       </div>

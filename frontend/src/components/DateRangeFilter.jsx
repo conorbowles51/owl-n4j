@@ -29,21 +29,23 @@ export default function DateRangeFilter({
       const dates = timelineEvents
         .map(e => e.date)
         .filter(d => d)
-        .map(d => new Date(d));
-      return dates.length > 0 
+        .map(d => new Date(d))
+        .filter(d => !isNaN(d.getTime()));
+      return dates.length > 0
         ? new Date(Math.min(...dates)).toISOString().split('T')[0]
         : null;
     }
     return null;
   }, [minDate, timelineEvents]);
-  
+
   const effectiveMaxDate = useMemo(() => {
     if (maxDate) return maxDate;
     if (timelineEvents && timelineEvents.length > 0) {
       const dates = timelineEvents
         .map(e => e.date)
         .filter(d => d)
-        .map(d => new Date(d));
+        .map(d => new Date(d))
+        .filter(d => !isNaN(d.getTime()));
       return dates.length > 0
         ? new Date(Math.max(...dates)).toISOString().split('T')[0]
         : null;

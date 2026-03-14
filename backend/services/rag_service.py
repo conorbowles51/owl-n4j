@@ -197,17 +197,25 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         if not doc_results:
             return ""
 
-        # Group by document: track best distance and doc-scoped status
-        doc_info = {}  # filename -> {best_distance, doc_scoped, chunk_count}
+        # Group by document: track best distance, best page, and doc-scoped status
+        doc_info = {}  # filename -> {best_distance, best_page, doc_scoped, chunk_count}
         for chunk in doc_results:
             metadata = chunk.get("metadata", {})
             filename = metadata.get("filename", metadata.get("doc_name", chunk.get("id", "Unknown")))
             distance = chunk.get("distance")
             is_doc_scoped = chunk.get("_doc_scoped", False)
 
+            # Extract page number from chunk metadata
+            page_start = metadata.get("page_start")
+            if page_start and page_start != -1 and page_start != "-1":
+                page_start = int(page_start) if isinstance(page_start, str) else page_start
+            else:
+                page_start = 1
+
             if filename not in doc_info:
                 doc_info[filename] = {
                     "best_distance": distance,
+                    "best_page": page_start,
                     "doc_scoped": is_doc_scoped,
                     "chunk_count": 1,
                 }
@@ -219,6 +227,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     current_best = doc_info[filename]["best_distance"]
                     if current_best is None or distance < current_best:
                         doc_info[filename]["best_distance"] = distance
+                        doc_info[filename]["best_page"] = page_start
 
         # Sort: doc-scoped first, then by best distance
         sorted_docs = sorted(
@@ -247,7 +256,10 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             else:
                 relevance_score = None
 
-            line = f"{i}. **{filename}**"
+            from urllib.parse import quote
+            best_page = info.get("best_page", 1)
+            doc_link = f"doc://{quote(filename, safe='')}/{best_page}"
+            line = f"{i}. [**{filename}**]({doc_link})"
             if relevance_score is not None:
                 line += f" (Relevance: {relevance_score:.1f}%)"
             if info["doc_scoped"]:
@@ -833,6 +845,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         graph_context: Dict,
         cypher_context: Optional[str] = None,
         question: str = "",
+        model_context_window: Optional[int] = None,
     ) -> str:
         """
         Build a structured context string with multiple sections:
@@ -840,7 +853,19 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         - RELEVANT ENTITIES (from entity vector search with verified facts)
         - GRAPH CONNECTIONS (from graph traversal)
         - GRAPH QUERY RESULTS (from Cypher, if applicable)
+
+        Enforces a total character budget scaled to the model's context window
+        so the final context fits (approx 4 chars/token).
         """
+        # Use 70% of the model's context window for context, leave 30% for
+        # system prompt, question, and generated answer.
+        if model_context_window and model_context_window > 0:
+            MAX_CONTEXT_CHARS = int(model_context_window * 0.7 * 4)  # tokens -> chars
+        else:
+            MAX_CONTEXT_CHARS = 360000  # ~90k tokens, safe default for 128k models
+        print(f"[RAG] Context budget: {MAX_CONTEXT_CHARS:,} chars "
+              f"(model context window: {model_context_window or 'unknown'})")
+        total_chars = 0
         sections = []
 
         # Section 1: Relevant Text Passages
@@ -869,7 +894,9 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                     lines.append(f"Relevance: {1 - distance:.4f}")
                 lines.append(chunk.get("text", ""))
                 lines.append("")
-            sections.append("\n".join(lines))
+            section_text = "\n".join(lines)
+            total_chars += len(section_text)
+            sections.append(section_text)
 
         # Section 2: Relevant Entities (with verified facts for citations)
         if entity_results:
@@ -924,33 +951,47 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
                         lines.append(f"    - {insight_text}{conf_str}")
 
                 lines.append("")
-            sections.append("\n".join(lines))
+            section_text = "\n".join(lines)
+            total_chars += len(section_text)
+            sections.append(section_text)
 
-        # Section 3: Graph Connections (sorted by relevance)
+        # Section 3: Graph Connections (sorted by relevance, budget-capped)
         retrieved_entity_keys = {e.get("key") for e in entity_results if e.get("key")}
         graph_entities = graph_context.get("selected_entities", [])
-        if graph_entities:
+        if graph_entities and total_chars < MAX_CONTEXT_CHARS:
             lines = ["=== GRAPH CONNECTIONS ===", ""]
+            graph_chars = 0
+            graph_budget = MAX_CONTEXT_CHARS - total_chars
+            truncated = 0
             for entity in graph_entities:
                 connections = entity.get("connections", [])
                 if connections:
-                    # Sort: independently retrieved first, then has summary, then alphabetical
                     connections = sorted(connections, key=lambda c: (
                         c.get("key") in retrieved_entity_keys,
                         bool(c.get("summary")),
                         c.get("name", ""),
                     ), reverse=True)
-                    lines.append(f"[{entity.get('type', '?')}] {entity.get('name', '?')}:")
-                    for conn in connections[:25]:  # Cap connections per entity
+                    entity_lines = [f"[{entity.get('type', '?')}] {entity.get('name', '?')}:"]
+                    for conn in connections[:25]:
                         direction = "->" if conn.get("direction") == "outgoing" else "<-"
-                        lines.append(
+                        entity_lines.append(
                             f"  {direction} [{conn.get('relationship', '?')}] "
                             f"{conn.get('name', '?')} ({conn.get('type', '?')})"
                         )
                         if conn.get("summary"):
-                            lines.append(f"     Summary: {conn['summary'][:200]}")
-                    lines.append("")
-            sections.append("\n".join(lines))
+                            entity_lines.append(f"     Summary: {conn['summary'][:200]}")
+                    entity_lines.append("")
+                    entity_text = "\n".join(entity_lines)
+                    if graph_chars + len(entity_text) > graph_budget:
+                        truncated += 1
+                        continue
+                    lines.extend(entity_lines)
+                    graph_chars += len(entity_text)
+            if truncated > 0:
+                lines.append(f"[{truncated} more entities omitted due to context size limits]")
+            section_text = "\n".join(lines)
+            total_chars += len(section_text)
+            sections.append(section_text)
 
         # Section 4: Cypher Query Results (if available)
         if cypher_context:
@@ -959,7 +1000,14 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         if not sections:
             return "No relevant context found."
 
-        return "\n\n".join(sections)
+        context = "\n\n".join(sections)
+
+        # Final safety truncation — hard cap to prevent token overflow
+        if len(context) > MAX_CONTEXT_CHARS:
+            context = context[:MAX_CONTEXT_CHARS] + "\n\n[Context truncated to fit model context window]"
+            print(f"[RAG] WARNING: Context truncated from {len(context)} to {MAX_CONTEXT_CHARS} chars")
+
+        return context
 
     # =====================
     # NEW: Re-ranking
@@ -1785,10 +1833,20 @@ Only include candidates with score >= 5."""
         )
 
         # ── Stage 4: Graph traversal ─────────────────────────────────────
-        print(f"[RAG] Starting Stage 4: Graph traversal ({len(entity_results)} entities)..."); sys.stdout.flush()
-        t4 = time.time()
+        # Cap traversal to the most relevant entities to avoid context explosion.
+        # Sort by distance (vector search relevance), then take top N.
+        MAX_TRAVERSAL_ENTITIES = 50
         all_entity_keys = [e.get("key") for e in entity_results if e.get("key")]
-        graph_context = self._traverse_graph(all_entity_keys, case_id, debug_log=debug_log)
+        if len(all_entity_keys) > MAX_TRAVERSAL_ENTITIES:
+            # Sort entities by distance (lower = more relevant), traverse only the top ones
+            sorted_entities = sorted(entity_results, key=lambda e: e.get("distance", 1.0))
+            traversal_keys = [e.get("key") for e in sorted_entities[:MAX_TRAVERSAL_ENTITIES] if e.get("key")]
+            print(f"[RAG] Starting Stage 4: Graph traversal (top {len(traversal_keys)} of {len(all_entity_keys)} entities)..."); sys.stdout.flush()
+        else:
+            traversal_keys = all_entity_keys
+            print(f"[RAG] Starting Stage 4: Graph traversal ({len(traversal_keys)} entities)..."); sys.stdout.flush()
+        t4 = time.time()
+        graph_context = self._traverse_graph(traversal_keys, case_id, debug_log=debug_log)
         graph_traversal_info = debug_log.get("graph_traversal") or {}
         total_connections = 0
         connection_list = []
@@ -1846,9 +1904,14 @@ Only include candidates with score >= 5."""
 
         # ── Stage 6: Context building ────────────────────────────────────
         t6 = time.time()
+        # Look up the model's context window so the budget scales appropriately
+        from models.llm_models import get_model_by_id
+        current_model = get_model_by_id(self.llm.model_id)
+        model_ctx_window = current_model.context_window if current_model else None
         context = self._build_hybrid_context(
             chunk_results, entity_results, graph_context, cypher_context,
             question=question,
+            model_context_window=model_ctx_window,
         )
 
         # Build context description
@@ -1937,6 +2000,17 @@ Only include candidates with score >= 5."""
             question=effective_question,
             context=context,
         )
+
+        # Post-process: convert plain [docname, p.N] citations to doc:// links
+        # (catches cases where the LLM didn't follow the link format)
+        import re
+        from urllib.parse import quote
+        answer = re.sub(
+            r'\[([^]]+?),\s*p\.?\s*(\d+)\](?!\()',
+            lambda m: f'[{m.group(1)}, p.{m.group(2)}](doc://{quote(m.group(1).strip(), safe="")}/{m.group(2)})',
+            answer
+        )
+
         debug_log["final_prompt"] = final_prompt
         _add_stage(
             "Answer Generation", 7, t7,
