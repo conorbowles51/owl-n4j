@@ -119,7 +119,7 @@ fi
 # ============================================================
 step "Pulling latest from main"
 
-if ! $RUN_AS git pull origin main --ff-only; then
+if ! git pull origin main --ff-only; then
     fail "git pull failed (merge conflict or diverged history)"
     fail "Manual intervention required. Run: git status"
     fail "Stashed changes (if any) are safe. Run: git stash list"
