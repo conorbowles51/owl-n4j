@@ -14,88 +14,36 @@
 <!-- Move tasks here when actively working on them -->
 
 ## Pending
-
-### BUG-001 · [HIGH] Fix: Evidence processing crashes mid-ingestion during parallel file processing
-- **Reported:** 2026-03-09 (Alexandra)
-- **Scope:** Backend — complex (thread-safety + path validation)
-- **Files:**
-  - `backend/services/evidence_service.py` (ThreadPoolExecutor, `process_single_file`)
-  - `backend/services/evidence_storage.py` (stored_path retrieval)
-  - `backend/routers/evidence.py` (upload endpoint)
-- **Issue:** Platform gets stuck mid-ingestion when processing files in parallel. Background Tasks panel shows red `FileNotFoundError` and path-related tracebacks. Observed when working on deduplication in another tab for the same case simultaneously. Screenshots show multiple workers crashing with "No such file or directory" errors.
-- **Likely Root Cause:** Race condition in `ThreadPoolExecutor` — multiple threads access `stored_path` from evidence records before files are fully written. The lock at line ~750 only protects counter updates, not file access. Concurrent operations (e.g., dedup in another tab) on the same case may also invalidate file references mid-processing.
-- **Acceptance:**
-  - [ ] Evidence processing completes without path errors when processing files in parallel
-  - [ ] Concurrent case operations (dedup, merge) don't cause processing crashes
-  - [ ] Failed files are properly reported with clear error messages, not silent crashes
-  - [ ] Processing can be retried for failed files
-
----
-
-### BUG-002 · [HIGH] Fix: Merged entities still appear as duplicates in workspace Entity Summary
-- **Reported:** 2026-03-09 (Alexandra)
-- **Scope:** Frontend + Backend — moderate
-- **Files:**
-  - `backend/services/neo4j_service.py` (`merge_entities` method)
-  - `frontend/src/components/workspace/EntitySummarySection.jsx` (entity list loading)
-  - `backend/routers/graph.py` (entity summary endpoint)
-- **Issue:** After merging duplicate entities (e.g., multiple "Eric Tate" / "Eric TATAR" variants), the workspace Entity Summary still shows all the old duplicates. Screenshot shows ~15 "Eric Tate/TATAR" entries that should have been consolidated into one.
-- **Likely Root Cause:** Two possible issues: (1) Frontend `EntitySummarySection` loads entities on mount and doesn't refetch after a merge operation completes. (2) Neo4j `merge_entities` may not fully delete source entity nodes or redirect all relationships, leaving orphaned nodes visible in queries.
-- **Acceptance:**
-  - [ ] After merging entities, the Entity Summary refreshes and shows only the merged target entity
-  - [ ] Source entities are fully removed from Neo4j (no orphaned nodes)
-  - [ ] All relationships from source entities are properly redirected to the target
-  - [ ] Entity count in workspace header updates after merge
-
----
-
-### BUG-003 · [MEDIUM] Fix: Case export report shows blank graph
-- **Reported:** 2026-03-09 (Alexandra)
-- **Scope:** Frontend — moderate
-- **Files:**
-  - `frontend/src/components/workspace/CaseExportModal.jsx` (graph data fetching, line ~166)
-  - `backend/routers/graph.py` (graph API endpoint)
-  - `frontend/src/utils/graphDataConverter.js` (export utilities)
-- **Issue:** When exporting a case report with all sections checked, the graph appears blank. Graph timeline and graph map are also exported but may be empty. User noted they had tested AI graph with investigative theories prior, which may have affected state.
-- **Likely Root Cause:** The export modal fetches graph data via `graphAPI.getGraph({ case_id: caseId })` with a fallback to `{ nodes: [], links: [] }` on failure. The API call may be failing silently (auth, scoping, or timeout), or the graph data isn't being passed correctly to the HTML export renderer.
-- **Acceptance:**
-  - [ ] Exported report renders the full case graph with all nodes and links
-  - [ ] Graph timeline and map render correctly in export
-  - [ ] Export works regardless of previous AI assistant/theory interactions
-  - [ ] Error is surfaced to user if graph data cannot be fetched
-
----
-
-### BUG-004 · [MEDIUM] Fix: File uploads stuck in "Unprocessed" state with errors
-- **Reported:** 2026-03-09 (Alexandra)
-- **Scope:** Backend + Frontend — simple to moderate
-- **Files:**
-  - `backend/routers/evidence.py` (`upload_evidence` endpoint, lines ~281-386)
-  - `backend/services/evidence_service.py` (`add_uploaded_files`, lines ~65-122)
-  - `frontend/src/components/EvidenceProcessingView.jsx` (upload UI)
-- **Issue:** Uploaded files remain stuck in "Unprocessed Files" list. Screenshot shows files uploaded but never transitioning to processing or completed state. No clear error message shown to user.
-- **Likely Root Cause:** Background upload tasks fail silently without updating progress or status. Evidence records may not be created if path validation fails during storage. Frontend doesn't auto-refresh after upload completion, showing stale state.
-- **Acceptance:**
-  - [ ] Uploaded files transition from "Unprocessed" to processing/completed states
-  - [ ] Upload errors are clearly displayed to the user with actionable messages
-  - [ ] Frontend auto-refreshes file status after upload completes
-  - [ ] Retry mechanism available for failed uploads
-
----
-
-### BUG-005 · [LOW] Fix: Deadline emoji rendering broken in CaseDeadlinesSection
-- **Reported:** 2026-02 (development team)
-- **Scope:** Frontend — simple
-- **Files:**
-  - `frontend/src/components/workspace/CaseDeadlinesSection.jsx`
-- **Issue:** Emoji characters render incorrectly on certain browsers.
-- **Acceptance:**
-  - [ ] Deadlines display with proper icons
-  - [ ] Test on Chrome, Firefox, and Safari
+<!-- No pending tasks -->
 
 ---
 
 ## Done
+
+### ✅ BUG-001 · [HIGH] Fix: Evidence processing crashes mid-ingestion during parallel file processing
+- **Completed:** 2026-03-15
+- **Description:** Fixed race condition in ThreadPoolExecutor — added file existence validation before ingestion, specific FileNotFoundError handling with descriptive error messages, per-case active processing tracking (`_active_processing_cases` dict with thread-safe guards), and delete protection (HTTP 409 Conflict) for files currently being processed.
+- **Commits:** fd9c941
+
+### ✅ BUG-002 · [HIGH] Fix: Merged entities still appear as duplicates in workspace Entity Summary
+- **Completed:** 2026-03-15
+- **Description:** Added `entities-refresh` window event dispatch after merge in App.jsx `handleMergeEntities`. Added event listener in EntitySummarySection to auto-refetch entities when the event fires. Neo4j merge logic was already correct (DETACH DELETE on source nodes).
+- **Commits:** fd9c941
+
+### ✅ BUG-003 · [MEDIUM] Fix: Case export report shows blank graph
+- **Completed:** 2026-03-15
+- **Description:** Added 2000ms extraWait for graph capture (was 0), blank-image detection with automatic retry, enhanced canvas fallback with additional wait, and pre-warming by switching to graph tab on modal open so ForceGraph2D starts rendering before export capture.
+- **Commits:** fd9c941
+
+### ✅ BUG-004 · [MEDIUM] Fix: File uploads stuck in "Unprocessed" state with errors
+- **Completed:** 2026-03-15
+- **Description:** "Unprocessed" is by design (user must click Process), but UX was unclear. Added helper text for first-time users, "Select All" convenience button in toolbar, and error surfacing for failed upload/processing background tasks during polling.
+- **Commits:** fd9c941
+
+### ✅ BUG-005 · [LOW] Fix: Deadline emoji rendering broken in CaseDeadlinesSection
+- **Completed:** 2026-03-15
+- **Description:** Not actually emojis — Lucide SVG icons had `inline-block align-text-bottom` which doesn't reliably align with text across browsers. Changed to `inline align-middle -mt-0.5` on all 4 icon instances.
+- **Commits:** fd9c941
 
 ### ✅ RAG-001 · [HIGH] Feature: Document-scoped RAG retrieval
 - **Completed:** 2026-03-08
