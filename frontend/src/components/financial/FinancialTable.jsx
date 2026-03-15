@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight, FileText } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 import { CATEGORY_COLORS } from './constants';
 import { graphAPI, financialAPI } from '../../services/api';
@@ -337,6 +337,8 @@ export default function FinancialTable({
   const reasonInputRef = useRef(null);
   const editingAmountValueRef = useRef(0);
 
+  const [showAllSummaries, setShowAllSummaries] = useState(false);
+
   // Sub-transaction grouping state
   const [expandedParentKeys, setExpandedParentKeys] = useState(new Set());
   const [childrenCache, setChildrenCache] = useState({}); // { parentKey: [children] }
@@ -523,7 +525,15 @@ export default function FinancialTable({
                   className="rounded border-light-300"
                 />
               </th>
-              <th className="px-1 py-2 w-6"></th>
+              <th className="px-1 py-2 w-6">
+                <button
+                  onClick={() => setShowAllSummaries(s => !s)}
+                  className={`p-0.5 rounded transition-colors ${showAllSummaries ? 'text-owl-blue-600 bg-owl-blue-100' : 'text-light-400 hover:text-light-600'}`}
+                  title={showAllSummaries ? 'Hide all AI summaries' : 'Show all AI summaries'}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                </button>
+              </th>
               {[
                 { key: 'date', label: 'Date' },
                 { key: 'time', label: 'Time' },
@@ -531,7 +541,7 @@ export default function FinancialTable({
                 { key: 'from_to', label: 'From \u2192 To', sortable: false },
                 { key: 'amount', label: 'Amount' },
                 { key: 'type', label: 'Type' },
-                { key: 'financial_category', label: 'Category' },
+                { key: 'category', label: 'Category' },
                 { key: 'actions', label: 'Actions', sortable: false },
               ].map(col => (
                 <th
@@ -718,7 +728,7 @@ export default function FinancialTable({
                     </td>
                     <td className="px-2 py-1.5">
                       <CategoryBadge
-                        category={txn.financial_category}
+                        category={txn.category}
                         categories={categories}
                         categoryColorMap={categoryColorMap}
                         onCategoryChange={(cat) => onCategoryChange(txn.key, cat)}
@@ -732,6 +742,19 @@ export default function FinancialTable({
                       />
                     </td>
                   </tr>
+                  {showAllSummaries && !isExpanded && txn.summary && (
+                    <tr className="border-b border-light-100">
+                      <td colSpan={10} className="px-4 py-2 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
+                        <div className="flex items-start gap-2">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-owl-blue-500 bg-owl-blue-100/60 px-1.5 py-0.5 rounded flex-shrink-0 mt-px">
+                            <FileText className="w-3 h-3" />
+                            AI Summary
+                          </span>
+                          <p className="text-xs text-light-700 leading-relaxed">{txn.summary}</p>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {isExpanded && !isParent && (
                     <TransactionDetailRow
                       txn={txn}
@@ -792,7 +815,7 @@ export default function FinancialTable({
                               </span>
                             </td>
                             <td className="px-2 py-1.5 text-xs text-light-500">
-                              {child.financial_category || '-'}
+                              {child.category || '-'}
                             </td>
                             <td className="px-1 py-1.5">
                               <button
