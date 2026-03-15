@@ -20,6 +20,10 @@
 
 ## Done
 
+### ✅ UI-002 · [MEDIUM] Feature: File summaries expanded by default in Case Management
+- **Completed:** 2026-03-15
+- **Description:** Added inline file summaries below each filename in the Case Management evidence file list. Summaries (already batch-fetched from Neo4j by the existing `list_evidence()` endpoint) are displayed as 4-line truncated snippets using `line-clamp-4`. Layout restructured so the summary spans full row width beneath the filename/status header row, rather than competing for space with metadata. No backend changes needed — frontend-only change to `CaseManagementView.jsx`. Unprocessed files without summaries render as before. Click-to-preview still works.
+
 ### ✅ BUG-001 · [HIGH] Fix: Evidence processing crashes mid-ingestion during parallel file processing
 - **Completed:** 2026-03-15
 - **Description:** Fixed race condition in ThreadPoolExecutor — added file existence validation before ingestion, specific FileNotFoundError handling with descriptive error messages, per-case active processing tracking (`_active_processing_cases` dict with thread-safe guards), and delete protection (HTTP 409 Conflict) for files currently being processed.

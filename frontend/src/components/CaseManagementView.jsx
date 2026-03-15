@@ -1837,35 +1837,42 @@ export default function CaseManagementView({
                                           }
                                     );
                                   }}
-                                  className={`flex items-center justify-between p-2 rounded border text-xs group cursor-pointer transition-colors ${
+                                  className={`p-2 rounded border text-xs group cursor-pointer transition-colors ${
                                     isSelected
                                       ? 'bg-owl-blue-100 border-owl-blue-300'
                                       : 'bg-white border-light-200 hover:bg-light-50'
                                   }`}
                                 >
-                                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                                    <FileText className={`w-3 h-3 flex-shrink-0 ${
-                                      isSelected ? 'text-owl-blue-700' : 'text-owl-blue-700'
-                                    }`} />
-                                    <span className={`truncate ${
-                                      isSelected ? 'text-owl-blue-900 font-medium' : 'text-owl-blue-900'
-                                    }`}>
-                                      {file.original_filename}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
-                                    <span>{file.status}</span>
-                                    <span className="hidden sm:inline">
-                                      {new Date(file.created_at).toLocaleString()}
-                                    </span>
-                                    <div className={`p-1 rounded flex-shrink-0 ${
-                                      isSelected
-                                        ? 'bg-owl-blue-200 text-owl-blue-700'
-                                        : 'opacity-0 group-hover:opacity-100 bg-light-200 text-owl-blue-600'
-                                    } transition-opacity`}>
-                                      <Eye className="w-3.5 h-3.5" />
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <FileText className={`w-3 h-3 flex-shrink-0 ${
+                                        isSelected ? 'text-owl-blue-700' : 'text-owl-blue-700'
+                                      }`} />
+                                      <span className={`truncate ${
+                                        isSelected ? 'text-owl-blue-900 font-medium' : 'text-owl-blue-900'
+                                      }`}>
+                                        {file.original_filename}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-3 text-light-600 flex-shrink-0 ml-2">
+                                      <span>{file.status}</span>
+                                      <span className="hidden sm:inline">
+                                        {new Date(file.created_at).toLocaleString()}
+                                      </span>
+                                      <div className={`p-1 rounded flex-shrink-0 ${
+                                        isSelected
+                                          ? 'bg-owl-blue-200 text-owl-blue-700'
+                                          : 'opacity-0 group-hover:opacity-100 bg-light-200 text-owl-blue-600'
+                                      } transition-opacity`}>
+                                        <Eye className="w-3.5 h-3.5" />
+                                      </div>
                                     </div>
                                   </div>
+                                  {file.summary && (
+                                    <p className="text-[11px] text-light-500 line-clamp-4 mt-1 ml-5 leading-relaxed">
+                                      {file.summary}
+                                    </p>
+                                  )}
                                 </div>
                               );
                             })}
