@@ -291,6 +291,11 @@ export default function EvidenceProcessingView({
             // Newly completed upload task - mark for refresh
             shouldRefreshFiles = true;
             completedUploadTaskIdsRef.current.add(task.id);
+          } else if (task.status === 'failed' && !completedUploadTaskIdsRef.current.has(task.id)) {
+            // Surface upload error to user
+            const failError = task.error || 'Unknown upload error';
+            setError(`Upload failed: ${failError}`);
+            completedUploadTaskIdsRef.current.add(task.id);
           } else if (task.status === 'completed' || task.status === 'failed') {
             // Track completed/failed tasks to avoid duplicate refreshes
             completedUploadTaskIdsRef.current.add(task.id);
@@ -304,6 +309,13 @@ export default function EvidenceProcessingView({
 
         for (const task of processingTasks) {
           if (task.status === 'completed' && !completedProcessingTaskIdsRef.current.has(task.id)) {
+            shouldRefreshFiles = true;
+            completedProcessingTaskIdsRef.current.add(task.id);
+          } else if (task.status === 'failed' && !completedProcessingTaskIdsRef.current.has(task.id)) {
+            // Surface processing error to user
+            const failError = task.error || 'Unknown processing error';
+            const failedCount = task.progress_failed || 0;
+            setError(`Processing failed${failedCount > 0 ? ` (${failedCount} file(s))` : ''}: ${failError}`);
             shouldRefreshFiles = true;
             completedProcessingTaskIdsRef.current.add(task.id);
           } else if (task.status === 'completed' || task.status === 'failed') {
@@ -1553,6 +1565,16 @@ export default function EvidenceProcessingView({
                   return `Process ${totalCount} file(s)`;
                 })()}
               </button>
+              {/* Process All shortcut — selects all unprocessed files */}
+              {unprocessed.length > 0 && selectedIds.size === 0 && selectedFilePaths.size === 0 && !processing && canUploadEvidence && (
+                <button
+                  onClick={() => selectAll(unprocessed.map((f) => f.id))}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-owl-blue-700 bg-owl-blue-50 border border-owl-blue-200 hover:bg-owl-blue-100 transition-colors"
+                  title="Select all unprocessed files for processing"
+                >
+                  Select All ({unprocessed.length})
+                </button>
+              )}
             </div>
           </div>
 
@@ -1653,6 +1675,13 @@ export default function EvidenceProcessingView({
                     : 'No files match the current filters.'}
                 </p>
               ) : (
+                <>
+                {/* Helper text for first-time users */}
+                {selectedIds.size === 0 && selectedFilePaths.size === 0 && !processing && (
+                  <p className="text-xs text-light-500 mb-3 italic">
+                    Select files below and click &quot;Process&quot; above to begin evidence extraction.
+                  </p>
+                )}
                 <div className="space-y-2">
                   {filteredUnprocessed.map((file) => (
                     <div
@@ -1716,6 +1745,7 @@ export default function EvidenceProcessingView({
                     </div>
                   ))}
                 </div>
+                </>
               )}
             </div>
           </div>

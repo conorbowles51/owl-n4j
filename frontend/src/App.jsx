@@ -1225,10 +1225,13 @@ export default function App() {
 
       // Refresh graph to show merged entity
       await loadGraph();
-      
+
+      // Notify workspace components (EntitySummarySection etc.) to refresh
+      window.dispatchEvent(new Event('entities-refresh'));
+
       // Clear selection if merged entities were selected
       setSelectedNodes(prev => prev.filter(n => n.key !== sourceKey && n.key !== targetKey));
-      
+
       // Add merged node to selection
       if (result.merged_node) {
         setSelectedNodes([{
@@ -1239,7 +1242,7 @@ export default function App() {
         }]);
         await loadNodeDetails([result.merged_node.key]);
       }
-      
+
       alert(`Successfully merged entities. ${result.relationships_updated || 0} relationships migrated.`);
     } catch (err) {
       console.error('Failed to merge entities:', err);

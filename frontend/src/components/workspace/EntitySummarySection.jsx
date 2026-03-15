@@ -36,23 +36,32 @@ export default function EntitySummarySection({ caseId }) {
   const [sortOpen, setSortOpen] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(new Set());
 
-  useEffect(() => {
+  const fetchEntities = React.useCallback(() => {
     if (!caseId) return;
-    let cancelled = false;
     setLoading(true);
     setError(null);
     graphAPI.getEntitySummary(caseId)
       .then((data) => {
-        if (!cancelled) setEntities(data.entities || []);
+        setEntities(data.entities || []);
       })
       .catch((err) => {
-        if (!cancelled) setError(err.message || 'Failed to load entity summary');
+        setError(err.message || 'Failed to load entity summary');
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       });
-    return () => { cancelled = true; };
   }, [caseId]);
+
+  useEffect(() => {
+    fetchEntities();
+  }, [fetchEntities]);
+
+  // Re-fetch entities when a merge operation completes
+  useEffect(() => {
+    const handleRefresh = () => fetchEntities();
+    window.addEventListener('entities-refresh', handleRefresh);
+    return () => window.removeEventListener('entities-refresh', handleRefresh);
+  }, [fetchEntities]);
 
   const tabCounts = useMemo(() => {
     const counts = { All: entities.length };

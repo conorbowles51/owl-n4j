@@ -187,6 +187,11 @@ export default function CaseExportModal({
         });
         setTimelineEvents(timelineRes?.events || []);
         setFullGraphData(graphRes?.nodes?.length ? graphRes : null);
+
+        // Pre-warm: switch to graph tab so ForceGraph2D starts rendering before export
+        if (graphRes?.nodes?.length > 0) {
+          setActiveTab('graph');
+        }
       } catch (err) {
         console.error('Failed to load case data for export:', err);
       } finally {
@@ -292,11 +297,50 @@ export default function CaseExportModal({
 
       if (includeInExport.graph && fullGraphData?.nodes?.length > 0) {
         setProgress(25);
-        const u = await captureTab('graph', graphCanvasRef);
+        // ForceGraph2D needs extra time to lay out nodes, especially large graphs
+        const u = await captureTab('graph', graphCanvasRef, 2000);
         if (u) graphCanvasDataUrl = u;
         else {
+          // html2canvas failed — try direct canvas capture
           const c = graphCanvasRef.current?.querySelector?.('canvas');
-          if (c) graphCanvasDataUrl = c.toDataURL('image/png', 1.0);
+          if (c) {
+            // Wait a bit more then try direct canvas
+            await new Promise((r) => setTimeout(r, 2000));
+            graphCanvasDataUrl = c.toDataURL('image/png', 1.0);
+          }
+        }
+        // Check if captured image is blank (all white) and retry once
+        if (graphCanvasDataUrl) {
+          try {
+            const img = new Image();
+            const loaded = await new Promise((resolve) => {
+              img.onload = () => resolve(true);
+              img.onerror = () => resolve(false);
+              img.src = graphCanvasDataUrl;
+            });
+            if (loaded) {
+              const testCanvas = document.createElement('canvas');
+              testCanvas.width = Math.min(img.width, 100);
+              testCanvas.height = Math.min(img.height, 100);
+              const ctx = testCanvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, testCanvas.width, testCanvas.height);
+              const pixels = ctx.getImageData(0, 0, testCanvas.width, testCanvas.height).data;
+              let nonWhitePixels = 0;
+              for (let i = 0; i < pixels.length; i += 4) {
+                if (pixels[i] < 250 || pixels[i+1] < 250 || pixels[i+2] < 250) nonWhitePixels++;
+              }
+              // If less than 1% non-white pixels, image is likely blank — retry
+              if (nonWhitePixels < (testCanvas.width * testCanvas.height * 0.01)) {
+                console.warn('Graph capture appears blank, retrying...');
+                await new Promise((r) => setTimeout(r, 3000));
+                const retry = await captureTab('graph', graphCanvasRef, 1000);
+                if (retry) graphCanvasDataUrl = retry;
+              }
+            }
+          } catch (checkErr) {
+            // Non-critical — keep whatever we captured
+            console.warn('Graph blank-check failed:', checkErr);
+          }
         }
       }
       if (includeInExport['graph-timeline'] && hasTimeline) {

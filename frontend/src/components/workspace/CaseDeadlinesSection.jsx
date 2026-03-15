@@ -103,10 +103,10 @@ export default function CaseDeadlinesSection({
 
   const getUrgencyIcon = (urgencyLevel, daysUntil) => {
     if (urgencyLevel === 'URGENT' || (daysUntil !== null && daysUntil <= 7)) {
-      return <AlertCircle className="w-4 h-4 text-red-500 inline-block align-text-bottom" />;
+      return <AlertCircle className="w-4 h-4 text-red-500 inline align-middle -mt-0.5" />;
     }
     if (urgencyLevel === 'HIGH' || (daysUntil !== null && daysUntil <= 30)) {
-      return <AlertCircle className="w-4 h-4 text-amber-500 inline-block align-text-bottom" />;
+      return <AlertCircle className="w-4 h-4 text-amber-500 inline align-middle -mt-0.5" />;
     }
     return null;
   };
@@ -189,7 +189,7 @@ export default function CaseDeadlinesSection({
               {/* Trial Date Section */}
               {config.trial_date && (
                 <div className="text-sm text-owl-blue-900 font-medium">
-                  <AlertCircle className="w-4 h-4 text-red-500 inline-block align-text-bottom" /> TRIAL DATE: {formatDate(config.trial_date)}
+                  <AlertCircle className="w-4 h-4 text-red-500 inline align-middle -mt-0.5" /> TRIAL DATE: {formatDate(config.trial_date)}
                   {config.trial_court && ` | ${config.trial_court}`}
                 </div>
               )}
@@ -198,7 +198,7 @@ export default function CaseDeadlinesSection({
               {sortedDeadlines.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="text-xs font-semibold text-owl-blue-900 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-owl-blue-600 inline-block align-text-bottom" />
+                    <Calendar className="w-4 h-4 text-owl-blue-600 inline align-middle -mt-0.5" />
                     Upcoming Deadlines:
                   </h4>
                   <div className="space-y-1 text-xs text-light-700">

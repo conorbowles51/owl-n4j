@@ -42,6 +42,45 @@ def _import_ingest_file():
 class EvidenceService:
     """Orchestrates evidence processing and integration with ingest_data.py."""
 
+    # Per-case locks to prevent concurrent destructive operations during processing
+    _case_processing_locks: Dict[str, Lock] = {}
+    _case_processing_locks_guard = Lock()
+
+    # Track which cases are currently processing (for delete protection)
+    _active_processing_cases: Dict[str, set] = {}  # case_id -> set of evidence_ids
+    _active_processing_guard = Lock()
+
+    @classmethod
+    def _get_case_processing_lock(cls, case_id: str) -> Lock:
+        """Get or create a per-case processing lock."""
+        with cls._case_processing_locks_guard:
+            if case_id not in cls._case_processing_locks:
+                cls._case_processing_locks[case_id] = Lock()
+            return cls._case_processing_locks[case_id]
+
+    @classmethod
+    def is_evidence_being_processed(cls, case_id: str, evidence_id: str) -> bool:
+        """Check if a specific evidence file is currently being processed."""
+        with cls._active_processing_guard:
+            return evidence_id in cls._active_processing_cases.get(case_id, set())
+
+    @classmethod
+    def _mark_processing_active(cls, case_id: str, evidence_ids: List[str]):
+        """Mark evidence IDs as actively being processed."""
+        with cls._active_processing_guard:
+            if case_id not in cls._active_processing_cases:
+                cls._active_processing_cases[case_id] = set()
+            cls._active_processing_cases[case_id].update(evidence_ids)
+
+    @classmethod
+    def _mark_processing_complete(cls, case_id: str, evidence_ids: List[str]):
+        """Remove evidence IDs from active processing set."""
+        with cls._active_processing_guard:
+            if case_id in cls._active_processing_cases:
+                cls._active_processing_cases[case_id] -= set(evidence_ids)
+                if not cls._active_processing_cases[case_id]:
+                    del cls._active_processing_cases[case_id]
+
     def __init__(self) -> None:
         self._ingest_file = None
 
@@ -786,6 +825,21 @@ class EvidenceService:
 
                     path = Path(path_str)
 
+                    # Validate file exists on disk before processing
+                    if not path.exists():
+                        error_msg = f"File not found on disk: {path_str}"
+                        evidence_storage.mark_processed(
+                            [r["id"] for r in recs],
+                            error=error_msg,
+                        )
+                        return {
+                            "status": "error",
+                            "error": error_msg,
+                            "recs": recs,
+                            "evidence_id": evidence_id,
+                            "filename": filename,
+                        }
+
                     # Create log callback for this specific file (captures evidence_id and filename)
                     def log_callback(message: str, eid=evidence_id, fname=filename) -> None:
                         """Callback to log progress messages."""
@@ -820,6 +874,19 @@ class EvidenceService:
                             "evidence_id": evidence_id,
                             "filename": filename,
                         }
+                    except FileNotFoundError:
+                        error_msg = f"File disappeared during processing (possible concurrent operation): {path_str}"
+                        evidence_storage.mark_processed(
+                            [r["id"] for r in recs],
+                            error=error_msg,
+                        )
+                        return {
+                            "status": "error",
+                            "error": error_msg,
+                            "recs": recs,
+                            "evidence_id": evidence_id,
+                            "filename": filename,
+                        }
                     except Exception as e:
                         error_msg = str(e)
                         evidence_storage.mark_processed(
@@ -834,41 +901,51 @@ class EvidenceService:
                             "filename": filename,
                         }
 
-                # Process files in parallel using ThreadPoolExecutor
-                with ThreadPoolExecutor(max_workers=task_max_workers) as executor:
-                    future_to_sha = {
-                        executor.submit(process_single_file, sha, recs): sha
-                        for sha, recs in by_hash.items()
-                    }
+                # Track which evidence IDs are being processed (for delete protection)
+                all_evidence_ids = [r["id"] for recs in by_hash.values() for r in recs]
+                if case_id:
+                    EvidenceService._mark_processing_active(case_id, all_evidence_ids)
 
-                    for future in as_completed(future_to_sha):
-                        result = future.result()
-                        recs = result["recs"]
+                try:
+                    # Process files in parallel using ThreadPoolExecutor
+                    with ThreadPoolExecutor(max_workers=task_max_workers) as executor:
+                        future_to_sha = {
+                            executor.submit(process_single_file, sha, recs): sha
+                            for sha, recs in by_hash.items()
+                        }
 
-                        with counter_lock:
-                            if result["status"] == "success":
-                                processed_count += len(recs)
-                                background_task_storage.update_task(
-                                    task_id,
-                                    file_status={
-                                        "file_id": result["evidence_id"],
-                                        "filename": result["filename"],
-                                        "status": "completed",
-                                    },
-                                    progress_completed=processed_count,
-                                )
-                            else:
-                                failed_count += len(recs)
-                                background_task_storage.update_task(
-                                    task_id,
-                                    file_status={
-                                        "file_id": result["evidence_id"],
-                                        "filename": result["filename"],
-                                        "status": "failed",
-                                        "error": result.get("error", "Unknown error"),
-                                    },
-                                    progress_failed=failed_count,
-                                )
+                        for future in as_completed(future_to_sha):
+                            result = future.result()
+                            recs = result["recs"]
+
+                            with counter_lock:
+                                if result["status"] == "success":
+                                    processed_count += len(recs)
+                                    background_task_storage.update_task(
+                                        task_id,
+                                        file_status={
+                                            "file_id": result["evidence_id"],
+                                            "filename": result["filename"],
+                                            "status": "completed",
+                                        },
+                                        progress_completed=processed_count,
+                                    )
+                                else:
+                                    failed_count += len(recs)
+                                    background_task_storage.update_task(
+                                        task_id,
+                                        file_status={
+                                            "file_id": result["evidence_id"],
+                                            "filename": result["filename"],
+                                            "status": "failed",
+                                            "error": result.get("error", "Unknown error"),
+                                        },
+                                        progress_failed=failed_count,
+                                    )
+                finally:
+                    # Always clear active processing state
+                    if case_id:
+                        EvidenceService._mark_processing_complete(case_id, all_evidence_ids)
 
                 # Save case version if applicable (no cypher needed - data persists in Neo4j)
                 if case_id and processed_count > 0:

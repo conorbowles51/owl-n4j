@@ -838,6 +838,14 @@ async def delete_evidence_file(
         if record.get("case_id") != case_id:
             raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
 
+        # Check if file is currently being processed — prevent deletion race condition
+        from services.evidence_service import EvidenceService
+        if EvidenceService.is_evidence_being_processed(case_id, evidence_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot delete file while it is being processed. Wait for processing to complete."
+            )
+
         filename = record.get("original_filename", "")
         stored_path = record.get("stored_path")
         result_info = {
