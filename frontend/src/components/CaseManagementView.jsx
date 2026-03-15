@@ -1869,7 +1869,7 @@ export default function CaseManagementView({
                                     </div>
                                   </div>
                                   {file.summary && (
-                                    <p className="text-[11px] text-light-500 line-clamp-4 mt-1 ml-5 leading-relaxed">
+                                    <p className="text-[11px] text-light-500 mt-1 ml-5 leading-relaxed">
                                       {file.summary}
                                     </p>
                                   )}
