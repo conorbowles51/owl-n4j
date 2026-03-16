@@ -1,10 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
 import { graphAPI } from "../api"
 
-export function useGraphData(caseId: string | undefined, limit?: number, sortBy?: string) {
+export function useGraphData(caseId: string | undefined) {
   return useQuery({
-    queryKey: ["graph", caseId, limit, sortBy],
-    queryFn: () => graphAPI.getGraph({ case_id: caseId!, limit, sort_by: sortBy }),
+    queryKey: ["graph", caseId],
+    queryFn: () => graphAPI.getGraph({ case_id: caseId! }),
     enabled: !!caseId,
   })
 }

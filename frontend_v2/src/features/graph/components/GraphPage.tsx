@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from "react"
+import { useRef, useState, useCallback, useMemo, useEffect } from "react"
 import { useParams } from "react-router-dom"
 import type { ForceGraphMethods } from "react-force-graph-2d"
 import {
@@ -23,19 +23,11 @@ import { ExpandGraphDialog } from "./ExpandGraphDialog"
 import { EntityComparisonDialog } from "./EntityComparisonDialog"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Network, Info } from "lucide-react"
+import { Network } from "lucide-react"
 import { graphAPI } from "../api"
 import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
 import type { GraphNode, NodeDetail } from "@/types/graph.types"
-
-/* ------------------------------------------------------------------ */
-/*  Constants                                                          */
-/* ------------------------------------------------------------------ */
-
-const SMART_CAP_THRESHOLD = 2000
-const SMART_CAP_DEFAULT = 500
-const SMART_CAP_INCREMENT = 500
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -46,26 +38,9 @@ export function GraphPage() {
   const queryClient = useQueryClient()
   const graphRef = useRef<ForceGraphMethods>()
 
-  /* ---- Smart cap state ---- */
-  const [smartCapLimit, setSmartCapLimit] = useState<number | undefined>(undefined)
-  const [smartCapActive, setSmartCapActive] = useState(false)
-
   /* ---- Data fetching ---- */
-  const { data: graphData, isLoading } = useGraphData(
-    caseId,
-    smartCapActive ? smartCapLimit : undefined,
-    smartCapActive ? "degree" : undefined,
-  )
+  const { data: graphData, isLoading } = useGraphData(caseId)
   const { filteredData } = useGraphSearch(graphData)
-
-  /* ---- Smart cap activation ---- */
-  useEffect(() => {
-    if (!graphData) return
-    if (graphData.nodes.length > SMART_CAP_THRESHOLD && !smartCapActive) {
-      setSmartCapActive(true)
-      setSmartCapLimit(SMART_CAP_DEFAULT)
-    }
-  }, [graphData, smartCapActive])
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -157,10 +132,6 @@ export function GraphPage() {
     useGraphStore.getState().addToSubgraph(keys)
   }, [selectedNodeKeys])
 
-  const handleShowMore = useCallback(() => {
-    setSmartCapLimit((prev) => (prev ?? SMART_CAP_DEFAULT) + SMART_CAP_INCREMENT)
-  }, [])
-
   /* ---- Merge setup ---- */
   const mergeEntities = useMemo(() => {
     if (selectedNodeKeys.size !== 2 || !graphData) return { e1: null, e2: null }
@@ -225,7 +196,6 @@ export function GraphPage() {
   }
 
   const displayData = filteredData ?? graphData
-  const totalNodeCount = graphData.nodes.length
 
   /* Toggle helper for toolbar tool buttons */
   const toggleToolOverlay = (name: typeof graphPanelToolOverlay) =>
@@ -244,22 +214,6 @@ export function GraphPage() {
         onOpenRecycleBin={() => toggleToolOverlay("recycle")}
         onOpenCypher={() => toggleToolOverlay("cypher")}
       />
-
-      {/* Smart cap info banner */}
-      {smartCapActive && (
-        <div className="flex items-center gap-2 border-b border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-1.5">
-          <Info className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-          <span className="text-xs text-amber-700 dark:text-amber-300">
-            Showing top {smartCapLimit ?? SMART_CAP_DEFAULT} of {totalNodeCount.toLocaleString()} nodes by connections.
-          </span>
-          <button
-            onClick={handleShowMore}
-            className="ml-auto text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
-          >
-            Show more
-          </button>
-        </div>
-      )}
 
       <div className="flex flex-1 overflow-hidden">
         <ResizablePanelGroup orientation="horizontal" className="flex-1">
