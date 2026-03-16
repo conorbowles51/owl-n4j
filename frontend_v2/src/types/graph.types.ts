@@ -119,31 +119,3 @@ export interface ShortestPathResult {
   paths: { nodes: string[]; edges: string[]; length: number }[]
 }
 
-/* ------------------------------------------------------------------ */
-/*  Community Overview (Phase 2 — large graph aggregation)             */
-/* ------------------------------------------------------------------ */
-
-export interface SuperNode {
-  community_id: number
-  member_count: number
-  top_entities: { key: string; name: string; type: string }[]
-  entity_type_breakdown: Record<string, number>
-  internal_edge_count: number
-  label: string
-}
-
-export interface CrossCommunityEdge {
-  source_community: number
-  target_community: number
-  edge_count: number
-  edge_types: string[]
-}
-
-export interface CommunityOverview {
-  super_nodes: SuperNode[]
-  cross_community_edges: CrossCommunityEdge[]
-  node_community_map: Record<string, number>
-  total_nodes: number
-  total_edges: number
-  community_count: number
-}

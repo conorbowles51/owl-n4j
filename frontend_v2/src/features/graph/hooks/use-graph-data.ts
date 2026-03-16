@@ -9,15 +9,6 @@ export function useGraphData(caseId: string | undefined, limit?: number, sortBy?
   })
 }
 
-export function useCommunityOverview(caseId: string | undefined, enabled = true) {
-  return useQuery({
-    queryKey: ["graph", "community-overview", caseId],
-    queryFn: () => graphAPI.getCommunityOverview(caseId!),
-    enabled: !!caseId && enabled,
-    staleTime: 5 * 60 * 1000, // 5 min — community structure rarely changes
-  })
-}
-
 export function useGraphSummary(caseId: string | undefined) {
   return useQuery({
     queryKey: ["graph", "summary", caseId],

@@ -9,7 +9,6 @@ import type {
   CommunityResult,
   BetweennessResult,
   ShortestPathResult,
-  CommunityOverview,
 } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
@@ -60,11 +59,6 @@ export const graphAPI = {
     if (params.sort_by) qs.set("sort_by", params.sort_by)
     const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
     return toGraphData(raw)
-  },
-
-  getCommunityOverview: async (caseId: string, resolution = 1.0) => {
-    const qs = new URLSearchParams({ case_id: caseId, resolution: String(resolution) })
-    return fetchAPI<CommunityOverview>(`/api/graph/community-overview?${qs}`)
   },
 
   getNodeDetails: async (key: string, caseId: string) => {
