@@ -215,6 +215,113 @@ class Neo4jService:
 
         return {"nodes": nodes, "links": links}
 
+    def get_graph_structure(
+        self,
+        case_id: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict[str, List]:
+        """
+        Lightweight graph structure for visualization — returns only the fields
+        needed for rendering (key, name, type, confidence, mentioned) instead
+        of full properties(n).  The on-demand detail endpoint still returns
+        everything when a node is clicked.
+
+        Args:
+            case_id: REQUIRED - Filter to only include nodes/relationships belonging to this case
+            start_date: Filter to include nodes with date >= start_date (YYYY-MM-DD) or connected to such nodes
+            end_date: Filter to include nodes with date <= end_date (YYYY-MM-DD) or connected to such nodes
+
+        Returns:
+            Dict with 'nodes' and 'links' arrays (slim payloads)
+        """
+        with self._driver.session() as session:
+            params = {"case_id": case_id}
+
+            if start_date or end_date:
+                date_conditions = []
+                if start_date:
+                    date_conditions.append("n.date >= $start_date")
+                    params["start_date"] = start_date
+                if end_date:
+                    date_conditions.append("n.date <= $end_date")
+                    params["end_date"] = end_date
+
+                date_filter = " AND " + " AND ".join(date_conditions)
+
+                query = f"""
+                    MATCH (n)
+                    WHERE n.case_id = $case_id AND n.date IS NOT NULL
+                    {date_filter}
+                    WITH collect(DISTINCT n) AS nodes_in_range
+                    UNWIND nodes_in_range AS start_node
+                    MATCH path = (start_node)-[*0..2]-(connected)
+                    WHERE connected.case_id = $case_id
+                    WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
+                    UNWIND all_nodes AS node
+                    WITH DISTINCT node
+                    RETURN
+                        node.key AS key,
+                        node.name AS name,
+                        labels(node)[0] AS type,
+                        node.confidence AS confidence,
+                        node.mentioned AS mentioned
+                """
+            else:
+                query = """
+                    MATCH (n)
+                    WHERE n.case_id = $case_id
+                    RETURN
+                        n.key AS key,
+                        n.name AS name,
+                        labels(n)[0] AS type,
+                        n.confidence AS confidence,
+                        n.mentioned AS mentioned
+                """
+
+            nodes_result = session.run(query, **params)
+            nodes = []
+            node_keys = set()
+
+            for record in nodes_result:
+                node_key = record["key"]
+                if node_key not in node_keys:
+                    node_keys.add(node_key)
+                    nodes.append({
+                        "key": node_key,
+                        "name": record["name"] or node_key,
+                        "type": record["type"],
+                        "confidence": record["confidence"],
+                        "mentioned": record["mentioned"],
+                    })
+
+            if node_keys and len(node_keys) > 0:
+                keys_list = list(node_keys)
+                rels_query = """
+                    MATCH (a)-[r]->(b)
+                    WHERE a.key IN $node_keys AND b.key IN $node_keys
+                      AND r.case_id = $case_id
+                    RETURN
+                        a.key AS source,
+                        b.key AS target,
+                        type(r) AS type,
+                        r.weight AS weight
+                """
+                rels_result = session.run(rels_query, node_keys=keys_list, case_id=case_id)
+            else:
+                rels_result = []
+
+            links = []
+            for record in rels_result:
+                links.append({
+                    "source": record["source"],
+                    "target": record["target"],
+                    "type": record["type"],
+                    "weight": record["weight"],
+                })
+
+        return {"nodes": nodes, "links": links}
+
     def get_node_with_neighbours(self, key: str, depth: int = 1, case_id: str = None) -> Dict[str, List]:
         """
         Get a node and its neighbours up to specified depth.
