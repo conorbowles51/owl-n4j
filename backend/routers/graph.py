@@ -203,12 +203,33 @@ async def get_entity_types(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/community-overview")
+async def get_community_overview(
+    case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
+    resolution: float = Query(1.0, description="Louvain resolution (higher = more communities)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Return a community-aggregated overview of the graph for large-graph rendering.
+    Each community becomes a super-node; cross-community edges are aggregated.
+    """
+    try:
+        result = neo4j_service.get_community_overview(
+            case_id=case_id, resolution=resolution,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("")
 async def get_graph(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
     lightweight: bool = Query(False, description="Return slim payload (key/name/type/confidence/mentioned only)"),
+    limit: Optional[int] = Query(None, description="Cap nodes at top-N (requires sort_by)"),
+    sort_by: Optional[str] = Query(None, description="Sort criterion when limit is set (e.g. 'degree')"),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -220,7 +241,10 @@ async def get_graph(
     """
     try:
         if lightweight:
-            result = neo4j_service.get_graph_structure(case_id=case_id, start_date=start_date, end_date=end_date)
+            result = neo4j_service.get_graph_structure(
+                case_id=case_id, start_date=start_date, end_date=end_date,
+                limit=limit, sort_by=sort_by,
+            )
         else:
             result = neo4j_service.get_full_graph(case_id=case_id, start_date=start_date, end_date=end_date)
         

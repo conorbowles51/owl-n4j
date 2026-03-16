@@ -6,7 +6,7 @@ import {
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
-import { useGraphData } from "../hooks/use-graph-data"
+import { useGraphData, useCommunityOverview } from "../hooks/use-graph-data"
 import { useGraphSearch } from "../hooks/use-graph-search"
 import { useGraphStore } from "@/stores/graph.store"
 import { useQueryClient } from "@tanstack/react-query"
@@ -23,11 +23,20 @@ import { ExpandGraphDialog } from "./ExpandGraphDialog"
 import { EntityComparisonDialog } from "./EntityComparisonDialog"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
-import { Network } from "lucide-react"
+import { Network, Layers, Maximize2, Info } from "lucide-react"
 import { graphAPI } from "../api"
 import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
 import type { GraphNode, NodeDetail } from "@/types/graph.types"
+
+/* ------------------------------------------------------------------ */
+/*  Constants                                                          */
+/* ------------------------------------------------------------------ */
+
+const COMMUNITY_THRESHOLD = 500
+const SMART_CAP_THRESHOLD = 2000
+const SMART_CAP_DEFAULT = 500
+const SMART_CAP_INCREMENT = 500
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -36,9 +45,68 @@ import type { GraphNode, NodeDetail } from "@/types/graph.types"
 export function GraphPage() {
   const { id: caseId } = useParams()
   const queryClient = useQueryClient()
-  const { data: graphData, isLoading } = useGraphData(caseId)
-  const { filteredData } = useGraphSearch(graphData)
   const graphRef = useRef<ForceGraphMethods>()
+
+  /* ---- View mode from store ---- */
+  const viewMode = useGraphStore((s) => s.viewMode)
+  const setViewMode = useGraphStore((s) => s.setViewMode)
+  const setCommunityOverview = useGraphStore((s) => s.setCommunityOverview)
+
+  /* ---- Smart cap state (Phase 3) ---- */
+  const [smartCapLimit, setSmartCapLimit] = useState<number | undefined>(undefined)
+  const [smartCapActive, setSmartCapActive] = useState(false)
+
+  /* ---- Data fetching ---- */
+  const { data: graphData, isLoading } = useGraphData(
+    caseId,
+    smartCapActive ? smartCapLimit : undefined,
+    smartCapActive ? "degree" : undefined,
+  )
+  const { filteredData } = useGraphSearch(graphData)
+
+  // Fetch community overview in parallel (only when there are enough nodes)
+  const shouldFetchCommunities = (graphData?.nodes.length ?? 0) > COMMUNITY_THRESHOLD
+  const { data: communityData } = useCommunityOverview(
+    caseId,
+    shouldFetchCommunities && viewMode === "community-overview",
+  )
+
+  /* ---- Auto-set view mode based on node count ---- */
+  const hasAutoSetView = useRef(false)
+  useEffect(() => {
+    if (!graphData || hasAutoSetView.current) return
+    hasAutoSetView.current = true
+
+    const count = graphData.nodes.length
+    if (count > COMMUNITY_THRESHOLD) {
+      setViewMode("community-overview")
+    } else {
+      setViewMode("full")
+    }
+  }, [graphData, setViewMode])
+
+  // Reset auto-set flag when case changes
+  useEffect(() => {
+    hasAutoSetView.current = false
+  }, [caseId])
+
+  /* ---- Smart cap fallback (Phase 3) ---- */
+  useEffect(() => {
+    if (!graphData || viewMode !== "full") {
+      setSmartCapActive(false)
+      return
+    }
+    // If full view and too many nodes and no community overview available, apply cap
+    if (graphData.nodes.length > SMART_CAP_THRESHOLD && !smartCapActive) {
+      setSmartCapActive(true)
+      setSmartCapLimit(SMART_CAP_DEFAULT)
+    }
+  }, [graphData, viewMode, smartCapActive])
+
+  /* ---- Sync community overview to store ---- */
+  useEffect(() => {
+    setCommunityOverview(communityData ?? null)
+  }, [communityData, setCommunityOverview])
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -130,6 +198,10 @@ export function GraphPage() {
     useGraphStore.getState().addToSubgraph(keys)
   }, [selectedNodeKeys])
 
+  const handleShowMore = useCallback(() => {
+    setSmartCapLimit((prev) => (prev ?? SMART_CAP_DEFAULT) + SMART_CAP_INCREMENT)
+  }, [])
+
   /* ---- Merge setup ---- */
   const mergeEntities = useMemo(() => {
     if (selectedNodeKeys.size !== 2 || !graphData) return { e1: null, e2: null }
@@ -194,6 +266,7 @@ export function GraphPage() {
   }
 
   const displayData = filteredData ?? graphData
+  const totalNodeCount = graphData.nodes.length
 
   /* Toggle helper for toolbar tool buttons */
   const toggleToolOverlay = (name: typeof graphPanelToolOverlay) =>
@@ -213,6 +286,59 @@ export function GraphPage() {
         onOpenCypher={() => toggleToolOverlay("cypher")}
       />
 
+      {/* View mode toggle + smart cap banner */}
+      {totalNodeCount > COMMUNITY_THRESHOLD && (
+        <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 px-3 py-1.5">
+          <div className="flex items-center gap-1 rounded-md bg-slate-200/70 dark:bg-slate-800/70 p-0.5">
+            <button
+              onClick={() => {
+                setViewMode("community-overview")
+                setSmartCapActive(false)
+              }}
+              className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                viewMode === "community-overview"
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+              }`}
+            >
+              <Layers className="h-3 w-3" />
+              Communities
+            </button>
+            <button
+              onClick={() => setViewMode("full")}
+              className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                viewMode === "full"
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
+              }`}
+            >
+              <Maximize2 className="h-3 w-3" />
+              Full Graph
+            </button>
+          </div>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">
+            {totalNodeCount.toLocaleString()} nodes
+          </span>
+        </div>
+      )}
+
+      {/* Smart cap info banner (Phase 3) */}
+      {smartCapActive && viewMode === "full" && (
+        <div className="flex items-center gap-2 border-b border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-3 py-1.5">
+          <Info className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-xs text-amber-700 dark:text-amber-300">
+            Showing top {smartCapLimit ?? SMART_CAP_DEFAULT} nodes by connections.
+            Use Community View for the full overview.
+          </span>
+          <button
+            onClick={handleShowMore}
+            className="ml-auto text-xs font-medium text-amber-700 dark:text-amber-300 hover:underline"
+          >
+            Show more
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-1 overflow-hidden">
         <ResizablePanelGroup orientation="horizontal" className="flex-1">
           {/* Panel 1: Main Graph — always present */}
@@ -227,6 +353,7 @@ export function GraphPage() {
                 data={displayData}
                 caseId={caseId!}
                 graphRef={graphRef}
+                communityOverview={communityData}
               />
               <GraphLegend nodes={displayData.nodes} />
             </div>

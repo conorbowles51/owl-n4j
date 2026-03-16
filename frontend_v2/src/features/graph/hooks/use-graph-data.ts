@@ -1,11 +1,20 @@
 import { useQuery } from "@tanstack/react-query"
 import { graphAPI } from "../api"
 
-export function useGraphData(caseId: string | undefined) {
+export function useGraphData(caseId: string | undefined, limit?: number, sortBy?: string) {
   return useQuery({
-    queryKey: ["graph", caseId],
-    queryFn: () => graphAPI.getGraph({ case_id: caseId! }),
+    queryKey: ["graph", caseId, limit, sortBy],
+    queryFn: () => graphAPI.getGraph({ case_id: caseId!, limit, sort_by: sortBy }),
     enabled: !!caseId,
+  })
+}
+
+export function useCommunityOverview(caseId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["graph", "community-overview", caseId],
+    queryFn: () => graphAPI.getCommunityOverview(caseId!),
+    enabled: !!caseId && enabled,
+    staleTime: 5 * 60 * 1000, // 5 min — community structure rarely changes
   })
 }
 

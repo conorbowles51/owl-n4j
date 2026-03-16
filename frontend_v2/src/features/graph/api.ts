@@ -9,6 +9,7 @@ import type {
   CommunityResult,
   BetweennessResult,
   ShortestPathResult,
+  CommunityOverview,
 } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
@@ -49,12 +50,21 @@ export const graphAPI = {
     case_id: string
     start_date?: string
     end_date?: string
+    limit?: number
+    sort_by?: string
   }) => {
     const qs = new URLSearchParams({ case_id: params.case_id, lightweight: "true" })
     if (params.start_date) qs.set("start_date", params.start_date)
     if (params.end_date) qs.set("end_date", params.end_date)
+    if (params.limit != null) qs.set("limit", String(params.limit))
+    if (params.sort_by) qs.set("sort_by", params.sort_by)
     const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
     return toGraphData(raw)
+  },
+
+  getCommunityOverview: async (caseId: string, resolution = 1.0) => {
+    const qs = new URLSearchParams({ case_id: caseId, resolution: String(resolution) })
+    return fetchAPI<CommunityOverview>(`/api/graph/community-overview?${qs}`)
   },
 
   getNodeDetails: async (key: string, caseId: string) => {

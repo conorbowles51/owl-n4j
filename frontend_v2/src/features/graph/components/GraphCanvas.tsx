@@ -7,7 +7,7 @@ import ForceGraph2D, {
 import { useGraphStore } from "@/stores/graph.store"
 import { getNodeColor, communityColors, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
-import type { GraphData } from "@/types/graph.types"
+import type { GraphData, CommunityOverview } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
 /*  Types for react-force-graph-2d                                     */
@@ -22,11 +22,18 @@ interface FGNode extends NodeObject {
   community_id?: number
   mentioned?: boolean
   _degree?: number
+  /* Super-node fields */
+  _isSuperNode?: boolean
+  _memberCount?: number
+  _entityTypeBreakdown?: Record<string, number>
+  _internalEdgeCount?: number
 }
 
 interface FGLink extends LinkObject {
   type: string
   weight?: number
+  _edgeCount?: number
+  _edgeTypes?: string[]
 }
 
 /* ------------------------------------------------------------------ */
@@ -37,13 +44,14 @@ interface GraphCanvasProps {
   data: GraphData
   caseId: string
   graphRef?: React.MutableRefObject<ForceGraphMethods | undefined>
+  communityOverview?: CommunityOverview | null
 }
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
+export function GraphCanvas({ data, graphRef: externalRef, communityOverview }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const internalRef = useRef<ForceGraphMethods<FGNode, FGLink>>()
   const fgRef = externalRef ?? internalRef
@@ -65,6 +73,10 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     analysisHighlight,
     selectionMode,
     openContextMenu,
+    viewMode,
+    expandedCommunities,
+    expandCommunity,
+    collapseCommunity,
   } = useGraphStore()
 
   const { theme } = useTheme()
@@ -94,8 +106,137 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     return () => ro.disconnect()
   }, [])
 
-  /* ---- Build force-graph data with degree calc ---- */
+  /* ---- Build force-graph data with degree calc + community view ---- */
   const fgData = useMemo(() => {
+    /* ---- Community overview mode ---- */
+    if (viewMode === "community-overview" && communityOverview) {
+      const nodes: FGNode[] = []
+      const links: FGLink[] = []
+      const expandedSet = expandedCommunities
+
+      // Degree counts for expanded nodes (needed for sizing)
+      const degreeCounts = new Map<string, number>()
+      for (const e of data.edges) {
+        degreeCounts.set(e.source, (degreeCounts.get(e.source) ?? 0) + 1)
+        degreeCounts.set(e.target, (degreeCounts.get(e.target) ?? 0) + 1)
+      }
+
+      for (const sn of communityOverview.super_nodes) {
+        if (expandedSet.has(sn.community_id)) {
+          // Expanded: show individual nodes from cached lightweight data
+          const memberKeys = new Set<string>()
+          for (const [key, cid] of Object.entries(communityOverview.node_community_map)) {
+            if (cid === sn.community_id) memberKeys.add(key)
+          }
+
+          for (const n of data.nodes) {
+            if (memberKeys.has(n.key) && !hiddenNodeKeys.has(n.key)) {
+              nodes.push({
+                id: n.key,
+                key: n.key,
+                label: n.label,
+                type: n.type,
+                confidence: n.confidence,
+                community_id: sn.community_id,
+                mentioned: n.mentioned,
+                _degree: degreeCounts.get(n.key) ?? 0,
+              })
+            }
+          }
+
+          // Include intra-community edges
+          for (const e of data.edges) {
+            if (memberKeys.has(e.source) && memberKeys.has(e.target)) {
+              links.push({
+                source: e.source,
+                target: e.target,
+                type: e.type,
+                weight: e.weight,
+              })
+            }
+          }
+        } else {
+          // Collapsed: render as super-node
+          nodes.push({
+            id: `community_${sn.community_id}`,
+            key: `community_${sn.community_id}`,
+            label: sn.label,
+            type: "community",
+            community_id: sn.community_id,
+            _degree: 0,
+            _isSuperNode: true,
+            _memberCount: sn.member_count,
+            _entityTypeBreakdown: sn.entity_type_breakdown,
+            _internalEdgeCount: sn.internal_edge_count,
+          })
+        }
+      }
+
+      // Cross-community edges
+      for (const ce of communityOverview.cross_community_edges) {
+        const srcExpanded = expandedSet.has(ce.source_community)
+        const tgtExpanded = expandedSet.has(ce.target_community)
+
+        if (!srcExpanded && !tgtExpanded) {
+          // Both collapsed — super-node to super-node
+          links.push({
+            source: `community_${ce.source_community}`,
+            target: `community_${ce.target_community}`,
+            type: ce.edge_types.join(", "),
+            _edgeCount: ce.edge_count,
+            _edgeTypes: ce.edge_types,
+          })
+        } else if (srcExpanded && tgtExpanded) {
+          // Both expanded — add actual edges between communities from cached data
+          const srcKeys = new Set<string>()
+          const tgtKeys = new Set<string>()
+          for (const [key, cid] of Object.entries(communityOverview.node_community_map)) {
+            if (cid === ce.source_community) srcKeys.add(key)
+            if (cid === ce.target_community) tgtKeys.add(key)
+          }
+          for (const e of data.edges) {
+            if (
+              (srcKeys.has(e.source) && tgtKeys.has(e.target)) ||
+              (tgtKeys.has(e.source) && srcKeys.has(e.target))
+            ) {
+              links.push({ source: e.source, target: e.target, type: e.type, weight: e.weight })
+            }
+          }
+        } else {
+          // One expanded, one collapsed — connect expanded nodes to super-node
+          const expandedCid = srcExpanded ? ce.source_community : ce.target_community
+          const collapsedCid = srcExpanded ? ce.target_community : ce.source_community
+          const expandedKeys = new Set<string>()
+          for (const [key, cid] of Object.entries(communityOverview.node_community_map)) {
+            if (cid === expandedCid) expandedKeys.add(key)
+          }
+          // Find which expanded nodes connect to the collapsed community
+          const collapsedKeys = new Set<string>()
+          for (const [key, cid] of Object.entries(communityOverview.node_community_map)) {
+            if (cid === collapsedCid) collapsedKeys.add(key)
+          }
+          const bridgeNodes = new Set<string>()
+          for (const e of data.edges) {
+            if (expandedKeys.has(e.source) && collapsedKeys.has(e.target)) bridgeNodes.add(e.source)
+            if (expandedKeys.has(e.target) && collapsedKeys.has(e.source)) bridgeNodes.add(e.target)
+          }
+          // Connect top bridge node (or first) to the super-node
+          const bridgeArr = Array.from(bridgeNodes)
+          if (bridgeArr.length > 0) {
+            links.push({
+              source: bridgeArr[0],
+              target: `community_${collapsedCid}`,
+              type: ce.edge_types.join(", "),
+              _edgeCount: ce.edge_count,
+            })
+          }
+        }
+      }
+
+      return { nodes, links }
+    }
+
+    /* ---- Full / default mode ---- */
     const visibleNodes = data.nodes.filter((n) => !hiddenNodeKeys.has(n.key))
     const visibleKeys = new Set(visibleNodes.map((n) => n.key))
 
@@ -134,7 +275,15 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       }))
 
     return { nodes, links }
-  }, [data, hiddenNodeKeys, pinnedNodeKeys])
+  }, [data, hiddenNodeKeys, pinnedNodeKeys, viewMode, communityOverview, expandedCommunities])
+
+  /* ---- Adaptive force simulation tuning ---- */
+  const nodeCount = fgData.nodes.length
+  const isLargeGraph = nodeCount > 500
+  const simAlphaDecay = isLargeGraph ? 0.05 : 0.02
+  const simVelocityDecay = isLargeGraph ? 0.5 : 0.3
+  const simCooldownTime = isLargeGraph ? 1500 : 3000
+  const simWarmupTicks = isLargeGraph ? 50 : 0
 
   /* ---- Apply force parameters ---- */
   useEffect(() => {
@@ -158,20 +307,109 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   /* ---- Node color logic ---- */
   const getColor = useCallback(
     (node: FGNode): string => {
+      if (node._isSuperNode) {
+        return communityColors[(node.community_id ?? 0) % communityColors.length]
+      }
       if (communityMap?.has(node.key)) {
         const cid = communityMap.get(node.key)!
         return communityColors[cid % communityColors.length]
       }
+      // In community-overview with expanded communities, color by community
+      if (viewMode === "community-overview" && node.community_id != null) {
+        return communityColors[node.community_id % communityColors.length]
+      }
       return getNodeColor(node.type)
     },
-    [communityMap]
+    [communityMap, viewMode]
   )
 
-  /* ---- Custom node renderer ---- */
+  /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
     (node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
+
+      /* ---- Super-node rendering ---- */
+      if (node._isSuperNode) {
+        const memberCount = node._memberCount ?? 1
+        const radius = Math.log(memberCount + 1) * 8
+        const color = getColor(node)
+
+        // Outer glow ring
+        ctx.beginPath()
+        ctx.arc(x, y, radius + 3, 0, 2 * Math.PI)
+        ctx.fillStyle = color.replace(")", ",0.15)").replace("rgb", "rgba")
+        ctx.fill()
+
+        // Double-border hint (indicates expandable)
+        ctx.beginPath()
+        ctx.arc(x, y, radius + 1.5, 0, 2 * Math.PI)
+        ctx.strokeStyle = color
+        ctx.lineWidth = 1 / globalScale
+        ctx.globalAlpha = 0.5
+        ctx.stroke()
+        ctx.globalAlpha = 1.0
+
+        // Main circle
+        ctx.beginPath()
+        ctx.arc(x, y, radius, 0, 2 * Math.PI)
+        ctx.fillStyle = color
+        ctx.fill()
+
+        // Pie chart of entity type breakdown (if enough space)
+        if (globalScale > 0.3 && node._entityTypeBreakdown) {
+          const breakdown = node._entityTypeBreakdown
+          const total = Object.values(breakdown).reduce((a, b) => a + b, 0)
+          if (total > 0) {
+            let startAngle = -Math.PI / 2
+            const pieRadius = radius * 0.65
+            for (const [type, count] of Object.entries(breakdown)) {
+              const sliceAngle = (count / total) * 2 * Math.PI
+              ctx.beginPath()
+              ctx.moveTo(x, y)
+              ctx.arc(x, y, pieRadius, startAngle, startAngle + sliceAngle)
+              ctx.closePath()
+              ctx.fillStyle = getNodeColor(type)
+              ctx.globalAlpha = 0.7
+              ctx.fill()
+              startAngle += sliceAngle
+            }
+            ctx.globalAlpha = 1.0
+          }
+        }
+
+        // Member count badge
+        const badgeFontSize = Math.max(10 / globalScale, 3)
+        ctx.font = `bold ${badgeFontSize}px Inter, system-ui, sans-serif`
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        ctx.fillStyle = "#fff"
+        ctx.fillText(String(memberCount), x, y)
+
+        // Label
+        if (globalScale > 0.3) {
+          const labelFontSize = Math.max(10 / globalScale, 2)
+          ctx.font = `${labelFontSize}px Inter, system-ui, sans-serif`
+          ctx.textAlign = "center"
+          ctx.textBaseline = "top"
+          ctx.fillStyle = canvasColors.labelText
+          const label = node.label.length > 30 ? node.label.slice(0, 28) + "..." : node.label
+          ctx.fillText(label, x, y + radius + 3)
+        }
+
+        // Selection ring
+        if (selectedNodeKeys.has(node.key)) {
+          ctx.beginPath()
+          ctx.arc(x, y, radius + 4, 0, 2 * Math.PI)
+          ctx.strokeStyle = "#3B82F6"
+          ctx.lineWidth = 2.5 / globalScale
+          ctx.stroke()
+        }
+
+        return
+      }
+
+      /* ---- Regular node rendering with LOD ---- */
       const isSelected = selectedNodeKeys.has(node.key)
       const isHovered = hoveredNode === node.key
       const isHighlighted = analysisHighlight?.has(node.key) ?? false
@@ -184,10 +422,71 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       // Opacity based on mentioned flag
       const alpha = node.mentioned === false ? 0.45 : 1.0
-
       const color = getColor(node)
-
       ctx.globalAlpha = alpha
+
+      /* LOD: Dots tier (globalScale < 0.3) — circle only */
+      if (globalScale < 0.3) {
+        ctx.beginPath()
+        ctx.arc(x, y, sz, 0, 2 * Math.PI)
+        ctx.fillStyle = color
+        ctx.fill()
+
+        // Still show selection ring even at low zoom
+        if (isSelected) {
+          ctx.beginPath()
+          ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
+          ctx.strokeStyle = "#3B82F6"
+          ctx.lineWidth = 2 / globalScale
+          ctx.stroke()
+        }
+
+        ctx.globalAlpha = 1.0
+        return
+      }
+
+      /* LOD: Compact tier (globalScale 0.3–1.0) — circle + selective labels */
+      if (globalScale < 1.0) {
+        // Glow for highlighted nodes
+        if (isHighlighted || isOnPath) {
+          ctx.beginPath()
+          ctx.arc(x, y, sz + 4, 0, 2 * Math.PI)
+          ctx.fillStyle = isOnPath ? "rgba(59,130,246,0.25)" : "rgba(245,158,11,0.25)"
+          ctx.fill()
+        }
+
+        // Selection ring
+        if (isSelected) {
+          ctx.beginPath()
+          ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
+          ctx.strokeStyle = "#3B82F6"
+          ctx.lineWidth = 2 / globalScale
+          ctx.stroke()
+        }
+
+        // Node circle
+        ctx.beginPath()
+        ctx.arc(x, y, sz, 0, 2 * Math.PI)
+        ctx.fillStyle = color
+        ctx.fill()
+
+        // Label only for high-degree, selected, or hovered nodes
+        const showLabel = (node._degree ?? 0) > 5 || isSelected || isHovered
+        if (showLabel) {
+          const fontSize = Math.max(10 / globalScale, 2)
+          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+          ctx.textAlign = "center"
+          ctx.textBaseline = "top"
+          ctx.fillStyle = canvasColors.labelText
+          const label = node.label.length > 20 ? node.label.slice(0, 18) + "..." : node.label
+          ctx.fillText(label, x, y + sz + 2)
+        }
+
+        ctx.globalAlpha = 1.0
+        return
+      }
+
+      /* LOD: Full tier (globalScale >= 1.0) — everything */
 
       // Glow for highlighted nodes
       if (isHighlighted || isOnPath) {
@@ -238,33 +537,55 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     [selectedNodeKeys, hoveredNode, getColor, analysisHighlight, highlightedPaths, canvasColors]
   )
 
-  /* ---- Custom link renderer ---- */
+  /* ---- Custom link renderer with LOD tiers ---- */
   const paintLink = useCallback(
     (link: FGLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const src = link.source as FGNode
       const tgt = link.target as FGNode
       if (!src?.x || !tgt?.x) return
 
+      /* LOD: skip links entirely at very low zoom */
+      if (globalScale < 0.3) return
+
       const isOnPath =
         highlightedPaths?.has((src as FGNode).key) &&
         highlightedPaths?.has((tgt as FGNode).key)
 
-      const width = Math.max(0.5, (link.weight ?? 1) * 0.8) / Math.sqrt(globalScale)
+      const isCrossComm = (link._edgeCount ?? 0) > 0
+
+      const baseWidth = isCrossComm
+        ? Math.log((link._edgeCount ?? 1) + 1) * 1.5
+        : Math.max(0.5, (link.weight ?? 1) * 0.8)
+      const width = baseWidth / Math.sqrt(globalScale)
+
       ctx.beginPath()
       ctx.moveTo(src.x, src.y!)
       ctx.lineTo(tgt.x, tgt.y!)
       ctx.strokeStyle = isOnPath ? "#3B82F6" : canvasColors.linkColor
       ctx.lineWidth = isOnPath ? width * 2 : width
-      ctx.globalAlpha = isOnPath ? 0.9 : 0.4
+      ctx.globalAlpha = isOnPath ? 0.9 : isCrossComm ? 0.6 : 0.4
       ctx.stroke()
+
+      /* LOD: Thin lines only (globalScale 0.3–0.6) — no arrows, no labels */
+      if (globalScale < 0.6) {
+        ctx.globalAlpha = 1.0
+        return
+      }
+
+      /* Full detail (globalScale >= 0.6) — arrows + labels */
 
       // Arrowhead
       const dx = tgt.x - src.x
       const dy = tgt.y! - src.y!
       const len = Math.sqrt(dx * dx + dy * dy)
-      if (len < 1) return
+      if (len < 1) {
+        ctx.globalAlpha = 1.0
+        return
+      }
 
-      const tgtSz = 4 + Math.min(((tgt as FGNode)._degree ?? 0) * 0.8, 12)
+      const tgtSz = (tgt as FGNode)._isSuperNode
+        ? Math.log(((tgt as FGNode)._memberCount ?? 1) + 1) * 8
+        : 4 + Math.min(((tgt as FGNode)._degree ?? 0) * 0.8, 12)
       const arrowLen = 4 / globalScale
       const endX = tgt.x - (dx / len) * (tgtSz + 1)
       const endY = tgt.y! - (dy / len) * (tgtSz + 1)
@@ -284,8 +605,31 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       ctx.fillStyle = isOnPath ? "#3B82F6" : canvasColors.linkColor
       ctx.fill()
 
+      // Cross-community edge count label
+      if (isCrossComm && link._edgeCount && link._edgeCount > 1) {
+        const midX = (src.x + tgt.x) / 2
+        const midY = (src.y! + tgt.y!) / 2
+        const countFontSize = Math.max(8 / globalScale, 1.5)
+        ctx.font = `bold ${countFontSize}px Inter, system-ui, sans-serif`
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        const text = `${link._edgeCount}`
+        const metrics = ctx.measureText(text)
+        const pad = 2 / globalScale
+        ctx.fillStyle = canvasColors.labelBg
+        ctx.fillRect(
+          midX - metrics.width / 2 - pad,
+          midY - countFontSize / 2 - pad,
+          metrics.width + pad * 2,
+          countFontSize + pad * 2
+        )
+        ctx.fillStyle = canvasColors.labelText
+        ctx.globalAlpha = 0.9
+        ctx.fillText(text, midX, midY)
+      }
+
       // Relationship label
-      if (showRelationshipLabels && link.type) {
+      if (showRelationshipLabels && link.type && !isCrossComm) {
         const midX = (src.x + tgt.x) / 2
         const midY = (src.y! + tgt.y!) / 2
         const fontSize = Math.max(8 / globalScale, 1.5)
@@ -325,6 +669,29 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     [selectNodes, addToSelection]
   )
 
+  /* ---- Double-click: expand super-node ---- */
+  const lastClickRef = useRef<{ key: string; time: number } | null>(null)
+  const handleNodeClickWithDblClick = useCallback(
+    (node: FGNode, event: MouseEvent) => {
+      const now = Date.now()
+      const last = lastClickRef.current
+
+      if (last && last.key === node.key && now - last.time < 400) {
+        // Double-click detected
+        lastClickRef.current = null
+        if (node._isSuperNode && node.community_id != null) {
+          expandCommunity(node.community_id)
+          return
+        }
+      } else {
+        lastClickRef.current = { key: node.key, time: now }
+      }
+
+      handleNodeClick(node, event)
+    },
+    [handleNodeClick, expandCommunity]
+  )
+
   const handleBackgroundClick = useCallback(() => {
     if (isDraggingRef.current) return
     selectNodes([])
@@ -335,6 +702,25 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const handleNodeRightClick = useCallback(
     (node: FGNode, event: MouseEvent) => {
       event.preventDefault()
+
+      // If right-clicking an expanded community node, offer collapse
+      if (
+        viewMode === "community-overview" &&
+        !node._isSuperNode &&
+        node.community_id != null &&
+        expandedCommunities.has(node.community_id)
+      ) {
+        openContextMenu({
+          x: event.clientX,
+          y: event.clientY,
+          nodeKey: node.key,
+          nodeLabel: node.label,
+        })
+        // Store the community_id for collapse action
+        ;(window as Record<string, unknown>).__collapseCommunityId = node.community_id
+        return
+      }
+
       openContextMenu({
         x: event.clientX,
         y: event.clientY,
@@ -342,7 +728,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         nodeLabel: node.label,
       })
     },
-    [openContextMenu]
+    [openContextMenu, viewMode, expandedCommunities]
   )
 
   const handleNodeHover = useCallback(
@@ -445,6 +831,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   /* ---- Node drag to pin ---- */
   const handleNodeDragEnd = useCallback(
     (node: FGNode) => {
+      if (node._isSuperNode) return // Don't pin super-nodes
       // Pin node at its current position
       node.fx = node.x
       node.fy = node.y
@@ -469,14 +856,16 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         backgroundColor={canvasColors.background}
         nodeCanvasObject={paintNode}
         nodePointerAreaPaint={(node: FGNode, color, ctx) => {
-          const sz = 4 + Math.min((node._degree ?? 0) * 0.8, 12)
+          const sz = node._isSuperNode
+            ? Math.log((node._memberCount ?? 1) + 1) * 8
+            : 4 + Math.min((node._degree ?? 0) * 0.8, 12)
           ctx.beginPath()
           ctx.arc(node.x ?? 0, node.y ?? 0, sz + 3, 0, 2 * Math.PI)
           ctx.fillStyle = color
           ctx.fill()
         }}
         linkCanvasObject={paintLink}
-        onNodeClick={handleNodeClick}
+        onNodeClick={handleNodeClickWithDblClick}
         onNodeRightClick={handleNodeRightClick}
         onNodeHover={handleNodeHover}
         onNodeDragEnd={handleNodeDragEnd}
@@ -484,9 +873,10 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         onEngineStop={handleEngineStop}
         enableNodeDrag={selectionMode === "click"}
         enablePanInteraction={selectionMode !== "drag"}
-        cooldownTime={3000}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
+        cooldownTime={simCooldownTime}
+        d3AlphaDecay={simAlphaDecay}
+        d3VelocityDecay={simVelocityDecay}
+        warmupTicks={simWarmupTicks}
       />
 
       {/* Drag selection rectangle overlay */}
@@ -506,6 +896,9 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       <div className="absolute bottom-3 left-3 rounded-md bg-slate-100/90 dark:bg-slate-900/80 px-2 py-1 text-[10px] text-slate-500 dark:text-slate-400">
         {fgData.nodes.length} nodes · {fgData.links.length} edges
         {hiddenNodeKeys.size > 0 && ` · ${hiddenNodeKeys.size} hidden`}
+        {viewMode === "community-overview" && communityOverview && (
+          <> · {communityOverview.total_nodes} total ({communityOverview.community_count} communities)</>
+        )}
       </div>
     </div>
   )

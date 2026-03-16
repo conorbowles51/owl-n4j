@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import type { CommunityOverview } from "@/types/graph.types"
 
 interface FocusEntry {
   nodeKey: string
@@ -57,6 +58,11 @@ interface GraphStore {
   /* Analysis results highlight (pagerank/betweenness top-N node keys) */
   analysisHighlight: Set<string> | null
 
+  /* Community overview (Phase 2) */
+  viewMode: "full" | "community-overview"
+  expandedCommunities: Set<number>
+  communityOverview: CommunityOverview | null
+
   /* Actions: selection */
   selectNodes: (keys: string[]) => void
   addToSelection: (key: string) => void
@@ -102,6 +108,12 @@ interface GraphStore {
   setCommunityMap: (map: Map<string, number> | null) => void
   setHighlightedPaths: (paths: Set<string> | null) => void
   setAnalysisHighlight: (keys: Set<string> | null) => void
+
+  /* Actions: community overview */
+  setViewMode: (mode: "full" | "community-overview") => void
+  expandCommunity: (communityId: number) => void
+  collapseCommunity: (communityId: number) => void
+  setCommunityOverview: (data: CommunityOverview | null) => void
 }
 
 export const useGraphStore = create<GraphStore>((set) => ({
@@ -130,6 +142,10 @@ export const useGraphStore = create<GraphStore>((set) => ({
   communityMap: null,
   highlightedPaths: null,
   analysisHighlight: null,
+
+  viewMode: "full",
+  expandedCommunities: new Set(),
+  communityOverview: null,
 
   /* Selection */
   selectNodes: (keys) => set({ selectedNodeKeys: new Set(keys) }),
@@ -229,4 +245,20 @@ export const useGraphStore = create<GraphStore>((set) => ({
   setCommunityMap: (map) => set({ communityMap: map }),
   setHighlightedPaths: (paths) => set({ highlightedPaths: paths }),
   setAnalysisHighlight: (keys) => set({ analysisHighlight: keys }),
+
+  /* Community overview */
+  setViewMode: (mode) => set({ viewMode: mode, expandedCommunities: new Set() }),
+  expandCommunity: (communityId) =>
+    set((s) => {
+      const next = new Set(s.expandedCommunities)
+      next.add(communityId)
+      return { expandedCommunities: next }
+    }),
+  collapseCommunity: (communityId) =>
+    set((s) => {
+      const next = new Set(s.expandedCommunities)
+      next.delete(communityId)
+      return { expandedCommunities: next }
+    }),
+  setCommunityOverview: (data) => set({ communityOverview: data }),
 }))

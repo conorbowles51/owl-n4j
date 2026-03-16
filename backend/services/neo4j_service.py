@@ -220,6 +220,8 @@ class Neo4jService:
         case_id: str,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        limit: Optional[int] = None,
+        sort_by: Optional[str] = None,
     ) -> Dict[str, List]:
         """
         Lightweight graph structure for visualization — returns only the fields
@@ -231,12 +233,67 @@ class Neo4jService:
             case_id: REQUIRED - Filter to only include nodes/relationships belonging to this case
             start_date: Filter to include nodes with date >= start_date (YYYY-MM-DD) or connected to such nodes
             end_date: Filter to include nodes with date <= end_date (YYYY-MM-DD) or connected to such nodes
+            limit: Optional cap on number of nodes returned (top-N by sort_by)
+            sort_by: Sort criterion when limit is set — 'degree' ranks by relationship count
 
         Returns:
             Dict with 'nodes' and 'links' arrays (slim payloads)
         """
         with self._driver.session() as session:
             params = {"case_id": case_id}
+
+            # Smart cap: return top-N nodes by degree
+            if limit and sort_by == "degree" and not start_date and not end_date:
+                params["limit"] = limit
+                nodes_result = session.run(
+                    """
+                    MATCH (n)
+                    WHERE n.case_id = $case_id
+                    OPTIONAL MATCH (n)-[r]-()
+                    WHERE r.case_id = $case_id
+                    WITH n, count(r) AS deg
+                    ORDER BY deg DESC
+                    LIMIT $limit
+                    RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
+                           n.confidence AS confidence, n.mentioned AS mentioned
+                    """,
+                    **params,
+                )
+                nodes = []
+                node_keys = set()
+                for record in nodes_result:
+                    nk = record["key"]
+                    if nk not in node_keys:
+                        node_keys.add(nk)
+                        nodes.append({
+                            "key": nk,
+                            "name": record["name"] or nk,
+                            "type": record["type"],
+                            "confidence": record["confidence"],
+                            "mentioned": record["mentioned"],
+                        })
+
+                links = []
+                if node_keys:
+                    rels_result = session.run(
+                        """
+                        MATCH (a)-[r]->(b)
+                        WHERE a.key IN $node_keys AND b.key IN $node_keys
+                          AND r.case_id = $case_id
+                        RETURN a.key AS source, b.key AS target,
+                               type(r) AS type, r.weight AS weight
+                        """,
+                        node_keys=list(node_keys), case_id=case_id,
+                    )
+                    for record in rels_result:
+                        links.append({
+                            "source": record["source"],
+                            "target": record["target"],
+                            "type": record["type"],
+                            "weight": record["weight"],
+                        })
+
+                return {"nodes": nodes, "links": links}
 
             if start_date or end_date:
                 date_conditions = []
@@ -1272,6 +1329,86 @@ class Neo4jService:
                 "scores": {key: pr[key] for key in top_node_keys if key in pr}
             }
 
+    def _run_louvain(
+        self,
+        node_keys_list: List[str],
+        adjacency: Dict[str, List[str]],
+        degree: Dict[str, int],
+        total_edges: int,
+        resolution: float = 1.0,
+        max_iterations: int = 10,
+    ) -> Dict[str, int]:
+        """
+        Run Louvain community detection on pre-built adjacency data.
+
+        Returns:
+            Dict mapping node key -> community_id (renumbered sequentially from 0)
+        """
+        if not node_keys_list or total_edges == 0:
+            return {key: 0 for key in node_keys_list}
+
+        node_to_community = {key: i for i, key in enumerate(node_keys_list)}
+
+        improved = True
+        iteration = 0
+
+        while improved and iteration < max_iterations:
+            improved = False
+            iteration += 1
+
+            nodes_shuffled = list(node_keys_list)
+            random.shuffle(nodes_shuffled)
+
+            for node in nodes_shuffled:
+                if node not in adjacency or len(adjacency[node]) == 0:
+                    continue
+
+                current_comm = node_to_community[node]
+                best_comm = current_comm
+                best_delta = 0.0
+
+                neighbor_communities = set()
+                for neighbor in adjacency[node]:
+                    if neighbor in node_to_community:
+                        neighbor_communities.add(node_to_community[neighbor])
+                neighbor_communities.add(current_comm)
+
+                for new_comm in neighbor_communities:
+                    if new_comm == current_comm:
+                        continue
+
+                    k_i = degree.get(node, 0)
+                    if total_edges == 0:
+                        continue
+
+                    edges_to_new_comm = sum(
+                        1 for neighbor in adjacency[node]
+                        if neighbor in node_to_community and node_to_community[neighbor] == new_comm
+                    )
+                    edges_to_current_comm = sum(
+                        1 for neighbor in adjacency[node]
+                        if neighbor in node_to_community and node_to_community[neighbor] == current_comm
+                    )
+
+                    delta = (edges_to_new_comm - edges_to_current_comm) / total_edges
+                    delta -= resolution * k_i * (
+                        sum(degree.get(n, 0) for n, c in node_to_community.items() if c == new_comm) -
+                        sum(degree.get(n, 0) for n, c in node_to_community.items() if c == current_comm)
+                    ) / (2.0 * total_edges * total_edges)
+
+                    if delta > best_delta:
+                        best_delta = delta
+                        best_comm = new_comm
+
+                if best_comm != current_comm and best_delta > 0:
+                    node_to_community[node] = best_comm
+                    improved = True
+
+        # Renumber communities sequentially
+        unique_communities = sorted(set(node_to_community.values()))
+        community_map = {old: new for new, old in enumerate(unique_communities)}
+        return {key: community_map[node_to_community[key]] for key in node_keys_list}
+
     def get_louvain_communities(
         self,
         node_keys: Optional[List[str]] = None,
@@ -1406,105 +1543,12 @@ class Neo4jService:
             
             if len(all_nodes) == 0:
                 return {"nodes": [], "links": [], "communities": {}}
-            
-            # Step 2: Louvain Algorithm
-            # Initialize: each node in its own community
-            community = {key: i for i, key in enumerate(all_nodes.keys())}
-            node_to_community = {key: i for i, key in enumerate(all_nodes.keys())}
-            
-            # Calculate modularity
-            def calculate_modularity(communities, adj, deg, m, gamma):
-                """Calculate modularity with resolution parameter."""
-                if m == 0:
-                    return 0.0
-                
-                q = 0.0
-                for node in communities.keys():
-                    node_comm = communities[node]
-                    for neighbor in adj.get(node, []):
-                        if neighbor in communities:
-                            neighbor_comm = communities[neighbor]
-                            # A_ij - gamma * (k_i * k_j) / (2m)
-                            a_ij = 1.0 if neighbor in adj.get(node, []) else 0.0
-                            k_i = deg.get(node, 0)
-                            k_j = deg.get(neighbor, 0)
-                            if node_comm == neighbor_comm:
-                                q += a_ij - gamma * (k_i * k_j) / (2.0 * m)
-                return q / (2.0 * m)
-            
-            # Louvain iteration
-            improved = True
-            iteration = 0
-            
-            while improved and iteration < max_iterations:
-                improved = False
-                iteration += 1
-                
-                # Try moving each node to a neighboring community
-                nodes_list = list(all_nodes.keys())
-                random.shuffle(nodes_list)  # Randomize order for better convergence
-                
-                for node in nodes_list:
-                    if node not in adjacency or len(adjacency[node]) == 0:
-                        continue
-                    
-                    current_comm = node_to_community[node]
-                    best_comm = current_comm
-                    best_delta = 0.0
-                    
-                    # Check all neighboring communities
-                    neighbor_communities = set()
-                    for neighbor in adjacency[node]:
-                        if neighbor in node_to_community:
-                            neighbor_communities.add(node_to_community[neighbor])
-                    
-                    # Also check current community
-                    neighbor_communities.add(current_comm)
-                    
-                    # Calculate delta modularity for each possible move
-                    for new_comm in neighbor_communities:
-                        if new_comm == current_comm:
-                            continue
-                        
-                        # Simplified delta calculation
-                        # Delta Q = (sum_in - sum_tot * k_i / (2m)) - (sum_in_old - sum_tot_old * k_i / (2m))
-                        k_i = degree.get(node, 0)
-                        if total_edges == 0:
-                            continue
-                        
-                        # Count edges to new community
-                        edges_to_new_comm = sum(
-                            1 for neighbor in adjacency[node]
-                            if neighbor in node_to_community and node_to_community[neighbor] == new_comm
-                        )
-                        
-                        # Count edges to current community
-                        edges_to_current_comm = sum(
-                            1 for neighbor in adjacency[node]
-                            if neighbor in node_to_community and node_to_community[neighbor] == current_comm
-                        )
-                        
-                        # Simplified delta (approximation)
-                        delta = (edges_to_new_comm - edges_to_current_comm) / total_edges
-                        delta -= resolution * k_i * (
-                            sum(degree.get(n, 0) for n, c in node_to_community.items() if c == new_comm) -
-                            sum(degree.get(n, 0) for n, c in node_to_community.items() if c == current_comm)
-                        ) / (2.0 * total_edges * total_edges)
-                        
-                        if delta > best_delta:
-                            best_delta = delta
-                            best_comm = new_comm
-                    
-                    # Move node if improvement found
-                    if best_comm != current_comm and best_delta > 0:
-                        node_to_community[node] = best_comm
-                        improved = True
-            
-            # Step 3: Build result with community information
-            # Renumber communities to be sequential
-            unique_communities = sorted(set(node_to_community.values()))
-            community_map = {old: new for new, old in enumerate(unique_communities)}
-            final_communities = {key: community_map[node_to_community[key]] for key in all_nodes.keys()}
+
+            # Step 2: Run Louvain via shared helper
+            final_communities = self._run_louvain(
+                list(all_nodes.keys()), adjacency, degree, total_edges,
+                resolution=resolution, max_iterations=max_iterations,
+            )
             
             # Add community_id to nodes
             result_nodes = []
@@ -1529,6 +1573,179 @@ class Neo4jService:
                     for comm_id, count in community_counts.items()
                 }
             }
+
+    def get_community_overview(
+        self,
+        case_id: str,
+        resolution: float = 1.0,
+        max_iterations: int = 10,
+    ) -> Dict:
+        """
+        Return a community-aggregated overview of the graph for large-graph rendering.
+
+        Returns super-nodes (one per community), cross-community edges,
+        and a node_community_map for client-side expansion.
+        """
+        with self._driver.session() as session:
+            # 1. Fetch lightweight nodes
+            nodes_result = session.run(
+                """
+                MATCH (n)
+                WHERE n.case_id = $case_id
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
+                       n.confidence AS confidence, n.mentioned AS mentioned
+                """,
+                case_id=case_id,
+            )
+            all_nodes: Dict[str, Dict] = {}
+            for rec in nodes_result:
+                k = rec["key"]
+                if k:
+                    all_nodes[k] = {
+                        "key": k,
+                        "name": rec["name"] or k,
+                        "type": (rec["type"] or "").lower(),
+                    }
+
+            if not all_nodes:
+                return {
+                    "super_nodes": [], "cross_community_edges": [],
+                    "node_community_map": {}, "total_nodes": 0,
+                    "total_edges": 0, "community_count": 0,
+                }
+
+            # 2. Fetch edges
+            node_keys_list = list(all_nodes.keys())
+            rels_result = session.run(
+                """
+                MATCH (a)-[r]->(b)
+                WHERE a.key IN $keys AND b.key IN $keys AND r.case_id = $case_id
+                RETURN a.key AS source, b.key AS target, type(r) AS type
+                """,
+                keys=node_keys_list, case_id=case_id,
+            )
+            edges = []
+            adjacency: Dict[str, List[str]] = {k: [] for k in all_nodes}
+            degree: Dict[str, int] = {k: 0 for k in all_nodes}
+            total_edges = 0
+
+            for rec in rels_result:
+                s, t = rec["source"], rec["target"]
+                if s in all_nodes and t in all_nodes:
+                    edges.append({"source": s, "target": t, "type": rec["type"]})
+                    if t not in adjacency[s]:
+                        adjacency[s].append(t)
+                    if s not in adjacency[t]:
+                        adjacency[t].append(s)
+                    degree[s] += 1
+                    degree[t] += 1
+                    total_edges += 1
+
+        # 3. Run Louvain
+        community_map = self._run_louvain(
+            node_keys_list, adjacency, degree, total_edges,
+            resolution=resolution, max_iterations=max_iterations,
+        )
+
+        # 4. Group nodes by community
+        communities: Dict[int, List[str]] = {}
+        for key, cid in community_map.items():
+            communities.setdefault(cid, []).append(key)
+
+        # 5. Build super-nodes
+        super_nodes = []
+        small_community_nodes: List[str] = []  # communities <3 members
+
+        for cid, members in communities.items():
+            if len(members) < 3:
+                small_community_nodes.extend(members)
+                continue
+
+            # Entity type breakdown
+            type_breakdown: Dict[str, int] = {}
+            for mk in members:
+                t = all_nodes[mk].get("type", "unknown")
+                type_breakdown[t] = type_breakdown.get(t, 0) + 1
+
+            # Top 5 entities by degree
+            top_entities = sorted(members, key=lambda k: degree.get(k, 0), reverse=True)[:5]
+
+            # Internal edge count
+            member_set = set(members)
+            internal = sum(1 for e in edges if e["source"] in member_set and e["target"] in member_set)
+
+            # Label from top entity
+            top_name = all_nodes[top_entities[0]]["name"] if top_entities else "Community"
+            label = f"{top_name} + {len(members) - 1} others" if len(members) > 1 else top_name
+
+            super_nodes.append({
+                "community_id": cid,
+                "member_count": len(members),
+                "top_entities": [
+                    {"key": k, "name": all_nodes[k]["name"], "type": all_nodes[k]["type"]}
+                    for k in top_entities
+                ],
+                "entity_type_breakdown": type_breakdown,
+                "internal_edge_count": internal,
+                "label": label,
+            })
+
+        # Add uncategorized synthetic community for small clusters
+        if small_community_nodes:
+            type_breakdown_uc: Dict[str, int] = {}
+            for mk in small_community_nodes:
+                t = all_nodes[mk].get("type", "unknown")
+                type_breakdown_uc[t] = type_breakdown_uc.get(t, 0) + 1
+
+            # Assign them all to a synthetic community id
+            uc_id = max(communities.keys(), default=-1) + 1
+            for k in small_community_nodes:
+                community_map[k] = uc_id
+
+            if len(small_community_nodes) >= 3:
+                top_uc = sorted(small_community_nodes, key=lambda k: degree.get(k, 0), reverse=True)[:5]
+                super_nodes.append({
+                    "community_id": uc_id,
+                    "member_count": len(small_community_nodes),
+                    "top_entities": [
+                        {"key": k, "name": all_nodes[k]["name"], "type": all_nodes[k]["type"]}
+                        for k in top_uc
+                    ],
+                    "entity_type_breakdown": type_breakdown_uc,
+                    "internal_edge_count": 0,
+                    "label": f"Uncategorized ({len(small_community_nodes)} entities)",
+                })
+
+        # 6. Cross-community edges
+        cross_edges_map: Dict[tuple, Dict] = {}
+        for e in edges:
+            sc = community_map.get(e["source"])
+            tc = community_map.get(e["target"])
+            if sc is not None and tc is not None and sc != tc:
+                pair = (min(sc, tc), max(sc, tc))
+                if pair not in cross_edges_map:
+                    cross_edges_map[pair] = {"edge_count": 0, "edge_types": set()}
+                cross_edges_map[pair]["edge_count"] += 1
+                cross_edges_map[pair]["edge_types"].add(e["type"])
+
+        cross_community_edges = [
+            {
+                "source_community": pair[0],
+                "target_community": pair[1],
+                "edge_count": info["edge_count"],
+                "edge_types": sorted(info["edge_types"]),
+            }
+            for pair, info in cross_edges_map.items()
+        ]
+
+        return {
+            "super_nodes": super_nodes,
+            "cross_community_edges": cross_community_edges,
+            "node_community_map": community_map,
+            "total_nodes": len(all_nodes),
+            "total_edges": total_edges,
+            "community_count": len(super_nodes),
+        }
 
     def get_betweenness_centrality(
         self,
