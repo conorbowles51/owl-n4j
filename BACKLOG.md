@@ -20,6 +20,41 @@
 
 ## Done
 
+### ✅ PERF-001 · [HIGH] Feature: Two-phase graph loading with node cap and info banner
+- **Completed:** 2026-03-18
+- **Description:** Graph view now loads a lightweight top-100 node preview for instant rendering, then fetches full data in the background. When the graph is capped, an info banner shows the total entity count and guides users to search or Spotlight Graph for entities not shown.
+- **Commits:** e0fbb24, b0c4319
+
+### ✅ PERF-002 · [HIGH] Feature: Financial table pagination
+- **Completed:** 2026-03-18
+- **Description:** Added pagination to the financial transaction table with page size selector (50/100/200/500 rows per page). Prevents browser freezing on cases with 13,000+ transactions. Stats and totals still computed from the full filtered dataset.
+- **Commits:** e0fbb24
+
+### ✅ UI-003 · [MEDIUM] Feature: Collapsible filter chips with show more/less
+- **Completed:** 2026-03-18
+- **Description:** Transaction Type and Category filter chip lists in the Financial view now collapse by default, showing a limited set with a "show more/less" toggle. Prevents rendering hundreds of chips simultaneously, improving load performance.
+- **Commits:** e0fbb24
+
+### ✅ UI-004 · [MEDIUM] Feature: Financial table layout improvements
+- **Completed:** 2026-03-18
+- **Description:** Widened the transaction table to 80% of the view width (charts reduced to 20%). Removed max-width constraint on AI summaries so they wrap to full width. Always-visible AI summaries in financial table rows. Fixed-width table columns to prevent layout shifts during interaction.
+- **Commits:** e0fbb24, b0c4319
+
+### ✅ CHORE-001 · [LOW] Chore: Chunk upload cache TTL cleanup
+- **Completed:** 2026-03-18
+- **Description:** Added background task to clean up stale chunk upload cache entries older than 30 minutes. Prevents memory buildup from abandoned or failed uploads.
+- **Commits:** e0fbb24
+
+### ✅ DEPLOY-002 · [LOW] Fix: Data directory ownership after git pull
+- **Completed:** 2026-03-18
+- **Description:** Deploy script now fixes ownership of the data directory after git pull runs as root, preventing "Permission denied" errors when the backend (running as conorbowles51) tries to write evidence logs.
+- **Commits:** e0fbb24
+
+### ✅ CHORE-002 · [LOW] Chore: Transaction categorization script
+- **Completed:** 2026-03-18
+- **Description:** Added `scripts/categorize_transactions.py` — a utility script for bulk categorization of financial transactions. Supports dry-run preview and `--apply` mode.
+- **Commits:** e0fbb24
+
 ### ✅ UI-002 · [MEDIUM] Feature: File summaries expanded by default in Case Management
 - **Completed:** 2026-03-15
 - **Description:** Added inline file summaries below each filename in the Case Management evidence file list. Summaries (already batch-fetched from Neo4j by the existing `list_evidence()` endpoint) are displayed as 4-line truncated snippets using `line-clamp-4`. Layout restructured so the summary spans full row width beneath the filename/status header row, rather than competing for space with metadata. No backend changes needed — frontend-only change to `CaseManagementView.jsx`. Unprocessed files without summaries render as before. Click-to-preview still works.
