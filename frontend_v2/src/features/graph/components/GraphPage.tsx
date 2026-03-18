@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, useEffect, useMemo } from "react"
+import { useRef, useState, useCallback, useMemo, useEffect } from "react"
 import { useParams } from "react-router-dom"
 import type { ForceGraphMethods } from "react-force-graph-2d"
 import {
@@ -36,9 +36,11 @@ import type { GraphNode, NodeDetail } from "@/types/graph.types"
 export function GraphPage() {
   const { id: caseId } = useParams()
   const queryClient = useQueryClient()
+  const graphRef = useRef<ForceGraphMethods>()
+
+  /* ---- Data fetching ---- */
   const { data: graphData, isLoading } = useGraphData(caseId)
   const { filteredData } = useGraphSearch(graphData)
-  const graphRef = useRef<ForceGraphMethods>()
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const selectNodes = useGraphStore((s) => s.selectNodes)

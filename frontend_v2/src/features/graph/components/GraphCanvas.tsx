@@ -136,6 +136,14 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     return { nodes, links }
   }, [data, hiddenNodeKeys, pinnedNodeKeys])
 
+  /* ---- Adaptive force simulation tuning ---- */
+  const nodeCount = fgData.nodes.length
+  const isLargeGraph = nodeCount > 500
+  const simAlphaDecay = isLargeGraph ? 0.05 : 0.02
+  const simVelocityDecay = isLargeGraph ? 0.5 : 0.3
+  const simCooldownTime = isLargeGraph ? 1500 : 3000
+  const simWarmupTicks = isLargeGraph ? 50 : 0
+
   /* ---- Apply force parameters ---- */
   useEffect(() => {
     const fg = fgRef.current
@@ -167,11 +175,13 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     [communityMap]
   )
 
-  /* ---- Custom node renderer ---- */
+  /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
     (node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
+
+      /* ---- Node rendering with LOD ---- */
       const isSelected = selectedNodeKeys.has(node.key)
       const isHovered = hoveredNode === node.key
       const isHighlighted = analysisHighlight?.has(node.key) ?? false
@@ -184,10 +194,71 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       // Opacity based on mentioned flag
       const alpha = node.mentioned === false ? 0.45 : 1.0
-
       const color = getColor(node)
-
       ctx.globalAlpha = alpha
+
+      /* LOD: Dots tier (globalScale < 0.3) — circle only */
+      if (globalScale < 0.3) {
+        ctx.beginPath()
+        ctx.arc(x, y, sz, 0, 2 * Math.PI)
+        ctx.fillStyle = color
+        ctx.fill()
+
+        // Still show selection ring even at low zoom
+        if (isSelected) {
+          ctx.beginPath()
+          ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
+          ctx.strokeStyle = "#3B82F6"
+          ctx.lineWidth = 2 / globalScale
+          ctx.stroke()
+        }
+
+        ctx.globalAlpha = 1.0
+        return
+      }
+
+      /* LOD: Compact tier (globalScale 0.3–1.0) — circle + selective labels */
+      if (globalScale < 1.0) {
+        // Glow for highlighted nodes
+        if (isHighlighted || isOnPath) {
+          ctx.beginPath()
+          ctx.arc(x, y, sz + 4, 0, 2 * Math.PI)
+          ctx.fillStyle = isOnPath ? "rgba(59,130,246,0.25)" : "rgba(245,158,11,0.25)"
+          ctx.fill()
+        }
+
+        // Selection ring
+        if (isSelected) {
+          ctx.beginPath()
+          ctx.arc(x, y, sz + 2.5, 0, 2 * Math.PI)
+          ctx.strokeStyle = "#3B82F6"
+          ctx.lineWidth = 2 / globalScale
+          ctx.stroke()
+        }
+
+        // Node circle
+        ctx.beginPath()
+        ctx.arc(x, y, sz, 0, 2 * Math.PI)
+        ctx.fillStyle = color
+        ctx.fill()
+
+        // Label only for high-degree, selected, or hovered nodes
+        const showLabel = (node._degree ?? 0) > 5 || isSelected || isHovered
+        if (showLabel) {
+          const fontSize = Math.max(10 / globalScale, 2)
+          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+          ctx.textAlign = "center"
+          ctx.textBaseline = "top"
+          ctx.fillStyle = canvasColors.labelText
+          const label = node.label.length > 20 ? node.label.slice(0, 18) + "..." : node.label
+          ctx.fillText(label, x, y + sz + 2)
+        }
+
+        ctx.globalAlpha = 1.0
+        return
+      }
+
+      /* LOD: Full tier (globalScale >= 1.0) — everything */
 
       // Glow for highlighted nodes
       if (isHighlighted || isOnPath) {
@@ -238,18 +309,23 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     [selectedNodeKeys, hoveredNode, getColor, analysisHighlight, highlightedPaths, canvasColors]
   )
 
-  /* ---- Custom link renderer ---- */
+  /* ---- Custom link renderer with LOD tiers ---- */
   const paintLink = useCallback(
     (link: FGLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const src = link.source as FGNode
       const tgt = link.target as FGNode
       if (!src?.x || !tgt?.x) return
 
+      /* LOD: skip links entirely at very low zoom */
+      if (globalScale < 0.3) return
+
       const isOnPath =
         highlightedPaths?.has((src as FGNode).key) &&
         highlightedPaths?.has((tgt as FGNode).key)
 
-      const width = Math.max(0.5, (link.weight ?? 1) * 0.8) / Math.sqrt(globalScale)
+      const baseWidth = Math.max(0.5, (link.weight ?? 1) * 0.8)
+      const width = baseWidth / Math.sqrt(globalScale)
+
       ctx.beginPath()
       ctx.moveTo(src.x, src.y!)
       ctx.lineTo(tgt.x, tgt.y!)
@@ -258,11 +334,22 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       ctx.globalAlpha = isOnPath ? 0.9 : 0.4
       ctx.stroke()
 
+      /* LOD: Thin lines only (globalScale 0.3–0.6) — no arrows, no labels */
+      if (globalScale < 0.6) {
+        ctx.globalAlpha = 1.0
+        return
+      }
+
+      /* Full detail (globalScale >= 0.6) — arrows + labels */
+
       // Arrowhead
       const dx = tgt.x - src.x
       const dy = tgt.y! - src.y!
       const len = Math.sqrt(dx * dx + dy * dy)
-      if (len < 1) return
+      if (len < 1) {
+        ctx.globalAlpha = 1.0
+        return
+      }
 
       const tgtSz = 4 + Math.min(((tgt as FGNode)._degree ?? 0) * 0.8, 12)
       const arrowLen = 4 / globalScale
@@ -445,7 +532,6 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   /* ---- Node drag to pin ---- */
   const handleNodeDragEnd = useCallback(
     (node: FGNode) => {
-      // Pin node at its current position
       node.fx = node.x
       node.fy = node.y
       useGraphStore.getState().pinNode(node.key)
@@ -484,9 +570,10 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         onEngineStop={handleEngineStop}
         enableNodeDrag={selectionMode === "click"}
         enablePanInteraction={selectionMode !== "drag"}
-        cooldownTime={3000}
-        d3AlphaDecay={0.02}
-        d3VelocityDecay={0.3}
+        cooldownTime={simCooldownTime}
+        d3AlphaDecay={simAlphaDecay}
+        d3VelocityDecay={simVelocityDecay}
+        warmupTicks={simWarmupTicks}
       />
 
       {/* Drag selection rectangle overlay */}

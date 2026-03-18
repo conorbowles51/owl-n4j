@@ -76,7 +76,7 @@ export default function FinancialCharts({ volumeData = [], transactions = [], ca
   const categoryData = useMemo(() => {
     const counts = {};
     transactions.forEach(t => {
-      const cat = t.financial_category || 'Uncategorized';
+      const cat = t.category || 'Uncategorized';
       counts[cat] = (counts[cat] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({

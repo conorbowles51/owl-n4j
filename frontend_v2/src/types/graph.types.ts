@@ -118,3 +118,4 @@ export interface BetweennessResult {
 export interface ShortestPathResult {
   paths: { nodes: string[]; edges: string[]; length: number }[]
 }
+

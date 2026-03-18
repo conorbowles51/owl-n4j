@@ -102,6 +102,7 @@ interface GraphStore {
   setCommunityMap: (map: Map<string, number> | null) => void
   setHighlightedPaths: (paths: Set<string> | null) => void
   setAnalysisHighlight: (keys: Set<string> | null) => void
+
 }
 
 export const useGraphStore = create<GraphStore>((set) => ({
@@ -229,4 +230,5 @@ export const useGraphStore = create<GraphStore>((set) => ({
   setCommunityMap: (map) => set({ communityMap: map }),
   setHighlightedPaths: (paths) => set({ highlightedPaths: paths }),
   setAnalysisHighlight: (keys) => set({ analysisHighlight: keys }),
+
 }))

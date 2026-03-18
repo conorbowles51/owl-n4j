@@ -208,6 +208,9 @@ async def get_graph(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),
     start_date: Optional[str] = Query(None, description="Filter start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter end date (YYYY-MM-DD)"),
+    lightweight: bool = Query(False, description="Return slim payload (key/name/type/confidence/mentioned only)"),
+    limit: Optional[int] = Query(None, description="Cap nodes at top-N (requires sort_by)"),
+    sort_by: Optional[str] = Query(None, description="Sort criterion when limit is set (e.g. 'degree')"),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -215,9 +218,16 @@ async def get_graph(
 
     Returns all nodes and relationships for the specified case. Optionally filter by date range.
     Nodes included if they have a date in range or are connected to nodes with dates in range.
+    Pass lightweight=true for a slim response suitable for graph rendering (v2 frontend).
     """
     try:
-        result = neo4j_service.get_full_graph(case_id=case_id, start_date=start_date, end_date=end_date)
+        if lightweight:
+            result = neo4j_service.get_graph_structure(
+                case_id=case_id, start_date=start_date, end_date=end_date,
+                limit=limit, sort_by=sort_by,
+            )
+        else:
+            result = neo4j_service.get_full_graph(case_id=case_id, start_date=start_date, end_date=end_date)
         
         # Log the filter operation if dates are provided
         if start_date or end_date:

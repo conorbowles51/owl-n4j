@@ -19,31 +19,13 @@ type RawNode = Record<string, unknown>
 type RawEdge = Record<string, unknown>
 type RawGraphData = { nodes: RawNode[]; links: RawEdge[] }
 
-function safeParse(val: unknown): unknown[] | undefined {
-  if (Array.isArray(val)) return val
-  if (typeof val === "string") {
-    try {
-      const parsed = JSON.parse(val)
-      return Array.isArray(parsed) ? parsed : undefined
-    } catch {
-      return undefined
-    }
-  }
-  return undefined
-}
-
 function toGraphData(raw: RawGraphData): GraphData {
   return {
     nodes: (raw.nodes ?? []).map((n: RawNode) => ({
       key: n.key,
       label: n.name || n.label || n.key,
       type: (n.type || "").toLowerCase(),
-      summary: n.summary,
-      notes: n.notes,
-      verified_facts: safeParse(n.verified_facts),
-      ai_insights: safeParse(n.ai_insights),
       confidence: n.confidence,
-      community_id: n.community_id,
       mentioned: n.mentioned,
       properties: n.properties ?? {},
     })),
@@ -52,7 +34,6 @@ function toGraphData(raw: RawGraphData): GraphData {
       target: e.target,
       type: e.type || e.relationship || "",
       weight: e.weight,
-      properties: e.properties,
     })),
   }
 }
@@ -68,10 +49,14 @@ export const graphAPI = {
     case_id: string
     start_date?: string
     end_date?: string
+    limit?: number
+    sort_by?: string
   }) => {
-    const qs = new URLSearchParams({ case_id: params.case_id })
+    const qs = new URLSearchParams({ case_id: params.case_id, lightweight: "true" })
     if (params.start_date) qs.set("start_date", params.start_date)
     if (params.end_date) qs.set("end_date", params.end_date)
+    if (params.limit != null) qs.set("limit", String(params.limit))
+    if (params.sort_by) qs.set("sort_by", params.sort_by)
     const raw = await fetchAPI<RawGraphData>(`/api/graph?${qs}`)
     return toGraphData(raw)
   },

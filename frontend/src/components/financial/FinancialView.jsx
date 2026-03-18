@@ -96,7 +96,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     const q = searchQuery.toLowerCase().trim();
     return transactions.filter(t => {
       if (selectedTypes.size > 0 && !selectedTypes.has(t.type)) return false;
-      if (selectedCategories.size > 0 && !selectedCategories.has(t.financial_category || 'Unknown')) return false;
+      if (selectedCategories.size > 0 && !selectedCategories.has(t.category || 'Unknown')) return false;
       if (startDate && t.date && t.date < startDate) return false;
       if (endDate && t.date && t.date > endDate) return false;
       if (entityFilter) {
@@ -110,7 +110,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         const fields = [
           t.name, t.purpose, t.notes, t.counterparty_details,
           t.from_entity?.name, t.to_entity?.name,
-          t.financial_category,
+          t.category,
         ].filter(Boolean).map(f => f.toLowerCase());
         if (!fields.some(f => f.includes(q))) return false;
       }
@@ -178,7 +178,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     const groups = {};
     filteredTransactions.forEach(t => {
       if (!t.date) return;
-      const cat = t.financial_category || 'Uncategorized';
+      const cat = t.category || 'Uncategorized';
       const key = `${t.date}|${cat}`;
       if (!groups[key]) groups[key] = { date: t.date, category: cat, total_amount: 0, count: 0 };
       groups[key].total_amount += Math.abs(parseFloat(t.amount) || 0);
@@ -192,7 +192,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     try {
       await financialAPI.categorize(nodeKey, category, caseId);
       setTransactions(prev =>
-        prev.map(t => t.key === nodeKey ? { ...t, financial_category: category } : t)
+        prev.map(t => t.key === nodeKey ? { ...t, category: category } : t)
       );
     } catch (err) {
       console.error('Failed to categorize:', err);
@@ -204,7 +204,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     try {
       await financialAPI.batchCategorize(nodeKeys, category, caseId);
       setTransactions(prev =>
-        prev.map(t => nodeKeys.includes(t.key) ? { ...t, financial_category: category } : t)
+        prev.map(t => nodeKeys.includes(t.key) ? { ...t, category: category } : t)
       );
     } catch (err) {
       console.error('Failed to batch categorize:', err);
