@@ -1,7 +1,14 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Plus, Search, FolderOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { useCases } from "../hooks/use-cases"
@@ -18,7 +25,7 @@ interface CaseListSidebarProps {
 export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
   const [search, setSearch] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
-  const { selectedCaseId, setSelectedCaseId, viewMode, setViewMode } =
+  const { selectedCaseId, setSelectedCaseId, viewMode, setViewMode, sortBy, setSortBy } =
     useCaseManagementStore()
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin =
@@ -28,11 +35,22 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
     isSuperAdmin && viewMode === "all_cases" ? "all" : undefined
   )
 
-  const filtered = cases?.filter(
-    (c) =>
-      c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.description?.toLowerCase().includes(search.toLowerCase())
-  )
+  const filtered = useMemo(() => {
+    let list = cases?.filter(
+      (c) =>
+        c.title.toLowerCase().includes(search.toLowerCase()) ||
+        c.description?.toLowerCase().includes(search.toLowerCase())
+    )
+    if (list && sortBy === "next_deadline") {
+      list = [...list].sort((a, b) => {
+        if (!a.next_deadline_date && !b.next_deadline_date) return 0
+        if (!a.next_deadline_date) return 1
+        if (!b.next_deadline_date) return -1
+        return a.next_deadline_date.localeCompare(b.next_deadline_date)
+      })
+    }
+    return list
+  }, [cases, search, sortBy])
 
   return (
     <div className="flex h-full flex-col">
@@ -77,8 +95,8 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
         </div>
       )}
 
-      {/* Search */}
-      <div className="border-b border-border px-3 py-2">
+      {/* Search + Sort */}
+      <div className="space-y-2 border-b border-border px-3 py-2">
         <div className="relative">
           <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -88,6 +106,15 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
             className="h-8 pl-7 text-xs"
           />
         </div>
+        <Select value={sortBy} onValueChange={(v) => setSortBy(v as "updated_at" | "next_deadline")}>
+          <SelectTrigger className="h-7 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="updated_at">Last Updated</SelectItem>
+            <SelectItem value="next_deadline">Next Deadline</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Case list */}

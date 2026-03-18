@@ -6,7 +6,7 @@ Handles CRUD operations for investigation cases with permission-based access con
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,6 +29,7 @@ from services.case_service import (
     get_user_role_for_case,
     is_super_admin,
 )
+from services.deadline_service import get_next_deadline_for_cases
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -64,6 +65,9 @@ class CaseResponse(BaseModel):
     owner_name: str | None = None  # Display name of case owner
     user_role: str | None = None  # 'owner', 'editor', 'viewer', 'admin_access'
     is_owner: bool = False  # True ONLY if user is actual owner
+    # Deadline enrichment
+    next_deadline_date: date | None = None
+    next_deadline_name: str | None = None
 
     class Config:
         from_attributes = True
@@ -132,6 +136,10 @@ def list_cases(
 
     case_tuples = list_cases_for_user(db=db, user=current_user, include_all=include_all)
 
+    # Batch-fetch next deadlines for all cases
+    case_ids = [case.id for case, _, _ in case_tuples]
+    next_deadlines = get_next_deadline_for_cases(db, case_ids)
+
     # Build enriched response
     enriched_cases = []
     for case, membership, owner in case_tuples:
@@ -141,6 +149,7 @@ def list_cases(
             and membership.membership_role.value == "owner"
         )
 
+        deadline_info = next_deadlines.get(case.id)
         enriched_case = CaseResponse(
             id=case.id,
             title=case.title,
@@ -152,6 +161,8 @@ def list_cases(
             owner_name=owner.name if owner else None,
             user_role=user_role,
             is_owner=is_actual_owner,
+            next_deadline_date=deadline_info[0] if deadline_info else None,
+            next_deadline_name=deadline_info[1] if deadline_info else None,
         )
         enriched_cases.append(enriched_case)
 
