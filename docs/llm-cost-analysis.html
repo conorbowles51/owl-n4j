@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Provider Cost Analysis — Owl Investigation Platform</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #1e293b;
+      background: #f8fafc;
+    }
+
+    /* ── Cover Page ── */
+    .cover-page {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(135deg, #0f2f4a 0%, #1d4d76 50%, #245c8a 100%);
+      color: white;
+      text-align: center;
+      padding: 3rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-page::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      right: -30%;
+      width: 80%;
+      height: 200%;
+      background: radial-gradient(ellipse, rgba(255,255,255,0.04) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cover-logo {
+      max-width: 180px;
+      height: auto;
+      margin-bottom: 2rem;
+      filter: brightness(0) invert(1);
+    }
+    .cover-page h1 {
+      font-size: 2.6rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.5px;
+    }
+    .cover-page .subtitle {
+      font-size: 1.25rem;
+      opacity: 0.85;
+      margin-bottom: 2.5rem;
+      max-width: 600px;
+    }
+    .cover-meta {
+      font-size: 0.9rem;
+      opacity: 0.6;
+    }
+    .cover-meta span { margin: 0 0.75rem; }
+    .cover-badge {
+      display: inline-block;
+      margin-top: 2rem;
+      padding: 0.5rem 1.25rem;
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 999px;
+      font-size: 0.8rem;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0.7;
+    }
+
+    /* ── Layout ── */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 3rem 2rem;
+    }
+
+    /* ── Typography ── */
+    h2 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #0f2f4a;
+      margin: 3rem 0 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 3px solid #1d4d76;
+    }
+    h2:first-of-type { margin-top: 0; }
+    h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: #1d4d76;
+      margin: 2rem 0 0.75rem;
+    }
+    p, li { font-size: 0.95rem; color: #334155; margin-bottom: 0.5rem; }
+    ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.35rem; }
+    strong { color: #0f2f4a; }
+
+    /* ── Executive Summary Box ── */
+    .exec-summary {
+      background: linear-gradient(135deg, #0f2f4a, #1d4d76);
+      color: white;
+      border-radius: 12px;
+      padding: 2rem 2.5rem;
+      margin-bottom: 2rem;
+    }
+    .exec-summary h3 { color: #93c5fd; margin-top: 0; }
+    .exec-summary p { color: rgba(255,255,255,0.9); }
+    .exec-summary .stat-row {
+      display: flex;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: rgba(255,255,255,0.1);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      flex: 1;
+      min-width: 180px;
+      text-align: center;
+    }
+    .stat-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; opacity: 0.7; }
+    .stat-card .value { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; }
+    .stat-card .sub { font-size: 0.8rem; opacity: 0.6; margin-top: 0.25rem; }
+
+    /* ── Tables ── */
+    .table-wrapper {
+      overflow-x: auto;
+      margin: 1rem 0 2rem;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      background: white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+    }
+    thead { background: #f1f5f9; }
+    th {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      font-weight: 600;
+      color: #0f2f4a;
+      border-bottom: 2px solid #e2e8f0;
+      white-space: nowrap;
+    }
+    td {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+    tbody tr:hover { background: #f8fafc; }
+    .highlight-row { background: #eff6ff !important; }
+    .highlight-row td { font-weight: 600; }
+    .current-row { background: #fef3c7 !important; }
+    .best-row { background: #dcfce7 !important; }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-blue { background: #dbeafe; color: #1e40af; }
+    .badge-amber { background: #fef3c7; color: #92400e; }
+    .badge-red { background: #fee2e2; color: #991b1b; }
+    .badge-purple { background: #f3e8ff; color: #6b21a8; }
+    .badge-gray { background: #f1f5f9; color: #475569; }
+
+    /* ── Callout Boxes ── */
+    .callout {
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin: 1.5rem 0;
+      border-left: 4px solid;
+    }
+    .callout-info { background: #eff6ff; border-color: #3b82f6; }
+    .callout-success { background: #f0fdf4; border-color: #22c55e; }
+    .callout-warning { background: #fffbeb; border-color: #f59e0b; }
+    .callout-danger { background: #fef2f2; border-color: #ef4444; }
+    .callout h4 { font-size: 0.95rem; margin-bottom: 0.5rem; }
+    .callout p { margin-bottom: 0.25rem; font-size: 0.9rem; }
+
+    /* ── Provider Cards ── */
+    .provider-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.25rem;
+      margin: 1.5rem 0;
+    }
+    .provider-card {
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+      transition: box-shadow 0.2s;
+    }
+    .provider-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    .provider-card h4 {
+      font-size: 1rem;
+      color: #0f2f4a;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .provider-card .price {
+      font-size: 0.85rem;
+      color: #64748b;
+      margin-bottom: 0.75rem;
+    }
+    .provider-card ul { padding-left: 1.25rem; }
+    .provider-card li { font-size: 0.85rem; margin-bottom: 0.25rem; }
+
+    /* ── Recommendation Section ── */
+    .recommendation {
+      background: white;
+      border: 2px solid #1d4d76;
+      border-radius: 12px;
+      padding: 2rem;
+      margin: 2rem 0;
+    }
+    .recommendation h3 { color: #0f2f4a; margin-top: 0; font-size: 1.3rem; }
+    .tier { margin: 1.25rem 0; padding: 1rem 1.25rem; border-radius: 8px; }
+    .tier-1 { background: #dcfce7; border-left: 4px solid #22c55e; }
+    .tier-2 { background: #dbeafe; border-left: 4px solid #3b82f6; }
+    .tier-3 { background: #f3e8ff; border-left: 4px solid #a855f7; }
+    .tier-4 { background: #fef3c7; border-left: 4px solid #f59e0b; }
+    .tier h4 { font-size: 0.95rem; margin-bottom: 0.5rem; }
+    .tier p { font-size: 0.9rem; margin-bottom: 0.25rem; }
+
+    /* ── Code ── */
+    code {
+      background: #f1f5f9;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+    }
+    pre {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 1.25rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    pre code { background: none; padding: 0; color: inherit; }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: 4rem;
+      padding: 2rem 0;
+      border-top: 1px solid #e2e8f0;
+      text-align: center;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+
+    /* ── Print ── */
+    @media print {
+      .cover-page { page-break-after: always; }
+      h2 { page-break-before: always; }
+      h2:first-of-type { page-break-before: avoid; }
+      .table-wrapper { box-shadow: none; }
+      body { background: white; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════ COVER PAGE ═══════════ -->
+<div class="cover-page">
+  <img src="../frontend/public/owl-logo.webp" alt="Owl Consultancy Group" class="cover-logo" />
+  <h1>LLM Provider &amp; Cost Analysis</h1>
+  <p class="subtitle">
+    Comprehensive evaluation of AI model providers for the Owl Investigation Platform —
+    optimising ingestion quality and cost across entity extraction, summarisation, and RAG.
+  </p>
+  <div class="cover-meta">
+    <span>March 2026</span>
+    <span>|</span>
+    <span>Prepared for Owl Engineering</span>
+    <span>|</span>
+    <span>CONFIDENTIAL</span>
+  </div>
+  <div class="cover-badge">Internal Technical Analysis</div>
+</div>
+
+<!-- ═══════════ CONTENT ═══════════ -->
+<div class="container">
+
+<!-- ── Executive Summary ── -->
+<div class="exec-summary">
+  <h3>Executive Summary</h3>
+  <p>
+    Owl's ingestion pipeline currently runs on <strong>GPT-5.1</strong> at <strong>$1.25 / $10.00 per 1M tokens</strong> (input/output).
+    With ~30–36 LLM calls per document across entity extraction, disambiguation, and summarisation,
+    a 464-file batch costs approximately <strong>$204</strong>. By routing tasks to appropriate model tiers,
+    ingestion costs can be reduced by <strong>85–95%</strong> with minimal quality impact.
+  </p>
+  <div class="stat-row">
+    <div class="stat-card">
+      <div class="label">Current Cost</div>
+      <div class="value">$0.44</div>
+      <div class="sub">per document (GPT-5.1)</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Optimised Cost</div>
+      <div class="value">$0.03</div>
+      <div class="sub">per document (GPT-4o Mini)</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">464-File Batch</div>
+      <div class="value">93%</div>
+      <div class="sub">cost reduction ($204 → $14)</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Zero Code Change</div>
+      <div class="value">.env</div>
+      <div class="sub">OPENAI_MODEL=gpt-4o-mini</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Current Architecture ── -->
+<h2>1. Current Architecture &amp; Usage</h2>
+
+<h3>How Owl Uses LLM APIs</h3>
+<p>The ingestion pipeline processes uploaded evidence files through multiple AI stages:</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Task</th>
+        <th>Calls per Document</th>
+        <th>Model Used</th>
+        <th>Requires JSON Mode</th>
+        <th>Requires Vision</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Entity &amp; relationship extraction</td>
+        <td>~5 (1 per chunk)</td>
+        <td>GPT-5.1</td>
+        <td><span class="badge badge-green">Yes</span></td>
+        <td><span class="badge badge-gray">No</span></td>
+      </tr>
+      <tr>
+        <td>Entity disambiguation</td>
+        <td>~15 (per fuzzy match)</td>
+        <td>GPT-5.1</td>
+        <td><span class="badge badge-green">Yes</span></td>
+        <td><span class="badge badge-gray">No</span></td>
+      </tr>
+      <tr>
+        <td>Entity summary generation</td>
+        <td>~10–15</td>
+        <td>GPT-5.1</td>
+        <td><span class="badge badge-gray">No</span></td>
+        <td><span class="badge badge-gray">No</span></td>
+      </tr>
+      <tr>
+        <td>Processing estimate</td>
+        <td>1</td>
+        <td>GPT-5.1</td>
+        <td><span class="badge badge-green">Yes</span></td>
+        <td><span class="badge badge-gray">No</span></td>
+      </tr>
+      <tr>
+        <td>Image analysis</td>
+        <td>1 per image</td>
+        <td>GPT-4o (Vision)</td>
+        <td><span class="badge badge-gray">No</span></td>
+        <td><span class="badge badge-green">Yes</span></td>
+      </tr>
+      <tr>
+        <td>Geo-location rescan</td>
+        <td>~1 per 5 docs</td>
+        <td>GPT-5.2</td>
+        <td><span class="badge badge-green">Yes</span></td>
+        <td><span class="badge badge-gray">No</span></td>
+      </tr>
+      <tr>
+        <td>Embeddings</td>
+        <td>1 per chunk batch</td>
+        <td>text-embedding-3-small</td>
+        <td><span class="badge badge-gray">N/A</span></td>
+        <td><span class="badge badge-gray">N/A</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="callout callout-info">
+  <h4>Key Constraint: JSON Structured Output</h4>
+  <p>~60% of ingestion calls require <code>response_format: {"type": "json_object"}</code> for reliable structured extraction. Any replacement provider <strong>must</strong> support JSON mode or structured outputs.</p>
+</div>
+
+<h3>Cost Breakdown per Document (GPT-5.1)</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Component</th><th>Avg Tokens</th><th>Rate</th><th>Cost</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Input tokens (~35 calls × 2K avg)</td><td>~70,000</td><td>$1.25 / 1M</td><td>$0.09</td></tr>
+      <tr><td>Output tokens (~35 calls × 1K avg)</td><td>~35,000</td><td>$10.00 / 1M</td><td>$0.35</td></tr>
+      <tr class="highlight-row"><td><strong>Total per document</strong></td><td></td><td></td><td><strong>$0.44</strong></td></tr>
+      <tr class="highlight-row"><td><strong>464-file batch</strong></td><td></td><td></td><td><strong>~$204</strong></td></tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ── Provider Comparison ── -->
+<h2>2. Provider &amp; Model Comparison</h2>
+
+<h3>Comprehensive Pricing Table</h3>
+<p>All prices per 1 million tokens. Estimated costs assume ~70K input + ~35K output tokens per document across ~35 calls.</p>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>Provider</th>
+        <th>Model</th>
+        <th>Input $/1M</th>
+        <th>Output $/1M</th>
+        <th>Est. $/Doc</th>
+        <th>464 Files</th>
+        <th>JSON Mode</th>
+        <th>OpenAI SDK</th>
+        <th>Quality Tier</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="current-row">
+        <td><strong>OpenAI</strong></td>
+        <td>GPT-5.1 <span class="badge badge-amber">Current</span></td>
+        <td>$1.25</td>
+        <td>$10.00</td>
+        <td>$0.44</td>
+        <td>$204</td>
+        <td>&#10003;</td>
+        <td>Native</td>
+        <td><span class="badge badge-purple">Excellent</span></td>
+      </tr>
+      <tr>
+        <td><strong>OpenAI</strong></td>
+        <td>GPT-5.2</td>
+        <td>$1.75</td>
+        <td>$14.00</td>
+        <td>$0.61</td>
+        <td>$283</td>
+        <td>&#10003;</td>
+        <td>Native</td>
+        <td><span class="badge badge-purple">Top-Tier</span></td>
+      </tr>
+      <tr class="best-row">
+        <td><strong>OpenAI</strong></td>
+        <td>GPT-4o Mini <span class="badge badge-green">Best Value</span></td>
+        <td>$0.15</td>
+        <td>$0.60</td>
+        <td>$0.03</td>
+        <td>$14</td>
+        <td>&#10003;</td>
+        <td>Native</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>OpenAI</strong></td>
+        <td>GPT-5 Mini</td>
+        <td>$0.25</td>
+        <td>$2.00</td>
+        <td>$0.09</td>
+        <td>$42</td>
+        <td>&#10003;</td>
+        <td>Native</td>
+        <td><span class="badge badge-blue">Very Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>OpenAI</strong></td>
+        <td>GPT-5 Nano</td>
+        <td>$0.05</td>
+        <td>$0.40</td>
+        <td>$0.02</td>
+        <td>$9</td>
+        <td>&#10003;</td>
+        <td>Native</td>
+        <td><span class="badge badge-gray">Basic</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>Google</strong></td>
+        <td>Gemini 2.0 Flash</td>
+        <td>$0.10</td>
+        <td>$0.40</td>
+        <td>$0.02</td>
+        <td>$11</td>
+        <td>&#10003;</td>
+        <td>Own SDK*</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>Google</strong></td>
+        <td>Gemini 2.5 Flash</td>
+        <td>$0.15</td>
+        <td>$0.60</td>
+        <td>$0.03</td>
+        <td>$14</td>
+        <td>&#10003;</td>
+        <td>Own SDK*</td>
+        <td><span class="badge badge-blue">Very Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>Google</strong></td>
+        <td>Gemini 2.5 Pro</td>
+        <td>$1.25</td>
+        <td>$10.00</td>
+        <td>$0.44</td>
+        <td>$204</td>
+        <td>&#10003;</td>
+        <td>Own SDK*</td>
+        <td><span class="badge badge-purple">Excellent</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>Anthropic</strong></td>
+        <td>Claude Haiku 4.5</td>
+        <td>$1.00</td>
+        <td>$5.00</td>
+        <td>$0.25</td>
+        <td>$114</td>
+        <td>Via tool_use**</td>
+        <td>Own SDK</td>
+        <td><span class="badge badge-blue">Very Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>Anthropic</strong></td>
+        <td>Claude Sonnet 4.6</td>
+        <td>$3.00</td>
+        <td>$15.00</td>
+        <td>$0.74</td>
+        <td>$343</td>
+        <td>Via tool_use**</td>
+        <td>Own SDK</td>
+        <td><span class="badge badge-purple">Excellent</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>xAI</strong></td>
+        <td>Grok 4.1 Fast</td>
+        <td>$0.20</td>
+        <td>$0.50</td>
+        <td>$0.03</td>
+        <td>$15</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>xAI</strong></td>
+        <td>Grok 4</td>
+        <td>$3.00</td>
+        <td>$15.00</td>
+        <td>$0.74</td>
+        <td>$343</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-purple">Excellent</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>Mistral</strong></td>
+        <td>Mistral Small</td>
+        <td>$0.10</td>
+        <td>$0.30</td>
+        <td>$0.02</td>
+        <td>$8</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>Mistral</strong></td>
+        <td>Mistral Medium 3</td>
+        <td>$0.40</td>
+        <td>$2.00</td>
+        <td>$0.10</td>
+        <td>$46</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Very Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>Mistral</strong></td>
+        <td>Mistral Large 3</td>
+        <td>$2.00</td>
+        <td>$6.00</td>
+        <td>$0.35</td>
+        <td>$162</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-purple">Excellent</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>DeepSeek</strong></td>
+        <td>DeepSeek V3 (direct)</td>
+        <td>$0.14</td>
+        <td>$0.28</td>
+        <td>$0.02</td>
+        <td>$9</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>DeepSeek</strong></td>
+        <td>DeepSeek R1</td>
+        <td>$0.55</td>
+        <td>$2.19</td>
+        <td>$0.12</td>
+        <td>$54</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Very Good</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>Together AI</strong></td>
+        <td>Llama 3.3 70B</td>
+        <td>$0.88</td>
+        <td>$0.88</td>
+        <td>$0.09</td>
+        <td>$43</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr>
+        <td><strong>Together AI</strong></td>
+        <td>DeepSeek V3</td>
+        <td>$0.14</td>
+        <td>$0.28</td>
+        <td>$0.02</td>
+        <td>$9</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+      <tr style="border-top: 2px solid #e2e8f0;">
+        <td><strong>Groq</strong></td>
+        <td>Llama 3.1 8B</td>
+        <td>$0.06</td>
+        <td>$0.06</td>
+        <td>&lt;$0.01</td>
+        <td>$3</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-gray">Basic</span></td>
+      </tr>
+      <tr>
+        <td><strong>Groq</strong></td>
+        <td>Llama 3.3 70B</td>
+        <td>$0.06</td>
+        <td>$0.06</td>
+        <td>&lt;$0.01</td>
+        <td>$3</td>
+        <td>&#10003;</td>
+        <td>Compatible</td>
+        <td><span class="badge badge-blue">Good</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<p style="font-size: 0.8rem; color: #94a3b8;">
+  * Google requires google-genai SDK, but offers an OpenAI-compatible endpoint on Vertex AI.<br>
+  ** Anthropic uses tool_use for structured output rather than <code>response_format</code>; requires adapter code in <code>llm_client.py</code>.
+</p>
+
+
+<!-- ── Perplexity Deep Dive ── -->
+<h2>3. Perplexity Analysis</h2>
+
+<h3>Subscription Plans (for team research)</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Plan</th><th>Price</th><th>Key Features</th><th>API Included?</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Free</td>
+        <td>$0</td>
+        <td>Limited queries, basic models</td>
+        <td><span class="badge badge-red">No</span></td>
+      </tr>
+      <tr>
+        <td>Pro</td>
+        <td>$20/mo ($200/yr)</td>
+        <td>Unlimited Pro searches, advanced models, 20 daily Deep Research</td>
+        <td><span class="badge badge-amber">$5 credit only</span></td>
+      </tr>
+      <tr>
+        <td>Enterprise Pro</td>
+        <td>$40/seat/mo</td>
+        <td>Team admin, SOC 2, data not used for training, all Pro features</td>
+        <td><span class="badge badge-red">No — billed separately</span></td>
+      </tr>
+      <tr>
+        <td>Enterprise Max</td>
+        <td>$325/seat/mo</td>
+        <td>Unlimited deep research, GPT-5 Thinking, Opus 4.6 access</td>
+        <td><span class="badge badge-red">No — billed separately</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h3>Sonar API (for programmatic use)</h3>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Model</th><th>Input $/1M</th><th>Output $/1M</th><th>Request Fee (per 1K)</th><th>Best For</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Sonar</td>
+        <td>$1</td>
+        <td>$1</td>
+        <td>$5 – $12</td>
+        <td>Quick factual lookups</td>
+      </tr>
+      <tr>
+        <td>Sonar Pro</td>
+        <td>$3</td>
+        <td>$15</td>
+        <td>$6 – $14</td>
+        <td>Complex research questions</td>
+      </tr>
+      <tr>
+        <td>Sonar Reasoning Pro</td>
+        <td>$2</td>
+        <td>$8</td>
+        <td>$6 – $14</td>
+        <td>Multi-step reasoning</td>
+      </tr>
+      <tr>
+        <td>Sonar Deep Research</td>
+        <td>$2</td>
+        <td>$8</td>
+        <td>+$5/1K search queries</td>
+        <td>In-depth analysis</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="callout callout-warning">
+  <h4>Why Perplexity Doesn't Suit Owl's Ingestion</h4>
+  <p><strong>Every API call triggers a web search</strong>, adding a $5–$14 per 1,000 requests fee on top of token costs. Owl's ingestion extracts entities from <em>your own documents</em> — web search adds no value and inflates costs significantly.</p>
+  <p>For 464 files × ~35 calls = ~16,240 requests → <strong>$81–$227 in request fees alone</strong>, before any token costs.</p>
+  <p><strong>Also missing:</strong> No embeddings API. No vision model. JSON mode reliability unproven for structured extraction at scale.</p>
+</div>
+
+<div class="callout callout-success">
+  <h4>Where Perplexity Excels</h4>
+  <p><strong>Enterprise Pro ($40/seat/mo)</strong> is excellent for your investigation team's manual research — web-grounded answers with citations, SOC 2 compliant, data never used for training. Highly relevant for legal investigations.</p>
+  <p><strong>Sonar API for geo-location rescan</strong> — the one ingestion task where web-grounded search genuinely adds value (verifying addresses, looking up property records).</p>
+</div>
+
+
+<!-- ── Provider Profiles ── -->
+<h2>4. Provider Profiles</h2>
+
+<div class="provider-grid">
+  <div class="provider-card">
+    <h4>OpenAI</h4>
+    <div class="price">$0.05 – $14.00 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Native integration (zero code changes), full model range, excellent JSON mode, vision, embeddings, batch API (50% off)</li>
+      <li><strong>Cons:</strong> Premium models are expensive</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">None — change .env</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>Google Gemini</h4>
+    <div class="price">$0.10 – $10.00 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Extremely cheap Flash models, excellent structured output support, generous free tier, vision support</li>
+      <li><strong>Cons:</strong> Requires google-genai SDK or Vertex AI OpenAI-compat endpoint</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-amber">Moderate — new SDK or base_url</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>Anthropic Claude</h4>
+    <div class="price">$1.00 – $75.00 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Top-tier quality for analysis and reasoning, excellent at following complex instructions, strong safety</li>
+      <li><strong>Cons:</strong> No native JSON mode (uses tool_use), no embeddings, expensive, needs SDK adapter</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-amber">Via tool_use</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-red">High — new SDK + adapter</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>xAI Grok</h4>
+    <div class="price">$0.20 – $15.00 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Very competitive pricing on Grok 4.1 Fast, OpenAI-compatible API, structured output support</li>
+      <li><strong>Cons:</strong> Newer platform with less production track record, no embeddings</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">Low — base_url swap</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>Mistral AI</h4>
+    <div class="price">$0.10 – $6.00 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Excellent price/performance ratio, strong JSON mode, OpenAI-compatible, EU-based (GDPR)</li>
+      <li><strong>Cons:</strong> No vision models, no embeddings API</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">Low — base_url swap</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>DeepSeek (Direct)</h4>
+    <div class="price">$0.14 – $2.19 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Extremely cheap, competitive quality for structured tasks, cache discounts (90% off), off-peak discounts</li>
+      <li><strong>Cons:</strong> China-based (data residency concerns for legal work), occasional availability issues</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">Low — base_url swap</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>Together AI</h4>
+    <div class="price">$0.14 – $0.88 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> 200+ open-source models, strong JSON mode with schema enforcement, fine-tuning available, US-hosted</li>
+      <li><strong>Cons:</strong> Quality varies by model, no proprietary frontier models</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native + Schema</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">Low — base_url swap</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>Groq</h4>
+    <div class="price">$0.06 – $0.99 / 1M tokens</div>
+    <ul>
+      <li><strong>Pros:</strong> Fastest inference (LPU hardware), cheapest per-token pricing, batch API (25% off), great for high-volume</li>
+      <li><strong>Cons:</strong> Open-source models only, rate limits may constrain batch ingestion, no vision</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-green">Native</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">Low — base_url swap</span></li>
+    </ul>
+  </div>
+
+  <div class="provider-card">
+    <h4>Perplexity Sonar</h4>
+    <div class="price">$1.00 – $15.00 / 1M + request fees</div>
+    <ul>
+      <li><strong>Pros:</strong> Web-grounded answers with citations, excellent for research tasks requiring current information</li>
+      <li><strong>Cons:</strong> Mandatory web search adds cost, no embeddings, no vision, no JSON mode guarantee, request fees</li>
+      <li><strong>JSON mode:</strong> <span class="badge badge-red">Limited</span></li>
+      <li><strong>Integration effort:</strong> <span class="badge badge-green">Low — base_url swap</span></li>
+    </ul>
+  </div>
+</div>
+
+
+<!-- ── Recommendation ── -->
+<h2>5. Recommended Strategy</h2>
+
+<div class="recommendation">
+  <h3>Tiered Task-Based Routing</h3>
+  <p>Rather than switching everything to one provider, route each task to the most cost-effective model that meets its quality requirements. The Owl codebase already supports <code>LLM_PROVIDER</code> and <code>LLM_MODEL</code> configuration.</p>
+
+  <div class="tier tier-1">
+    <h4>Tier 1: Bulk Extraction &amp; Disambiguation — <span class="badge badge-green">93% Savings</span></h4>
+    <p><strong>Model:</strong> GPT-4o Mini ($0.15 / $0.60) or GPT-5 Mini ($0.25 / $2.00)</p>
+    <p><strong>Tasks:</strong> Entity extraction, relationship extraction, disambiguation, processing estimate</p>
+    <p><strong>Why:</strong> These tasks require reliable JSON output but don't need frontier-level intelligence. Mini models handle structured extraction very well.</p>
+    <p><strong>Implementation:</strong> Change <code>OPENAI_MODEL=gpt-4o-mini</code> in <code>.env</code> — zero code changes.</p>
+    <p><strong>Savings:</strong> $204 → $14 per 464-file batch</p>
+  </div>
+
+  <div class="tier tier-2">
+    <h4>Tier 2: Quality-Sensitive Tasks — Keep Premium</h4>
+    <p><strong>Model:</strong> GPT-5.1 ($1.25 / $10.00) or GPT-5 Mini ($0.25 / $2.00)</p>
+    <p><strong>Tasks:</strong> Entity summaries, RAG answer synthesis, investigation insights, defence analysis</p>
+    <p><strong>Why:</strong> Prose quality and nuanced legal reasoning matter here. These are low-volume (on-demand) so cost impact is minimal.</p>
+    <p><strong>Implementation:</strong> Add per-task model override in <code>llm_client.py</code></p>
+  </div>
+
+  <div class="tier tier-3">
+    <h4>Tier 3: Embeddings — Free Alternative</h4>
+    <p><strong>Model:</strong> Local sentence-transformers (all-MiniLM-L6-v2) or Ollama embeddings</p>
+    <p><strong>Tasks:</strong> Document chunk embeddings for RAG vector search</p>
+    <p><strong>Why:</strong> Eliminates embedding API costs entirely. Config already supports <code>EMBEDDING_PROVIDER=ollama</code>.</p>
+    <p><strong>Implementation:</strong> Change <code>EMBEDDING_PROVIDER=ollama</code> in <code>.env</code></p>
+  </div>
+
+  <div class="tier tier-4">
+    <h4>Tier 4: Future Optimisation — Multi-Provider</h4>
+    <p><strong>Models:</strong> Gemini 2.0 Flash, Grok 4.1 Fast, DeepSeek V3, or Groq Llama 3.3 70B</p>
+    <p><strong>Tasks:</strong> Bulk extraction at even lower cost ($3–$15 per 464-file batch)</p>
+    <p><strong>Why:</strong> All support OpenAI-compatible endpoints. Requires adding <code>base_url</code> configuration and quality validation.</p>
+    <p><strong>Implementation:</strong> Add provider routing in <code>llm_client.py</code> with <code>base_url</code> override</p>
+  </div>
+</div>
+
+
+<!-- ── Quick Start ── -->
+<h2>6. Quick Start — Immediate Savings</h2>
+
+<h3>Option A: One-Line .env Change (93% savings, 30 seconds)</h3>
+<pre><code># In /owl-n4j/.env — change:
+OPENAI_MODEL=gpt-5.1
+
+# To:
+OPENAI_MODEL=gpt-4o-mini</code></pre>
+
+<h3>Option B: Per-Task Model Routing (maximum optimisation)</h3>
+<pre><code># In /owl-n4j/.env — add task-specific overrides:
+OPENAI_MODEL=gpt-4o-mini          # Default for bulk extraction
+OPENAI_SUMMARY_MODEL=gpt-5-mini   # For entity summaries
+OPENAI_INSIGHT_MODEL=gpt-5.1      # For investigation insights / RAG
+EMBEDDING_PROVIDER=ollama          # Free local embeddings</code></pre>
+
+<div class="callout callout-info">
+  <h4>Perplexity Enterprise Pro — Separate Investment</h4>
+  <p>Consider <strong>Enterprise Pro at $40/seat/month</strong> as a separate line item for your investigator team. It provides unlimited AI-powered research with citations, SOC 2 compliance, and data privacy guarantees — valuable for legal work, but separate from ingestion costs.</p>
+</div>
+
+
+<!-- ── Risk Matrix ── -->
+<h2>7. Risk Assessment</h2>
+
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr><th>Risk</th><th>Likelihood</th><th>Impact</th><th>Mitigation</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Quality regression with cheaper models</td>
+        <td><span class="badge badge-amber">Medium</span></td>
+        <td><span class="badge badge-amber">Medium</span></td>
+        <td>Run parallel extraction on sample set, compare entity counts and accuracy before full rollout</td>
+      </tr>
+      <tr>
+        <td>JSON parsing failures on non-OpenAI providers</td>
+        <td><span class="badge badge-amber">Medium</span></td>
+        <td><span class="badge badge-green">Low</span></td>
+        <td>Stick with OpenAI Mini models first (same JSON mode). Add retry logic for alternative providers.</td>
+      </tr>
+      <tr>
+        <td>Rate limits on high-volume batch ingestion</td>
+        <td><span class="badge badge-green">Low</span></td>
+        <td><span class="badge badge-amber">Medium</span></td>
+        <td>Existing batch throttling (50-file chunks) helps. Use OpenAI Batch API for 50% discount + higher limits.</td>
+      </tr>
+      <tr>
+        <td>Data residency concerns (DeepSeek/China-based)</td>
+        <td><span class="badge badge-red">High</span></td>
+        <td><span class="badge badge-red">High</span></td>
+        <td>For legal investigation data, prefer US/EU-based providers (OpenAI, Mistral, Together AI).</td>
+      </tr>
+      <tr>
+        <td>Provider API downtime / instability</td>
+        <td><span class="badge badge-green">Low</span></td>
+        <td><span class="badge badge-amber">Medium</span></td>
+        <td>Multi-provider fallback: if primary fails, route to secondary. OpenAI has best uptime track record.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+
+<!-- ── Footer ── -->
+<div class="footer">
+  <p>Owl Consultancy Group — LLM Provider &amp; Cost Analysis — March 2026</p>
+  <p>Pricing data sourced from official provider documentation. Estimates based on observed Owl pipeline token usage patterns.</p>
+  <p style="margin-top: 0.5rem; font-size: 0.75rem; color: #cbd5e1;">
+    Sources: OpenAI Pricing (platform.openai.com) · Google Gemini Pricing (ai.google.dev) · Anthropic Pricing (platform.claude.com) ·
+    xAI Pricing (docs.x.ai) · Mistral Pricing (mistral.ai) · DeepSeek Pricing (api-docs.deepseek.com) ·
+    Together AI Pricing (together.ai) · Groq Pricing (groq.com) · Perplexity Pricing (docs.perplexity.ai)
+  </p>
+</div>
+
+</div>
+</body>
+</html>

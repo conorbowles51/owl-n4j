@@ -14,7 +14,13 @@
       "Bash(npx storybook:*)",
       "Bash(node:*)",
       "Bash(ls:*)",
-      "WebFetch(domain:localhost)"
+      "WebFetch(domain:localhost)",
+      "Bash(python3:*)",
+      "Bash(npx --yes tsc:*)",
+      "Bash(npm run build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }

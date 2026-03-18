@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Owl's Eye — Expansion & Net Revenue Retention</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Source+Sans+Pro:wght@300;400;600;700&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.65;
+      color: #2c3e50;
+      background: #fff;
+    }
+
+    /* ── Page Container ── */
+    .page {
+      max-width: 850px;
+      margin: 0 auto;
+      padding: 2.5rem 3rem;
+    }
+
+    @media print {
+      .page { padding: 0; max-width: 100%; }
+      .page-break { page-break-before: always; }
+    }
+
+    /* ── Section Headers (matching exec summary style) ── */
+    .section-header {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1a2744;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin: 2.5rem 0 1rem;
+      padding-bottom: 0.4rem;
+      border-left: 4px solid #c8953c;
+      padding-left: 0.75rem;
+    }
+
+    .section-header:first-child {
+      margin-top: 0;
+    }
+
+    /* ── Subsection Headers ── */
+    h3 {
+      font-family: 'Source Sans Pro', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #1a2744;
+      margin: 1.75rem 0 0.5rem;
+    }
+
+    /* ── Body Text ── */
+    p {
+      margin-bottom: 1rem;
+      font-size: 0.95rem;
+      color: #34495e;
+    }
+
+    strong { color: #1a2744; }
+
+    .highlight {
+      color: #c8953c;
+      font-weight: 700;
+    }
+
+    .lead-text {
+      font-size: 1.05rem;
+      font-weight: 400;
+      color: #2c3e50;
+      margin-bottom: 1.25rem;
+    }
+
+    /* ── ROI Callout Box ── */
+    .roi-callout {
+      background: linear-gradient(135deg, #1a2744 0%, #2a3f66 100%);
+      color: white;
+      border-radius: 8px;
+      padding: 1.5rem 2rem;
+      margin: 1.5rem 0;
+    }
+
+    .roi-callout h3 {
+      color: #c8953c;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.15rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-top: 0;
+      margin-bottom: 1rem;
+    }
+
+    .roi-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .roi-item {
+      text-align: center;
+      padding: 0.75rem;
+    }
+
+    .roi-item .number {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #c8953c;
+      display: block;
+      line-height: 1.2;
+    }
+
+    .roi-item .label {
+      font-size: 0.8rem;
+      opacity: 0.85;
+      display: block;
+      margin-top: 0.25rem;
+    }
+
+    /* ── Pricing Table ── */
+    .pricing-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.25rem 0;
+      font-size: 0.9rem;
+    }
+
+    .pricing-table thead th {
+      background: #1a2744;
+      color: white;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.6rem 1rem;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .pricing-table tbody td {
+      padding: 0.55rem 1rem;
+      border-bottom: 1px solid #e8e8e8;
+    }
+
+    .pricing-table tbody tr:nth-child(even) {
+      background: #f9f9fb;
+    }
+
+    .pricing-table .price-col {
+      text-align: right;
+      font-weight: 600;
+      color: #1a2744;
+    }
+
+    /* ── Projection Table ── */
+    .projection-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.25rem 0;
+      font-size: 0.88rem;
+    }
+
+    .projection-table thead th {
+      background: #1a2744;
+      color: white;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .projection-table thead th:last-child,
+    .projection-table thead th:nth-child(3),
+    .projection-table thead th:nth-child(4) {
+      text-align: right;
+    }
+
+    .projection-table tbody td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid #e8e8e8;
+    }
+
+    .projection-table tbody td:last-child,
+    .projection-table tbody td:nth-child(3),
+    .projection-table tbody td:nth-child(4) {
+      text-align: right;
+    }
+
+    .projection-table tbody tr:nth-child(even) {
+      background: #f9f9fb;
+    }
+
+    .projection-table .revenue-col {
+      font-weight: 700;
+      color: #1a2744;
+    }
+
+    .projection-table .highlight-row {
+      background: #f0f4ff !important;
+    }
+
+    .projection-table .highlight-row td {
+      font-weight: 600;
+    }
+
+    /* ── Comparison Columns ── */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin: 1.5rem 0;
+    }
+
+    .comparison-card {
+      border-radius: 8px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+
+    .comparison-card.before {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+    }
+
+    .comparison-card.after {
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+      border: 2px solid #c8953c;
+    }
+
+    .comparison-card .card-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+    }
+
+    .comparison-card.before .card-title { color: #888; }
+    .comparison-card.after .card-title { color: #c8953c; }
+
+    .comparison-card .big-number {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #1a2744;
+      line-height: 1.1;
+    }
+
+    .comparison-card .sub-label {
+      font-size: 0.8rem;
+      color: #666;
+      margin-top: 0.25rem;
+    }
+
+    /* ── Bullet List ── */
+    .benefit-list {
+      list-style: none;
+      padding: 0;
+      margin: 1rem 0;
+    }
+
+    .benefit-list li {
+      padding: 0.4rem 0 0.4rem 1.5rem;
+      position: relative;
+      font-size: 0.93rem;
+      color: #34495e;
+    }
+
+    .benefit-list li::before {
+      content: '▸';
+      position: absolute;
+      left: 0;
+      color: #c8953c;
+      font-weight: 700;
+    }
+
+    /* ── Flywheel Diagram ── */
+    .flywheel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin: 1.5rem 0;
+      flex-wrap: wrap;
+    }
+
+    .flywheel-step {
+      background: #1a2744;
+      color: white;
+      padding: 0.6rem 1rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-align: center;
+      min-width: 110px;
+    }
+
+    .flywheel-arrow {
+      color: #c8953c;
+      font-size: 1.4rem;
+      font-weight: 700;
+      padding: 0 0.3rem;
+    }
+
+    /* ── Key Metric Boxes ── */
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .metric-box {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .metric-box .metric-value {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #c8953c;
+      display: block;
+    }
+
+    .metric-box .metric-label {
+      font-size: 0.75rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 0.25rem;
+      display: block;
+    }
+
+    /* ── Footer Note ── */
+    .section-note {
+      font-size: 0.8rem;
+      color: #888;
+      font-style: italic;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid #eee;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #ddd, transparent);
+      margin: 2rem 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- SECTION: Expansion & Net Revenue Retention     -->
+  <!-- ═══════════════════════════════════════════════ -->
+
+  <h2 class="section-header">Expansion & Net Revenue Retention</h2>
+
+  <p class="lead-text">
+    The Owl's Eye is not a single-license product—it is a <strong>platform that grows inside every client</strong>.
+    Our per-seat pricing model creates a natural expansion path: as attorneys and investigators experience
+    the productivity gains firsthand, adoption spreads across practice groups and offices without additional
+    sales effort.
+  </p>
+
+  <!-- ROI Per Seat Callout -->
+  <div class="roi-callout">
+    <h3>The Per-Attorney ROI Case</h3>
+    <div class="roi-grid">
+      <div class="roi-item">
+        <span class="number">5+ hrs/wk</span>
+        <span class="label">Saved per attorney on manual<br>document review</span>
+      </div>
+      <div class="roi-item">
+        <span class="number">$130–260K</span>
+        <span class="label">Annual recovered billable capacity<br>per seat at $500–1,000/hr</span>
+      </div>
+      <div class="roi-item">
+        <span class="number">$5–15K</span>
+        <span class="label">Annual cost per seat</span>
+      </div>
+      <div class="roi-item">
+        <span class="number">10–25x</span>
+        <span class="label">ROI per seat in Year 1</span>
+      </div>
+    </div>
+  </div>
+
+  <p>
+    At billing rates of <strong>$500–1,000+/hour</strong>, even modest time savings translate into massive recovered
+    capacity. An attorney who saves five hours per week on document review recovers <span class="highlight">$130,000–260,000
+    in billable capacity annually</span>. Against a seat cost of $5K–15K, the platform pays for itself
+    within the first week of use. This makes the per-seat expansion an effortless sell—budget holders can
+    justify each additional seat with clear, quantifiable ROI.
+  </p>
+
+  <!-- Expansion Flywheel -->
+  <h3>The Expansion Flywheel</h3>
+
+  <div class="flywheel">
+    <div class="flywheel-step">Lead attorney<br>adopts platform</div>
+    <span class="flywheel-arrow">→</span>
+    <div class="flywheel-step">Case won faster<br>with less cost</div>
+    <span class="flywheel-arrow">→</span>
+    <div class="flywheel-step">Other attorneys<br>request access</div>
+    <span class="flywheel-arrow">→</span>
+    <div class="flywheel-step">Firm-wide<br>rollout</div>
+    <span class="flywheel-arrow">→</span>
+    <div class="flywheel-step">Multi-year<br>enterprise deal</div>
+  </div>
+
+  <p>
+    A typical engagement begins with a single partner or practice group purchasing a base license with
+    2–3 seats. As outcomes improve and the platform proves its value on live cases, organic demand drives
+    expansion across the organization—from 3 seats to 10, then 25, then firm-wide deployment. This
+    viral, outcome-driven adoption is the same pattern that has driven land-and-expand leaders like
+    Datadog and Snowflake to net revenue retention above 130%.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- SECTION: Tiered Pricing Structure              -->
+  <!-- ═══════════════════════════════════════════════ -->
+
+  <h2 class="section-header">Tiered Pricing Structure</h2>
+
+  <table class="pricing-table">
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th>Description</th>
+        <th style="text-align: right;">Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Platform License</strong> (base)</td>
+        <td>Full platform access, on-premise deployment, includes 3 seats</td>
+        <td class="price-col">$25,000/yr</td>
+      </tr>
+      <tr>
+        <td><strong>Additional Seats</strong></td>
+        <td>Per attorney / investigator / analyst seat</td>
+        <td class="price-col">$5,000–10,000/yr</td>
+      </tr>
+      <tr>
+        <td><strong>Enterprise Tier</strong></td>
+        <td>Unlimited seats, priority support, custom integrations</td>
+        <td class="price-col">$100,000+/yr</td>
+      </tr>
+      <tr>
+        <td><strong>Services Add-ons</strong></td>
+        <td>Training, managed ingestion, custom reports</td>
+        <td class="price-col">Variable</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    This structure gives clients a low-friction entry point while creating <strong>predictable expansion revenue</strong>
+    as usage grows. Enterprise tier captures large firms and corporate investigation units where per-seat
+    negotiation is impractical and budget holders prefer a single annual commitment.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- SECTION: Revised Financial Projections         -->
+  <!-- ═══════════════════════════════════════════════ -->
+
+  <h2 class="section-header">Revised Financial Projections</h2>
+
+  <p>
+    Layering per-seat expansion onto the base licensing model transforms the revenue trajectory.
+    Existing customers naturally grow their spend as adoption spreads, driving <strong>net revenue retention
+    above 130%</strong> and compounding growth without proportional sales investment.
+  </p>
+
+  <table class="projection-table">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Key Drivers</th>
+        <th>Avg Seats / Client</th>
+        <th>Avg Rev / Client</th>
+        <th>Annual Revenue</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Year 1</strong></td>
+        <td>8–12 customers; initial adoption, base + 3 seats</td>
+        <td>3</td>
+        <td>$30K</td>
+        <td class="revenue-col">$0.24–0.36M</td>
+      </tr>
+      <tr>
+        <td><strong>Year 2</strong></td>
+        <td>20–30 customers; practice group expansion begins</td>
+        <td>5</td>
+        <td>$45K</td>
+        <td class="revenue-col">$0.9–1.35M</td>
+      </tr>
+      <tr>
+        <td><strong>Year 3</strong></td>
+        <td>40–60 customers; firm-wide rollouts, enterprise deals</td>
+        <td>8</td>
+        <td>$65K</td>
+        <td class="revenue-col">$2.6–3.9M</td>
+      </tr>
+      <tr>
+        <td><strong>Year 4</strong></td>
+        <td>70–110 customers; partner-led sales, multi-office firms</td>
+        <td>10</td>
+        <td>$80K</td>
+        <td class="revenue-col">$5.6–8.8M</td>
+      </tr>
+      <tr class="highlight-row">
+        <td><strong>Year 5</strong></td>
+        <td>100–150 customers; established niche leader</td>
+        <td>12</td>
+        <td>$95K</td>
+        <td class="revenue-col">$9.5–14.25M</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <!-- Before / After Comparison -->
+  <div class="comparison">
+    <div class="comparison-card before">
+      <div class="card-title">Original Model (License Only)</div>
+      <div class="big-number">$2.5–3.75M</div>
+      <div class="sub-label">Year 5 ARR</div>
+    </div>
+    <div class="comparison-card after">
+      <div class="card-title">With Per-Seat Expansion</div>
+      <div class="big-number">$9.5–14.25M</div>
+      <div class="sub-label">Year 5 ARR</div>
+    </div>
+  </div>
+
+  <!-- Key Metrics -->
+  <div class="metric-row">
+    <div class="metric-box">
+      <span class="metric-value">>130%</span>
+      <span class="metric-label">Net Revenue Retention</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-value">3–4x</span>
+      <span class="metric-label">Revenue Uplift vs. Flat License</span>
+    </div>
+    <div class="metric-box">
+      <span class="metric-value">~$0</span>
+      <span class="metric-label">CAC on Expansion Revenue</span>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════════ -->
+  <!-- SECTION: Why This Matters to Investors         -->
+  <!-- ═══════════════════════════════════════════════ -->
+
+  <h2 class="section-header">Why This Matters to Investors</h2>
+
+  <ul class="benefit-list">
+    <li><strong>Compounding, not linear growth.</strong> Each new customer becomes a growing revenue stream, not a fixed line item. Seat expansion within existing accounts compounds ARR year over year with minimal incremental cost.</li>
+    <li><strong>Near-zero expansion CAC.</strong> Once a firm adopts the platform, additional seats sell themselves through internal demand. No outbound sales effort required for expansion revenue.</li>
+    <li><strong>Deep switching costs.</strong> When 15+ attorneys across a firm depend on The Owl's Eye for daily casework, switching costs become prohibitive. This creates durable, defensible revenue.</li>
+    <li><strong>Clear path to Series A threshold.</strong> The per-seat model creates a credible path to $10M+ ARR—the benchmark most Series A investors require—within the 5-year projection window.</li>
+    <li><strong>Proven playbook.</strong> Land-and-expand is the dominant SaaS growth motion. The per-attorney ROI (10–25x) gives internal champions an easy business case to drive adoption across their organization.</li>
+  </ul>
+
+  <p class="section-note">
+    Note: Projections assume conservative seat growth (3→12 seats per client over 5 years). A mid-size
+    law firm with 50+ litigators represents a potential $200K–500K/year account. Actual expansion
+    rates will depend on deployment velocity and customer success investment.
+  </p>
+
+</div>
+
+</body>
+</html>

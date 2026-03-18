@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Owl's Eye Platform — Executive Summary for Seed Investment</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.65;
+      color: #2c3e50;
+      background: #fff;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* COVER / TITLE BANNER                      */
+    /* ══════════════════════════════════════════ */
+    .cover-banner {
+      background: linear-gradient(135deg, #111e33 0%, #1a2744 40%, #263d5e 100%);
+      color: white;
+      text-align: center;
+      padding: 3.5rem 2rem 3rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-banner::before {
+      content: '';
+      position: absolute;
+      top: -40%;
+      right: -20%;
+      width: 60%;
+      height: 180%;
+      background: radial-gradient(ellipse, rgba(200,149,60,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cover-banner h1 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2.8rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .cover-banner .subtitle {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.15rem;
+      font-style: italic;
+      opacity: 0.8;
+      letter-spacing: 0.5px;
+    }
+    .gold-rule {
+      width: 80px;
+      height: 3px;
+      background: #c8953c;
+      margin: 1rem auto 0;
+      border: none;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* PAGE LAYOUT                               */
+    /* ══════════════════════════════════════════ */
+    .page {
+      max-width: 850px;
+      margin: 0 auto;
+      padding: 2rem 3rem 3rem;
+    }
+
+    @media print {
+      body { background: white; }
+      .page { padding: 0 1.5rem; max-width: 100%; }
+      .cover-banner { padding: 2rem 1.5rem 1.5rem; }
+      .page-break { page-break-before: always; }
+      .no-break { page-break-inside: avoid; }
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* SECTION HEADERS                           */
+    /* ══════════════════════════════════════════ */
+    .section-header {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #1a2744;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin: 2.5rem 0 0.9rem;
+      padding-left: 0.75rem;
+      border-left: 4px solid #c8953c;
+    }
+
+    h3 {
+      font-family: 'Source Sans Pro', sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #1a2744;
+      margin: 1.5rem 0 0.4rem;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* BODY TEXT                                  */
+    /* ══════════════════════════════════════════ */
+    p {
+      margin-bottom: 0.9rem;
+      font-size: 0.93rem;
+      color: #34495e;
+    }
+
+    .intro-text {
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    strong, b { color: #1a2744; }
+
+    .highlight {
+      color: #c8953c;
+      font-weight: 700;
+    }
+
+    .lead-text {
+      font-size: 1rem;
+      color: #2c3e50;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* STANDARD BULLET LISTS                     */
+    /* ══════════════════════════════════════════ */
+    ul.doc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.5rem 0 1rem;
+    }
+    ul.doc-list li {
+      padding: 0.25rem 0 0.25rem 1.4rem;
+      position: relative;
+      font-size: 0.92rem;
+      color: #34495e;
+    }
+    ul.doc-list li::before {
+      content: '\2022';
+      position: absolute;
+      left: 0;
+      color: #c8953c;
+      font-weight: 700;
+      font-size: 1.1rem;
+      line-height: 1.5;
+    }
+
+    /* Gold-arrow variant for investor section */
+    ul.benefit-list {
+      list-style: none;
+      padding: 0;
+      margin: 0.75rem 0 1rem;
+    }
+    ul.benefit-list li {
+      padding: 0.35rem 0 0.35rem 1.5rem;
+      position: relative;
+      font-size: 0.92rem;
+      color: #34495e;
+    }
+    ul.benefit-list li::before {
+      content: '\25B8';
+      position: absolute;
+      left: 0;
+      color: #c8953c;
+      font-weight: 700;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* TABLES (shared)                           */
+    /* ══════════════════════════════════════════ */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+    thead th {
+      background: #1a2744;
+      color: white;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    tbody td {
+      padding: 0.5rem 0.85rem;
+      border-bottom: 1px solid #e8e8e8;
+    }
+    tbody tr:nth-child(even) {
+      background: #f9f9fb;
+    }
+
+    .text-right { text-align: right; }
+    .fw-bold { font-weight: 700; color: #1a2744; }
+    .highlight-row { background: #f0f4ff !important; }
+    .highlight-row td { font-weight: 600; }
+
+    /* ══════════════════════════════════════════ */
+    /* USE-OF-FUNDS SIDE-BY-SIDE                 */
+    /* ══════════════════════════════════════════ */
+    .funds-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin: 1rem 0;
+    }
+    .funds-grid table { margin: 0; }
+
+    /* ══════════════════════════════════════════ */
+    /* TWO-COLUMN INFO BOXES                     */
+    /* ══════════════════════════════════════════ */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin: 1.25rem 0;
+    }
+    .info-box {
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+    }
+    .info-box h3 {
+      margin: 0 0 0.5rem;
+      font-size: 0.95rem;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* ROI CALLOUT                               */
+    /* ══════════════════════════════════════════ */
+    .roi-callout {
+      background: linear-gradient(135deg, #1a2744 0%, #2a3f66 100%);
+      color: white;
+      border-radius: 8px;
+      padding: 1.4rem 1.75rem;
+      margin: 1.25rem 0;
+    }
+    .roi-callout h3 {
+      color: #c8953c;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 0.9rem;
+    }
+    .roi-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    .roi-item {
+      text-align: center;
+      padding: 0.5rem;
+    }
+    .roi-item .number {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #c8953c;
+      display: block;
+      line-height: 1.2;
+    }
+    .roi-item .label {
+      font-size: 0.78rem;
+      opacity: 0.85;
+      display: block;
+      margin-top: 0.2rem;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* FLYWHEEL                                  */
+    /* ══════════════════════════════════════════ */
+    .flywheel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin: 1.25rem 0;
+      flex-wrap: wrap;
+    }
+    .flywheel-step {
+      background: #1a2744;
+      color: white;
+      padding: 0.5rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-align: center;
+      min-width: 100px;
+    }
+    .flywheel-arrow {
+      color: #c8953c;
+      font-size: 1.3rem;
+      font-weight: 700;
+      padding: 0 0.25rem;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* COMPARISON CARDS                          */
+    /* ══════════════════════════════════════════ */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+      margin: 1.25rem 0;
+    }
+    .comparison-card {
+      border-radius: 8px;
+      padding: 1.1rem;
+      text-align: center;
+    }
+    .comparison-card.before {
+      background: #f5f5f5;
+      border: 1px solid #ddd;
+    }
+    .comparison-card.after {
+      background: linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 100%);
+      border: 2px solid #c8953c;
+    }
+    .comparison-card .card-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .comparison-card.before .card-title { color: #888; }
+    .comparison-card.after .card-title { color: #c8953c; }
+    .comparison-card .big-number {
+      font-size: 1.7rem;
+      font-weight: 700;
+      color: #1a2744;
+      line-height: 1.1;
+    }
+    .comparison-card .sub-label {
+      font-size: 0.78rem;
+      color: #666;
+      margin-top: 0.2rem;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* METRIC ROW                                */
+    /* ══════════════════════════════════════════ */
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.9rem;
+      margin: 1.25rem 0;
+    }
+    .metric-box {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 0.9rem;
+      text-align: center;
+    }
+    .metric-box .metric-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #c8953c;
+      display: block;
+    }
+    .metric-box .metric-label {
+      font-size: 0.72rem;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 0.2rem;
+      display: block;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* CLOSING / INVESTMENT BOX                  */
+    /* ══════════════════════════════════════════ */
+    .closing-box {
+      background: #f8f6f1;
+      border: 2px solid #c8953c;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0 1rem;
+    }
+    .closing-box h3 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.15rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #1a2744;
+      margin: 0 0 0.6rem;
+    }
+    .closing-box p {
+      margin-bottom: 0;
+    }
+
+    /* ══════════════════════════════════════════ */
+    /* FOOTER                                    */
+    /* ══════════════════════════════════════════ */
+    .page-footer {
+      background: #1a2744;
+      color: rgba(255,255,255,0.7);
+      text-align: center;
+      padding: 0.9rem 2rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.5px;
+    }
+    .page-footer .gold { color: #c8953c; font-weight: 600; }
+
+    /* ══════════════════════════════════════════ */
+    /* DIVIDER                                   */
+    /* ══════════════════════════════════════════ */
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #ddd, transparent);
+      margin: 2rem 0;
+    }
+
+    .section-note {
+      font-size: 0.78rem;
+      color: #888;
+      font-style: italic;
+      margin-top: 1.25rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid #eee;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- COVER BANNER                                               -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<div class="cover-banner">
+  <h1>The Owl's Eye Platform</h1>
+  <div class="subtitle">Executive Summary for Seed Investment</div>
+  <hr class="gold-rule">
+</div>
+
+<div class="page">
+
+  <!-- ─── Opening Paragraph ─── -->
+  <p class="intro-text" style="margin-top: 1.5rem;">
+    <strong>Owl Consultancy Group</strong> is a Washington, DC-based private investigations firm founded by investigators
+    specializing in complex federal criminal defense, white collar crime, financial fraud, and corporate due
+    diligence. We work alongside attorneys and defense teams on high-stakes matters, and to meet the analytical
+    demands of our own caseload, we built <strong>The Owl's Eye</strong>—proprietary AI investigation software that
+    automatically ingests thousands of documents, extracts entities and relationships, maps networks,
+    reconstructs timelines, and surfaces hidden connections. It is already deployed and generating results on live
+    cases. We are seeking <span class="highlight">$1.5M in seed investment</span> to commercialize and spin off The Owl's Eye: a platform
+    built by practitioners, proven in the field, and addressing a massive, underserved market.
+  </p>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- THE PROBLEM                                 -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">The Problem</h2>
+  <p>
+    Investigators, attorneys, compliance teams, and fraud analysts face the same crisis:
+    <strong>the evidence they need to win exists—it's buried inside thousands of documents, financial records,
+    and communications they simply don't have the time or resources to manually read and connect.</strong>
+    A federal case can generate 500,000 pages of discovery. Every hour spent on manual document review is
+    an hour not spent on strategy—and at investigator rates of $300–$500/hour and legal fees exceeding
+    $1,000/hour, the cost is devastating. Worse, critical connections get missed. Cases are lost. Fraud goes undetected.
+  </p>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- THE SOLUTION                                -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">The Solution</h2>
+  <p>
+    The Owl's Eye replaces manual document review with automated intelligence. Upload thousands of documents,
+    financial records, audio files, or communications—the platform does the rest.
+    <strong>Automated entity &amp; relationship extraction</strong> identifies every person, company, account, and location
+    and maps how they connect. <strong>Interactive network visualization</strong> reveals hidden connections no manual
+    review would catch. <strong>Timeline reconstruction</strong> organizes events automatically.
+    <strong>AI investigation assistant</strong> allows natural language questions directly against the evidence.
+    <strong>One-click reports</strong> generate comprehensive, citation-backed investigative reports instantly.
+    <strong>On-premise deployment</strong> keeps all data within the client's environment, protecting confidentiality.
+  </p>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- TARGET MARKET                               -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">Target Market &amp; Customer Segments</h2>
+  <p>
+    The Owl's Eye targets a fragmented <span class="highlight">$50B+ U.S. market</span> for investigative software and services, with a
+    <span class="highlight">$10–15B beachhead</span> in legal defense and corporate investigations where pain is acute and budgets are clear.
+    Primary customers include:
+  </p>
+  <ul class="doc-list">
+    <li>Criminal defense and white-collar practices handling complex federal cases (RICO, fraud, corruption)</li>
+    <li>Litigation teams in major law firms</li>
+    <li>Corporate internal investigations and Big 4 forensic accounting teams</li>
+    <li>Healthcare fraud units, insurance SIUs, and bank AML/compliance teams</li>
+  </ul>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- COMPETITIVE ADVANTAGE                       -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">Competitive Advantage</h2>
+  <ul class="doc-list">
+    <li><strong>Designed by practitioners, built by engineers</strong>—we are investigators who designed this tool for ourselves, giving us product instincts no pure tech company can replicate.</li>
+    <li><strong>Proprietary technology</strong>—our hybrid architecture combines AI LLMs with advanced graph database technology for documents, relationships, and natural language querying in one system.</li>
+    <li><strong>On-premise deployment</strong>—runs entirely within client environments with full support for local AI models ensuring zero data leaves their infrastructure.</li>
+    <li><strong>Live deployment</strong>—already running on active cases.</li>
+    <li><strong>Underserved market</strong>—the legal industry operates decades behind technologically.</li>
+  </ul>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- TRACTION & VALIDATION                       -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">Traction &amp; Validation</h2>
+  <p>
+    The Owl's Eye is fully built and actively deployed across Owl Consultancy Group's caseload, handling complex
+    federal criminal defense, white collar, and financial crime matters. Attorneys have retained Owl Consultancy
+    Group <em>specifically because of</em> The Owl's Eye—drawn by the ability to see their entire case organized in one
+    place. This unprompted, platform-driven client acquisition is direct evidence of product-market fit before any
+    formal marketing effort. Internal analyses show <span class="highlight">70–80% cost savings</span> and
+    <span class="highlight">~90% reduction in processing time</span> compared with manual workflows. External beta tester
+    onboarding is planned for 2026.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- PAGE 2 — THE ASK                            -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="page-break"></div>
+
+  <h2 class="section-header">The Ask: $1.5M Seed Round</h2>
+  <p>
+    We are raising <span class="highlight">$1.5M</span> to commercialize The Owl's Eye and transition from proven internal tool to commercial
+    platform. Capital is allocated 50/50 between R&amp;D and go-to-market, providing <strong>18–24 months of runway</strong>
+    to reach sustainable revenue.
+  </p>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- USE OF FUNDS                                -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">Use of Funds</h2>
+
+  <div class="funds-grid no-break">
+    <!-- R&D Table -->
+    <table>
+      <thead>
+        <tr><th colspan="2" style="text-align: center;">R&amp;D</th></tr>
+        <tr><th>Line Item</th><th class="text-right">Cost</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>CEO</td><td class="text-right fw-bold">$180K</td></tr>
+        <tr><td>CTO</td><td class="text-right fw-bold">$180K</td></tr>
+        <tr><td>Engineering</td><td class="text-right fw-bold">$120K</td></tr>
+        <tr><td>AI &amp; Infrastructure</td><td class="text-right fw-bold">$84K</td></tr>
+        <tr><td>Security &amp; SOC 2</td><td class="text-right fw-bold">$60K</td></tr>
+        <tr><td>Contractors &amp; Jr Dev</td><td class="text-right fw-bold">$126K</td></tr>
+        <tr><td>Contingency</td><td class="text-right fw-bold">$75K</td></tr>
+      </tbody>
+    </table>
+
+    <!-- GTM Table -->
+    <table>
+      <thead>
+        <tr><th colspan="2" style="text-align: center;">Go-to-Market</th></tr>
+        <tr><th>Line Item</th><th class="text-right">Cost</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Sales Hire</td><td class="text-right fw-bold">$60K + Commission</td></tr>
+        <tr><td>SDR / BD Associate</td><td class="text-right fw-bold">$72K</td></tr>
+        <tr><td>Marketing &amp; Brand</td><td class="text-right fw-bold">$150K</td></tr>
+        <tr><td>GTM &amp; Pricing Strategy</td><td class="text-right fw-bold">$150K</td></tr>
+        <tr><td>Legal, Partnerships, Collateral</td><td class="text-right fw-bold">$150K</td></tr>
+        <tr><td>GTM Contingency</td><td class="text-right fw-bold">$103K</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- FINANCIAL PROJECTIONS & PRICING             -->
+  <!-- ═══════════════════════════════════════════ -->
+  <h2 class="section-header">Financial Projections</h2>
+
+  <p>
+    The Owl's Eye is priced as a <strong>platform license starting at $25K/year</strong>, with per-seat pricing
+    that grows naturally as adoption spreads within each client organization. Every attorney or investigator
+    who uses The Owl's Eye saves an estimated five or more hours per week on manual document review. At
+    billing rates of $500–1,000+/hour, that translates to <span class="highlight">$130,000–260,000 in recovered
+    billable capacity per seat annually</span>—against a seat cost of $5K–15K. The platform pays for itself
+    within the first week. This economics makes expansion within existing accounts effortless: once a lead
+    attorney sees results, other attorneys in the practice group request access, and adoption spreads
+    organically from 3 seats to 10, to 25, to firm-wide deployment.
+  </p>
+
+  <div class="roi-callout no-break">
+    <h3>Per-Seat ROI</h3>
+    <div class="roi-grid">
+      <div class="roi-item">
+        <span class="number">5+ hrs/wk</span>
+        <span class="label">Saved per attorney on manual<br>document review</span>
+      </div>
+      <div class="roi-item">
+        <span class="number">$130–260K</span>
+        <span class="label">Annual recovered billable capacity<br>per seat at $500–1,000/hr</span>
+      </div>
+      <div class="roi-item">
+        <span class="number">$5–15K</span>
+        <span class="label">Annual cost per seat</span>
+      </div>
+      <div class="roi-item">
+        <span class="number">10–25x</span>
+        <span class="label">Return on investment per seat</span>
+      </div>
+    </div>
+  </div>
+
+  <h3>Pricing Structure</h3>
+
+  <table class="no-break">
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th>Description</th>
+        <th class="text-right">Price</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Platform License</strong></td>
+        <td>Full platform access, on-premise deployment, includes 3 seats</td>
+        <td class="text-right fw-bold">$25,000/yr</td>
+      </tr>
+      <tr>
+        <td><strong>Additional Seats</strong></td>
+        <td>Per attorney, investigator, or analyst</td>
+        <td class="text-right fw-bold">$5,000–10,000/yr</td>
+      </tr>
+      <tr>
+        <td><strong>Enterprise</strong></td>
+        <td>Unlimited seats, priority support, custom integrations</td>
+        <td class="text-right fw-bold">$100,000+/yr</td>
+      </tr>
+      <tr>
+        <td><strong>Services</strong></td>
+        <td>Training, managed ingestion, custom reporting</td>
+        <td class="text-right fw-bold">Variable</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Revenue Projections</h3>
+
+  <p>
+    As each client expands from an initial base license to broader adoption across their organization,
+    <strong>average revenue per client grows from $30K to $95K over five years</strong>—driven entirely by
+    organic seat expansion within accounts we have already won, with no additional sales cost.
+  </p>
+
+  <table class="no-break">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th>Key Drivers</th>
+        <th class="text-right">Avg Seats</th>
+        <th class="text-right">Avg Rev/Client</th>
+        <th class="text-right">Annual Revenue</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Year 1</strong></td>
+        <td>8–12 customers; initial adoption, base + 3 seats</td>
+        <td class="text-right">3</td>
+        <td class="text-right">$30K</td>
+        <td class="text-right fw-bold">$0.24–0.36M</td>
+      </tr>
+      <tr>
+        <td><strong>Year 2</strong></td>
+        <td>20–30 customers; practice group expansion begins</td>
+        <td class="text-right">5</td>
+        <td class="text-right">$45K</td>
+        <td class="text-right fw-bold">$0.9–1.35M</td>
+      </tr>
+      <tr>
+        <td><strong>Year 3</strong></td>
+        <td>40–60 customers; firm-wide rollouts, enterprise deals</td>
+        <td class="text-right">8</td>
+        <td class="text-right">$65K</td>
+        <td class="text-right fw-bold">$2.6–3.9M</td>
+      </tr>
+      <tr>
+        <td><strong>Year 4</strong></td>
+        <td>70–110 customers; partner-led channel sales, multi-office firms</td>
+        <td class="text-right">10</td>
+        <td class="text-right">$80K</td>
+        <td class="text-right fw-bold">$5.6–8.8M</td>
+      </tr>
+      <tr class="highlight-row">
+        <td><strong>Year 5</strong></td>
+        <td>100–150 customers; established category leader</td>
+        <td class="text-right">12</td>
+        <td class="text-right">$95K</td>
+        <td class="text-right fw-bold">$9.5–14.25M</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>
+    These projections assume conservative seat growth—3 to 12 seats per client over five years. A mid-size
+    law firm with 50+ litigators represents a potential $200K–500K/year account. Because expansion revenue
+    is driven by internal demand rather than outbound sales, <strong>the cost of growing existing accounts
+    is near zero</strong>, and once multiple attorneys across a firm depend on The Owl's Eye for daily casework,
+    switching costs become prohibitive—creating durable, defensible revenue.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- MARKET OPPORTUNITY + ROI (side by side)     -->
+  <!-- ═══════════════════════════════════════════ -->
+
+  <div class="info-grid no-break">
+    <div class="info-box">
+      <h3>Market Opportunity</h3>
+      <ul class="doc-list">
+        <li><strong>Legal defense &amp; litigation:</strong> $10–20B in PI and e-discovery spend (currently manual)</li>
+        <li><strong>Corporate investigations:</strong> $2B + $5.5–7B forensic accounting (currently manual)</li>
+        <li><strong>Insurance fraud:</strong> $2–8B investigation spend (currently manual)</li>
+        <li><strong>Financial compliance:</strong> Billions in AML/transaction review (currently manual)</li>
+      </ul>
+    </div>
+    <div class="info-box">
+      <h3>ROI &amp; Performance</h3>
+      <ul class="doc-list">
+        <li><strong>70–80%</strong> cost savings per case</li>
+        <li><strong>90%</strong> reduction in processing time</li>
+        <li><strong>1,000-doc case:</strong> $94K–104K manual vs. $19K–21K platform</li>
+        <li><strong>Savings:</strong> $29K–83K per case</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- INVESTMENT OPPORTUNITY (closing)            -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div class="closing-box no-break">
+    <h3>Investment Opportunity</h3>
+    <p>
+      <strong>The Owl's Eye represents a rare opportunity:</strong> a proven platform with live deployments, built by
+      domain experts, addressing a massive underserved market. Every new client becomes a compounding
+      revenue engine—a single $25K base license expands organically as attorneys across the firm
+      experience 10–25x ROI on every seat. We are seeking $1.5M in seed investment to commercialize and
+      spin off The Owl's Eye: a platform built through close collaboration between domain practitioners
+      and engineers.
+    </p>
+  </div>
+
+</div>
+
+<!-- Footer -->
+<div class="page-footer">
+  <span class="gold">Owl Consultancy Group</span> &nbsp;|&nbsp; Washington, DC &nbsp;|&nbsp; Confidential Executive Summary &nbsp;|&nbsp; 2026
+</div>
+
+</body>
+</html>

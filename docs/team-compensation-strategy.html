@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Owl's Eye — Founding Team & Compensation Strategy</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=Source+Sans+Pro:ital,wght@0,300;0,400;0,600;0,700;1,400&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+      line-height: 1.7;
+      color: #2c3e50;
+      background: #fff;
+    }
+
+    .cover-banner {
+      background: linear-gradient(135deg, #111e33 0%, #1a2744 40%, #263d5e 100%);
+      color: white;
+      text-align: center;
+      padding: 2.5rem 2rem 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .cover-banner::before {
+      content: '';
+      position: absolute;
+      top: -40%;
+      right: -20%;
+      width: 60%;
+      height: 180%;
+      background: radial-gradient(ellipse, rgba(200,149,60,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .cover-banner h1 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .cover-banner .subtitle {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.05rem;
+      font-style: italic;
+      opacity: 0.8;
+      letter-spacing: 0.5px;
+    }
+    .gold-rule {
+      width: 80px;
+      height: 3px;
+      background: #c8953c;
+      margin: 1rem auto 0;
+      border: none;
+    }
+
+    .page {
+      max-width: 850px;
+      margin: 0 auto;
+      padding: 2rem 3rem 3rem;
+    }
+
+    .section-header {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #1a2744;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin: 2.2rem 0 0.9rem;
+      padding-left: 0.75rem;
+      border-left: 4px solid #c8953c;
+    }
+
+    p {
+      margin-bottom: 1rem;
+      font-size: 0.93rem;
+      color: #34495e;
+    }
+
+    strong, b { color: #1a2744; }
+
+    .highlight { color: #c8953c; font-weight: 700; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+    thead th {
+      background: #1a2744;
+      color: white;
+      font-weight: 600;
+      text-align: left;
+      padding: 0.55rem 0.85rem;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    tbody td {
+      padding: 0.5rem 0.85rem;
+      border-bottom: 1px solid #e8e8e8;
+    }
+    tbody tr:nth-child(even) {
+      background: #f9f9fb;
+    }
+    .text-right { text-align: right; }
+    .fw-bold { font-weight: 700; color: #1a2744; }
+    .highlight-row { background: #f0f4ff !important; }
+    .highlight-row td { font-weight: 600; }
+
+    .callout-box {
+      background: linear-gradient(135deg, #1a2744 0%, #2a3f66 100%);
+      color: white;
+      border-radius: 8px;
+      padding: 1.3rem 1.75rem;
+      margin: 1.25rem 0;
+    }
+    .callout-box h3 {
+      color: #c8953c;
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.05rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 0.6rem;
+    }
+    .callout-box p {
+      color: rgba(255,255,255,0.9);
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    .callout-box p:last-child { margin-bottom: 0; }
+
+    .closing-box {
+      background: #f8f6f1;
+      border: 2px solid #c8953c;
+      border-radius: 8px;
+      padding: 1.25rem 1.5rem;
+      margin: 2rem 0 1rem;
+    }
+    .closing-box h3 {
+      font-family: 'Cormorant Garamond', Georgia, serif;
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #1a2744;
+      margin: 0 0 0.6rem;
+    }
+    .closing-box p { margin-bottom: 0; }
+
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #ddd, transparent);
+      margin: 2rem 0;
+    }
+
+    .page-footer {
+      background: #1a2744;
+      color: rgba(255,255,255,0.7);
+      text-align: center;
+      padding: 0.9rem 2rem;
+      font-size: 0.78rem;
+      letter-spacing: 0.5px;
+    }
+    .page-footer .gold { color: #c8953c; font-weight: 600; }
+
+    @media print {
+      body { background: white; }
+      .page { padding: 0 1.5rem; max-width: 100%; }
+      .cover-banner { padding: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="cover-banner">
+  <h1>The Owl's Eye Platform</h1>
+  <div class="subtitle">Founding Team &amp; Compensation Strategy</div>
+  <hr class="gold-rule">
+</div>
+
+<div class="page">
+
+  <!-- ─── Founding Team ─── -->
+  <h2 class="section-header">Founding Team</h2>
+
+  <p>
+    The Owl's Eye was conceived, designed, and built by three co-founders whose combined expertise spans
+    investigation, AI engineering, and scalable systems architecture&mdash;allowing the platform to progress
+    from concept to live deployment without outside capital.
+  </p>
+
+  <p>
+    <strong>Alexandra Sol&oacute;rzano &mdash; Founder, CEO &amp; Lead Investigator.</strong>
+    Licensed private investigator with over ten years of experience in federal criminal defence, white collar
+    crime, and financial fraud. Alexandra is the domain authority behind the platform&mdash;translating
+    real-world investigative demands into product design and ensuring The Owl's Eye solves the problems
+    practitioners actually face.
+  </p>
+
+  <p>
+    <strong>Neil Byrne &mdash; Co-Founder &amp; CTO.</strong>
+    Solutions engineer with over ten years across data engineering, AI systems, and full-stack development.
+    Responsible for platform architecture, AI pipeline design, and technical strategy. Neil drives the
+    technology vision that underpins the platform's intelligence capabilities and competitive differentiation.
+  </p>
+
+  <p>
+    <strong>Conor Bowles &mdash; Co-Founder &amp; Head of Engineering.</strong>
+    Software engineer specialising in data infrastructure, security, and scalable systems. Responsible for
+    core platform engineering, database architecture, and deployment operations. Conor ensures the product
+    is reliable, secure, and deployable within client environments at enterprise standards.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ─── Compensation Strategy ─── -->
+  <h2 class="section-header">Compensation Strategy</h2>
+
+  <p>
+    Our approach to founding team compensation reflects a deliberate and capital-efficient transition
+    strategy designed to preserve runway while ensuring the platform has the daily engineering capacity
+    it needs to operate as a commercial product. Within the $1.5M seed round, total R&amp;D allocation
+    stands at $750K, of which founding team compensation represents $480K&mdash;split between the CEO
+    at $180K, the CTO at $180K, and an Engineering allocation of $120K over an 18&ndash;24 month runway.
+    These figures are structured to accommodate a phased commitment model rather than placing all three
+    founders on full-time salaries from day one.
+  </p>
+
+  <p>
+    <strong>Conor Bowles transitions to full-time immediately.</strong> A commercial product requires someone
+    whose entire working day is dedicated to the platform: shipping features, onboarding customers technically,
+    managing production infrastructure, and responding to issues in real time. As Head of Engineering, Conor
+    becomes the daily engine of the operation&mdash;the person who keeps the product moving forward at the
+    pace paying customers expect. His full-time rate is set at approximately $5,500&ndash;$6,500 per month, a
+    startup-weighted rate that reflects both the equity position he holds as a co-founder and the reality
+    of early-stage compensation. This is roughly 55&ndash;65% of the market rate for an equivalent
+    infrastructure and full-stack engineering role in the Washington, DC market.
+  </p>
+
+  <p>
+    <strong>Neil Byrne remains part-time initially, with a defined transition trigger.</strong> The CTO
+    allocation of $180K matches the CEO allocation, reflecting the seniority and strategic importance of
+    the role. During the part-time phase, the draw is structured at approximately $10,000 per month,
+    ensuring consistent availability for the work that requires his ten years of experience: architecture
+    decisions, AI pipeline strategy, sprint planning, code reviews, and major feature design. These are the
+    high-leverage tasks that shape the product's technical trajectory but do not yet require forty hours
+    per week. The R&amp;D contingency of $75K is deliberately structured to serve as the reserve for
+    Neil's transition to full-time. If by month eight to ten the company has ten or more paying customers
+    and the development backlog is growing faster than Conor and a junior developer can handle, the
+    transition is triggered. The contingency covers the incremental cost of moving from part-time to
+    full-time commitment, providing a clear financial path without requiring additional fundraising.
+  </p>
+
+  <p>
+    <strong>Alexandra Sol&oacute;rzano operates as full-time CEO from the outset.</strong> With the platform
+    entering its commercial phase, the CEO role encompasses investor relations, sales leadership, customer
+    relationships, and the ongoing translation of investigative domain expertise into product direction.
+    Her allocation of $180K over the runway period represents a founder-rate salary that is significantly
+    below market for a CEO role at a venture-backed company, consistent with the team's commitment to
+    capital efficiency.
+  </p>
+
+  <p>
+    <strong>The trigger for the CTO going full-time</strong> is clearly defined: when customer onboarding
+    demand, feature requests, or AI pipeline complexity requires more than fifteen to twenty hours per week
+    of CTO-level work. Based on our projections, this is likely to occur around the ten to fifteen customer
+    mark, or when the platform begins building domain-specific profiles for new verticals such as healthcare
+    fraud or AML compliance. Investors should note that this is a disciplined approach&mdash;founders have
+    thought carefully about when each transition makes financial and operational sense rather than assuming
+    everyone goes full-time on day one.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ─── Founder Economics ─── -->
+  <h2 class="section-header">Founder Economics</h2>
+
+  <div class="callout-box">
+    <h3>Below-Market Commitment</h3>
+    <p>
+      The combined founding team draw of approximately $480K over an 18&ndash;24 month runway represents
+      roughly 45&ndash;55% of the market rate for the roles being performed. At equivalent market
+      compensation in the Washington, DC area, a CEO, CTO, and Head of Engineering would collectively
+      command $400K&ndash;500K per year&mdash;meaning the founding team is effectively contributing
+      $350K&ndash;500K in foregone salary over the runway period alone.
+    </p>
+    <p>
+      This is in addition to the engineering value already built. The Owl's Eye platform&mdash;spanning
+      a hybrid AI/graph intelligence engine, full-stack web application, document ingestion pipeline,
+      and on-premise deployment architecture&mdash;would have cost an estimated
+      <strong style="color: #c8953c;">$500K&ndash;$800K</strong> to develop at market engineering rates.
+      The founding team built it for a fraction of that cost because they believed in it. Combined with
+      the below-market salaries going forward, total founder contribution exceeds
+      <strong style="color: #c8953c;">$1M</strong> before any outside capital is deployed.
+    </p>
+  </div>
+
+  <p>
+    This level of founder commitment is exactly what seed investors look for. It demonstrates conviction
+    in the product, discipline in capital allocation, and a team that treats investor capital as a
+    multiplier on their own investment rather than a substitute for it. Every dollar of the $1.5M seed
+    round is directed toward commercial acceleration&mdash;scaling what already works&mdash;not toward
+    building something from scratch or paying founders at market rates.
+  </p>
+
+  <div class="divider"></div>
+
+  <!-- ─── Compensation Table ─── -->
+  <h2 class="section-header">R&amp;D Compensation Summary</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th>Status</th>
+        <th class="text-right">Monthly Rate</th>
+        <th class="text-right">18-Month Total</th>
+        <th>Notes</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>CEO &amp; Lead Investigator</strong></td>
+        <td>Full-time</td>
+        <td class="text-right fw-bold">$10,000</td>
+        <td class="text-right fw-bold">$180,000</td>
+        <td>Founder rate; ~50% of market</td>
+      </tr>
+      <tr>
+        <td><strong>CTO</strong></td>
+        <td>Part-time &rarr; Full-time</td>
+        <td class="text-right fw-bold">$10,000</td>
+        <td class="text-right fw-bold">$180,000</td>
+        <td>Founder rate; transitions to full-time when demand justifies</td>
+      </tr>
+      <tr>
+        <td><strong>Head of Engineering</strong></td>
+        <td>Full-time</td>
+        <td class="text-right fw-bold">$5,500&ndash;$6,500</td>
+        <td class="text-right fw-bold">$100K&ndash;$120K</td>
+        <td>First full-time technical hire; startup rate</td>
+      </tr>
+      <tr>
+        <td><strong>Junior Developer</strong></td>
+        <td>From month 9+</td>
+        <td class="text-right fw-bold">~$4,500</td>
+        <td class="text-right fw-bold">~$40K</td>
+        <td>Frontend, QA, deployment support</td>
+      </tr>
+      <tr>
+        <td><strong>Contractors</strong></td>
+        <td>As needed</td>
+        <td class="text-right fw-bold">Variable</td>
+        <td class="text-right fw-bold">$126K</td>
+        <td>Specialist features, domain profiles</td>
+      </tr>
+      <tr class="highlight-row">
+        <td><strong>R&amp;D Contingency</strong></td>
+        <td>&mdash;</td>
+        <td class="text-right">&mdash;</td>
+        <td class="text-right fw-bold">$75K</td>
+        <td>Includes CTO full-time transition reserve</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="divider"></div>
+
+  <!-- ─── Closing ─── -->
+  <div class="closing-box">
+    <h3>Capital Efficiency by Design</h3>
+    <p>
+      The founding team's compensation strategy is not an afterthought&mdash;it is a core element of our
+      capital efficiency thesis. By phasing founder commitments against real commercial milestones, we
+      ensure that every salary dollar is justified by customer traction rather than assumed. Combined with
+      over $1M in pre-investment founder contribution, this structure gives investors confidence that
+      their capital will be deployed with the same discipline the team has demonstrated from day one.
+    </p>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  <span class="gold">Owl Consultancy Group</span> &nbsp;|&nbsp; Washington, DC &nbsp;|&nbsp; Confidential &nbsp;|&nbsp; 2026
+</div>
+
+</body>
+</html>

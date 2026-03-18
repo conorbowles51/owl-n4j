@@ -491,7 +491,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       {/* Bottom: Table (left) + Charts (right) side by side */}
       <div className="flex-1 min-h-0 flex border-t border-light-200">
         {/* Left: Transaction table */}
-        <div className="w-[55%] min-w-0 border-r border-light-200">
+        <div className="w-[80%] min-w-0 border-r border-light-200">
           <FinancialTable
             transactions={filteredTransactions}
             categories={categoryNames}
@@ -510,7 +510,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           />
         </div>
         {/* Right: Charts */}
-        <div className="w-[45%] min-w-0 overflow-y-auto p-3">
+        <div className="w-[20%] min-w-0 overflow-y-auto p-3">
           <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} categoryColorMap={categoryColorMap} />
         </div>
       </div>

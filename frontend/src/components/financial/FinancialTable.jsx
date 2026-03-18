@@ -259,7 +259,7 @@ const TransactionDetailRow = memo(function TransactionDetailRow({ txn, onDetails
   return (
     <tr className="bg-light-50 border-b border-light-200">
       <td colSpan={10} className="px-4 py-3">
-        <div className="space-y-2 max-w-2xl">
+        <div className="space-y-2">
           {txn.summary && (
             <div>
               <span className="text-xs text-light-500 font-medium">AI Summary:</span>
