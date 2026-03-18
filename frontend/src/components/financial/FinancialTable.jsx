@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
-import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight, FileText } from 'lucide-react';
+import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight, FileText, ChevronsLeft, ChevronLeft, ChevronsRight } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 import { CATEGORY_COLORS } from './constants';
 import { graphAPI, financialAPI } from '../../services/api';
@@ -373,6 +373,19 @@ export default function FinancialTable({
     return arr;
   }, [transactions, sortField, sortDir]);
 
+  // Pagination
+  const [pageSize, setPageSize] = useState(100);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to page 1 when data or sort changes
+  useEffect(() => { setCurrentPage(1); }, [transactions, sortField, sortDir]);
+
+  const totalPages = Math.ceil(sorted.length / pageSize);
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
+
   const isSelected = (key) => selectedKeys.includes(key);
 
   const toggleSelection = (key) => {
@@ -384,10 +397,13 @@ export default function FinancialTable({
   };
 
   const toggleAll = () => {
-    if (selectedKeys.length === sorted.length) {
-      onSelectionChange([]);
+    const pageKeys = paginatedRows.map(t => t.key);
+    const allPageSelected = pageKeys.every(k => selectedKeys.includes(k));
+    if (allPageSelected) {
+      onSelectionChange(selectedKeys.filter(k => !pageKeys.includes(k)));
     } else {
-      onSelectionChange(sorted.map(t => t.key));
+      const combined = new Set([...selectedKeys, ...pageKeys]);
+      onSelectionChange([...combined]);
     }
   };
 
@@ -513,19 +529,31 @@ export default function FinancialTable({
       )}
 
       {/* Table */}
-      <div className="flex-1 overflow-auto">
-        <table className="w-full text-xs">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <table className="w-full text-xs table-fixed">
+          <colgroup>
+            <col className="w-8" />
+            <col className="w-7" />
+            <col style={{ width: '80px' }} />
+            <col style={{ width: '52px' }} />
+            <col />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '90px' }} />
+            <col style={{ width: '76px' }} />
+            <col style={{ width: '10%' }} />
+            <col className="w-8" />
+          </colgroup>
           <thead className="sticky top-0 bg-light-50 z-10">
             <tr className="border-b border-light-200">
-              <th className="px-2 py-2 text-left w-8">
+              <th className="px-2 py-2 text-left">
                 <input
                   type="checkbox"
-                  checked={selectedKeys.length === sorted.length && sorted.length > 0}
+                  checked={paginatedRows.length > 0 && paginatedRows.every(t => selectedKeys.includes(t.key))}
                   onChange={toggleAll}
                   className="rounded border-light-300"
                 />
               </th>
-              <th className="px-1 py-2 w-6">
+              <th className="px-1 py-2">
                 <button
                   onClick={() => setShowAllSummaries(s => !s)}
                   className={`p-0.5 rounded transition-colors ${showAllSummaries ? 'text-owl-blue-600 bg-owl-blue-100' : 'text-light-400 hover:text-light-600'}`}
@@ -542,7 +570,7 @@ export default function FinancialTable({
                 { key: 'amount', label: 'Amount' },
                 { key: 'type', label: 'Type' },
                 { key: 'category', label: 'Category' },
-                { key: 'actions', label: 'Actions', sortable: false },
+                { key: 'actions', label: '', sortable: false },
               ].map(col => (
                 <th
                   key={col.key}
@@ -558,7 +586,7 @@ export default function FinancialTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map(txn => {
+            {paginatedRows.map(txn => {
               const amount = parseFloat(txn.amount);
               const amountColor = amount >= 0 ? '#22c55e' : '#ef4444';
               const typeColor = TYPE_COLORS[txn.type] || TYPE_COLORS.Other;
@@ -604,9 +632,9 @@ export default function FinancialTable({
                         )}
                       </div>
                     </td>
-                    <td className="px-2 py-1.5 text-light-700 whitespace-nowrap">{txn.date || '-'}</td>
-                    <td className="px-2 py-1.5 text-light-500 whitespace-nowrap">{txn.time || '-'}</td>
-                    <td className="px-2 py-1.5 text-light-900 font-medium truncate max-w-[180px]" title={txn.name}>
+                    <td className="px-2 py-1.5 text-light-700 whitespace-nowrap truncate">{txn.date || '-'}</td>
+                    <td className="px-2 py-1.5 text-light-500 whitespace-nowrap truncate">{txn.time || '-'}</td>
+                    <td className="px-2 py-1.5 text-light-900 font-medium overflow-hidden" title={txn.name}>
                       <span className="flex items-center gap-1">
                         {isChild && <CornerDownRight className="w-3 h-3 text-light-400 flex-shrink-0" />}
                         {isParent && <Link2 className="w-3 h-3 text-owl-blue-500 flex-shrink-0" title="Parent transaction" />}
@@ -742,16 +770,10 @@ export default function FinancialTable({
                       />
                     </td>
                   </tr>
-                  {showAllSummaries && !isExpanded && txn.summary && (
+                  {txn.summary && (
                     <tr className="border-b border-light-100">
-                      <td colSpan={10} className="px-4 py-2 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
-                        <div className="flex items-start gap-2">
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-owl-blue-500 bg-owl-blue-100/60 px-1.5 py-0.5 rounded flex-shrink-0 mt-px">
-                            <FileText className="w-3 h-3" />
-                            AI Summary
-                          </span>
-                          <p className="text-xs text-light-700 leading-relaxed">{txn.summary}</p>
-                        </div>
+                      <td colSpan={10} className="px-4 py-1 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
+                        <p className="text-xs text-light-600 leading-relaxed">{txn.summary}</p>
                       </td>
                     </tr>
                   )}
@@ -790,15 +812,15 @@ export default function FinancialTable({
                           >
                             <td className="px-2 py-1.5"></td>
                             <td className="px-1 py-1.5"></td>
-                            <td className="px-2 py-1.5 text-light-700 whitespace-nowrap">{child.date || '-'}</td>
-                            <td className="px-2 py-1.5 text-light-500 whitespace-nowrap">{child.time || '-'}</td>
-                            <td className="px-2 py-1.5 text-light-800 truncate max-w-[180px]" title={child.name}>
+                            <td className="px-2 py-1.5 text-light-700 whitespace-nowrap truncate">{child.date || '-'}</td>
+                            <td className="px-2 py-1.5 text-light-500 whitespace-nowrap truncate">{child.time || '-'}</td>
+                            <td className="px-2 py-1.5 text-light-800 overflow-hidden" title={child.name}>
                               <span className="flex items-center gap-1">
                                 <CornerDownRight className="w-3 h-3 text-light-400 flex-shrink-0" />
                                 <span className="truncate">{child.name}</span>
                               </span>
                             </td>
-                            <td className="px-2 py-1.5 text-xs text-light-500">
+                            <td className="px-2 py-1.5 text-xs text-light-500 truncate">
                               {child.from_name && child.to_name
                                 ? `${child.from_name} → ${child.to_name}`
                                 : child.from_name || child.to_name || '-'}
@@ -814,7 +836,7 @@ export default function FinancialTable({
                                 {child.type}
                               </span>
                             </td>
-                            <td className="px-2 py-1.5 text-xs text-light-500">
+                            <td className="px-2 py-1.5 text-xs text-light-500 truncate">
                               {child.category || '-'}
                             </td>
                             <td className="px-1 py-1.5">
@@ -834,7 +856,7 @@ export default function FinancialTable({
                 </React.Fragment>
               );
             })}
-            {sorted.length === 0 && (
+            {paginatedRows.length === 0 && (
               <tr>
                 <td colSpan={10} className="px-4 py-8 text-center text-light-500">
                   No transactions match the current filters
@@ -844,6 +866,42 @@ export default function FinancialTable({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Controls */}
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between px-3 py-2 border-t border-light-200 bg-light-50 text-xs text-light-600">
+          <div className="flex items-center gap-2">
+            <span>Rows per page:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+              className="border border-light-200 rounded px-1 py-0.5 text-xs focus:outline-none focus:border-owl-blue-400"
+            >
+              {[50, 100, 200, 500].map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            <span className="text-light-500">
+              {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronsLeft className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
+            <span className="px-2">Page {currentPage} of {totalPages}</span>
+            <button onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage >= totalPages} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage >= totalPages} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronsRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Sub-Transaction Grouping Modal */}
       <SubTransactionModal

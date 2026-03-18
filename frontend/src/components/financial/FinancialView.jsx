@@ -22,7 +22,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [endDate, setEndDate] = useState(null);
   const [entityFilter, setEntityFilter] = useState(null); // { key, name }
   const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
-  const [filterExpanded, setFilterExpanded] = useState(true);
+  const [filterExpanded, setFilterExpanded] = useState(false);
 
   // Selection state for batch operations
   const [selectedKeys, setSelectedKeys] = useState([]);

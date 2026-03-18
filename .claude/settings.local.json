@@ -20,7 +20,19 @@
       "Bash(npm run build:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(curl:*)",
+      "Bash(systemctl status:*)",
+      "Bash(journalctl:*)",
+      "Bash(kill:*)",
+      "Bash(dmesg:*)",
+      "Bash(systemctl stop:*)",
+      "Bash(systemctl reset-failed:*)",
+      "Bash(git log:*)",
+      "Bash(systemctl daemon-reload:*)",
+      "Bash(cd:*)",
+      "Bash(systemctl restart:*)",
+      "Bash(chown:*)"
     ]
   }
 }

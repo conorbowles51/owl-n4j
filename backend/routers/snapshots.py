@@ -4,6 +4,8 @@ Snapshots Router
 Handles saving and retrieving investigation snapshots (saved subgraphs, timelines, notes, etc.)
 """
 
+import asyncio
+import time
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends
@@ -354,6 +356,21 @@ async def restore_snapshot(snapshot_data: dict, user: dict = Depends(get_current
 
 # In-memory storage for assembling chunks during upload
 _chunk_upload_cache = {}
+_CHUNK_CACHE_TTL_SECONDS = 30 * 60  # 30 minutes
+
+
+async def _cleanup_stale_chunks():
+    """Background task that periodically removes orphaned chunk cache entries."""
+    while True:
+        await asyncio.sleep(60)  # Check every minute
+        now = time.monotonic()
+        stale_ids = [
+            sid for sid, entry in _chunk_upload_cache.items()
+            if now - entry.get("_created_at", now) > _CHUNK_CACHE_TTL_SECONDS
+        ]
+        for sid in stale_ids:
+            print(f"[chunk-cache] Evicting stale entry: {sid}")
+            del _chunk_upload_cache[sid]
 
 
 @router.post("/upload-chunk")
@@ -363,17 +380,18 @@ async def upload_snapshot_chunk(
 ):
     """
     Upload a chunk of snapshot data (for very large snapshots that can't be stringified in frontend).
-    
+
     The frontend sends chunks sequentially, and the backend reassembles them.
     Call this endpoint multiple times with chunk_index incrementing, and set is_last_chunk=True on the final chunk.
     """
     snapshot_id = chunk.snapshot_id
-    
+
     # Initialize cache for this snapshot if first chunk
     if snapshot_id not in _chunk_upload_cache:
         _chunk_upload_cache[snapshot_id] = {
             "chunks": {},
             "owner": user["username"],
+            "_created_at": time.monotonic(),
         }
     
     # Store this chunk

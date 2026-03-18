@@ -122,6 +122,7 @@ export default function App() {
   // Graph state
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [fullGraphData, setFullGraphData] = useState({ nodes: [], links: [] }); // Store unfiltered graph
+  const [totalEntityCount, setTotalEntityCount] = useState(0); // Total entities in case (for graph cap banner)
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   // Rich operation status for graph analysis operations
@@ -576,26 +577,43 @@ export default function App() {
   });
 
   // Apply search filter to graph data
+  const GRAPH_VIEW_NODE_LIMIT = 100;
+
   const applyGraphFilter = useCallback((data, searchTerm) => {
-    if (!searchTerm) {
-      setGraphData(data);
-      return;
+    let nodes = data.nodes;
+    let isFiltered = false;
+
+    // Apply search filter if present
+    if (searchTerm) {
+      const queryAST = parseSearchQuery(searchTerm);
+      const searchOpts = { allFields: graphSearchFieldScope === 'all' };
+      nodes = nodes.filter(node => matchesQuery(queryAST, node, searchOpts));
+      isFiltered = true;
     }
 
-    const queryAST = parseSearchQuery(searchTerm);
-    const searchOpts = { allFields: graphSearchFieldScope === 'all' };
-    const matchingNodes = data.nodes.filter(node => matchesQuery(queryAST, node, searchOpts));
+    // Cap the graph view to the top N nodes by connection degree
+    // (only when showing the full unfiltered graph — searches show all matches)
+    if (!isFiltered && nodes.length > GRAPH_VIEW_NODE_LIMIT) {
+      // Count degree for each node from the full link set
+      const degree = {};
+      for (const link of data.links) {
+        const sk = typeof link.source === 'string' ? link.source : link.source.key;
+        const tk = typeof link.target === 'string' ? link.target : link.target.key;
+        degree[sk] = (degree[sk] || 0) + 1;
+        degree[tk] = (degree[tk] || 0) + 1;
+      }
+      // Sort nodes by degree descending, take top N
+      nodes = [...nodes].sort((a, b) => (degree[b.key] || 0) - (degree[a.key] || 0)).slice(0, GRAPH_VIEW_NODE_LIMIT);
+    }
 
-    const matchingNodeKeys = new Set(matchingNodes.map(n => n.key));
-
-    // Filter links to only include connections between matching nodes
-    const matchingLinks = data.links.filter(link => {
+    const nodeKeys = new Set(nodes.map(n => n.key));
+    const links = data.links.filter(link => {
       const sourceKey = typeof link.source === 'string' ? link.source : link.source.key;
       const targetKey = typeof link.target === 'string' ? link.target : link.target.key;
-      return matchingNodeKeys.has(sourceKey) && matchingNodeKeys.has(targetKey);
+      return nodeKeys.has(sourceKey) && nodeKeys.has(targetKey);
     });
 
-    setGraphData({ nodes: matchingNodes, links: matchingLinks });
+    setGraphData({ nodes, links });
   }, [graphSearchFieldScope]);
 
   // -- Graph operation helpers --
@@ -657,24 +675,39 @@ export default function App() {
     }
   }, [getAnalysisScope]);
 
-  // Load graph data
+  // Load graph data — two-phase: lightweight top-100 for instant render, then full data in background
   const loadGraph = useCallback(async (caseIdOverride = null) => {
     setIsLoading(true);
     setError(null);
     try {
-      // Use caseIdOverride if provided, otherwise use currentCaseId
       const caseId = caseIdOverride !== null ? caseIdOverride : currentCaseId;
-      const data = await graphAPI.getGraph({
+      const fetchOpts = {
         case_id: caseId,
         start_date: dateRange.start_date,
         end_date: dateRange.end_date,
+      };
+
+      // Phase 1: Fetch lightweight top-100 by degree for fast graph render
+      const preview = await graphAPI.getGraph({
+        ...fetchOpts,
+        lightweight: true,
+        limit: GRAPH_VIEW_NODE_LIMIT,
+        sort_by: 'degree',
       });
-      setFullGraphData(data);
-      // Apply search filter if exists
-      applyGraphFilter(data, graphSearchTerm);
+      // Store the total count from the lightweight response so the banner can show it immediately
+      const previewTotalCount = preview.total_node_count || preview.nodes.length;
+      setTotalEntityCount(previewTotalCount);
+      setGraphData(preview);
+      setIsLoading(false);
+
+      // Phase 2: Fetch full graph in background for search/table/subgraph/etc
+      const full = await graphAPI.getGraph(fetchOpts);
+      setFullGraphData(full);
+      setTotalEntityCount(full.nodes.length);
+      // Re-apply filter (will cap to top-100 again for graph view, but fullGraphData is now complete)
+      applyGraphFilter(full, graphSearchTerm);
     } catch (err) {
       setError(err.message);
-    } finally {
       setIsLoading(false);
     }
   }, [currentCaseId, dateRange, graphSearchTerm, applyGraphFilter]);
@@ -2831,49 +2864,35 @@ export default function App() {
         }));
 
         try {
-          // Get the current case to find all existing snapshots from the current version
+          // Get the current case to find existing snapshot IDs from the current version
           const currentCase = await casesAPI.get(currentCaseId);
-          const snapshotData = [];
-          
-          // Get all snapshots from the current version (most recent version)
+          const snapshotRefs = [];
+
+          // Collect lightweight references to existing snapshots (no re-fetching full data)
           if (currentCase.versions && currentCase.versions.length > 0) {
             const latestVersion = currentCase.versions[0];
             if (latestVersion.snapshots && latestVersion.snapshots.length > 0) {
-              // Load full snapshot data for all existing snapshots in this version
               for (const snap of latestVersion.snapshots) {
-                try {
-                  // If it's already a full snapshot object, use it; otherwise fetch it
-                  if (snap.subgraph || snap._chunked) {
-                    snapshotData.push(snap);
-                  } else {
-                    const fullSnapshot = await snapshotsAPI.get(snap.id);
-                    snapshotData.push(fullSnapshot);
-                  }
-                } catch (err) {
-                  console.warn(`Failed to load snapshot ${snap.id}:`, err);
-                  // If we can't load it, try to use the metadata we have
-                  if (snap.id) {
-                    snapshotData.push(snap);
-                  }
-                }
+                // Keep just the reference — the full data is already saved in snapshot storage
+                snapshotRefs.push({ id: snap.id, name: snap.name, timestamp: snap.timestamp });
               }
             }
           }
-          
-          // Add the newly saved snapshot (avoid duplicates)
-          const existingIds = new Set(snapshotData.map(s => s.id));
+
+          // Add the newly saved snapshot reference (avoid duplicates)
+          const existingIds = new Set(snapshotRefs.map(s => s.id));
           if (!existingIds.has(savedSnapshot.id)) {
-            snapshotData.push(savedSnapshot);
+            snapshotRefs.push({ id: savedSnapshot.id, name: savedSnapshot.name, timestamp: savedSnapshot.timestamp });
           }
-          
-          console.log(`Auto-saving case with ${snapshotData.length} snapshots (including new one)`);
-          
-          // Save case with updated snapshots
+
+          console.log(`Auto-saving case with ${snapshotRefs.length} snapshot references (including new one)`);
+
+          // Save case with snapshot references only — full snapshot data lives in snapshot storage
           await casesAPI.save({
             case_id: currentCaseId,
             case_name: currentCaseName,
             graph_data: fullGraphData,
-            snapshots: snapshotData,
+            snapshots: snapshotRefs,
             save_notes: `Auto-saved after snapshot: ${snapshot.name}`,
           });
           
@@ -4173,6 +4192,7 @@ export default function App() {
                   {paneViewMode !== 'full' && (
                     <GraphView
                       graphData={graphData}
+                      fullNodeCount={totalEntityCount}
                       selectedNodes={selectedNodes}
                       onNodeClick={handleNodeClick}
                       onBulkNodeSelect={handleBulkNodeSelect}
@@ -4778,6 +4798,7 @@ export default function App() {
               <GraphView
                 ref={mainGraphRef}
                 graphData={graphData}
+                fullNodeCount={totalEntityCount}
                 selectedNodes={selectedNodes}
                 onNodeClick={handleNodeClick}
                 onBulkNodeSelect={handleBulkNodeSelect}

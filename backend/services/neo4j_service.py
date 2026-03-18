@@ -245,6 +245,14 @@ class Neo4jService:
             # Smart cap: return top-N nodes by degree
             if limit and sort_by == "degree" and not start_date and not end_date:
                 params["limit"] = limit
+
+                # Get total node count first (fast count query)
+                total_result = session.run(
+                    "MATCH (n) WHERE n.case_id = $case_id RETURN count(n) AS cnt",
+                    case_id=case_id,
+                )
+                total_node_count = total_result.single()["cnt"]
+
                 nodes_result = session.run(
                     """
                     MATCH (n)
@@ -293,7 +301,7 @@ class Neo4jService:
                             "weight": record["weight"],
                         })
 
-                return {"nodes": nodes, "links": links}
+                return {"nodes": nodes, "links": links, "total_node_count": total_node_count}
 
             if start_date or end_date:
                 date_conditions = []

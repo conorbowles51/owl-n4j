@@ -105,11 +105,14 @@ export const graphAPI = {
    * @param {string} [options.start_date] - Filter start date (YYYY-MM-DD)
    * @param {string} [options.end_date] - Filter end date (YYYY-MM-DD)
    */
-  getGraph: ({ case_id, start_date, end_date } = {}) => {
+  getGraph: ({ case_id, start_date, end_date, lightweight, limit, sort_by } = {}) => {
     const params = new URLSearchParams();
     params.append('case_id', case_id);
     if (start_date) params.append('start_date', start_date);
     if (end_date) params.append('end_date', end_date);
+    if (lightweight) params.append('lightweight', 'true');
+    if (limit) params.append('limit', String(limit));
+    if (sort_by) params.append('sort_by', sort_by);
 
     return fetchAPI(`/graph?${params.toString()}`);
   },
