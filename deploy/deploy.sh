@@ -126,6 +126,11 @@ if ! git pull origin main --ff-only; then
     exit 1
 fi
 
+# Ensure data directory stays owned by the app user (git pull runs as root)
+if [ -d "${PROJECT_DIR}/data" ]; then
+    chown -R "${DEPLOY_USER}:${DEPLOY_USER}" "${PROJECT_DIR}/data"
+fi
+
 NEW_COMMIT=$(git rev-parse HEAD)
 NEW_COMMIT_SHORT=$(git rev-parse --short HEAD)
 

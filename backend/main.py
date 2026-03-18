@@ -4,6 +4,7 @@ Investigation Console - FastAPI Backend
 Main entry point for the API server.
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,7 @@ from routers import (
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
+from routers.snapshots import _cleanup_stale_chunks
 
 
 @asynccontextmanager
@@ -52,7 +54,12 @@ async def lifespan(app: FastAPI):
 
     # Cases are now stored in PostgreSQL - no JSON file to reload
 
+    # Background task: clean up orphaned chunk upload cache entries
+    cleanup_task = asyncio.create_task(_cleanup_stale_chunks())
+
     yield
+
+    cleanup_task.cancel()
     # Shutdown
     print("Shutting down, closing Neo4j connection...")
     try:

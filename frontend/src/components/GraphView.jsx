@@ -102,6 +102,7 @@ function getCommunityColor(communityId) {
  */
 const GraphView = forwardRef(function GraphView({
   graphData,
+  fullNodeCount, // Total nodes in dataset (before graph view cap)
   selectedNodes = [],
   onNodeClick,
   onBulkNodeSelect, // New prop for bulk selection
@@ -1154,6 +1155,13 @@ const GraphView = forwardRef(function GraphView({
         backgroundColor="transparent"
       />
 
+      {/* Node cap info banner */}
+      {!isSubgraph && fullNodeCount > graphData.nodes.length && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700 shadow pointer-events-none">
+          Showing {graphData.nodes.length} of {fullNodeCount.toLocaleString()} entities (most connected). Use search or Spotlight to find others.
+        </div>
+      )}
+
       {/* Relevance tooltip on hover (result graph nodes only) */}
       {hoveredNode?.relevance_reason && graphRef.current && (() => {
         const coords = graphRef.current.graph2ScreenCoords(hoveredNode.x, hoveredNode.y);
@@ -1171,8 +1179,9 @@ const GraphView = forwardRef(function GraphView({
         );
       })()}
 
+
       {/* Legend */}
-      <div className={`absolute bottom-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-10 shadow-lg border border-light-200 ${
+      <div className={`absolute bottom-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 text-xs z-30 shadow-lg border border-light-200 ${
         isSubgraph ? 'left-[44px]' : 'left-4'
       }`}>
         {/* Relationship Labels Toggle - Only show in subgraph */}

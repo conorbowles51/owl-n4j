@@ -14,7 +14,24 @@
       "Bash(npx storybook:*)",
       "Bash(node:*)",
       "Bash(ls:*)",
-      "WebFetch(domain:localhost)"
+      "WebFetch(domain:localhost)",
+      "Bash(curl:*)",
+      "Bash(systemctl status:*)",
+      "Bash(journalctl:*)",
+      "Bash(kill:*)",
+      "Bash(dmesg:*)",
+      "Bash(systemctl stop:*)",
+      "Bash(systemctl reset-failed:*)",
+      "Bash(git log:*)",
+      "Bash(systemctl daemon-reload:*)",
+      "Bash(cd:*)",
+      "Bash(sudo -u conorbowles51 /home/conorbowles51/app_v2/venv/bin/python -c \"from main import app; print\\('Main import OK'\\)\" 2>&1)",
+      "Bash(systemctl restart:*)",
+      "Bash(chown:*)",
+      "Bash(sudo -u conorbowles51 /home/conorbowles51/app_v2/venv/bin/python3 scripts/categorize_transactions.py 2>&1 | grep -v '^\\\\\\(Received\\\\|One of\\\\|Neo\\\\.\\\\\\)')",
+      "Bash(sudo -u conorbowles51 /home/conorbowles51/app_v2/venv/bin/python3 scripts/categorize_transactions.py --apply 2>&1 | grep -v '^\\\\\\(Received\\\\|One of\\\\|Neo\\\\.\\\\\\)')",
+      "Bash(sudo -u conorbowles51 /home/conorbowles51/app_v2/venv/bin/python3 -c \"\nfrom services.neo4j_service import neo4j_service\nresult = neo4j_service.get_graph_structure\\(\n    case_id='c1f8a9d4-3b72-4e6c-8f1a-9d3b5c7e2f10',\n    limit=100, sort_by='degree'\n\\)\nprint\\(f'Nodes returned: {len\\(result[\\\\\"nodes\\\\\"]\\)}'\\)\nprint\\(f'Links returned: {len\\(result[\\\\\"links\\\\\"]\\)}'\\)\nprint\\(f'total_node_count: {result.get\\(\\\\\"total_node_count\\\\\", \\\\\"MISSING\\\\\"\\)}'\\)\n\" 2>&1 | grep -v '^\\\\\\(Received\\\\|One of\\\\|Neo\\\\.\\\\|\\\\[\\)')",
+      "Bash(git add:*)"
     ]
   }
 }

@@ -122,10 +122,17 @@ export default function FinancialFilterPanel({
   searchQuery = '',
   onSearchChange,
 }) {
+  const [showAllTypes, setShowAllTypes] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const CHIP_LIMIT = 15;
+
   const selectedTypeCount = selectedTypes.size;
   const totalTypeCount = transactionTypes.length;
   const selectedCatCount = selectedCategories.size;
   const totalCatCount = categories.length;
+
+  const visibleTypes = showAllTypes ? transactionTypes : transactionTypes.slice(0, CHIP_LIMIT);
+  const visibleCategories = showAllCategories ? categories : categories.slice(0, CHIP_LIMIT);
 
   return (
     <div className="bg-light-50 rounded-lg p-3 border border-light-200">
@@ -161,8 +168,8 @@ export default function FinancialFilterPanel({
                 <button onClick={onClearAllTypes} className="text-xs text-light-600 hover:text-light-800">None</button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {transactionTypes.map(type => {
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {visibleTypes.map(type => {
                 const isSelected = selectedTypes.has(type);
                 const color = TYPE_COLORS[type] || TYPE_COLORS.Other;
                 return (
@@ -180,6 +187,11 @@ export default function FinancialFilterPanel({
                   </button>
                 );
               })}
+              {transactionTypes.length > CHIP_LIMIT && (
+                <button onClick={() => setShowAllTypes(s => !s)} className="text-xs text-light-500 hover:text-light-700 px-1">
+                  {showAllTypes ? 'Show less' : `+${transactionTypes.length - CHIP_LIMIT} more`}
+                </button>
+              )}
             </div>
           </div>
 
@@ -204,8 +216,8 @@ export default function FinancialFilterPanel({
                 <button onClick={onClearAllCategories} className="text-xs text-light-600 hover:text-light-800">None</button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-1.5">
-              {categories.map(cat => {
+            <div className="flex flex-wrap gap-1.5 items-center">
+              {visibleCategories.map(cat => {
                 const isSelected = selectedCategories.has(cat);
                 const color = categoryColorMap[cat] || CATEGORY_COLORS[cat] || '#6b7280';
                 return (
@@ -223,6 +235,11 @@ export default function FinancialFilterPanel({
                   </button>
                 );
               })}
+              {categories.length > CHIP_LIMIT && (
+                <button onClick={() => setShowAllCategories(s => !s)} className="text-xs text-light-500 hover:text-light-700 px-1">
+                  {showAllCategories ? 'Show less' : `+${categories.length - CHIP_LIMIT} more`}
+                </button>
+              )}
             </div>
           </div>
 
