@@ -65,6 +65,8 @@ class CaseResponse(BaseModel):
     owner_name: str | None = None  # Display name of case owner
     user_role: str | None = None  # 'owner', 'editor', 'viewer', 'admin_access'
     is_owner: bool = False  # True ONLY if user is actual owner
+    # Archive status
+    archived: bool = False
     # Deadline enrichment
     next_deadline_date: date | None = None
     next_deadline_name: str | None = None
@@ -114,6 +116,7 @@ def create_new_case(
 @router.get("", response_model=CaseListResponse)
 def list_cases(
     view_mode: str = Query("my_cases", description="'my_cases' or 'all_cases' (super admins only)"),
+    include_archived: bool = Query(False, description="Include archived cases"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -135,6 +138,10 @@ def list_cases(
     include_all = view_mode == "all_cases" and user_is_super_admin
 
     case_tuples = list_cases_for_user(db=db, user=current_user, include_all=include_all)
+
+    # Filter out archived cases unless requested
+    if not include_archived:
+        case_tuples = [(c, m, o) for c, m, o in case_tuples if not getattr(c, 'archived', False)]
 
     # Batch-fetch next deadlines for all cases
     case_ids = [case.id for case, _, _ in case_tuples]
@@ -226,6 +233,42 @@ def update_existing_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied - case.edit permission required",
         )
+
+
+@router.patch("/{case_id}/archive")
+def archive_case(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Archive a case (hide from default list)."""
+    try:
+        case = get_case_if_allowed(db=db, case_id=case_id, user=current_user)
+        case.archived = True
+        db.commit()
+        return {"message": "Case archived", "case_id": str(case_id)}
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+@router.patch("/{case_id}/unarchive")
+def unarchive_case(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Unarchive a case (show in default list again)."""
+    try:
+        case = get_case_if_allowed(db=db, case_id=case_id, user=current_user)
+        case.archived = False
+        db.commit()
+        return {"message": "Case unarchived", "case_id": str(case_id)}
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)

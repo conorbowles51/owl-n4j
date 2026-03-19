@@ -44,7 +44,6 @@ const SECTION_KEYS = [
   'timeline',
   'evidence',
   'documents',
-  'audit-log',
   'snapshots',
 ];
 

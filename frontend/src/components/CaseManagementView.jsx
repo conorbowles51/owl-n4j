@@ -70,6 +70,7 @@ export default function CaseManagementView({
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState(null);
   const [viewMode, setViewMode] = useState('my_cases'); // 'my_cases' or 'all_cases' (super admins only)
+  const [showArchived, setShowArchived] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
   const [showCaseModal, setShowCaseModal] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(true);
@@ -855,6 +856,15 @@ export default function CaseManagementView({
                 >
                   All Cases
                 </button>
+                <label className="flex items-center gap-1.5 ml-3 text-xs text-light-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showArchived}
+                    onChange={(e) => setShowArchived(e.target.checked)}
+                    className="rounded border-light-300"
+                  />
+                  Archived
+                </label>
               </div>
             </div>
           )}
@@ -884,7 +894,7 @@ export default function CaseManagementView({
             </div>
           ) : (
             <div className="p-2">
-              {cases.map((caseItem) => (
+              {cases.filter(c => showArchived || !c.archived).map((caseItem) => (
                 <div
                   key={caseItem.id}
                   onClick={() => handleViewCase(caseItem)}
@@ -941,15 +951,36 @@ export default function CaseManagementView({
                         <span>{caseItem.version_count || 0} version{(caseItem.version_count || 0) !== 1 ? 's' : ''}</span>
                       </div>
                     </div>
-                    {/* Delete button: shown for owners, super admins (canDelete), or cases with admin_access */}
+                    {/* Archive/Delete buttons */}
                     {(caseItem.is_owner || caseItem.user_role === 'admin_access' || canDelete) && (
-                      <button
-                        onClick={(e) => handleDeleteCase(caseItem.id, e)}
-                        className="p-1 hover:bg-light-200 rounded transition-colors ml-2 flex-shrink-0"
-                        title="Delete case"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
+                      <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              if (caseItem.archived) {
+                                await casesAPI.unarchive(caseItem.id);
+                              } else {
+                                await casesAPI.archive(caseItem.id);
+                              }
+                              loadCases();
+                            } catch (err) {
+                              console.error('Failed to archive/unarchive case:', err);
+                            }
+                          }}
+                          className="p-1 hover:bg-light-200 rounded transition-colors"
+                          title={caseItem.archived ? 'Unarchive case' : 'Archive case'}
+                        >
+                          <Archive className={`w-4 h-4 ${caseItem.archived ? 'text-owl-blue-600' : 'text-light-500'}`} />
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteCase(caseItem.id, e)}
+                          className="p-1 hover:bg-light-200 rounded transition-colors"
+                          title="Delete case"
+                        >
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </div>

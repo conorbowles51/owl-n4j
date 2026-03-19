@@ -1271,6 +1271,22 @@ export const casesAPI = {
     }),
 
   /**
+   * Archive a case
+   */
+  archive: (caseId) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/archive`, {
+      method: 'PATCH',
+    }),
+
+  /**
+   * Unarchive a case
+   */
+  unarchive: (caseId) =>
+    fetchAPI(`/cases/${encodeURIComponent(caseId)}/unarchive`, {
+      method: 'PATCH',
+    }),
+
+  /**
    * Backup a case - returns a blob URL for download
    * @param {string} caseId - Case ID to backup
    * @param {boolean} includeFiles - Whether to include file contents

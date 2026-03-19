@@ -36,7 +36,6 @@ const OVERVIEW_SECTION_KEYS = [
   'graph-timeline',
   'graph-map',
   'case-files',
-  'audit-log',
   'snapshots',
 ];
 

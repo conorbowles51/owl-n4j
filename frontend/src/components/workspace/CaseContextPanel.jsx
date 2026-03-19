@@ -144,7 +144,29 @@ export default function CaseContextPanel({
         <QuickActionsButtons caseId={caseId} />
       </div>
 
-      {/* Theories */}
+      {/* 1. Case Deadlines & Tasks */}
+      <div className={selectedSection === 'deadlines' ? 'bg-owl-blue-50' : ''}>
+        <CaseDeadlinesSection
+          caseId={caseId}
+          onRefresh={() => {}}
+          isCollapsed={isCollapsed('deadlines')}
+          onToggle={(e) => toggleSection('deadlines', e)}
+          onFocus={(e) => focusSection('deadlines', e)}
+        />
+      </div>
+
+      {/* 2. Client Profile & Exposure */}
+      <div className={selectedSection === 'client-profile' ? 'bg-owl-blue-50' : ''}>
+        <ClientProfileSection
+          caseContext={caseContext}
+          onUpdate={onUpdateContext}
+          isCollapsed={isCollapsed('client-profile')}
+          onToggle={(e) => toggleSection('client-profile', e)}
+          onFocus={(e) => focusSection('client-profile', e)}
+        />
+      </div>
+
+      {/* 3. Investigative Theories */}
       <div className={`border-b border-light-200 ${selectedSection === 'theories' ? 'bg-owl-blue-50' : ''}`}>
         <TheoriesSection
           caseId={caseId}
@@ -156,23 +178,54 @@ export default function CaseContextPanel({
         />
       </div>
 
-      {/* Pinned Evidence */}
-      <div className={selectedSection === 'pinned-evidence' ? 'bg-owl-blue-50' : ''}>
-        <PinnedEvidenceSection
+      {/* 4. Investigative Notes */}
+      <div className={selectedSection === 'investigative-notes' ? 'bg-owl-blue-50' : ''}>
+        <InvestigativeNotesSection
           caseId={caseId}
-          pinnedItems={pinnedItems}
-          onRefresh={() => {
-            workspaceAPI.getPinnedItems(caseId).then(data => {
-              setPinnedItems(data.pinned_items || []);
-            });
-          }}
-          isCollapsed={isCollapsed('pinned-evidence')}
-          onToggle={(e) => toggleSection('pinned-evidence', e)}
-          onFocus={(e) => focusSection('pinned-evidence', e)}
+          isCollapsed={isCollapsed('investigative-notes')}
+          onToggle={(e) => toggleSection('investigative-notes', e)}
+          onFocus={(e) => focusSection('investigative-notes', e)}
         />
       </div>
 
-      {/* Key Entities */}
+      {/* 5. Tasks */}
+      <div className={selectedSection === 'tasks' ? 'bg-owl-blue-50' : ''}>
+        <TasksSection
+          caseId={caseId}
+          onRefresh={() => {}}
+          isCollapsed={isCollapsed('tasks')}
+          onToggle={(e) => toggleSection('tasks', e)}
+          onFocus={(e) => focusSection('tasks', e)}
+        />
+      </div>
+
+      {/* 6. Snapshots */}
+      <div className={selectedSection === 'snapshots' ? 'bg-owl-blue-50' : ''}>
+        <SnapshotsSection
+          caseId={caseId}
+          isCollapsed={isCollapsed('snapshots')}
+          onToggle={(e) => toggleSection('snapshots', e)}
+          onFocus={(e) => focusSection('snapshots', e)}
+        />
+      </div>
+
+      {/* 7. Interviews & Statements (Witness Matrix) */}
+      <div className={selectedSection === 'witness-matrix' ? 'bg-owl-blue-50' : ''}>
+        <WitnessMatrixSection
+          caseId={caseId}
+          witnesses={witnesses}
+          onRefresh={() => {
+            workspaceAPI.getWitnesses(caseId).then(data => {
+              setWitnesses(data.witnesses || []);
+            });
+          }}
+          isCollapsed={isCollapsed('witness-matrix')}
+          onToggle={(e) => toggleSection('witness-matrix', e)}
+          onFocus={(e) => focusSection('witness-matrix', e)}
+        />
+      </div>
+
+      {/* 8. Key Entities */}
       <div className={selectedSection === 'entity-summary' ? 'bg-owl-blue-50' : ''}>
         <div className="border-b border-light-200">
           <div
@@ -206,70 +259,23 @@ export default function CaseContextPanel({
         </div>
       </div>
 
-      {/* Client Profile & Exposure */}
-      <div className={selectedSection === 'client-profile' ? 'bg-owl-blue-50' : ''}>
-        <ClientProfileSection
-          caseContext={caseContext}
-          onUpdate={onUpdateContext}
-          isCollapsed={isCollapsed('client-profile')}
-          onToggle={(e) => toggleSection('client-profile', e)}
-          onFocus={(e) => focusSection('client-profile', e)}
-        />
-      </div>
-
-      {/* Witness Matrix */}
-      <div className={selectedSection === 'witness-matrix' ? 'bg-owl-blue-50' : ''}>
-        <WitnessMatrixSection
+      {/* 9. Pinned Evidence */}
+      <div className={selectedSection === 'pinned-evidence' ? 'bg-owl-blue-50' : ''}>
+        <PinnedEvidenceSection
           caseId={caseId}
-          witnesses={witnesses}
+          pinnedItems={pinnedItems}
           onRefresh={() => {
-            workspaceAPI.getWitnesses(caseId).then(data => {
-              setWitnesses(data.witnesses || []);
+            workspaceAPI.getPinnedItems(caseId).then(data => {
+              setPinnedItems(data.pinned_items || []);
             });
           }}
-          isCollapsed={isCollapsed('witness-matrix')}
-          onToggle={(e) => toggleSection('witness-matrix', e)}
-          onFocus={(e) => focusSection('witness-matrix', e)}
+          isCollapsed={isCollapsed('pinned-evidence')}
+          onToggle={(e) => toggleSection('pinned-evidence', e)}
+          onFocus={(e) => focusSection('pinned-evidence', e)}
         />
       </div>
 
-      {/* Case Deadlines & Trial Info */}
-      <div className={selectedSection === 'deadlines' ? 'bg-owl-blue-50' : ''}>
-        <CaseDeadlinesSection
-          caseId={caseId}
-          onRefresh={() => {
-            // Component loads its own data, but we can trigger a refresh if needed
-          }}
-          isCollapsed={isCollapsed('deadlines')}
-          onToggle={(e) => toggleSection('deadlines', e)}
-          onFocus={(e) => focusSection('deadlines', e)}
-        />
-      </div>
-
-      {/* Investigative Notes */}
-      <div className={selectedSection === 'investigative-notes' ? 'bg-owl-blue-50' : ''}>
-        <InvestigativeNotesSection
-          caseId={caseId}
-          isCollapsed={isCollapsed('investigative-notes')}
-          onToggle={(e) => toggleSection('investigative-notes', e)}
-          onFocus={(e) => focusSection('investigative-notes', e)}
-        />
-      </div>
-
-      {/* Tasks */}
-      <div className={selectedSection === 'tasks' ? 'bg-owl-blue-50' : ''}>
-        <TasksSection
-          caseId={caseId}
-          onRefresh={() => {
-            // Component loads its own data, but we can trigger a refresh if needed
-          }}
-          isCollapsed={isCollapsed('tasks')}
-          onToggle={(e) => toggleSection('tasks', e)}
-          onFocus={(e) => focusSection('tasks', e)}
-        />
-      </div>
-
-      {/* Case Documents */}
+      {/* 10. Case Documents */}
       <div className={selectedSection === 'case-files' ? 'bg-owl-blue-50' : ''}>
         <CaseFilesSection
           caseId={caseId}
@@ -284,7 +290,7 @@ export default function CaseContextPanel({
         />
       </div>
 
-      {/* Audit Log */}
+      {/* 11. Audit Log */}
       <div className={selectedSection === 'audit-log' ? 'bg-owl-blue-50' : ''}>
         <AuditLogSection
           caseId={caseId}
@@ -294,17 +300,7 @@ export default function CaseContextPanel({
         />
       </div>
 
-      {/* Snapshots */}
-      <div className={selectedSection === 'snapshots' ? 'bg-owl-blue-50' : ''}>
-        <SnapshotsSection
-          caseId={caseId}
-          isCollapsed={isCollapsed('snapshots')}
-          onToggle={(e) => toggleSection('snapshots', e)}
-          onFocus={(e) => focusSection('snapshots', e)}
-        />
-      </div>
-
-      {/* Investigation Timeline */}
+      {/* 12. Comprehensive Audit Log (Investigation Timeline) */}
       <div className={selectedSection === 'investigation-timeline' ? 'bg-owl-blue-50' : ''}>
         <InvestigationTimelineSection
           caseId={caseId}

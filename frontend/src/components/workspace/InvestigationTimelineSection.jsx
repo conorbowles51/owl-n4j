@@ -154,7 +154,7 @@ export default function InvestigationTimelineSection({
       >
         <h3 className="text-sm font-semibold text-owl-blue-900 flex items-center gap-2">
           <Calendar className="w-4 h-4" />
-          Investigation Timeline ({events.length})
+          Comprehensive Audit Log ({events.length})
         </h3>
         <div className="flex items-center gap-2">
           {onFocus && (

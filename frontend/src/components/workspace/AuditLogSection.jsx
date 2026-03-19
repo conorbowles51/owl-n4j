@@ -60,7 +60,7 @@ export default function AuditLogSection({
       >
         <h3 className="text-sm font-semibold text-owl-blue-900 flex items-center gap-2">
           <FileText className="w-4 h-4" />
-          Audit Log (Chain of Custody) ({logs.length})
+          Audit Log ({logs.length})
         </h3>
         <div className="flex items-center gap-2">
           {onFocus && (
