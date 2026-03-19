@@ -272,6 +272,46 @@ function AIInsightItem({ insight, index, nodeKey, username, onVerify, isVerifyin
 }
 
 /**
+ * Insight Group — groups AI insights by confidence level with expand/collapse
+ */
+function InsightGroup({ level, items, nodeKey, username, onVerify, isVerifying, highlightTerms }) {
+  const [expanded, setExpanded] = useState(false);
+  const colorMap = { high: 'text-green-700 bg-green-50', medium: 'text-yellow-700 bg-yellow-50', low: 'text-red-700 bg-red-50' };
+  const colors = colorMap[level] || colorMap.medium;
+
+  return (
+    <div className="mb-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 text-xs w-full text-left hover:bg-light-50 rounded px-1 py-0.5"
+      >
+        {expanded ? <ChevronDown className="w-3 h-3 text-light-500" /> : <ChevronRight className="w-3 h-3 text-light-500" />}
+        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${colors}`}>
+          {level.charAt(0).toUpperCase() + level.slice(1)} Confidence
+        </span>
+        <span className="text-light-500">({items.length})</span>
+      </button>
+      {expanded && (
+        <div className="ml-4 mt-1 space-y-1">
+          {items.map(({ insight, idx }) => (
+            <AIInsightItem
+              key={idx}
+              insight={insight}
+              index={idx}
+              nodeKey={nodeKey}
+              username={username}
+              onVerify={onVerify}
+              isVerifying={isVerifying}
+              highlightTerms={highlightTerms}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Collapsible Section Component
  */
 function CollapsibleSection({ title, icon: Icon, iconColor, count, children, defaultExpanded = true, emptyMessage }) {
@@ -617,13 +657,13 @@ export default function NodeDetails({
           ))}
         </CollapsibleSection>
 
-        {/* AI Insights Section */}
+        {/* AI Insights Section — grouped by confidence */}
         <CollapsibleSection
           title="AI Insights - Unverified"
           icon={AlertTriangle}
           iconColor="text-orange-700"
           count={aiInsights.length}
-          defaultExpanded={aiInsights.length > 0}
+          defaultExpanded={false}
           emptyMessage="No AI insights."
         >
           {aiInsights.length > 0 && (
@@ -631,18 +671,28 @@ export default function NodeDetails({
               These are inferences drawn by AI. Click "Mark as Verified" to confirm after investigation.
             </p>
           )}
-          {aiInsights.map((insight, idx) => (
-            <AIInsightItem
-              key={idx}
-              insight={insight}
-              index={idx}
-              nodeKey={node.key}
-              username={username}
-              onVerify={handleVerifyInsight}
-              isVerifying={isVerifying}
-              highlightTerms={highlightTerms}
-            />
-          ))}
+          {(() => {
+            const groups = { high: [], medium: [], low: [] };
+            aiInsights.forEach((insight, idx) => {
+              const conf = (insight.confidence || 'medium').toLowerCase();
+              if (groups[conf]) groups[conf].push({ insight, idx });
+              else groups.medium.push({ insight, idx });
+            });
+            return Object.entries(groups)
+              .filter(([, items]) => items.length > 0)
+              .map(([level, items]) => (
+                <InsightGroup
+                  key={level}
+                  level={level}
+                  items={items}
+                  nodeKey={node.key}
+                  username={username}
+                  onVerify={handleVerifyInsight}
+                  isVerifying={isVerifying}
+                  highlightTerms={highlightTerms}
+                />
+              ));
+          })()}
         </CollapsibleSection>
 
         {/* Legacy Notes (for backwards compatibility with old data) */}

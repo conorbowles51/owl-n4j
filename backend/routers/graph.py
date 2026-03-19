@@ -203,6 +203,33 @@ async def get_entity_types(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/nodes-by-type")
+async def get_nodes_by_type(
+    case_id: str = Query(..., description="Case ID"),
+    entity_type: str = Query(..., description="Entity type to filter by (e.g. Person, Company)"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get all nodes of a specific entity type for a case.
+    Returns lightweight node data (key, name, type) suitable for adding to spotlight graph.
+    """
+    try:
+        with neo4j_service._driver.session() as session:
+            result = session.run(
+                f"""
+                MATCH (n:{entity_type.replace('`', '')} {{case_id: $case_id}})
+                WHERE n.name IS NOT NULL
+                RETURN n.key AS key, n.name AS name, labels(n)[0] AS type
+                ORDER BY n.name
+                """,
+                case_id=case_id,
+            )
+            nodes = [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in result]
+        return {"nodes": nodes, "count": len(nodes), "entity_type": entity_type}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("")
 async def get_graph(
     case_id: str = Query(..., description="REQUIRED: Filter by case ID"),

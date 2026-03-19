@@ -556,6 +556,11 @@ export const graphAPI = {
     return fetchAPI(`/graph/entity-types${params}`);
   },
 
+  getNodesByType: (caseId, entityType) => {
+    const params = `?case_id=${encodeURIComponent(caseId)}&entity_type=${encodeURIComponent(entityType)}`;
+    return fetchAPI(`/graph/nodes-by-type${params}`);
+  },
+
   /**
    * Create a new node in the graph
    * @param {Object} nodeData - Node data including name, type, description, summary, properties

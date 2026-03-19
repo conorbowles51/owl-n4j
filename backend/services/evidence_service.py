@@ -991,6 +991,15 @@ class EvidenceService:
                     error=error_msg,
                     completed_at=datetime.now().isoformat(),
                 )
+                # Clean up active processing state so uploads aren't permanently blocked
+                if case_id:
+                    try:
+                        all_ev_ids = [r["id"] for recs in by_hash.values() for r in recs]
+                        EvidenceService._mark_processing_complete(case_id, all_ev_ids)
+                    except Exception:
+                        # by_hash may not exist if failure was very early — clear entire case
+                        with EvidenceService._active_processing_guard:
+                            EvidenceService._active_processing_cases.pop(case_id, None)
 
         # Use non-daemon thread so it continues running even if the request ends
         # This allows users to navigate away from the page while processing continues

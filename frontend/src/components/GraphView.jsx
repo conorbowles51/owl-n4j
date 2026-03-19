@@ -538,8 +538,21 @@ const GraphView = forwardRef(function GraphView({
     }
   }, [onBackgroundClick, selectionMode]);
 
-  // Handle entity type click - select all nodes of that type
-  const handleEntityTypeClick = useCallback((entityType, nodesOfType) => {
+  // Handle entity type click - select all nodes of that type (fetches from backend if graph is capped)
+  const handleEntityTypeClick = useCallback(async (entityType, nodesOfType) => {
+    // If we have a caseId, try fetching all nodes of this type from the backend
+    if (caseId && nodesOfType.length < 500) {
+      try {
+        const result = await graphAPI.getNodesByType(caseId, entityType);
+        if (result?.nodes?.length > nodesOfType.length) {
+          console.log(`Fetched ${result.nodes.length} ${entityType} nodes from backend (visible: ${nodesOfType.length})`);
+          nodesOfType = result.nodes;
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch ${entityType} nodes from backend, using visible nodes:`, err);
+      }
+    }
+
     if (nodesOfType.length === 0) {
       console.warn(`No nodes found for type: ${entityType}`);
       return;
@@ -581,7 +594,7 @@ const GraphView = forwardRef(function GraphView({
         console.error('onBulkNodeSelect is not available! Entity type selection will not work.');
       }
     }
-  }, [selectedNodes, onBulkNodeSelect, onNodeClick]);
+  }, [selectedNodes, onBulkNodeSelect, onNodeClick, caseId]);
 
   // Update selectedEntityTypes when selectedNodes changes
   useEffect(() => {

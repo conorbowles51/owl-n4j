@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.background_task_storage import background_task_storage, TaskStatus
+from services.evidence_service import EvidenceService
 from routers.auth import get_current_user
 
 
@@ -119,6 +120,13 @@ async def delete_task(
     # Only allow owner to delete their own tasks
     if task.get("owner") != user["username"]:
         raise HTTPException(status_code=403, detail="Access denied")
+
+    # Clear active processing state if this is an evidence processing task
+    if task.get("type") == "evidence_processing":
+        case_id = task.get("metadata", {}).get("case_id")
+        if case_id:
+            with EvidenceService._active_processing_guard:
+                EvidenceService._active_processing_cases.pop(case_id, None)
 
     deleted = background_task_storage.delete_task(task_id)
     if not deleted:
