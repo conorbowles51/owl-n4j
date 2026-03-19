@@ -15,14 +15,6 @@
 
 ## Pending
 
-### FEAT-001 · [HIGH] Feature: File summaries in Workspace view
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** File summaries are now shown in Case Management but the same treatment is needed in the Workspace view. Users should see inline AI summaries beneath each file in the Workspace evidence/files section without needing to click.
-
-### FEAT-002 · [HIGH] Feature: More comprehensive document summaries
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Current AI-generated document summaries are too short and barebones. Summaries should be more detailed — covering key facts, entities mentioned, financial figures, dates, and relationships. May require changing the LLM prompt and/or increasing the input context window from the current 5000 characters.
-
 ### FEAT-003 · [HIGH] Feature: Workspace Findings section with linked evidence
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Workspace needs a dedicated Findings section (separate from Notes) where users can create findings and link evidence files, entity profiles, and documents to each finding. Findings should appear first in exported reports. Should support easy "add finding + link evidence" workflow.
@@ -30,14 +22,6 @@
 ### FEAT-004 · [HIGH] Feature: Bulk entity merge from Table view
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Allow selecting multiple duplicate entities in the Table view and merging them in one operation. Currently limited to 2-at-a-time merge which took a user 45 minutes to merge 8 duplicates. Should combine all summaries/facts/insights and let user set the final name and type.
-
-### FEAT-005 · [HIGH] Feature: Financial search bar separate from filter panel
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** The search bar (name, entity, notes, date range) is inside the filter dropdown. On smaller screens, users must close filters to see transactions but then lose the ability to search. Search should be a persistent bar visible even when the filter panel is collapsed.
-
-### FEAT-006 · [MEDIUM] Feature: Transaction ID column for printout reference
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Add a visible transaction ID (simple sequential number) to each transaction in the financial table. The ID should persist in exports/printouts so when meeting clients in person, they can reference specific transactions by number and the team can log notes back into the platform.
 
 ### FEAT-007 · [MEDIUM] Feature: Cost Ledger improvements — case ID, PDF export, simplified line items
 - **Source:** Platform Feedback PDF (18 Mar)
@@ -72,10 +56,6 @@
 - **Description:** AI-generated facts and insights are "getting out of control" — too many individual items cluttering the view. Need a better way to view them, possibly integrated into a more comprehensive per-entity or per-document summary rather than individual fact cards.
 
 
-### BUG-010 · [MEDIUM] Fix: Audit log shows actions from all cases
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** The audit log in the workspace is showing actions from ALL cases instead of being scoped to the currently selected case. Needs case_id filtering on the audit log query.
-
 ### BUG-011 · [MEDIUM] Fix: Upload fails during concurrent ingestion
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Uploading files while ingestion is running on the same case causes a server error. The error persists even after cancelling ingestion — user cannot upload anything else until the server is restarted. Likely related to BUG-001 race condition but a different code path.
@@ -88,21 +68,48 @@
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** When the AI chat returns a result graph, some nodes appear faded/dimmed. The purpose (showing relevance hierarchy) is unclear to users and causes confusion. Need better visual explanation or simplified presentation.
 
-### BUG-014 · [LOW] Fix: "Attach to theory" dialog appears behind map
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** When attaching a document to an investigative theory, the dialog pops up behind the map layer. Z-index issue — dialog should appear on top of all other elements.
-
 ### BUG-015 · [MEDIUM] Fix: Graph legend entity type selection should query full graph
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** When graph is capped at 100 nodes, clicking an Entity Type in the legend should query ALL nodes of that type from the backend and add them to the spotlight graph, not just filter the visible 100. Currently misleading as it only operates on the loaded subset.
 
-### BUG-016 · [LOW] Fix: Ability to edit existing notes
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Users cannot edit notes after creation. Need an edit mode for existing investigative notes.
-
 ---
 
 ## Done
+
+### ✅ FEAT-001 · [HIGH] Feature: File summaries in Workspace view
+- **Completed:** 2026-03-19
+- **Description:** Added inline file summaries below filenames in Workspace CaseFilesSection, full width, matching CaseManagementView pattern. Summary data already returned by evidenceAPI.list().
+- **Commits:** 3861f4d
+
+### ✅ FEAT-002 · [HIGH] Feature: More comprehensive document summaries
+- **Completed:** 2026-03-19
+- **Description:** Rewrote summary LLM prompt to request structured output: overview, key entities, financial details, important dates, relationships. Increased input from 5000 to 15000 characters. Output now 4-8 sentences.
+- **Commits:** 3861f4d
+
+### ✅ FEAT-005 · [HIGH] Feature: Financial search bar separate from filter panel
+- **Completed:** 2026-03-19
+- **Description:** Moved search bar, date range, and entity filter outside the collapsible filter panel so they're always visible. Filter chips (type/category) remain inside the collapsible section.
+- **Commits:** 3861f4d
+
+### ✅ FEAT-006 · [MEDIUM] Feature: Transaction ID column for printout reference
+- **Completed:** 2026-03-19
+- **Description:** Added sequential # column to financial table after checkbox. IDs are page-aware (page 2 at 100/page starts at 101). Updated all colSpan values.
+- **Commits:** 3861f4d
+
+### ✅ BUG-010 · [MEDIUM] Fix: Audit log shows actions from all cases
+- **Completed:** 2026-03-19
+- **Description:** Added case_id query parameter to system logs endpoint and filtering logic in system_log_service. Audit log now only shows actions for the currently selected case.
+- **Commits:** 3861f4d
+
+### ✅ BUG-014 · [LOW] Fix: "Attach to theory" dialog appears behind map
+- **Completed:** 2026-03-19
+- **Description:** Raised z-index from z-50 to z-[9999] on AttachToTheoryModal so it renders above the Leaflet map layer. Also removed backdrop onClick.
+- **Commits:** 3861f4d
+
+### ✅ BUG-016 · [LOW] Fix: Ability to edit existing notes
+- **Completed:** 2026-03-19
+- **Description:** Added Edit button (pencil icon) to each note card in InvestigativeNotesSection. Opens AddInvestigativeNoteModal pre-filled with existing content. Updated modal to accept editNote prop, changed onSave to pass noteId for updates via workspaceAPI.updateNote.
+- **Commits:** 3861f4d
 
 ### ✅ BUG-006 · [HIGH] Fix: Popup/modal dismissal loses unsaved work
 - **Completed:** 2026-03-19
