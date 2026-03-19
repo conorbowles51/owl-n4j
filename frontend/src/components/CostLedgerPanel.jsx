@@ -217,10 +217,10 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
                 </style></head><body>
                 <h1>Cost Ledger${filters.case_id ? ` — Case: ${filters.case_id}` : ''}</h1>
                 <p>Generated: ${new Date().toLocaleString()}</p>
-                ${summary ? `<p><strong>Total Cost:</strong> ${formatCurrency(summary.total_cost)} &nbsp;|&nbsp; <strong>Billable (3x):</strong> ${formatCurrency(summary.total_cost * billableMultiplier)}</p>` : ''}
-                <table><thead><tr><th>Time</th><th>Job Type</th><th>Model</th><th class="right">Tokens</th><th class="right">Cost</th><th class="right">Billable (3x)</th><th>Description</th></tr></thead><tbody>`;
+                ${summary ? `<p><strong>Total:</strong> ${formatCurrency(summary.total_cost * billableMultiplier)}</p>` : ''}
+                <table><thead><tr><th>Time</th><th>Job Type</th><th>Model</th><th class="right">Tokens</th><th class="right">Amount</th><th>Description</th></tr></thead><tbody>`;
                 records.forEach(r => {
-                  html += `<tr><td>${formatTimestamp(r.created_at)}</td><td>${getJobTypeLabel(r.job_type)}</td><td>${r.model_id || ''}</td><td class="right">${r.total_tokens ? formatNumber(r.total_tokens) : ''}</td><td class="right">${formatCurrency(r.cost_usd)}</td><td class="right">${formatCurrency(r.cost_usd * billableMultiplier)}</td><td>${r.description || ''}</td></tr>`;
+                  html += `<tr><td>${formatTimestamp(r.created_at)}</td><td>${getJobTypeLabel(r.job_type)}</td><td>${r.model_id || ''}</td><td class="right">${r.total_tokens ? formatNumber(r.total_tokens) : ''}</td><td class="right">${formatCurrency(r.cost_usd * billableMultiplier)}</td><td>${r.description || ''}</td></tr>`;
                 });
                 html += `</tbody></table><div class="confidential">CONFIDENTIAL — ATTORNEY WORK PRODUCT — PRIVILEGED & CONFIDENTIAL</div></body></html>`;
                 const w = window.open('', '_blank');
@@ -411,7 +411,7 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
             <div className="space-y-2">
               <div className="text-sm text-light-600 mb-4">
                 Showing {offset + 1}-{Math.min(offset + limit, total)} of {total} records
-                {totalCost > 0 && ` • Cost: ${formatCurrency(totalCost)} • Billable: ${formatCurrency(totalCost * 3)}`}
+                {totalCost > 0 && ` • Total: ${formatCurrency(totalCost)} • Billable: ${formatCurrency(totalCost * 3)}`}
                 {totalTokens && ` • ${formatNumber(totalTokens)} tokens`}
               </div>
               <table className="w-full text-sm">
