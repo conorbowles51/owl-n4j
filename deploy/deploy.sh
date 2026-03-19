@@ -22,8 +22,8 @@ FRONTEND_DIR="${PROJECT_DIR}/frontend"
 LOG_DIR="${PROJECT_DIR}/deploy/logs"
 LOG_FILE="${LOG_DIR}/deploy-$(date +%Y%m%d-%H%M%S).log"
 HEALTH_URL="http://127.0.0.1:8000/health"
-HEALTH_RETRIES=20
-HEALTH_DELAY=3
+HEALTH_RETRIES=30
+HEALTH_DELAY=5
 
 # --- Colour output ---
 RED='\033[0;31m'
@@ -196,7 +196,7 @@ sleep 10
 HEALTHY=false
 for i in $(seq 1 $HEALTH_RETRIES); do
     sleep "$HEALTH_DELAY"
-    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" 2>/dev/null || echo "000")
+    HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$HEALTH_URL" 2>/dev/null) || HTTP_CODE="000"
 
     if [ "$HTTP_CODE" = "200" ]; then
         RESPONSE=$(curl -s "$HEALTH_URL" 2>/dev/null)
