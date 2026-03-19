@@ -999,21 +999,22 @@ export async function exportCaseToHTML(opts) {
   };
 
   const theoryExportStyles = `
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Lato:wght@300;400;700&display=swap');
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2937; background: #fff; }
+    body { font-family: 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1f2937; background: #fff; }
     .container { max-width: 1200px; margin: 0 auto; padding: 0; }
-    .cover-page { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(135deg, #0f2f4a 0%, #1d4d76 100%); color: white; text-align: center; padding: 3rem; page-break-after: always; }
+    .cover-page { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background: linear-gradient(135deg, #161636 0%, #222248 100%); color: white; text-align: center; padding: 3rem; page-break-after: always; }
     .cover-logo { max-width: 200px; height: auto; margin-bottom: 2rem; filter: brightness(0) invert(1); }
-    .cover-title { font-size: 2.5rem; font-weight: bold; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 2px; }
-    .cover-subtitle { font-size: 1.2rem; opacity: 0.9; margin-bottom: 3rem; }
-    .cover-theory-title { font-size: 2rem; font-weight: 600; margin-bottom: 2rem; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 8px; }
+    .cover-title { font-family: 'Cinzel', serif; font-size: 2.5rem; font-weight: 900; margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 2px; }
+    .cover-subtitle { font-family: 'Lato', sans-serif; font-size: 1.2rem; opacity: 0.9; margin-bottom: 3rem; font-weight: 300; }
+    .cover-theory-title { font-family: 'Cinzel', serif; font-size: 2rem; font-weight: 700; margin-bottom: 2rem; padding: 2rem; background: rgba(255,255,255,0.1); border-radius: 8px; }
     .content-page { padding: 3rem 2rem; page-break-before: always; }
-    .section-header { font-size: 1.75rem; font-weight: bold; color: #1d4d76; margin-top: 3rem; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 3px solid #2d6fa8; }
-    .subsection-header { font-size: 1.25rem; font-weight: 600; color: #245e8f; margin-bottom: 1rem; }
+    .section-header { font-family: 'Cinzel', serif; font-size: 1.75rem; font-weight: 900; color: #222248; margin-top: 3rem; margin-bottom: 1.5rem; padding-bottom: 0.5rem; border-bottom: 3px solid #222248; }
+    .subsection-header { font-family: 'Cinzel', serif; font-size: 1.25rem; font-weight: 700; color: #222248; margin-bottom: 1rem; }
     .item-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .item-title { font-size: 1.1rem; font-weight: 600; color: #1d4d76; }
+    .item-title { font-size: 1.1rem; font-weight: 700; color: #222248; }
     .item-meta { font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; }
-    .detail-label { font-weight: 600; color: #1d4d76; margin-bottom: 0.25rem; }
+    .detail-label { font-weight: 700; color: #222248; margin-bottom: 0.25rem; }
     .detail-value { color: #4b5563; }
     .graph-container { text-align: center; margin: 2rem 0; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; }
     .graph-image { max-width: 100%; height: auto; border-radius: 4px; }
@@ -1027,6 +1028,9 @@ export async function exportCaseToHTML(opts) {
     <div class="cover-subtitle">Owl Consultancy Group</div>
     <div class="cover-theory-title">${escapeHtml(finalCaseName || 'Case')}</div>
     ${caseId ? `<p style="margin-top:1rem;opacity:0.9;">Case ID: ${escapeHtml(caseId)}</p>` : ''}
+    <div style="margin-top:2rem;padding:0.75rem 1.5rem;border:2px solid #dc2626;border-radius:0.5rem;background:#fef2f2;color:#991b1b;font-size:0.875rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">
+      CONFIDENTIAL &mdash; Attorney Work Product &mdash; Privileged &amp; Confidential
+    </div>
   </div>
   <div class="content-page"><div class="container">`;
 
@@ -1103,9 +1107,9 @@ export async function exportCaseToHTML(opts) {
     attachedItems.evidence.forEach((file, idx) => {
       const data = documentData[file.id] || {};
       html += `<div class="item-card"><div class="item-title">${idx + 1}. ${escapeHtml(file.original_filename || file.filename || `Evidence ${file.id}`)}</div><div class="item-meta">${file.size ? `Size: ${(file.size / 1024).toFixed(1)} KB` : ''}${file.processed_at ? ` • Processed: ${formatShortDate(file.processed_at)}` : ''}${file.status ? ` • ${escapeHtml(file.status)}` : ''}</div>`;
-      if (data.summary) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #357dbe;"><div class="detail-label" style="margin-bottom:0.5rem;">Summary</div>${escapeHtml(data.summary)}</div>`;
-      if (data.spanish_transcription) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #0d9488;"><div class="detail-label" style="margin-bottom:0.5rem;">Spanish Transcription</div><div style="white-space:pre-wrap;">${escapeHtml(data.spanish_transcription)}</div></div>`;
-      if (data.english_translation) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #0369a1;"><div class="detail-label" style="margin-bottom:0.5rem;">English Translation</div><div style="white-space:pre-wrap;">${escapeHtml(data.english_translation)}</div></div>`;
+      if (data.summary) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #357dbe;"><div class="detail-label" style="margin-bottom:0.5rem;">Summary</div>${escapeHtml(data.summary)}<div style="margin-top:0.5rem;font-size:0.7rem;color:#9ca3af;">Source: ${escapeHtml(file.original_filename || file.filename || 'Unknown')}</div></div>`;
+      if (data.spanish_transcription) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #0d9488;"><div class="detail-label" style="margin-bottom:0.5rem;">Spanish Transcription</div><div style="white-space:pre-wrap;">${escapeHtml(data.spanish_transcription)}</div><div style="margin-top:0.5rem;font-size:0.7rem;color:#9ca3af;">Source: ${escapeHtml(file.original_filename || file.filename || 'Unknown')}</div></div>`;
+      if (data.english_translation) html += `<div class="detail-value" style="margin-top:1rem;padding:1rem;background:#f8fafc;border-radius:4px;border-left:3px solid #0369a1;"><div class="detail-label" style="margin-bottom:0.5rem;">English Translation</div><div style="white-space:pre-wrap;">${escapeHtml(data.english_translation)}</div><div style="margin-top:0.5rem;font-size:0.7rem;color:#9ca3af;">Source: ${escapeHtml(file.original_filename || file.filename || 'Unknown')}</div></div>`;
       if (data.imageData) html += `<div style="margin-top:1rem;"><img src="${data.imageData}" alt="${escapeHtml(file.original_filename || file.filename)}" style="max-width:100%;height:auto;border-radius:4px;border:1px solid #e5e7eb;" /></div>`;
       html += `</div>`;
     });
@@ -1197,7 +1201,7 @@ export async function exportCaseToHTML(opts) {
     html += `</div>`;
   }
 
-  html += `<div class="footer"><p>Owl Consultancy Group - Case Export</p><p style="margin-top:0.5rem;font-size:0.75rem;">Generated on ${formatDate(new Date().toISOString())}</p></div></div></div></body></html>`;
+  html += `<div class="footer"><p style="color:#991b1b;font-weight:600;font-size:0.75rem;letter-spacing:0.05em;">CONFIDENTIAL &mdash; ATTORNEY WORK PRODUCT &mdash; PRIVILEGED &amp; CONFIDENTIAL</p><p style="margin-top:0.5rem;">Owl Consultancy Group - Case Export</p><p style="margin-top:0.25rem;font-size:0.75rem;">Generated on ${formatDate(new Date().toISOString())}</p></div></div></div></body></html>`;
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
