@@ -51,6 +51,7 @@ class WitnessInterview(BaseModel):
     interview_id: Optional[str] = None
     date: str  # ISO date string
     duration: Optional[str] = None  # e.g., "45 minutes", "1 hour 30 minutes"
+    interviewed_by: Optional[str] = None  # Who conducted the interview (police, deposition, investigator, etc.)
     statement: Optional[str] = None
     status: Optional[str] = None  # e.g., "Cooperating Witness (CW)"
     credibility_rating: Optional[int] = None  # 1-5

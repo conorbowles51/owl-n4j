@@ -282,7 +282,7 @@ export default function CaseExportModal({
         try {
           const canvas = await html2canvas(el, {
             backgroundColor: '#ffffff',
-            scale: 2,
+            scale: 3,
             useCORS: true,
             logging: false,
             width: el.scrollWidth || el.offsetWidth,

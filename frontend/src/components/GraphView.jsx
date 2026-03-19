@@ -354,18 +354,8 @@ const GraphView = forwardRef(function GraphView({
       nodeColor = getNodeColor(node.type, profileColors);
     }
 
-    // Apply opacity modulation for result graph nodes
-    // Mentioned entities stay solid, non-mentioned fade based on confidence
+    // Result graph nodes: all at full opacity, relevance indicated by border thickness
     ctx.save();
-    if (node.confidence !== undefined && node.confidence !== null) {
-      if (node.mentioned === false) {
-        // Non-mentioned: fade based on confidence (0.25 to 0.7)
-        ctx.globalAlpha = 0.25 + (node.confidence * 0.45);
-      }
-      // Mentioned nodes stay at full opacity (1.0)
-    } else if (node.mentioned === false) {
-      ctx.globalAlpha = 0.4;
-    }
 
     // Node circle
     ctx.beginPath();
@@ -373,25 +363,27 @@ const GraphView = forwardRef(function GraphView({
     ctx.fillStyle = nodeColor;
     ctx.fill();
 
+    // Relevance border for result graph nodes (mentioned = thick blue border)
+    if (node.mentioned === true) {
+      ctx.strokeStyle = '#245e8f';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    } else if (node.confidence !== undefined && node.confidence > 0.5) {
+      ctx.strokeStyle = '#6b9cc4';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
     // Selection/hover ring - using Owl blue for selection, light gray for hover
     if (isSelected || isHovered) {
-      ctx.strokeStyle = isSelected ? '#245e8f' : '#9ca3af'; // owl-blue-700 for selected, light-400 for hover
+      ctx.strokeStyle = isSelected ? '#245e8f' : '#9ca3af';
       ctx.lineWidth = isSelected ? 2.5 : 1.5;
       ctx.stroke();
     }
 
-    // Label - scale font size with confidence, fade non-mentioned labels
+    // Label
     let labelFontSize = fontSize;
     let labelColor = '#1f2937'; // light-800 default
-    if (node.confidence !== undefined && node.confidence !== null) {
-      // Scale label: 0.85x to 1.3x of base font size (subtle scaling)
-      labelFontSize = fontSize * (0.85 + node.confidence * 0.45);
-      // Only fade labels for non-mentioned nodes
-      if (node.mentioned === false) {
-        const labelAlpha = Math.max(0.4, 0.4 + node.confidence * 0.4);
-        labelColor = `rgba(31, 41, 55, ${labelAlpha})`;
-      }
-    }
     ctx.font = `${labelFontSize}px Inter, system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -444,16 +436,7 @@ const GraphView = forwardRef(function GraphView({
       }
     }
 
-    // Apply opacity based on connected node confidence (result graph links fade with low-confidence nodes)
     ctx.save();
-    // Fade links when both connected nodes are non-mentioned (context-only)
-    const startMentioned = start.mentioned !== false;
-    const endMentioned = end.mentioned !== false;
-    if (!startMentioned && !endMentioned) {
-      ctx.globalAlpha = 0.3; // Both faded = faded link
-    } else if (!startMentioned || !endMentioned) {
-      ctx.globalAlpha = 0.5; // One faded = semi-faded link
-    }
 
     // Draw the link line
     ctx.beginPath();

@@ -118,7 +118,7 @@ export default function WitnessMatrixSection({
         onClick={(e) => onToggle && onToggle(e)}
       >
         <h3 className="text-sm font-semibold text-owl-blue-900">
-          Witness Matrix ({witnesses.length})
+          Interviews &amp; Statements ({witnesses.length})
         </h3>
         <div className="flex items-center gap-2">
           <button
@@ -195,33 +195,20 @@ export default function WitnessMatrixSection({
                                 </span>
                               </div>
                               
-                              {/* Latest Interview Summary */}
-                              {latestInterview && (
-                                <div className="mt-2 text-xs space-y-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {latestInterview.status && (
-                                      <span className="text-owl-blue-900 font-medium">
-                                        Status: {latestInterview.status}
-                                      </span>
-                                    )}
-                                    {latestInterview.credibility_rating && (
-                                      <span className={`${getCredibilityColor(latestInterview.credibility_rating)}`}>
-                                        Credibility: {getCredibilityStars(latestInterview.credibility_rating)} ({latestInterview.credibility_rating >= 4 ? 'High' : latestInterview.credibility_rating >= 3 ? 'Medium' : 'Low'})
-                                      </span>
-                                    )}
-                                  </div>
-                                  {latestInterview.statement && (
-                                    <p className="text-light-700">
-                                      Statement: {latestInterview.statement}
-                                    </p>
-                                  )}
-                                  {latestInterview.risk_assessment && (
-                                    <p className="text-red-600">
-                                      Risk: {getRiskEmoji(latestInterview.risk_assessment)} {latestInterview.risk_assessment}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
+                              {/* Compact Summary — always visible */}
+                              <div className="mt-1 text-xs flex items-center gap-3 flex-wrap">
+                                {witness.status && (
+                                  <span className="text-owl-blue-900 font-medium">{witness.status}</span>
+                                )}
+                                {(latestInterview?.credibility_rating || witness.credibility_rating) && (
+                                  <span className={`${getCredibilityColor(latestInterview?.credibility_rating || witness.credibility_rating)}`}>
+                                    {getCredibilityStars(latestInterview?.credibility_rating || witness.credibility_rating)}
+                                  </span>
+                                )}
+                                {interviews.length > 0 && (
+                                  <span className="text-light-500">{interviews.length} interview{interviews.length !== 1 ? 's' : ''}</span>
+                                )}
+                              </div>
 
                               {/* No interviews message */}
                               {interviews.length === 0 && (
@@ -304,6 +291,12 @@ export default function WitnessMatrixSection({
                                           <>
                                             <span className="text-light-400">•</span>
                                             <span className="text-light-600">{interview.duration}</span>
+                                          </>
+                                        )}
+                                        {interview.interviewed_by && (
+                                          <>
+                                            <span className="text-light-400">•</span>
+                                            <span className="text-light-600">By: {interview.interviewed_by}</span>
                                           </>
                                         )}
                                       </div>

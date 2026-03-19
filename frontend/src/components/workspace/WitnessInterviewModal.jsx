@@ -32,6 +32,7 @@ export default function WitnessInterviewModal({
         setFormData({
           date: interview.date || '',
           duration: interview.duration || '',
+          interviewed_by: interview.interviewed_by || '',
           statement: interview.statement || '',
           status: interview.status || '',
           credibility_rating: interview.credibility_rating ?? null,
@@ -42,6 +43,7 @@ export default function WitnessInterviewModal({
         setFormData({
           date: new Date().toISOString().split('T')[0], // Today's date
           duration: '',
+          interviewed_by: '',
           statement: '',
           status: '',
           credibility_rating: null,
@@ -138,6 +140,19 @@ export default function WitnessInterviewModal({
               value={formData.duration}
               onChange={(e) => setFormData({ ...formData, duration: e.target.value })}
               placeholder="e.g., 45 minutes, 1 hour 30 minutes"
+              className="w-full px-3 py-2 border border-light-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-blue-500"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-owl-blue-900 mb-1">
+              Interviewed By
+            </label>
+            <input
+              type="text"
+              value={formData.interviewed_by}
+              onChange={(e) => setFormData({ ...formData, interviewed_by: e.target.value })}
+              placeholder="e.g., Det. Smith (police), Atty. Jones (deposition), Investigator Lee"
               className="w-full px-3 py-2 border border-light-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-owl-blue-500"
             />
           </div>
