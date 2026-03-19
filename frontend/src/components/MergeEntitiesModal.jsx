@@ -12,6 +12,7 @@ export default function MergeEntitiesModal({
   onSuccess,  // Called after successful merge with { entity1, entity2 }
   entity1,
   entity2,
+  bulkEntities = null, // Array of 3+ entities for bulk merge
   onMerge,
   similarity = null,
 }) {
@@ -240,6 +241,24 @@ export default function MergeEntitiesModal({
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Bulk merge info banner */}
+          {bulkEntities && bulkEntities.length > 2 && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-sm text-amber-800 font-medium">
+                Bulk Merge: {bulkEntities.length} entities will be merged into one
+              </p>
+              <p className="text-xs text-amber-700 mt-1">
+                Target: <strong>{entity1?.name}</strong> — all other entities will be merged into this one.
+              </p>
+              <div className="flex flex-wrap gap-1 mt-2">
+                {bulkEntities.slice(1).map((e, i) => (
+                  <span key={i} className="text-[10px] px-2 py-0.5 bg-amber-100 rounded text-amber-800">
+                    {e.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Side-by-side comparison */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             {/* Entity 1 */}

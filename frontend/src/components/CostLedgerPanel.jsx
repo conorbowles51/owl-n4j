@@ -200,13 +200,47 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
             <DollarSign className="w-6 h-6 text-owl-blue-600" />
             <h2 className="text-xl font-semibold text-light-900">Cost Ledger</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-light-100 rounded transition-colors"
-            title="Close"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                // Generate printable HTML and open in new window for PDF print
+                const billableMultiplier = 3;
+                let html = `<html><head><title>Cost Ledger</title><style>
+                  body { font-family: 'Lato', sans-serif; font-size: 12px; color: #1f2937; }
+                  h1 { font-family: 'Cinzel', serif; color: #222248; }
+                  table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+                  th { background: #f3f4f6; padding: 8px; text-align: left; font-weight: 600; border-bottom: 2px solid #e5e7eb; }
+                  td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; }
+                  .right { text-align: right; }
+                  .total-row { font-weight: bold; background: #f0f9ff; }
+                  .confidential { text-align: center; color: #991b1b; font-weight: 600; font-size: 10px; margin-top: 2rem; }
+                </style></head><body>
+                <h1>Cost Ledger${filters.case_id ? ` — Case: ${filters.case_id}` : ''}</h1>
+                <p>Generated: ${new Date().toLocaleString()}</p>
+                ${summary ? `<p><strong>Total Cost:</strong> ${formatCurrency(summary.total_cost)} &nbsp;|&nbsp; <strong>Billable (3x):</strong> ${formatCurrency(summary.total_cost * billableMultiplier)}</p>` : ''}
+                <table><thead><tr><th>Time</th><th>Job Type</th><th>Model</th><th class="right">Tokens</th><th class="right">Cost</th><th class="right">Billable (3x)</th><th>Description</th></tr></thead><tbody>`;
+                records.forEach(r => {
+                  html += `<tr><td>${formatTimestamp(r.created_at)}</td><td>${getJobTypeLabel(r.job_type)}</td><td>${r.model_id || ''}</td><td class="right">${r.total_tokens ? formatNumber(r.total_tokens) : ''}</td><td class="right">${formatCurrency(r.cost_usd)}</td><td class="right">${formatCurrency(r.cost_usd * billableMultiplier)}</td><td>${r.description || ''}</td></tr>`;
+                });
+                html += `</tbody></table><div class="confidential">CONFIDENTIAL — ATTORNEY WORK PRODUCT — PRIVILEGED & CONFIDENTIAL</div></body></html>`;
+                const w = window.open('', '_blank');
+                w.document.write(html);
+                w.document.close();
+                w.print();
+              }}
+              className="p-2 hover:bg-light-100 rounded transition-colors"
+              title="Export / Print as PDF"
+            >
+              <Download className="w-5 h-5 text-owl-blue-600" />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-light-100 rounded transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Active Filters Display */}
@@ -240,8 +274,17 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
                 </div>
               </div>
               <div className="bg-white p-4 rounded-lg border border-light-200">
+                <div className="text-sm text-light-600 mb-1">Billable (3x)</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {formatCurrency(summary.total_cost * 3)}
+                </div>
+                <div className="text-xs text-light-500 mt-1">
+                  Markup applied for client billing
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-lg border border-light-200">
                 <div className="text-sm text-light-600 mb-1">Ingestion</div>
-                <div className="text-xl font-semibold text-green-600">
+                <div className="text-xl font-semibold text-blue-600">
                   {formatCurrency(summary.ingestion_cost)}
                 </div>
                 <div className="text-xs text-light-500 mt-1">
@@ -250,17 +293,11 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
               </div>
               <div className="bg-white p-4 rounded-lg border border-light-200">
                 <div className="text-sm text-light-600 mb-1">AI Assistant</div>
-                <div className="text-xl font-semibold text-blue-600">
+                <div className="text-xl font-semibold text-purple-600">
                   {formatCurrency(summary.ai_assistant_cost)}
                 </div>
                 <div className="text-xs text-light-500 mt-1">
                   {formatNumber(summary.ai_assistant_tokens)} tokens
-                </div>
-              </div>
-              <div className="bg-white p-4 rounded-lg border border-light-200">
-                <div className="text-sm text-light-600 mb-1">Models Used</div>
-                <div className="text-xl font-semibold text-light-900">
-                  {Object.keys(summary.by_model || {}).length}
                 </div>
               </div>
             </div>
@@ -374,7 +411,7 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
             <div className="space-y-2">
               <div className="text-sm text-light-600 mb-4">
                 Showing {offset + 1}-{Math.min(offset + limit, total)} of {total} records
-                {totalCost > 0 && ` • Total: ${formatCurrency(totalCost)}`}
+                {totalCost > 0 && ` • Cost: ${formatCurrency(totalCost)} • Billable: ${formatCurrency(totalCost * 3)}`}
                 {totalTokens && ` • ${formatNumber(totalTokens)} tokens`}
               </div>
               <table className="w-full text-sm">
@@ -385,6 +422,7 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
                     <th className="px-4 py-2 text-left font-medium text-light-700">Model</th>
                     <th className="px-4 py-2 text-right font-medium text-light-700">Tokens</th>
                     <th className="px-4 py-2 text-right font-medium text-light-700">Cost</th>
+                    <th className="px-4 py-2 text-right font-medium text-green-700">Billable (3x)</th>
                     <th className="px-4 py-2 text-left font-medium text-light-700">Description</th>
                   </tr>
                 </thead>
@@ -413,6 +451,9 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
                       </td>
                       <td className="px-4 py-2 text-right font-semibold text-owl-blue-600">
                         {formatCurrency(record.cost_usd)}
+                      </td>
+                      <td className="px-4 py-2 text-right font-semibold text-green-600">
+                        {formatCurrency(record.cost_usd * 3)}
                       </td>
                       <td className="px-4 py-2 text-light-600 text-xs">
                         {record.description || '—'}

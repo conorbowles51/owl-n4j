@@ -200,6 +200,7 @@ export default function GraphTableView({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showCreateRelationshipModal, setShowCreateRelationshipModal] = useState(false);
   const [mergeEntity1, setMergeEntity1] = useState(null);
+  const [bulkMergeEntities, setBulkMergeEntities] = useState(null);
   const [mergeEntity2, setMergeEntity2] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showBulkEditModal, setShowBulkEditModal] = useState(false);
@@ -1062,15 +1063,18 @@ export default function GraphTableView({
     }
   }, []);
 
-  // Handle merge action
+  // Handle merge action — supports 2+ entities
   const handleMerge = useCallback(() => {
     const selected = getSelectedNodes();
     if (selected.length < 2) {
       alert('Please select at least 2 nodes to merge');
       return;
     }
+    // For 2 entities, use the standard merge modal
+    // For 3+, use bulk merge: first entity is target, rest are sources
     setMergeEntity1(selected[0]);
-    setMergeEntity2(selected[1]);
+    setMergeEntity2(selected.length === 2 ? selected[1] : null);
+    setBulkMergeEntities(selected.length > 2 ? selected : null);
     setShowMergeModal(true);
   }, [getSelectedNodes]);
 
@@ -1118,16 +1122,27 @@ export default function GraphTableView({
     return result;
   }, [getSelectedNodes, caseId, onGraphRefresh]);
 
-  // Handle merge confirmation
+  // Handle merge confirmation — supports both 2-entity and bulk merge
   const handleMergeConfirm = useCallback(async (sourceKey, targetKey, mergedData) => {
     if (!onMergeNodes) {
       alert('Merge functionality is not available');
       return;
     }
     try {
-      await onMergeNodes(sourceKey, targetKey, mergedData);
+      if (bulkMergeEntities && bulkMergeEntities.length > 2) {
+        // Bulk merge: first entity is target, merge all others into it
+        const target = bulkMergeEntities[0];
+        const sources = bulkMergeEntities.slice(1);
+        for (let i = 0; i < sources.length; i++) {
+          const combinedData = i === 0 ? mergedData : { name: mergedData.name, type: mergedData.type };
+          await onMergeNodes(sources[i].key, target.key, combinedData);
+        }
+      } else {
+        await onMergeNodes(sourceKey, targetKey, mergedData);
+      }
       setCheckboxSelectedKeys(new Set());
       setShowMergeModal(false);
+      setBulkMergeEntities(null);
       if (onGraphRefresh) {
         await onGraphRefresh();
       }
@@ -1135,7 +1150,7 @@ export default function GraphTableView({
       console.error('Failed to merge nodes:', err);
       throw err;
     }
-  }, [onMergeNodes, onGraphRefresh]);
+  }, [onMergeNodes, onGraphRefresh, bulkMergeEntities]);
 
   // Handle delete confirmation
   const handleDeleteConfirm = useCallback(async (nodesToDelete) => {
@@ -1544,14 +1559,17 @@ export default function GraphTableView({
           setShowMergeModal(false);
           setMergeEntity1(null);
           setMergeEntity2(null);
+          setBulkMergeEntities(null);
         }}
         onSuccess={() => {
           setShowMergeModal(false);
           setMergeEntity1(null);
           setMergeEntity2(null);
+          setBulkMergeEntities(null);
         }}
         entity1={mergeEntity1}
-        entity2={mergeEntity2}
+        entity2={bulkMergeEntities ? bulkMergeEntities[1] : mergeEntity2}
+        bulkEntities={bulkMergeEntities}
         onMerge={handleMergeConfirm}
       />
 
