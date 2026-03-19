@@ -15,10 +15,6 @@
 
 ## Pending
 
-### FEAT-003 · [HIGH] Feature: Workspace Findings section with linked evidence
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Workspace needs a dedicated Findings section (separate from Notes) where users can create findings and link evidence files, entity profiles, and documents to each finding. Findings should appear first in exported reports. Should support easy "add finding + link evidence" workflow.
-
 ### FEAT-004 · [HIGH] Feature: Bulk entity merge from Table view
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Allow selecting multiple duplicate entities in the Table view and merging them in one operation. Currently limited to 2-at-a-time merge which took a user 45 minutes to merge 8 duplicates. Should combine all summaries/facts/insights and let user set the final name and type.
@@ -27,26 +23,6 @@
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Cost Ledger needs: (1) case ID or name so costs can be billed back by case to courts, (2) PDF export capability, (3) simplified line items — consolidate multiple "Document Ingestion: None" entries for the same document into a single line to avoid pushback when billing.
 
-### FEAT-008 · [MEDIUM] Feature: Snapshot reports — source citations and confidentiality labels
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Exported snapshot reports should cite their source documents (which files/evidence the events came from). Reports should also be labeled as "Confidential" or "Attorney Work Product — Privileged & Confidential".
-
-### FEAT-009 · [MEDIUM] Feature: Report section ordering and brand guidelines
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Users should be able to organize the order of sections in exported reports. Brand guidelines: blue should be HEX #222248 spectrum, titles in Cinzel Black font, body text in Lato font.
-
-### FEAT-010 · [MEDIUM] Feature: Witness matrix improvements — compact view and interviewer field
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** (1) Witness matrix is too verbose when statements are added — show only name, credibility rating, status, phone, address by default with expand for details. (2) Add "Interviewed by" field to capture who conducted the interview (police, deposition, trial, investigator). (3) Rename "Witness Interview" to "Interview or Statement" to cover wiretaps, recordings, depositions etc.
-
-### FEAT-011 · [MEDIUM] Feature: Workspace section reorganization
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Reorganize workspace sections in this order: Case Deadlines & Tasks, Findings, Client Profile & Exposure, Investigative Theories, Notes, Snapshots, Witness Matrix, Entity Summary, Pinned Evidence, Case Files, Graph, Timeline (simplified), Map, Audit Log. Left pane should match this order. Rename "Investigation Timeline" to "Comprehensive Audit Log". Remove "Chain of Custody" label (legal term conflict). Remove audit log and investigation timeline from exported reports.
-
-### FEAT-012 · [LOW] Feature: Archive completed cases
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Ability to archive cases that are done so they don't clutter the active case list. Archived cases should still be accessible but hidden from the default view.
-
 ### FEAT-013 · [LOW] Feature: Better text message processing
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Improve the ingestion pipeline's handling of text message exports. Current processing may not properly parse conversation threads, timestamps, or sender/recipient metadata from common text message export formats.
@@ -54,6 +30,31 @@
 ---
 
 ## Done
+
+### ✅ FEAT-003 · [HIGH] Feature: Workspace Findings section with linked evidence
+- **Completed:** 2026-03-19
+- **Description:** Full stack implementation: FindingCreate model, CRUD endpoints, JSON storage, FindingsSection component with add/edit/delete, priority badges, evidence linking. Integrated into workspace after Deadlines.
+- **Commits:** 47c54ea
+
+### ✅ FEAT-008 · [MEDIUM] Feature: Snapshot reports — source citations and confidentiality
+- **Completed:** 2026-03-19
+- **Description:** Added CONFIDENTIAL banner on cover page and footer. Source document citations on evidence summaries. Applied to all HTML case exports.
+- **Commits:** 05dc351
+
+### ✅ FEAT-009 · [MEDIUM] Feature: Report ordering + brand guidelines
+- **Completed:** 2026-03-19
+- **Description:** Applied brand guidelines: blue #222248, Cinzel Black (900) for titles, Lato for body. Google Fonts imported. Cover gradient, section headers, labels all updated.
+- **Commits:** 05dc351
+
+### ✅ FEAT-011 · [MEDIUM] Feature: Workspace section reorganization
+- **Completed:** 2026-03-19
+- **Description:** Reordered workspace: Deadlines, Findings, Client Profile, Theories, Notes, Tasks, Snapshots, Witnesses, Entities, Pinned Evidence, Case Files, Audit Log, Comprehensive Audit Log. Renamed Investigation Timeline. Removed Chain of Custody. Removed audit log from exports.
+- **Commits:** b9670b3
+
+### ✅ FEAT-012 · [LOW] Feature: Archive completed cases
+- **Completed:** 2026-03-19
+- **Description:** Added archived boolean field to Case model with Alembic migration, archive/unarchive PATCH endpoints, Archive button in case list, Show Archived toggle. Archived cases hidden by default.
+- **Commits:** b9670b3
 
 ### ✅ FEAT-010 · [MEDIUM] Feature: Witness matrix — compact view and interviewer field
 - **Completed:** 2026-03-19
