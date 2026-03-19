@@ -53,6 +53,7 @@ async def get_logs(
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     user: Optional[str] = Query(None, description="Filter by user"),
     success_only: Optional[bool] = Query(None, description="Filter by success status"),
+    case_id: Optional[str] = Query(None, description="Filter by case ID"),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -116,6 +117,7 @@ async def get_logs(
             offset=offset,
             user=user,
             success_only=success_only,
+            case_id=case_id,
         )
         
         return LogsResponse(**result)

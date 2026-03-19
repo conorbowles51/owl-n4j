@@ -158,6 +158,7 @@ class SystemLogService:
         offset: int = 0,
         user: Optional[str] = None,
         success_only: Optional[bool] = None,
+        case_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Retrieve logs with filtering.
@@ -208,6 +209,10 @@ class SystemLogService:
                             continue
                         if success_only is not None and log.get("success") != success_only:
                             continue
+                        if case_id:
+                            log_case_id = log.get("details", {}).get("case_id", "")
+                            if log_case_id != case_id:
+                                continue
                         
                         # Time filters
                         if start_time or end_time:

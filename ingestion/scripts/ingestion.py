@@ -884,15 +884,21 @@ def ingest_document(
         log_progress(f"[Step 8] Document summary: Generating summary for document", log_callback)
         try:
             # Generate a concise summary of the document content
-            summary_text = text[:5000] if len(text) > 5000 else text  # Use first 5000 chars for summary generation
-            
-            summary_prompt = f"""Summarize the following document content in 2-4 sentences. Focus on the main topics, key facts, and important information.
+            summary_text = text[:15000] if len(text) > 15000 else text  # Use first 15000 chars for summary generation
+
+            summary_prompt = f"""Analyze the following document and provide a comprehensive summary covering:
+
+1. **Overview**: What this document is about (1-2 sentences)
+2. **Key Entities**: Names of people, companies, banks, or organizations mentioned and their roles
+3. **Financial Details**: Any monetary amounts, transactions, account numbers, or financial activity
+4. **Important Dates**: Key dates and timeframes referenced
+5. **Relationships**: How the entities are connected to each other
 
 Document: {doc_name}
 Content:
 {summary_text}
 
-Provide a concise summary that captures the essential information:"""
+Provide a detailed summary (4-8 sentences) that captures all significant facts an investigator would need:"""
             
             # Get LLM config from profile
             llm_config = get_llm_config(profile_name)

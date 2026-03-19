@@ -243,57 +243,58 @@ export default function FinancialFilterPanel({
             </div>
           </div>
 
-          {/* Search + Date range + Entity filter */}
-          <div className="flex items-center gap-4 flex-wrap">
-            {onSearchChange && (
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by name, entity, notes..."
-                    value={searchQuery}
-                    onChange={(e) => onSearchChange(e.target.value)}
-                    className="text-xs pl-7 pr-7 py-1.5 w-56 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
-                  />
-                  {searchQuery && (
-                    <button
-                      onClick={() => onSearchChange('')}
-                      className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-light-400 hover:text-light-600 rounded"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-light-600 font-medium">Date range:</span>
-              <input
-                type="date"
-                value={startDate || ''}
-                onChange={(e) => onStartDateChange(e.target.value || null)}
-                className="text-xs px-2 py-1 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
-              />
-              <span className="text-xs text-light-500">to</span>
-              <input
-                type="date"
-                value={endDate || ''}
-                onChange={(e) => onEndDateChange(e.target.value || null)}
-                className="text-xs px-2 py-1 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-light-600 font-medium">Entity:</span>
-              <EntityFilterDropdown
-                allEntities={allEntities}
-                entityFilter={entityFilter}
-                onEntityFilterChange={onEntityFilterChange}
-              />
-            </div>
-          </div>
         </div>
       )}
+
+      {/* Search + Date range + Entity filter — always visible */}
+      <div className="flex items-center gap-4 flex-wrap mt-2">
+        {onSearchChange && (
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
+              <input
+                type="text"
+                placeholder="Search by name, entity, notes..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="text-xs pl-7 pr-7 py-1.5 w-56 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => onSearchChange('')}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 text-light-400 hover:text-light-600 rounded"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-light-600 font-medium">Date range:</span>
+          <input
+            type="date"
+            value={startDate || ''}
+            onChange={(e) => onStartDateChange(e.target.value || null)}
+            className="text-xs px-2 py-1 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
+          />
+          <span className="text-xs text-light-500">to</span>
+          <input
+            type="date"
+            value={endDate || ''}
+            onChange={(e) => onEndDateChange(e.target.value || null)}
+            className="text-xs px-2 py-1 border border-light-200 rounded focus:outline-none focus:border-owl-blue-400"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-light-600 font-medium">Entity:</span>
+          <EntityFilterDropdown
+            allEntities={allEntities}
+            entityFilter={entityFilter}
+            onEntityFilterChange={onEntityFilterChange}
+          />
+        </div>
+      </div>
     </div>
   );
 }

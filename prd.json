@@ -1,0 +1,293 @@
+{
+  "project": "Owl Investigation Platform — Backlog Implementation",
+  "stories": [
+    {
+      "id": "FEAT-001",
+      "title": "Add inline file summaries to Workspace CaseFilesSection",
+      "priority": 1,
+      "passes": false,
+      "description": "In frontend/src/components/workspace/CaseFilesSection.jsx, display the file.summary field below each filename in the file list. The summary data is already returned by evidenceAPI.list(). Show full summary text below the filename with text-[11px] text-light-500 styling. Only show if file.summary exists. Same pattern used in CaseManagementView.jsx.",
+      "acceptance_criteria": [
+        "File summaries appear below filenames in Workspace file list",
+        "No summary shown for unprocessed files",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-002",
+      "title": "Improve document summary LLM prompt and input size",
+      "priority": 2,
+      "passes": false,
+      "description": "In ingestion/scripts/ingestion.py, find Step 8 document summary generation. Change summary_text from text[:5000] to text[:15000]. Rewrite the summary_prompt to request: key facts, entities mentioned with roles, financial figures and amounts, important dates, and relationships between entities. Structure as sections. Keep output to 4-8 sentences.",
+      "acceptance_criteria": [
+        "Summary prompt requests structured output with key facts, entities, financials, dates",
+        "Input context increased from 5000 to 15000 characters",
+        "python3 syntax check passes on ingestion.py"
+      ]
+    },
+    {
+      "id": "FEAT-005",
+      "title": "Move financial search bar outside collapsible filter panel",
+      "priority": 3,
+      "passes": false,
+      "description": "In frontend/src/components/financial/FinancialView.jsx, extract the search inputs (text search, date range picker, entity filter dropdown) from inside FinancialFilterPanel and place them in a persistent bar between the stats cards and the table. The filter chips (Transaction Type, Category) stay inside the collapsible panel. The search bar should always be visible even when filters are collapsed.",
+      "acceptance_criteria": [
+        "Search bar (text, date range, entity) is always visible above the table",
+        "Filter chips remain inside collapsible Filters section",
+        "Search works the same as before",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-006",
+      "title": "Add transaction ID column to financial table",
+      "priority": 4,
+      "passes": false,
+      "description": "In frontend/src/components/financial/FinancialTable.jsx, add a '#' column as the first column after the checkbox. Display a sequential number: (currentPage - 1) * rowsPerPage + index + 1. Also add the ID to CSV export if one exists. Column should be narrow (w-10) and right-aligned.",
+      "acceptance_criteria": [
+        "Sequential ID number appears in first column after checkbox",
+        "IDs are page-aware (page 2 starts at 101 if 100 per page)",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "BUG-010",
+      "title": "Filter audit log by current case ID",
+      "priority": 5,
+      "passes": false,
+      "description": "The audit log in the workspace shows actions from ALL cases. Find the audit log section component in frontend/src/components/workspace/ and the backend endpoint that serves audit log entries. Add case_id filter parameter to the backend query. Ensure the frontend passes the current caseId when fetching. The system_log_service already logs case_id in the details field — filter on that.",
+      "acceptance_criteria": [
+        "Audit log only shows actions for the currently selected case",
+        "Other cases' actions are not visible",
+        "python3 syntax check passes",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "BUG-014",
+      "title": "Fix attach-to-theory dialog z-index behind map",
+      "priority": 6,
+      "passes": false,
+      "description": "Find the 'attach to theory' dialog component (likely in workspace components). Its z-index is lower than the Leaflet map layer (z-index ~400-1000). Set the dialog's z-index to z-[9999] or z-50 to ensure it renders above the map.",
+      "acceptance_criteria": [
+        "Attach to theory dialog appears above the map",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "BUG-016",
+      "title": "Add edit mode for existing investigative notes",
+      "priority": 7,
+      "passes": false,
+      "description": "In frontend/src/components/workspace/InvestigativeNotesSection.jsx, add an Edit button to each note card. On click, open AddInvestigativeNoteModal pre-populated with the existing note content. Check if backend has PUT /workspace/{case_id}/notes/{note_id} endpoint. If not, add one in backend/routers/workspace.py that calls workspace_service.save_note() with the existing note_id to update in place. Dispatch notes-refresh event after save.",
+      "acceptance_criteria": [
+        "Edit button visible on each note card",
+        "Clicking edit opens modal with pre-filled content",
+        "Saving updates the existing note (not creating a new one)",
+        "Note list refreshes after edit",
+        "python3 syntax check passes",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-010",
+      "title": "Compact witness matrix with expand/collapse and interviewer field",
+      "priority": 8,
+      "passes": false,
+      "description": "Three changes: (1) In WitnessMatrixSection.jsx, change default view to show only name, credibility rating, status, phone, address per witness. Add expand/collapse per witness for statement, risk assessment, strategy notes. (2) In backend/routers/workspace.py WitnessCreate model and WitnessModal.jsx, add interviewed_by field (string). (3) Rename section header from 'Witness Interview' to 'Interviews & Statements' in WorkspaceView.jsx.",
+      "acceptance_criteria": [
+        "Witness list shows compact view by default",
+        "Expand reveals full details",
+        "interviewed_by field exists in modal and is saved",
+        "Section renamed to Interviews & Statements",
+        "python3 syntax check passes",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "BUG-011",
+      "title": "Fix upload failure during concurrent ingestion",
+      "priority": 9,
+      "passes": false,
+      "description": "In backend/routers/evidence.py, the upload endpoint may acquire a lock or conflict with active processing. Uploads (file storage) should never block on processing (ingestion). Ensure the upload endpoint doesn't hold the case processing lock. Add error recovery so if the upload state gets corrupted, subsequent uploads still work without server restart. Check evidence_service.py for any shared state that could block.",
+      "acceptance_criteria": [
+        "Uploading files while ingestion is running succeeds",
+        "Error state doesn't persist — subsequent uploads work",
+        "python3 syntax check passes"
+      ]
+    },
+    {
+      "id": "BUG-012",
+      "title": "Fix blurry graph and irrelevant events in snapshot export",
+      "priority": 10,
+      "passes": false,
+      "description": "In frontend/src/components/workspace/CaseExportModal.jsx: (1) Find html2canvas calls and increase the scale parameter from 1 to 2 for retina-quality graph capture. (2) Find where timeline events are included in the export — filter to only include events relevant to the snapshot (matching the snapshot's timeline data) rather than all case events.",
+      "acceptance_criteria": [
+        "Exported graph image is sharp (2x resolution)",
+        "Only snapshot-relevant events appear in export",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "BUG-013",
+      "title": "Clarify or simplify faded nodes in AI result graph",
+      "priority": 11,
+      "passes": false,
+      "description": "In the AI result graph rendering (likely in App.jsx or GraphView.jsx where result graph nodes are rendered), nodes with lower relevance appear faded/dimmed. This confuses users. Either: (a) add a small legend near the result graph explaining 'Brighter = more relevant to your question', or (b) remove opacity-based fading entirely and use a subtle border color difference instead (e.g., thicker blue border for high relevance).",
+      "acceptance_criteria": [
+        "Result graph nodes have clear visual explanation or simplified styling",
+        "Users can understand why some nodes look different",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "BUG-015",
+      "title": "Graph legend entity type click queries full graph not just visible 100",
+      "priority": 12,
+      "passes": false,
+      "description": "In frontend/src/components/GraphView.jsx, when the graph is capped at 100 nodes, clicking an Entity Type in the legend currently only filters the visible 100. Change it to call the backend with a type filter to fetch ALL nodes of that type and add them to the spotlight graph. May need a new or modified backend endpoint: GET /graph/cases/{case_id}/nodes?type=Person. The returned nodes should be merged into the existing graph display.",
+      "acceptance_criteria": [
+        "Clicking Person in legend fetches all Person nodes from backend",
+        "Fetched nodes appear in the spotlight graph",
+        "Works when graph is capped at 100",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-014",
+      "title": "Consolidate AI facts and insights into grouped/collapsible view",
+      "priority": 13,
+      "passes": false,
+      "description": "In the entity detail panel (likely NodeDetails or similar component), AI facts and insights are listed individually and overwhelming. Group them by category (financial, identity, relationship, location, etc.) into collapsible sections with counts like 'Financial (12)'. Alternatively, add a 'Summary' tab that consolidates all facts into a single AI-generated paragraph.",
+      "acceptance_criteria": [
+        "Facts/insights are grouped or summarized instead of listed individually",
+        "User can still see individual facts if needed (via expand)",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-003",
+      "title": "Backend: Add Findings CRUD endpoints and storage",
+      "priority": 14,
+      "passes": false,
+      "description": "In backend/routers/workspace.py, add FindingCreate and FindingUpdate Pydantic models with fields: title (str), content (str), linked_evidence_ids (Optional[List[str]]), linked_entity_keys (Optional[List[str]]). Add CRUD endpoints: POST /workspace/{case_id}/findings, GET /workspace/{case_id}/findings, PUT /workspace/{case_id}/findings/{finding_id}, DELETE /workspace/{case_id}/findings/{finding_id}. In backend/services/workspace_service.py, add findings storage methods following the same pattern as notes (dict-based, JSON file persistence).",
+      "acceptance_criteria": [
+        "POST creates a finding and returns finding_id",
+        "GET returns all findings for a case",
+        "PUT updates a finding",
+        "DELETE removes a finding",
+        "python3 syntax check passes"
+      ]
+    },
+    {
+      "id": "FEAT-003b",
+      "title": "Frontend: Add FindingsSection component to workspace",
+      "priority": 15,
+      "passes": false,
+      "description": "Create frontend/src/components/workspace/FindingsSection.jsx following the pattern of InvestigativeNotesSection.jsx. Display findings as expandable cards with title, content, and linked evidence/entities. Add 'Add Finding' button that opens a FindingModal. Create FindingModal.jsx with title input, content textarea, and evidence/entity linking (searchable dropdown from case files and entities). Add FindingsSection to WorkspaceView.jsx after Case Deadlines section. Add findings-refresh event pattern.",
+      "acceptance_criteria": [
+        "Findings section appears in workspace",
+        "Can create, view, edit, delete findings",
+        "Can link evidence files and entities to findings",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-004",
+      "title": "Add bulk entity merge from Table view",
+      "priority": 16,
+      "passes": false,
+      "description": "In the Table view component, allow selecting 3+ entities via checkboxes. Show a 'Merge Selected (N)' button when 2+ are selected. Create BulkMergeModal.jsx showing all selected entities with a target name input and type selector. On confirm, call a new or extended backend endpoint that merges all source entities into one target. Backend should combine summaries, facts, and insights from all sources. Dispatch entities-refresh event after merge.",
+      "acceptance_criteria": [
+        "Can select 3+ entities in table view",
+        "Merge button appears with count",
+        "Modal lets user set target name and type",
+        "All selected entities merge into one",
+        "Combined data preserved",
+        "npm run build passes",
+        "python3 syntax check passes"
+      ]
+    },
+    {
+      "id": "FEAT-011",
+      "title": "Reorganize workspace sections and rename audit log",
+      "priority": 17,
+      "passes": false,
+      "description": "In frontend/src/components/WorkspaceView.jsx, reorder sections to: Case Deadlines & Tasks, Findings, Client Profile & Exposure, Investigative Theories, Notes, Snapshots, Witness Matrix, Entity Summary, Pinned Evidence, Case Files, Graph, Timeline, Map, Audit Log. Reorder the left pane navigation to match. Rename 'Investigation Timeline' to 'Comprehensive Audit Log'. Remove 'Chain of Custody' label. Update the export to exclude audit log and timeline sections.",
+      "acceptance_criteria": [
+        "Workspace sections appear in the specified order",
+        "Left pane matches section order",
+        "Renamed to Comprehensive Audit Log",
+        "Chain of Custody removed",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-007",
+      "title": "Cost Ledger: add case filter, PDF export, consolidate line items",
+      "priority": 18,
+      "passes": false,
+      "description": "Find the Cost Ledger component (likely a modal or section in the workspace). (1) Add case name/ID display and filter so costs can be attributed per case. (2) Consolidate duplicate 'Document Ingestion: None' entries for the same document into a single line with total cost. (3) Add PDF export button using the same WeasyPrint pattern as financial_export_service.py.",
+      "acceptance_criteria": [
+        "Case name visible on ledger",
+        "Duplicate ingestion lines consolidated",
+        "PDF export downloads a formatted ledger",
+        "npm run build passes",
+        "python3 syntax check passes"
+      ]
+    },
+    {
+      "id": "FEAT-008",
+      "title": "Add source citations and confidentiality labels to snapshot reports",
+      "priority": 19,
+      "passes": false,
+      "description": "In the snapshot export/report generation logic, for each event or entity in the report, add a citation showing which source document it came from (the Document node's name). Add a header and footer to exported reports: 'CONFIDENTIAL — Attorney Work Product — Privileged & Confidential'.",
+      "acceptance_criteria": [
+        "Each event/entity in report cites its source document",
+        "Confidentiality header and footer appear on every page",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-009",
+      "title": "Report section ordering and brand guidelines",
+      "priority": 20,
+      "passes": false,
+      "description": "In the export modal, add UI for reordering report sections (drag-to-reorder or up/down arrows). Apply brand guidelines to exported reports: blue color HEX #222248, title font Cinzel Black, body font Lato. Import fonts via Google Fonts link or embed in the report template.",
+      "acceptance_criteria": [
+        "User can reorder sections before export",
+        "Export uses #222248 blue",
+        "Titles in Cinzel Black, body in Lato",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-012",
+      "title": "Add case archiving",
+      "priority": 21,
+      "passes": false,
+      "description": "Backend: Add archived boolean field to case model (default false). Add PUT /cases/{case_id}/archive and /unarchive endpoints. Frontend: In CaseManagementView.jsx, add Archive button to case actions (trash icon area). Add 'Show Archived' toggle to case list header (default off). Archived cases hidden from default list but visible when toggled.",
+      "acceptance_criteria": [
+        "Archive button on each case",
+        "Archived cases hidden by default",
+        "Show Archived toggle reveals them",
+        "Can unarchive",
+        "python3 syntax check passes",
+        "npm run build passes"
+      ]
+    },
+    {
+      "id": "FEAT-013",
+      "title": "Improve text message processing in ingestion pipeline",
+      "priority": 22,
+      "passes": false,
+      "description": "In ingestion/scripts/ingestion.py, add detection for common text message export formats (iOS Messages export, WhatsApp .txt export, CSV format). Parse conversation threads extracting: timestamp, sender, recipient, message content. Create Person entities for participants. Structure the extracted data as a conversation timeline for graph ingestion.",
+      "acceptance_criteria": [
+        "WhatsApp .txt exports are parsed correctly",
+        "Timestamps and sender/recipient extracted",
+        "Person entities created for participants",
+        "python3 syntax check passes"
+      ]
+    }
+  ]
+}

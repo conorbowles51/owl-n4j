@@ -1,16 +1,35 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Save, Link as LinkIcon } from 'lucide-react';
 
 /**
- * Add Investigative Note Modal
+ * Add/Edit Investigative Note Modal
  *
- * Modal for adding investigative notes (thoughts and insights)
+ * Modal for adding or editing investigative notes (thoughts and insights)
  * Supports optional URL attachment.
  */
-export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
+export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave, editNote = null }) {
   const [content, setContent] = useState('');
   const [url, setUrl] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (editNote) {
+        setContent(editNote.content || '');
+        // Extract URL if it was appended as "Reference: ..."
+        const refMatch = (editNote.content || '').match(/\n\nReference: (https?:\/\/.+)$/);
+        if (refMatch) {
+          setContent((editNote.content || '').replace(/\n\nReference: https?:\/\/.+$/, ''));
+          setUrl(refMatch[1]);
+        } else {
+          setUrl('');
+        }
+      } else {
+        setContent('');
+        setUrl('');
+      }
+    }
+  }, [isOpen, editNote]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -21,7 +40,7 @@ export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
       const noteContent = url.trim()
         ? `${content.trim()}\n\nReference: ${url.trim()}`
         : content.trim();
-      await onSave(noteContent);
+      await onSave(noteContent, editNote?.note_id || editNote?.id || null);
       setContent('');
       setUrl('');
       onClose();
@@ -42,7 +61,7 @@ export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b border-light-200">
-          <h3 className="text-lg font-semibold text-owl-blue-900">Add Investigative Note</h3>
+          <h3 className="text-lg font-semibold text-owl-blue-900">{editNote ? 'Edit Investigative Note' : 'Add Investigative Note'}</h3>
           <button onClick={onClose} className="p-1 hover:bg-light-100 rounded" disabled={saving}>
             <X className="w-5 h-5 text-light-600" />
           </button>
@@ -90,7 +109,7 @@ export default function AddInvestigativeNoteModal({ isOpen, onClose, onSave }) {
               className="flex-1 px-4 py-2 bg-owl-blue-600 text-white rounded-lg hover:bg-owl-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               <Save className="w-4 h-4" />
-              {saving ? 'Saving...' : 'Save Note'}
+              {saving ? 'Saving...' : editNote ? 'Update Note' : 'Save Note'}
             </button>
             <button
               type="button"

@@ -278,10 +278,10 @@ export default function CaseFilesSection({
                 <div className="flex items-center gap-2 mt-1 text-xs text-light-600">
                   {file.size && <><span>{humanSize(file.size)}</span><span>•</span></>}
                   {file.processed_at && <><Calendar className="w-3 h-3" /><span>{formatDate(file.processed_at)}</span></>}
-                  {file.summary && !isUploadedDoc && (
-                    <span className="truncate max-w-[200px]">{file.summary}</span>
-                  )}
                 </div>
+                {file.summary && !isUploadedDoc && (
+                  <p className="text-[11px] text-light-500 mt-1 leading-relaxed">{file.summary}</p>
+                )}
                 {isLink && content && (() => {
                   try {
                     const ld = parseLinkContent(content);

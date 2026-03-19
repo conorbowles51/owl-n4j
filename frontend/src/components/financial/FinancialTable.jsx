@@ -258,7 +258,7 @@ const TransactionDetailRow = memo(function TransactionDetailRow({ txn, onDetails
 
   return (
     <tr className="bg-light-50 border-b border-light-200">
-      <td colSpan={10} className="px-4 py-3">
+      <td colSpan={11} className="px-4 py-3">
         <div className="space-y-2">
           {txn.summary && (
             <div>
@@ -533,6 +533,7 @@ export default function FinancialTable({
         <table className="w-full text-xs table-fixed">
           <colgroup>
             <col className="w-8" />
+            <col className="w-9" />
             <col className="w-7" />
             <col style={{ width: '80px' }} />
             <col style={{ width: '52px' }} />
@@ -553,6 +554,7 @@ export default function FinancialTable({
                   className="rounded border-light-300"
                 />
               </th>
+              <th className="px-1 py-2 text-right text-light-500 font-normal">#</th>
               <th className="px-1 py-2">
                 <button
                   onClick={() => setShowAllSummaries(s => !s)}
@@ -586,7 +588,7 @@ export default function FinancialTable({
             </tr>
           </thead>
           <tbody>
-            {paginatedRows.map(txn => {
+            {paginatedRows.map((txn, rowIndex) => {
               const amount = parseFloat(txn.amount);
               const amountColor = amount >= 0 ? '#22c55e' : '#ef4444';
               const typeColor = TYPE_COLORS[txn.type] || TYPE_COLORS.Other;
@@ -611,6 +613,7 @@ export default function FinancialTable({
                         className="rounded border-light-300"
                       />
                     </td>
+                    <td className="px-1 py-1.5 text-right text-light-400 tabular-nums">{(currentPage - 1) * pageSize + rowIndex + 1}</td>
                     <td className="px-1 py-1.5">
                       <div className="flex items-center gap-0.5">
                         {isParent && (
@@ -772,7 +775,7 @@ export default function FinancialTable({
                   </tr>
                   {txn.summary && (
                     <tr className="border-b border-light-100">
-                      <td colSpan={10} className="px-4 py-1 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
+                      <td colSpan={11} className="px-4 py-1 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
                         <p className="text-xs text-light-600 leading-relaxed">{txn.summary}</p>
                       </td>
                     </tr>
@@ -788,14 +791,14 @@ export default function FinancialTable({
                     <>
                       {isLoadingChildren && (
                         <tr className="bg-indigo-50/30 border-b border-light-100">
-                          <td colSpan={10} className="px-6 py-2 text-xs text-light-500">
+                          <td colSpan={11} className="px-6 py-2 text-xs text-light-500">
                             Loading sub-transactions...
                           </td>
                         </tr>
                       )}
                       {!isLoadingChildren && children.length === 0 && (
                         <tr className="bg-indigo-50/30 border-b border-light-100">
-                          <td colSpan={10} className="px-6 py-2 text-xs text-light-500">
+                          <td colSpan={11} className="px-6 py-2 text-xs text-light-500">
                             No sub-transactions linked yet
                           </td>
                         </tr>
@@ -858,7 +861,7 @@ export default function FinancialTable({
             })}
             {paginatedRows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-light-500">
+                <td colSpan={11} className="px-4 py-8 text-center text-light-500">
                   No transactions match the current filters
                 </td>
               </tr>

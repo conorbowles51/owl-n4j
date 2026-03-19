@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, FileText, Focus, Link2, Plus, Trash2, Calendar } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Focus, Link2, Plus, Trash2, Calendar, Pencil } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
 import AttachToTheoryModal from './AttachToTheoryModal';
 import AddInvestigativeNoteModal from './AddInvestigativeNoteModal';
@@ -20,6 +20,7 @@ export default function InvestigativeNotesSection({
   const [loading, setLoading] = useState(true);
   const [attachModal, setAttachModal] = useState({ open: false, note: null });
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingNote, setEditingNote] = useState(null);
 
   useEffect(() => {
     const loadNotes = async () => {
@@ -45,16 +46,21 @@ export default function InvestigativeNotesSection({
     return () => window.removeEventListener('notes-refresh', handleNotesRefresh);
   }, [caseId]);
 
-  const handleAddNote = async (content) => {
+  const handleSaveNote = async (content, noteId = null) => {
     if (!caseId || !content.trim()) return;
-    
+
     try {
-      await workspaceAPI.createNote(caseId, { content });
+      if (noteId) {
+        await workspaceAPI.updateNote(caseId, noteId, { content });
+      } else {
+        await workspaceAPI.createNote(caseId, { content });
+      }
       // Reload notes
       const data = await workspaceAPI.getNotes(caseId);
       setNotes(data.notes || []);
+      setEditingNote(null);
     } catch (err) {
-      console.error('Failed to create note:', err);
+      console.error('Failed to save note:', err);
       throw err;
     }
   };
@@ -177,6 +183,17 @@ export default function InvestigativeNotesSection({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            setEditingNote(note);
+                            setShowAddModal(true);
+                          }}
+                          className="p-1.5 hover:bg-owl-blue-100 rounded transition-colors"
+                          title="Edit note"
+                        >
+                          <Pencil className="w-4 h-4 text-owl-blue-600" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             setAttachModal({ open: true, note: { id: noteId, content: noteContent } });
                           }}
                           className="p-1.5 hover:bg-owl-blue-100 rounded transition-colors"
@@ -207,8 +224,9 @@ export default function InvestigativeNotesSection({
       {showAddModal && (
         <AddInvestigativeNoteModal
           isOpen={showAddModal}
-          onClose={() => setShowAddModal(false)}
-          onSave={handleAddNote}
+          onClose={() => { setShowAddModal(false); setEditingNote(null); }}
+          onSave={handleSaveNote}
+          editNote={editingNote}
         />
       )}
 
