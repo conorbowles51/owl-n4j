@@ -96,6 +96,15 @@ class NoteCreate(BaseModel):
     tags: Optional[List[str]] = None
 
 
+class FindingCreate(BaseModel):
+    title: str
+    content: Optional[str] = None
+    linked_evidence_ids: Optional[List[str]] = None
+    linked_entity_keys: Optional[List[str]] = None
+    linked_document_ids: Optional[List[str]] = None
+    priority: Optional[str] = None  # "HIGH", "MEDIUM", "LOW"
+
+
 class TaskCreate(BaseModel):
     title: str
     description: Optional[str] = None
@@ -965,6 +974,98 @@ async def delete_note(
         if not workspace_service.delete_note(case_id, note_id):
             raise HTTPException(status_code=404, detail="Note not found")
 
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Findings Endpoints
+
+
+@router.get("/{case_id}/findings")
+async def get_findings(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Get all findings for a case."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+        findings = workspace_service.get_findings(case_id)
+        return {"findings": findings}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{case_id}/findings")
+async def create_finding(
+    case_id: str,
+    finding: FindingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Create a new finding."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+        finding_data = finding.dict()
+        finding_data["created_by"] = current_user.email
+        finding_id = workspace_service.save_finding(case_id, finding_data)
+        return {"finding_id": finding_id, **finding_data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{case_id}/findings/{finding_id}")
+async def update_finding(
+    case_id: str,
+    finding_id: str,
+    finding: FindingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Update a finding."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+        finding_data = finding.dict()
+        finding_data["finding_id"] = finding_id
+        workspace_service.save_finding(case_id, finding_data)
+        return {"success": True, "finding_id": finding_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{case_id}/findings/{finding_id}")
+async def delete_finding(
+    case_id: str,
+    finding_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Delete a finding."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+        if not workspace_service.delete_finding(case_id, finding_id):
+            raise HTTPException(status_code=404, detail="Finding not found")
         return {"success": True}
     except HTTPException:
         raise

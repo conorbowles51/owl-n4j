@@ -2063,6 +2063,20 @@ export const workspaceAPI = {
     method: 'DELETE',
   }),
 
+  // Findings
+  getFindings: (caseId) => fetchAPI(`/workspace/${caseId}/findings`),
+  createFinding: (caseId, finding) => fetchAPI(`/workspace/${caseId}/findings`, {
+    method: 'POST',
+    body: JSON.stringify(finding),
+  }),
+  updateFinding: (caseId, findingId, finding) => fetchAPI(`/workspace/${caseId}/findings/${findingId}`, {
+    method: 'PUT',
+    body: JSON.stringify(finding),
+  }),
+  deleteFinding: (caseId, findingId) => fetchAPI(`/workspace/${caseId}/findings/${findingId}`, {
+    method: 'DELETE',
+  }),
+
   // Theories
   getTheories: (caseId) => fetchAPI(`/workspace/${caseId}/theories`),
   createTheory: (caseId, theory) => fetchAPI(`/workspace/${caseId}/theories`, {

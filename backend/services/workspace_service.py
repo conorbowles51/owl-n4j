@@ -27,6 +27,7 @@ TASKS_FILE = STORAGE_DIR / "tasks.json"
 CASE_DEADLINES_FILE = STORAGE_DIR / "case_deadlines.json"
 PINNED_ITEMS_FILE = STORAGE_DIR / "pinned_items.json"
 NOTES_FILE = STORAGE_DIR / "investigative_notes.json"
+FINDINGS_FILE = STORAGE_DIR / "findings.json"
 
 
 def ensure_storage_dir():
@@ -71,7 +72,8 @@ class WorkspaceService:
         self._deadlines = load_json_file(CASE_DEADLINES_FILE, {})
         self._pinned_items = load_json_file(PINNED_ITEMS_FILE, {})
         self._notes = load_json_file(NOTES_FILE, {})
-    
+        self._findings = load_json_file(FINDINGS_FILE, {})
+
     def reload(self):
         """Reload all data from disk."""
         self._case_contexts = load_json_file(CASE_CONTEXTS_FILE, {})
@@ -81,6 +83,7 @@ class WorkspaceService:
         self._deadlines = load_json_file(CASE_DEADLINES_FILE, {})
         self._pinned_items = load_json_file(PINNED_ITEMS_FILE, {})
         self._notes = load_json_file(NOTES_FILE, {})
+        self._findings = load_json_file(FINDINGS_FILE, {})
     
     # Case Context Methods
     def get_case_context(self, case_id: str) -> Optional[Dict]:
@@ -337,6 +340,35 @@ class WorkspaceService:
             return True
         return False
     
+    # Findings Methods
+
+    def get_findings(self, case_id: str) -> List[Dict]:
+        """Get all findings for a case."""
+        case_findings = self._findings.get(case_id, {})
+        return sorted(case_findings.values(), key=lambda f: f.get("created_at", ""), reverse=True)
+
+    def save_finding(self, case_id: str, finding: Dict) -> str:
+        """Save a finding, returning finding_id."""
+        if case_id not in self._findings:
+            self._findings[case_id] = {}
+        finding_id = finding.get("finding_id") or f"finding_{uuid.uuid4().hex[:12]}"
+        finding["finding_id"] = finding_id
+        finding["case_id"] = case_id
+        finding["updated_at"] = datetime.now().isoformat()
+        if "created_at" not in finding:
+            finding["created_at"] = datetime.now().isoformat()
+        self._findings[case_id][finding_id] = finding
+        save_json_file(FINDINGS_FILE, self._findings)
+        return finding_id
+
+    def delete_finding(self, case_id: str, finding_id: str) -> bool:
+        """Delete a finding."""
+        if case_id in self._findings and finding_id in self._findings[case_id]:
+            del self._findings[case_id][finding_id]
+            save_json_file(FINDINGS_FILE, self._findings)
+            return True
+        return False
+
     def get_investigation_timeline(self, case_id: str) -> List[Dict]:
         """
         Aggregate all timeline events for a case investigation.

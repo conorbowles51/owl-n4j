@@ -6,6 +6,7 @@ import CaseDeadlinesSection from './CaseDeadlinesSection';
 import TasksSection from './TasksSection';
 import AuditLogSection from './AuditLogSection';
 import TheoriesSection from './TheoriesSection';
+import FindingsSection from './FindingsSection';
 import InvestigativeNotesSection from './InvestigativeNotesSection';
 import CaseFilesSection from './CaseFilesSection';
 import EntitySummarySection from './EntitySummarySection';
@@ -50,6 +51,17 @@ export default function SectionContentPanel({
   };
 
   switch (selectedSection) {
+    case 'findings':
+      return (
+        <div className="h-full flex flex-col p-4">
+          <FindingsSection
+            caseId={caseId}
+            isCollapsed={false}
+            onToggle={() => {}}
+          />
+        </div>
+      );
+
     case 'theories':
       return (
         <div className="h-full flex flex-col p-4">

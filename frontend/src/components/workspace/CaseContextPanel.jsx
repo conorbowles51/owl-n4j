@@ -6,6 +6,7 @@ import PinnedEvidenceSection from './PinnedEvidenceSection';
 import ClientProfileSection from './ClientProfileSection';
 import WitnessMatrixSection from './WitnessMatrixSection';
 import CaseDeadlinesSection from './CaseDeadlinesSection';
+import FindingsSection from './FindingsSection';
 import TasksSection from './TasksSection';
 import AuditLogSection from './AuditLogSection';
 import TheoriesSection from './TheoriesSection';
@@ -38,6 +39,7 @@ export default function CaseContextPanel({
     'client-profile',
     'witness-matrix',
     'deadlines',
+    'findings',
     'investigative-notes',
     'tasks',
     'entity-summary',
@@ -152,6 +154,16 @@ export default function CaseContextPanel({
           isCollapsed={isCollapsed('deadlines')}
           onToggle={(e) => toggleSection('deadlines', e)}
           onFocus={(e) => focusSection('deadlines', e)}
+        />
+      </div>
+
+      {/* 1b. Findings */}
+      <div className={selectedSection === 'findings' ? 'bg-owl-blue-50' : ''}>
+        <FindingsSection
+          caseId={caseId}
+          isCollapsed={isCollapsed('findings')}
+          onToggle={(e) => toggleSection('findings', e)}
+          onFocus={(e) => focusSection('findings', e)}
         />
       </div>
 
