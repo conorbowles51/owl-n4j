@@ -15,14 +15,6 @@
 
 ## Pending
 
-### FEAT-004 · [HIGH] Feature: Bulk entity merge from Table view
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Allow selecting multiple duplicate entities in the Table view and merging them in one operation. Currently limited to 2-at-a-time merge which took a user 45 minutes to merge 8 duplicates. Should combine all summaries/facts/insights and let user set the final name and type.
-
-### FEAT-007 · [MEDIUM] Feature: Cost Ledger improvements — case ID, PDF export, simplified line items
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Cost Ledger needs: (1) case ID or name so costs can be billed back by case to courts, (2) PDF export capability, (3) simplified line items — consolidate multiple "Document Ingestion: None" entries for the same document into a single line to avoid pushback when billing.
-
 ### FEAT-013 · [LOW] Feature: Better text message processing
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Improve the ingestion pipeline's handling of text message exports. Current processing may not properly parse conversation threads, timestamps, or sender/recipient metadata from common text message export formats.
@@ -30,6 +22,16 @@
 ---
 
 ## Done
+
+### ✅ FEAT-004 · [HIGH] Feature: Bulk entity merge from Table view
+- **Completed:** 2026-03-19
+- **Description:** Bulk merge now supports 3+ entities from Table view. First selected entity becomes target, rest merge sequentially via existing merge endpoint. Bulk merge info banner in modal shows all entities being merged. Existing 2-entity merge unchanged.
+- **Commits:** 75baaea
+
+### ✅ FEAT-007 · [MEDIUM] Feature: Cost Ledger — 3x markup, PDF export
+- **Completed:** 2026-03-19
+- **Description:** Added 3x billable markup column to table and Billable (3x) summary card. PDF export/print button generates formatted HTML with cost/billable columns and confidentiality label. Case ID shown in export header when filtered.
+- **Commits:** 75baaea
 
 ### ✅ FEAT-003 · [HIGH] Feature: Workspace Findings section with linked evidence
 - **Completed:** 2026-03-19
