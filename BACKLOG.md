@@ -51,30 +51,39 @@
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** Improve the ingestion pipeline's handling of text message exports. Current processing may not properly parse conversation threads, timestamps, or sender/recipient metadata from common text message export formats.
 
-### FEAT-014 · [MEDIUM] Feature: AI facts and insights consolidation
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** AI-generated facts and insights are "getting out of control" — too many individual items cluttering the view. Need a better way to view them, possibly integrated into a more comprehensive per-entity or per-document summary rather than individual fact cards.
-
-
-### BUG-011 · [MEDIUM] Fix: Upload fails during concurrent ingestion
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Uploading files while ingestion is running on the same case causes a server error. The error persists even after cancelling ingestion — user cannot upload anything else until the server is restarted. Likely related to BUG-001 race condition but a different code path.
-
-### BUG-012 · [MEDIUM] Fix: Exported snapshot report — blurry graph and irrelevant events
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** When exporting a snapshot report: (1) the graph image comes out blurry (resolution/DPI issue in html2canvas), (2) the export includes all events from the case rather than only the relevant ones for the snapshot. BUG-003 fixed blank graph but blurriness and event scoping are separate issues.
-
-### BUG-013 · [LOW] Fix: AI result graph faded nodes confusing to users
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** When the AI chat returns a result graph, some nodes appear faded/dimmed. The purpose (showing relevance hierarchy) is unclear to users and causes confusion. Need better visual explanation or simplified presentation.
-
-### BUG-015 · [MEDIUM] Fix: Graph legend entity type selection should query full graph
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** When graph is capped at 100 nodes, clicking an Entity Type in the legend should query ALL nodes of that type from the backend and add them to the spotlight graph, not just filter the visible 100. Currently misleading as it only operates on the loaded subset.
-
 ---
 
 ## Done
+
+### ✅ FEAT-010 · [MEDIUM] Feature: Witness matrix — compact view and interviewer field
+- **Completed:** 2026-03-19
+- **Description:** Compact default view showing name, status, credibility, interview count. Full details (statement, risk, strategy) on expand. Added interviewed_by field to WitnessInterview model and modal. Renamed section to "Interviews & Statements".
+- **Commits:** a301288
+
+### ✅ BUG-012 · [MEDIUM] Fix: Exported snapshot report blurry graph
+- **Completed:** 2026-03-19
+- **Description:** Increased html2canvas scale from 2 to 3 for sharper graph capture in exports. Event scoping deferred to snapshot-specific export feature.
+- **Commits:** a301288
+
+### ✅ BUG-013 · [LOW] Fix: AI result graph faded nodes confusing
+- **Completed:** 2026-03-19
+- **Description:** Removed opacity-based fading on result graph nodes and links. Relevance now shown via border thickness — thick blue border for mentioned entities, thin border for high-confidence context nodes. All nodes fully visible.
+- **Commits:** a301288
+
+### ✅ BUG-011 · [MEDIUM] Fix: Upload fails during concurrent ingestion
+- **Completed:** 2026-03-19
+- **Description:** Added cleanup of _active_processing_cases in outer exception handler (was missing, causing permanent state corruption). Task deletion endpoint now also clears active processing state. Processing state no longer gets permanently stuck.
+- **Commits:** be2dd4c
+
+### ✅ BUG-015 · [MEDIUM] Fix: Graph legend entity type selection queries full graph
+- **Completed:** 2026-03-19
+- **Description:** Added /graph/nodes-by-type backend endpoint that returns all nodes of a type from Neo4j. Legend click handler now fetches all nodes from backend when graph is capped, not just visible subset.
+- **Commits:** be2dd4c
+
+### ✅ FEAT-014 · [MEDIUM] Feature: AI facts/insights consolidation
+- **Completed:** 2026-03-19
+- **Description:** AI insights now grouped by confidence level (High/Medium/Low) with collapsible groups showing counts. Insights section collapsed by default. Reduces visual noise from 30+ individual cards to 3 group headers.
+- **Commits:** be2dd4c
 
 ### ✅ FEAT-001 · [HIGH] Feature: File summaries in Workspace view
 - **Completed:** 2026-03-19
