@@ -113,6 +113,12 @@ export default function SnapshotsSection({
     loadSnapshots();
   }, [loadSnapshots]);
 
+  useEffect(() => {
+    const handleRefresh = () => loadSnapshots();
+    window.addEventListener('snapshots-refresh', handleRefresh);
+    return () => window.removeEventListener('snapshots-refresh', handleRefresh);
+  }, [loadSnapshots]);
+
   const formatDate = (dateString) => {
     if (!dateString) return 'No date';
     try {

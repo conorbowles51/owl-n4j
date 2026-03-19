@@ -91,6 +91,7 @@ class TheoryCreate(BaseModel):
 
 class NoteCreate(BaseModel):
     content: str
+    title: Optional[str] = None
     tags: Optional[List[str]] = None
 
 

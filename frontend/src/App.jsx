@@ -2841,10 +2841,20 @@ export default function App() {
       } catch (saveErr) {
         console.error('First save attempt failed:', saveErr);
         // If save fails, try again without work_state (which can be very large)
-        console.log('Retrying save without work_state...');
-        const lightSnapshot = { ...snapshot };
-        delete lightSnapshot.work_state;
-        savedSnapshot = await snapshotsAPI.create(lightSnapshot);
+        setSaveSnapshotProgress(prev => ({
+          ...prev,
+          message: 'Retrying with reduced data...',
+        }));
+        try {
+          const lightSnapshot = { ...snapshot };
+          delete lightSnapshot.work_state;
+          savedSnapshot = await snapshotsAPI.create(lightSnapshot);
+        } catch (retryErr) {
+          console.error('Retry also failed:', retryErr);
+          setSaveSnapshotProgress(prev => ({ ...prev, isOpen: false }));
+          alert(`Failed to save snapshot: ${retryErr.message || saveErr.message}`);
+          return;
+        }
       }
       
       setSaveSnapshotProgress(prev => ({
@@ -2912,6 +2922,7 @@ export default function App() {
       // Close progress dialog and snapshot modal
       setSaveSnapshotProgress(prev => ({ ...prev, isOpen: false }));
       setShowSnapshotModal(false);
+      window.dispatchEvent(new Event('snapshots-refresh'));
       
       // Also save chat history separately for easy reloading
       // Use the full chat history, not just relevant, to preserve complete context

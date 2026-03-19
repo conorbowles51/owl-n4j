@@ -597,6 +597,7 @@ export default function ChatPanel({
       setNoteSavedId(saveNoteModal.msgId);
       setSaveNoteModal(null);
       setTimeout(() => setNoteSavedId(null), 3000);
+      window.dispatchEvent(new Event('notes-refresh'));
     } catch (err) {
       console.error('Failed to save note:', err);
       alert('Failed to save note: ' + err.message);
@@ -1062,7 +1063,7 @@ export default function ChatPanel({
 
       {/* Save as Note Modal */}
       {saveNoteModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999]" onClick={() => setSaveNoteModal(null)}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999]">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 flex flex-col max-h-[80vh]" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-3 border-b border-light-200">
               <h3 className="font-semibold text-owl-blue-900 flex items-center gap-2">

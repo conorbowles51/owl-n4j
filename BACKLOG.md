@@ -71,21 +71,6 @@
 - **Source:** Platform Feedback PDF (18 Mar)
 - **Description:** AI-generated facts and insights are "getting out of control" — too many individual items cluttering the view. Need a better way to view them, possibly integrated into a more comprehensive per-entity or per-document summary rather than individual fact cards.
 
-### BUG-006 · [HIGH] Fix: Popup/modal dismissal loses unsaved work
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Clicking outside a popup/modal window accidentally dismisses it and loses all work in progress. This is extremely frustrating for users writing long notes or filling out forms. Fix: require explicit Save or X to close modals. Add a confirmation prompt if there are unsaved changes, or auto-save drafts.
-
-### BUG-007 · [HIGH] Fix: Notes disappearing from workspace
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** User creates investigative notes but they keep disappearing from the workspace. The audit log shows the notes were created but they don't appear in the Notes section. May be a display/fetch issue or a data persistence problem. Needs investigation.
-
-### BUG-008 · [HIGH] Fix: Failure to save notes
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** User gets "Failed to save note" error when trying to save an investigative note. Screenshot shows the error occurs during the save operation. Related to BUG-007 — notes system needs reliability audit.
-
-### BUG-009 · [HIGH] Fix: Snapshots not showing and crash on save
-- **Source:** Platform Feedback PDF (18 Mar)
-- **Description:** Snapshots are not showing in the workspace view. Additionally, the platform crashes (freezes) when trying to save a snapshot. The save snapshot and save note from AI chat both cause timeouts. Needs investigation — likely a backend timeout or data serialization issue.
 
 ### BUG-010 · [MEDIUM] Fix: Audit log shows actions from all cases
 - **Source:** Platform Feedback PDF (18 Mar)
@@ -118,6 +103,22 @@
 ---
 
 ## Done
+
+### ✅ BUG-006 · [HIGH] Fix: Popup/modal dismissal loses unsaved work
+- **Completed:** 2026-03-19
+- **Description:** Removed `onClick={onClose}` backdrop handlers from 5 form modals (AddInvestigativeNoteModal, AddNoteModal, WitnessModal, LinkEntityModal, ChatPanel save-note modal). Users must now explicitly click X or Cancel to close — no more accidental data loss from misclicks.
+
+### ✅ BUG-007 · [HIGH] Fix: Notes disappearing from workspace
+- **Completed:** 2026-03-19
+- **Description:** ChatPanel was not dispatching `notes-refresh` event after saving a note from AI chat. Added `window.dispatchEvent(new Event('notes-refresh'))` after successful save so InvestigativeNotesSection auto-refreshes.
+
+### ✅ BUG-008 · [HIGH] Fix: Failure to save notes
+- **Completed:** 2026-03-19
+- **Description:** ChatPanel sent `{ title, content, tags }` but NoteCreate Pydantic model only accepted `content` and `tags`, causing a 422 validation error. Added `title: Optional[str] = None` to the NoteCreate model.
+
+### ✅ BUG-009 · [HIGH] Fix: Snapshots not showing and crash on save
+- **Completed:** 2026-03-19
+- **Description:** Fixed snapshot save retry to properly close progress dialog on failure (was freezing for 10+ minutes on double timeout). Added `snapshots-refresh` event listener to SnapshotsSection so it auto-updates after save. Dispatched event from App.jsx after successful snapshot save.
 
 ### ✅ PERF-001 · [HIGH] Feature: Two-phase graph loading with node cap and info banner
 - **Completed:** 2026-03-18
