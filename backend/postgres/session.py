@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -47,5 +48,20 @@ def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_background_session() -> Generator[Session, None, None]:
+    """Get a database session for use in background threads outside the request lifecycle."""
+    SessionLocal = _get_session_local()
+    db = SessionLocal()
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
