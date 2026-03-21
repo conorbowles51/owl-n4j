@@ -135,7 +135,7 @@ async def chunk_and_embed(
     texts = [c.text for c in chunks]
     embeddings = await embed_texts(texts)
 
-    collection = get_or_create_collection(f"case_{case_id}_documents")
+    collection = get_or_create_collection("chunks")
 
     add_embeddings(
         collection=collection,
@@ -144,6 +144,9 @@ async def chunk_and_embed(
         documents=texts,
         metadatas=[
             {
+                "case_id": case_id,
+                "doc_id": file_name,
+                "doc_name": file_name,
                 "job_id": job_id,
                 "file_name": file_name,
                 "chunk_index": c.index,

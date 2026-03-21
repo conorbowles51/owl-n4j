@@ -7,24 +7,20 @@ Handles storage and retrieval of document embeddings using ChromaDB.
 from typing import List, Dict, Optional
 from pathlib import Path
 
-from config import BASE_DIR, CHROMADB_PATH
+from config import BASE_DIR, CHROMADB_PATH, CHROMADB_HOST, CHROMADB_PORT
 
 
 class VectorDBService:
     """Service for managing entity and chunk embeddings in ChromaDB."""
 
     def __init__(self):
-        # Lazy import ChromaDB to avoid Python 3.14 compatibility issues at import time
-        # Note: On Python 3.14, chromadb.config will raise ConfigError due to Pydantic v1 incompatibility
         try:
             import chromadb
             from chromadb.config import Settings
         except Exception as e:
-            # Catch any exception during import, including Pydantic v1 ConfigError on Python 3.14
             error_type = type(e).__name__
             error_msg = str(e)
 
-            # Check if it's a Pydantic/ConfigError (Python 3.14 compatibility issue)
             if "ConfigError" in error_type or "pydantic" in error_msg.lower() or "infer type" in error_msg.lower():
                 raise RuntimeError(
                     f"ChromaDB is not compatible with Python 3.14 due to Pydantic v1 issues. "
@@ -32,20 +28,28 @@ class VectorDBService:
                     f"Original error: {error_type}: {error_msg}"
                 ) from e
             else:
-                # Other import errors
                 raise ImportError(
                     f"ChromaDB is not available: {error_type}: {error_msg}"
                 ) from e
 
-        # Store ChromaDB data in project data directory
-        db_path = BASE_DIR / CHROMADB_PATH
-        db_path.mkdir(parents=True, exist_ok=True)
-
-        # Initialize ChromaDB client (persistent mode)
-        self.client = chromadb.PersistentClient(
-            path=str(db_path),
-            settings=Settings(anonymized_telemetry=False)
-        )
+        # Connect to ChromaDB via HTTP (shared with evidence engine)
+        try:
+            self.client = chromadb.HttpClient(
+                host=CHROMADB_HOST,
+                port=CHROMADB_PORT,
+                settings=Settings(anonymized_telemetry=False),
+            )
+            self.client.heartbeat()
+        except Exception as e:
+            # Fall back to file-based client if HTTP is unavailable
+            print(f"[VectorDB] HTTP client failed ({CHROMADB_HOST}:{CHROMADB_PORT}): {e}")
+            print("[VectorDB] Falling back to file-based PersistentClient")
+            db_path = BASE_DIR / CHROMADB_PATH
+            db_path.mkdir(parents=True, exist_ok=True)
+            self.client = chromadb.PersistentClient(
+                path=str(db_path),
+                settings=Settings(anonymized_telemetry=False),
+            )
 
         # Get or create collection for entities
         self.entity_collection = self.client.get_or_create_collection(

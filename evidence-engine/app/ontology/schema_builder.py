@@ -48,7 +48,6 @@ def build_entity_schema(ontology: OntologySchema | None = None) -> dict[str, Any
         "type": "json_schema",
         "json_schema": {
             "name": "entity_extraction",
-            "strict": True,
             "schema": {
                 "type": "object",
                 "properties": {
@@ -74,7 +73,6 @@ def build_relationship_schema() -> dict[str, Any]:
         "type": "json_schema",
         "json_schema": {
             "name": "relationship_extraction",
-            "strict": True,
             "schema": {
                 "type": "object",
                 "properties": {

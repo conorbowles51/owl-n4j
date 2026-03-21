@@ -55,7 +55,9 @@ else:
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
 
 # Vector DB Configuration
-CHROMADB_PATH = os.getenv("CHROMADB_PATH", "data/chromadb")  # Relative to project root
+CHROMADB_PATH = os.getenv("CHROMADB_PATH", "data/chromadb")  # Relative to project root (legacy, file-based)
+CHROMADB_HOST = os.getenv("CHROMADB_HOST", "localhost")
+CHROMADB_PORT = int(os.getenv("CHROMADB_PORT", "8100"))  # 8100 = host-mapped port from docker-compose
 
 # RAG Configuration
 VECTOR_SEARCH_ENABLED = os.getenv("VECTOR_SEARCH_ENABLED", "true").lower() == "true"
@@ -116,6 +118,7 @@ AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440")) 
 # Evidence Engine Configuration
 EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8001")
 EVIDENCE_ENGINE_TIMEOUT = int(os.getenv("EVIDENCE_ENGINE_TIMEOUT", "300"))  # seconds
+USE_EVIDENCE_ENGINE = os.getenv("USE_EVIDENCE_ENGINE", "true").lower() == "true"
 
 # Redis Configuration (shared with evidence-engine for job progress pub/sub)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")

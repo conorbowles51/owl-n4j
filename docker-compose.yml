@@ -26,7 +26,7 @@ services:
       - ./neo4j/plugins:/plugins
       - ./neo4j/import:/import
 
-  # POSTGRES
+  # POSTGRES (shared by backend + evidence engine)
   postgres:
     image: postgres:16
     container_name: owl-pg
@@ -58,21 +58,6 @@ services:
     ports:
       - "6379:6379"
 
-  # EVIDENCE ENGINE — ingestion microservice
-  # Postgres for job tracking (separate DB from owl-n4j)
-  evidence-postgres:
-    image: postgres:16
-    container_name: owl-evidence-pg
-    restart: unless-stopped
-    ports:
-      - "5433:5432"
-    environment:
-      POSTGRES_DB: ingestion
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    volumes:
-      - evidence-pg-data:/var/lib/postgresql/data
-
   # Evidence Engine API
   evidence-engine-api:
     build: ./evidence-engine
@@ -81,7 +66,7 @@ services:
     ports:
       - "8001:8000"
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@evidence-postgres:5432/ingestion
+      DATABASE_URL: postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: testpassword
@@ -94,7 +79,7 @@ services:
       - evidence-files:/data/files
     depends_on:
       - neo4j
-      - evidence-postgres
+      - postgres
       - redis
       - chromadb
 
@@ -105,7 +90,7 @@ services:
     restart: unless-stopped
     command: arq app.worker.WorkerSettings
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@evidence-postgres:5432/ingestion
+      DATABASE_URL: postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: testpassword
@@ -118,11 +103,10 @@ services:
       - evidence-files:/data/files
     depends_on:
       - neo4j
-      - evidence-postgres
+      - postgres
       - redis
       - chromadb
 
 volumes:
-  evidence-pg-data:
   evidence-files:
   chromadb-data:

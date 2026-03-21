@@ -226,6 +226,67 @@ class EvidenceStorage:
             self._persist()
             return created_records
 
+    def add_engine_file(
+        self,
+        case_id: str,
+        engine_job_id: str,
+        original_filename: str,
+        sha256: str,
+        size: int,
+        owner: Optional[str] = None,
+    ) -> dict:
+        """
+        Register a file that is stored and managed by the evidence engine.
+
+        The file is NOT stored locally — all file operations go through the
+        evidence engine via its HTTP API.
+        """
+        with self._lock:
+            ensure_dirs()
+            now = datetime.now().isoformat()
+
+            # Check for duplicates by hash
+            duplicate_rec = None
+            for rec in self._records.values():
+                if rec.get("sha256") == sha256:
+                    duplicate_rec = rec
+                    break
+
+            evidence_id = f"ev_{sha256[:16]}"
+            suffix = 1
+            while evidence_id in self._records:
+                evidence_id = f"ev_{sha256[:12]}_{suffix}"
+                suffix += 1
+
+            record = {
+                "id": evidence_id,
+                "case_id": case_id,
+                "owner": owner,
+                "original_filename": original_filename,
+                "stored_path": "",  # managed by evidence engine
+                "size": size,
+                "sha256": sha256,
+                "status": "processing",  # evidence engine auto-processes on upload
+                "is_duplicate": bool(duplicate_rec),
+                "duplicate_of": duplicate_rec.get("id") if duplicate_rec else None,
+                "is_relevant": False,
+                "created_at": now,
+                "processed_at": None,
+                "last_error": None,
+                "engine_job_id": engine_job_id,
+            }
+            self._records[evidence_id] = record
+            self._persist()
+            return record
+
+    def find_by_engine_job_id(self, engine_job_id: str) -> Optional[dict]:
+        """Find an evidence record by its engine job ID."""
+        with self._lock:
+            for rec in self._records.values():
+                if rec.get("engine_job_id") == engine_job_id:
+                    return rec
+            return None
+
     def delete_record(self, evidence_id: str) -> Optional[dict]:
         """
         Delete an evidence record by ID. Returns the deleted record or None.

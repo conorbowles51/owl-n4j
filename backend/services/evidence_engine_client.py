@@ -1,9 +1,9 @@
 """
 Evidence Engine Client — async HTTP client for the evidence-engine microservice.
 
-The evidence-engine handles file processing (text extraction, entity extraction,
-deduplication, graph writing). This client proxies requests from the owl-n4j
-backend so the frontend API surface remains unchanged.
+The evidence-engine handles file storage, processing (text extraction, entity
+extraction, deduplication, graph writing), and file serving. This client proxies
+requests from the owl-n4j backend so the frontend API surface remains unchanged.
 """
 
 import logging
@@ -37,6 +37,15 @@ async def close():
         _client = None
 
 
+async def is_available() -> bool:
+    """Check if the evidence engine is reachable."""
+    try:
+        result = await health_check()
+        return result.get("status") != "unavailable"
+    except Exception:
+        return False
+
+
 async def upload_file(
     case_id: str,
     file_name: str,
@@ -45,17 +54,10 @@ async def upload_file(
     llm_profile: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Upload a file to the evidence-engine for processing.
-
-    Args:
-        case_id: Case ID to associate the file with
-        file_name: Original file name
-        file_content: Raw file bytes
-        content_type: MIME type of the file
-        llm_profile: Optional LLM profile context string
+    Upload a file to the evidence-engine for storage and processing.
 
     Returns:
-        Job response dict from evidence-engine (id, case_id, status, etc.)
+        Job response dict from evidence-engine (id, case_id, status, sha256, etc.)
     """
     client = _get_client()
 
@@ -74,15 +76,7 @@ async def upload_file(
 
 
 async def get_job(job_id: str) -> Dict[str, Any]:
-    """
-    Get the status of a processing job.
-
-    Args:
-        job_id: UUID of the job
-
-    Returns:
-        Job response dict (id, case_id, status, progress, entity_count, etc.)
-    """
+    """Get the status of a processing job."""
     client = _get_client()
     response = await client.get(f"/jobs/{job_id}")
     response.raise_for_status()
@@ -90,28 +84,44 @@ async def get_job(job_id: str) -> Dict[str, Any]:
 
 
 async def list_jobs(case_id: str) -> List[Dict[str, Any]]:
-    """
-    List all processing jobs for a case.
-
-    Args:
-        case_id: Case ID to list jobs for
-
-    Returns:
-        List of job response dicts, ordered by created_at desc
-    """
+    """List all processing jobs for a case, ordered by created_at desc."""
     client = _get_client()
     response = await client.get(f"/cases/{case_id}/jobs")
     response.raise_for_status()
     return response.json()
 
 
-async def health_check() -> Dict[str, Any]:
-    """
-    Check evidence-engine health.
+async def list_files(case_id: str) -> List[Dict[str, Any]]:
+    """List all files for a case from evidence engine."""
+    client = _get_client()
+    response = await client.get(f"/cases/{case_id}/files")
+    response.raise_for_status()
+    return response.json()
 
-    Returns:
-        Health response dict from evidence-engine
+
+async def download_file(case_id: str, job_id: str) -> httpx.Response:
     """
+    Download a file from evidence engine. Returns the raw httpx Response
+    so the caller can stream it back to the client.
+    """
+    client = _get_client()
+    response = await client.get(
+        f"/cases/{case_id}/files/{job_id}",
+        follow_redirects=True,
+    )
+    response.raise_for_status()
+    return response
+
+
+async def delete_file(case_id: str, job_id: str) -> None:
+    """Delete a file from evidence engine storage."""
+    client = _get_client()
+    response = await client.delete(f"/cases/{case_id}/files/{job_id}")
+    response.raise_for_status()
+
+
+async def health_check() -> Dict[str, Any]:
+    """Check evidence-engine health."""
     client = _get_client()
     try:
         response = await client.get("/health")

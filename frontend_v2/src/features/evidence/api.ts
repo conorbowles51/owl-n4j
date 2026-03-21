@@ -12,6 +12,7 @@ export interface UploadResponse {
   files?: EvidenceFile[]
   task_id?: string
   task_ids?: string[]
+  job_ids?: string[]
   message?: string
 }
 

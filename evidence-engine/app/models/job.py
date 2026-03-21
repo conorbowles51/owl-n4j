@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, func
+from sqlalchemy import BigInteger, Enum, String, Text, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -30,12 +30,18 @@ class Job(Base):
     case_id: Mapped[str] = mapped_column(String(255), index=True)
     file_name: Mapped[str] = mapped_column(String(500))
     file_path: Mapped[str] = mapped_column(String(1000))
-    status: Mapped[JobStatus] = mapped_column(default=JobStatus.PENDING)
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus, values_callable=lambda e: [s.value for s in e], name="jobstatus", create_type=False),
+        default=JobStatus.PENDING,
+    )
     progress: Mapped[float] = mapped_column(default=0.0)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     entity_count: Mapped[int] = mapped_column(default=0)
     relationship_count: Mapped[int] = mapped_column(default=0)
     llm_profile: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    mime_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         server_default=func.now(), onupdate=func.now()

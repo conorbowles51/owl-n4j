@@ -13,10 +13,13 @@ ENTITY_CATEGORIES = _ontology.categories
 
 
 async def _ensure_indexes() -> None:
-    # Per-category case_id index
+    # Per-category case_id and key indexes
     for label in ENTITY_CATEGORIES:
         await neo4j_client.execute_write(
             f"CREATE INDEX IF NOT EXISTS FOR (n:{label}) ON (n.case_id)"
+        )
+        await neo4j_client.execute_write(
+            f"CREATE INDEX IF NOT EXISTS FOR (n:{label}) ON (n.key)"
         )
 
     # Location spatial index
@@ -110,6 +113,7 @@ async def _write_entities(
         # Build flat property dict for Neo4j (no nested objects)
         props: dict[str, Any] = {
             "id": e.id,
+            "key": e.id,
             "case_id": case_id,
             "name": e.name,
             "aliases": e.aliases,
@@ -146,6 +150,7 @@ async def _write_entities(
 
 async def _write_relationships(
     relationships: list[ResolvedRelationship],
+    case_id: str,
 ) -> None:
     # Group by type
     by_type: dict[str, list[dict[str, Any]]] = {}
@@ -153,6 +158,7 @@ async def _write_relationships(
         props: dict[str, Any] = {
             "source_id": rel.source_entity_id,
             "target_id": rel.target_entity_id,
+            "case_id": case_id,
             "detail": rel.detail,
             "confidence": rel.confidence,
             "source_quotes": rel.source_quotes,
@@ -193,7 +199,7 @@ async def _embed_entities(
     if not new_entities:
         return
 
-    collection = chroma_client.get_or_create_collection(f"case_{case_id}_entities")
+    collection = chroma_client.get_or_create_collection("entities")
 
     texts = []
     for e in new_entities:
@@ -235,5 +241,5 @@ async def write_graph(
 ) -> None:
     await _ensure_indexes()
     await _write_entities(entities, case_id, job_id)
-    await _write_relationships(relationships)
+    await _write_relationships(relationships, case_id)
     await _embed_entities(entities, case_id)

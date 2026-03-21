@@ -169,7 +169,7 @@ async def _embedding_candidates(
 
         embeddings = await embed_texts(texts)
 
-        col_name = f"_dedup_{uuid.uuid4().hex[:8]}"
+        col_name = f"dedup-{uuid.uuid4().hex[:8]}"
         col = get_or_create_collection(col_name)
         try:
             add_embeddings(
@@ -339,9 +339,8 @@ async def _cross_job_dedup(
     case_id: str,
 ) -> dict[str, str]:
     """Returns mapping of new-entity-id → existing-entity-id for confirmed merges."""
-    col_name = f"case_{case_id}_entities"
     try:
-        col = get_or_create_collection(col_name)
+        col = get_or_create_collection("entities")
         if col.count() == 0:
             return {}
     except Exception:
@@ -365,7 +364,7 @@ async def _cross_job_dedup(
             col,
             query_embeddings=[emb],
             n_results=5,
-            where={"category": entity.category},
+            where={"$and": [{"case_id": case_id}, {"category": entity.category}]},
         )
         if not results or not results.get("ids") or not results["ids"][0]:
             continue

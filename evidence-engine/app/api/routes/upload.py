@@ -1,3 +1,5 @@
+import hashlib
+import mimetypes
 import os
 import uuid
 
@@ -28,9 +30,14 @@ async def upload_file(
     os.makedirs(dir_path, exist_ok=True)
     file_path = os.path.join(dir_path, file.filename)
 
+    content = await file.read()
     async with aiofiles.open(file_path, "wb") as f:
-        content = await file.read()
         await f.write(content)
+
+    # Compute file metadata
+    file_size = len(content)
+    mime_type = mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
+    sha256 = hashlib.sha256(content).hexdigest()
 
     # Create job record
     job = Job(
@@ -39,6 +46,9 @@ async def upload_file(
         file_name=file.filename,
         file_path=file_path,
         llm_profile=llm_profile,
+        file_size=file_size,
+        mime_type=mime_type,
+        sha256=sha256,
     )
     db.add(job)
     await db.commit()

@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # PostgreSQL
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ingestion"
+    # PostgreSQL (shared with backend — owl_db)
+    database_url: str = "postgresql+asyncpg://owl_us:owl_pw@localhost:5432/owl_db"
 
     # Neo4j
     neo4j_uri: str = "bolt://localhost:7687"

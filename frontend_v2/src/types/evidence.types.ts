@@ -11,6 +11,7 @@ export interface EvidenceFile {
   last_error?: string | null
   summary?: string | null
   entity_count?: number
+  engine_job_id?: string | null
 }
 
 export interface IngestionResult {

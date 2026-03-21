@@ -19,6 +19,9 @@ class JobResponse(BaseModel):
     error_message: str | None
     entity_count: int
     relationship_count: int
+    file_size: int = 0
+    mime_type: str | None = None
+    sha256: str | None = None
     created_at: datetime
     updated_at: datetime
 

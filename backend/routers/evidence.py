@@ -2,15 +2,19 @@
 Evidence Router
 
 Handles uploading evidence files and triggering ingestion processing.
+File storage and AI processing are delegated to the evidence engine when enabled.
 """
 
+import asyncio
+import logging
+import mimetypes
 import subprocess
 import shutil
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from services.evidence_service import evidence_service
@@ -22,14 +26,17 @@ from services.background_task_storage import background_task_storage, TaskStatus
 from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
+from services import evidence_engine_client
 from .auth import get_current_user
 from routers.users import get_current_db_user
 from fastapi import Query, status
 from postgres.session import get_db
 from postgres.models.user import User
 from sqlalchemy.orm import Session
-from config import BASE_DIR
+from config import BASE_DIR, USE_EVIDENCE_ENGINE
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 # Hard limit on file IDs per single processing request.
@@ -43,7 +50,7 @@ class EvidenceRecord(BaseModel):
     id: str
     case_id: str
     original_filename: str
-    stored_path: str
+    stored_path: str = ""
     size: int
     sha256: str
     status: str
@@ -52,6 +59,7 @@ class EvidenceRecord(BaseModel):
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
     summary: Optional[str] = None  # Document summary if available
+    engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking
 
 
 class EvidenceListResponse(BaseModel):
@@ -63,6 +71,7 @@ class UploadResponse(BaseModel):
     files: Optional[List[EvidenceRecord]] = None  # For synchronous uploads
     task_id: Optional[str] = None  # Single task ID (for backwards compatibility)
     task_ids: Optional[List[str]] = None  # Multiple task IDs (for folder uploads)
+    job_ids: Optional[List[str]] = None  # Evidence engine job IDs (for WebSocket progress)
     message: Optional[str] = None  # Status message
 
 
@@ -103,7 +112,7 @@ class EvidenceLogListResponse(BaseModel):
 @router.get("", response_model=EvidenceListResponse)
 async def list_evidence(
     case_id: Optional[str] = None,
-    status: Optional[str] = None,
+    status_filter: Optional[str] = Query(None, alias="status"),
     user: dict = Depends(get_current_user),
 ):
     """
@@ -111,39 +120,78 @@ async def list_evidence(
 
     Args:
         case_id: Optional case ID to filter by.
-        status: Optional status filter
+        status_filter: Optional status filter
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
     try:
         files = evidence_service.list_files(
             case_id=case_id,
-            status=status,
+            status=status_filter,
         )
-        
+
+        # For engine-managed files, update status from evidence engine jobs
+        if USE_EVIDENCE_ENGINE and files:
+            await _sync_engine_statuses(files)
+
         # Get document summaries for processed files
         if files and case_id:
             processed_files = [f for f in files if f.get("status") == "processed"]
             if processed_files:
                 try:
-                    # Get summaries from Neo4j
                     doc_names = [f.get("original_filename", "") for f in processed_files]
                     summaries = neo4j_service.get_document_summaries_batch(doc_names, case_id)
-                    
-                    # Add summaries to file records
                     for file in files:
                         if file.get("status") == "processed":
                             filename = file.get("original_filename", "")
                             if filename in summaries:
                                 file["summary"] = summaries[filename]
                 except Exception as e:
-                    # Don't fail the entire request if summary retrieval fails
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Failed to load document summaries: {str(e)}")
-        
+                    logger.warning("Failed to load document summaries: %s", e)
+
         return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Map evidence engine job statuses to backend evidence statuses
+_ENGINE_STATUS_MAP = {
+    "completed": "processed",
+    "failed": "failed",
+    "pending": "processing",
+    "extracting_text": "processing",
+    "chunking": "processing",
+    "extracting_entities": "processing",
+    "resolving_entities": "processing",
+    "resolving_relationships": "processing",
+    "generating_summaries": "processing",
+    "writing_graph": "processing",
+}
+
+
+async def _sync_engine_statuses(files: List[dict]) -> None:
+    """
+    For files with engine_job_id, fetch current status from the evidence engine
+    and update the local record if it has changed.
+    """
+    engine_files = [f for f in files if f.get("engine_job_id") and f.get("status") == "processing"]
+    if not engine_files:
+        return
+
+    for file in engine_files:
+        try:
+            job = await evidence_engine_client.get_job(file["engine_job_id"])
+            engine_status = job.get("status", "")
+            mapped = _ENGINE_STATUS_MAP.get(engine_status, "processing")
+            if mapped != file.get("status"):
+                file["status"] = mapped
+                if mapped == "processed":
+                    evidence_storage.mark_processed([file["id"]])
+                elif mapped == "failed":
+                    err_msg = job.get("error_message", "Processing failed")
+                    evidence_storage.mark_processed([file["id"]], error=err_msg)
+                    file["last_error"] = err_msg
+        except Exception as e:
+            logger.debug("Could not sync status for job %s: %s", file.get("engine_job_id"), e)
 
 
 @router.post("/sync-filesystem")
@@ -289,10 +337,9 @@ async def upload_evidence(
     """
     Upload one or more evidence files for a case.
 
-    Files are stored under the ingestion data directory so they can be
-    processed by the ingestion pipeline.
-
-    If is_folder is 'true' or more than 5 files are uploaded, creates background tasks.
+    When the evidence engine is enabled, files are forwarded to it for storage
+    and automatic AI processing. Otherwise, files are stored locally and must
+    be processed separately.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
@@ -305,34 +352,29 @@ async def upload_evidence(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
+        # --- Evidence Engine path: forward files for storage + auto-processing ---
+        if USE_EVIDENCE_ENGINE:
+            return await _upload_via_engine(case_id, files, current_user.email)
+
+        # --- Legacy path: store locally, process separately ---
         # Check if this is a folder upload or should be background task
         is_folder_upload = is_folder and is_folder.lower() == 'true'
         use_background = is_folder_upload or len(files) > 5
 
         if use_background:
-            # Extract files with relative paths for folder uploads
             uploads = []
-            
-            # Note: FastAPI doesn't easily allow access to arbitrary form fields when using Form()/File()
-            # For folder uploads, the frontend sends file_path_{index} fields, but we can't access them here.
-            # We'll rely on the filename potentially containing the path, or use the original filename.
-            # The relative_path might be None for some files, but upload_folders_background handles that.
             for index, uf in enumerate(files):
                 content = await uf.read()
                 filename = uf.filename or ""
-                
-                # For folder uploads, try to extract relative path from filename
-                # The frontend may send the path as part of the filename
+
                 relative_path = None
                 if '/' in filename or '\\' in filename:
-                    # Path separators present - treat as relative path
                     relative_path = filename.replace('\\', '/')
-                    # Extract just the filename (last component) for original_filename
                     path_parts = relative_path.split('/')
                     original_filename = path_parts[-1] if path_parts else filename
                 else:
                     original_filename = filename
-                
+
                 uploads.append(
                     {
                         "original_filename": original_filename,
@@ -340,21 +382,19 @@ async def upload_evidence(
                         "relative_path": relative_path,
                     }
                 )
-            
+
             if is_folder_upload:
-                # Use upload_folders_background for folder uploads (groups by top-level folder)
                 task_ids = evidence_service.upload_folders_background(
                     case_id=case_id,
                     files=uploads,
                     owner=current_user.email,
                 )
                 return UploadResponse(
-                    task_id=task_ids[0] if task_ids else None,  # First task ID for backwards compatibility
+                    task_id=task_ids[0] if task_ids else None,
                     task_ids=task_ids,
                     message=f"Uploading {len(task_ids)} folder(s) in background" if task_ids else "No folders to upload",
                 )
             else:
-                # Use upload_files_background for large file uploads
                 task_id = evidence_service.upload_files_background(
                     case_id=case_id,
                     files=uploads,
@@ -365,7 +405,6 @@ async def upload_evidence(
                     message=f"Uploading {len(files)} file(s) in background",
                 )
         else:
-            # Synchronous upload for small file sets
             uploads = []
             for uf in files:
                 content = await uf.read()
@@ -382,8 +421,227 @@ async def upload_evidence(
                 owner=current_user.email,
             )
             return UploadResponse(files=records)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _upload_via_engine(
+    case_id: str,
+    files: List[UploadFile],
+    owner: str,
+) -> UploadResponse:
+    """
+    Forward files to the evidence engine for storage and processing.
+
+    The evidence engine stores each file, computes metadata (sha256, size, mime),
+    and auto-enqueues AI processing. We create a local evidence record with
+    engine_job_id so we can proxy file operations later.
+    """
+    sem = asyncio.Semaphore(5)
+
+    async def upload_one(uf: UploadFile) -> dict:
+        content = await uf.read()
+        filename = uf.filename or "unknown"
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        async with sem:
+            job = await evidence_engine_client.upload_file(
+                case_id=case_id,
+                file_name=filename,
+                file_content=content,
+                content_type=content_type,
+            )
+        # Create local evidence record linked to the engine job
+        record = evidence_storage.add_engine_file(
+            case_id=case_id,
+            engine_job_id=str(job["id"]),
+            original_filename=filename,
+            sha256=job.get("sha256", ""),
+            size=job.get("file_size", len(content)),
+            owner=owner,
+        )
+        return record
+
+    records = await asyncio.gather(*[upload_one(uf) for uf in files])
+    records = list(records)
+    job_ids = [r.get("engine_job_id") for r in records if r.get("engine_job_id")]
+
+    # Create a backend background task to track engine processing progress.
+    # This bridges the evidence engine's Redis pub/sub with the frontend's
+    # polling-based Activity tab.
+    task_id = None
+    if job_ids:
+        task = background_task_storage.create_task(
+            task_type="evidence_processing",
+            task_name=f"Processing {len(records)} file(s)",
+            owner=owner,
+            case_id=case_id,
+            metadata={
+                "engine_job_ids": job_ids,
+                "file_count": len(records),
+            },
+        )
+        task_id = task["id"]
+
+        import threading
+
+        def _track_engine_jobs(tid: str, jids: list, recs: list):
+            """Poll evidence engine jobs and mirror progress to the background task."""
+            import time
+            from services.evidence_log_storage import evidence_log_storage
+
+            _STATUS_MESSAGES = {
+                "pending": "Queued for processing",
+                "extracting_text": "Extracting text from document",
+                "chunking": "Chunking and embedding document",
+                "extracting_entities": "Extracting entities and relationships",
+                "resolving_entities": "Resolving and deduplicating entities",
+                "resolving_relationships": "Deduplicating relationships",
+                "generating_summaries": "Generating entity summaries",
+                "writing_graph": "Writing to knowledge graph",
+            }
+
+            case_id = recs[0].get("case_id") if recs else None
+
+            background_task_storage.update_task(
+                tid,
+                status=TaskStatus.RUNNING.value,
+                started_at=datetime.now().isoformat(),
+                progress_total=len(jids),
+                progress_completed=0,
+            )
+
+            # Init file statuses
+            job_to_file = {}
+            job_to_ev_id = {}
+            for rec in recs:
+                jid = rec.get("engine_job_id")
+                if jid:
+                    fname = rec.get("original_filename", "unknown")
+                    job_to_file[jid] = fname
+                    job_to_ev_id[jid] = rec.get("id", jid)
+                    background_task_storage.update_task(
+                        tid,
+                        file_status={
+                            "file_id": rec.get("id", jid),
+                            "filename": fname,
+                            "status": "processing",
+                        },
+                    )
+                    evidence_log_storage.add_log(
+                        case_id=case_id,
+                        evidence_id=rec.get("id"),
+                        filename=fname,
+                        level="info",
+                        message=f"Started processing: {fname}",
+                    )
+
+            terminal = set()
+            completed_count = 0
+            failed_count = 0
+            last_status = {}  # Track last logged status per job
+
+            while len(terminal) < len(jids):
+                time.sleep(3)
+                for jid in jids:
+                    if jid in terminal:
+                        continue
+                    try:
+                        import asyncio as _aio
+                        loop = _aio.new_event_loop()
+                        job = loop.run_until_complete(evidence_engine_client.get_job(jid))
+                        loop.close()
+                    except Exception:
+                        continue
+
+                    engine_status = job.get("status", "")
+                    fname = job_to_file.get(jid, "unknown")
+                    ev_id = job_to_ev_id.get(jid)
+
+                    # Log status changes
+                    if engine_status != last_status.get(jid) and engine_status in _STATUS_MESSAGES:
+                        last_status[jid] = engine_status
+                        evidence_log_storage.add_log(
+                            case_id=case_id,
+                            evidence_id=ev_id,
+                            filename=fname,
+                            level="info",
+                            message=f"{fname}: {_STATUS_MESSAGES[engine_status]}",
+                        )
+
+                    if engine_status in ("completed", "failed"):
+                        terminal.add(jid)
+                        file_status = "completed" if engine_status == "completed" else "failed"
+                        if engine_status == "completed":
+                            completed_count += 1
+                        else:
+                            failed_count += 1
+
+                        # Sync status to evidence record
+                        ev_rec = evidence_storage.find_by_engine_job_id(jid)
+                        if ev_rec:
+                            if engine_status == "completed":
+                                evidence_storage.mark_processed([ev_rec["id"]])
+                            else:
+                                evidence_storage.mark_processed(
+                                    [ev_rec["id"]],
+                                    error=job.get("error_message", "Processing failed"),
+                                )
+
+                        # Log terminal state
+                        if engine_status == "completed":
+                            entity_count = job.get("entity_count", 0)
+                            rel_count = job.get("relationship_count", 0)
+                            evidence_log_storage.add_log(
+                                case_id=case_id,
+                                evidence_id=ev_id,
+                                filename=fname,
+                                level="info",
+                                message=f"Completed processing: {fname} ({entity_count} entities, {rel_count} relationships)",
+                            )
+                        else:
+                            evidence_log_storage.add_log(
+                                case_id=case_id,
+                                evidence_id=ev_id,
+                                filename=fname,
+                                level="error",
+                                message=f"Failed processing {fname}: {job.get('error_message', 'Unknown error')}",
+                            )
+
+                        background_task_storage.update_task(
+                            tid,
+                            progress_completed=completed_count + failed_count,
+                            file_status={
+                                "file_id": ev_rec["id"] if ev_rec else jid,
+                                "filename": fname,
+                                "status": file_status,
+                                "error": job.get("error_message") if file_status == "failed" else None,
+                            },
+                        )
+
+            # All done
+            final_status = TaskStatus.COMPLETED.value if failed_count == 0 else TaskStatus.FAILED.value
+            background_task_storage.update_task(
+                tid,
+                status=final_status,
+                completed_at=datetime.now().isoformat(),
+            )
+
+        thread = threading.Thread(
+            target=_track_engine_jobs,
+            args=(task_id, job_ids, records),
+            daemon=True,
+            name=f"engine-track-{task_id}",
+        )
+        thread.start()
+
+    return UploadResponse(
+        files=records,
+        job_ids=job_ids if job_ids else None,
+        task_id=task_id,
+        message=f"Processing {len(records)} file(s)" if task_id else None,
+    )
 
 
 @router.post("/process/background")
@@ -395,8 +653,9 @@ async def process_evidence_background(
     """
     Process selected evidence files in the background.
 
-    Returns immediately with a task ID. Use the background-tasks API
-    to monitor progress.
+    For engine-managed files, processing is automatic (started on upload).
+    This endpoint returns job status for those files.
+    For legacy files, starts background processing via the ingestion pipeline.
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
@@ -416,15 +675,32 @@ async def process_evidence_background(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        task_id = evidence_service.process_files_background(
-            evidence_ids=request.file_ids,
-            case_id=request.case_id,
-            owner=current_user.email,
-            profile=request.profile,
-            max_workers=request.max_workers,
-            image_provider=request.image_provider,
-        )
-        return {"task_id": task_id, "message": "Processing started in background"}
+        # Separate engine-managed files from legacy files
+        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids)
+
+        if engine_ids and not legacy_ids:
+            # All engine-managed — processing is automatic, return status
+            return {
+                "task_id": None,
+                "message": f"{len(engine_ids)} file(s) are already being processed by the evidence engine",
+            }
+
+        if legacy_ids:
+            # Process legacy files via the old pipeline
+            task_id = evidence_service.process_files_background(
+                evidence_ids=legacy_ids,
+                case_id=request.case_id,
+                owner=current_user.email,
+                profile=request.profile,
+                max_workers=request.max_workers,
+                image_provider=request.image_provider,
+            )
+            msg = f"Processing {len(legacy_ids)} legacy file(s) in background"
+            if engine_ids:
+                msg += f"; {len(engine_ids)} file(s) already processing via evidence engine"
+            return {"task_id": task_id, "message": msg}
+
+        return {"task_id": None, "message": "No files to process"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -438,8 +714,8 @@ async def process_evidence(
     """
     Process selected evidence files synchronously.
 
-    Deduplicates by file hash so identical files are only ingested once.
-    For multiple files, consider using /process/background instead.
+    For engine-managed files, processing is automatic. This returns their
+    current status counts. Legacy files are processed via the ingestion pipeline.
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
@@ -453,17 +729,25 @@ async def process_evidence(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        # Run the potentially long-running ingestion work in a threadpool
-        # so that other requests (like /evidence/logs) can still be served
-        # while processing is ongoing.
-        summary = await run_in_threadpool(
-            evidence_service.process_files,
-            request.file_ids,
-            request.case_id,
-            current_user.email,
-            request.profile,
-        )
-        return ProcessResponse(**summary)
+        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids)
+
+        processed = len(engine_ids)  # engine files are already processing/processed
+        skipped = 0
+        errors = 0
+
+        if legacy_ids:
+            summary = await run_in_threadpool(
+                evidence_service.process_files,
+                legacy_ids,
+                request.case_id,
+                current_user.email,
+                request.profile,
+            )
+            processed += summary.get("processed", 0)
+            skipped += summary.get("skipped", 0)
+            errors += summary.get("errors", 0)
+
+        return ProcessResponse(processed=processed, skipped=skipped, errors=errors)
     except ImportError as e:
         raise HTTPException(
             status_code=500,
@@ -471,6 +755,19 @@ async def process_evidence(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _split_engine_legacy(file_ids: List[str]) -> tuple:
+    """Split file IDs into engine-managed and legacy lists."""
+    engine_ids = []
+    legacy_ids = []
+    for fid in file_ids:
+        rec = evidence_storage.get(fid)
+        if rec and rec.get("engine_job_id"):
+            engine_ids.append(fid)
+        else:
+            legacy_ids.append(fid)
+    return engine_ids, legacy_ids
 
 
 @router.get("/logs", response_model=EvidenceLogListResponse)
@@ -912,15 +1209,22 @@ async def delete_evidence_file(
         except Exception as e:
             logger.warning(f"Neo4j cleanup error: {e}")
 
-        # 4. Delete physical file from disk
-        if stored_path:
+        # 4. Delete physical file — via evidence engine or local disk
+        engine_job_id = record.get("engine_job_id")
+        if engine_job_id:
+            try:
+                await evidence_engine_client.delete_file(case_id, engine_job_id)
+                result_info["file_deleted"] = True
+            except Exception as e:
+                logger.warning("Failed to delete file from evidence engine: %s", e)
+        elif stored_path:
             file_path = Path(stored_path)
             if file_path.exists():
                 try:
                     file_path.unlink()
                     result_info["file_deleted"] = True
                 except Exception as e:
-                    logger.warning(f"Failed to delete physical file: {e}")
+                    logger.warning("Failed to delete physical file: %s", e)
 
         # 5. Delete evidence record from JSON storage
         evidence_storage.delete_record(evidence_id)
@@ -940,65 +1244,55 @@ async def get_evidence_file(
 ):
     """
     Serve the actual file content for a given evidence ID.
-    
-    Returns the PDF/document file with appropriate content type headers.
-    Used by the document viewer to display original source documents.
+
+    For engine-managed files, proxies the request to the evidence engine.
+    For legacy files, serves directly from local disk.
     """
     try:
-        # Get the evidence record
         record = evidence_storage.get(evidence_id)
-        
         if not record:
-            raise HTTPException(status_code=404, detail="Evidence not found") 
-        
-        # Get the stored file path
+            raise HTTPException(status_code=404, detail="Evidence not found")
+
+        filename = record.get("original_filename", "file")
+
+        # --- Engine-managed file: proxy from evidence engine ---
+        engine_job_id = record.get("engine_job_id")
+        if engine_job_id:
+            case_id = record.get("case_id", "")
+            try:
+                resp = await evidence_engine_client.download_file(case_id, engine_job_id)
+                media_type = resp.headers.get("content-type", "application/octet-stream")
+                return Response(
+                    content=resp.content,
+                    media_type=media_type,
+                    headers={
+                        "Content-Disposition": f'inline; filename="{filename}"',
+                    },
+                )
+            except Exception as e:
+                logger.error("Failed to proxy file from evidence engine: %s", e)
+                raise HTTPException(
+                    status_code=502,
+                    detail="Could not retrieve file from evidence engine",
+                )
+
+        # --- Legacy file: serve from local disk ---
         stored_path = record.get("stored_path")
         if not stored_path:
             raise HTTPException(status_code=404, detail="File path not found")
-        
+
         file_path = Path(stored_path)
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
-        
-        # Determine content type based on file extension
-        filename = record.get("original_filename", file_path.name)
-        extension = file_path.suffix.lower()
-        
-        content_type_map = {
-            ".pdf": "application/pdf",
-            ".txt": "text/plain",
-            ".doc": "application/msword",
-            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            ".png": "image/png",
-            ".jpg": "image/jpeg",
-            ".jpeg": "image/jpeg",
-            ".gif": "image/gif",
-            ".webp": "image/webp",
-            ".bmp": "image/bmp",
-            ".svg": "image/svg+xml",
-            ".mp4": "video/mp4",
-            ".webm": "video/webm",
-            ".mov": "video/quicktime",
-            ".avi": "video/x-msvideo",
-            ".mkv": "video/x-matroska",
-            ".flv": "video/x-flv",
-            ".wmv": "video/x-ms-wmv",
-            ".mp3": "audio/mpeg",
-            ".wav": "audio/wav",
-            ".ogg": "audio/ogg",
-            ".flac": "audio/flac",
-            ".aac": "audio/aac",
-            ".m4a": "audio/mp4",
-        }
-        
-        content_type = content_type_map.get(extension, "application/octet-stream")
-        
+
+        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+
         return FileResponse(
             path=file_path,
             filename=filename,
             media_type=content_type,
             headers={
-                "Content-Disposition": f"inline; filename=\"{filename}\"",
+                "Content-Disposition": f'inline; filename="{filename}"',
             }
         )
     except HTTPException:

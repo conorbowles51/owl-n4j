@@ -3,7 +3,7 @@ import { StatusIndicator, type ProcessingStatus } from "@/components/ui/status-i
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { TableRow, TableCell } from "@/components/ui/table"
-import { Eye, RotateCcw, Trash2 } from "lucide-react"
+import { Eye, RotateCcw, Trash2, AlertCircle } from "lucide-react"
 import type { EvidenceFile } from "@/types/evidence.types"
 
 interface EvidenceRowProps {
@@ -38,14 +38,22 @@ export function EvidenceRow({
         />
       </TableCell>
       <TableCell
-        className="max-w-[300px] cursor-pointer truncate font-medium hover:text-amber-500"
+        className="max-w-[300px] cursor-pointer font-medium hover:text-amber-500"
         onClick={() => onView?.(file)}
       >
-        {file.original_filename}
+        <div className="truncate">{file.original_filename}</div>
         {file.duplicate_of && (
-          <Badge variant="warning" className="ml-1.5 text-[9px]">
+          <Badge variant="warning" className="mt-0.5 text-[9px]">
             Duplicate
           </Badge>
+        )}
+        {file.status === "failed" && file.last_error && (
+          <div className="mt-0.5 flex items-start gap-1 text-[11px] text-red-400 leading-tight">
+            <AlertCircle className="mt-0.5 size-3 shrink-0" />
+            <span className="truncate" title={file.last_error}>
+              {file.last_error}
+            </span>
+          </div>
         )}
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">

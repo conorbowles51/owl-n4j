@@ -215,7 +215,7 @@ export function EvidencePage() {
             </TabsTrigger>
             <TabsTrigger value="upload">
               <UploadIcon className="size-3.5" />
-              Upload & Process
+              Upload
             </TabsTrigger>
             <TabsTrigger value="profiles">
               <Settings className="size-3.5" />
