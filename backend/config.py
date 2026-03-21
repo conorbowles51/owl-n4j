@@ -113,6 +113,13 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "supersecretchange")
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours default
 
+# Evidence Engine Configuration
+EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8001")
+EVIDENCE_ENGINE_TIMEOUT = int(os.getenv("EVIDENCE_ENGINE_TIMEOUT", "300"))  # seconds
+
+# Redis Configuration (shared with evidence-engine for job progress pub/sub)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+
 # API Configuration
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
 API_PORT = int(os.getenv("API_PORT", "8000"))

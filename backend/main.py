@@ -38,7 +38,9 @@ from routers import (
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
+from services import evidence_engine_client
 from routers.snapshots import _cleanup_stale_chunks
+from routers.evidence_ws import router as evidence_ws_router, close_redis
 
 
 @asynccontextmanager
@@ -62,11 +64,19 @@ async def lifespan(app: FastAPI):
 
     cleanup_task.cancel()
     # Shutdown
-    print("Shutting down, closing Neo4j connection...")
+    print("Shutting down, closing connections...")
     try:
         neo4j_service.close()
     except Exception as e:
         print(f"Warning: Error closing Neo4j connection: {e}")
+    try:
+        await evidence_engine_client.close()
+    except Exception as e:
+        print(f"Warning: Error closing evidence engine client: {e}")
+    try:
+        await close_redis()
+    except Exception as e:
+        print(f"Warning: Error closing Redis connection: {e}")
 
 
 app = FastAPI(
@@ -110,6 +120,7 @@ app.include_router(cost_ledger_router)
 app.include_router(financial_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
+app.include_router(evidence_ws_router)
 
 
 @app.get("/")
@@ -134,10 +145,18 @@ async def health():
         neo4j_status = f"error: {str(e)}"
         node_count = 0
 
+    # Test evidence engine connection
+    try:
+        ee_health = await evidence_engine_client.health_check()
+        evidence_engine_status = ee_health.get("status", "unknown")
+    except Exception as e:
+        evidence_engine_status = f"error: {str(e)}"
+
     return {
         "status": "ok",
         "neo4j": neo4j_status,
         "nodes": node_count,
+        "evidence_engine": evidence_engine_status,
     }
 
 
