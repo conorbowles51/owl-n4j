@@ -40,6 +40,16 @@ services:
     volumes:
       - ./postgres/data:/var/lib/postgresql/data
 
+  # CHROMADB (shared: vector search for RAG + entity dedup)
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: owl-chromadb
+    restart: unless-stopped
+    ports:
+      - "8100:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+
   # REDIS (shared: evidence-engine job queue + progress pub/sub)
   redis:
     image: redis:7-alpine
@@ -86,6 +96,7 @@ services:
       - neo4j
       - evidence-postgres
       - redis
+      - chromadb
 
   # Evidence Engine Worker (arq background job processor)
   evidence-engine-worker:
@@ -109,7 +120,9 @@ services:
       - neo4j
       - evidence-postgres
       - redis
+      - chromadb
 
 volumes:
   evidence-pg-data:
   evidence-files:
+  chromadb-data:
