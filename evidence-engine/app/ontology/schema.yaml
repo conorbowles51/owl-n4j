@@ -1,0 +1,637 @@
+version: "1.0"
+
+# =============================================================================
+# ENTITY CATEGORIES
+# =============================================================================
+# Each category becomes a Neo4j label. The AI also assigns a free-form
+# "specific_type" property for finer granularity (e.g., "Suspect", "Firearm").
+# If the AI encounters something that truly doesn't fit ANY category below,
+# it may use "Other" and justify why.
+# =============================================================================
+
+entity_categories:
+
+  # ---------------------------------------------------------------------------
+  # People & Organizations
+  # ---------------------------------------------------------------------------
+
+  Person:
+    description: "A specific named individual relevant to the investigation"
+    properties:
+      aliases:        { type: list,   description: "Alternative names, nicknames, aliases" }
+      role:           { type: string, description: "Role, occupation, or title" }
+      nationality:    { type: string, description: "Nationality or citizenship" }
+      date_of_birth:  { type: string, description: "Date of birth (ISO format if known)" }
+      description:    { type: string, description: "Brief description of the person and their relevance" }
+    extraction_notes: >
+      Only named individuals or those with a clear identifier.
+      Not generic references like 'the suspect' or 'a witness' unless they can be resolved to a specific person.
+
+  Organization:
+    description: "A formal legal entity — company, government agency, NGO, institution, bank"
+    properties:
+      aliases:        { type: list,   description: "Alternative names, abbreviations, trade names" }
+      org_type:       { type: string, description: "Type of organization (company, government_agency, bank, ngo, law_firm, etc.)" }
+      jurisdiction:   { type: string, description: "Country or jurisdiction of registration" }
+      description:    { type: string, description: "Brief description and relevance" }
+    extraction_notes: >
+      Formal, legally constituted entities only.
+      For informal groups (gangs, cells, networks), use Group instead.
+
+  Group:
+    description: "An informal association — gang, cell, network, syndicate, crew, clan, militia, cartel"
+    properties:
+      aliases:        { type: list,   description: "Alternative names for the group" }
+      group_type:     { type: string, enum: [gang, cell, network, syndicate, crew, clan, militia, cartel, other], description: "Type of group" }
+      estimated_size: { type: string, description: "Estimated number of members if known" }
+      description:    { type: string, description: "Brief description and relevance" }
+    extraction_notes: >
+      Informal associations without formal legal standing.
+      For companies, agencies, or registered entities, use Organization instead.
+
+  # ---------------------------------------------------------------------------
+  # Places & Events
+  # ---------------------------------------------------------------------------
+
+  Location:
+    description: "A specific geographic location that can be placed on a map"
+    properties:
+      address:          { type: string, description: "Street address" }
+      city:             { type: string, description: "City or town" }
+      region:           { type: string, description: "State, province, or region" }
+      country:          { type: string, description: "Country" }
+      coordinates_hint: { type: string, description: "Any lat/long or coordinate hint from the text" }
+      specificity:      { type: string, description: "How specific this location is (exact_address, building, city, region)" }
+      description:      { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      ONLY locations specific enough to place on a map.
+      NOT vague regions like 'America', 'overseas', 'the east coast', 'somewhere in Europe'.
+      A city name is the minimum specificity.
+
+  Event:
+    description: "A meaningful discrete occurrence — a meeting, incident, shipment, attack, arrest scene"
+    properties:
+      date:           { type: string, description: "Date or date range (ISO format if possible)" }
+      date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      event_type:     { type: string, description: "Type of event (meeting, incident, shipment, raid, etc.)" }
+      significance:   { type: string, description: "Why this event matters to the investigation" }
+      description:    { type: string, description: "What happened" }
+    extraction_notes: >
+      Only meaningful discrete occurrences with investigative relevance.
+      NOT vague temporal references like 'in recent years' or 'over the past decade'.
+      For formal legal proceedings (arrest, charge, conviction), use LegalAction instead.
+
+  # ---------------------------------------------------------------------------
+  # Financial
+  # ---------------------------------------------------------------------------
+
+  Transaction:
+    description: "An actual financial transaction with identifiable parties and amount"
+    properties:
+      amount:         { type: string, description: "Monetary amount" }
+      currency:       { type: string, description: "Currency code (USD, EUR, GBP, etc.)" }
+      date:           { type: string, description: "Transaction date (ISO format if possible)" }
+      date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      sender:         { type: string, description: "Sending party name" }
+      receiver:       { type: string, description: "Receiving party name" }
+      method:         { type: string, description: "Payment method (wire, cash, check, crypto, etc.)" }
+      reference:      { type: string, description: "Transaction reference or ID" }
+      description:    { type: string, description: "Description and context" }
+    extraction_notes: >
+      ONLY actual financial transactions with identifiable parties and amounts.
+      NOT incidental monetary references like 'the company is worth $5M' or 'salaries averaged $80K'.
+      NOT valuations, estimates, or market prices unless they represent an actual transfer of funds.
+
+  Account:
+    description: "A financial account at an institution — bank account, brokerage account, investment account"
+    properties:
+      account_number: { type: string, description: "Account number or IBAN" }
+      institution:    { type: string, description: "Bank or financial institution name" }
+      holder:         { type: string, description: "Account holder name" }
+      account_type:   { type: string, description: "Type of account (checking, savings, brokerage, trust, etc.)" }
+      currency:       { type: string, description: "Account currency" }
+      description:    { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Accounts held at an institution.
+      For specific financial tools or bearer instruments (credit cards, checks), use FinancialInstrument instead.
+
+  FinancialInstrument:
+    description: "A specific financial tool — credit card, debit card, check, crypto wallet, money order"
+    properties:
+      instrument_type: { type: string, enum: [credit_card, debit_card, check, crypto_wallet, wire_transfer, money_order, insurance_policy, other], description: "Type of instrument" }
+      number:          { type: string, description: "Card number, check number, wallet address, etc." }
+      issuer:          { type: string, description: "Issuing institution" }
+      expiry:          { type: string, description: "Expiry date if applicable" }
+      description:     { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Specific bearer instruments or financial tools, not accounts.
+      For accounts at institutions (bank accounts, brokerage accounts), use Account instead.
+
+  # ---------------------------------------------------------------------------
+  # Communications & Documents
+  # ---------------------------------------------------------------------------
+
+  Communication:
+    description: "A specific communication — phone call, email, text message, letter, meeting"
+    properties:
+      comm_type:      { type: string, description: "Type (phone_call, email, text_message, letter, in_person_meeting, radio, etc.)" }
+      date:           { type: string, description: "Date/time of communication" }
+      date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      participants:   { type: list,   description: "Names of participants" }
+      duration:       { type: string, description: "Duration if known" }
+      summary:        { type: string, description: "Summary of communication content" }
+    extraction_notes: >
+      Specific communications between identifiable parties.
+      Not general references to 'they communicated' without specifics.
+
+  Document:
+    description: "A specific text-based document — contract, report, letter, invoice, certificate, filing"
+    properties:
+      doc_type:          { type: string, description: "Type of document (contract, report, invoice, letter, certificate, etc.)" }
+      date:              { type: string, description: "Document date" }
+      date_precision:    { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      reference_number:  { type: string, description: "Document reference number or ID" }
+      author:            { type: string, description: "Author or issuing party" }
+      description:       { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Text-based documents referenced in the investigation.
+      Do NOT extract the document currently being processed as an entity.
+      For audio/visual media (footage, recordings, photographs), use Media instead.
+
+  Media:
+    description: "Audio or visual evidence — surveillance footage, photographs, recordings, screenshots, body cam"
+    properties:
+      media_type:     { type: string, enum: [surveillance_footage, photograph, audio_recording, video, screenshot, body_cam, other], description: "Type of media" }
+      date:           { type: string, description: "Date the media was captured" }
+      date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      duration:       { type: string, description: "Duration for audio/video" }
+      source_device:  { type: string, description: "Device that captured the media" }
+      description:    { type: string, description: "Description of media content and relevance" }
+    extraction_notes: >
+      Audio/visual evidentiary media.
+      For text-based documents (contracts, reports, letters), use Document instead.
+
+  # ---------------------------------------------------------------------------
+  # Physical Evidence
+  # ---------------------------------------------------------------------------
+
+  Vehicle:
+    description: "A specific vehicle — car, truck, boat, aircraft, motorcycle"
+    properties:
+      vehicle_type:      { type: string, enum: [car, truck, van, suv, boat, aircraft, motorcycle, bicycle, other], description: "Type of vehicle" }
+      make:              { type: string, description: "Manufacturer (Toyota, Ford, Boeing, etc.)" }
+      model:             { type: string, description: "Model name" }
+      year:              { type: string, description: "Year of manufacture" }
+      color:             { type: string, description: "Color" }
+      registration_plate: { type: string, description: "License plate or registration number" }
+      vin:               { type: string, description: "Vehicle Identification Number" }
+      description:       { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Only specific, identifiable vehicles — not generic mentions like 'a car' or 'by vehicle'.
+
+  Weapon:
+    description: "A weapon — firearm, blade, explosive device, chemical agent"
+    properties:
+      weapon_type:   { type: string, enum: [firearm, blade, explosive, chemical, biological, improvised, other], description: "Type of weapon" }
+      make:          { type: string, description: "Manufacturer" }
+      model:         { type: string, description: "Model name" }
+      serial_number: { type: string, description: "Serial number" }
+      caliber:       { type: string, description: "Caliber or specification" }
+      description:   { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Specific weapons or armaments mentioned in the investigation.
+
+  Drug:
+    description: "A controlled substance, precursor chemical, or illicit drug"
+    properties:
+      substance_name:  { type: string, description: "Name of the substance" }
+      drug_type:       { type: string, enum: [narcotic, stimulant, depressant, hallucinogen, precursor, synthetic, pharmaceutical, other], description: "Drug classification" }
+      quantity:        { type: string, description: "Amount seized or mentioned" }
+      unit:            { type: string, description: "Unit of measurement (kg, g, lb, tablets, etc.)" }
+      estimated_value: { type: string, description: "Estimated street/market value" }
+      form:            { type: string, enum: [powder, pill, liquid, plant, crystal, paste, resin, other], description: "Physical form" }
+      description:     { type: string, description: "Description and context" }
+    extraction_notes: >
+      Specific controlled substances or precursors.
+      Not generic references to 'drugs' without specifics.
+
+  Device:
+    description: "A physical electronic device — phone, computer, laptop, tablet, hard drive, camera"
+    properties:
+      device_type:   { type: string, enum: [phone, computer, laptop, tablet, storage_media, camera, gps_tracker, recorder, drone, other], description: "Type of device" }
+      make:          { type: string, description: "Manufacturer" }
+      model:         { type: string, description: "Model name" }
+      serial_number: { type: string, description: "Serial number" }
+      imei:          { type: string, description: "IMEI number (for phones)" }
+      mac_address:   { type: string, description: "MAC address" }
+      description:   { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      The physical electronic device itself.
+      For digital identities associated with a device (phone number, IP address, email), use CyberIdentity instead.
+      Extract both if the text mentions a physical device AND its digital identifiers.
+
+  PhysicalEvidence:
+    description: "Physical evidence that does not fit Vehicle, Weapon, Drug, or Device categories"
+    properties:
+      evidence_type: { type: string, description: "Type of evidence (clothing, packaging, container, tool, biological_sample, fingerprint, etc.)" }
+      description:   { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      FALLBACK category for physical items that do not fit Vehicle, Weapon, Drug, or Device.
+      Examples: clothing, packaging, tools, biological samples, fingerprints, footprints.
+      Always prefer the specific category (Vehicle, Weapon, Drug, Device) if it fits.
+
+  # ---------------------------------------------------------------------------
+  # Digital
+  # ---------------------------------------------------------------------------
+
+  CyberIdentity:
+    description: "A digital identifier — email address, phone number, username, IP address, domain, social media account, crypto wallet"
+    properties:
+      identity_type:   { type: string, enum: [email, phone_number, username, ip_address, domain, social_media_account, crypto_wallet, mac_address, other], description: "Type of digital identity" }
+      platform:        { type: string, description: "Platform or service (Gmail, WhatsApp, Twitter, Telegram, etc.)" }
+      handle:          { type: string, description: "The actual identifier value (the email address, phone number, username, etc.)" }
+      associated_name: { type: string, description: "Real name associated with this identity if known" }
+      description:     { type: string, description: "Description and relevance" }
+    extraction_notes: >
+      Digital identifiers that can link to real-world persons or activities.
+      For the physical device itself (a phone, a laptop), use Device instead.
+      Extract both if the text mentions a physical device AND its digital identifiers.
+
+  # ---------------------------------------------------------------------------
+  # Legal & Intelligence
+  # ---------------------------------------------------------------------------
+
+  LegalAction:
+    description: "A formal legal proceeding — arrest, charge, warrant, conviction, sentence, court order, indictment"
+    properties:
+      action_type:    { type: string, enum: [arrest, charge, warrant, conviction, sentence, court_order, indictment, filing, bail_hearing, extradition, other], description: "Type of legal action" }
+      case_number:    { type: string, description: "Case or docket number" }
+      jurisdiction:   { type: string, description: "Court or jurisdiction" }
+      date:           { type: string, description: "Date of the legal action" }
+      date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      outcome:        { type: string, description: "Outcome or result if known" }
+      description:    { type: string, description: "Description and significance" }
+    extraction_notes: >
+      Formal legal proceedings and actions only.
+      For real-world events (a raid, a meeting, a shipment), use Event instead.
+
+  Intelligence:
+    description: "An intelligence product — tip, informant report, surveillance observation, intercept, open-source intelligence"
+    properties:
+      intel_type:               { type: string, enum: [tip, informant_report, surveillance_observation, intercept, open_source_intel, forensic_analysis, other], description: "Type of intelligence" }
+      date:                     { type: string, description: "Date of the intelligence" }
+      date_precision:           { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
+      source_reliability:       { type: string, enum: [A, B, C, D, E, F], description: "NATO reliability scale — A (completely reliable) to F (reliability cannot be judged)" }
+      information_credibility:  { type: string, enum: ["1", "2", "3", "4", "5", "6"], description: "NATO credibility scale — 1 (confirmed) to 6 (truth cannot be judged)" }
+      description:              { type: string, description: "Description of the intelligence and its significance" }
+    extraction_notes: >
+      Intelligence products and reports.
+      Rate source reliability and information credibility when the text provides enough context.
+
+  # ---------------------------------------------------------------------------
+  # Catch-all
+  # ---------------------------------------------------------------------------
+
+  Other:
+    description: "An entity that does not fit any of the categories above"
+    properties:
+      other_type:  { type: string, description: "What kind of entity this is" }
+      description: { type: string, description: "Description and justification for why no other category fits" }
+    extraction_notes: >
+      Use ONLY when no other category fits. You must justify why.
+
+
+# =============================================================================
+# RELATIONSHIP TYPES
+# =============================================================================
+# The AI should prefer these types but may create custom types if none fit.
+# =============================================================================
+
+relationship_types:
+
+  # General
+  ASSOCIATED_WITH:
+    description: "General association between entities (fallback when no specific type fits)"
+    typical_source: []
+    typical_target: []
+    properties: {}
+
+  RELATED_TO:
+    description: "Familial or personal relationship"
+    typical_source: [Person]
+    typical_target: [Person]
+    properties:
+      nature: { type: string, description: "Nature of relationship (spouse, sibling, parent, cousin, etc.)" }
+
+  # Employment & Membership
+  WORKS_FOR:
+    description: "Employment or formal organizational membership"
+    typical_source: [Person]
+    typical_target: [Organization]
+    properties:
+      role:      { type: string, description: "Role or position" }
+      date_from: { type: string, description: "Start date" }
+      date_to:   { type: string, description: "End date" }
+
+  SUPERVISED_BY:
+    description: "Management or command hierarchy — one person supervises another"
+    typical_source: [Person]
+    typical_target: [Person]
+    properties:
+      context:   { type: string, description: "Context of supervision" }
+      date_from: { type: string }
+      date_to:   { type: string }
+
+  MEMBER_OF:
+    description: "Membership in an organization or informal group"
+    typical_source: [Person]
+    typical_target: [Organization, Group]
+    properties:
+      role:      { type: string, description: "Role within the group" }
+      date_from: { type: string }
+      date_to:   { type: string }
+
+  AFFILIATED_WITH:
+    description: "Inter-organizational or inter-group affiliation"
+    typical_source: [Organization, Group]
+    typical_target: [Organization, Group]
+    properties:
+      nature: { type: string, description: "Nature of affiliation" }
+
+  CONTROLLED_BY:
+    description: "Beneficial or operational control"
+    typical_source: [Organization, Group]
+    typical_target: [Person, Organization]
+    properties:
+      mechanism: { type: string, description: "How control is exercised" }
+
+  SUBSIDIARY_OF:
+    description: "Corporate parent-subsidiary relationship"
+    typical_source: [Organization]
+    typical_target: [Organization]
+    properties: {}
+
+  KNOWN_ASSOCIATE_OF:
+    description: "Known association specifically between persons"
+    typical_source: [Person]
+    typical_target: [Person]
+    properties:
+      context: { type: string, description: "Context of the association" }
+      nature:  { type: string, description: "Nature of association" }
+
+  # Location & Movement
+  LOCATED_AT:
+    description: "Entity is at, based in, or operates from a location"
+    typical_source: [Person, Organization, Group, Device, Event]
+    typical_target: [Location]
+    properties: {}
+
+  TRAVELED_TO:
+    description: "Person traveled to a location"
+    typical_source: [Person]
+    typical_target: [Location]
+    properties:
+      date:           { type: string, description: "Date of travel" }
+      date_precision: { type: string }
+      method:         { type: string, description: "Mode of travel (air, road, sea, rail)" }
+
+  RESIDED_AT:
+    description: "Person's residential address"
+    typical_source: [Person]
+    typical_target: [Location]
+    properties:
+      date_from: { type: string }
+      date_to:   { type: string }
+
+  OPERATED_FROM:
+    description: "Base of operations for a person, organization, or group"
+    typical_source: [Person, Organization, Group]
+    typical_target: [Location]
+    properties:
+      date_from: { type: string }
+      date_to:   { type: string }
+
+  # Financial
+  SENT_PAYMENT:
+    description: "Sender of a financial transaction"
+    typical_source: [Person, Organization, Account]
+    typical_target: [Transaction]
+    properties: {}
+
+  RECEIVED_PAYMENT:
+    description: "Receiver of a financial transaction"
+    typical_source: [Person, Organization, Account]
+    typical_target: [Transaction]
+    properties: {}
+
+  VIA_ACCOUNT:
+    description: "Transaction routed through a specific account or instrument"
+    typical_source: [Transaction]
+    typical_target: [Account, FinancialInstrument]
+    properties: {}
+
+  HELD_BY:
+    description: "Account or financial instrument owned or held by a person/organization"
+    typical_source: [Account, FinancialInstrument]
+    typical_target: [Person, Organization]
+    properties: {}
+
+  FINANCED_BY:
+    description: "Entity funded or financed by another"
+    typical_source: [Person, Organization, Group, Event]
+    typical_target: [Person, Organization, Account]
+    properties:
+      amount:   { type: string }
+      currency: { type: string }
+      period:   { type: string }
+
+  BENEFICIAL_OWNER_OF:
+    description: "Beneficial ownership (may differ from legal holder)"
+    typical_source: [Person]
+    typical_target: [Account, Organization, FinancialInstrument]
+    properties:
+      share_percentage: { type: string, description: "Ownership percentage if known" }
+
+  TRANSFERRED_TO:
+    description: "Direct transfer between accounts or financial instruments"
+    typical_source: [Account, FinancialInstrument]
+    typical_target: [Account, FinancialInstrument]
+    properties:
+      amount:   { type: string }
+      currency: { type: string }
+      date:     { type: string }
+
+  # Communication & Identity
+  COMMUNICATED_WITH:
+    description: "Communication between parties"
+    typical_source: [Person, CyberIdentity]
+    typical_target: [Person, CyberIdentity]
+    properties: {}
+
+  ALIAS_OF:
+    description: "Digital identity belongs to or is used by a person"
+    typical_source: [CyberIdentity]
+    typical_target: [Person]
+    properties:
+      confirmed: { type: string, description: "Whether the link is confirmed or suspected" }
+
+  # Legal
+  ARRESTED_FOR:
+    description: "Person arrested in connection with a legal action"
+    typical_source: [Person]
+    typical_target: [LegalAction]
+    properties:
+      date: { type: string }
+
+  CHARGED_WITH:
+    description: "Person formally charged"
+    typical_source: [Person]
+    typical_target: [LegalAction]
+    properties:
+      date:  { type: string }
+      count: { type: string, description: "Number of counts" }
+
+  CONVICTED_OF:
+    description: "Person convicted"
+    typical_source: [Person]
+    typical_target: [LegalAction]
+    properties:
+      date:     { type: string }
+      sentence: { type: string, description: "Sentence imposed" }
+
+  SUSPECT_IN:
+    description: "Person is a suspect in an event or incident"
+    typical_source: [Person]
+    typical_target: [Event]
+    properties:
+      basis: { type: string, description: "Basis for suspicion" }
+
+  VICTIM_OF:
+    description: "Person is a victim of an event or incident"
+    typical_source: [Person]
+    typical_target: [Event]
+    properties: {}
+
+  WITNESS_TO:
+    description: "Person witnessed an event"
+    typical_source: [Person]
+    typical_target: [Event]
+    properties: {}
+
+  # Evidence & Ownership
+  OWNS:
+    description: "Ownership of property, assets, vehicles, or evidence"
+    typical_source: [Person, Organization]
+    typical_target: [Vehicle, Device, PhysicalEvidence, FinancialInstrument]
+    properties: {}
+
+  SEIZED_FROM:
+    description: "Evidence, weapon, or drug seized from a person, location, or vehicle"
+    typical_source: [Weapon, Drug, Device, Vehicle, PhysicalEvidence, FinancialInstrument]
+    typical_target: [Person, Location, Vehicle]
+    properties:
+      date:      { type: string }
+      authority: { type: string, description: "Seizing authority or agency" }
+
+  FOUND_AT:
+    description: "Entity found or discovered at a location"
+    typical_source: [Weapon, Drug, Device, Vehicle, PhysicalEvidence, Person]
+    typical_target: [Location]
+    properties:
+      date: { type: string }
+
+  REGISTERED_TO:
+    description: "Vehicle, device, or identity officially registered to a person/organization"
+    typical_source: [Vehicle, Device, CyberIdentity, FinancialInstrument]
+    typical_target: [Person, Organization]
+    properties:
+      date: { type: string, description: "Registration date" }
+
+  # Document & Reference
+  MENTIONED_IN:
+    description: "Entity referenced or mentioned in a document"
+    typical_source: [Person, Organization, Event, Location]
+    typical_target: [Document, Media, Intelligence]
+    properties: {}
+
+  # Digital
+  ACCESSED_FROM:
+    description: "Digital account or identity accessed from a location or device"
+    typical_source: [CyberIdentity, Account]
+    typical_target: [Location, Device]
+    properties:
+      date:       { type: string }
+      ip_address: { type: string }
+
+  # Event participation
+  PARTICIPATED_IN:
+    description: "Entity participated in or was involved in an event"
+    typical_source: [Person, Organization, Group, Vehicle]
+    typical_target: [Event]
+    properties: {}
+
+
+# =============================================================================
+# DISAMBIGUATION RULES
+# =============================================================================
+# Injected into extraction prompts to help the AI choose the right category.
+# =============================================================================
+
+disambiguation:
+  - categories: [Device, CyberIdentity]
+    rule: >
+      Device = the physical object (a Samsung Galaxy phone, a Dell laptop).
+      CyberIdentity = the digital identity (phone number +353..., email john@..., IP 192.168.1.1).
+      Extract BOTH if the text mentions a physical device AND a digital identifier associated with it.
+
+  - categories: [Account, FinancialInstrument]
+    rule: >
+      Account = an account held at an institution (bank account, brokerage account).
+      FinancialInstrument = a specific bearer instrument or financial tool (credit card, check, crypto wallet address).
+
+  - categories: [Organization, Group]
+    rule: >
+      Organization = a formal legal entity (company, government agency, NGO, registered charity).
+      Group = an informal association (gang, terror cell, drug crew, family network, militia).
+
+  - categories: [Document, Media]
+    rule: >
+      Document = text-based (contracts, reports, letters, invoices, certificates).
+      Media = audio/visual (CCTV footage, photographs, audio recordings, body cam video).
+
+  - categories: [Event, LegalAction]
+    rule: >
+      Event = a real-world occurrence (a meeting, a shooting, a drug shipment, a raid).
+      LegalAction = a formal legal proceeding (arrest, criminal charge, conviction, warrant, court order).
+
+  - categories: [PhysicalEvidence, Vehicle, Weapon, Drug, Device]
+    rule: >
+      Always prefer the specific category: Vehicle, Weapon, Drug, or Device.
+      Only use PhysicalEvidence for physical items that do not fit any of those (clothing, packaging, tools, biological samples).
+
+
+# =============================================================================
+# FRONTEND VIEW CONFIGURATION
+# =============================================================================
+# Defines which categories power each frontend view.
+# =============================================================================
+
+views:
+  timeline:
+    description: "Events and dated entities on a chronological timeline"
+    categories: [Event, LegalAction, Media, Intelligence, Transaction, Communication]
+    date_field: "date"
+
+  map:
+    description: "Entities with geographic coordinates on a map"
+    categories: [Location]
+    requires: [latitude, longitude]
+
+  financial:
+    description: "Financial transactions and flows"
+    categories: [Transaction]
+    requires: [amount, currency]
+
+  graph:
+    description: "All entities and relationships in a network graph"
+    categories: all

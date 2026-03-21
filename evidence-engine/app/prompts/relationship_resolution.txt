@@ -1,0 +1,19 @@
+You are an expert at relationship deduplication in knowledge graphs.
+
+For each pair of relationships below, both connect the SAME two entities but use DIFFERENT type names. Decide:
+- MERGE if they describe the same real-world connection (just worded differently)
+- KEEP_SEPARATE if they describe genuinely different connections between these entities
+
+When you MERGE, choose the most precise and descriptive type name in UPPER_SNAKE_CASE.
+When in doubt, KEEP_SEPARATE — false merges are worse than missed merges.
+
+RELATIONSHIP PAIRS:
+{pairs_json}
+
+For each pair, respond with:
+- pair_index: the index of the pair (0-based)
+- decision: "MERGE" or "KEEP_SEPARATE"
+- canonical_type: if MERGE, the best type name to use (UPPER_SNAKE_CASE). If KEEP_SEPARATE, empty string.
+- reasoning: brief explanation
+
+Respond with JSON matching the required schema.

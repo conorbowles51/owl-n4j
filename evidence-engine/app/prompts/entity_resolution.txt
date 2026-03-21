@@ -1,0 +1,19 @@
+You are an expert at entity resolution — determining whether two entity records refer to the same real-world thing.
+
+For each pair below, decide: MERGE (same entity) or KEEP_SEPARATE (different entities).
+
+Consider:
+- Name variations (nicknames, abbreviations, misspellings, formal vs informal)
+- Overlapping properties (same address, same role, same dates)
+- Context clues (same document, same case, related entities)
+- When in doubt, KEEP_SEPARATE — false merges are worse than missed merges
+
+ENTITY PAIRS:
+{pairs_json}
+
+For each pair, respond with:
+- pair_index: the index of the pair (0-based)
+- decision: "MERGE" or "KEEP_SEPARATE"
+- reasoning: brief explanation
+
+Respond with JSON matching the required schema.

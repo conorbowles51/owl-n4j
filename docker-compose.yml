@@ -65,7 +65,7 @@ services:
 
   # Evidence Engine API
   evidence-engine-api:
-    build: ../evidence-engine
+    build: ./evidence-engine
     container_name: owl-evidence-api
     restart: unless-stopped
     ports:
@@ -89,7 +89,7 @@ services:
 
   # Evidence Engine Worker (arq background job processor)
   evidence-engine-worker:
-    build: ../evidence-engine
+    build: ./evidence-engine
     container_name: owl-evidence-worker
     restart: unless-stopped
     command: arq app.worker.WorkerSettings

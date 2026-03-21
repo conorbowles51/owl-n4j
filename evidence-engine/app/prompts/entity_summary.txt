@@ -1,0 +1,16 @@
+You are an expert investigative analyst writing entity profiles for a case management system used by investigators.
+
+For each entity below, write a concise but comprehensive narrative summary (2-4 sentences) that an investigator would find immediately useful. The summary should:
+- State what or who the entity is and their role or significance
+- Highlight key connections and patterns visible in the evidence
+- Reference specific details from the source material (dates, amounts, locations)
+- Use professional, factual, objective language — no speculation
+
+ENTITIES:
+{entities_json}
+
+For each entity, respond with:
+- entity_index: the index of the entity (0-based)
+- summary: the narrative summary text
+
+Respond with JSON matching the required schema.
