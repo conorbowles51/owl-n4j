@@ -1,25 +1,36 @@
 import { create } from "zustand"
-import type { EvidenceFile } from "@/types/evidence.types"
 
-type EvidenceTab = "files" | "upload" | "profiles" | "activity"
 type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed"
 
 interface EvidenceState {
+  // Navigation
+  currentFolderId: string | null
+  setCurrentFolder: (id: string | null) => void
+
+  // Folder tree
+  expandedFolderIds: Set<string>
+  toggleFolderExpand: (id: string) => void
+  expandFolder: (id: string) => void
+  collapseFolder: (id: string) => void
+
   // Selection
   selectedFileIds: Set<string>
+  selectedFolderIds: Set<string>
   toggleFileSelection: (id: string) => void
+  toggleFolderSelection: (id: string) => void
   selectAllFiles: (ids: string[]) => void
   clearSelection: () => void
 
-  // Tabs
-  activeTab: EvidenceTab
-  setActiveTab: (tab: EvidenceTab) => void
-
   // Detail sheet
-  detailFile: EvidenceFile | null
+  detailFileId: string | null
   detailOpen: boolean
-  openDetail: (file: EvidenceFile) => void
+  openDetail: (fileId: string) => void
   closeDetail: () => void
+
+  // Jobs panel
+  jobsPanelOpen: boolean
+  toggleJobsPanel: () => void
+  setJobsPanelOpen: (open: boolean) => void
 
   // Filters
   searchTerm: string
@@ -28,27 +39,66 @@ interface EvidenceState {
   setStatusFilter: (filter: StatusFilter) => void
   typeFilter: string
   setTypeFilter: (filter: string) => void
+
+  // Drag state
+  dragType: "file" | "folder" | "external" | null
+  dragId: string | null
+  setDrag: (type: "file" | "folder" | "external" | null, id: string | null) => void
+  clearDrag: () => void
 }
 
 export const useEvidenceStore = create<EvidenceState>((set) => ({
+  currentFolderId: null,
+  setCurrentFolder: (id) => set({ currentFolderId: id, selectedFileIds: new Set(), selectedFolderIds: new Set() }),
+
+  expandedFolderIds: new Set(),
+  toggleFolderExpand: (id) =>
+    set((s) => {
+      const next = new Set(s.expandedFolderIds)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return { expandedFolderIds: next }
+    }),
+  expandFolder: (id) =>
+    set((s) => {
+      const next = new Set(s.expandedFolderIds)
+      next.add(id)
+      return { expandedFolderIds: next }
+    }),
+  collapseFolder: (id) =>
+    set((s) => {
+      const next = new Set(s.expandedFolderIds)
+      next.delete(id)
+      return { expandedFolderIds: next }
+    }),
+
   selectedFileIds: new Set(),
+  selectedFolderIds: new Set(),
   toggleFileSelection: (id) =>
-    set((state) => {
-      const next = new Set(state.selectedFileIds)
+    set((s) => {
+      const next = new Set(s.selectedFileIds)
       if (next.has(id)) next.delete(id)
       else next.add(id)
       return { selectedFileIds: next }
     }),
+  toggleFolderSelection: (id) =>
+    set((s) => {
+      const next = new Set(s.selectedFolderIds)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return { selectedFolderIds: next }
+    }),
   selectAllFiles: (ids) => set({ selectedFileIds: new Set(ids) }),
-  clearSelection: () => set({ selectedFileIds: new Set() }),
+  clearSelection: () => set({ selectedFileIds: new Set(), selectedFolderIds: new Set() }),
 
-  activeTab: "files",
-  setActiveTab: (tab) => set({ activeTab: tab }),
-
-  detailFile: null,
+  detailFileId: null,
   detailOpen: false,
-  openDetail: (file) => set({ detailFile: file, detailOpen: true }),
+  openDetail: (fileId) => set({ detailFileId: fileId, detailOpen: true }),
   closeDetail: () => set({ detailOpen: false }),
+
+  jobsPanelOpen: false,
+  toggleJobsPanel: () => set((s) => ({ jobsPanelOpen: !s.jobsPanelOpen })),
+  setJobsPanelOpen: (open) => set({ jobsPanelOpen: open }),
 
   searchTerm: "",
   setSearchTerm: (term) => set({ searchTerm: term }),
@@ -56,4 +106,9 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   setStatusFilter: (filter) => set({ statusFilter: filter }),
   typeFilter: "",
   setTypeFilter: (filter) => set({ typeFilter: filter }),
+
+  dragType: null,
+  dragId: null,
+  setDrag: (type, id) => set({ dragType: type, dragId: id }),
+  clearDrag: () => set({ dragType: null, dragId: null }),
 }))

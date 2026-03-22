@@ -3,10 +3,18 @@ You are an expert at entity resolution — determining whether two entity record
 For each pair below, decide: MERGE (same entity) or KEEP_SEPARATE (different entities).
 
 Consider:
-- Name variations (nicknames, abbreviations, misspellings, formal vs informal)
+- Name variations (nicknames, abbreviations, misspellings, formal vs informal, trailing punctuation)
+- Names that differ only by punctuation, case, or minor formatting should be MERGED (e.g., "Nexus Trading Ltd." and "Nexus Trading Ltd")
 - Overlapping properties (same address, same role, same dates)
 - Context clues (same document, same case, related entities)
 - When in doubt, KEEP_SEPARATE — false merges are worse than missed merges
+- Two entities with similar but distinct names (e.g., "Marcus Chen" vs "Sarah Chen") are SEPARATE people
+- An organization's abbreviated name and full name are the same entity (e.g., "Nexus Trading" and "Nexus Trading Limited")
+
+IMPORTANT — Transaction / Event / Communication entities:
+- These are "instance" entities where multiple records with the same name are legitimate
+- Two transactions with the same name but different dates, amounts, or parties are SEPARATE instances — do NOT merge them
+- Only merge these if they have the same date AND same amount AND same parties (i.e., they are truly duplicate records of the same event)
 
 ENTITY PAIRS:
 {pairs_json}

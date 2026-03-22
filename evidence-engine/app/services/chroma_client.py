@@ -52,6 +52,24 @@ def add_embeddings(
         )
 
 
+def upsert_embeddings(
+    collection: chromadb.Collection,
+    ids: list[str],
+    embeddings: list[list[float]],
+    documents: list[str],
+    metadatas: list[dict[str, Any]],
+) -> None:
+    batch_size = 500
+    for i in range(0, len(ids), batch_size):
+        end = i + batch_size
+        collection.upsert(
+            ids=ids[i:end],
+            embeddings=embeddings[i:end],
+            documents=documents[i:end],
+            metadatas=metadatas[i:end],
+        )
+
+
 def query_similar(
     collection: chromadb.Collection,
     query_embeddings: list[list[float]],

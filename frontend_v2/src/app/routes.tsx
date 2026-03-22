@@ -7,7 +7,7 @@ import { AppLayout } from "./layouts/AppLayout"
 import { CaseLayout } from "./layouts/CaseLayout"
 import { AdminLayout } from "./layouts/AdminLayout"
 import { CaseManagementPage } from "@/features/cases/components/CaseManagementPage"
-import { EvidencePage } from "@/features/evidence/components/EvidencePage"
+import { EvidenceExplorer } from "@/features/evidence/components/EvidenceExplorer"
 
 // Lazy-loaded heavy views
 const GraphPage = lazy(() =>
@@ -129,7 +129,7 @@ export function AppRoutes() {
             <Route path="map" element={<LazyPage><MapPage /></LazyPage>} />
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
             <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
-            <Route path="evidence" element={<EvidencePage />} />
+            <Route path="evidence" element={<EvidenceExplorer />} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />
             <Route path="reports" element={<LazyPage><ReportsPage /></LazyPage>} />

@@ -114,6 +114,7 @@ async def list_evidence(
     case_id: Optional[str] = None,
     status_filter: Optional[str] = Query(None, alias="status"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     List evidence files.
@@ -123,15 +124,29 @@ async def list_evidence(
         status_filter: Optional status filter
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
-    try:
-        files = evidence_service.list_files(
-            case_id=case_id,
-            status=status_filter,
-        )
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
 
-        # For engine-managed files, update status from evidence engine jobs
-        if USE_EVIDENCE_ENGINE and files:
-            await _sync_engine_statuses(files)
+    try:
+        if not case_id:
+            return {"files": []}
+        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
+        files = []
+        for f in db_files:
+            files.append({
+                "id": str(f.id),
+                "case_id": str(f.case_id),
+                "original_filename": f.original_filename,
+                "stored_path": f.stored_path or "",
+                "size": f.size,
+                "sha256": f.sha256,
+                "status": f.status,
+                "duplicate_of": str(f.duplicate_of_id) if f.duplicate_of_id else None,
+                "created_at": f.created_at.isoformat() if f.created_at else "",
+                "processed_at": f.processed_at.isoformat() if f.processed_at else None,
+                "last_error": f.last_error,
+                "engine_job_id": f.engine_job_id,
+            })
 
         # Get document summaries for processed files
         if files and case_id:
@@ -153,45 +168,6 @@ async def list_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Map evidence engine job statuses to backend evidence statuses
-_ENGINE_STATUS_MAP = {
-    "completed": "processed",
-    "failed": "failed",
-    "pending": "processing",
-    "extracting_text": "processing",
-    "chunking": "processing",
-    "extracting_entities": "processing",
-    "resolving_entities": "processing",
-    "resolving_relationships": "processing",
-    "generating_summaries": "processing",
-    "writing_graph": "processing",
-}
-
-
-async def _sync_engine_statuses(files: List[dict]) -> None:
-    """
-    For files with engine_job_id, fetch current status from the evidence engine
-    and update the local record if it has changed.
-    """
-    engine_files = [f for f in files if f.get("engine_job_id") and f.get("status") == "processing"]
-    if not engine_files:
-        return
-
-    for file in engine_files:
-        try:
-            job = await evidence_engine_client.get_job(file["engine_job_id"])
-            engine_status = job.get("status", "")
-            mapped = _ENGINE_STATUS_MAP.get(engine_status, "processing")
-            if mapped != file.get("status"):
-                file["status"] = mapped
-                if mapped == "processed":
-                    evidence_storage.mark_processed([file["id"]])
-                elif mapped == "failed":
-                    err_msg = job.get("error_message", "Processing failed")
-                    evidence_storage.mark_processed([file["id"]], error=err_msg)
-                    file["last_error"] = err_msg
-        except Exception as e:
-            logger.debug("Could not sync status for job %s: %s", file.get("engine_job_id"), e)
 
 
 @router.post("/sync-filesystem")
@@ -224,18 +200,17 @@ async def sync_filesystem(
         if not case_dir.exists() or not case_dir.is_dir():
             return {"created": 0, "message": "Case directory does not exist"}
 
-        # Get existing evidence records for this case
-        existing_records = evidence_storage.list_files(case_id=case_id)
+        from services.evidence_db_storage import EvidenceDBStorage
 
-        # Build a set of known filenames (using original_filename) and stored paths
-        known_filenames = set()
+        # Get existing evidence records for this case from Postgres
+        db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id))
+
+        # Build a set of known stored paths
         known_stored_paths = set()
-        for rec in existing_records:
-            known_filenames.add(rec.get("original_filename", ""))
-            sp = rec.get("stored_path", "")
+        for rec in db_files:
+            sp = rec.stored_path or ""
             if sp:
                 known_stored_paths.add(sp)
-                # Also add just the resolved path in case it was stored differently
                 try:
                     known_stored_paths.add(str(Path(sp).resolve()))
                 except Exception:
@@ -250,33 +225,10 @@ async def sync_filesystem(
             if file_path.name.startswith('.'):
                 continue
 
-            # Check if this file already has an evidence record
             abs_path_str = str(file_path)
             resolved_str = str(file_path.resolve())
-            filename = file_path.name
 
-            # Check by stored_path (both absolute and resolved)
             if abs_path_str in known_stored_paths or resolved_str in known_stored_paths:
-                continue
-
-            # Check by filename (within this case)
-            # Only skip if there's a record with same filename AND same relative path
-            relative_path = str(file_path.relative_to(case_dir)).replace('\\', '/')
-            already_exists = False
-            for rec in existing_records:
-                rec_stored = rec.get("stored_path", "")
-                rec_filename = rec.get("original_filename", "")
-                # Match by filename for root-level files
-                if rec_filename == filename:
-                    # Check if the relative paths match
-                    if '/' not in relative_path and rec_filename == relative_path:
-                        already_exists = True
-                        break
-                    # For nested files, check if stored path ends with same relative path
-                    if rec_stored.replace('\\', '/').endswith(relative_path):
-                        already_exists = True
-                        break
-            if already_exists:
                 continue
 
             # Read file content for hash computation
@@ -286,19 +238,22 @@ async def sync_filesystem(
                 logger.warning(f"Cannot read file {file_path}: {e}")
                 continue
 
+            import hashlib
+            sha256 = hashlib.sha256(content).hexdigest()
+
             file_infos.append({
-                "original_filename": filename,
-                "stored_path": file_path,
-                "content": content,
+                "original_filename": file_path.name,
+                "stored_path": str(file_path),
+                "sha256": sha256,
                 "size": len(content),
             })
 
         if file_infos:
-            new_records = evidence_storage.add_files(
-                case_id=case_id,
-                files=file_infos,
-                owner=current_user.email,
+            new_records = EvidenceDBStorage.add_files(
+                db, case_id=UUID(case_id),
+                files_data=file_infos, owner=current_user.email,
             )
+            db.commit()
             created_count = len(new_records)
             logger.info(f"Filesystem sync: created {created_count} evidence records for case {case_id}")
 
@@ -331,6 +286,7 @@ async def upload_evidence(
     case_id: str = Form(..., description="Associated case ID"),
     files: List[UploadFile] = File(..., description="Evidence files to upload"),
     is_folder: Optional[str] = Form(None, description="Whether this is a folder upload"),
+    folder_id: Optional[str] = Form(None, description="Target folder ID for file placement"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -354,9 +310,13 @@ async def upload_evidence(
 
         # --- Evidence Engine path: forward files for storage + auto-processing ---
         if USE_EVIDENCE_ENGINE:
-            return await _upload_via_engine(case_id, files, current_user.email)
+            return await _upload_via_engine(
+                case_id, files, current_user.email,
+                folder_id=folder_id, db=db,
+            )
 
-        # --- Legacy path: store locally, process separately ---
+        # --- Legacy path (deprecated): store locally, process separately ---
+        logger.warning("USE_EVIDENCE_ENGINE=false: using deprecated legacy upload path")
         # Check if this is a folder upload or should be background task
         is_folder_upload = is_folder and is_folder.lower() == 'true'
         use_background = is_folder_upload or len(files) > 5
@@ -431,216 +391,131 @@ async def _upload_via_engine(
     case_id: str,
     files: List[UploadFile],
     owner: str,
+    folder_id: Optional[str] = None,
+    db: Optional[Session] = None,
 ) -> UploadResponse:
     """
-    Forward files to the evidence engine for storage and processing.
+    Store files locally and send to the evidence engine for processing.
 
-    The evidence engine stores each file, computes metadata (sha256, size, mime),
-    and auto-enqueues AI processing. We create a local evidence record with
-    engine_job_id so we can proxy file operations later.
+    The backend owns file storage (disk + Postgres). The evidence engine is
+    a processing pipeline: it receives file contents, extracts entities and
+    relationships, and writes them to Neo4j/ChromaDB.
+
+    When folder_id is provided, resolves the effective profile for that folder
+    and passes folder context + sibling file info to the engine for prompt enrichment.
     """
-    sem = asyncio.Semaphore(5)
+    import hashlib
+    import json as _json
+    import uuid as _uuid
+    from services.folder_context_service import resolve_effective_profile, gather_sibling_files
+    from services.evidence_db_storage import EvidenceDBStorage
 
-    async def upload_one(uf: UploadFile) -> dict:
+    fid_uuid = _uuid.UUID(folder_id) if folder_id else None
+    case_uuid = _uuid.UUID(case_id)
+
+    # --- Step 1: Read file contents and store to backend disk ---
+    case_dir = EVIDENCE_ROOT_DIR / case_id
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    file_tuples = []  # (filename, content, content_type) for engine
+    db_files_data = []  # For Postgres record creation
+
+    for uf in files:
         content = await uf.read()
         filename = uf.filename or "unknown"
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        async with sem:
-            job = await evidence_engine_client.upload_file(
-                case_id=case_id,
-                file_name=filename,
-                file_content=content,
-                content_type=content_type,
-            )
-        # Create local evidence record linked to the engine job
-        record = evidence_storage.add_engine_file(
-            case_id=case_id,
-            engine_job_id=str(job["id"]),
-            original_filename=filename,
-            sha256=job.get("sha256", ""),
-            size=job.get("file_size", len(content)),
+
+        # Store file to backend disk
+        stored_path = case_dir / filename
+        stored_path.parent.mkdir(parents=True, exist_ok=True)
+        stored_path.write_bytes(content)
+
+        # Compute metadata locally
+        sha256 = hashlib.sha256(content).hexdigest()
+
+        file_tuples.append((filename, content, content_type))
+        db_files_data.append({
+            "original_filename": filename,
+            "stored_path": str(stored_path),
+            "sha256": sha256,
+            "size": len(content),
+        })
+
+    # --- Step 2: Create EvidenceFile records in Postgres ---
+    db_records = []
+    if db and db_files_data:
+        db_records = EvidenceDBStorage.add_files(
+            db,
+            case_id=case_uuid,
+            files_data=db_files_data,
             owner=owner,
+            folder_id=fid_uuid,
         )
-        return record
+        for db_rec in db_records:
+            db_rec.status = "processing"
+        db.flush()
 
-    records = await asyncio.gather(*[upload_one(uf) for uf in files])
-    records = list(records)
-    job_ids = [r.get("engine_job_id") for r in records if r.get("engine_job_id")]
+    # --- Step 3: Resolve folder context for engine prompt enrichment ---
+    folder_context: Optional[str] = None
+    sibling_files_json: Optional[str] = None
+    llm_profile: Optional[str] = None
 
-    # Create a backend background task to track engine processing progress.
-    # This bridges the evidence engine's Redis pub/sub with the frontend's
-    # polling-based Activity tab.
-    task_id = None
+    if fid_uuid and db:
+        effective = resolve_effective_profile(db, fid_uuid, case_uuid)
+        if effective["merged_context"]:
+            folder_context = effective["merged_context"]
+        if effective["merged_overrides"].get("llm_profile"):
+            llm_profile = effective["merged_overrides"]["llm_profile"]
+        siblings = gather_sibling_files(db, fid_uuid)
+        if siblings:
+            sibling_files_json = _json.dumps(siblings)
+
+    # --- Step 4: Send files to evidence engine for processing ---
+    jobs = await evidence_engine_client.upload_files_batch(
+        case_id=case_id,
+        files=file_tuples,
+        llm_profile=llm_profile,
+        folder_context=folder_context,
+        sibling_files=sibling_files_json,
+    )
+
+    # --- Step 5: Link engine job IDs back to our Postgres records ---
+    job_ids = []
+    for db_rec, job in zip(db_records, jobs):
+        db_rec.engine_job_id = str(job["id"])
+        job_ids.append(str(job["id"]))
+
+    if db:
+        db.commit()
+
+    # Build response records (matching UploadResponse.files shape)
+    records = []
+    for db_rec, fd in zip(db_records, db_files_data):
+        records.append({
+            "id": str(db_rec.id),
+            "case_id": case_id,
+            "original_filename": fd["original_filename"],
+            "stored_path": fd["stored_path"],
+            "sha256": fd["sha256"],
+            "size": fd["size"],
+            "status": "processing",
+            "engine_job_id": db_rec.engine_job_id,
+            "created_at": datetime.now().isoformat(),
+        })
+
+    # Register jobs with the Redis subscriber for status tracking
     if job_ids:
-        task = background_task_storage.create_task(
-            task_type="evidence_processing",
-            task_name=f"Processing {len(records)} file(s)",
-            owner=owner,
-            case_id=case_id,
-            metadata={
-                "engine_job_ids": job_ids,
-                "file_count": len(records),
-            },
-        )
-        task_id = task["id"]
-
-        import threading
-
-        def _track_engine_jobs(tid: str, jids: list, recs: list):
-            """Poll evidence engine jobs and mirror progress to the background task."""
-            import time
-            from services.evidence_log_storage import evidence_log_storage
-
-            _STATUS_MESSAGES = {
-                "pending": "Queued for processing",
-                "extracting_text": "Extracting text from document",
-                "chunking": "Chunking and embedding document",
-                "extracting_entities": "Extracting entities and relationships",
-                "resolving_entities": "Resolving and deduplicating entities",
-                "resolving_relationships": "Deduplicating relationships",
-                "generating_summaries": "Generating entity summaries",
-                "writing_graph": "Writing to knowledge graph",
-            }
-
-            case_id = recs[0].get("case_id") if recs else None
-
-            background_task_storage.update_task(
-                tid,
-                status=TaskStatus.RUNNING.value,
-                started_at=datetime.now().isoformat(),
-                progress_total=len(jids),
-                progress_completed=0,
-            )
-
-            # Init file statuses
-            job_to_file = {}
-            job_to_ev_id = {}
-            for rec in recs:
-                jid = rec.get("engine_job_id")
-                if jid:
-                    fname = rec.get("original_filename", "unknown")
-                    job_to_file[jid] = fname
-                    job_to_ev_id[jid] = rec.get("id", jid)
-                    background_task_storage.update_task(
-                        tid,
-                        file_status={
-                            "file_id": rec.get("id", jid),
-                            "filename": fname,
-                            "status": "processing",
-                        },
-                    )
-                    evidence_log_storage.add_log(
-                        case_id=case_id,
-                        evidence_id=rec.get("id"),
-                        filename=fname,
-                        level="info",
-                        message=f"Started processing: {fname}",
-                    )
-
-            terminal = set()
-            completed_count = 0
-            failed_count = 0
-            last_status = {}  # Track last logged status per job
-
-            while len(terminal) < len(jids):
-                time.sleep(3)
-                for jid in jids:
-                    if jid in terminal:
-                        continue
-                    try:
-                        import asyncio as _aio
-                        loop = _aio.new_event_loop()
-                        job = loop.run_until_complete(evidence_engine_client.get_job(jid))
-                        loop.close()
-                    except Exception:
-                        continue
-
-                    engine_status = job.get("status", "")
-                    fname = job_to_file.get(jid, "unknown")
-                    ev_id = job_to_ev_id.get(jid)
-
-                    # Log status changes
-                    if engine_status != last_status.get(jid) and engine_status in _STATUS_MESSAGES:
-                        last_status[jid] = engine_status
-                        evidence_log_storage.add_log(
-                            case_id=case_id,
-                            evidence_id=ev_id,
-                            filename=fname,
-                            level="info",
-                            message=f"{fname}: {_STATUS_MESSAGES[engine_status]}",
-                        )
-
-                    if engine_status in ("completed", "failed"):
-                        terminal.add(jid)
-                        file_status = "completed" if engine_status == "completed" else "failed"
-                        if engine_status == "completed":
-                            completed_count += 1
-                        else:
-                            failed_count += 1
-
-                        # Sync status to evidence record
-                        ev_rec = evidence_storage.find_by_engine_job_id(jid)
-                        if ev_rec:
-                            if engine_status == "completed":
-                                evidence_storage.mark_processed([ev_rec["id"]])
-                            else:
-                                evidence_storage.mark_processed(
-                                    [ev_rec["id"]],
-                                    error=job.get("error_message", "Processing failed"),
-                                )
-
-                        # Log terminal state
-                        if engine_status == "completed":
-                            entity_count = job.get("entity_count", 0)
-                            rel_count = job.get("relationship_count", 0)
-                            evidence_log_storage.add_log(
-                                case_id=case_id,
-                                evidence_id=ev_id,
-                                filename=fname,
-                                level="info",
-                                message=f"Completed processing: {fname} ({entity_count} entities, {rel_count} relationships)",
-                            )
-                        else:
-                            evidence_log_storage.add_log(
-                                case_id=case_id,
-                                evidence_id=ev_id,
-                                filename=fname,
-                                level="error",
-                                message=f"Failed processing {fname}: {job.get('error_message', 'Unknown error')}",
-                            )
-
-                        background_task_storage.update_task(
-                            tid,
-                            progress_completed=completed_count + failed_count,
-                            file_status={
-                                "file_id": ev_rec["id"] if ev_rec else jid,
-                                "filename": fname,
-                                "status": file_status,
-                                "error": job.get("error_message") if file_status == "failed" else None,
-                            },
-                        )
-
-            # All done
-            final_status = TaskStatus.COMPLETED.value if failed_count == 0 else TaskStatus.FAILED.value
-            background_task_storage.update_task(
-                tid,
-                status=final_status,
-                completed_at=datetime.now().isoformat(),
-            )
-
-        thread = threading.Thread(
-            target=_track_engine_jobs,
-            args=(task_id, job_ids, records),
-            daemon=True,
-            name=f"engine-track-{task_id}",
-        )
-        thread.start()
+        from services.job_status_subscriber import get_subscriber
+        try:
+            subscriber = get_subscriber()
+            await subscriber.track_jobs(job_ids, case_id)
+        except Exception as e:
+            logger.warning("Failed to register jobs with subscriber: %s", e)
 
     return UploadResponse(
         files=records,
         job_ids=job_ids if job_ids else None,
-        task_id=task_id,
-        message=f"Processing {len(records)} file(s)" if task_id else None,
+        message=f"Processing {len(records)} file(s)" if job_ids else None,
     )
 
 
@@ -676,7 +551,7 @@ async def process_evidence_background(
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
         # Separate engine-managed files from legacy files
-        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids)
+        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids, db)
 
         if engine_ids and not legacy_ids:
             # All engine-managed — processing is automatic, return status
@@ -729,7 +604,7 @@ async def process_evidence(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids)
+        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids, db)
 
         processed = len(engine_ids)  # engine files are already processing/processed
         skipped = 0
@@ -757,13 +632,20 @@ async def process_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _split_engine_legacy(file_ids: List[str]) -> tuple:
+def _split_engine_legacy(file_ids: List[str], db: Session) -> tuple:
     """Split file IDs into engine-managed and legacy lists."""
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
     engine_ids = []
     legacy_ids = []
     for fid in file_ids:
-        rec = evidence_storage.get(fid)
-        if rec and rec.get("engine_job_id"):
+        rec = None
+        try:
+            rec = EvidenceDBStorage.get(db, UUID(fid))
+        except (ValueError, AttributeError):
+            rec = EvidenceDBStorage.get_by_legacy_id(db, fid)
+        if rec and rec.engine_job_id:
             engine_ids.append(fid)
         else:
             legacy_ids.append(fid)
@@ -789,8 +671,67 @@ async def get_evidence_logs(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        logs = evidence_log_storage.list_logs(case_id=case_id, limit=limit)
+        from services.evidence_db_storage import EvidenceDBStorage
+        from uuid import UUID
+        case_uuid = UUID(case_id) if case_id else None
+        db_logs = EvidenceDBStorage.list_logs(db, case_id=case_uuid, limit=limit)
+        logs = []
+        for log in db_logs:
+            logs.append({
+                "id": str(log.id),
+                "case_id": str(log.case_id) if log.case_id else None,
+                "evidence_id": str(log.evidence_file_id) if log.evidence_file_id else None,
+                "filename": log.filename,
+                "level": log.level,
+                "message": log.message,
+                "timestamp": log.created_at.isoformat() if log.created_at else "",
+            })
         return {"logs": logs}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/engine/jobs")
+async def list_engine_jobs(
+    case_id: str = Query(..., description="Case ID"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Proxy: list all processing jobs from the evidence engine for a case."""
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        if not USE_EVIDENCE_ENGINE:
+            return []
+
+        jobs = await evidence_engine_client.list_jobs(case_id)
+        return jobs
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("Failed to list engine jobs: %s", e)
+        return []
+
+
+@router.get("/engine/jobs/{job_id}")
+async def get_engine_job(
+    job_id: str,
+    current_user: User = Depends(get_current_db_user),
+):
+    """Proxy: get status of a single processing job from the evidence engine."""
+    try:
+        if not USE_EVIDENCE_ENGINE:
+            raise HTTPException(status_code=404, detail="Evidence engine not enabled")
+
+        job = await evidence_engine_client.get_job(job_id)
+        return job
     except HTTPException:
         raise
     except Exception as e:
@@ -1127,24 +1068,38 @@ async def delete_evidence_file(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        # 1. Get the evidence record
-        record = evidence_storage.get(evidence_id)
-        if not record:
-            raise HTTPException(status_code=404, detail="Evidence file not found")
+        # 1. Get the evidence record from Postgres
+        from services.evidence_db_storage import EvidenceDBStorage
+        from uuid import UUID
 
-        if record.get("case_id") != case_id:
+        db_record = None
+        try:
+            db_record = EvidenceDBStorage.get(db, UUID(evidence_id))
+        except (ValueError, AttributeError):
+            db_record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+
+        # Fallback to legacy JSON storage during migration
+        legacy_record = None
+        if not db_record:
+            legacy_record = evidence_storage.get(evidence_id)
+            if not legacy_record:
+                raise HTTPException(status_code=404, detail="Evidence file not found")
+            if legacy_record.get("case_id") != case_id:
+                raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
+        elif str(db_record.case_id) != case_id:
             raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
 
-        # Check if file is currently being processed — prevent deletion race condition
-        from services.evidence_service import EvidenceService
-        if EvidenceService.is_evidence_being_processed(case_id, evidence_id):
+        # Check if file is currently being processed
+        record = db_record or legacy_record
+        if db_record and db_record.status == "processing":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot delete file while it is being processed. Wait for processing to complete."
             )
 
-        filename = record.get("original_filename", "")
-        stored_path = record.get("stored_path")
+        filename = db_record.original_filename if db_record else legacy_record.get("original_filename", "")
+        stored_path = db_record.stored_path if db_record else legacy_record.get("stored_path")
+        engine_job_id = db_record.engine_job_id if db_record else legacy_record.get("engine_job_id")
         result_info = {
             "evidence_id": evidence_id,
             "filename": filename,
@@ -1209,15 +1164,8 @@ async def delete_evidence_file(
         except Exception as e:
             logger.warning(f"Neo4j cleanup error: {e}")
 
-        # 4. Delete physical file — via evidence engine or local disk
-        engine_job_id = record.get("engine_job_id")
-        if engine_job_id:
-            try:
-                await evidence_engine_client.delete_file(case_id, engine_job_id)
-                result_info["file_deleted"] = True
-            except Exception as e:
-                logger.warning("Failed to delete file from evidence engine: %s", e)
-        elif stored_path:
+        # 4. Delete physical file from backend disk
+        if stored_path:
             file_path = Path(stored_path)
             if file_path.exists():
                 try:
@@ -1226,8 +1174,21 @@ async def delete_evidence_file(
                 except Exception as e:
                     logger.warning("Failed to delete physical file: %s", e)
 
-        # 5. Delete evidence record from JSON storage
-        evidence_storage.delete_record(evidence_id)
+        # 5. Tell evidence engine to clean up its processing copy
+        if engine_job_id:
+            try:
+                await evidence_engine_client.delete_file(case_id, engine_job_id)
+            except Exception as e:
+                logger.warning("Failed to delete file from evidence engine: %s", e)
+
+        # 6. Delete evidence record from Postgres
+        if db_record:
+            EvidenceDBStorage.delete_record(db, db_record.id)
+            db.commit()
+
+        # Legacy cleanup (remove once JSON storage is fully deprecated)
+        if legacy_record:
+            evidence_storage.delete_record(evidence_id)
 
         return result_info
 
@@ -1241,59 +1202,65 @@ async def delete_evidence_file(
 async def get_evidence_file(
     evidence_id: str,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Serve the actual file content for a given evidence ID.
 
-    For engine-managed files, proxies the request to the evidence engine.
-    For legacy files, serves directly from local disk.
+    All files are served from the backend's local disk (EVIDENCE_ROOT_DIR).
     """
+    from services.evidence_db_storage import EvidenceDBStorage
+
     try:
-        record = evidence_storage.get(evidence_id)
+        # Look up by UUID or legacy ID
+        record = None
+        try:
+            from uuid import UUID
+            record = EvidenceDBStorage.get(db, UUID(evidence_id))
+        except (ValueError, AttributeError):
+            record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+
         if not record:
-            raise HTTPException(status_code=404, detail="Evidence not found")
+            # Fallback to legacy JSON storage during migration
+            legacy_rec = evidence_storage.get(evidence_id)
+            if not legacy_rec:
+                raise HTTPException(status_code=404, detail="Evidence not found")
+            # Serve legacy file via old path
+            stored_path = legacy_rec.get("stored_path", "")
+            filename = legacy_rec.get("original_filename", "file")
+            if not stored_path or not Path(stored_path).exists():
+                # Try engine proxy as last resort for old engine-managed files
+                engine_job_id = legacy_rec.get("engine_job_id")
+                if engine_job_id:
+                    resp = await evidence_engine_client.download_file(
+                        legacy_rec.get("case_id", ""), engine_job_id
+                    )
+                    media_type = resp.headers.get("content-type", "application/octet-stream")
+                    return Response(
+                        content=resp.content,
+                        media_type=media_type,
+                        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+                    )
+                raise HTTPException(status_code=404, detail="File not found on disk")
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            return FileResponse(
+                path=stored_path, filename=filename, media_type=content_type,
+                headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            )
 
-        filename = record.get("original_filename", "file")
+        # Primary path: serve from backend disk
+        filename = record.original_filename or "file"
+        stored_path = record.stored_path
 
-        # --- Engine-managed file: proxy from evidence engine ---
-        engine_job_id = record.get("engine_job_id")
-        if engine_job_id:
-            case_id = record.get("case_id", "")
-            try:
-                resp = await evidence_engine_client.download_file(case_id, engine_job_id)
-                media_type = resp.headers.get("content-type", "application/octet-stream")
-                return Response(
-                    content=resp.content,
-                    media_type=media_type,
-                    headers={
-                        "Content-Disposition": f'inline; filename="{filename}"',
-                    },
-                )
-            except Exception as e:
-                logger.error("Failed to proxy file from evidence engine: %s", e)
-                raise HTTPException(
-                    status_code=502,
-                    detail="Could not retrieve file from evidence engine",
-                )
-
-        # --- Legacy file: serve from local disk ---
-        stored_path = record.get("stored_path")
-        if not stored_path:
-            raise HTTPException(status_code=404, detail="File path not found")
-
-        file_path = Path(stored_path)
-        if not file_path.exists():
+        if not stored_path or not Path(stored_path).exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-
         return FileResponse(
-            path=file_path,
+            path=stored_path,
             filename=filename,
             media_type=content_type,
-            headers={
-                "Content-Disposition": f'inline; filename="{filename}"',
-            }
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
         )
     except HTTPException:
         raise
@@ -1356,16 +1323,24 @@ async def get_video_frames(
     interval: int = Query(30, description="Seconds between frame captures"),
     max_frames: int = Query(50, description="Maximum number of frames"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Extract and return key frames from a video evidence file.
     Frames are cached so subsequent requests are instant.
     """
-    record = evidence_storage.get(evidence_id)
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
+    record = None
+    try:
+        record = EvidenceDBStorage.get(db, UUID(evidence_id))
+    except (ValueError, AttributeError):
+        record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
     if not record:
         raise HTTPException(status_code=404, detail="Evidence not found")
 
-    stored_path = record.get("stored_path")
+    stored_path = record.stored_path
     if not stored_path:
         raise HTTPException(status_code=404, detail="File path not found")
 
@@ -1398,7 +1373,7 @@ async def get_video_frames(
 
     return {
         "evidence_id": evidence_id,
-        "filename": record.get("original_filename", video_path.name),
+        "filename": record.original_filename or video_path.name,
         "frame_count": len(frames_meta),
         "frames": frames_meta,
     }
@@ -1430,11 +1405,24 @@ class SetRelevanceRequest(BaseModel):
 async def set_evidence_relevance(
     body: SetRelevanceRequest,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Mark evidence files as relevant or non-relevant."""
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
     if not body.evidence_ids:
         raise HTTPException(status_code=400, detail="No evidence IDs provided")
-    updated = evidence_storage.set_relevance(body.evidence_ids, body.is_relevant)
+    file_uuids = []
+    for eid in body.evidence_ids:
+        try:
+            file_uuids.append(UUID(eid))
+        except ValueError:
+            rec = EvidenceDBStorage.get_by_legacy_id(db, eid)
+            if rec:
+                file_uuids.append(rec.id)
+    updated = EvidenceDBStorage.set_relevance(db, file_uuids, body.is_relevant)
+    db.commit()
     return {"updated": updated, "is_relevant": body.is_relevant}
 
 
@@ -1443,6 +1431,7 @@ async def set_relevance_from_theory(
     case_id: str = Query(..., description="Case ID"),
     theory_id: str = Query(..., description="Theory ID"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Mark all evidence files linked to a theory as relevant.
@@ -1450,6 +1439,8 @@ async def set_relevance_from_theory(
     and any evidence files referenced by graph nodes in the theory's snapshot.
     """
     from services.workspace_service import workspace_service
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
 
     theory = workspace_service.get_theory(case_id, theory_id)
     if not theory:
@@ -1470,8 +1461,10 @@ async def set_relevance_from_theory(
             snapshot = snapshot_storage.get(snapshot_id)
             if snapshot:
                 nodes = snapshot.get("graph_data", {}).get("nodes", [])
-                all_files = evidence_storage.list_files(case_id=case_id)
-                filename_to_id = {f.get("original_filename", "").lower(): f["id"] for f in all_files}
+                all_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id))
+                filename_to_id = {
+                    (f.original_filename or "").lower(): str(f.id) for f in all_files
+                }
                 for node in nodes:
                     for prop_key in ("source", "source_doc", "source_document", "file"):
                         val = node.get("properties", {}).get(prop_key)
@@ -1484,7 +1477,17 @@ async def set_relevance_from_theory(
 
     updated = 0
     if evidence_ids:
-        updated = evidence_storage.set_relevance(list(evidence_ids), True)
+        file_uuids = []
+        for eid in evidence_ids:
+            try:
+                file_uuids.append(UUID(eid))
+            except ValueError:
+                rec = EvidenceDBStorage.get_by_legacy_id(db, eid)
+                if rec:
+                    file_uuids.append(rec.id)
+        if file_uuids:
+            updated = EvidenceDBStorage.set_relevance(db, file_uuids, True)
+            db.commit()
 
     return {"updated": updated, "theory_id": theory_id, "evidence_ids_marked": list(evidence_ids)}
 
@@ -1514,40 +1517,36 @@ async def get_evidence_by_filename(
     filename: str,
     case_id: Optional[str] = None,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Find evidence by original filename and return file info.
-    
+
     This endpoint helps the frontend locate evidence IDs from document names
     stored in entity citations.
     """
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
     try:
-        # Search for files matching the filename
-        all_files = evidence_storage.list_files(
-            case_id=case_id,
-        )
-        
-        # Find matching file
-        for record in all_files:
-            if record.get("original_filename") == filename:
-                # Get document summary if available
-                summary = None
-                if case_id:
-                    try:
-                        summary = neo4j_service.get_document_summary(filename, case_id)
-                    except Exception:
-                        # Summary retrieval is optional
-                        pass
-                
-                return {
-                    "found": True,
-                    "evidence_id": record.get("id"),
-                    "case_id": record.get("case_id"),
-                    "original_filename": record.get("original_filename"),
-                    "stored_path": record.get("stored_path"),
-                    "summary": summary,
-                }
-        
+        case_uuid = UUID(case_id) if case_id else None
+        record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
+        if record:
+            summary = None
+            if case_id:
+                try:
+                    summary = neo4j_service.get_document_summary(filename, case_id)
+                except Exception:
+                    pass
+            return {
+                "found": True,
+                "evidence_id": str(record.id),
+                "case_id": str(record.case_id),
+                "original_filename": record.original_filename,
+                "stored_path": record.stored_path,
+                "summary": summary,
+            }
+
         return {"found": False, "message": f"No evidence file found with name: {filename}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

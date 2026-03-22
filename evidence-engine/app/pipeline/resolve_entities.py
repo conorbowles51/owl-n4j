@@ -1,7 +1,10 @@
 import json
 import logging
+import re
+import unicodedata
 import uuid
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -14,11 +17,16 @@ from app.services.chroma_client import (
     query_similar,
 )
 from app.ontology.schema_builder import get_resolution_schema
+from app.services import neo4j_client
 from app.services.openai_client import chat_completion, embed_texts
 
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+# Categories where multiple entities with the same name are legitimate
+# (e.g., two "Payment to Nexus Trading Ltd" on different dates are separate)
+INSTANCE_CATEGORIES = {"Transaction", "Event", "Communication"}
 
 
 @dataclass
@@ -81,7 +89,11 @@ class UnionFind:
 # ---------------------------------------------------------------------------
 
 def _normalize(name: str) -> str:
-    return " ".join(name.lower().strip().split())
+    """Normalize name for blocking: lowercase, strip punctuation, collapse whitespace."""
+    name = unicodedata.normalize("NFKD", name)
+    name = name.lower().strip()
+    name = re.sub(r'[^\w\s]', '', name)  # strip all punctuation
+    return " ".join(name.split())
 
 
 def _token_overlap(a: str, b: str) -> float:
@@ -96,6 +108,25 @@ def _token_overlap(a: str, b: str) -> float:
 # Phase 1 — Blocking
 # ---------------------------------------------------------------------------
 
+def _instance_props_match(a: RawEntity, b: RawEntity) -> bool:
+    """For instance categories (Transaction, Event, Communication), check if
+    entities share enough properties to be considered duplicates.
+    Returns True if they likely represent the same instance."""
+    pa, pb = a.properties, b.properties
+    # Must share the same date if both have one
+    date_a = pa.get("date", "")
+    date_b = pb.get("date", "")
+    if date_a and date_b and date_a != date_b:
+        return False
+    # For transactions, must share amount if both have one
+    amount_a = pa.get("amount", "")
+    amount_b = pb.get("amount", "")
+    if amount_a and amount_b and str(amount_a) != str(amount_b):
+        return False
+    # At least one overlapping property required
+    return bool(date_a and date_b) or bool(amount_a and amount_b)
+
+
 def _blocking_candidates(entities: list[RawEntity]) -> list[tuple[int, int]]:
     by_cat: dict[str, list[int]] = {}
     for i, e in enumerate(entities):
@@ -103,7 +134,9 @@ def _blocking_candidates(entities: list[RawEntity]) -> list[tuple[int, int]]:
 
     candidates: set[tuple[int, int]] = set()
 
-    for indices in by_cat.values():
+    for cat, indices in by_cat.items():
+        is_instance = cat in INSTANCE_CATEGORIES
+
         # Index by normalized name
         name_map: dict[str, list[int]] = {}
         for idx in indices:
@@ -114,7 +147,10 @@ def _blocking_candidates(entities: list[RawEntity]) -> list[tuple[int, int]]:
         for group in name_map.values():
             for i in range(len(group)):
                 for j in range(i + 1, len(group)):
-                    candidates.add((min(group[i], group[j]), max(group[i], group[j])))
+                    pair = (min(group[i], group[j]), max(group[i], group[j]))
+                    if is_instance and not _instance_props_match(entities[group[i]], entities[group[j]]):
+                        continue
+                    candidates.add(pair)
 
         # Token overlap ≥ 50 %
         norms = list(name_map.keys())
@@ -123,7 +159,25 @@ def _blocking_candidates(entities: list[RawEntity]) -> list[tuple[int, int]]:
                 if _token_overlap(norms[i], norms[j]) >= 0.5:
                     for a in name_map[norms[i]]:
                         for b in name_map[norms[j]]:
-                            candidates.add((min(a, b), max(a, b)))
+                            pair = (min(a, b), max(a, b))
+                            if is_instance and not _instance_props_match(entities[a], entities[b]):
+                                continue
+                            candidates.add(pair)
+
+        # Fuzzy string matching (identity categories only — skip transactions/events)
+        if not is_instance:
+            for i in range(len(norms)):
+                for j in range(i + 1, len(norms)):
+                    if any(
+                        (min(a, b), max(a, b)) in candidates
+                        for a in name_map[norms[i]] for b in name_map[norms[j]]
+                    ):
+                        continue
+                    ratio = SequenceMatcher(None, norms[i], norms[j]).ratio()
+                    if ratio >= 0.85:
+                        for a in name_map[norms[i]]:
+                            for b in name_map[norms[j]]:
+                                candidates.add((min(a, b), max(a, b)))
 
         # Alias ↔ name matches
         alias_map: dict[str, list[int]] = {}
@@ -136,7 +190,10 @@ def _blocking_candidates(entities: list[RawEntity]) -> list[tuple[int, int]]:
                 for ai in alias_indices:
                     for ni in name_map[norm]:
                         if ai != ni:
-                            candidates.add((min(ai, ni), max(ai, ni)))
+                            pair = (min(ai, ni), max(ai, ni))
+                            if is_instance and not _instance_props_match(entities[ai], entities[ni]):
+                                continue
+                            candidates.add(pair)
 
     return sorted(candidates)
 
@@ -162,7 +219,7 @@ async def _embedding_candidates(
         texts = []
         for idx in indices:
             e = entities[idx]
-            desc = e.name
+            desc = f"{e.category}: {e.name}"
             if e.properties.get("description"):
                 desc += f" — {e.properties['description']}"
             texts.append(desc)
@@ -346,20 +403,56 @@ async def _cross_job_dedup(
     except Exception:
         return {}
 
+    merge_map: dict[str, str] = {}
+
+    # ---------------------------------------------------------------
+    # Phase A: Deterministic name matching (identity categories only)
+    # ---------------------------------------------------------------
+    all_existing = col.get(where={"case_id": case_id}, include=["metadatas"])
+    existing_by_norm: dict[tuple[str, str], str] = {}
+    if all_existing and all_existing["ids"]:
+        for eid, meta in zip(
+            all_existing["ids"], all_existing["metadatas"] or [{}] * len(all_existing["ids"])
+        ):
+            meta = meta or {}
+            cat = meta.get("category", "")
+            if cat in INSTANCE_CATEGORIES:
+                continue  # never deterministically merge transactions/events
+            key = (cat, _normalize(meta.get("name", "")))
+            if key not in existing_by_norm:
+                existing_by_norm[key] = eid
+
+    already_matched: set[str] = set()
+    for entity in entities:
+        if entity.category in INSTANCE_CATEGORIES:
+            continue
+        key = (entity.category, _normalize(entity.name))
+        if key in existing_by_norm:
+            merge_map[entity.id] = existing_by_norm[key]
+            already_matched.add(entity.id)
+            logger.info(
+                "Cross-job deterministic merge: '%s' → existing %s",
+                entity.name, existing_by_norm[key],
+            )
+
+    # ---------------------------------------------------------------
+    # Phase B: Embedding similarity (for entities not yet matched)
+    # ---------------------------------------------------------------
+    remaining = [e for e in entities if e.id not in already_matched]
+    if not remaining:
+        return merge_map
+
     texts = []
-    for e in entities:
+    for e in remaining:
         desc = f"{e.category}: {e.name}"
         if e.properties.get("description"):
             desc += f" — {e.properties['description']}"
         texts.append(desc)
 
-    if not texts:
-        return {}
-
     embeddings = await embed_texts(texts)
 
-    candidate_pairs: list[tuple[int, str]] = []  # (new_idx, existing_id)
-    for k, (emb, entity) in enumerate(zip(embeddings, entities)):
+    candidate_pairs: list[tuple[int, str]] = []  # (remaining_idx, existing_id)
+    for k, (emb, entity) in enumerate(zip(embeddings, remaining)):
         results = query_similar(
             col,
             query_embeddings=[emb],
@@ -375,9 +468,9 @@ async def _cross_job_dedup(
                 candidate_pairs.append((k, existing_id))
 
     if not candidate_pairs:
-        return {}
+        return merge_map
 
-    # Fetch existing entity metadata
+    # Fetch existing entity metadata for LLM confirmation
     existing_ids = list({eid for _, eid in candidate_pairs})
     existing_data = col.get(ids=existing_ids, include=["documents", "metadatas"])
     existing_map: dict[str, dict] = {}
@@ -391,7 +484,6 @@ async def _cross_job_dedup(
 
     # LLM confirmation
     template = (PROMPTS_DIR / "entity_resolution.txt").read_text(encoding="utf-8")
-    merge_map: dict[str, str] = {}
     batch_size = 20
 
     for i in range(0, len(candidate_pairs), batch_size):
@@ -401,10 +493,10 @@ async def _cross_job_dedup(
                 {
                     "pair_index": j,
                     "entity_a": {
-                        "id": entities[new_idx].id,
-                        "category": entities[new_idx].category,
-                        "name": entities[new_idx].name,
-                        "specific_type": entities[new_idx].specific_type,
+                        "id": remaining[new_idx].id,
+                        "category": remaining[new_idx].category,
+                        "name": remaining[new_idx].name,
+                        "specific_type": remaining[new_idx].specific_type,
                     },
                     "entity_b": existing_map.get(existing_id, {"id": existing_id}),
                 }
@@ -431,7 +523,7 @@ async def _cross_job_dedup(
             idx = d.get("pair_index", -1)
             if 0 <= idx < len(batch) and d.get("decision") == "MERGE":
                 new_idx, existing_id = batch[idx]
-                entity_id = entities[new_idx].id
+                entity_id = remaining[new_idx].id
                 if entity_id not in merge_map:
                     merge_map[entity_id] = existing_id
 
@@ -452,27 +544,70 @@ async def resolve_entities(
 
     # Phase 1: Blocking
     blocking_pairs = _blocking_candidates(raw_entities)
+    logger.info(
+        "Phase 1 blocking: %d candidate pairs from %d entities",
+        len(blocking_pairs), len(raw_entities),
+    )
+    for a, b in blocking_pairs:
+        logger.info(
+            "  Blocking pair: '%s' [%s] ↔ '%s' [%s]",
+            raw_entities[a].name, raw_entities[a].category,
+            raw_entities[b].name, raw_entities[b].category,
+        )
 
     # Phase 2: Embedding similarity
     embedding_pairs = await _embedding_candidates(raw_entities, set(blocking_pairs))
+    logger.info("Phase 2 embedding: %d additional candidate pairs", len(embedding_pairs))
+    for a, b in embedding_pairs:
+        logger.info(
+            "  Embedding pair: '%s' [%s] ↔ '%s' [%s]",
+            raw_entities[a].name, raw_entities[a].category,
+            raw_entities[b].name, raw_entities[b].category,
+        )
 
     all_candidates = blocking_pairs + embedding_pairs
 
     # Phase 3: LLM confirmation
     merge_pairs = await _llm_confirm(raw_entities, all_candidates)
+    logger.info("Phase 3 LLM confirmed: %d merge pairs", len(merge_pairs))
+    for a, b in merge_pairs:
+        logger.info(
+            "  LLM merge: '%s' [%s] ↔ '%s' [%s]",
+            raw_entities[a].name, raw_entities[a].category,
+            raw_entities[b].name, raw_entities[b].category,
+        )
 
     # Apply intra-file merges
     resolved_entities, id_map = _apply_merges(raw_entities, merge_pairs)
+    logger.info(
+        "After merges: %d raw → %d resolved entities",
+        len(raw_entities), len(resolved_entities),
+    )
 
     # Cross-job dedup
     cross_merges = await _cross_job_dedup(resolved_entities, case_id)
 
-    # Apply cross-job merges
+    # Apply cross-job merges — fetch existing entity properties and merge
     for entity in resolved_entities:
         if entity.id in cross_merges:
             old_id = entity.id
             entity.id = cross_merges[old_id]
             entity.is_existing = True
+
+            # Merge properties from the existing Neo4j node
+            existing_props = await neo4j_client.execute_query(
+                "MATCH (n {id: $id}) RETURN properties(n) AS props",
+                {"id": entity.id},
+            )
+            if existing_props:
+                props = existing_props[0]["props"]
+                existing_aliases = set(props.get("aliases", []) or [])
+                entity.aliases = sorted(set(entity.aliases) | existing_aliases)
+                existing_files = set(props.get("source_files", []) or [])
+                entity.source_files = sorted(set(entity.source_files) | existing_files)
+                existing_quotes = props.get("source_quotes", []) or []
+                new_quotes = [q for q in entity.source_quotes if q not in existing_quotes]
+                entity.source_quotes = existing_quotes + new_quotes
 
     # Chain id_map through cross-job merges
     for temp_id in id_map:

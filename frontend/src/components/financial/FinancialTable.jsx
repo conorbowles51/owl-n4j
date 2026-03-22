@@ -89,7 +89,7 @@ function EntityEditor({ caseId, side, currentEntity, onSave, onCancel }) {
 
   return (
     <div className="absolute z-50 bg-white rounded-lg shadow-lg border border-light-200 p-2 w-64" onClick={e => e.stopPropagation()}>
-      <div className="text-xs text-light-600 font-medium mb-1.5">Set {side} entity</div>
+      <div className="text-xs text-light-600 font-medium mb-1.5">Set {side === 'from' ? 'sender' : 'receiver'} entity</div>
       <div className="relative mb-2">
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
         <input
@@ -502,14 +502,14 @@ export default function FinancialTable({
             className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded border ${batchFromToSide === 'from' ? 'bg-owl-blue-100 border-owl-blue-300 text-owl-blue-800' : 'bg-white border-owl-blue-200 text-owl-blue-700 hover:bg-owl-blue-50'}`}
           >
             <ArrowLeftRight className="w-3 h-3" />
-            Set From
+            Set Sender
           </button>
           <button
             onClick={() => setBatchFromToSide(batchFromToSide === 'to' ? null : 'to')}
             className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded border ${batchFromToSide === 'to' ? 'bg-owl-blue-100 border-owl-blue-300 text-owl-blue-800' : 'bg-white border-owl-blue-200 text-owl-blue-700 hover:bg-owl-blue-50'}`}
           >
             <ArrowLeftRight className="w-3 h-3" />
-            Set To
+            Set Receiver
           </button>
           <button onClick={() => onSelectionChange([])} className="text-xs text-owl-blue-600 hover:underline ml-auto">
             Clear selection
@@ -566,7 +566,7 @@ export default function FinancialTable({
                 { key: 'date', label: 'Date' },
                 { key: 'time', label: 'Time' },
                 { key: 'name', label: 'Name' },
-                { key: 'from_to', label: 'From \u2192 To', sortable: false },
+                { key: 'from_to', label: 'Sender \u2192 Receiver', sortable: false },
                 { key: 'amount', label: 'Amount' },
                 { key: 'type', label: 'Type' },
                 { key: 'category', label: 'Category' },

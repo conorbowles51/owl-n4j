@@ -154,3 +154,130 @@ export interface EvidenceSummary {
   summary?: string | null
   filename?: string
 }
+
+// Folder types
+export interface EvidenceFolder {
+  id: string
+  case_id: string
+  name: string
+  parent_id: string | null
+  disk_path: string | null
+  file_count: number
+  subfolder_count: number
+  has_profile: boolean
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface FolderTreeNode {
+  id: string
+  name: string
+  parent_id: string | null
+  file_count: number
+  subfolder_count: number
+  has_profile: boolean
+  children: FolderTreeNode[]
+}
+
+export interface FolderContentsResponse {
+  folder: {
+    id: string
+    name: string
+    parent_id: string | null
+    has_profile: boolean
+  } | null
+  breadcrumbs: { id: string; name: string }[]
+  folders: EvidenceFolder[]
+  files: EvidenceFileRecord[]
+}
+
+export interface EvidenceFileRecord {
+  id: string
+  case_id: string
+  folder_id: string | null
+  original_filename: string
+  stored_path: string
+  size: number
+  sha256: string
+  status: "unprocessed" | "processing" | "processed" | "failed"
+  is_duplicate: boolean
+  duplicate_of: string | null
+  is_relevant: boolean
+  owner: string | null
+  created_at: string | null
+  processed_at: string | null
+  last_error: string | null
+  legacy_id: string | null
+}
+
+// Folder profiles
+export interface FolderProfile {
+  context_instructions: string | null
+  profile_overrides: ProfileOverrides | null
+}
+
+export interface ProfileOverrides {
+  special_entity_types?: { name: string; description?: string }[]
+  temperature?: number
+  system_context?: string
+  llm_profile?: string
+}
+
+export interface ProfileChainLink {
+  folder_id: string
+  folder_name: string
+  context_instructions: string | null
+  profile_overrides: ProfileOverrides | null
+}
+
+export interface EffectiveProfile {
+  chain: ProfileChainLink[]
+  merged_context: string
+  merged_overrides: ProfileOverrides
+}
+
+// Job progress (from WebSocket)
+export interface JobProgressMessage {
+  job_id: string
+  status: string
+  progress: number
+  message: string
+}
+
+export type PipelineStage =
+  | "pending"
+  | "extracting_text"
+  | "chunking"
+  | "extracting_entities"
+  | "resolving_entities"
+  | "resolving_relationships"
+  | "generating_summaries"
+  | "writing_graph"
+  | "completed"
+  | "failed"
+
+export interface EvidenceJob {
+  id: string
+  case_id: string
+  batch_id: string | null
+  file_name: string
+  status: PipelineStage
+  progress: number
+  error_message: string | null
+  entity_count: number
+  relationship_count: number
+  file_size: number
+  mime_type: string | null
+  sha256: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Profile templates
+export interface ProfileTemplate {
+  id: string
+  name: string
+  description: string
+  context_instructions: string
+  profile_overrides?: ProfileOverrides
+}

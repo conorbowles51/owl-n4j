@@ -55,7 +55,7 @@ export function EntityEditDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="text-sm">
-            Set {field === "from" ? "From" : "To"} Entity
+            Set {field === "from" ? "Sender" : "Receiver"} Entity
           </DialogTitle>
           <DialogDescription className="text-xs">
             {isBatch

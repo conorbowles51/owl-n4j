@@ -13,6 +13,7 @@ class JobCreate(BaseModel):
 class JobResponse(BaseModel):
     id: uuid.UUID
     case_id: str
+    batch_id: uuid.UUID | None = None
     file_name: str
     status: JobStatus
     progress: float

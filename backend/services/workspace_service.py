@@ -419,7 +419,6 @@ class WorkspaceService:
         - System logs for case operations
         """
         from services.system_log_service import system_log_service, LogType
-        from services.evidence_storage import evidence_storage
         from services.snapshot_storage import snapshot_storage
 
         events = []
@@ -554,19 +553,21 @@ class WorkspaceService:
                 })
 
         # 5. Evidence processing dates
-        evidence_files = evidence_storage.list_files(case_id=case_id)
-        for evidence in evidence_files:
-            uploaded_at = evidence.get("uploaded_at") or evidence.get("created_at")
-            if uploaded_at:
-                events.append({
-                    "id": f"evidence_upload_{evidence.get('id')}",
-                    "type": "evidence_uploaded",
-                    "thread": "Evidence",
-                    "date": uploaded_at,
-                    "title": f"Evidence Uploaded: {evidence.get('original_filename', 'Unknown')}",
-                    "description": f"File uploaded: {evidence.get('original_filename', 'Unknown')}",
-                    "metadata": {"evidence_id": evidence.get("id"), "filename": evidence.get("original_filename")},
-                })
+        from services.evidence_db_storage import EvidenceDBStorage
+        with get_background_session() as ev_db:
+            evidence_files = EvidenceDBStorage.list_files(ev_db, case_id=uuid.UUID(case_id))
+            for evidence in evidence_files:
+                uploaded_at = evidence.created_at.isoformat() if evidence.created_at else None
+                if uploaded_at:
+                    events.append({
+                        "id": f"evidence_upload_{evidence.id}",
+                        "type": "evidence_uploaded",
+                        "thread": "Evidence",
+                        "date": uploaded_at,
+                        "title": f"Evidence Uploaded: {evidence.original_filename or 'Unknown'}",
+                        "description": f"File uploaded: {evidence.original_filename or 'Unknown'}",
+                        "metadata": {"evidence_id": str(evidence.id), "filename": evidence.original_filename},
+                    })
 
             if evidence.get("status") == "processed":
                 processed_at = evidence.get("processed_at")
@@ -719,7 +720,6 @@ class WorkspaceService:
         - Attached documents (upload/processing dates)
         - Attached tasks (creation/due dates/status changes)
         """
-        from services.evidence_storage import evidence_storage
         from services.snapshot_storage import snapshot_storage
 
         events = []
@@ -763,33 +763,33 @@ class WorkspaceService:
 
         # 2. Attached evidence
         if attached_evidence_ids:
-            evidence_files = evidence_storage.list_files(case_id=case_id)
-            for evidence in evidence_files:
-                if evidence.get("id") in attached_evidence_ids:
-                    if evidence.get("status") == "processed":
-                        processed_at = evidence.get("processed_at")
-                        if processed_at:
+            from services.evidence_db_storage import EvidenceDBStorage
+            with get_background_session() as ev_db:
+                evidence_files = EvidenceDBStorage.list_files(ev_db, case_id=uuid.UUID(case_id))
+                for evidence in evidence_files:
+                    if str(evidence.id) in attached_evidence_ids:
+                        if evidence.status == "processed" and evidence.processed_at:
                             events.append({
-                                "id": f"evidence_processed_{evidence.get('id')}",
+                                "id": f"evidence_processed_{evidence.id}",
                                 "type": "evidence_processed",
                                 "thread": "Evidence",
-                                "date": processed_at,
-                                "title": f"Evidence Processed: {evidence.get('original_filename', 'Unknown')}",
-                                "description": f"Processing completed for {evidence.get('original_filename', 'Unknown')}",
-                                "metadata": {"evidence_id": evidence.get("id"), "filename": evidence.get("original_filename")},
+                                "date": evidence.processed_at.isoformat(),
+                                "title": f"Evidence Processed: {evidence.original_filename or 'Unknown'}",
+                                "description": f"Processing completed for {evidence.original_filename or 'Unknown'}",
+                                "metadata": {"evidence_id": str(evidence.id), "filename": evidence.original_filename},
                             })
 
-                    uploaded_at = evidence.get("uploaded_at") or evidence.get("created_at")
-                    if uploaded_at:
-                        events.append({
-                            "id": f"evidence_upload_{evidence.get('id')}",
-                            "type": "evidence_uploaded",
-                            "thread": "Evidence",
-                            "date": uploaded_at,
-                            "title": f"Evidence Uploaded: {evidence.get('original_filename', 'Unknown')}",
-                            "description": f"File uploaded: {evidence.get('original_filename', 'Unknown')}",
-                            "metadata": {"evidence_id": evidence.get("id"), "filename": evidence.get("original_filename")},
-                        })
+                        uploaded_at = evidence.created_at.isoformat() if evidence.created_at else None
+                        if uploaded_at:
+                            events.append({
+                                "id": f"evidence_upload_{evidence.id}",
+                                "type": "evidence_uploaded",
+                                "thread": "Evidence",
+                                "date": uploaded_at,
+                                "title": f"Evidence Uploaded: {evidence.original_filename or 'Unknown'}",
+                                "description": f"File uploaded: {evidence.original_filename or 'Unknown'}",
+                                "metadata": {"evidence_id": str(evidence.id), "filename": evidence.original_filename},
+                            })
 
         # 3. Attached witnesses
         if attached_witness_ids:
@@ -879,32 +879,32 @@ class WorkspaceService:
 
         # 6. Attached documents
         if attached_document_ids:
-            evidence_files = evidence_storage.list_files(case_id=case_id)
-            for evidence in evidence_files:
-                if evidence.get("id") in attached_document_ids:
-                    uploaded_at = evidence.get("uploaded_at") or evidence.get("created_at")
-                    if uploaded_at:
-                        events.append({
-                            "id": f"document_upload_{evidence.get('id')}",
-                            "type": "document_uploaded",
-                            "thread": "Documents",
-                            "date": uploaded_at,
-                            "title": f"Document Uploaded: {evidence.get('original_filename', 'Unknown')}",
-                            "description": f"Case document uploaded: {evidence.get('original_filename', 'Unknown')}",
-                            "metadata": {"evidence_id": evidence.get("id"), "filename": evidence.get("original_filename")},
-                        })
-
-                    if evidence.get("status") == "processed":
-                        processed_at = evidence.get("processed_at")
-                        if processed_at:
+            from services.evidence_db_storage import EvidenceDBStorage
+            with get_background_session() as ev_db:
+                evidence_files = EvidenceDBStorage.list_files(ev_db, case_id=uuid.UUID(case_id))
+                for evidence in evidence_files:
+                    if str(evidence.id) in attached_document_ids:
+                        uploaded_at = evidence.created_at.isoformat() if evidence.created_at else None
+                        if uploaded_at:
                             events.append({
-                                "id": f"document_processed_{evidence.get('id')}",
+                                "id": f"document_upload_{evidence.id}",
+                                "type": "document_uploaded",
+                                "thread": "Documents",
+                                "date": uploaded_at,
+                                "title": f"Document Uploaded: {evidence.original_filename or 'Unknown'}",
+                                "description": f"Case document uploaded: {evidence.original_filename or 'Unknown'}",
+                                "metadata": {"evidence_id": str(evidence.id), "filename": evidence.original_filename},
+                            })
+
+                        if evidence.status == "processed" and evidence.processed_at:
+                            events.append({
+                                "id": f"document_processed_{evidence.id}",
                                 "type": "document_processed",
                                 "thread": "Documents",
-                                "date": processed_at,
-                                "title": f"Document Processed: {evidence.get('original_filename', 'Unknown')}",
-                                "description": f"Processing completed for {evidence.get('original_filename', 'Unknown')}",
-                                "metadata": {"evidence_id": evidence.get("id"), "filename": evidence.get("original_filename")},
+                                "date": evidence.processed_at.isoformat(),
+                                "title": f"Document Processed: {evidence.original_filename or 'Unknown'}",
+                                "description": f"Processing completed for {evidence.original_filename or 'Unknown'}",
+                                "metadata": {"evidence_id": str(evidence.id), "filename": evidence.original_filename},
                             })
 
         # 7. Attached tasks

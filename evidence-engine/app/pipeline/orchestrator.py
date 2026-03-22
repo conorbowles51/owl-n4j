@@ -5,10 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import Job, JobStatus
 from app.pipeline.chunk_embed import chunk_and_embed
+from app.pipeline.context_injector import build_enriched_context
 from app.pipeline.extract_entities import extract_entities_and_relationships
 from app.pipeline.extract_text import extract_text
 from app.pipeline.generate_summaries import generate_summaries
 from app.pipeline.resolve_entities import resolve_entities
+from app.pipeline.link_transaction_parties import link_transaction_parties
 from app.pipeline.resolve_relationships import resolve_relationships
 from app.pipeline.write_graph import write_graph
 from app.services.redis_client import publish_progress
@@ -58,8 +60,11 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
         await _update_job(
             job, JobStatus.EXTRACTING_ENTITIES, 0.0, db, "Extracting entities…"
         )
+        enriched_context = build_enriched_context(
+            job.folder_context, job.sibling_files, job.llm_profile or ""
+        )
         raw_entities, raw_rels = await extract_entities_and_relationships(
-            chunks, job.llm_profile or "", job.file_name
+            chunks, enriched_context, job.file_name
         )
         await _update_job(
             job,
@@ -100,6 +105,9 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             db,
             f"Deduplicated to {len(resolved_rels)} relationships",
         )
+
+        # Stage 5.5: Link transaction sender/receiver to entity nodes
+        resolved_rels = link_transaction_parties(resolved_ents, resolved_rels)
 
         # Stage 6: Generate entity summaries
         await _update_job(

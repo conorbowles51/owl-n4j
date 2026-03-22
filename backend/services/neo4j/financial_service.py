@@ -91,6 +91,8 @@ class FinancialService:
                     n.from_entity_name AS from_entity_name,
                     n.to_entity_key AS to_entity_key,
                     n.to_entity_name AS to_entity_name,
+                    n.sender AS prop_sender,
+                    n.receiver AS prop_receiver,
                     collect(DISTINCT to_entity.key)[0] AS rel_to_key,
                     collect(DISTINCT to_entity.name)[0] AS rel_to_name,
                     collect(DISTINCT from_entity.key)[0] AS rel_from_key,
@@ -110,12 +112,12 @@ class FinancialService:
             result = session.run(query, **params)
             transactions = []
             for record in result:
-                # Resolve from entity: manual override > relationship-derived
+                # Resolve from entity: manual override > relationship-derived > property fallback
                 from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
-                from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"]
-                # Resolve to entity: manual override > relationship-derived
+                from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"] or record["prop_sender"]
+                # Resolve to entity: manual override > relationship-derived > property fallback
                 to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
-                to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"]
+                to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"] or record["prop_receiver"]
 
                 amount_val = safe_float(record["amount"])
                 if amount_val == 0:

@@ -1,8 +1,8 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { AlertCircle } from "lucide-react"
-import { useFileContent } from "../../hooks/use-filesystem"
 import { evidenceAPI } from "../../api"
 import { useQuery } from "@tanstack/react-query"
+import { fetchAPI } from "@/lib/api-client"
 import type { EvidenceFile } from "@/types/evidence.types"
 
 interface TextPreviewProps {
@@ -39,8 +39,17 @@ export function TextPreview({ file, caseId }: TextPreviewProps) {
   const isEngineManagedFile = !!file.engine_job_id && !file.stored_path
   const relativePath = isEngineManagedFile ? undefined : getRelativePath(file, caseId)
 
-  // Use filesystem hook for legacy files, proxy endpoint for engine-managed files
-  const legacyQuery = useFileContent(caseId, relativePath)
+  // Inline filesystem content query for legacy files
+  const legacyQuery = useQuery({
+    queryKey: ["filesystem-content", caseId, relativePath],
+    queryFn: async () => {
+      const qs = new URLSearchParams({ case_id: caseId, path: relativePath! })
+      const res = await fetchAPI<{ content: string }>(`/api/filesystem/read?${qs}`)
+      return res.content
+    },
+    enabled: !!relativePath && !isEngineManagedFile,
+    staleTime: 60_000,
+  })
   const engineQuery = useEngineFileContent(file.id, isEngineManagedFile)
 
   const { data: content, isLoading, error } = isEngineManagedFile ? engineQuery : legacyQuery

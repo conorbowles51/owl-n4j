@@ -13,6 +13,13 @@ from app.pipeline.chunk_embed import TextChunk
 from app.services.openai_client import chat_completion
 
 
+def _clean_entity_name(name: str) -> str:
+    """Light cleanup of entity names at extraction time."""
+    name = name.strip()
+    name = name.rstrip('.')
+    return " ".join(name.split())
+
+
 @dataclass
 class RawEntity:
     temp_id: str
@@ -78,7 +85,7 @@ async def _extract_entities_from_chunk(
         if category not in _categories_set:
             category = "Other"
 
-        name = e.get("name", "").strip()
+        name = _clean_entity_name(e.get("name", ""))
         if not name:
             continue
 

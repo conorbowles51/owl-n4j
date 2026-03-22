@@ -31,12 +31,12 @@ export function BulkActionsBar({
 
       <Button variant="ghost" size="sm" onClick={onBulkSetFrom}>
         <ArrowLeft className="size-3.5" />
-        Set From
+        Set Sender
       </Button>
 
       <Button variant="ghost" size="sm" onClick={onBulkSetTo}>
         <ArrowRight className="size-3.5" />
-        Set To
+        Set Receiver
       </Button>
 
       <div className="flex-1" />

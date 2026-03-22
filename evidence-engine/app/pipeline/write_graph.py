@@ -139,7 +139,15 @@ async def _write_entities(
             query = (
                 f"UNWIND $nodes AS node "
                 f"MERGE (n:{category} {{id: node.id}}) "
-                f"SET n += node"
+                f"WITH n, node, n.aliases AS prev_aliases, "
+                f"n.source_files AS prev_sf, n.source_quotes AS prev_sq "
+                f"SET n += node, "
+                f"n.aliases = reduce(acc = [], x IN (coalesce(prev_aliases, []) + coalesce(node.aliases, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
+                f"n.source_files = reduce(acc = [], x IN (coalesce(prev_sf, []) + coalesce(node.source_files, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
+                f"n.source_quotes = coalesce(prev_sq, []) + "
+                f"[q IN coalesce(node.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])]"
             )
             await neo4j_client.execute_write(query, {"nodes": batch})
 
@@ -182,7 +190,12 @@ async def _write_relationships(
                 f"MATCH (a {{id: rel.source_id}}) "
                 f"MATCH (b {{id: rel.target_id}}) "
                 f"MERGE (a)-[r:{rel_type} {{source_id: rel.source_id, target_id: rel.target_id}}]->(b) "
-                f"SET r += rel"
+                f"WITH r, rel, r.source_files AS prev_sf, r.source_quotes AS prev_sq "
+                f"SET r += rel, "
+                f"r.source_files = reduce(acc = [], x IN (coalesce(prev_sf, []) + coalesce(rel.source_files, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
+                f"r.source_quotes = coalesce(prev_sq, []) + "
+                f"[q IN coalesce(rel.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])]"
             )
             await neo4j_client.execute_write(query, {"rels": batch})
 
@@ -195,14 +208,13 @@ async def _embed_entities(
     entities: list[ResolvedEntity],
     case_id: str,
 ) -> None:
-    new_entities = [e for e in entities if not e.is_existing]
-    if not new_entities:
+    if not entities:
         return
 
     collection = chroma_client.get_or_create_collection("entities")
 
     texts = []
-    for e in new_entities:
+    for e in entities:
         desc = f"{e.category}: {e.name}"
         if e.properties.get("description"):
             desc += f" — {e.properties['description']}"
@@ -212,9 +224,10 @@ async def _embed_entities(
 
     embeddings = await embed_texts(texts)
 
-    chroma_client.add_embeddings(
+    # Upsert so existing entities get updated embeddings (merged aliases, etc.)
+    chroma_client.upsert_embeddings(
         collection=collection,
-        ids=[e.id for e in new_entities],
+        ids=[e.id for e in entities],
         embeddings=embeddings,
         documents=texts,
         metadatas=[
@@ -224,7 +237,7 @@ async def _embed_entities(
                 "name": e.name,
                 "case_id": case_id,
             }
-            for e in new_entities
+            for e in entities
         ],
     )
 

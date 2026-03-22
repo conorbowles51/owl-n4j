@@ -24,10 +24,11 @@ export const evidenceAPI = {
     return res.files
   },
 
-  upload: (caseId: string, files: File[], isFolder = false) => {
+  upload: (caseId: string, files: File[], isFolder = false, folderId?: string) => {
     const formData = new FormData()
     formData.append("case_id", caseId)
     if (isFolder) formData.append("is_folder", "true")
+    if (folderId) formData.append("folder_id", folderId)
     files.forEach((f) => formData.append("files", f))
     return fetchAPI<UploadResponse>("/api/evidence/upload", {
       method: "POST",

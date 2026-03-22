@@ -56,6 +56,13 @@ class EvidenceFolder(Base, TimestampMixin):
 
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
 
+    # Folder context & profile — used for LLM extraction prompt enrichment.
+    # context_instructions: free-text context injected into entity extraction prompts.
+    # profile_overrides: structured JSONB for additive profile settings
+    #   (e.g. special_entity_types, temperature).
+    context_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    profile_overrides: Mapped[dict | None] = mapped_column("profile_overrides", JSONB, nullable=True)
+
     # Relationships
     case = relationship("Case", foreign_keys=[case_id])
     created_by = relationship("User", foreign_keys=[created_by_id])

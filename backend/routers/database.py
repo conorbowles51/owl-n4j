@@ -8,7 +8,6 @@ from pydantic import BaseModel
 
 from services.vector_db_service import vector_db_service
 from services.neo4j_service import neo4j_service
-from services.evidence_storage import evidence_storage
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from routers.auth import get_current_user
 

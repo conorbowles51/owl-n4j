@@ -52,23 +52,57 @@ async def upload_file(
     file_content: bytes,
     content_type: str = "application/octet-stream",
     llm_profile: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """
-    Upload a file to the evidence-engine for storage and processing.
+    Upload a single file to the evidence-engine for storage and processing.
 
     Returns:
-        Job response dict from evidence-engine (id, case_id, status, sha256, etc.)
+        List of job response dicts (single element for one file).
+    """
+    return await upload_files_batch(
+        case_id=case_id,
+        files=[(file_name, file_content, content_type)],
+        llm_profile=llm_profile,
+    )
+
+
+async def upload_files_batch(
+    case_id: str,
+    files: List[tuple],  # List of (file_name, file_content, content_type)
+    llm_profile: Optional[str] = None,
+    folder_context: Optional[str] = None,
+    sibling_files: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Upload multiple files to the evidence-engine as a batch.
+
+    All files are extracted in parallel, then deduplicated together in
+    a single unified pass.
+
+    Args:
+        folder_context: Merged context instructions from the folder chain.
+        sibling_files: JSON string of sibling file info for LLM awareness.
+
+    Returns:
+        List of job response dicts from evidence-engine.
     """
     client = _get_client()
 
-    files = {"file": (file_name, file_content, content_type)}
+    multipart_files = [
+        ("files", (name, content, ctype))
+        for name, content, ctype in files
+    ]
     data = {}
     if llm_profile:
         data["llm_profile"] = llm_profile
+    if folder_context:
+        data["folder_context"] = folder_context
+    if sibling_files:
+        data["sibling_files"] = sibling_files
 
     response = await client.post(
         f"/cases/{case_id}/files",
-        files=files,
+        files=multipart_files,
         data=data,
     )
     response.raise_for_status()

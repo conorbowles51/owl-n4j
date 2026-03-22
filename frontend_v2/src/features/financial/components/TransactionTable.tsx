@@ -191,7 +191,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("from", e)}
               >
-                From {renderSortIcon("from")}
+                Sender {renderSortIcon("from")}
               </button>
             </TableHead>
             <TableHead />
@@ -200,7 +200,7 @@ export function TransactionTable({
                 className="flex items-center gap-1 text-xs"
                 onClick={(e) => handleSort("to", e)}
               >
-                To {renderSortIcon("to")}
+                Receiver {renderSortIcon("to")}
               </button>
             </TableHead>
             <TableHead className="text-right">

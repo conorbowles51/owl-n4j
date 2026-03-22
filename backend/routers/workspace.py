@@ -24,7 +24,8 @@ from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessDenied
 from services.vector_db_service import vector_db_service
 from services.embedding_service import EmbeddingService
-from services.evidence_storage import evidence_storage
+from services.evidence_storage import evidence_storage  # TODO: remove after full migration
+from services.evidence_db_storage import EvidenceDBStorage
 from services.neo4j_service import neo4j_service
 from pathlib import Path
 from utils.text_extraction import extract_text_from_file
@@ -470,31 +471,22 @@ async def build_theory_graph(
         # Add text from attached items if requested
         if request.include_attached_items:
             # Extract text from attached evidence
-            if theory.get("attached_evidence_ids"):
-                for evidence_id in theory["attached_evidence_ids"]:
+            from uuid import UUID
+            for field_name, label in [("attached_evidence_ids", "Evidence"), ("attached_document_ids", "Document")]:
+                for eid in (theory.get(field_name) or []):
                     try:
-                        evidence_record = evidence_storage.get(evidence_id)
-                        if evidence_record and evidence_record.get("stored_path"):
-                            file_path = Path(evidence_record["stored_path"])
+                        rec = None
+                        try:
+                            rec = EvidenceDBStorage.get(db, UUID(eid))
+                        except (ValueError, AttributeError):
+                            rec = EvidenceDBStorage.get_by_legacy_id(db, eid)
+                        if rec and rec.stored_path:
+                            file_path = Path(rec.stored_path)
                             text = extract_text_from_file(file_path)
                             if text:
-                                text_parts.append(f"Evidence {evidence_record.get('original_filename', evidence_id)}: {text[:5000]}")  # Limit to 5k chars per file
+                                text_parts.append(f"{label} {rec.original_filename or eid}: {text[:5000]}")
                     except Exception as e:
-                        print(f"[Build Theory Graph] Failed to extract text from evidence {evidence_id}: {e}")
-                        continue
-            
-            # Extract text from attached documents (same as evidence)
-            if theory.get("attached_document_ids"):
-                for doc_id in theory["attached_document_ids"]:
-                    try:
-                        doc_record = evidence_storage.get(doc_id)
-                        if doc_record and doc_record.get("stored_path"):
-                            file_path = Path(doc_record["stored_path"])
-                            text = extract_text_from_file(file_path)
-                            if text:
-                                text_parts.append(f"Document {doc_record.get('original_filename', doc_id)}: {text[:5000]}")
-                    except Exception as e:
-                        print(f"[Build Theory Graph] Failed to extract text from document {doc_id}: {e}")
+                        print(f"[Build Theory Graph] Failed to extract text from {label.lower()} {eid}: {e}")
                         continue
             
             # Add notes text

@@ -63,12 +63,14 @@ class EvidenceDBStorage:
 
     @staticmethod
     def get_folder_breadcrumbs(db: Session, folder_id: uuid.UUID) -> List[EvidenceFolder]:
-        """Walk up from folder_id to root, return list from root → current."""
+        """Walk up from folder_id to root, return ancestor list from root → parent (excludes current)."""
         breadcrumbs: List[EvidenceFolder] = []
         current = db.get(EvidenceFolder, folder_id)
-        while current:
-            breadcrumbs.append(current)
-            current = db.get(EvidenceFolder, current.parent_id) if current.parent_id else None
+        if current and current.parent_id:
+            current = db.get(EvidenceFolder, current.parent_id)
+            while current:
+                breadcrumbs.append(current)
+                current = db.get(EvidenceFolder, current.parent_id) if current.parent_id else None
         breadcrumbs.reverse()
         return breadcrumbs
 
@@ -298,6 +300,12 @@ class EvidenceDBStorage:
         return created
 
     @staticmethod
+    def find_by_engine_job_id(db: Session, engine_job_id: str) -> Optional[EvidenceFile]:
+        return db.scalars(
+            select(EvidenceFile).where(EvidenceFile.engine_job_id == engine_job_id).limit(1)
+        ).first()
+
+    @staticmethod
     def find_by_hash(db: Session, sha256: str) -> Optional[EvidenceFile]:
         return db.scalars(
             select(EvidenceFile).where(EvidenceFile.sha256 == sha256).limit(1)
@@ -308,6 +316,15 @@ class EvidenceDBStorage:
         return list(db.scalars(
             select(EvidenceFile).where(EvidenceFile.sha256 == sha256)
         ).all())
+
+    @staticmethod
+    def find_by_filename(
+        db: Session, filename: str, case_id: Optional[uuid.UUID] = None
+    ) -> Optional[EvidenceFile]:
+        q = select(EvidenceFile).where(EvidenceFile.original_filename == filename)
+        if case_id:
+            q = q.where(EvidenceFile.case_id == case_id)
+        return db.scalars(q.limit(1)).first()
 
     @staticmethod
     def delete_record(db: Session, file_id: uuid.UUID) -> Optional[EvidenceFile]:
@@ -420,6 +437,107 @@ class EvidenceDBStorage:
             .limit(limit)
         )
         return list(db.scalars(q).all())
+
+    # --- Folder tree & profile ---
+
+    @staticmethod
+    def get_folder_tree(db: Session, case_id: uuid.UUID) -> List[Dict[str, Any]]:
+        """
+        Return the complete folder tree for a case as a nested structure.
+        Each node includes file_count, subfolder_count, and has_profile.
+        """
+        # Fetch all folders for this case in one query
+        all_folders = list(db.scalars(
+            select(EvidenceFolder).where(EvidenceFolder.case_id == case_id)
+            .order_by(EvidenceFolder.name)
+        ).all())
+
+        if not all_folders:
+            return []
+
+        folder_ids = [f.id for f in all_folders]
+
+        # Batch-count files per folder
+        file_counts: Dict[uuid.UUID, int] = {}
+        if folder_ids:
+            rows = db.execute(
+                select(EvidenceFile.folder_id, func.count())
+                .where(EvidenceFile.folder_id.in_(folder_ids))
+                .group_by(EvidenceFile.folder_id)
+            ).all()
+            file_counts = {row[0]: row[1] for row in rows}
+
+        # Build a lookup and count subfolders
+        by_parent: Dict[uuid.UUID | None, List[EvidenceFolder]] = {}
+        for f in all_folders:
+            by_parent.setdefault(f.parent_id, []).append(f)
+
+        subfolder_counts: Dict[uuid.UUID, int] = {}
+        for f in all_folders:
+            subfolder_counts[f.id] = len(by_parent.get(f.id, []))
+
+        def _build_node(folder: EvidenceFolder) -> Dict[str, Any]:
+            has_profile = bool(folder.context_instructions or folder.profile_overrides)
+            children = by_parent.get(folder.id, [])
+            return {
+                "id": str(folder.id),
+                "name": folder.name,
+                "parent_id": str(folder.parent_id) if folder.parent_id else None,
+                "file_count": file_counts.get(folder.id, 0),
+                "subfolder_count": subfolder_counts.get(folder.id, 0),
+                "has_profile": has_profile,
+                "children": [_build_node(c) for c in children],
+            }
+
+        # Root folders (parent_id is None)
+        roots = by_parent.get(None, [])
+        return [_build_node(r) for r in roots]
+
+    @staticmethod
+    def collect_recursive_file_ids(
+        db: Session, folder_id: uuid.UUID
+    ) -> List[uuid.UUID]:
+        """Return all file IDs in a folder and all its descendants."""
+        file_ids: List[uuid.UUID] = []
+
+        def _collect(fid: uuid.UUID) -> None:
+            files = db.scalars(
+                select(EvidenceFile.id).where(EvidenceFile.folder_id == fid)
+            ).all()
+            file_ids.extend(files)
+            children = db.scalars(
+                select(EvidenceFolder.id).where(EvidenceFolder.parent_id == fid)
+            ).all()
+            for child_id in children:
+                _collect(child_id)
+
+        _collect(folder_id)
+        return file_ids
+
+    @staticmethod
+    def update_folder_profile(
+        db: Session,
+        folder_id: uuid.UUID,
+        context_instructions: str | None,
+        profile_overrides: dict | None,
+    ) -> EvidenceFolder:
+        folder = db.get(EvidenceFolder, folder_id)
+        if not folder:
+            raise ValueError(f"Folder {folder_id} not found")
+        folder.context_instructions = context_instructions
+        folder.profile_overrides = profile_overrides
+        db.flush()
+        return folder
+
+    @staticmethod
+    def get_folder_profile(db: Session, folder_id: uuid.UUID) -> Dict[str, Any]:
+        folder = db.get(EvidenceFolder, folder_id)
+        if not folder:
+            raise ValueError(f"Folder {folder_id} not found")
+        return {
+            "context_instructions": folder.context_instructions,
+            "profile_overrides": folder.profile_overrides,
+        }
 
     # --- Helpers ---
 

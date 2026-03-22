@@ -35,12 +35,14 @@ from routers import (
     financial_router,
     maintenance_router,
     case_deadlines_router,
+    evidence_folders_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
 from services import evidence_engine_client
 from routers.snapshots import _cleanup_stale_chunks
 from routers.evidence_ws import router as evidence_ws_router, close_redis
+from services.job_status_subscriber import get_subscriber
 
 
 @asynccontextmanager
@@ -60,9 +62,22 @@ async def lifespan(app: FastAPI):
     # Background task: clean up orphaned chunk upload cache entries
     cleanup_task = asyncio.create_task(_cleanup_stale_chunks())
 
+    # Start Redis subscriber for evidence engine job status sync
+    job_subscriber = get_subscriber()
+    try:
+        await job_subscriber.start()
+    except Exception as e:
+        print(f"Warning: Failed to start job status subscriber: {e}")
+
     yield
 
     cleanup_task.cancel()
+
+    # Stop job status subscriber
+    try:
+        await job_subscriber.stop()
+    except Exception as e:
+        print(f"Warning: Error stopping job status subscriber: {e}")
     # Shutdown
     print("Shutting down, closing connections...")
     try:
@@ -120,6 +135,7 @@ app.include_router(cost_ledger_router)
 app.include_router(financial_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
+app.include_router(evidence_folders_router)
 app.include_router(evidence_ws_router)
 
 
