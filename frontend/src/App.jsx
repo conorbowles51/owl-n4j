@@ -3968,7 +3968,7 @@ export default function App() {
             <div className="flex-1 min-w-0 overflow-hidden">
               <div className="h-full flex flex-col min-h-0">
                 <GraphTableView
-                  graphData={graphData}
+                  graphData={fullGraphData.nodes.length > 0 ? fullGraphData : graphData}
                   searchTerm={graphSearchTerm || ''}
                   onNodeClick={handleNodeClick}
                   selectedNodeKeys={selectedNodeKeys}
@@ -4867,7 +4867,7 @@ export default function App() {
             // Table View - tabular view of graph nodes with expandable relations
             <div className="h-full flex flex-col min-h-0">
               <GraphTableView
-                graphData={graphData}
+                graphData={fullGraphData.nodes.length > 0 ? fullGraphData : graphData}
                 searchTerm={graphSearchTerm || ''}
                 onNodeClick={handleNodeClick}
                 selectedNodeKeys={selectedNodeKeys}

@@ -352,10 +352,11 @@ export default function WorkspaceView({
         base = { nodes, links };
       }
     } else {
-      // Create new array references even when using graphData directly
+      // Use fullGraphData if available (contains all entities), fall back to graphData (capped preview)
+      const sourceData = fullGraphData.nodes.length > 0 ? fullGraphData : graphData;
       base = {
-        nodes: [...graphData.nodes],
-        links: [...graphData.links],
+        nodes: [...sourceData.nodes],
+        links: [...sourceData.links],
       };
     }
     const term = (graphSearchTerm || '').trim();
