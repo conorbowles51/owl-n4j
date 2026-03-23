@@ -2112,6 +2112,7 @@ Only include candidates with score >= 5."""
         self,
         answer: str,
         graph_summary: Optional[Dict] = None,
+        case_id: Optional[str] = None,
     ) -> List[str]:
         """
         Generate a Cypher query from the answer to extract relevant nodes.
@@ -2120,7 +2121,9 @@ Only include candidates with score >= 5."""
             return []
 
         if graph_summary is None:
-            graph_summary = self.neo4j.get_graph_summary()
+            if case_id is None:
+                return []
+            graph_summary = self.neo4j.get_graph_summary(case_id)
 
         entity_types = list(graph_summary.get("entity_types", {}).keys())
         relationship_types = list(graph_summary.get("relationship_types", {}).keys())

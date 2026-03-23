@@ -126,18 +126,15 @@ async def root():
 async def health():
     """Detailed health check."""
     try:
-        # Test Neo4j connection
-        summary = neo4j_service.get_graph_summary()
+        # Test Neo4j connection with a lightweight query
+        neo4j_service._driver.verify_connectivity()
         neo4j_status = "connected"
-        node_count = summary.get("total_nodes", 0)
     except Exception as e:
         neo4j_status = f"error: {str(e)}"
-        node_count = 0
 
     return {
         "status": "ok",
         "neo4j": neo4j_status,
-        "nodes": node_count,
     }
 
 

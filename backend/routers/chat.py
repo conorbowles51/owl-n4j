@@ -232,6 +232,7 @@ class ExtractNodesRequest(BaseModel):
     """Request model for extract nodes endpoint."""
 
     answer: str
+    case_id: str
 
 
 @router.post("/extract-nodes")
@@ -249,7 +250,7 @@ async def extract_nodes_from_answer(request: ExtractNodesRequest):
         raise HTTPException(status_code=400, detail="Answer is required")
 
     try:
-        node_keys = rag_service.extract_nodes_from_answer(request.answer.strip())
+        node_keys = rag_service.extract_nodes_from_answer(request.answer.strip(), case_id=request.case_id)
         return {"node_keys": node_keys}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

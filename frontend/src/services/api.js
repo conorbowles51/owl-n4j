@@ -776,11 +776,12 @@ export const chatAPI = {
   /**
    * Extract node keys from an AI answer
    */
-  extractNodesFromAnswer: (answer) =>
+  extractNodesFromAnswer: (answer, caseId) =>
     fetchAPI('/chat/extract-nodes', {
       method: 'POST',
       body: JSON.stringify({
         answer: answer,
+        case_id: caseId,
       }),
       timeout: 300000, // 5 minutes for node extraction (uses LLM)
     }),
