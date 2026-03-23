@@ -4,6 +4,7 @@ import { ChevronRight, X, ChevronsRight, MessageSquare, CheckSquare, Square, Fil
 import { parseSearchQuery, getHighlightTerms } from '../utils/searchParser';
 import { highlightMatchedText } from '../utils/highlightText';
 import MergeEntitiesModal from './MergeEntitiesModal';
+import BulkMergeModal from './BulkMergeModal';
 import EditNodeModal from './EditNodeModal';
 import AddNodeModal from './AddNodeModal';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -195,6 +196,7 @@ export default function GraphTableView({
   
   // Modal states
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const [showBulkMergeModal, setShowBulkMergeModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1063,19 +1065,24 @@ export default function GraphTableView({
     }
   }, []);
 
-  // Handle merge action — supports 2+ entities
+  // Handle merge action — 2 entities uses existing modal, 3+ uses bulk wizard
   const handleMerge = useCallback(() => {
     const selected = getSelectedNodes();
     if (selected.length < 2) {
       alert('Please select at least 2 nodes to merge');
       return;
     }
-    // For 2 entities, use the standard merge modal
-    // For 3+, use bulk merge: first entity is target, rest are sources
-    setMergeEntity1(selected[0]);
-    setMergeEntity2(selected.length === 2 ? selected[1] : null);
-    setBulkMergeEntities(selected.length > 2 ? selected : null);
-    setShowMergeModal(true);
+    if (selected.length === 2) {
+      // Standard 2-entity merge modal
+      setMergeEntity1(selected[0]);
+      setMergeEntity2(selected[1]);
+      setBulkMergeEntities(null);
+      setShowMergeModal(true);
+    } else {
+      // 3+ entities: open bulk merge wizard
+      setBulkMergeEntities(selected);
+      setShowBulkMergeModal(true);
+    }
   }, [getSelectedNodes]);
 
   // Handle delete action
@@ -1122,27 +1129,16 @@ export default function GraphTableView({
     return result;
   }, [getSelectedNodes, caseId, onGraphRefresh]);
 
-  // Handle merge confirmation — supports both 2-entity and bulk merge
+  // Handle 2-entity merge confirmation (existing MergeEntitiesModal)
   const handleMergeConfirm = useCallback(async (sourceKey, targetKey, mergedData) => {
     if (!onMergeNodes) {
       alert('Merge functionality is not available');
       return;
     }
     try {
-      if (bulkMergeEntities && bulkMergeEntities.length > 2) {
-        // Bulk merge: first entity is target, merge all others into it
-        const target = bulkMergeEntities[0];
-        const sources = bulkMergeEntities.slice(1);
-        for (let i = 0; i < sources.length; i++) {
-          const combinedData = i === 0 ? mergedData : { name: mergedData.name, type: mergedData.type };
-          await onMergeNodes(sources[i].key, target.key, combinedData);
-        }
-      } else {
-        await onMergeNodes(sourceKey, targetKey, mergedData);
-      }
+      await onMergeNodes(sourceKey, targetKey, mergedData);
       setCheckboxSelectedKeys(new Set());
       setShowMergeModal(false);
-      setBulkMergeEntities(null);
       if (onGraphRefresh) {
         await onGraphRefresh();
       }
@@ -1150,7 +1146,7 @@ export default function GraphTableView({
       console.error('Failed to merge nodes:', err);
       throw err;
     }
-  }, [onMergeNodes, onGraphRefresh, bulkMergeEntities]);
+  }, [onMergeNodes, onGraphRefresh]);
 
   // Handle delete confirmation
   const handleDeleteConfirm = useCallback(async (nodesToDelete) => {
@@ -1359,12 +1355,12 @@ export default function GraphTableView({
           </button>
           <button
             onClick={handleMerge}
-            disabled={checkboxSelectedKeys.size !== 2}
+            disabled={checkboxSelectedKeys.size < 2}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-owl-blue-600 text-white rounded hover:bg-owl-blue-700 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Merge exactly 2 selected entities"
+            title="Merge selected entities into one"
           >
             <Merge className="w-4 h-4" />
-            Merge 2
+            {checkboxSelectedKeys.size >= 2 ? `Merge ${checkboxSelectedKeys.size}` : 'Merge'}
           </button>
           <button
             onClick={handleDelete}
@@ -1559,18 +1555,29 @@ export default function GraphTableView({
           setShowMergeModal(false);
           setMergeEntity1(null);
           setMergeEntity2(null);
-          setBulkMergeEntities(null);
         }}
         onSuccess={() => {
           setShowMergeModal(false);
           setMergeEntity1(null);
           setMergeEntity2(null);
-          setBulkMergeEntities(null);
         }}
         entity1={mergeEntity1}
-        entity2={bulkMergeEntities ? bulkMergeEntities[1] : mergeEntity2}
-        bulkEntities={bulkMergeEntities}
+        entity2={mergeEntity2}
         onMerge={handleMergeConfirm}
+      />
+
+      <BulkMergeModal
+        isOpen={showBulkMergeModal}
+        onClose={() => { setShowBulkMergeModal(false); setBulkMergeEntities(null); }}
+        entities={bulkMergeEntities || []}
+        graphLinks={graphData?.links || []}
+        caseId={caseId}
+        onMergeComplete={() => {
+          setCheckboxSelectedKeys(new Set());
+          setShowBulkMergeModal(false);
+          setBulkMergeEntities(null);
+          if (onGraphRefresh) onGraphRefresh();
+        }}
       />
 
       <EditNodeModal

@@ -407,6 +407,17 @@ export const graphAPI = {
       }),
     }),
 
+  bulkMergeEntities: (caseId, targetKey, sourceKeys, mergedData) =>
+    fetchAPI('/graph/bulk-merge-entities', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        target_key: targetKey,
+        source_keys: sourceKeys,
+        merged_data: mergedData,
+      }),
+    }),
+
   /**
    * Reject a merge pair as a false positive (not actually duplicates).
    * The pair will be filtered out from future similar-entities scans.

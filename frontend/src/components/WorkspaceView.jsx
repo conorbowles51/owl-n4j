@@ -283,6 +283,24 @@ export default function WorkspaceView({
     }
   }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
 
+  const handleMergeNodes = useCallback(async (sourceKey, targetKey, mergedData) => {
+    try {
+      await graphAPI.mergeEntities(caseId, sourceKey, targetKey, mergedData);
+      const graph = await graphAPI.getGraph({ case_id: caseId });
+      const newGraph = { nodes: [...graph.nodes], links: [...graph.links] };
+      setFullGraphData(newGraph);
+      if (graphSearchTerm || theoryGraphKeys) {
+        applyGraphFilter(newGraph, graphSearchTerm);
+      } else {
+        setGraphData(newGraph);
+      }
+      window.dispatchEvent(new Event('entities-refresh'));
+    } catch (err) {
+      console.error('Failed to merge nodes:', err);
+      throw err;
+    }
+  }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
+
   const handleDeleteNodes = useCallback(async (nodesToDelete) => {
     try {
       // Delete each node
@@ -594,6 +612,7 @@ export default function WorkspaceView({
                 onNodeCreated={handleNodeCreated}
                 onGraphRefresh={handleGraphRefresh}
                 onDeleteNodes={handleDeleteNodes}
+                onMergeNodes={handleMergeNodes}
               />
             </div>
 

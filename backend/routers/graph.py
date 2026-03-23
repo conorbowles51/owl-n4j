@@ -1342,6 +1342,14 @@ class MergeEntitiesRequest(BaseModel):
     merged_data: Dict[str, Any]  # name, summary, notes, type, properties
 
 
+class BulkMergeEntitiesRequest(BaseModel):
+    """Request model for merging multiple entities into one."""
+    case_id: str
+    target_key: str
+    source_keys: List[str]  # All entities to merge INTO target
+    merged_data: Dict[str, Any]  # name, summary, verified_facts, ai_insights, type, properties
+
+
 @router.post("/find-similar-entities")
 async def find_similar_entities(
     request: FindSimilarEntitiesRequest,
@@ -1546,6 +1554,60 @@ async def merge_entities(
             },
             user=user.get("username", "unknown"),
             success=False,
+        )
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/bulk-merge-entities")
+async def bulk_merge_entities(
+    request: BulkMergeEntitiesRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Merge multiple entities into a single target entity in one atomic operation."""
+    try:
+        if not request.source_keys:
+            raise HTTPException(status_code=400, detail="source_keys cannot be empty")
+        if request.merged_data is None or not isinstance(request.merged_data, dict):
+            raise HTTPException(status_code=400, detail="merged_data must be a dict")
+
+        result = neo4j_service.bulk_merge_entities(
+            target_key=request.target_key,
+            source_keys=request.source_keys,
+            merged_data=request.merged_data,
+            case_id=request.case_id,
+        )
+
+        if result is None or not isinstance(result, dict):
+            raise HTTPException(status_code=500, detail="Bulk merge returned invalid result")
+
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Bulk Merge Entities",
+            details={
+                "target_key": request.target_key,
+                "source_keys": request.source_keys,
+                "entities_merged": result.get("entities_merged", 0),
+                "relationships_updated": result.get("relationships_updated", 0),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+        return result
+    except ValueError as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION, origin=LogOrigin.FRONTEND,
+            action="Bulk Merge Entities Failed",
+            details={"target_key": request.target_key, "source_keys": request.source_keys, "error": str(e)},
+            user=user.get("username", "unknown"), success=False,
+        )
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION, origin=LogOrigin.FRONTEND,
+            action="Bulk Merge Entities Failed",
+            details={"target_key": request.target_key, "source_keys": request.source_keys, "error": str(e)},
+            user=user.get("username", "unknown"), success=False,
         )
         raise HTTPException(status_code=500, detail=str(e))
 

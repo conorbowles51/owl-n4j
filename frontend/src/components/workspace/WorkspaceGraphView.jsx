@@ -42,6 +42,7 @@ export default function WorkspaceGraphView({
   onNodeCreated = null,
   onGraphRefresh = null,
   onDeleteNodes = null,
+  onMergeNodes = null,
 }) {
   const tableData = tableGraphData ?? graphData;
   const graphViewRef = useRef();
@@ -243,6 +244,7 @@ export default function WorkspaceGraphView({
                   onNodeCreated={onNodeCreated}
                   onGraphRefresh={onGraphRefresh}
                   onDeleteNodes={onDeleteNodes}
+                  onMergeNodes={onMergeNodes}
                 />
               </div>
             ) : (

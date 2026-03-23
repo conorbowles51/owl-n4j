@@ -2504,6 +2504,161 @@ class Neo4jService:
                 "relationships_updated": relationships_updated,
             }
             
+    def bulk_merge_entities(
+        self,
+        target_key: str,
+        source_keys: list,
+        merged_data: Dict[str, Any],
+        case_id: str = None,
+    ) -> Dict[str, Any]:
+        """
+        Merge multiple source entities into a single target entity in one operation.
+
+        Args:
+            target_key: Key of the target entity (will be kept and updated)
+            source_keys: List of source entity keys (will be soft-deleted)
+            merged_data: Dict with merged properties (name, summary, verified_facts, ai_insights, type, properties)
+            case_id: REQUIRED - Verify all entities belong to this case
+
+        Returns:
+            Dict with merged_node, relationships_updated, entities_merged
+        """
+        import re
+
+        if merged_data is None:
+            raise ValueError("merged_data cannot be None")
+        if not isinstance(merged_data, dict):
+            raise ValueError(f"merged_data must be a dict, got {type(merged_data)}")
+        if not source_keys:
+            raise ValueError("source_keys cannot be empty")
+
+        with self._driver.session() as session:
+            # Validate target exists
+            target_result = session.run(
+                """
+                MATCH (t {key: $key, case_id: $case_id})
+                RETURN t.id AS id, t.key AS key, t.name AS name, labels(t)[0] AS type
+                """,
+                key=target_key, case_id=case_id,
+            )
+            target_record = target_result.single()
+            if not target_record:
+                raise ValueError(f"Target entity not found: {target_key} in case {case_id}")
+
+            # Validate all sources exist
+            for sk in source_keys:
+                sr = session.run(
+                    "MATCH (s {key: $key, case_id: $case_id}) RETURN s.key AS key",
+                    key=sk, case_id=case_id,
+                ).single()
+                if not sr:
+                    raise ValueError(f"Source entity not found: {sk} in case {case_id}")
+
+            # Update target entity with merged data
+            set_clauses = []
+            params = {"target_key": target_key}
+
+            if "name" in merged_data:
+                set_clauses.append("t.name = $merged_name")
+                params["merged_name"] = merged_data["name"]
+            if "summary" in merged_data and merged_data["summary"] is not None:
+                set_clauses.append("t.summary = $merged_summary")
+                params["merged_summary"] = merged_data["summary"]
+            if "verified_facts" in merged_data and merged_data["verified_facts"] is not None:
+                set_clauses.append("t.verified_facts = $merged_verified_facts")
+                params["merged_verified_facts"] = json.dumps(merged_data["verified_facts"])
+            if "ai_insights" in merged_data and merged_data["ai_insights"] is not None:
+                set_clauses.append("t.ai_insights = $merged_ai_insights")
+                params["merged_ai_insights"] = json.dumps(merged_data["ai_insights"])
+
+            # Handle type (label) change
+            new_type = merged_data.get("type")
+            old_type = target_record["type"]
+            if new_type and isinstance(new_type, str) and new_type.strip() and old_type != new_type:
+                sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', new_type.strip())
+                sanitized = re.sub(r'_+', '_', sanitized).strip('_') or "Other"
+                session.run(
+                    f"MATCH (t {{key: $target_key}}) REMOVE t:`{old_type}` SET t:`{sanitized}`",
+                    target_key=target_key,
+                )
+
+            # Add additional properties
+            if "properties" in merged_data and isinstance(merged_data.get("properties"), dict):
+                for prop_key, prop_val in merged_data["properties"].items():
+                    param_name = f"prop_{prop_key}"
+                    set_clauses.append(f"t.{prop_key} = ${param_name}")
+                    params[param_name] = prop_val
+
+            if set_clauses:
+                session.run(
+                    f"MATCH (t {{key: $target_key}}) SET {', '.join(set_clauses)}",
+                    **params,
+                )
+
+            # Migrate relationships from all sources to target and soft-delete each
+            total_relationships = 0
+            all_source_keys_set = set(source_keys)
+
+            for source_key in source_keys:
+                # Get all relationships from this source
+                rels_result = session.run(
+                    """
+                    MATCH (s {key: $key})-[r]->(target)
+                    RETURN type(r) AS rel_type, target.key AS other_key,
+                           properties(r) AS rel_properties, 'outgoing' AS direction
+                    UNION
+                    MATCH (source)-[r]->(s {key: $key})
+                    RETURN type(r) AS rel_type, source.key AS other_key,
+                           properties(r) AS rel_properties, 'incoming' AS direction
+                    """,
+                    key=source_key,
+                )
+                rels = [dict(r) for r in rels_result]
+
+                for rel in rels:
+                    other_key = rel["other_key"]
+                    # Skip self-loops to target AND relationships to other sources (they'll be deleted too)
+                    if other_key == target_key or other_key in all_source_keys_set:
+                        continue
+
+                    rel_type = rel["rel_type"]
+                    rel_props = rel["rel_properties"] or {}
+                    direction = rel["direction"]
+
+                    if direction == "outgoing":
+                        cypher = f"MATCH (t {{key: $target_key}}), (o {{key: $other_key}}) MERGE (t)-[r:`{rel_type}`]->(o)"
+                    else:
+                        cypher = f"MATCH (o {{key: $other_key}}), (t {{key: $target_key}}) MERGE (o)-[r:`{rel_type}`]->(t)"
+
+                    if rel_props:
+                        cypher += " SET r += $rel_props"
+                        session.run(cypher, target_key=target_key, other_key=other_key, rel_props=rel_props)
+                    else:
+                        session.run(cypher, target_key=target_key, other_key=other_key)
+                    total_relationships += 1
+
+                # Soft-delete the source
+                try:
+                    self.soft_delete_entity(
+                        node_key=source_key, case_id=case_id,
+                        deleted_by="system", reason=f"bulk_merge_into:{target_key}",
+                    )
+                except Exception:
+                    session.run("MATCH (s {key: $key}) DETACH DELETE s", key=source_key)
+
+            # Get final merged node
+            merged_result = session.run(
+                "MATCH (t {key: $key}) RETURN t.id AS id, t.key AS key, t.name AS name, labels(t)[0] AS type",
+                key=target_key,
+            )
+            merged_record = merged_result.single()
+
+            return {
+                "merged_node": dict(merged_record) if merged_record else None,
+                "relationships_updated": total_relationships,
+                "entities_merged": len(source_keys),
+            }
+
     def delete_node(self, node_key: str, case_id: str = None) -> Dict[str, Any]:
         """
         Delete a node and all its relationships.
