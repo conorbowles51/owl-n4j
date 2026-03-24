@@ -3,6 +3,12 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+} from "@/components/ui/context-menu"
 import { useFolderTree } from "../hooks/use-folder-tree"
 import { useEvidenceStore } from "../evidence.store"
 import { FolderTreeNode } from "./FolderTreeNode"
@@ -44,16 +50,26 @@ export function FolderTreeSidebar({
       </div>
 
       {/* Root item */}
-      <button
-        onClick={() => setCurrentFolder(null)}
-        className={`mx-2 mt-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
-          currentFolderId === null
-            ? "bg-amber-500/10 text-amber-500 font-medium"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground"
-        }`}
-      >
-        <span className="text-xs">All Files</span>
-      </button>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            onClick={() => setCurrentFolder(null)}
+            className={`mx-2 mt-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
+              currentFolderId === null
+                ? "bg-amber-500/10 text-amber-500 font-medium"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            }`}
+          >
+            <span className="text-xs">All Files</span>
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => onCreateFolder(null)}>
+            <FolderPlus className="mr-2 size-4" />
+            New Folder
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
 
       {/* Tree */}
       <ScrollArea className="flex-1 px-1 py-1">
