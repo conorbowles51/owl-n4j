@@ -33,6 +33,7 @@ import { DocumentViewer } from "@/components/ui/document-viewer"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/cn"
 import { useEvidenceStore } from "../evidence.store"
+import { useJobs } from "../hooks/use-jobs"
 import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
@@ -604,6 +605,12 @@ export function EvidenceContextSidebar({
   detailFile,
 }: EvidenceContextSidebarProps) {
   const { sidebarTab, setSidebarTab, setSidebarOpen } = useEvidenceStore()
+  const { data: jobs } = useJobs(caseId)
+  const hasActiveJobs = useMemo(
+    () =>
+      jobs?.some((j) => !["completed", "failed"].includes(j.status)) ?? false,
+    [jobs]
+  )
 
   const tabs = [
     { id: "details" as const, label: "Details", icon: Info },
@@ -629,6 +636,9 @@ export function EvidenceContextSidebar({
           >
             <tab.icon className="size-3.5" />
             {tab.label}
+            {tab.id === "processing" && hasActiveJobs && (
+              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+            )}
           </button>
         ))}
         <div className="ml-auto pr-1">

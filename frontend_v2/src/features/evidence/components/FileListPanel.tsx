@@ -7,11 +7,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
-import { EmptyState } from "@/components/ui/empty-state"
+import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Upload } from "lucide-react"
+import { Upload, Play } from "lucide-react"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { useEvidenceStore } from "../evidence.store"
+import { evidenceAPI } from "../api"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { getFileTypeCategory } from "../utils/file-types"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
@@ -48,6 +51,30 @@ export function FileListPanel({
   const { data: contents, isLoading } = useFolderContents(caseId, currentFolderId)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDraggingExternal, setIsDraggingExternal] = useState(false)
+
+  const queryClient = useQueryClient()
+  const processMutation = useMutation({
+    mutationFn: (data: { fileIds: string[] }) =>
+      evidenceAPI.processBackground(caseId, data.fileIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+    },
+  })
+
+  const handleProcessSelected = () => {
+    if (selectedFileIds.size === 0) return
+    processMutation.mutate(
+      { fileIds: Array.from(selectedFileIds) },
+      {
+        onSuccess: () => {
+          toast.success("Processing started")
+          clearSelection()
+        },
+        onError: (err) => toast.error(err.message),
+      }
+    )
+  }
 
   // Filter files based on search/filters
   const filteredFiles = contents?.files?.filter((f) => {
@@ -122,7 +149,7 @@ export function FileListPanel({
   return (
     <div
       ref={containerRef}
-      className="flex h-full flex-col overflow-hidden"
+      className="relative flex h-full flex-col overflow-hidden"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -164,11 +191,15 @@ export function FileListPanel({
             <LoadingSpinner />
           </div>
         ) : !hasContent ? (
-          <EmptyState
-            icon={Upload}
-            title="No files yet"
-            description="Drag and drop files here or use the upload button."
-          />
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">
+            <Upload className="size-10 text-muted-foreground/30" />
+            <p className="text-sm font-medium text-muted-foreground">
+              No files yet
+            </p>
+            <p className="text-xs text-muted-foreground/70">
+              Drop files here or click Upload to get started
+            </p>
+          </div>
         ) : (
           <Table>
             <TableHeader>
@@ -209,6 +240,22 @@ export function FileListPanel({
           </Table>
         )}
       </div>
+
+      {/* Floating selection action bar */}
+      {selectedFileIds.size > 0 && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2 shadow-lg">
+          <span className="text-xs font-medium text-muted-foreground">
+            {selectedFileIds.size} file{selectedFileIds.size !== 1 ? "s" : ""} selected
+          </span>
+          <Button size="sm" onClick={handleProcessSelected}>
+            <Play className="mr-1.5 size-3.5" />
+            Process
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearSelection}>
+            Clear
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

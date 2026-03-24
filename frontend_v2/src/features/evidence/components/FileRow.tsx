@@ -3,6 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { TableRow, TableCell } from "@/components/ui/table"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -89,12 +90,17 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
 
       {/* Filename */}
       <TableCell>
-        <button
-          onClick={() => openDetail(file.id)}
-          className="max-w-[300px] truncate text-left text-sm font-medium hover:text-amber-500 transition-colors"
-        >
-          {file.original_filename}
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => openDetail(file.id)}
+              className="max-w-[300px] truncate text-left text-sm font-medium hover:text-amber-500 transition-colors"
+            >
+              {file.original_filename}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{file.original_filename}</TooltipContent>
+        </Tooltip>
       </TableCell>
 
       {/* Type badge */}

@@ -1,9 +1,8 @@
 import { useMemo } from "react"
-import { X, Layers } from "lucide-react"
+import { X, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useEvidenceStore } from "../evidence.store"
 import { useJobs } from "../hooks/use-jobs"
@@ -116,12 +115,15 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
             <LoadingSpinner size="sm" />
           </div>
         ) : sortedJobs.length === 0 ? (
-          <EmptyState
-            icon={Layers}
-            title="No processing jobs"
-            description="Select files and click Process to start ingestion."
-            className="py-8"
-          />
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-6 py-8 text-center">
+            <Loader2 className="size-8 text-muted-foreground/30" />
+            <p className="text-sm font-medium text-muted-foreground">
+              No processing activity
+            </p>
+            <p className="text-xs text-muted-foreground/70">
+              Select files and click Process to begin
+            </p>
+          </div>
         ) : (
           <div className="space-y-1 p-2">
             {sortedJobs.map((job) => (
