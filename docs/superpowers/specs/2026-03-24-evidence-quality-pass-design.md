@@ -276,7 +276,7 @@ Upload → Backend disk + DB record (status: processing)
     → Stage 4: Resolve entities with cross-job dedup (progress: 60-70%)
     → Stage 5 + 5.5: Resolve relationships + link transaction parties (progress: 70-75%)
     → Stage 6: Generate entity summaries as structured markdown with source links (progress: 75-85%)
-    → Stage 7: Write to Neo4j + embed for RAG (progress: 90-100%)
+    → Stage 7: Write to Neo4j + embed for RAG (progress: 85-100%)
   → Redis pub/sub → WebSocket → Frontend progress updates (per-stage, within-stage)
   → JobStatusSubscriber syncs: status, entity_count, relationship_count, document_summary → DB
   → Frontend detail panel shows: summary (markdown), entities, relationships, processing info
@@ -292,7 +292,7 @@ Upload → Backend disk + DB record (status: processing)
 - `features/evidence/components/FolderTreeSidebar.tsx` — add root context menu
 - `features/evidence/components/FileRow.tsx` — fix entity count display
 - `features/evidence/components/EvidenceDetailSheet.tsx` — major upgrade (status-dependent views, entities, relationships)
-- `features/evidence/components/FileSummaryPanel.tsx` — markdown rendering
+- `features/evidence/components/FileSummaryPanel.tsx` — markdown rendering, remove separate API call (read from file record instead)
 - `features/evidence/components/JobsPanel.tsx` — adapt for sidebar tab placement
 - `features/evidence/components/JobCard.tsx` — enhanced progress display
 - `features/evidence/components/FileListPanel.tsx` — empty states, selection action bar, loading skeletons
@@ -300,6 +300,7 @@ Upload → Backend disk + DB record (status: processing)
 - New: sidebar tab container component
 - New: markdown renderer with `evidence://` link interception
 - New: hooks for fetching entities/relationships per file
+- `types/evidence.types.ts` — add `entity_count`, `relationship_count` to `EvidenceFileRecord`; add `consolidating_entities` and `generating_document_summary` to `PipelineStage` enum
 
 **Backend:**
 - `postgres/models/evidence.py` — add `entity_count`, `relationship_count` columns
