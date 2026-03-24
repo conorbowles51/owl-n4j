@@ -560,6 +560,9 @@ class EvidenceDBStorage:
             "processed_at": ef.processed_at.isoformat() if ef.processed_at else None,
             "last_error": ef.last_error,
             "legacy_id": ef.legacy_id,
+            "summary": ef.summary,
+            "entity_count": ef.entity_count,
+            "relationship_count": ef.relationship_count,
         }
 
     @staticmethod

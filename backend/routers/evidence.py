@@ -59,6 +59,8 @@ class EvidenceRecord(BaseModel):
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
     summary: Optional[str] = None  # Document summary if available
+    entity_count: Optional[int] = None
+    relationship_count: Optional[int] = None
     engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking
 
 
@@ -146,22 +148,10 @@ async def list_evidence(
                 "processed_at": f.processed_at.isoformat() if f.processed_at else None,
                 "last_error": f.last_error,
                 "engine_job_id": f.engine_job_id,
+                "summary": f.summary,
+                "entity_count": f.entity_count,
+                "relationship_count": f.relationship_count,
             })
-
-        # Get document summaries for processed files
-        if files and case_id:
-            processed_files = [f for f in files if f.get("status") == "processed"]
-            if processed_files:
-                try:
-                    doc_names = [f.get("original_filename", "") for f in processed_files]
-                    summaries = neo4j_service.get_document_summaries_batch(doc_names, case_id)
-                    for file in files:
-                        if file.get("status") == "processed":
-                            filename = file.get("original_filename", "")
-                            if filename in summaries:
-                                file["summary"] = summaries[filename]
-                except Exception as e:
-                    logger.warning("Failed to load document summaries: %s", e)
 
         return {"files": files}
     except Exception as e:
@@ -1532,19 +1522,13 @@ async def get_evidence_by_filename(
         case_uuid = UUID(case_id) if case_id else None
         record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
         if record:
-            summary = None
-            if case_id:
-                try:
-                    summary = neo4j_service.get_document_summary(filename, case_id)
-                except Exception:
-                    pass
             return {
                 "found": True,
                 "evidence_id": str(record.id),
                 "case_id": str(record.case_id),
                 "original_filename": record.original_filename,
                 "stored_path": record.stored_path,
-                "summary": summary,
+                "summary": record.summary,
             }
 
         return {"found": False, "message": f"No evidence file found with name: {filename}"}
@@ -1557,14 +1541,20 @@ async def get_document_summary(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Get the AI-generated summary for a document.
-    
-    Returns the summary stored in Neo4j for the document with the given filename.
+
+    Returns the summary stored on the EvidenceFile record in Postgres.
     """
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
     try:
-        summary = neo4j_service.get_document_summary(filename, case_id)
+        case_uuid = UUID(case_id)
+        record = EvidenceDBStorage.find_by_filename(db, filename, case_id=case_uuid)
+        summary = record.summary if record else None
         return {
             "filename": filename,
             "case_id": case_id,

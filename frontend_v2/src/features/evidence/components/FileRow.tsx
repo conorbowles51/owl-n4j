@@ -123,7 +123,9 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
 
       {/* Entity count */}
       <TableCell className="font-mono text-xs text-muted-foreground">
-        {file.status === "processed" ? "--" : "--"}
+        {file.status === "processed"
+          ? `${file.entity_count ?? 0} / ${file.relationship_count ?? 0}`
+          : "--"}
       </TableCell>
 
       {/* Date */}

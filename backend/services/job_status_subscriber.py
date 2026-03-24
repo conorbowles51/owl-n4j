@@ -103,6 +103,16 @@ class JobStatusSubscriber:
                             # Already terminal — sync immediately
                             err = job.get("error_message") if engine_status == "failed" else None
                             EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
+                            if engine_status == "completed":
+                                doc_summary = job.get("document_summary")
+                                if doc_summary:
+                                    ef.summary = doc_summary
+                                ec = job.get("entity_count")
+                                rc = job.get("relationship_count")
+                                if ec is not None:
+                                    ef.entity_count = ec
+                                if rc is not None:
+                                    ef.relationship_count = rc
                             logger.info("Recovered job %s: %s", jid, engine_status)
                         else:
                             # Still running — subscribe for updates
@@ -166,6 +176,21 @@ class JobStatusSubscriber:
                 if db_rec:
                     err = data.get("error_message") if status == "failed" else None
                     EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
+
+                    # Store document summary from evidence engine
+                    if status == "completed":
+                        doc_summary = data.get("document_summary")
+                        if doc_summary:
+                            db_rec.summary = doc_summary
+
+                    # Store entity/relationship counts
+                    if status == "completed":
+                        entity_count = data.get("entity_count")
+                        rel_count = data.get("relationship_count")
+                        if entity_count is not None:
+                            db_rec.entity_count = entity_count
+                        if rel_count is not None:
+                            db_rec.relationship_count = rel_count
 
                     # Write ingestion log
                     if status == "completed":

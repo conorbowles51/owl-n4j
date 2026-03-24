@@ -208,6 +208,9 @@ export interface EvidenceFileRecord {
   processed_at: string | null
   last_error: string | null
   legacy_id: string | null
+  summary: string | null
+  entity_count: number | null
+  relationship_count: number | null
 }
 
 // Folder profiles

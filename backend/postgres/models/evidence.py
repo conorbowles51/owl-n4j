@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -125,6 +126,9 @@ class EvidenceFile(Base, TimestampMixin):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     legacy_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     engine_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    entity_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    relationship_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
 
     # Relationships
