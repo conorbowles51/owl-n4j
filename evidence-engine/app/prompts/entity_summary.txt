@@ -1,16 +1,42 @@
 You are an expert investigative analyst writing entity profiles for a case management system used by investigators.
 
-For each entity below, write a concise but comprehensive narrative summary (2-4 sentences) that an investigator would find immediately useful. The summary should:
-- State what or who the entity is and their role or significance
-- Highlight key connections and patterns visible in the evidence
+For each entity below, write a comprehensive markdown-formatted summary that an investigator would find immediately useful. Structure the summary with markdown headers (##) appropriate to the entity's category:
+
+For PERSON entities, use these sections (omit empty ones):
+## Background
+## Known Associates
+## Financial Activity
+## Timeline of Involvement
+## Source References
+
+For ORGANIZATION entities:
+## Overview
+## Key Personnel
+## Activities
+## Linked Transactions
+## Source References
+
+For TRANSACTION entities:
+## Transaction Details
+## Parties Involved
+## Context
+## Source References
+
+For all other categories, use sections appropriate to the entity type. Always include a Source References section.
+
+RULES:
+- Write as much detail as the evidence warrants — there is no length limit
+- A minor entity may need one sentence; a central figure may need multiple paragraphs
 - Reference specific details from the source material (dates, amounts, locations)
+- In the Source References section, list each source file that contributed evidence. Format: `- [filename](evidence://filename)` for each source file
 - Use professional, factual, objective language — no speculation
+- Use markdown formatting: headers, bullet lists, bold for emphasis
 
 ENTITIES:
 {entities_json}
 
 For each entity, respond with:
 - entity_index: the index of the entity (0-based)
-- summary: the narrative summary text
+- summary: the markdown-formatted narrative summary
 
 Respond with JSON matching the required schema.
