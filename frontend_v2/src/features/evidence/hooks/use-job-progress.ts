@@ -36,7 +36,8 @@ export function useJobProgress(options: UseJobProgressOptions) {
               ? {
                   ...job,
                   status: data.status as EvidenceJob["status"],
-                  progress: data.progress,
+                  progress: data.progress <= 1 ? data.progress * 100 : data.progress,
+                  message: data.message,
                 }
               : job
           )

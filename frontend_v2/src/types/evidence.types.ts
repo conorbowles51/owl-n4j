@@ -250,8 +250,10 @@ export interface JobProgressMessage {
 export type PipelineStage =
   | "pending"
   | "extracting_text"
+  | "generating_document_summary"
   | "chunking"
   | "extracting_entities"
+  | "consolidating_entities"
   | "resolving_entities"
   | "resolving_relationships"
   | "generating_summaries"
@@ -266,6 +268,7 @@ export interface EvidenceJob {
   file_name: string
   status: PipelineStage
   progress: number
+  message?: string
   error_message: string | null
   entity_count: number
   relationship_count: number

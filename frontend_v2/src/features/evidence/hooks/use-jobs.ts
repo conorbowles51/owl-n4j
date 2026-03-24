@@ -6,7 +6,11 @@ async function fetchJobs(caseId: string): Promise<EvidenceJob[]> {
   const { fetchAPI } = await import("@/lib/api-client")
   // Use the evidence engine's job listing
   const jobs = await fetchAPI<EvidenceJob[]>(`/api/evidence/engine/jobs?case_id=${caseId}`)
-  return jobs
+  // Engine reports progress as 0.0-1.0; frontend expects 0-100
+  return jobs.map((job) => ({
+    ...job,
+    progress: job.progress <= 1 ? job.progress * 100 : job.progress,
+  }))
 }
 
 export function useJobs(caseId: string | undefined, hasActiveJobs = false) {

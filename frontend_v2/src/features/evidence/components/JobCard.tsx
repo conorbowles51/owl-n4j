@@ -12,8 +12,10 @@ interface JobCardProps {
 const STAGE_LABELS: Record<PipelineStage, string> = {
   pending: "Pending",
   extracting_text: "Extracting Text",
+  generating_document_summary: "Summarizing Document",
   chunking: "Chunking",
   extracting_entities: "Extracting Entities",
+  consolidating_entities: "Consolidating Entities",
   resolving_entities: "Resolving Entities",
   resolving_relationships: "Resolving Relationships",
   generating_summaries: "Generating Summaries",
@@ -25,8 +27,10 @@ const STAGE_LABELS: Record<PipelineStage, string> = {
 const STAGE_COLORS: Record<PipelineStage, string> = {
   pending: "bg-slate-500/10 text-slate-500 border-slate-500/20",
   extracting_text: "bg-blue-500/10 text-blue-500 border-blue-500/20",
+  generating_document_summary: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   chunking: "bg-blue-500/10 text-blue-500 border-blue-500/20",
   extracting_entities: "bg-purple-500/10 text-purple-500 border-purple-500/20",
+  consolidating_entities: "bg-purple-500/10 text-purple-500 border-purple-500/20",
   resolving_entities: "bg-purple-500/10 text-purple-500 border-purple-500/20",
   resolving_relationships: "bg-indigo-500/10 text-indigo-500 border-indigo-500/20",
   generating_summaries: "bg-amber-500/10 text-amber-500 border-amber-500/20",
@@ -100,6 +104,13 @@ export function JobCard({ job }: JobCardProps) {
             {Math.round(job.progress)}%
           </span>
         </div>
+      )}
+
+      {/* Stage description from WebSocket */}
+      {isActive && job.message && (
+        <p className="mt-1 text-[10px] text-muted-foreground truncate">
+          {job.message}
+        </p>
       )}
 
       {/* Bottom row: metadata */}

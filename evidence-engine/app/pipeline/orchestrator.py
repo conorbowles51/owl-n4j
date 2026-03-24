@@ -5,9 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import Job, JobStatus
 from app.pipeline.chunk_embed import chunk_and_embed
+from app.pipeline.consolidate_entities import consolidate_entities
 from app.pipeline.context_injector import build_enriched_context
 from app.pipeline.extract_entities import extract_entities_and_relationships
 from app.pipeline.extract_text import extract_text
+from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
 from app.pipeline.resolve_entities import resolve_entities
 from app.pipeline.link_transaction_parties import link_transaction_parties
@@ -44,22 +46,25 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
     job = result.scalar_one()
 
     try:
-        # Stage 1: Text extraction
+        # Stage 1: Text extraction → 0-15%
         await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.0, db, "Extracting text…")
         doc = await extract_text(job.file_path, job.file_name)
-        await _update_job(job, JobStatus.EXTRACTING_TEXT, 1.0, db, "Text extracted")
+        await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Text extracted")
 
-        # Stage 2: Chunking & embedding
-        await _update_job(job, JobStatus.CHUNKING, 0.0, db, "Chunking document…")
+        # Stage 1.5: Document summary → 15-20%
+        await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Generating document summary…")
+        doc_summary = await generate_document_summary(doc, job.file_name)
+        job.document_summary = doc_summary
+        await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.20, db, "Document summary " + ("generated" if doc_summary else "skipped"))
+        logger.info("Document summary for %s: %s", job.file_name, "generated" if doc_summary else "skipped/failed")
+
+        # Stage 2: Chunking & embedding → 20-30%
+        await _update_job(job, JobStatus.CHUNKING, 0.20, db, "Chunking document…")
         chunks = await chunk_and_embed(doc, job.case_id, str(job.id), job.file_name)
-        await _update_job(
-            job, JobStatus.CHUNKING, 1.0, db, f"Created {len(chunks)} chunks"
-        )
+        await _update_job(job, JobStatus.CHUNKING, 0.30, db, f"Created {len(chunks)} chunks")
 
-        # Stage 3: Entity & relationship extraction
-        await _update_job(
-            job, JobStatus.EXTRACTING_ENTITIES, 0.0, db, "Extracting entities…"
-        )
+        # Stage 3: Entity & relationship extraction → 30-55%
+        await _update_job(job, JobStatus.EXTRACTING_ENTITIES, 0.30, db, "Extracting entities…")
         enriched_context = build_enriched_context(
             job.folder_context, job.sibling_files, job.llm_profile or ""
         )
@@ -69,72 +74,67 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
         await _update_job(
             job,
             JobStatus.EXTRACTING_ENTITIES,
-            1.0,
+            0.55,
             db,
             f"Extracted {len(raw_entities)} entities, {len(raw_rels)} relationships",
         )
 
-        # Stage 4: Entity resolution / deduplication
-        await _update_job(
-            job, JobStatus.RESOLVING_ENTITIES, 0.0, db, "Resolving entities…"
-        )
+        # Stage 3.5: Entity consolidation → 55-60%
+        await _update_job(job, JobStatus.EXTRACTING_ENTITIES, 0.55, db, "Consolidating entities…")
+        raw_entities, raw_rels = await consolidate_entities(raw_entities, raw_rels)
+        await _update_job(job, JobStatus.EXTRACTING_ENTITIES, 0.60, db, "Entities consolidated")
+
+        # Stage 4: Entity resolution / deduplication → 60-70%
+        await _update_job(job, JobStatus.RESOLVING_ENTITIES, 0.60, db, "Resolving entities…")
         resolved_ents, resolved_rels = await resolve_entities(
             raw_entities, raw_rels, job.case_id
         )
         await _update_job(
             job,
             JobStatus.RESOLVING_ENTITIES,
-            1.0,
+            0.70,
             db,
             f"Resolved to {len(resolved_ents)} entities",
         )
 
-        # Stage 5: Relationship deduplication
-        await _update_job(
-            job,
-            JobStatus.RESOLVING_RELATIONSHIPS,
-            0.0,
-            db,
-            "Deduplicating relationships…",
-        )
+        # Stage 5: Relationship deduplication → 70-75%
+        await _update_job(job, JobStatus.RESOLVING_RELATIONSHIPS, 0.70, db, "Deduplicating relationships…")
         resolved_rels = await resolve_relationships(resolved_rels)
+        resolved_rels = link_transaction_parties(resolved_ents, resolved_rels)
         await _update_job(
             job,
             JobStatus.RESOLVING_RELATIONSHIPS,
-            1.0,
+            0.75,
             db,
             f"Deduplicated to {len(resolved_rels)} relationships",
         )
 
-        # Stage 5.5: Link transaction sender/receiver to entity nodes
-        resolved_rels = link_transaction_parties(resolved_ents, resolved_rels)
-
-        # Stage 6: Generate entity summaries
-        await _update_job(
-            job,
-            JobStatus.GENERATING_SUMMARIES,
-            0.0,
-            db,
-            "Generating entity summaries…",
-        )
+        # Stage 6: Generate entity summaries → 75-85%
+        await _update_job(job, JobStatus.GENERATING_SUMMARIES, 0.75, db, "Generating entity summaries…")
         resolved_ents = await generate_summaries(resolved_ents, resolved_rels)
-        await _update_job(
-            job,
-            JobStatus.GENERATING_SUMMARIES,
-            1.0,
-            db,
-            "Summaries generated",
-        )
+        await _update_job(job, JobStatus.GENERATING_SUMMARIES, 0.85, db, "Summaries generated")
 
-        # Stage 7: Write to Neo4j + embed for RAG
-        await _update_job(
-            job, JobStatus.WRITING_GRAPH, 0.0, db, "Writing graph…"
-        )
+        # Stage 7: Write to Neo4j + embed for RAG → 85-100%
+        await _update_job(job, JobStatus.WRITING_GRAPH, 0.85, db, "Writing graph…")
         await write_graph(resolved_ents, resolved_rels, job.case_id, str(job.id))
 
         job.entity_count = len(resolved_ents)
         job.relationship_count = len(resolved_rels)
-        await _update_job(job, JobStatus.COMPLETED, 1.0, db, "Processing complete")
+        job.status = JobStatus.COMPLETED
+        job.progress = 1.0
+        await db.commit()
+        await publish_progress(
+            str(job.id),
+            {
+                "job_id": str(job.id),
+                "status": JobStatus.COMPLETED.value,
+                "progress": 1.0,
+                "message": "Processing complete",
+                "entity_count": len(resolved_ents),
+                "relationship_count": len(resolved_rels),
+                "document_summary": doc_summary,
+            },
+        )
 
     except Exception as e:
         logger.exception("Pipeline failed for job %s", job_id)
