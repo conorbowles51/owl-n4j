@@ -80,8 +80,10 @@ export function FolderTreeNode({
     processMutation.mutate(
       { folderId: node.id, recursive: true },
       {
-        onSuccess: (data) =>
-          toast.success(`Processing ${data.file_count} files from "${node.name}"`),
+        onSuccess: (data) => {
+          toast.success(`Processing ${data.file_count} files from "${node.name}"`)
+          useEvidenceStore.getState().openSidebarTo("processing")
+        },
         onError: (err) => toast.error(err.message),
       }
     )

@@ -46,8 +46,10 @@ export function FileListToolbar({
     setTypeFilter,
     selectedFileIds,
     currentFolderId,
-    jobsPanelOpen,
-    toggleJobsPanel,
+    sidebarOpen,
+    sidebarTab,
+    openSidebarTo,
+    setSidebarOpen,
   } = useEvidenceStore()
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -94,7 +96,7 @@ export function FileListToolbar({
         onSuccess: () => {
           toast.success("Processing started")
           useEvidenceStore.getState().clearSelection()
-          useEvidenceStore.getState().setJobsPanelOpen(true)
+          useEvidenceStore.getState().openSidebarTo("processing")
         },
         onError: (err) => toast.error(err.message),
       }
@@ -242,10 +244,16 @@ export function FileListToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant={jobsPanelOpen ? "secondary" : "outline"}
+            variant={sidebarOpen && sidebarTab === "processing" ? "secondary" : "outline"}
             size="sm"
             className="h-8 gap-1.5 text-xs"
-            onClick={toggleJobsPanel}
+            onClick={() => {
+              if (sidebarOpen && sidebarTab === "processing") {
+                setSidebarOpen(false)
+              } else {
+                openSidebarTo("processing")
+              }
+            }}
           >
             <Activity className="size-3.5" />
             Jobs
@@ -257,7 +265,7 @@ export function FileListToolbar({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {jobsPanelOpen ? "Hide processing jobs panel" : "Show processing jobs panel"}
+          {sidebarOpen && sidebarTab === "processing" ? "Hide processing panel" : "Show processing panel"}
         </TooltipContent>
       </Tooltip>
     </div>

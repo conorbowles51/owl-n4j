@@ -27,10 +27,12 @@ interface EvidenceState {
   openDetail: (fileId: string) => void
   closeDetail: () => void
 
-  // Jobs panel
-  jobsPanelOpen: boolean
-  toggleJobsPanel: () => void
-  setJobsPanelOpen: (open: boolean) => void
+  // Context sidebar
+  sidebarTab: "details" | "processing" | "chat"
+  sidebarOpen: boolean
+  setSidebarTab: (tab: "details" | "processing" | "chat") => void
+  setSidebarOpen: (open: boolean) => void
+  openSidebarTo: (tab: "details" | "processing" | "chat") => void
 
   // Filters
   searchTerm: string
@@ -97,12 +99,14 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
 
   detailFileId: null,
   detailOpen: false,
-  openDetail: (fileId) => set({ detailFileId: fileId, detailOpen: true }),
+  openDetail: (fileId) => set({ detailFileId: fileId, detailOpen: true, sidebarTab: "details", sidebarOpen: true }),
   closeDetail: () => set({ detailOpen: false }),
 
-  jobsPanelOpen: false,
-  toggleJobsPanel: () => set((s) => ({ jobsPanelOpen: !s.jobsPanelOpen })),
-  setJobsPanelOpen: (open) => set({ jobsPanelOpen: open }),
+  sidebarTab: "details",
+  sidebarOpen: false,
+  setSidebarTab: (tab) => set({ sidebarTab: tab }),
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
+  openSidebarTo: (tab) => set({ sidebarTab: tab, sidebarOpen: true }),
 
   searchTerm: "",
   setSearchTerm: (term) => set({ searchTerm: term }),
@@ -128,6 +132,8 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
         selectedFolderIds: new Set(),
         detailFileId: null,
         detailOpen: false,
+        sidebarTab: "details" as const,
+        sidebarOpen: false,
         searchTerm: "",
         statusFilter: "all" as StatusFilter,
         typeFilter: "",

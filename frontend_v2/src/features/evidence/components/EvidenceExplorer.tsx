@@ -13,22 +13,18 @@ import { useDeleteEvidence } from "../hooks/use-evidence-detail"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { FolderTreeSidebar } from "./FolderTreeSidebar"
 import { FileListPanel } from "./FileListPanel"
-import { JobsPanel } from "./JobsPanel"
+import { EvidenceContextSidebar } from "./EvidenceContextSidebar"
 import { CreateFolderDialog } from "./CreateFolderDialog"
 import { DeleteFolderDialog } from "./DeleteFolderDialog"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
-import { EvidenceDetailSheet } from "./EvidenceDetailSheet"
 import { toast } from "sonner"
 import type { EvidenceFile } from "@/types/evidence.types"
 
 export function EvidenceExplorer() {
   const { id: caseId } = useParams()
   const {
-    jobsPanelOpen,
     currentFolderId,
     detailFileId,
-    detailOpen,
-    closeDetail,
     selectedFileIds,
     clearSelection,
   } = useEvidenceStore()
@@ -142,31 +138,30 @@ export function EvidenceExplorer() {
 
           <ResizableHandle withHandle />
 
-          {/* Right side: main content */}
-          <ResizablePanel defaultSize="80" minSize="50">
-            {jobsPanelOpen ? (
-              <ResizablePanelGroup direction="vertical">
-                <ResizablePanel defaultSize="70" minSize="30">
-                  <FileListPanel
-                    caseId={caseId!}
-                    onCreateFolder={() => handleOpenCreateFolder(currentFolderId)}
-                    onDeleteFiles={() => handleOpenDeleteEvidence()}
-                    onDeleteFile={(file) => handleOpenDeleteEvidence(file)}
-                  />
-                </ResizablePanel>
-                <ResizableHandle withHandle />
-                <ResizablePanel defaultSize="30" minSize="15">
-                  <JobsPanel caseId={caseId!} />
-                </ResizablePanel>
-              </ResizablePanelGroup>
-            ) : (
-              <FileListPanel
-                caseId={caseId!}
-                onCreateFolder={() => handleOpenCreateFolder(currentFolderId)}
-                onDeleteFiles={() => handleOpenDeleteEvidence()}
-                onDeleteFile={(file) => handleOpenDeleteEvidence(file)}
-              />
-            )}
+          {/* Center: File list */}
+          <ResizablePanel defaultSize="50" minSize="30">
+            <FileListPanel
+              caseId={caseId!}
+              onCreateFolder={() => handleOpenCreateFolder(currentFolderId)}
+              onDeleteFiles={() => handleOpenDeleteEvidence()}
+              onDeleteFile={(file) => handleOpenDeleteEvidence(file)}
+            />
+          </ResizablePanel>
+
+          <ResizableHandle withHandle />
+
+          {/* Right sidebar: Context panel */}
+          <ResizablePanel
+            defaultSize="30"
+            minSize="20"
+            maxSize="45"
+            collapsible
+            collapsedSize="0"
+          >
+            <EvidenceContextSidebar
+              caseId={caseId!}
+              detailFile={detailFile}
+            />
           </ResizablePanel>
         </ResizablePanelGroup>
 
@@ -193,15 +188,6 @@ export function EvidenceExplorer() {
           fileCount={deleteEvidenceTarget ? 1 : selectedFileIds.size}
           onConfirm={handleConfirmDeleteEvidence}
           isPending={deleteEvidenceMutation.isPending}
-        />
-
-        <EvidenceDetailSheet
-          file={detailFile}
-          open={detailOpen}
-          onOpenChange={(open) => {
-            if (!open) closeDetail()
-          }}
-          caseId={caseId!}
         />
       </div>
     </TooltipProvider>

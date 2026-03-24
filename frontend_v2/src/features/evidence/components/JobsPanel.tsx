@@ -27,7 +27,7 @@ const ACTIVE_STATUSES: Set<PipelineStage> = new Set([
 ])
 
 export function JobsPanel({ caseId }: JobsPanelProps) {
-  const { toggleJobsPanel } = useEvidenceStore()
+  const { setSidebarOpen } = useEvidenceStore()
 
   const hasActiveJobs = useMemo(() => {
     return true // Always poll to detect new jobs
@@ -102,7 +102,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
             variant="ghost"
             size="icon-sm"
             className="size-6"
-            onClick={toggleJobsPanel}
+            onClick={() => setSidebarOpen(false)}
           >
             <X className="size-3.5" />
           </Button>
