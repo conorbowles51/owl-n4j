@@ -43,7 +43,7 @@ import { useFileEntities, useFileRelationships } from "../hooks/use-file-entitie
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
 
-// --- Shared helpers (mirrored from EvidenceDetailSheet) ---
+// --- Shared helpers ---
 
 const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "bmp", "svg", "webp"])
 const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "flac", "aac", "m4a"])

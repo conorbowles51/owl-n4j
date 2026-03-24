@@ -177,14 +177,13 @@ class JobStatusSubscriber:
                     err = data.get("error_message") if status == "failed" else None
                     EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
 
-                    # Store document summary from evidence engine
                     if status == "completed":
+                        # Store document summary
                         doc_summary = data.get("document_summary")
                         if doc_summary:
                             db_rec.summary = doc_summary
 
-                    # Store entity/relationship counts
-                    if status == "completed":
+                        # Store entity/relationship counts
                         entity_count = data.get("entity_count")
                         rel_count = data.get("relationship_count")
                         if entity_count is not None:
@@ -192,17 +191,14 @@ class JobStatusSubscriber:
                         if rel_count is not None:
                             db_rec.relationship_count = rel_count
 
-                    # Write ingestion log
-                    if status == "completed":
-                        entity_count = data.get("entity_count", 0)
-                        rel_count = data.get("relationship_count", 0)
+                        # Write ingestion log
                         EvidenceDBStorage.add_log(
                             db,
                             case_id=db_rec.case_id,
                             evidence_file_id=db_rec.id,
                             filename=db_rec.original_filename,
                             level="info",
-                            message=f"Completed: {db_rec.original_filename} ({entity_count} entities, {rel_count} relationships)",
+                            message=f"Completed: {db_rec.original_filename} ({entity_count or 0} entities, {rel_count or 0} relationships)",
                         )
                     else:
                         EvidenceDBStorage.add_log(
