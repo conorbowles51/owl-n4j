@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import {
   ResizablePanelGroup,
@@ -32,6 +32,11 @@ export function EvidenceExplorer() {
     selectedFileIds,
     clearSelection,
   } = useEvidenceStore()
+  const resetForCase = useEvidenceStore((s) => s.resetForCase)
+
+  useEffect(() => {
+    if (caseId) resetForCase(caseId)
+  }, [caseId, resetForCase])
 
   // Resolve the selected file from folder contents (react-query deduplicates this call)
   const { data: folderContents } = useFolderContents(caseId, currentFolderId)

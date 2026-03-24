@@ -45,6 +45,10 @@ interface EvidenceState {
   dragId: string | null
   setDrag: (type: "file" | "folder" | "external" | null, id: string | null) => void
   clearDrag: () => void
+
+  // Case tracking
+  _currentCaseId: string | null
+  resetForCase: (caseId: string) => void
 }
 
 export const useEvidenceStore = create<EvidenceState>((set) => ({
@@ -111,4 +115,22 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   dragId: null,
   setDrag: (type, id) => set({ dragType: type, dragId: id }),
   clearDrag: () => set({ dragType: null, dragId: null }),
+
+  _currentCaseId: null,
+  resetForCase: (caseId) =>
+    set((s) => {
+      if (s._currentCaseId === caseId) return s
+      return {
+        _currentCaseId: caseId,
+        currentFolderId: null,
+        expandedFolderIds: new Set(),
+        selectedFileIds: new Set(),
+        selectedFolderIds: new Set(),
+        detailFileId: null,
+        detailOpen: false,
+        searchTerm: "",
+        statusFilter: "all" as StatusFilter,
+        typeFilter: "",
+      }
+    }),
 }))
