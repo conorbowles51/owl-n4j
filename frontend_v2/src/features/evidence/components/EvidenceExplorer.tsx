@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useParams } from "react-router-dom"
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
+import type { ImperativePanelHandle } from "react-resizable-panels"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
 import { useCreateFolder } from "../hooks/use-folder-mutations"
@@ -29,6 +30,22 @@ export function EvidenceExplorer() {
     clearSelection,
   } = useEvidenceStore()
   const resetForCase = useEvidenceStore((s) => s.resetForCase)
+  const sidebarOpen = useEvidenceStore((s) => s.sidebarOpen)
+  const setSidebarOpen = useEvidenceStore((s) => s.setSidebarOpen)
+
+  const sidebarRef = useRef<ImperativePanelHandle>(null)
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      if (sidebarRef.current?.isCollapsed()) {
+        sidebarRef.current.expand()
+      }
+    } else {
+      if (sidebarRef.current?.isExpanded()) {
+        sidebarRef.current.collapse()
+      }
+    }
+  }, [sidebarOpen])
 
   useEffect(() => {
     if (caseId) resetForCase(caseId)
@@ -152,11 +169,14 @@ export function EvidenceExplorer() {
 
           {/* Right sidebar: Context panel */}
           <ResizablePanel
+            ref={sidebarRef}
             defaultSize="30"
             minSize="20"
             maxSize="45"
             collapsible
             collapsedSize="0"
+            onCollapse={() => setSidebarOpen(false)}
+            onExpand={() => setSidebarOpen(true)}
           >
             <EvidenceContextSidebar
               caseId={caseId!}
