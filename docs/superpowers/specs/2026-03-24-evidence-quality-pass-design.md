@@ -51,6 +51,7 @@ The evidence section allows investigators to upload files, organize them into fo
 - Add `entity_count` (Integer, nullable) and `relationship_count` (Integer, nullable) columns to `evidence_files` table via Alembic migration
 - Update `JobStatusSubscriber._handle_message()` to populate these fields when a job completes (the engine already reports these counts)
 - Update `FileRow.tsx` to display counts when `status === 'processed'`
+- Update the `EvidenceFileRecord` TypeScript type (in `frontend_v2/src/types/evidence.types.ts`) to include `entity_count` and `relationship_count` fields — this is the type used by `FileRow` and `EvidenceDetailSheet`
 
 ---
 
@@ -86,6 +87,7 @@ Entity summaries are what investigators rely on to understand a person, organiza
 - Format: `[see source](evidence://{file_id})` or `[invoice_march.pdf](evidence://{file_id})`
 - The `source_files` data on each entity already tracks which files contributed — use this to generate links
 - The LLM prompt instructs: "For each factual claim, include a source reference linking to the document it came from"
+- **Implementation note:** The pipeline currently passes `source_files` as filename strings, not file IDs. The frontend must resolve filenames to file IDs at render time (via the existing `GET /api/evidence/by-filename/{filename}` endpoint or a batch lookup) to construct `evidence://{file_id}` links. Alternatively, the pipeline can be updated to pass a `{filename: file_id}` mapping into the summary generation step. Either approach works — the implementer should pick whichever is simpler.
 
 **Cumulative growth.** The existing merge prompt (`entity_summary_merge.txt`) is improved:
 - Explicitly preserve all prior source references — never drop facts from earlier evidence
@@ -100,6 +102,7 @@ Entity summaries are what investigators rely on to understand a person, organiza
 - Add `react-markdown` (or equivalent) to render summaries in:
   - `FileSummaryPanel` / `EvidenceDetailSheet` (document summaries)
   - Entity detail views wherever entity summaries appear
+- **Note:** `FileSummaryPanel` currently fetches summaries via a separate API call (`GET /api/evidence/summary/{filename}`). Since document summaries are now stored as markdown on the `evidence_files.summary` column, `FileSummaryPanel` can read directly from the file record instead — eliminating the redundant API call.
 - Intercept `evidence://` protocol links:
   - Parse `file_id` from the URL
   - Open the document viewer (`DocumentViewer` component) for that file
@@ -116,17 +119,27 @@ Entity summaries are what investigators rely on to understand a person, organiza
 
 **New state:** Jobs/progress becomes a tab in the existing right sidebar alongside file details and AI chat.
 
+**Layout change:**
+
+Current layout is a two-panel horizontal split: `[FolderTree | FileList]` with `EvidenceDetailSheet` rendered as a `<Sheet>` portal overlay and `JobsPanel` as a bottom resizable panel.
+
+New layout is a three-panel horizontal split: `[FolderTree | FileList | ContextSidebar]`
+- The `ContextSidebar` is a new `ResizablePanel` (25-35% width, collapsible) on the right side of the `ResizablePanelGroup`
+- It replaces both the `<Sheet>` overlay and the bottom `JobsPanel`
+- When collapsed, the file list expands to fill the space (same as today when the Sheet is closed)
+- Minimum width ~320px to accommodate content; collapse below that threshold
+
 **Implementation:**
 - Remove the bottom `JobsPanel` from `EvidenceExplorer`'s `ResizablePanelGroup`
 - Remove `jobsPanelOpen` toggle from the evidence store (no longer needed)
-- Add a "Processing" tab to the sidebar (alongside Details and AI Chat)
-- Sidebar tabs:
-  - **Details** — file detail view (current `EvidenceDetailSheet`)
+- Replace `EvidenceDetailSheet` (`<Sheet>` component) with inline content inside the new `ContextSidebar` panel
+- New `ContextSidebar` component with tab state management:
+  - **Details** — file detail view (adapted from `EvidenceDetailSheet` content, no longer a `<Sheet>`)
   - **Processing** — relocated `JobsPanel` content (active + completed jobs)
   - **AI Chat** — existing chat feature
 - Auto-switch behavior:
-  - Clicking a file in the table → switches to Details tab
-  - Kicking off processing → switches to Processing tab
+  - Clicking a file in the table → opens sidebar (if collapsed) + switches to Details tab
+  - Kicking off processing → opens sidebar + switches to Processing tab
   - Manual tab switching always available
 - When no jobs are active, Processing tab shows "No active processing" with recent completed jobs below
 
@@ -136,15 +149,19 @@ Entity summaries are what investigators rely on to understand a person, organiza
 
 Each pipeline stage reports weighted progress:
 
-| Stage | Weight | Range |
-|-------|--------|-------|
-| Text extraction | 15% | 0–15% |
-| Document summary | 5% | 15–20% |
-| Chunking/embedding | 10% | 20–30% |
-| Entity extraction | 25% | 30–55% |
-| Consolidation + Resolution | 20% | 55–75% |
-| Summary generation | 10% | 75–85% |
-| Graph write | 15% | 85–100% |
+| Pipeline Stage | Weight | Range |
+|----------------|--------|-------|
+| Text extraction (Stage 1) | 15% | 0–15% |
+| Document summary (Stage 1.5) | 5% | 15–20% |
+| Chunking/embedding (Stage 2) | 10% | 20–30% |
+| Entity extraction (Stage 3) | 25% | 30–55% |
+| Entity consolidation (Stage 3.5) | 5% | 55–60% |
+| Entity resolution (Stage 4) | 10% | 60–70% |
+| Relationship resolution (Stage 5 + 5.5) | 5% | 70–75% |
+| Summary generation (Stage 6) | 10% | 75–85% |
+| Graph write (Stage 7) | 15% | 85–100% |
+
+This is the **authoritative** weight table — all progress reporting in orchestrator, batch_orchestrator, and the data flow below must use these ranges.
 
 Within-stage granularity for heavy stages:
 - Entity extraction: report per-chunk completion (e.g., "chunk 3/12")
@@ -256,9 +273,9 @@ Upload → Backend disk + DB record (status: processing)
     → Stage 2: Chunk + embed to ChromaDB (progress: 20-30%)
     → Stage 3: Extract entities + relationships per chunk (progress: 30-55%)
     → Stage 3.5: Consolidate entities across batch (progress: 55-60%)
-    → Stage 4: Resolve entities with cross-job dedup (progress: 60-75%)
-    → Stage 5: Resolve relationships + link transaction parties (progress: 75-80%)
-    → Stage 6: Generate entity summaries as structured markdown with source links (progress: 80-90%)
+    → Stage 4: Resolve entities with cross-job dedup (progress: 60-70%)
+    → Stage 5 + 5.5: Resolve relationships + link transaction parties (progress: 70-75%)
+    → Stage 6: Generate entity summaries as structured markdown with source links (progress: 75-85%)
     → Stage 7: Write to Neo4j + embed for RAG (progress: 90-100%)
   → Redis pub/sub → WebSocket → Frontend progress updates (per-stage, within-stage)
   → JobStatusSubscriber syncs: status, entity_count, relationship_count, document_summary → DB
