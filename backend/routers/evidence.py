@@ -1958,3 +1958,96 @@ async def test_folder_profile(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# File-level entity & relationship endpoints (Neo4j)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{evidence_id}/entities")
+async def get_file_entities(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return entities extracted from a specific evidence file."""
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
+    try:
+        eid = UUID(evidence_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid evidence ID")
+
+    file_rec = EvidenceDBStorage.get(db, eid)
+    if not file_rec:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    filename = file_rec.original_filename
+    case_id = str(file_rec.case_id)
+
+    query = """
+    MATCH (n)
+    WHERE n.case_id = $case_id AND $filename IN n.source_files
+    RETURN n.id AS id, n.name AS name, labels(n) AS labels,
+           n.specific_type AS specific_type, n.confidence AS confidence
+    ORDER BY n.confidence DESC
+    LIMIT 50
+    """
+    results = neo4j_service.run_cypher(query, {"case_id": case_id, "filename": filename})
+    entities = []
+    for r in results:
+        labels = [l for l in r["labels"] if l not in ("_Entity",)]
+        category = labels[0] if labels else "Other"
+        entities.append({
+            "id": r["id"],
+            "name": r["name"],
+            "category": category,
+            "specific_type": r["specific_type"],
+            "confidence": r["confidence"],
+        })
+    return entities
+
+
+@router.get("/{evidence_id}/relationships")
+async def get_file_relationships(
+    evidence_id: str,
+    db: Session = Depends(get_db),
+    user: dict = Depends(get_current_user),
+):
+    """Return relationships extracted from a specific evidence file."""
+    from services.evidence_db_storage import EvidenceDBStorage
+    from uuid import UUID
+
+    try:
+        eid = UUID(evidence_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid evidence ID")
+
+    file_rec = EvidenceDBStorage.get(db, eid)
+    if not file_rec:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    filename = file_rec.original_filename
+    case_id = str(file_rec.case_id)
+
+    query = """
+    MATCH (a)-[r]->(b)
+    WHERE r.case_id = $case_id AND $filename IN r.source_files
+    RETURN a.name AS source_name, b.name AS target_name,
+           type(r) AS type, r.detail AS detail, r.confidence AS confidence
+    ORDER BY r.confidence DESC
+    LIMIT 50
+    """
+    results = neo4j_service.run_cypher(query, {"case_id": case_id, "filename": filename})
+    return [
+        {
+            "source_entity_name": r["source_name"],
+            "target_entity_name": r["target_name"],
+            "type": r["type"],
+            "detail": r["detail"],
+            "confidence": r["confidence"],
+        }
+        for r in results
+    ]

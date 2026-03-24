@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import {
   Info,
   Loader2,
@@ -15,6 +15,15 @@ import {
   ChevronRight,
   Music,
   FolderOpen,
+  Play,
+  RotateCcw,
+  Network,
+  ArrowRight,
+  Users,
+  Building,
+  MapPin,
+  Banknote,
+  Tag,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -28,6 +37,9 @@ import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { evidenceAPI } from "../api"
+import { useProcessBackground } from "../hooks/use-evidence-detail"
+import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
+import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
 
 // --- Shared helpers (mirrored from EvidenceDetailSheet) ---
@@ -75,10 +87,12 @@ function DetailRow({
 function CollapsibleSection({
   title,
   defaultOpen = true,
+  count,
   children,
 }: {
   title: string
   defaultOpen?: boolean
+  count?: number
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -92,6 +106,11 @@ function CollapsibleSection({
       >
         <Chevron className="size-3.5 text-muted-foreground/60" />
         {title}
+        {count != null && count > 0 && (
+          <Badge variant="secondary" className="ml-auto text-[10px] px-1.5 py-0">
+            {count}
+          </Badge>
+        )}
       </button>
       {open && (
         <div className="border-t border-border px-3 pb-3 pt-1">
@@ -159,11 +178,132 @@ function SmartThumbnail({
   )
 }
 
+// --- Category icon mapping ---
+
+const CATEGORY_ICONS: Record<string, React.ElementType> = {
+  Person: Users,
+  Organization: Building,
+  Location: MapPin,
+  Financial: Banknote,
+  Money: Banknote,
+}
+
+function getCategoryIcon(category: string): React.ElementType {
+  return CATEGORY_ICONS[category] || Tag
+}
+
+// --- Entity list grouped by category ---
+
+function EntityList({ entities }: { entities: FileEntity[] }) {
+  const grouped = useMemo(() => {
+    const map = new Map<string, FileEntity[]>()
+    for (const e of entities) {
+      const existing = map.get(e.category) || []
+      existing.push(e)
+      map.set(e.category, existing)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]))
+  }, [entities])
+
+  if (entities.length === 0) {
+    return (
+      <p className="py-3 text-center text-xs text-muted-foreground">
+        No entities extracted from this file.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {grouped.map(([category, items]) => {
+        const Icon = getCategoryIcon(category)
+        return (
+          <div key={category}>
+            <div className="mb-1 flex items-center gap-1.5">
+              <Icon className="size-3 text-muted-foreground/60" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {category}
+              </span>
+              <span className="text-[10px] text-muted-foreground/50">({items.length})</span>
+            </div>
+            <div className="space-y-0.5">
+              {items.map((entity) => (
+                <div
+                  key={entity.id}
+                  className="flex items-center justify-between gap-2 rounded px-1.5 py-0.5 text-xs hover:bg-muted/40"
+                >
+                  <span className="min-w-0 truncate text-foreground">
+                    {entity.name}
+                  </span>
+                  {entity.confidence != null && (
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
+                    >
+                      {Math.round(entity.confidence * 100)}%
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// --- Relationship list ---
+
+function RelationshipList({ relationships }: { relationships: FileRelationship[] }) {
+  if (relationships.length === 0) {
+    return (
+      <p className="py-3 text-center text-xs text-muted-foreground">
+        No relationships extracted from this file.
+      </p>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      {relationships.map((rel, i) => (
+        <div
+          key={i}
+          className="flex items-center gap-1 rounded px-1.5 py-1 text-xs hover:bg-muted/40"
+        >
+          <span className="min-w-0 shrink truncate text-foreground" title={rel.source_entity_name}>
+            {rel.source_entity_name}
+          </span>
+          <ArrowRight className="size-3 shrink-0 text-muted-foreground/50" />
+          <Badge
+            variant="outline"
+            className="shrink-0 px-1 py-0 text-[9px] font-medium uppercase text-amber-500/80"
+          >
+            {rel.type}
+          </Badge>
+          <ArrowRight className="size-3 shrink-0 text-muted-foreground/50" />
+          <span className="min-w-0 shrink truncate text-foreground" title={rel.target_entity_name}>
+            {rel.target_entity_name}
+          </span>
+          {rel.confidence != null && (
+            <Badge
+              variant="outline"
+              className="ml-auto shrink-0 px-1 py-0 text-[9px] font-normal text-muted-foreground"
+            >
+              {Math.round(rel.confidence * 100)}%
+            </Badge>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // --- Details panel content (inline version of EvidenceDetailSheet) ---
 
 function DetailsPanelContent({
   file,
-  caseId: _caseId,
+  caseId,
 }: {
   file: EvidenceFileRecord
   caseId: string
@@ -171,6 +311,25 @@ function DetailsPanelContent({
   const [viewerOpen, setViewerOpen] = useState(false)
   const fileUrl = evidenceAPI.getFileUrl(file.id)
   const ext = getExt(file.original_filename)
+
+  const isProcessed = file.status === "processed"
+  const isProcessing = file.status === "processing"
+  const isFailed = file.status === "failed"
+  const isUnprocessed = file.status === "unprocessed"
+
+  const processMutation = useProcessBackground(caseId)
+
+  // Only fetch entities/relationships for processed files
+  const { data: entities, isLoading: entitiesLoading } = useFileEntities(
+    isProcessed ? file.id : null
+  )
+  const { data: relationships, isLoading: relationshipsLoading } = useFileRelationships(
+    isProcessed ? file.id : null
+  )
+
+  const handleProcess = () => {
+    processMutation.mutate({ fileIds: [file.id] })
+  }
 
   return (
     <>
@@ -225,7 +384,81 @@ function DetailsPanelContent({
             onOpenViewer={() => setViewerOpen(true)}
           />
 
-          {/* Details section */}
+          {/* --- Unprocessed: prominent Process button --- */}
+          {isUnprocessed && (
+            <div className="overflow-hidden rounded-lg border border-amber-500/20 bg-amber-500/5">
+              <div className="flex flex-col items-center gap-3 p-4">
+                <p className="text-xs text-muted-foreground text-center">
+                  This file has not been processed yet. Process it to extract entities, relationships, and generate a summary.
+                </p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={handleProcess}
+                  disabled={processMutation.isPending}
+                >
+                  {processMutation.isPending ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Play className="size-3.5" />
+                  )}
+                  Process this file
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* --- Processing: live progress indicator --- */}
+          {isProcessing && (
+            <div className="overflow-hidden rounded-lg border border-blue-500/20 bg-blue-500/5">
+              <div className="flex items-center gap-3 p-4">
+                <Loader2 className="size-5 shrink-0 animate-spin text-blue-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">
+                    Processing in progress
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    Extracting entities and relationships...
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- Failed: error card + retry --- */}
+          {isFailed && file.last_error && (
+            <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/5">
+              <div className="flex items-start gap-3 p-3">
+                <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-red-500/10">
+                  <AlertCircle className="size-4 text-red-500" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-red-600 dark:text-red-400">
+                    Processing Error
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {file.last_error}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    onClick={handleProcess}
+                    disabled={processMutation.isPending}
+                  >
+                    {processMutation.isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-3.5" />
+                    )}
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Details section (always shown) */}
           <CollapsibleSection title="Details">
             <DetailRow icon={HardDrive} label="File size" value={formatSize(file.size)} />
             <DetailRow
@@ -258,13 +491,77 @@ function DetailsPanelContent({
             />
           </CollapsibleSection>
 
-          {/* AI Summary section */}
-          <CollapsibleSection title="AI Summary">
-            <FileSummaryPanel summary={file.summary} />
-          </CollapsibleSection>
+          {/* --- Processed: AI Summary, Entities, Relationships, Processing Info --- */}
+          {isProcessed && (
+            <>
+              {/* AI Summary section */}
+              <CollapsibleSection title="AI Summary">
+                <FileSummaryPanel summary={file.summary} />
+              </CollapsibleSection>
 
-          {/* Error card */}
-          {file.last_error && (
+              {/* Extracted Entities section */}
+              <CollapsibleSection
+                title="Extracted Entities"
+                count={entities?.length}
+                defaultOpen={false}
+              >
+                {entitiesLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-4">
+                    <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Loading entities...</span>
+                  </div>
+                ) : (
+                  <EntityList entities={entities || []} />
+                )}
+              </CollapsibleSection>
+
+              {/* Relationships section */}
+              <CollapsibleSection
+                title="Key Relationships"
+                count={relationships?.length}
+                defaultOpen={false}
+              >
+                {relationshipsLoading ? (
+                  <div className="flex items-center justify-center gap-2 py-4">
+                    <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Loading relationships...</span>
+                  </div>
+                ) : (
+                  <RelationshipList relationships={relationships || []} />
+                )}
+              </CollapsibleSection>
+
+              {/* Processing Info section */}
+              {(file.entity_count != null || file.relationship_count != null || file.processed_at) && (
+                <CollapsibleSection title="Processing Info" defaultOpen={false}>
+                  {file.entity_count != null && (
+                    <DetailRow
+                      icon={Network}
+                      label="Entities"
+                      value={file.entity_count}
+                    />
+                  )}
+                  {file.relationship_count != null && (
+                    <DetailRow
+                      icon={Network}
+                      label="Relations"
+                      value={file.relationship_count}
+                    />
+                  )}
+                  {file.processed_at && (
+                    <DetailRow
+                      icon={Calendar}
+                      label="Processed"
+                      value={new Date(file.processed_at).toLocaleString()}
+                    />
+                  )}
+                </CollapsibleSection>
+              )}
+            </>
+          )}
+
+          {/* Non-failed error display for edge cases */}
+          {!isFailed && file.last_error && (
             <div className="overflow-hidden rounded-lg border border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/5">
               <div className="flex items-start gap-3 p-3">
                 <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-red-500/10">
