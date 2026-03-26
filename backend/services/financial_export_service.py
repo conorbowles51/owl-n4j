@@ -97,8 +97,10 @@ def generate_financial_pdf(
             details_parts.append(f'<span style="color: #6366f1; font-style: italic;">[AI] {_esc(summary)}</span>')
         details_html = "<br>".join(details_parts) if details_parts else "-"
 
+        ref_id = _esc(t.get("ref_id") or "-")
         rows_html += f"""
         <tr style="background: {bg};">
+            <td class="cell" style="font-family: monospace; font-size: 9px; letter-spacing: 0.5px; color: #475569;">{ref_id}</td>
             <td class="cell">{_esc(t.get("date"))}</td>
             <td class="cell" style="{indent_style}">{name_prefix}{_esc(tx_name)}</td>
             <td class="cell">{_esc(from_name)}</td>
@@ -245,12 +247,13 @@ def generate_financial_pdf(
         <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
             <thead>
                 <tr style="background: #1e3a5f; color: white;">
-                    <th class="th" style="width: 8%;">Date</th>
-                    <th class="th" style="width: 14%;">Name</th>
-                    <th class="th" style="width: 12%;">From</th>
-                    <th class="th" style="width: 12%;">To</th>
-                    <th class="th" style="text-align: right; width: 9%;">Amount</th>
-                    <th class="th" style="width: 10%;">Category</th>
+                    <th class="th" style="width: 6%;">Ref</th>
+                    <th class="th" style="width: 7%;">Date</th>
+                    <th class="th" style="width: 13%;">Name</th>
+                    <th class="th" style="width: 11%;">From</th>
+                    <th class="th" style="width: 11%;">To</th>
+                    <th class="th" style="text-align: right; width: 8%;">Amount</th>
+                    <th class="th" style="width: 9%;">Category</th>
                     <th class="th" style="width: 35%;">Details / AI Summary</th>
                 </tr>
             </thead>

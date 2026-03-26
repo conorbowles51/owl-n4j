@@ -258,7 +258,7 @@ const TransactionDetailRow = memo(function TransactionDetailRow({ txn, onDetails
 
   return (
     <tr className="bg-light-50 border-b border-light-200">
-      <td colSpan={11} className="px-4 py-3">
+      <td colSpan={12} className="px-4 py-3">
         <div className="space-y-2">
           {txn.summary && (
             <div>
@@ -534,6 +534,7 @@ export default function FinancialTable({
           <colgroup>
             <col className="w-8" />
             <col className="w-9" />
+            <col style={{ width: '72px' }} />
             <col className="w-7" />
             <col style={{ width: '80px' }} />
             <col style={{ width: '52px' }} />
@@ -555,6 +556,7 @@ export default function FinancialTable({
                 />
               </th>
               <th className="px-1 py-2 text-right text-light-500 font-normal">#</th>
+              <th className="px-2 py-2 text-left font-medium text-light-600">Ref</th>
               <th className="px-1 py-2">
                 <button
                   onClick={() => setShowAllSummaries(s => !s)}
@@ -614,6 +616,18 @@ export default function FinancialTable({
                       />
                     </td>
                     <td className="px-1 py-1.5 text-right text-light-400 tabular-nums">{(currentPage - 1) * pageSize + rowIndex + 1}</td>
+                    <td
+                      className="px-2 py-1.5 font-mono text-[10px] text-light-500 bg-light-25 cursor-pointer hover:text-owl-blue-600 select-none"
+                      title="Click to copy"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (txn.ref_id) {
+                          navigator.clipboard.writeText(txn.ref_id);
+                        }
+                      }}
+                    >
+                      {txn.ref_id || '-'}
+                    </td>
                     <td className="px-1 py-1.5">
                       <div className="flex items-center gap-0.5">
                         {isParent && (
@@ -775,7 +789,7 @@ export default function FinancialTable({
                   </tr>
                   {txn.summary && (
                     <tr className="border-b border-light-100">
-                      <td colSpan={11} className="px-4 py-1 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
+                      <td colSpan={12} className="px-4 py-1 bg-gradient-to-r from-owl-blue-50/40 to-transparent">
                         <p className="text-xs text-light-600 leading-relaxed">{txn.summary}</p>
                       </td>
                     </tr>
@@ -791,14 +805,14 @@ export default function FinancialTable({
                     <>
                       {isLoadingChildren && (
                         <tr className="bg-indigo-50/30 border-b border-light-100">
-                          <td colSpan={11} className="px-6 py-2 text-xs text-light-500">
+                          <td colSpan={12} className="px-6 py-2 text-xs text-light-500">
                             Loading sub-transactions...
                           </td>
                         </tr>
                       )}
                       {!isLoadingChildren && children.length === 0 && (
                         <tr className="bg-indigo-50/30 border-b border-light-100">
-                          <td colSpan={11} className="px-6 py-2 text-xs text-light-500">
+                          <td colSpan={12} className="px-6 py-2 text-xs text-light-500">
                             No sub-transactions linked yet
                           </td>
                         </tr>
@@ -814,6 +828,8 @@ export default function FinancialTable({
                             onClick={() => onNodeSelect && onNodeSelect(child.key)}
                           >
                             <td className="px-2 py-1.5"></td>
+                            <td className="px-1 py-1.5"></td>
+                            <td className="px-2 py-1.5 font-mono text-[10px] text-light-400">{child.ref_id || ''}</td>
                             <td className="px-1 py-1.5"></td>
                             <td className="px-2 py-1.5 text-light-700 whitespace-nowrap truncate">{child.date || '-'}</td>
                             <td className="px-2 py-1.5 text-light-500 whitespace-nowrap truncate">{child.time || '-'}</td>
@@ -861,7 +877,7 @@ export default function FinancialTable({
             })}
             {paginatedRows.length === 0 && (
               <tr>
-                <td colSpan={11} className="px-4 py-8 text-center text-light-500">
+                <td colSpan={12} className="px-4 py-8 text-center text-light-500">
                   No transactions match the current filters
                 </td>
               </tr>

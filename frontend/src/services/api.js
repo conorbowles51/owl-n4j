@@ -1018,6 +1018,34 @@ export const financialAPI = {
 
   getSubTransactions: (parentKey, caseId) =>
     fetchAPI(`/financial/transactions/${encodeURIComponent(parentKey)}/sub-transactions?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
+   * Auto-extract from/to entities from transaction fields using heuristics + LLM.
+   * @param {string} caseId - REQUIRED: Case ID
+   * @param {Object} options
+   * @param {boolean} [options.dryRun=true] - Preview only (true) or apply (false)
+   */
+  autoExtractFromTo: (caseId, { dryRun = true } = {}) =>
+    fetchAPI('/financial/auto-extract-from-to', {
+      method: 'POST',
+      body: JSON.stringify({ case_id: caseId, dry_run: dryRun }),
+      timeout: 600000, // 10 minutes — LLM batches can take a while
+    }),
+
+  /**
+   * Upload a CSV of investigator notes keyed by transaction ref_id
+   * @param {string} caseId - REQUIRED: Case ID
+   * @param {File} file - CSV file
+   */
+  uploadNotes: (caseId, file) => {
+    const formData = new FormData();
+    formData.append('case_id', caseId);
+    formData.append('file', file);
+    return fetchAPI('/financial/upload-notes', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 };
 
 /**

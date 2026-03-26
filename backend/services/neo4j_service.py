@@ -3463,6 +3463,113 @@ class Neo4jService:
     # Financial Analysis
     # -------------------------------------------------------------------------
 
+    def ensure_transaction_ref_ids(self, case_id: str) -> int:
+        """Assign 8-char uppercase hex ref_id to all transaction nodes missing one.
+
+        Uses uuid4 truncated to 8 hex chars.  Checks for collisions within the
+        case and regenerates if needed.  Idempotent — safe to call repeatedly.
+
+        Returns the number of newly assigned ref_ids.
+        """
+        import uuid as _uuid
+
+        with self._driver.session() as session:
+            # Existing ref_ids for collision checking
+            existing = session.run(
+                "MATCH (n {case_id: $case_id}) WHERE n.amount IS NOT NULL "
+                "AND n.ref_id IS NOT NULL RETURN n.ref_id AS ref_id",
+                case_id=case_id,
+            )
+            used_ids = {r["ref_id"] for r in existing}
+
+            # Nodes missing ref_id
+            missing = session.run(
+                "MATCH (n {case_id: $case_id}) WHERE n.amount IS NOT NULL "
+                "AND n.ref_id IS NULL RETURN n.key AS key",
+                case_id=case_id,
+            )
+            keys_to_update = [r["key"] for r in missing]
+
+            if not keys_to_update:
+                return 0
+
+            count = 0
+            for key in keys_to_update:
+                ref_id = _uuid.uuid4().hex[:8].upper()
+                while ref_id in used_ids:
+                    ref_id = _uuid.uuid4().hex[:8].upper()
+                used_ids.add(ref_id)
+                session.run(
+                    "MATCH (n {key: $key, case_id: $case_id}) "
+                    "SET n.ref_id = $ref_id",
+                    key=key, case_id=case_id, ref_id=ref_id,
+                )
+                count += 1
+
+            logger.info("[RefID] Assigned %d ref_ids for case %s", count, case_id)
+            return count
+
+    def bulk_append_notes_by_ref_id(self, case_id: str, notes_data: list) -> dict:
+        """Append investigator notes to transactions matched by ref_id.
+
+        Args:
+            case_id: Case ID
+            notes_data: List of dicts with 'ref_id' and 'notes' keys
+                        (optionally 'interviewer', 'date', 'question', 'answer')
+
+        Returns:
+            dict with matched, unmatched_ref_ids, total
+        """
+        with self._driver.session() as session:
+            matched = 0
+            unmatched = []
+
+            for entry in notes_data:
+                ref_id = (entry.get("ref_id") or "").strip().upper()
+                if not ref_id:
+                    continue
+
+                # Build formatted note text
+                parts = []
+                if entry.get("interviewer"):
+                    parts.append(f"Interviewer: {entry['interviewer']}")
+                if entry.get("date"):
+                    parts.append(f"Date: {entry['date']}")
+                if entry.get("question"):
+                    parts.append(f"Q: {entry['question']}")
+                if entry.get("answer"):
+                    parts.append(f"A: {entry['answer']}")
+                note_text = (entry.get("notes") or "").strip()
+                if note_text:
+                    parts.append(note_text)
+
+                formatted = "\n".join(parts) if parts else ""
+                if not formatted:
+                    continue
+
+                result = session.run(
+                    """
+                    MATCH (n {case_id: $case_id, ref_id: $ref_id})
+                    WHERE n.amount IS NOT NULL
+                    SET n.notes = CASE
+                        WHEN n.notes IS NULL OR n.notes = '' THEN $note
+                        ELSE n.notes + '\n---\n' + $note
+                    END
+                    RETURN n.key AS key
+                    """,
+                    case_id=case_id, ref_id=ref_id, note=formatted,
+                )
+                if list(result):
+                    matched += 1
+                else:
+                    unmatched.append(ref_id)
+
+            return {
+                "matched": matched,
+                "unmatched_ref_ids": unmatched,
+                "total": len(notes_data),
+            }
+
     def get_financial_transactions(
         self,
         case_id: str,
@@ -3484,6 +3591,9 @@ class Neo4jService:
         Returns:
             List of transaction dicts with from/to entity resolution
         """
+        # Lazy backfill: ensure every transaction has a ref_id
+        self.ensure_transaction_ref_ids(case_id)
+
         with self._driver.session() as session:
             params = {"case_id": case_id}
             conditions = []
@@ -3518,6 +3628,7 @@ class Neo4jService:
                 WHERE initiator.case_id = $case_id AND NOT initiator:Document AND NOT initiator:Case
                 RETURN
                     n.key AS key,
+                    n.ref_id AS ref_id,
                     n.name AS name,
                     labels(n)[0] AS type,
                     n.date AS date,
@@ -3535,6 +3646,8 @@ class Neo4jService:
                     n.from_entity_name AS from_entity_name,
                     n.to_entity_key AS to_entity_key,
                     n.to_entity_name AS to_entity_name,
+                    n.has_manual_from AS has_manual_from,
+                    n.has_manual_to AS has_manual_to,
                     collect(DISTINCT to_entity.key)[0] AS rel_to_key,
                     collect(DISTINCT to_entity.name)[0] AS rel_to_name,
                     collect(DISTINCT from_entity.key)[0] AS rel_from_key,
@@ -3555,11 +3668,20 @@ class Neo4jService:
             transactions = []
             for record in result:
                 # Resolve from entity: manual override > relationship-derived
-                from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
-                from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"]
+                # Use has_manual_from flag to detect manual overrides (including custom names with null key)
+                if record["has_manual_from"]:
+                    from_key = record["from_entity_key"]
+                    from_name = record["from_entity_name"]
+                else:
+                    from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
+                    from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"]
                 # Resolve to entity: manual override > relationship-derived
-                to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
-                to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"]
+                if record["has_manual_to"]:
+                    to_key = record["to_entity_key"]
+                    to_name = record["to_entity_name"]
+                else:
+                    to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
+                    to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"]
 
                 amount_val = safe_float(record["amount"])
                 if amount_val == 0:
@@ -3580,6 +3702,7 @@ class Neo4jService:
 
                 transactions.append({
                     "key": record["key"],
+                    "ref_id": record["ref_id"],
                     "name": record["name"],
                     "type": record["type"],
                     "date": record["date"],
@@ -3593,8 +3716,8 @@ class Neo4jService:
                     "notes": record["notes"],
                     "from_entity": {"key": from_key, "name": from_name} if (from_key or from_name) else None,
                     "to_entity": {"key": to_key, "name": to_name} if (to_key or to_name) else None,
-                    "has_manual_from": record["from_entity_key"] is not None,
-                    "has_manual_to": record["to_entity_key"] is not None,
+                    "has_manual_from": bool(record["has_manual_from"]),
+                    "has_manual_to": bool(record["has_manual_to"]),
                     "is_parent": record["is_parent"] or False,
                     "parent_transaction_key": record["parent_transaction_key"],
                     "amount_corrected": record["amount_corrected"] or False,
@@ -3766,14 +3889,16 @@ class Neo4jService:
             set_clauses = []
             params = {"key": node_key, "case_id": case_id}
 
-            if from_key is not None:
+            if from_key is not None or from_name is not None:
                 set_clauses.append("n.from_entity_key = $from_key")
                 set_clauses.append("n.from_entity_name = $from_name")
+                set_clauses.append("n.has_manual_from = true")
                 params["from_key"] = from_key
                 params["from_name"] = from_name
-            if to_key is not None:
+            if to_key is not None or to_name is not None:
                 set_clauses.append("n.to_entity_key = $to_key")
                 set_clauses.append("n.to_entity_name = $to_name")
+                set_clauses.append("n.has_manual_to = true")
                 params["to_key"] = to_key
                 params["to_name"] = to_name
 
@@ -3801,6 +3926,7 @@ class Neo4jService:
             List of dicts with name, color, builtin keys
         """
         predefined = {
+            "Uncategorized":      "#94a3b8",
             "Utility":            "#3b82f6",
             "Payroll/Salary":     "#22c55e",
             "Rent/Lease":         "#8b5cf6",

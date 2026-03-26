@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload } from 'lucide-react';
+import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare } from 'lucide-react';
 import { financialAPI } from '../../services/api';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
@@ -7,6 +7,8 @@ import FinancialTable from './FinancialTable';
 import FinancialFilterPanel from './FinancialFilterPanel';
 import AddCategoryModal from './AddCategoryModal';
 import BulkCorrectionModal from './BulkCorrectionModal';
+import AutoExtractPreviewModal from './AutoExtractPreviewModal';
+import NotesUploadModal from './NotesUploadModal';
 
 export default function FinancialView({ caseId, onNodeSelect }) {
   const [transactions, setTransactions] = useState([]);
@@ -35,6 +37,16 @@ export default function FinancialView({ caseId, onNodeSelect }) {
 
   // Bulk correction modal
   const [showBulkCorrectionModal, setShowBulkCorrectionModal] = useState(false);
+
+  // Notes upload modal
+  const [showNotesUploadModal, setShowNotesUploadModal] = useState(false);
+
+  // Auto-extract from/to modal
+  const [showAutoExtractModal, setShowAutoExtractModal] = useState(false);
+  const [autoExtractLoading, setAutoExtractLoading] = useState(false);
+  const [autoExtractApplying, setAutoExtractApplying] = useState(false);
+  const [autoExtractPreview, setAutoExtractPreview] = useState(null);
+  const [autoExtractError, setAutoExtractError] = useState(null);
 
   // Derived helpers from category objects
   const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
@@ -196,6 +208,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       );
     } catch (err) {
       console.error('Failed to categorize:', err);
+      alert('Failed to save category. Please try selecting the category again.\n\n' + err.message);
     }
   }, [caseId]);
 
@@ -208,6 +221,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       );
     } catch (err) {
       console.error('Failed to batch categorize:', err);
+      alert('Failed to save category for ' + nodeKeys.length + ' transactions. Please try again.\n\n' + err.message);
     }
   }, [caseId]);
 
@@ -234,6 +248,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       );
     } catch (err) {
       console.error('Failed to update from/to:', err);
+      alert('Failed to save sender/beneficiary. Please click the edit icon and try again.\n\n' + err.message);
     }
   }, [caseId]);
 
@@ -258,6 +273,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       );
     } catch (err) {
       console.error('Failed to update details:', err);
+      alert('Failed to save transaction details. Please click into the field and try again.\n\n' + err.message);
     }
   }, [caseId]);
 
@@ -279,7 +295,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       );
     } catch (err) {
       console.error('Failed to update amount:', err);
-      alert('Failed to update amount: ' + err.message);
+      alert('Failed to save amount correction. Please click the amount and try again.\n\n' + err.message);
     }
   }, [caseId]);
 
@@ -306,6 +322,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       );
     } catch (err) {
       console.error('Failed to batch update from/to:', err);
+      alert('Failed to save sender/beneficiary for ' + nodeKeys.length + ' transactions. Please try again.\n\n' + err.message);
     }
   }, [caseId]);
 
@@ -345,6 +362,38 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     params.append('include_entity_notes', 'true');
     window.open(`/api/financial/export/pdf?${params.toString()}`, '_blank');
   };
+
+  // Auto-extract from/to: preview (dry run)
+  const handleAutoExtractPreview = useCallback(async () => {
+    setShowAutoExtractModal(true);
+    setAutoExtractLoading(true);
+    setAutoExtractPreview(null);
+    setAutoExtractError(null);
+    try {
+      const result = await financialAPI.autoExtractFromTo(caseId, { dryRun: true });
+      setAutoExtractPreview(result);
+    } catch (err) {
+      console.error('Auto-extract preview failed:', err);
+      setAutoExtractError(err.message || 'Failed to analyze transactions');
+    }
+    setAutoExtractLoading(false);
+  }, [caseId]);
+
+  // Auto-extract from/to: apply
+  const handleAutoExtractApply = useCallback(async () => {
+    setAutoExtractApplying(true);
+    setAutoExtractError(null);
+    try {
+      await financialAPI.autoExtractFromTo(caseId, { dryRun: false });
+      setShowAutoExtractModal(false);
+      setAutoExtractPreview(null);
+      await loadData();
+    } catch (err) {
+      console.error('Auto-extract apply failed:', err);
+      setAutoExtractError(err.message || 'Failed to apply extractions');
+    }
+    setAutoExtractApplying(false);
+  }, [caseId, loadData]);
 
   // Filter handlers
   const toggleType = (type) => {
@@ -433,6 +482,22 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             )}
           </div>
           <div className="flex items-center gap-1">
+          <button
+            onClick={handleAutoExtractPreview}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-owl-blue-600 border border-owl-blue-200 rounded hover:bg-owl-blue-50"
+            title="Auto-extract Senders & Beneficiaries from transaction names"
+          >
+            <Wand2 className="w-3.5 h-3.5" />
+            <span>Auto-Extract</span>
+          </button>
+          <button
+            onClick={() => setShowNotesUploadModal(true)}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-light-600 border border-light-200 rounded hover:bg-light-50"
+            title="Upload investigator notes CSV"
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            <span>Notes CSV</span>
+          </button>
           <button
             onClick={() => setShowBulkCorrectionModal(true)}
             className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
@@ -530,6 +595,32 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         caseId={caseId}
         transactions={transactions}
         onComplete={loadData}
+      />
+
+      {/* Notes Upload Modal */}
+      <NotesUploadModal
+        isOpen={showNotesUploadModal}
+        onClose={() => setShowNotesUploadModal(false)}
+        caseId={caseId}
+        transactions={transactions}
+        onComplete={loadData}
+      />
+
+      {/* Auto-Extract From/To Modal */}
+      <AutoExtractPreviewModal
+        isOpen={showAutoExtractModal}
+        onClose={() => {
+          if (!autoExtractApplying) {
+            setShowAutoExtractModal(false);
+            setAutoExtractPreview(null);
+            setAutoExtractError(null);
+          }
+        }}
+        preview={autoExtractPreview}
+        loading={autoExtractLoading}
+        applying={autoExtractApplying}
+        onApply={handleAutoExtractApply}
+        error={autoExtractError}
       />
     </div>
   );

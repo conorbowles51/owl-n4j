@@ -5,7 +5,7 @@ Financial Router - endpoints for financial analysis and transaction visualizatio
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -268,6 +268,34 @@ async def create_category(body: CreateCategoryRequest):
         )
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "Failed to create category"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AutoExtractFromToRequest(BaseModel):
+    case_id: str
+    dry_run: bool = True
+
+
+@router.post("/auto-extract-from-to")
+async def auto_extract_from_to(body: AutoExtractFromToRequest):
+    """
+    Auto-extract sender/beneficiary from transaction fields using heuristics + LLM.
+
+    With dry_run=true (default): returns proposals without applying.
+    With dry_run=false: applies proposals and returns results.
+    """
+    try:
+        from services.from_to_extraction_service import extract_from_to_for_case
+        result = extract_from_to_for_case(
+            case_id=body.case_id,
+            dry_run=body.dry_run,
+        )
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("message", "Extraction failed"))
         return result
     except HTTPException:
         raise
@@ -548,5 +576,66 @@ async def export_financial_pdf(
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload-notes")
+async def upload_notes_csv(
+    case_id: str = Form(..., description="REQUIRED: Case ID"),
+    file: UploadFile = File(..., description="CSV file with ref_id and notes columns"),
+):
+    """Upload investigator notes as CSV, matched to transactions by ref_id.
+
+    CSV columns: ref_id (required), notes, interviewer, date, question, answer (optional).
+    Returns matched count and list of unmatched ref_ids.
+    """
+    import csv
+    import io
+
+    content = await file.read()
+    try:
+        text = content.decode("utf-8-sig")  # Handle Excel BOM
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
+
+    reader = csv.DictReader(io.StringIO(text))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=400, detail="CSV file has no headers")
+
+    # Normalize header names for flexible matching
+    norm = {h.strip().lower(): h for h in reader.fieldnames}
+    ref_col = norm.get("ref_id") or norm.get("ref")
+    if not ref_col:
+        raise HTTPException(status_code=400, detail="CSV must have a 'ref_id' or 'ref' column")
+
+    notes_col = norm.get("notes") or norm.get("note")
+    interviewer_col = norm.get("interviewer")
+    date_col = norm.get("date")
+    question_col = norm.get("question") or norm.get("q")
+    answer_col = norm.get("answer") or norm.get("a")
+
+    notes_data = []
+    for row in reader:
+        entry = {"ref_id": (row.get(ref_col) or "").strip()}
+        if notes_col:
+            entry["notes"] = (row.get(notes_col) or "").strip()
+        if interviewer_col:
+            entry["interviewer"] = (row.get(interviewer_col) or "").strip()
+        if date_col:
+            entry["date"] = (row.get(date_col) or "").strip()
+        if question_col:
+            entry["question"] = (row.get(question_col) or "").strip()
+        if answer_col:
+            entry["answer"] = (row.get(answer_col) or "").strip()
+        if entry["ref_id"]:
+            notes_data.append(entry)
+
+    if not notes_data:
+        raise HTTPException(status_code=400, detail="No valid rows found in CSV")
+
+    try:
+        result = neo4j_service.bulk_append_notes_by_ref_id(case_id, notes_data)
+        return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
