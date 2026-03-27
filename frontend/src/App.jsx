@@ -4858,8 +4858,10 @@ export default function App() {
               <FinancialView
                 caseId={currentCaseId}
                 onNodeSelect={(nodeKey) => {
-                  const node = graphData.nodes.find(n => n.key === nodeKey);
-                  if (node) handleNodeClick(node);
+                  const node = graphData.nodes.find(n => n.key === nodeKey)
+                    || fullGraphData.nodes.find(n => n.key === nodeKey)
+                    || { key: nodeKey, name: nodeKey };
+                  handleNodeClick(node);
                 }}
               />
             </div>
