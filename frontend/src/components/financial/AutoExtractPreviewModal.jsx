@@ -35,7 +35,7 @@ export default function AutoExtractPreviewModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-[1050px] max-h-[85vh] flex flex-col">
+      <div className="bg-white rounded-lg shadow-xl w-[1200px] max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-light-200">
           <div className="flex items-center gap-2">
@@ -117,7 +117,7 @@ export default function AutoExtractPreviewModal({
 
                   {/* Table */}
                   <div className="border border-light-200 rounded-lg overflow-hidden">
-                    <table className="w-full text-xs">
+                    <table className="w-full text-xs table-fixed">
                       <thead className="bg-light-50">
                         <tr>
                           <th className="text-left px-3 py-2 font-medium text-light-600 w-[28%]">Transaction</th>
@@ -133,10 +133,10 @@ export default function AutoExtractPreviewModal({
                             <td className="px-3 py-2 text-light-700 truncate max-w-0" title={p.txn_name}>
                               {p.txn_name || '—'}
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2 max-w-0">
                               {p.from ? (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-light-700 truncate">{p.from}</span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-light-700 truncate" title={p.from}>{p.from}</span>
                                   {p.from_matched ? (
                                     <span className="flex-shrink-0 px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Match</span>
                                   ) : (
@@ -147,10 +147,10 @@ export default function AutoExtractPreviewModal({
                                 <span className="text-light-300">—</span>
                               )}
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2 max-w-0">
                               {p.to ? (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-light-700 truncate">{p.to}</span>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="text-light-700 truncate" title={p.to}>{p.to}</span>
                                   {p.to_matched ? (
                                     <span className="flex-shrink-0 px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Match</span>
                                   ) : (
