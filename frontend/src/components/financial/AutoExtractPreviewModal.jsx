@@ -17,6 +17,13 @@ export default function AutoExtractPreviewModal({
   error,         // string|null
 }) {
   const [searchFilter, setSearchFilter] = useState('');
+  const [expandedCell, setExpandedCell] = useState(null); // "row-col" key
+
+  const toggleCell = (rowIdx, col) => {
+    const key = `${rowIdx}-${col}`;
+    setExpandedCell(prev => prev === key ? null : key);
+  };
+  const isCellExpanded = (rowIdx, col) => expandedCell === `${rowIdx}-${col}`;
 
   const proposals = preview?.proposals || [];
 
@@ -130,13 +137,20 @@ export default function AutoExtractPreviewModal({
                       <tbody className="divide-y divide-light-100">
                         {filtered.map((p, i) => (
                           <tr key={p.txn_key + '-' + i} className="hover:bg-light-25">
-                            <td className="px-3 py-2 text-light-700 truncate max-w-0" title={p.txn_name}>
+                            <td
+                              className={`px-3 py-2 text-light-700 max-w-0 cursor-pointer ${isCellExpanded(i, 'txn') ? 'break-words whitespace-normal' : 'truncate'}`}
+                              onClick={() => toggleCell(i, 'txn')}
+                              title={isCellExpanded(i, 'txn') ? undefined : p.txn_name}
+                            >
                               {p.txn_name || '—'}
                             </td>
-                            <td className="px-3 py-2 max-w-0">
+                            <td
+                              className={`px-3 py-2 max-w-0 cursor-pointer ${isCellExpanded(i, 'from') ? '' : ''}`}
+                              onClick={() => p.from && toggleCell(i, 'from')}
+                            >
                               {p.from ? (
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="text-light-700 truncate" title={p.from}>{p.from}</span>
+                                <div className={`flex items-center gap-1.5 min-w-0 ${isCellExpanded(i, 'from') ? 'flex-wrap' : ''}`}>
+                                  <span className={`text-light-700 ${isCellExpanded(i, 'from') ? 'break-words whitespace-normal' : 'truncate'}`} title={isCellExpanded(i, 'from') ? undefined : p.from}>{p.from}</span>
                                   {p.from_matched ? (
                                     <span className="flex-shrink-0 px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Match</span>
                                   ) : (
@@ -147,10 +161,13 @@ export default function AutoExtractPreviewModal({
                                 <span className="text-light-300">—</span>
                               )}
                             </td>
-                            <td className="px-3 py-2 max-w-0">
+                            <td
+                              className={`px-3 py-2 max-w-0 cursor-pointer`}
+                              onClick={() => p.to && toggleCell(i, 'to')}
+                            >
                               {p.to ? (
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                  <span className="text-light-700 truncate" title={p.to}>{p.to}</span>
+                                <div className={`flex items-center gap-1.5 min-w-0 ${isCellExpanded(i, 'to') ? 'flex-wrap' : ''}`}>
+                                  <span className={`text-light-700 ${isCellExpanded(i, 'to') ? 'break-words whitespace-normal' : 'truncate'}`} title={isCellExpanded(i, 'to') ? undefined : p.to}>{p.to}</span>
                                   {p.to_matched ? (
                                     <span className="flex-shrink-0 px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px] font-medium">Match</span>
                                   ) : (
