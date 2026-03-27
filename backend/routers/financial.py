@@ -573,22 +573,8 @@ async def export_financial_pdf(
             entity_notes=entity_notes,
         )
 
-        safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
-
-        # Try to render as PDF via WeasyPrint; fall back to printable HTML
-        try:
-            from services.financial_export_service import render_pdf
-            pdf_bytes = render_pdf(html)
-            filename = f"Financial_Report_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
-            return Response(
-                content=pdf_bytes,
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-            )
-        except (ImportError, OSError) as e:
-            import logging
-            logging.getLogger(__name__).info(f"WeasyPrint unavailable, serving HTML: {e}")
-            return Response(content=html, media_type="text/html")
+        # Serve as printable HTML — browser's Print → Save as PDF handles pagination
+        return Response(content=html, media_type="text/html")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

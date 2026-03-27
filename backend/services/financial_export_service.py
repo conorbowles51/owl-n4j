@@ -172,21 +172,36 @@ def generate_financial_pdf(
     <html>
     <head>
         <meta charset="utf-8">
+        <title>Financial Report — {_esc(case_name)}</title>
         <style>
             @page {{
                 size: A4 landscape;
                 margin: 1.5cm;
-                @bottom-center {{
-                    content: "Attorney-Client Privileged — Page " counter(page) " of " counter(pages);
-                    font-size: 9px;
-                    color: #64748b;
-                }}
+            }}
+            @media print {{
+                body {{ padding: 0; margin: 0; }}
+                .no-print {{ display: none !important; }}
+                thead {{ display: table-header-group; }}
+                tr {{ page-break-inside: avoid; }}
             }}
             body {{
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
                 color: #1e293b;
                 margin: 0;
-                padding: 0;
+                padding: 24px;
+                background: #f1f5f9;
+            }}
+            .report-wrap {{
+                max-width: 1400px;
+                margin: 0 auto;
+                background: white;
+                padding: 32px;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            }}
+            @media print {{
+                body {{ background: white; padding: 0; }}
+                .report-wrap {{ box-shadow: none; padding: 0; border-radius: 0; max-width: none; }}
             }}
             .cell {{
                 padding: 5px 8px;
@@ -206,9 +221,27 @@ def generate_financial_pdf(
                 font-size: 10px;
                 font-weight: 600;
             }}
+            .print-btn {{
+                position: fixed;
+                bottom: 24px;
+                right: 24px;
+                background: #1e3a5f;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                z-index: 999;
+            }}
+            .print-btn:hover {{ background: #0f172a; }}
         </style>
     </head>
     <body>
+        <button class="print-btn no-print" onclick="window.print()">&#128438; Print / Save as PDF</button>
+        <div class="report-wrap">
         <!-- Header -->
         <div style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); color: white; padding: 20px 24px; border-radius: 8px; margin-bottom: 16px;">
             <div style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">Financial Transaction Report</div>
@@ -265,6 +298,7 @@ def generate_financial_pdf(
         {footnote_html}
 
         {entity_notes_html}
+        </div>
     </body>
     </html>
     """
