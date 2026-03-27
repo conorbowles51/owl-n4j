@@ -269,11 +269,10 @@ def generate_financial_pdf(
     </html>
     """
 
-    try:
-        import weasyprint
-    except ImportError:
-        raise RuntimeError(
-            "WeasyPrint is not installed. Install it with: pip install weasyprint "
-            "(requires system dependencies: Cairo, Pango, GDK-PixBuf)"
-        )
+    return html
+
+
+def render_pdf(html: str) -> bytes:
+    """Convert HTML string to PDF bytes using WeasyPrint."""
+    import weasyprint
     return weasyprint.HTML(string=html).write_pdf()

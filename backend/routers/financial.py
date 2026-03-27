@@ -568,19 +568,27 @@ async def export_financial_pdf(
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
 
-        pdf_bytes = generate_financial_pdf(
+        html = generate_financial_pdf(
             transactions, case_name, filters_description,
             entity_notes=entity_notes,
         )
 
         safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
-        filename = f"Financial_Report_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
 
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        # Try to render as PDF via WeasyPrint; fall back to printable HTML
+        try:
+            from services.financial_export_service import render_pdf
+            pdf_bytes = render_pdf(html)
+            filename = f"Financial_Report_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            )
+        except (ImportError, OSError) as e:
+            import logging
+            logging.getLogger(__name__).info(f"WeasyPrint unavailable, serving HTML: {e}")
+            return Response(content=html, media_type="text/html")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -348,7 +348,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (selectedCategories.size > 0 && selectedCategories.size < categoryNames.length) {
       params.append('categories', [...selectedCategories].join(','));
     }
-    if (selectedTypes.size > 0) {
+    if (selectedTypes.size > 0 && selectedTypes.size < transactionTypes.length) {
       params.append('types', [...selectedTypes].join(','));
     }
     if (startDate) params.append('start_date', startDate);
