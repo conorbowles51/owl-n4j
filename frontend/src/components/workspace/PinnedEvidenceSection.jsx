@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Pin, ChevronDown, ChevronRight, Focus, FileText, CheckCircle2, Calendar, Link2 } from 'lucide-react';
 import { workspaceAPI, evidenceAPI } from '../../services/api';
+import { formatDateTime } from '../../utils/dateFormat';
 import FilePreview from '../FilePreview';
 import AttachToTheoryModal from './AttachToTheoryModal';
 
@@ -87,20 +88,6 @@ export default function PinnedEvidenceSection({
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return dateString;
-    }
-  };
 
   const humanSize = (bytes) => {
     if (!bytes) return '0 B';
@@ -208,7 +195,7 @@ export default function PinnedEvidenceSection({
                               {file.processed_at && (
                                 <>
                                   <Calendar className="w-3 h-3" />
-                                  <span>{formatDate(file.processed_at)}</span>
+                                  <span>{formatDateTime(file.processed_at)}</span>
                                 </>
                               )}
                             </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Calendar, Focus, Edit2, Plus, AlertCircle } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
+import { formatDateLong, formatDate } from '../../utils/dateFormat';
 import DeadlineEditorModal from './DeadlineEditorModal';
 
 /**
@@ -61,31 +62,6 @@ export default function CaseDeadlinesSection({
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
-
-  const formatShortDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
 
   const getDaysUntil = (dateString) => {
     if (!dateString) return null;
@@ -189,7 +165,7 @@ export default function CaseDeadlinesSection({
               {/* Trial Date Section */}
               {config.trial_date && (
                 <div className="text-sm text-owl-blue-900 font-medium">
-                  <AlertCircle className="w-4 h-4 text-red-500 inline align-middle -mt-0.5" /> TRIAL DATE: {formatDate(config.trial_date)}
+                  <AlertCircle className="w-4 h-4 text-red-500 inline align-middle -mt-0.5" /> TRIAL DATE: {formatDateLong(config.trial_date)}
                   {config.trial_court && ` | ${config.trial_court}`}
                 </div>
               )}
@@ -213,7 +189,7 @@ export default function CaseDeadlinesSection({
                           key={deadline.deadline_id || deadline.title}
                           className={isPastDue ? 'text-red-600' : ''}
                         >
-                          {formatShortDate(deadline.due_date)}
+                          {formatDate(deadline.due_date)}
                           {daysUntil !== null && (
                             <span className="text-light-600">
                               {' '}({isPastDue ? `${Math.abs(daysUntil)} days overdue` : `${daysUntil} days`})
@@ -233,7 +209,7 @@ export default function CaseDeadlinesSection({
                     {/* Trial Date in Deadlines List */}
                     {config.trial_date && (
                       <div className="text-light-700 font-medium pt-1">
-                        {formatShortDate(config.trial_date)}
+                        {formatDate(config.trial_date)}
                         {(() => {
                           const daysUntil = getDaysUntil(config.trial_date);
                           return daysUntil !== null ? ` (${daysUntil} days)` : '';

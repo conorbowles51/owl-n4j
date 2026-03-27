@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, ChevronUp, Plus, User, Focus, Link2, MessageSquare, Edit2, Trash2 } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
+import { formatDate } from '../../utils/dateFormat';
 import AttachToTheoryModal from './AttachToTheoryModal';
 import WitnessInterviewModal from './WitnessInterviewModal';
 import WitnessModal from './WitnessModal';
@@ -62,18 +63,6 @@ export default function WitnessMatrixSection({
     return '🟡'; // Default to yellow
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return '';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
 
   const handleAttachToTheory = async (theory, itemType, itemId) => {
     if (!caseId || !theory) return;

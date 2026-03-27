@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, DollarSign, TrendingUp, FileText, MessageSquare, Filter, Download } from 'lucide-react';
 import { costLedgerAPI } from '../services/api';
+import { formatDate } from '../utils/dateFormat';
 
 export default function CostLedgerPanel({ isOpen, onClose }) {
   const [records, setRecords] = useState([]);
@@ -170,11 +171,11 @@ export default function CostLedgerPanel({ isOpen, onClose }) {
     if (filters.start_date || filters.end_date) {
       const dateRange = [];
       if (filters.start_date) {
-        dateRange.push(new Date(filters.start_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }));
+        dateRange.push(formatDate(filters.start_date));
       }
       dateRange.push('to');
       if (filters.end_date) {
-        dateRange.push(new Date(filters.end_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }));
+        dateRange.push(formatDate(filters.end_date));
       }
       activeFilters.push(`Date Range: ${dateRange.join(' ')}`);
     } else if (filters.time_period) {

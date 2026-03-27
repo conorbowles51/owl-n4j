@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronDown, ChevronRight, FileText, Focus, Pin, CheckCircle2, Calendar, X, Filter, Link2, ExternalLink } from 'lucide-react';
 import { evidenceAPI, workspaceAPI } from '../../services/api';
+import { formatDateTime } from '../../utils/dateFormat';
 import FilePreview from '../FilePreview';
 import AttachToTheoryModal from './AttachToTheoryModal';
 
@@ -161,21 +162,6 @@ export default function AllEvidenceSection({
     } catch (err) {
       console.error('Failed to attach evidence to theory:', err);
       throw err;
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return dateString;
     }
   };
 
@@ -344,7 +330,7 @@ export default function AllEvidenceSection({
                               {file.processed_at && (
                                 <>
                                   <Calendar className="w-3 h-3" />
-                                  <span>{formatDate(file.processed_at)}</span>
+                                  <span>{formatDateTime(file.processed_at)}</span>
                                 </>
                               )}
                             </div>

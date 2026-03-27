@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChevronDown, ChevronRight, Search as SearchIcon, Plus, Pencil, Trash2, Focus, X, Save, FileText, Link2 } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
+import { formatDate } from '../../utils/dateFormat';
 
 /**
  * Findings Section
@@ -45,11 +46,6 @@ export default function FindingsSection({ caseId, isCollapsed, onToggle, onFocus
     }
   };
 
-  const formatDate = (d) => {
-    if (!d) return '';
-    try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
-    catch { return d; }
-  };
 
   const priorityColors = {
     HIGH: 'bg-red-100 text-red-700',

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, FileText, User, Archive, Trash2, CheckCircle2, Calendar, ChevronDown, ChevronUp, Clock, Network, Download, MapPin, Check, Loader2 } from 'lucide-react';
 import { evidenceAPI, casesAPI, workspaceAPI, snapshotsAPI, graphAPI } from '../../services/api';
+import { formatDateTime, formatShortDate } from '../../utils/dateFormat';
 import FilePreview from '../FilePreview';
 import ReactMarkdown from 'react-markdown';
 import VisualInvestigationTimeline from './VisualInvestigationTimeline';
@@ -279,20 +280,6 @@ export default function AttachedItemsModal({
     onDetach(type, itemId);
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return dateString;
-    }
-  };
 
   const humanSize = (bytes) => {
     if (!bytes) return '0 B';
@@ -760,7 +747,7 @@ export default function AttachedItemsModal({
                               {file.processed_at && (
                                 <>
                                   <Calendar className="w-3 h-3" />
-                                  <span>{formatDate(file.processed_at)}</span>
+                                  <span>{formatDateTime(file.processed_at)}</span>
                                 </>
                               )}
                             </div>
@@ -923,7 +910,7 @@ export default function AttachedItemsModal({
                                   <div className="flex items-center gap-2 flex-wrap text-xs mb-1">
                                     {interview.date && (
                                       <span className="text-light-600">
-                                        {formatDate(interview.date)}
+                                        {formatDateTime(interview.date)}
                                       </span>
                                     )}
                                     {interview.duration && (
@@ -979,7 +966,7 @@ export default function AttachedItemsModal({
                           {note.created_at && (
                             <span className="text-xs text-light-500 flex items-center gap-1">
                               <Calendar className="w-3 h-3" />
-                              {formatDate(note.created_at)}
+                              {formatDateTime(note.created_at)}
                             </span>
                           )}
                         </div>
@@ -1039,7 +1026,7 @@ export default function AttachedItemsModal({
                           </div>
                           <div className="flex items-center gap-3 text-xs text-light-600 mt-1">
                             {snapshot.timestamp && (
-                              <span>{formatDate(snapshot.timestamp)}</span>
+                              <span>{formatDateTime(snapshot.timestamp)}</span>
                             )}
                             {nodes.length > 0 && (
                               <span>• {nodes.length} nodes</span>
@@ -1249,17 +1236,6 @@ export default function AttachedItemsModal({
                     case 'URGENT': return 'bg-red-50 border-red-200 text-red-600';
                     case 'HIGH': return 'bg-yellow-50 border-yellow-200 text-yellow-600';
                     default: return 'bg-green-50 border-green-200 text-green-600';
-                  }
-                };
-                const formatShortDate = (dateString) => {
-                  if (!dateString) return null;
-                  try {
-                    return new Date(dateString).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    });
-                  } catch {
-                    return dateString;
                   }
                 };
                 const getStatusText = (task) => {

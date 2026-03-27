@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, ChevronRight, Focus, Plus, Edit2, Trash2, Link2 } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
+import { formatDate, formatShortDate } from '../../utils/dateFormat';
 import TaskEditorModal from './TaskEditorModal';
 import AttachToTheoryModal from './AttachToTheoryModal';
 
@@ -144,30 +145,6 @@ export default function TasksSection({
     }
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
-
-  const formatShortDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
 
   const getStatusText = (task) => {
     if (task.status_text) {

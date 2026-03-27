@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { ChevronDown, ChevronRight, FileText, Focus, Pin, CheckCircle2, Calendar, Filter, Link2, Image as ImageIcon, ExternalLink, Files, Star, StarOff } from 'lucide-react';
 import { evidenceAPI, workspaceAPI } from '../../services/api';
+import { formatDateTime } from '../../utils/dateFormat';
 import FilePreview from '../FilePreview';
 import AttachToTheoryModal from './AttachToTheoryModal';
 
@@ -35,14 +36,6 @@ const getFileIcon = (filename) => {
   return FileText;
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return 'N/A';
-  try {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit',
-    });
-  } catch { return dateString; }
-};
 
 const humanSize = (bytes) => {
   if (!bytes) return '0 B';
@@ -277,7 +270,7 @@ export default function CaseFilesSection({
                 </div>
                 <div className="flex items-center gap-2 mt-1 text-xs text-light-600">
                   {file.size && <><span>{humanSize(file.size)}</span><span>•</span></>}
-                  {file.processed_at && <><Calendar className="w-3 h-3" /><span>{formatDate(file.processed_at)}</span></>}
+                  {file.processed_at && <><Calendar className="w-3 h-3" /><span>{formatDateTime(file.processed_at)}</span></>}
                 </div>
                 {file.summary && !isUploadedDoc && (
                   <p className="text-[11px] text-light-500 mt-1 leading-relaxed">{file.summary}</p>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft, Users, Search, Download, Settings } from 'lucide-react';
+import { formatDate } from '../../utils/dateFormat';
 
 /**
  * Case Header Bar Component
@@ -15,19 +16,6 @@ export default function CaseHeaderBar({
   onBack,
   onLogoClick,
 }) {
-  const formatDate = (dateString) => {
-    if (!dateString) return null;
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-      });
-    } catch {
-      return dateString;
-    }
-  };
-
   return (
     <div className="h-16 border-b border-light-200 bg-white flex items-center justify-between px-6 shadow-sm">
       <div className="flex items-center gap-4">

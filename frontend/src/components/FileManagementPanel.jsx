@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { casesAPI, snapshotsAPI } from '../services/api';
+import { formatDate, formatDateTime } from '../utils/dateFormat';
 
 const FileManagementPanel = ({
   isOpen,
@@ -584,7 +585,7 @@ const FileManagementPanel = ({
                                               </div>
                                               {event.date && (
                                                 <p className="text-xs text-light-600 mt-0.5">
-                                                  {new Date(event.date).toLocaleDateString()}
+                                                  {formatDate(event.date)}
                                                   {event.time && ` at ${event.time}`}
                                                 </p>
                                               )}
@@ -620,7 +621,7 @@ const FileManagementPanel = ({
                                                 </span>
                                                 {msg.timestamp && (
                                                   <span className="text-xs text-light-500">
-                                                    {new Date(msg.timestamp).toLocaleDateString()}
+                                                    {formatDateTime(msg.timestamp)}
                                                   </span>
                                                 )}
                                               </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { formatDateTime } from '../../utils/dateFormat';
 import {
   ChevronDown,
   ChevronRight,
@@ -119,20 +120,6 @@ export default function SnapshotsSection({
     return () => window.removeEventListener('snapshots-refresh', handleRefresh);
   }, [loadSnapshots]);
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'No date';
-    try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } catch {
-      return String(dateString);
-    }
-  };
 
   const fetchAndMergeApi = useCallback(async (snapshot) => {
     const id = snapshot.id;
@@ -339,7 +326,7 @@ export default function SnapshotsSection({
                         </div>
                         <div className="flex items-center gap-2 mt-1 text-xs text-light-600">
                           <Calendar className="w-3 h-3 flex-shrink-0" />
-                          <span>{formatDate(snapshot.timestamp || snapshot.created_at)}</span>
+                          <span>{formatDateTime(snapshot.timestamp || snapshot.created_at)}</span>
                           <span>•</span>
                           <span>{snapshot.node_count ?? 0} nodes</span>
                           <span>•</span>
@@ -497,7 +484,7 @@ function SnapshotDetailContent({ full, snapshot, formatDate }) {
             <div className="flex items-center gap-2">
               <span className="text-light-600 w-20">Created:</span>
               <span className="text-light-700">
-                {formatDate(full.timestamp || full.created_at || snapshot.timestamp)}
+                {formatDateTime(full.timestamp || full.created_at || snapshot.timestamp)}
               </span>
             </div>
           )}
@@ -645,7 +632,7 @@ function SnapshotDetailContent({ full, snapshot, formatDate }) {
                 </div>
                 {event.date && (
                   <p className="text-xs text-light-600 mt-1">
-                    {formatDate(event.date)}
+                    {formatDateTime(event.date)}
                     {event.time && ` at ${event.time}`}
                   </p>
                 )}
@@ -677,7 +664,7 @@ function SnapshotDetailContent({ full, snapshot, formatDate }) {
                     {msg.role === 'user' ? 'User' : 'Assistant'}
                   </span>
                   {msg.timestamp && (
-                    <span className="text-xs text-light-500">{formatDate(msg.timestamp)}</span>
+                    <span className="text-xs text-light-500">{formatDateTime(msg.timestamp)}</span>
                   )}
                 </div>
                 <div className="text-sm text-light-700 prose prose-sm max-w-none">
