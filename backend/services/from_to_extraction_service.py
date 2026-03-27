@@ -10,6 +10,7 @@ Then matches extracted names against existing graph entities.
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
 
 from services.llm_service import LLMService
@@ -139,7 +140,9 @@ Return ONLY a JSON object with this structure:
 TRANSACTIONS:
 """
 
-BATCH_SIZE = 20
+BATCH_SIZE = 50
+MAX_LLM_TRANSACTIONS = 2000     # Cap to avoid extreme runtimes
+LLM_CONCURRENCY = 6             # Parallel LLM API calls
 
 
 def _format_transaction_for_llm(idx: int, txn: Dict) -> str:
@@ -158,13 +161,50 @@ def _format_transaction_for_llm(idx: int, txn: Dict) -> str:
     return " | ".join(parts)
 
 
+def _process_single_batch(batch_start: int, batch: List[Dict], llm: LLMService) -> List[Dict]:
+    """Process a single LLM batch. Thread-safe: creates its own LLMService."""
+    lines = []
+    for i, txn in enumerate(batch):
+        lines.append(_format_transaction_for_llm(i, txn))
+
+    prompt = FROM_TO_EXTRACTION_PROMPT + "\n".join(lines)
+
+    # Each thread uses its own LLMService instance for thread safety
+    thread_llm = LLMService()
+    thread_llm.set_config("openai", "gpt-4o-mini")
+
+    try:
+        raw = thread_llm.call(prompt, temperature=0.1, json_mode=True, timeout=120)
+    except Exception as e:
+        print(f"[FromToExtract] LLM batch at {batch_start} failed: {e}")
+        return []
+
+    results = []
+    try:
+        parsed = json.loads(raw)
+        extractions = parsed.get("extractions", [])
+        for ext in extractions:
+            abs_index = batch_start + ext.get("index", 0)
+            results.append({
+                "index": abs_index,
+                "from": ext.get("from"),
+                "to": ext.get("to"),
+                "category": ext.get("category"),
+            })
+    except json.JSONDecodeError:
+        print(f"[FromToExtract] Failed to parse LLM response for batch starting at {batch_start}")
+
+    return results
+
+
 def extract_from_to_llm(transactions: List[Dict], llm: LLMService) -> List[Dict]:
     """
-    Use GPT-4o-mini to extract from/to and category for a batch of transactions.
+    Use GPT-4o-mini to extract from/to and category for transactions.
+    Processes batches concurrently using ThreadPoolExecutor.
 
     Args:
         transactions: List of transaction dicts (must have sequential indices)
-        llm: LLMService instance
+        llm: LLMService instance (used for config reference only)
 
     Returns:
         List of {"index": int, "from": str|None, "to": str|None, "category": str|None}
@@ -172,40 +212,36 @@ def extract_from_to_llm(transactions: List[Dict], llm: LLMService) -> List[Dict]
     if not transactions:
         return []
 
-    all_results = []
-
+    # Build batch list
+    batches = []
     for batch_start in range(0, len(transactions), BATCH_SIZE):
         batch = transactions[batch_start:batch_start + BATCH_SIZE]
-        lines = []
-        for i, txn in enumerate(batch):
-            lines.append(_format_transaction_for_llm(i, txn))
+        batches.append((batch_start, batch))
 
-        prompt = FROM_TO_EXTRACTION_PROMPT + "\n".join(lines)
+    total_batches = len(batches)
+    print(f"[FromToExtract] Processing {len(transactions)} transactions in {total_batches} batches "
+          f"({LLM_CONCURRENCY} concurrent)")
 
-        saved_provider, saved_model = llm.get_current_config()
-        try:
-            llm.set_config("openai", "gpt-4o-mini")
-            raw = llm.call(prompt, temperature=0.1, json_mode=True, timeout=120)
-        finally:
-            llm.set_config(saved_provider, saved_model)
+    all_results = []
+    completed = 0
 
-        try:
-            parsed = json.loads(raw)
-            extractions = parsed.get("extractions", [])
-            # Map batch-relative indices back to absolute indices
-            for ext in extractions:
-                abs_index = batch_start + ext.get("index", 0)
-                all_results.append({
-                    "index": abs_index,
-                    "from": ext.get("from"),
-                    "to": ext.get("to"),
-                    "category": ext.get("category"),
-                })
-        except json.JSONDecodeError:
-            print(f"[FromToExtract] Failed to parse LLM response for batch starting at {batch_start}")
+    with ThreadPoolExecutor(max_workers=LLM_CONCURRENCY) as executor:
+        futures = {
+            executor.submit(_process_single_batch, bs, b, llm): bs
+            for bs, b in batches
+        }
 
-        print(f"[FromToExtract] LLM batch {batch_start // BATCH_SIZE + 1}: "
-              f"{len(batch)} transactions processed")
+        for future in as_completed(futures):
+            batch_start = futures[future]
+            try:
+                results = future.result()
+                all_results.extend(results)
+            except Exception as e:
+                print(f"[FromToExtract] Batch at {batch_start} raised exception: {e}")
+
+            completed += 1
+            if completed % 5 == 0 or completed == total_batches:
+                print(f"[FromToExtract] Progress: {completed}/{total_batches} batches complete")
 
     return all_results
 
@@ -357,6 +393,10 @@ def extract_from_to_for_case(
     print(f"[FromToExtract] Heuristic: {len(proposals)} pure-heuristic proposals, {len(needs_llm)} need LLM")
 
     # ---- Step 4: LLM extraction ----
+    if len(needs_llm) > MAX_LLM_TRANSACTIONS:
+        print(f"[FromToExtract] Capping LLM batch from {len(needs_llm)} to {MAX_LLM_TRANSACTIONS}")
+        needs_llm = needs_llm[:MAX_LLM_TRANSACTIONS]
+
     if needs_llm:
         llm = LLMService()
         llm.set_cost_tracking_context(
