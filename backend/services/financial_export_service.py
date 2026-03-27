@@ -47,7 +47,7 @@ def generate_financial_pdf(
 
     categories = {}
     for t in transactions:
-        cat = t.get("financial_category") or "Uncategorized"
+        cat = t.get("category") or "Uncategorized"
         categories[cat] = categories.get(cat, 0) + 1
 
     category_summary = ", ".join(f"{cat}: {count}" for cat, count in sorted(categories.items()))
@@ -106,7 +106,7 @@ def generate_financial_pdf(
             <td class="cell">{_esc(from_name)}</td>
             <td class="cell">{_esc(to_name)}</td>
             <td class="cell" style="font-family: monospace; color: {amount_color}; text-align: right; white-space: nowrap;">{amount_str}{corrected_marker}</td>
-            <td class="cell">{_esc(t.get("financial_category"))}</td>
+            <td class="cell">{_esc(t.get("category"))}</td>
             <td class="cell details">{details_html}</td>
         </tr>
         """

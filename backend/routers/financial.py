@@ -461,6 +461,7 @@ async def export_financial_pdf(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
     case_name: str = Query("Case", description="Case name for the header"),
     categories: Optional[str] = Query(None, description="Comma-separated categories to filter"),
+    types: Optional[str] = Query(None, description="Comma-separated transaction types to filter"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     entity_key: Optional[str] = Query(None, description="Filter by entity key (from/to)"),
@@ -482,8 +483,12 @@ async def export_financial_pdf(
         filters = []
         if categories:
             cat_list = [c.strip() for c in categories.split(",")]
-            transactions = [t for t in transactions if t.get("financial_category") in cat_list]
+            transactions = [t for t in transactions if t.get("category") in cat_list]
             filters.append(f"Categories: {', '.join(cat_list)}")
+        if types:
+            type_list = [tp.strip() for tp in types.split(",")]
+            transactions = [t for t in transactions if t.get("type") in type_list]
+            filters.append(f"Types: {', '.join(type_list)}")
         if start_date:
             transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
             filters.append(f"From: {start_date}")
@@ -514,7 +519,7 @@ async def export_financial_pdf(
                 fields = [
                     t.get("name"), t.get("purpose"), t.get("notes"),
                     t.get("counterparty_details"), t.get("summary"),
-                    t.get("financial_category"),
+                    t.get("category"),
                 ]
                 if isinstance(t.get("from_entity"), dict):
                     fields.append(t["from_entity"].get("name"))
