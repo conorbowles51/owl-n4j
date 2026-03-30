@@ -33,7 +33,9 @@ import { DocumentViewer } from "@/components/ui/document-viewer"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/cn"
 import { useEvidenceStore } from "../evidence.store"
+import { useUIStore } from "@/stores/ui.store"
 import { useJobs } from "../hooks/use-jobs"
+import { useFolderContents } from "../hooks/use-folder-contents"
 import { JobsPanel } from "./JobsPanel"
 import { FileSummaryPanel } from "./FileSummaryPanel"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
@@ -597,14 +599,17 @@ function DetailsPanelContent({
 
 interface EvidenceContextSidebarProps {
   caseId: string
-  detailFile: EvidenceFileRecord | null
 }
 
 export function EvidenceContextSidebar({
   caseId,
-  detailFile,
 }: EvidenceContextSidebarProps) {
-  const { sidebarTab, setSidebarTab, setSidebarOpen } = useEvidenceStore()
+  const { sidebarTab, setSidebarTab, detailFileId, currentFolderId } = useEvidenceStore()
+  const setCollapsed = useUIStore((s) => s.setGraphPanelCollapsed)
+
+  // Resolve detail file internally
+  const { data: folderContents } = useFolderContents(caseId, currentFolderId)
+  const detailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
   const { data: jobs } = useJobs(caseId)
   const hasActiveJobs = useMemo(
     () =>
@@ -647,7 +652,7 @@ export function EvidenceContextSidebar({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => setCollapsed(true)}
               >
                 <PanelRightClose className="size-3.5" />
               </Button>

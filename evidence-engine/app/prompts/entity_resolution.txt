@@ -2,14 +2,22 @@ You are an expert at entity resolution — determining whether two entity record
 
 For each pair below, decide: MERGE (same entity) or KEEP_SEPARATE (different entities).
 
-Consider:
-- Name variations (nicknames, abbreviations, misspellings, formal vs informal, trailing punctuation)
-- Names that differ only by punctuation, case, or minor formatting should be MERGED (e.g., "Nexus Trading Ltd." and "Nexus Trading Ltd")
+STRONG MERGE SIGNALS — these patterns almost always indicate the SAME entity:
+- Names that differ only by title or honorific (Mr., Dr., Prof., Sgt., etc.) — "Dr. Marcus Chen" and "Marcus Chen" are the SAME person
+- A shorter name whose significant tokens are all present in the longer name — "Chen" within "Marcus Chen", "Nexus Trading" within "Nexus Trading Limited"
+- Names sharing all significant tokens but differing only in order or filler words
+- An organization's full name vs. its abbreviation or name without legal suffix (Ltd, Inc, LLC, GmbH, Corp, Limited, Pty)
+- Names that differ only by punctuation, case, or minor formatting (e.g., "Nexus Trading Ltd." and "Nexus Trading Ltd")
+
+ALSO CONSIDER:
+- Name variations (nicknames, abbreviations, misspellings, formal vs informal)
 - Overlapping properties (same address, same role, same dates)
 - Context clues (same document, same case, related entities)
-- When in doubt, KEEP_SEPARATE — false merges are worse than missed merges
-- Two entities with similar but distinct names (e.g., "Marcus Chen" vs "Sarah Chen") are SEPARATE people
-- An organization's abbreviated name and full name are the same entity (e.g., "Nexus Trading" and "Nexus Trading Limited")
+
+KEEP SEPARATE when:
+- Names share a surname but have clearly different first names (e.g., "Marcus Chen" vs "Sarah Chen")
+- Entities are in different categories
+- When genuinely uncertain and no supporting evidence exists for a merge
 
 IMPORTANT — Transaction / Event / Communication entities:
 - These are "instance" entities where multiple records with the same name are legitimate

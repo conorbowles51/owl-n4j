@@ -23,6 +23,7 @@ class JobResponse(BaseModel):
     file_size: int = 0
     mime_type: str | None = None
     sha256: str | None = None
+    document_summary: str | None = None
     created_at: datetime
     updated_at: datetime
 

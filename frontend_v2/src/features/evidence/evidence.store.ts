@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import { useUIStore } from "@/stores/ui.store"
 
 type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed"
 
@@ -27,11 +28,9 @@ interface EvidenceState {
   openDetail: (fileId: string) => void
   closeDetail: () => void
 
-  // Context sidebar
+  // Context sidebar (tab state only — collapse is managed by UIStore.graphPanelCollapsed)
   sidebarTab: "details" | "processing" | "chat"
-  sidebarOpen: boolean
   setSidebarTab: (tab: "details" | "processing" | "chat") => void
-  setSidebarOpen: (open: boolean) => void
   openSidebarTo: (tab: "details" | "processing" | "chat") => void
 
   // Filters
@@ -99,14 +98,18 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
 
   detailFileId: null,
   detailOpen: false,
-  openDetail: (fileId) => set({ detailFileId: fileId, detailOpen: true, sidebarTab: "details", sidebarOpen: true }),
+  openDetail: (fileId) => {
+    set({ detailFileId: fileId, detailOpen: true, sidebarTab: "details" })
+    useUIStore.getState().setGraphPanelCollapsed(false)
+  },
   closeDetail: () => set({ detailOpen: false }),
 
   sidebarTab: "details",
-  sidebarOpen: false,
   setSidebarTab: (tab) => set({ sidebarTab: tab }),
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  openSidebarTo: (tab) => set({ sidebarTab: tab, sidebarOpen: true }),
+  openSidebarTo: (tab) => {
+    set({ sidebarTab: tab })
+    useUIStore.getState().setGraphPanelCollapsed(false)
+  },
 
   searchTerm: "",
   setSearchTerm: (term) => set({ searchTerm: term }),
@@ -133,7 +136,6 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
         detailFileId: null,
         detailOpen: false,
         sidebarTab: "details" as const,
-        sidebarOpen: false,
         searchTerm: "",
         statusFilter: "all" as StatusFilter,
         typeFilter: "",

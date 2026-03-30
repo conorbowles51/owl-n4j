@@ -42,6 +42,7 @@ class ResolvedEntity:
     source_files: list[str] = field(default_factory=list)
     is_existing: bool = False
     summary: str = ""
+    existing_summary: str = ""
 
 
 @dataclass
@@ -88,12 +89,22 @@ class UnionFind:
 # Helpers
 # ---------------------------------------------------------------------------
 
+STRIP_PREFIXES = {
+    "mr", "mrs", "ms", "dr", "prof", "sir", "lord", "lady",
+    "rev", "sgt", "cpl", "lt", "capt", "maj", "col", "gen", "hon",
+}
+
+
 def _normalize(name: str) -> str:
-    """Normalize name for blocking: lowercase, strip punctuation, collapse whitespace."""
+    """Normalize name for blocking: lowercase, strip punctuation, strip
+    titles/honorifics, collapse whitespace."""
     name = unicodedata.normalize("NFKD", name)
     name = name.lower().strip()
     name = re.sub(r'[^\w\s]', '', name)  # strip all punctuation
-    return " ".join(name.split())
+    tokens = name.split()
+    if tokens and tokens[0] in STRIP_PREFIXES:
+        tokens = tokens[1:]
+    return " ".join(tokens)
 
 
 def _token_overlap(a: str, b: str) -> float:
@@ -174,7 +185,7 @@ def _blocking_candidates(entities: list[RawEntity]) -> list[tuple[int, int]]:
                     ):
                         continue
                     ratio = SequenceMatcher(None, norms[i], norms[j]).ratio()
-                    if ratio >= 0.85:
+                    if ratio >= 0.70:
                         for a in name_map[norms[i]]:
                             for b in name_map[norms[j]]:
                                 candidates.add((min(a, b), max(a, b)))
@@ -220,6 +231,9 @@ async def _embedding_candidates(
         for idx in indices:
             e = entities[idx]
             desc = f"{e.category}: {e.name}"
+            aliases = [str(a) for a in (e.properties.get("aliases") or []) if a]
+            if aliases:
+                desc += f" (aka: {', '.join(aliases)})"
             if e.properties.get("description"):
                 desc += f" — {e.properties['description']}"
             texts.append(desc)
@@ -248,7 +262,7 @@ async def _embedding_candidates(
                     results["ids"][0], results.get("distances", [[]])[0]
                 ):
                     n = int(nid)
-                    if n != idx and dist < 0.15:
+                    if n != idx and dist < 0.35:
                         pair = (min(idx, n), max(idx, n))
                         if pair not in existing:
                             new_pairs.add(pair)
@@ -311,6 +325,7 @@ async def _llm_confirm(
                 },
                 {"role": "user", "content": prompt},
             ],
+            model=settings.openai_quality_model,
             response_format=get_resolution_schema(),
         )
 
@@ -418,14 +433,25 @@ async def _cross_job_dedup(
             cat = meta.get("category", "")
             if cat in INSTANCE_CATEGORIES:
                 continue  # never deterministically merge transactions/events
+            # Index by canonical name
             key = (cat, _normalize(meta.get("name", "")))
             if key not in existing_by_norm:
                 existing_by_norm[key] = eid
+            # Index by each alias
+            aliases_str = meta.get("aliases", "")
+            if aliases_str:
+                for alias in aliases_str.split(","):
+                    alias = alias.strip()
+                    if alias:
+                        alias_key = (cat, _normalize(alias))
+                        if alias_key not in existing_by_norm:
+                            existing_by_norm[alias_key] = eid
 
     already_matched: set[str] = set()
     for entity in entities:
         if entity.category in INSTANCE_CATEGORIES:
             continue
+        # Check entity name against existing names + aliases
         key = (entity.category, _normalize(entity.name))
         if key in existing_by_norm:
             merge_map[entity.id] = existing_by_norm[key]
@@ -434,6 +460,18 @@ async def _cross_job_dedup(
                 "Cross-job deterministic merge: '%s' → existing %s",
                 entity.name, existing_by_norm[key],
             )
+            continue
+        # Check entity aliases against existing names + aliases
+        for alias in entity.aliases:
+            alias_key = (entity.category, _normalize(alias))
+            if alias_key in existing_by_norm:
+                merge_map[entity.id] = existing_by_norm[alias_key]
+                already_matched.add(entity.id)
+                logger.info(
+                    "Cross-job deterministic merge (via alias '%s'): '%s' → existing %s",
+                    alias, entity.name, existing_by_norm[alias_key],
+                )
+                break
 
     # ---------------------------------------------------------------
     # Phase B: Embedding similarity (for entities not yet matched)
@@ -464,23 +502,67 @@ async def _cross_job_dedup(
         for existing_id, dist in zip(
             results["ids"][0], results.get("distances", [[]])[0]
         ):
-            if dist < 0.15:
+            if dist < 0.30:
                 candidate_pairs.append((k, existing_id))
 
     if not candidate_pairs:
         return merge_map
 
-    # Fetch existing entity metadata for LLM confirmation
+    # Fetch existing entity properties for LLM confirmation (Neo4j first, ChromaDB fallback)
     existing_ids = list({eid for _, eid in candidate_pairs})
-    existing_data = col.get(ids=existing_ids, include=["documents", "metadatas"])
     existing_map: dict[str, dict] = {}
-    if existing_data and existing_data["ids"]:
-        for eid, doc, meta in zip(
-            existing_data["ids"],
-            existing_data.get("documents") or [""] * len(existing_data["ids"]),
-            existing_data.get("metadatas") or [{}] * len(existing_data["ids"]),
-        ):
-            existing_map[eid] = {"id": eid, "name": (meta or {}).get("name", ""), "document": doc}
+
+    if existing_ids:
+        try:
+            neo4j_data = await neo4j_client.execute_query(
+                "UNWIND $ids AS eid MATCH (n {id: eid}) "
+                "RETURN n.id AS id, labels(n) AS labels, n.name AS name, "
+                "n.specific_type AS specific_type, n.description AS description, "
+                "n.role AS role, n.aliases AS aliases, "
+                "n.confidence AS confidence",
+                {"ids": existing_ids},
+            )
+            for record in neo4j_data or []:
+                eid = record["id"]
+                # Extract category from Neo4j labels
+                labels = record.get("labels") or []
+                cat = ""
+                for lbl in labels:
+                    if lbl not in ("_Entity",):
+                        cat = lbl
+                        break
+                props = {}
+                for k in ("description", "role"):
+                    if record.get(k):
+                        props[k] = record[k]
+                existing_map[eid] = {
+                    "id": eid,
+                    "category": cat,
+                    "name": record.get("name", ""),
+                    "specific_type": record.get("specific_type", ""),
+                    "properties": props,
+                }
+                if record.get("aliases"):
+                    existing_map[eid]["aliases"] = record["aliases"]
+        except Exception:
+            logger.warning("Neo4j fetch failed for cross-job LLM context, falling back to ChromaDB")
+
+        # Fallback: fill in any missing entities from ChromaDB
+        missing_ids = [eid for eid in existing_ids if eid not in existing_map]
+        if missing_ids:
+            chroma_data = col.get(ids=missing_ids, include=["documents", "metadatas"])
+            if chroma_data and chroma_data["ids"]:
+                for eid, doc, meta in zip(
+                    chroma_data["ids"],
+                    chroma_data.get("documents") or [""] * len(chroma_data["ids"]),
+                    chroma_data.get("metadatas") or [{}] * len(chroma_data["ids"]),
+                ):
+                    existing_map[eid] = {
+                        "id": eid,
+                        "name": (meta or {}).get("name", ""),
+                        "category": (meta or {}).get("category", ""),
+                        "document": doc,
+                    }
 
     # LLM confirmation
     template = (PROMPTS_DIR / "entity_resolution.txt").read_text(encoding="utf-8")
@@ -497,6 +579,7 @@ async def _cross_job_dedup(
                         "category": remaining[new_idx].category,
                         "name": remaining[new_idx].name,
                         "specific_type": remaining[new_idx].specific_type,
+                        "properties": remaining[new_idx].properties,
                     },
                     "entity_b": existing_map.get(existing_id, {"id": existing_id}),
                 }
@@ -516,6 +599,7 @@ async def _cross_job_dedup(
                 },
                 {"role": "user", "content": prompt},
             ],
+            model=settings.openai_quality_model,
             response_format=get_resolution_schema(),
         )
         data = json.loads(response)
@@ -601,6 +685,8 @@ async def resolve_entities(
             )
             if existing_props:
                 props = existing_props[0]["props"]
+
+                # List properties: accumulate
                 existing_aliases = set(props.get("aliases", []) or [])
                 entity.aliases = sorted(set(entity.aliases) | existing_aliases)
                 existing_files = set(props.get("source_files", []) or [])
@@ -608,6 +694,40 @@ async def resolve_entities(
                 existing_quotes = props.get("source_quotes", []) or []
                 new_quotes = [q for q in entity.source_quotes if q not in existing_quotes]
                 entity.source_quotes = existing_quotes + new_quotes
+
+                # Store existing summary for merge in generate_summaries
+                entity.existing_summary = props.get("summary", "") or ""
+
+                # Scalar properties: prefer richer/longer existing values
+                existing_desc = props.get("description", "") or ""
+                current_desc = entity.properties.get("description", "") or ""
+                if existing_desc and len(existing_desc) > len(current_desc):
+                    entity.properties["description"] = existing_desc
+
+                existing_role = props.get("role", "") or ""
+                current_role = entity.properties.get("role", "") or ""
+                if existing_role and (not current_role or len(existing_role) > len(current_role)):
+                    entity.properties["role"] = existing_role
+
+                # specific_type: prefer existing (first extraction has best context)
+                existing_st = props.get("specific_type", "") or ""
+                if existing_st and not entity.specific_type:
+                    entity.specific_type = existing_st
+
+                # confidence: prefer higher
+                existing_conf = props.get("confidence")
+                if existing_conf is not None and existing_conf > entity.confidence:
+                    entity.confidence = existing_conf
+
+                # Other scalars: fill blanks from existing
+                SKIP_KEYS = {
+                    "id", "key", "case_id", "name", "aliases", "source_files",
+                    "source_quotes", "summary", "job_id", "description",
+                    "role", "specific_type", "confidence",
+                }
+                for k, v in props.items():
+                    if k not in SKIP_KEYS and v and k not in entity.properties:
+                        entity.properties[k] = v
 
     # Chain id_map through cross-job merges
     for temp_id in id_map:

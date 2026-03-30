@@ -1,9 +1,14 @@
 import asyncio
 import json
+import logging
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.ontology import ENTITY_CATEGORIES
+
+logger = logging.getLogger(__name__)
 from app.ontology.prompt_builder import (
     build_entity_extraction_prompt,
     build_relationship_extraction_prompt,
@@ -177,6 +182,96 @@ async def _extract_relationships_from_chunk(
     return relationships
 
 
+_STRIP_PREFIXES = {
+    "mr", "mrs", "ms", "dr", "prof", "sir", "lord", "lady",
+    "rev", "sgt", "cpl", "lt", "capt", "maj", "col", "gen", "hon",
+}
+
+
+def _normalize_name(name: str) -> str:
+    """Normalize for overlap dedup: lowercase, strip punctuation/titles, collapse whitespace."""
+    name = unicodedata.normalize("NFKD", name)
+    name = name.lower().strip()
+    name = re.sub(r'[^\w\s]', '', name)
+    tokens = name.split()
+    if tokens and tokens[0] in _STRIP_PREFIXES:
+        tokens = tokens[1:]
+    return " ".join(tokens)
+
+
+def _dedup_within_file(
+    entities: list[RawEntity],
+    relationships: list[RawRelationship],
+) -> tuple[list[RawEntity], list[RawRelationship]]:
+    """Merge entities with identical normalized names extracted from
+    overlapping chunks within the same file.  Remaps relationship IDs."""
+    if not entities:
+        return entities, relationships
+
+    # Group by (category, normalized_name)
+    groups: dict[tuple[str, str], list[int]] = {}
+    for i, e in enumerate(entities):
+        key = (e.category, _normalize_name(e.name))
+        groups.setdefault(key, []).append(i)
+
+    id_remap: dict[str, str] = {}  # old temp_id → surviving temp_id
+    kept: list[RawEntity] = []
+
+    for indices in groups.values():
+        if len(indices) == 1:
+            kept.append(entities[indices[0]])
+            continue
+
+        # Pick primary: highest confidence, then most properties
+        primary_idx = max(
+            indices, key=lambda i: (entities[i].confidence, len(entities[i].properties))
+        )
+        primary = entities[primary_idx]
+
+        # Merge from others into primary
+        all_names: set[str] = set()
+        merged_props = dict(primary.properties)
+        best_confidence = primary.confidence
+
+        for idx in indices:
+            e = entities[idx]
+            id_remap[e.temp_id] = primary.temp_id
+            all_names.add(e.name)
+            best_confidence = max(best_confidence, e.confidence)
+            for k, v in e.properties.items():
+                if k not in merged_props or not merged_props[k]:
+                    merged_props[k] = v
+
+        all_names.discard(primary.name)
+        # Store other name forms as aliases
+        existing_aliases = list(merged_props.get("aliases") or [])
+        for name in all_names:
+            if name not in existing_aliases:
+                existing_aliases.append(name)
+        if existing_aliases:
+            merged_props["aliases"] = existing_aliases
+
+        primary.properties = merged_props
+        primary.confidence = best_confidence
+        kept.append(primary)
+
+    merged_count = len(entities) - len(kept)
+    if merged_count:
+        logger.info(
+            "Overlap dedup: merged %d duplicate entities (%d → %d)",
+            merged_count, len(entities), len(kept),
+        )
+
+    # Remap relationship IDs
+    remapped_rels: list[RawRelationship] = []
+    for r in relationships:
+        r.source_entity_id = id_remap.get(r.source_entity_id, r.source_entity_id)
+        r.target_entity_id = id_remap.get(r.target_entity_id, r.target_entity_id)
+        remapped_rels.append(r)
+
+    return kept, remapped_rels
+
+
 async def extract_entities_and_relationships(
     chunks: list[TextChunk],
     case_context: str,
@@ -222,5 +317,8 @@ async def extract_entities_and_relationships(
     all_relationships: list[RawRelationship] = []
     for chunk_rels in rel_results:
         all_relationships.extend(chunk_rels)
+
+    # Deduplicate entities extracted from overlapping chunks
+    all_entities, all_relationships = _dedup_within_file(all_entities, all_relationships)
 
     return all_entities, all_relationships

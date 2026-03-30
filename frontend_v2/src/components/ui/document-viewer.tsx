@@ -202,7 +202,7 @@ export function DocumentViewer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl h-[85vh] flex flex-col p-0 gap-0" showCloseButton={false}>
+      <DialogContent className="sm:max-w-[65vw] w-[65vw] h-[90vh] flex flex-col p-0 gap-0" showCloseButton={false}>
         <DialogHeader className="flex-row items-center justify-between border-b border-border px-4 py-3 space-y-0">
           <div className="flex items-center gap-3">
             <IconComp className="size-5 text-muted-foreground" />

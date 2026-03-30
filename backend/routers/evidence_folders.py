@@ -381,25 +381,72 @@ async def process_folder(
         sibling_info = gather_sibling_files(db, fid)
 
         # Mark files as processing
-        EvidenceDBStorage.mark_processing(db, file_ids)
+        EvidenceDBStorage.mark_processing(db, file_ids, force=req.reprocess_completed)
         db.commit()
 
-        # If evidence engine is enabled, dispatch to it
+        # If evidence engine is enabled, dispatch files to it
         if USE_EVIDENCE_ENGINE:
-            # Get files with engine_job_ids to re-process via engine
+            import json as _json
+            import mimetypes
+            from pathlib import Path
             from sqlalchemy import select
             from postgres.models.evidence import EvidenceFile as EF
+
             files = list(db.scalars(
                 select(EF).where(EF.id.in_(file_ids))
             ).all())
 
-            engine_job_ids = [f.engine_job_id for f in files if f.engine_job_id]
+            # Read file contents from disk and build tuples for the engine
+            file_tuples = []
+            valid_files = []
+            for f in files:
+                p = Path(f.stored_path)
+                if not p.exists():
+                    logger.warning("File not found on disk, skipping: %s", f.stored_path)
+                    continue
+                content = p.read_bytes()
+                ctype = mimetypes.guess_type(f.original_filename)[0] or "application/octet-stream"
+                file_tuples.append((f.original_filename, content, ctype))
+                valid_files.append(f)
+
+            if not file_tuples:
+                return {"job_ids": [], "file_count": 0, "message": "No files found on disk"}
+
+            # Build engine parameters from folder profile
+            folder_context = effective.get("merged_context")
+            llm_profile = effective.get("merged_overrides", {}).get("llm_profile")
+            sibling_files_json = _json.dumps(sibling_info) if sibling_info else None
+
+            # Send files to evidence engine for processing
+            jobs = await evidence_engine_client.upload_files_batch(
+                case_id=req.case_id,
+                files=file_tuples,
+                llm_profile=llm_profile,
+                folder_context=folder_context,
+                sibling_files=sibling_files_json,
+            )
+
+            # Store engine job IDs back to Postgres
+            job_ids_out = []
+            for f, job in zip(valid_files, jobs):
+                f.engine_job_id = str(job["id"])
+                job_ids_out.append(str(job["id"]))
+            db.commit()
+
+            # Register jobs with Redis subscriber for status tracking
+            if job_ids_out:
+                from services.job_status_subscriber import get_subscriber
+                try:
+                    subscriber = get_subscriber()
+                    await subscriber.track_jobs(job_ids_out, req.case_id)
+                except Exception as e:
+                    logger.warning("Failed to register jobs with subscriber: %s", e)
 
             return {
-                "job_ids": engine_job_ids,
-                "file_count": len(file_ids),
+                "job_ids": job_ids_out,
+                "file_count": len(valid_files),
                 "effective_profile": effective,
-                "message": f"Processing {len(file_ids)} file(s)",
+                "message": f"Processing {len(valid_files)} file(s)",
             }
 
         return {

@@ -1,4 +1,4 @@
-import { Outlet, useMatch } from "react-router-dom"
+import { Outlet, useMatch, useParams } from "react-router-dom"
 import { ErrorBoundary } from "@/components/ui/error-boundary"
 import {
   ResizablePanelGroup,
@@ -7,10 +7,13 @@ import {
 } from "@/components/ui/resizable"
 import { useUIStore } from "@/stores/ui.store"
 import { CaseSidePanelRail, CaseSidePanelContent } from "./CaseSidePanel"
+import { EvidenceContextSidebar } from "@/features/evidence/components/EvidenceContextSidebar"
 
 export function CaseLayout() {
+  const { id: caseId } = useParams()
   const graphPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
   const isGraphRoute = !!useMatch("/cases/:id/graph")
+  const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
 
   // Graph page manages its own side panel with tool overlays
   const showCaseSidePanel = !isGraphRoute
@@ -41,7 +44,11 @@ export function CaseLayout() {
                     minSize="15"
                     maxSize="45"
                   >
-                    <CaseSidePanelContent />
+                    {isEvidenceRoute ? (
+                      <EvidenceContextSidebar caseId={caseId!} />
+                    ) : (
+                      <CaseSidePanelContent />
+                    )}
                   </ResizablePanel>
                 </>
               )}

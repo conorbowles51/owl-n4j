@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
+import { useUIStore } from "@/stores/ui.store"
 import { useUploadToFolder } from "../hooks/use-upload-to-folder"
 import { useJobs } from "../hooks/use-jobs"
 import { evidenceAPI } from "../api"
@@ -46,11 +47,10 @@ export function FileListToolbar({
     setTypeFilter,
     selectedFileIds,
     currentFolderId,
-    sidebarOpen,
     sidebarTab,
     openSidebarTo,
-    setSidebarOpen,
   } = useEvidenceStore()
+  const panelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadMutation = useUploadToFolder(caseId)
@@ -244,12 +244,12 @@ export function FileListToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant={sidebarOpen && sidebarTab === "processing" ? "secondary" : "outline"}
+            variant={!panelCollapsed && sidebarTab === "processing" ? "secondary" : "outline"}
             size="sm"
             className="h-8 gap-1.5 text-xs"
             onClick={() => {
-              if (sidebarOpen && sidebarTab === "processing") {
-                setSidebarOpen(false)
+              if (!panelCollapsed && sidebarTab === "processing") {
+                useUIStore.getState().setGraphPanelCollapsed(true)
               } else {
                 openSidebarTo("processing")
               }
@@ -265,7 +265,7 @@ export function FileListToolbar({
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          {sidebarOpen && sidebarTab === "processing" ? "Hide processing panel" : "Show processing panel"}
+          {!panelCollapsed && sidebarTab === "processing" ? "Hide processing panel" : "Show processing panel"}
         </TooltipContent>
       </Tooltip>
     </div>

@@ -359,13 +359,19 @@ class EvidenceDBStorage:
         return moved
 
     @staticmethod
-    def mark_processing(db: Session, file_ids: List[uuid.UUID]) -> None:
+    def mark_processing(db: Session, file_ids: List[uuid.UUID], force: bool = False) -> None:
         for fid in file_ids:
             ef = db.get(EvidenceFile, fid)
-            if ef and ef.status not in ("processed", "processing"):
-                ef.status = "processing"
-                ef.last_error = None
-                ef.processed_at = None
+            if not ef:
+                continue
+            # Skip files already being processed; skip processed files unless force=True
+            if ef.status == "processing":
+                continue
+            if ef.status == "processed" and not force:
+                continue
+            ef.status = "processing"
+            ef.last_error = None
+            ef.processed_at = None
         db.flush()
 
     @staticmethod

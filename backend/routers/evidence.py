@@ -385,19 +385,13 @@ async def _upload_via_engine(
     db: Optional[Session] = None,
 ) -> UploadResponse:
     """
-    Store files locally and send to the evidence engine for processing.
+    Store files locally (disk + Postgres) without triggering processing.
 
-    The backend owns file storage (disk + Postgres). The evidence engine is
-    a processing pipeline: it receives file contents, extracts entities and
-    relationships, and writes them to Neo4j/ChromaDB.
-
-    When folder_id is provided, resolves the effective profile for that folder
-    and passes folder context + sibling file info to the engine for prompt enrichment.
+    The backend owns file storage. Processing is triggered separately via
+    the folder process endpoint (POST /evidence-folders/{id}/process).
     """
     import hashlib
-    import json as _json
     import uuid as _uuid
-    from services.folder_context_service import resolve_effective_profile, gather_sibling_files
     from services.evidence_db_storage import EvidenceDBStorage
 
     fid_uuid = _uuid.UUID(folder_id) if folder_id else None
@@ -407,13 +401,11 @@ async def _upload_via_engine(
     case_dir = EVIDENCE_ROOT_DIR / case_id
     case_dir.mkdir(parents=True, exist_ok=True)
 
-    file_tuples = []  # (filename, content, content_type) for engine
     db_files_data = []  # For Postgres record creation
 
     for uf in files:
         content = await uf.read()
         filename = uf.filename or "unknown"
-        content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
         # Store file to backend disk
         stored_path = case_dir / filename
@@ -423,7 +415,6 @@ async def _upload_via_engine(
         # Compute metadata locally
         sha256 = hashlib.sha256(content).hexdigest()
 
-        file_tuples.append((filename, content, content_type))
         db_files_data.append({
             "original_filename": filename,
             "stored_path": str(stored_path),
@@ -431,7 +422,7 @@ async def _upload_via_engine(
             "size": len(content),
         })
 
-    # --- Step 2: Create EvidenceFile records in Postgres ---
+    # --- Step 2: Create EvidenceFile records in Postgres (status="unprocessed") ---
     db_records = []
     if db and db_files_data:
         db_records = EvidenceDBStorage.add_files(
@@ -441,41 +432,6 @@ async def _upload_via_engine(
             owner=owner,
             folder_id=fid_uuid,
         )
-        for db_rec in db_records:
-            db_rec.status = "processing"
-        db.flush()
-
-    # --- Step 3: Resolve folder context for engine prompt enrichment ---
-    folder_context: Optional[str] = None
-    sibling_files_json: Optional[str] = None
-    llm_profile: Optional[str] = None
-
-    if fid_uuid and db:
-        effective = resolve_effective_profile(db, fid_uuid, case_uuid)
-        if effective["merged_context"]:
-            folder_context = effective["merged_context"]
-        if effective["merged_overrides"].get("llm_profile"):
-            llm_profile = effective["merged_overrides"]["llm_profile"]
-        siblings = gather_sibling_files(db, fid_uuid)
-        if siblings:
-            sibling_files_json = _json.dumps(siblings)
-
-    # --- Step 4: Send files to evidence engine for processing ---
-    jobs = await evidence_engine_client.upload_files_batch(
-        case_id=case_id,
-        files=file_tuples,
-        llm_profile=llm_profile,
-        folder_context=folder_context,
-        sibling_files=sibling_files_json,
-    )
-
-    # --- Step 5: Link engine job IDs back to our Postgres records ---
-    job_ids = []
-    for db_rec, job in zip(db_records, jobs):
-        db_rec.engine_job_id = str(job["id"])
-        job_ids.append(str(job["id"]))
-
-    if db:
         db.commit()
 
     # Build response records (matching UploadResponse.files shape)
@@ -488,24 +444,14 @@ async def _upload_via_engine(
             "stored_path": fd["stored_path"],
             "sha256": fd["sha256"],
             "size": fd["size"],
-            "status": "processing",
-            "engine_job_id": db_rec.engine_job_id,
+            "status": "unprocessed",
             "created_at": datetime.now().isoformat(),
         })
 
-    # Register jobs with the Redis subscriber for status tracking
-    if job_ids:
-        from services.job_status_subscriber import get_subscriber
-        try:
-            subscriber = get_subscriber()
-            await subscriber.track_jobs(job_ids, case_id)
-        except Exception as e:
-            logger.warning("Failed to register jobs with subscriber: %s", e)
-
     return UploadResponse(
         files=records,
-        job_ids=job_ids if job_ids else None,
-        message=f"Processing {len(records)} file(s)" if job_ids else None,
+        job_ids=None,
+        message=f"Uploaded {len(records)} file(s)",
     )
 
 

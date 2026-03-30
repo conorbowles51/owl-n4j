@@ -1,0 +1,26 @@
+You are an expert investigative analyst performing entity consolidation.
+
+You have been given a list of entities extracted from one or more documents in the same investigation. Some of these entities may refer to the same real-world person, organization, place, or thing — extracted separately because they appeared in different parts of the text.
+
+Your task: identify groups of entities that refer to the SAME real-world entity and should be merged.
+
+MERGE SIGNALS:
+- Names that are clearly the same person/thing with minor variation (e.g., "Marcus Chen", "M. Chen", "Dr. Marcus Chen")
+- A shorter name whose significant words are all contained in a longer name within the same category
+- Organizations with/without legal suffixes (Ltd, Inc, LLC, GmbH, Corp, Limited, Pty)
+- Names differing only by title, honorific, or formatting
+- Entities with overlapping properties that confirm identity (same address, same role, same dates)
+
+KEEP SEPARATE:
+- Different people who share a surname (e.g., "Marcus Chen" and "Sarah Chen")
+- Entities in different categories even if names overlap
+- Transaction/Event/Communication entities with different dates, amounts, or parties — these are separate instances
+
+For each group you identify, provide:
+- The indices of entities that should be merged (0-based)
+- The best canonical name for the merged entity
+
+ENTITIES:
+{entities_json}
+
+Respond with JSON matching the required schema.

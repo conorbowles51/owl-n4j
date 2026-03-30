@@ -122,6 +122,20 @@ def build_entity_extraction_prompt(
         "- confidence: 0.0 to 1.0"
     )
 
+    parts.append(
+        "\nNAME CANONICALIZATION RULES:\n"
+        "- Use the FULL canonical name as the entity name "
+        '(e.g., "Marcus Chen" not "Dr. Chen" or "M. Chen")\n'
+        "- Put titles (Dr., Mr., Prof.), honorifics, and nicknames in the "
+        '"aliases" property list, NOT in the name field\n'
+        "- For organizations, use the full legal name and put abbreviations "
+        "in aliases\n"
+        '- Prefer "FirstName LastName" format for persons when both are '
+        "available in the text\n"
+        "- If only a partial name is given (e.g., just a surname), use it "
+        "but set a lower confidence"
+    )
+
     parts.append(f"\nNOISE RULES:\n{_NOISE_RULES}")
 
     parts.append(f"\nTEXT:\n{chunk_text}")

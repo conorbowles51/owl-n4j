@@ -1,5 +1,5 @@
-import { Info, MessageSquare, PanelRightClose } from "lucide-react"
-import { useParams } from "react-router-dom"
+import { Info, Loader2, MessageSquare, PanelRightClose } from "lucide-react"
+import { useParams, useMatch } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/tooltip"
 import { useUIStore } from "@/stores/ui.store"
 import { useGraphStore } from "@/stores/graph.store"
+import { useEvidenceStore } from "@/features/evidence/evidence.store"
 import { cn } from "@/lib/cn"
 import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
@@ -19,6 +20,23 @@ import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 export function CaseSidePanelRail() {
   const tab = useUIStore((s) => s.graphPanelTab)
   const expandTo = useUIStore((s) => s.expandGraphPanelTo)
+  const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
+  const evidenceSidebarTab = useEvidenceStore((s) => s.sidebarTab)
+  const setSidebarTab = useEvidenceStore((s) => s.setSidebarTab)
+
+  const handleExpand = (target: string) => {
+    if (isEvidenceRoute) {
+      setSidebarTab(target as "details" | "processing" | "chat")
+    } else {
+      expandTo(target as "detail" | "chat")
+    }
+    useUIStore.getState().setGraphPanelCollapsed(false)
+  }
+
+  // Determine which tab is active for indicator
+  const isDetailsActive = isEvidenceRoute ? evidenceSidebarTab === "details" : tab === "detail"
+  const isProcessingActive = isEvidenceRoute && evidenceSidebarTab === "processing"
+  const isChatActive = isEvidenceRoute ? evidenceSidebarTab === "chat" : tab === "chat"
 
   return (
     <div className="flex h-full w-12 flex-col items-center gap-1 border-l border-border bg-muted/30 pt-2">
@@ -29,18 +47,39 @@ export function CaseSidePanelRail() {
             size="icon-sm"
             className={cn(
               "relative",
-              tab === "detail" && "text-foreground"
+              isDetailsActive && "text-foreground"
             )}
-            onClick={() => expandTo("detail")}
+            onClick={() => handleExpand(isEvidenceRoute ? "details" : "detail")}
           >
             <Info className="size-4" />
-            {tab === "detail" && (
+            {isDetailsActive && (
               <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
             )}
           </Button>
         </TooltipTrigger>
         <TooltipContent side="left">Details</TooltipContent>
       </Tooltip>
+      {isEvidenceRoute && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={cn(
+                "relative",
+                isProcessingActive && "text-foreground"
+              )}
+              onClick={() => handleExpand("processing")}
+            >
+              <Loader2 className="size-4" />
+              {isProcessingActive && (
+                <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">Processing</TooltipContent>
+        </Tooltip>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -48,12 +87,12 @@ export function CaseSidePanelRail() {
             size="icon-sm"
             className={cn(
               "relative",
-              tab === "chat" && "text-foreground"
+              isChatActive && "text-foreground"
             )}
-            onClick={() => expandTo("chat")}
+            onClick={() => handleExpand("chat")}
           >
             <MessageSquare className="size-4" />
-            {tab === "chat" && (
+            {isChatActive && (
               <span className="absolute -left-1 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-amber-500" />
             )}
           </Button>

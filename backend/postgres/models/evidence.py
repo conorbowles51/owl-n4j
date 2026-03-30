@@ -67,8 +67,8 @@ class EvidenceFolder(Base, TimestampMixin):
     # Relationships
     case = relationship("Case", foreign_keys=[case_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
-    parent = relationship("EvidenceFolder", remote_side=[id], foreign_keys=[parent_id])
-    children = relationship("EvidenceFolder", foreign_keys=[parent_id], cascade="all, delete-orphan")
+    parent = relationship("EvidenceFolder", remote_side=[id], foreign_keys=[parent_id], back_populates="children")
+    children = relationship("EvidenceFolder", foreign_keys=[parent_id], cascade="all, delete-orphan", back_populates="parent")
     files = relationship("EvidenceFile", back_populates="folder", cascade="all, delete-orphan")
 
 

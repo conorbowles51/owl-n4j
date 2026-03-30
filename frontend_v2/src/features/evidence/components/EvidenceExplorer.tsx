@@ -1,20 +1,17 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useParams } from "react-router-dom"
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
-import type { ImperativePanelHandle } from "react-resizable-panels"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
 import { useCreateFolder } from "../hooks/use-folder-mutations"
 import { useDeleteFolder } from "../hooks/use-folder-mutations"
 import { useDeleteEvidence } from "../hooks/use-evidence-detail"
-import { useFolderContents } from "../hooks/use-folder-contents"
 import { FolderTreeSidebar } from "./FolderTreeSidebar"
 import { FileListPanel } from "./FileListPanel"
-import { EvidenceContextSidebar } from "./EvidenceContextSidebar"
 import { CreateFolderDialog } from "./CreateFolderDialog"
 import { DeleteFolderDialog } from "./DeleteFolderDialog"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
@@ -25,35 +22,14 @@ export function EvidenceExplorer() {
   const { id: caseId } = useParams()
   const {
     currentFolderId,
-    detailFileId,
     selectedFileIds,
     clearSelection,
   } = useEvidenceStore()
   const resetForCase = useEvidenceStore((s) => s.resetForCase)
-  const sidebarOpen = useEvidenceStore((s) => s.sidebarOpen)
-  const setSidebarOpen = useEvidenceStore((s) => s.setSidebarOpen)
-
-  const sidebarRef = useRef<ImperativePanelHandle>(null)
-
-  useEffect(() => {
-    if (sidebarOpen) {
-      if (sidebarRef.current?.isCollapsed()) {
-        sidebarRef.current.expand()
-      }
-    } else {
-      if (sidebarRef.current?.isExpanded()) {
-        sidebarRef.current.collapse()
-      }
-    }
-  }, [sidebarOpen])
 
   useEffect(() => {
     if (caseId) resetForCase(caseId)
   }, [caseId, resetForCase])
-
-  // Resolve the selected file from folder contents (react-query deduplicates this call)
-  const { data: folderContents } = useFolderContents(caseId, currentFolderId)
-  const detailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
 
   // Dialog state
   const [createFolderOpen, setCreateFolderOpen] = useState(false)
@@ -137,7 +113,7 @@ export function EvidenceExplorer() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-full flex-col overflow-hidden">
-        <ResizablePanelGroup direction="horizontal" className="flex-1">
+        <ResizablePanelGroup orientation="horizontal" className="flex-1">
           {/* Left sidebar: Folder tree */}
           <ResizablePanel
             defaultSize="20"
@@ -156,31 +132,12 @@ export function EvidenceExplorer() {
           <ResizableHandle withHandle />
 
           {/* Center: File list */}
-          <ResizablePanel defaultSize="50" minSize="30">
+          <ResizablePanel defaultSize="80" minSize="30">
             <FileListPanel
               caseId={caseId!}
               onCreateFolder={() => handleOpenCreateFolder(currentFolderId)}
               onDeleteFiles={() => handleOpenDeleteEvidence()}
               onDeleteFile={(file) => handleOpenDeleteEvidence(file)}
-            />
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          {/* Right sidebar: Context panel */}
-          <ResizablePanel
-            ref={sidebarRef}
-            defaultSize="30"
-            minSize="20"
-            maxSize="45"
-            collapsible
-            collapsedSize="0"
-            onCollapse={() => setSidebarOpen(false)}
-            onExpand={() => setSidebarOpen(true)}
-          >
-            <EvidenceContextSidebar
-              caseId={caseId!}
-              detailFile={detailFile}
             />
           </ResizablePanel>
         </ResizablePanelGroup>

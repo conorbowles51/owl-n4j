@@ -132,6 +132,10 @@ class JobStatusSubscriber:
         """Main subscriber loop."""
         while True:
             try:
+                if not self._tracked:
+                    # No jobs to watch — sleep and retry
+                    await asyncio.sleep(1)
+                    continue
                 message = await self._pubsub.get_message(
                     ignore_subscribe_messages=True, timeout=1.0
                 )

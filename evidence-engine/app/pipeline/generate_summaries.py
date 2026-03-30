@@ -77,20 +77,27 @@ async def _summarize_batch(
     batch: list[tuple[int, ResolvedEntity]],
     entity_rels: dict[str, list[ResolvedRelationship]],
     entity_names: dict[str, str],
+    *,
+    merge: bool = False,
 ) -> list[tuple[int, str]]:
-    """Generate summaries for a batch of entities. Returns (original_index, summary) pairs."""
-    template = (PROMPTS_DIR / "entity_summary.txt").read_text(encoding="utf-8")
+    """Generate summaries for a batch of entities. Returns (original_index, summary) pairs.
 
-    entities_json = json.dumps(
-        [
-            {
-                "entity_index": j,
-                **_build_entity_context(entity, entity_rels.get(entity.id, []), entity_names),
-            }
-            for j, (_, entity) in enumerate(batch)
-        ],
-        indent=2,
-    )
+    When merge=True, uses the merge prompt — entities must have existing_summary set.
+    """
+    if merge:
+        template = (PROMPTS_DIR / "entity_summary_merge.txt").read_text(encoding="utf-8")
+    else:
+        template = (PROMPTS_DIR / "entity_summary.txt").read_text(encoding="utf-8")
+
+    items = []
+    for j, (_, entity) in enumerate(batch):
+        ctx = _build_entity_context(entity, entity_rels.get(entity.id, []), entity_names)
+        item = {"entity_index": j, **ctx}
+        if merge and entity.existing_summary:
+            item["existing_summary"] = entity.existing_summary
+        items.append(item)
+
+    entities_json = json.dumps(items, indent=2)
 
     prompt = template.format(entities_json=entities_json)
     response = await chat_completion(
@@ -137,22 +144,32 @@ async def generate_summaries(
     # Build entity name lookup
     entity_names: dict[str, str] = {e.id: e.name for e in entities}
 
-    # Build batches — include all entities (including is_existing for re-summarization)
-    indexed_entities = list(enumerate(entities))
-    batches = [
-        indexed_entities[i : i + BATCH_SIZE]
-        for i in range(0, len(indexed_entities), BATCH_SIZE)
+    # Split entities into new (generate from scratch) vs existing (merge with prior summary)
+    new_indexed = [(i, e) for i, e in enumerate(entities) if not (e.is_existing and e.existing_summary)]
+    merge_indexed = [(i, e) for i, e in enumerate(entities) if e.is_existing and e.existing_summary]
+
+    new_batches = [
+        new_indexed[i : i + BATCH_SIZE]
+        for i in range(0, len(new_indexed), BATCH_SIZE)
+    ]
+    merge_batches = [
+        merge_indexed[i : i + BATCH_SIZE]
+        for i in range(0, len(merge_indexed), BATCH_SIZE)
     ]
 
     logger.info(
-        "Generating summaries for %d entities in %d batches (model: %s)",
-        len(entities), len(batches), settings.openai_quality_model,
+        "Generating summaries: %d new, %d merge in %d batches (model: %s)",
+        len(new_indexed), len(merge_indexed),
+        len(new_batches) + len(merge_batches), settings.openai_quality_model,
     )
 
-    # Run batches with concurrency bounded by the openai_client semaphore
+    # Run all batches with concurrency bounded by the openai_client semaphore
     tasks = [
         _summarize_batch(batch, entity_rels, entity_names)
-        for batch in batches
+        for batch in new_batches
+    ] + [
+        _summarize_batch(batch, entity_rels, entity_names, merge=True)
+        for batch in merge_batches
     ]
     batch_results = await asyncio.gather(*tasks)
 

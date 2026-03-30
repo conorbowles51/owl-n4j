@@ -183,6 +183,40 @@ def build_relationship_resolution_schema() -> dict[str, Any]:
     }
 
 
+def build_consolidation_schema() -> dict[str, Any]:
+    """Build the OpenAI Structured Output schema for entity consolidation."""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "entity_consolidation",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "groups": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "indices": {
+                                    "type": "array",
+                                    "items": {"type": "integer"},
+                                },
+                                "canonical_name": {"type": "string"},
+                                "reasoning": {"type": "string"},
+                            },
+                            "required": ["indices", "canonical_name", "reasoning"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["groups"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 def build_summary_schema() -> dict[str, Any]:
     """Build the OpenAI Structured Output schema for entity summary generation."""
     return {
@@ -235,6 +269,11 @@ def get_resolution_schema() -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def get_relationship_resolution_schema() -> dict[str, Any]:
     return build_relationship_resolution_schema()
+
+
+@lru_cache(maxsize=1)
+def get_consolidation_schema() -> dict[str, Any]:
+    return build_consolidation_schema()
 
 
 @lru_cache(maxsize=1)

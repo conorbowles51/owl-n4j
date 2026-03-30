@@ -1,10 +1,9 @@
 import { useMemo } from "react"
-import { X, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { useEvidenceStore } from "../evidence.store"
 import { useJobs } from "../hooks/use-jobs"
 import { useJobProgress } from "../hooks/use-job-progress"
 import { JobCard } from "./JobCard"
@@ -26,8 +25,6 @@ const ACTIVE_STATUSES: Set<PipelineStage> = new Set([
 ])
 
 export function JobsPanel({ caseId }: JobsPanelProps) {
-  const { setSidebarOpen } = useEvidenceStore()
-
   const hasActiveJobs = useMemo(() => {
     return true // Always poll to detect new jobs
   }, [])
@@ -71,7 +68,7 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
   }, [jobs])
 
   return (
-    <div className="flex h-full flex-col border-t border-border bg-muted/20">
+    <div className="flex h-full flex-col bg-muted/20">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <div className="flex items-center gap-2">
@@ -84,28 +81,18 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
             </Badge>
           )}
         </div>
-        <div className="flex items-center gap-1">
-          {completedJobs.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 text-[10px] text-muted-foreground"
-              onClick={() => {
-                // TODO: implement clear completed jobs
-              }}
-            >
-              Clear Completed
-            </Button>
-          )}
+        {completedJobs.length > 0 && (
           <Button
             variant="ghost"
-            size="icon-sm"
-            className="size-6"
-            onClick={() => setSidebarOpen(false)}
+            size="sm"
+            className="h-6 text-[10px] text-muted-foreground"
+            onClick={() => {
+              // TODO: implement clear completed jobs
+            }}
           >
-            <X className="size-3.5" />
+            Clear Completed
           </Button>
-        </div>
+        )}
       </div>
 
       {/* Content */}
