@@ -8,10 +8,10 @@ function formatCurrency(amount) {
   return `$${absVal.toFixed(2)}`;
 }
 
-export default function FinancialSummaryCards({ summary, entityFilter }) {
+export default function FinancialSummaryCards({ summary, hasEntitySelection, entitySelectionLabel }) {
   if (!summary) return null;
 
-  const cards = entityFilter
+  const cards = hasEntitySelection
     ? [
         {
           label: 'Inflows',
@@ -75,9 +75,9 @@ export default function FinancialSummaryCards({ summary, entityFilter }) {
 
   return (
     <div>
-      {entityFilter && (
+      {hasEntitySelection && entitySelectionLabel && (
         <div className="text-xs text-light-500 mb-1.5">
-          Showing flows relative to <span className="font-medium text-light-700">{entityFilter.name}</span>
+          Showing flows for <span className="font-medium text-light-700">{entitySelectionLabel}</span>
         </div>
       )}
       <div className="grid grid-cols-4 gap-3">

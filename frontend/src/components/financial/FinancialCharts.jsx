@@ -1,9 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
 import { CATEGORY_COLORS } from './constants';
 
 function detectGrouping(dates) {
@@ -61,8 +60,6 @@ function formatPeriodLabel(period, grouping) {
 }
 
 export default function FinancialCharts({ volumeData = [], transactions = [], categoryColorMap = {} }) {
-  const [isExpanded, setIsExpanded] = useState(true);
-
   const dates = useMemo(() => volumeData.map(d => d.date).filter(Boolean), [volumeData]);
   const grouping = useMemo(() => detectGrouping(dates), [dates]);
   const barData = useMemo(() => groupByPeriod(volumeData, grouping), [volumeData, grouping]);
@@ -89,87 +86,76 @@ export default function FinancialCharts({ volumeData = [], transactions = [], ca
   if (volumeData.length === 0 && transactions.length === 0) return null;
 
   return (
-    <div className="border border-light-200 rounded-lg bg-white">
-      <div
-        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-light-50 select-none"
-        onClick={() => setIsExpanded(!isExpanded)}
-      >
-        {isExpanded ? <ChevronDown className="w-4 h-4 text-light-500" /> : <ChevronRight className="w-4 h-4 text-light-500" />}
-        <BarChart3 className="w-4 h-4 text-light-600" />
-        <span className="text-sm font-medium text-light-700">Charts</span>
-      </div>
-
-      {isExpanded && (
-        <div className="px-3 pb-3 space-y-4">
-          {/* Stacked Bar Chart - Volume over time */}
-          <div>
-            <div className="text-xs text-light-600 mb-2 font-medium">
-              Volume Over Time ({grouping === 'month' ? 'Monthly' : grouping === 'week' ? 'Weekly' : 'Daily'})
-            </div>
-            {barData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={barData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="period"
-                    tickFormatter={(v) => formatPeriodLabel(v, grouping)}
-                    tick={{ fontSize: 10 }}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10 }}
-                    tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}K` : v}
-                  />
-                  <Tooltip
-                    formatter={(value) => [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, undefined]}
-                    labelFormatter={(label) => formatPeriodLabel(label, grouping)}
-                  />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
-                  {allCategories.map(cat => (
-                    <Bar
-                      key={cat}
-                      dataKey={cat}
-                      stackId="volume"
-                      fill={categoryColorMap[cat] || CATEGORY_COLORS[cat] || '#9ca3af'}
-                      name={cat}
-                    />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-[220px] text-xs text-light-500">No volume data</div>
-            )}
+    <div className="border border-light-200 rounded-lg bg-white p-2">
+      <div className="flex gap-3">
+        {/* Stacked Bar Chart - Volume over time (60%) */}
+        <div className="w-[60%] min-w-0">
+          <div className="text-xs text-light-600 mb-2 font-medium">
+            Volume Over Time ({grouping === 'month' ? 'Monthly' : grouping === 'week' ? 'Weekly' : 'Daily'})
           </div>
-
-          {/* Donut Chart - Category distribution */}
-          <div>
-            <div className="text-xs text-light-600 mb-2 font-medium">Category Distribution</div>
-            {categoryData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={50}
-                    outerRadius={80}
-                    dataKey="value"
-                    nameKey="name"
-                    paddingAngle={2}
-                  >
-                    {categoryData.map((entry, idx) => (
-                      <Cell key={idx} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value, name) => [value, name]} />
-                  <Legend wrapperStyle={{ fontSize: 10 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="flex items-center justify-center h-[220px] text-xs text-light-500">No category data</div>
-            )}
-          </div>
+          {barData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <BarChart data={barData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis
+                  dataKey="period"
+                  tickFormatter={(v) => formatPeriodLabel(v, grouping)}
+                  tick={{ fontSize: 10 }}
+                />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}K` : v}
+                />
+                <Tooltip
+                  formatter={(value) => [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, undefined]}
+                  labelFormatter={(label) => formatPeriodLabel(label, grouping)}
+                />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                {allCategories.map(cat => (
+                  <Bar
+                    key={cat}
+                    dataKey={cat}
+                    stackId="volume"
+                    fill={categoryColorMap[cat] || CATEGORY_COLORS[cat] || '#9ca3af'}
+                    name={cat}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[140px] text-xs text-light-500">No volume data</div>
+          )}
         </div>
-      )}
+
+        {/* Donut Chart - Category distribution (40%) */}
+        <div className="w-[40%] min-w-0">
+          <div className="text-xs text-light-600 mb-2 font-medium">Category Distribution</div>
+          {categoryData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={140}>
+              <PieChart>
+                <Pie
+                  data={categoryData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={30}
+                  outerRadius={50}
+                  dataKey="value"
+                  nameKey="name"
+                  paddingAngle={2}
+                >
+                  {categoryData.map((entry, idx) => (
+                    <Cell key={idx} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value, name) => [value, name]} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex items-center justify-center h-[140px] text-xs text-light-500">No category data</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

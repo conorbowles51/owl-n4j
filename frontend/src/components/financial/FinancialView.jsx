@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
 import { financialAPI } from '../../services/api';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
 import FinancialTable from './FinancialTable';
 import FinancialFilterPanel from './FinancialFilterPanel';
+import EntityFlowTables from './EntityFlowTables';
 import AddCategoryModal from './AddCategoryModal';
 import BulkCorrectionModal from './BulkCorrectionModal';
 import AutoExtractPreviewModal from './AutoExtractPreviewModal';
@@ -22,9 +23,46 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [selectedCategories, setSelectedCategories] = useState(new Set());
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
-  const [entityFilter, setEntityFilter] = useState(null); // { key, name }
+  const [selectedFromEntities, setSelectedFromEntities] = useState(new Set()); // Set of entity keys
+  const [selectedToEntities, setSelectedToEntities] = useState(new Set());     // Set of entity keys
   const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
   const [filterExpanded, setFilterExpanded] = useState(false);
+  const [chartsExpanded, setChartsExpanded] = useState(true);
+
+  // Resizable charts section — user drags the divider to control height
+  const [chartsSectionHeight, setChartsSectionHeight] = useState(null); // null = auto (use default)
+  const containerRef = useRef(null);
+  const chartsSectionRef = useRef(null);
+  const isDraggingRef = useRef(false);
+
+  const handleDragStart = useCallback((e) => {
+    e.preventDefault();
+    isDraggingRef.current = true;
+    const startY = e.clientY;
+    const startHeight = chartsSectionRef.current?.getBoundingClientRect().height || 200;
+
+    const onMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return;
+      const containerRect = containerRef.current?.getBoundingClientRect();
+      if (!containerRect) return;
+      const delta = startY - moveEvent.clientY;
+      const newHeight = Math.max(60, Math.min(startHeight - delta, containerRect.height * 0.6));
+      setChartsSectionHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      isDraggingRef.current = false;
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
 
   // Selection state for batch operations
   const [selectedKeys, setSelectedKeys] = useState([]);
@@ -93,31 +131,15 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     return [...types].sort();
   }, [transactions]);
 
-  // Collect all unique entities referenced in from/to for the entity filter
-  const allEntities = useMemo(() => {
-    const map = new Map();
-    transactions.forEach(t => {
-      if (t.from_entity?.name) map.set(t.from_entity.key || t.from_entity.name, t.from_entity);
-      if (t.to_entity?.name) map.set(t.to_entity.key || t.to_entity.name, t.to_entity);
-    });
-    return [...map.values()].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [transactions]);
-
-  // Filter transactions client-side
-  const filteredTransactions = useMemo(() => {
+  // Stage 1: Filter transactions by type/category/date/search (before entity selection)
+  // This feeds the entity flow tables so they reflect non-entity filters
+  const baseFilteredTransactions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
     return transactions.filter(t => {
       if (selectedTypes.size > 0 && !selectedTypes.has(t.type)) return false;
       if (selectedCategories.size > 0 && !selectedCategories.has(t.category || 'Unknown')) return false;
       if (startDate && t.date && t.date < startDate) return false;
       if (endDate && t.date && t.date > endDate) return false;
-      if (entityFilter) {
-        const matchKey = entityFilter.key || entityFilter.name;
-        const fromMatch = t.from_entity && (t.from_entity.key === matchKey || t.from_entity.name === matchKey);
-        const toMatch = t.to_entity && (t.to_entity.key === matchKey || t.to_entity.name === matchKey);
-        if (!fromMatch && !toMatch) return false;
-      }
-      // Free-text search across entity names, description, notes, purpose
       if (q) {
         const fields = [
           t.name, t.purpose, t.notes, t.counterparty_details,
@@ -137,27 +159,86 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       }
       return true;
     });
-  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, entityFilter, searchQuery, searchTerm]);
+  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, searchQuery, searchTerm]);
 
-  // Compute summary from filtered transactions — context-aware based on entity filter
+  // Compute From entities (senders), constrained by To selection for cross-filtering
+  const fromEntities = useMemo(() => {
+    const map = new Map();
+    baseFilteredTransactions.forEach(t => {
+      if (!t.from_entity?.name) return;
+      // If To entities are selected, only include senders on those recipients' transactions
+      if (selectedToEntities.size > 0) {
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        if (!toKey || !selectedToEntities.has(toKey)) return;
+      }
+      const key = t.from_entity.key || t.from_entity.name;
+      const existing = map.get(key) || { key, name: t.from_entity.name, count: 0, totalAmount: 0 };
+      existing.count += 1;
+      existing.totalAmount += Math.abs(parseFloat(t.amount) || 0);
+      map.set(key, existing);
+    });
+    return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [baseFilteredTransactions, selectedToEntities]);
+
+  // Compute To entities (recipients), constrained by From selection for cross-filtering
+  const toEntities = useMemo(() => {
+    const map = new Map();
+    baseFilteredTransactions.forEach(t => {
+      if (!t.to_entity?.name) return;
+      // If From entities are selected, only include recipients on those senders' transactions
+      if (selectedFromEntities.size > 0) {
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        if (!fromKey || !selectedFromEntities.has(fromKey)) return;
+      }
+      const key = t.to_entity.key || t.to_entity.name;
+      const existing = map.get(key) || { key, name: t.to_entity.name, count: 0, totalAmount: 0 };
+      existing.count += 1;
+      existing.totalAmount += Math.abs(parseFloat(t.amount) || 0);
+      map.set(key, existing);
+    });
+    return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [baseFilteredTransactions, selectedFromEntities]);
+
+  // Stage 2: Apply entity selection filtering on top of base
+  const filteredTransactions = useMemo(() => {
+    return baseFilteredTransactions.filter(t => {
+      if (selectedFromEntities.size > 0) {
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        if (!fromKey || !selectedFromEntities.has(fromKey)) return false;
+      }
+      if (selectedToEntities.size > 0) {
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        if (!toKey || !selectedToEntities.has(toKey)) return false;
+      }
+      return true;
+    });
+  }, [baseFilteredTransactions, selectedFromEntities, selectedToEntities]);
+
+  // Compute summary from filtered transactions — context-aware based on entity selection
+  const hasEntitySelection = selectedFromEntities.size > 0 || selectedToEntities.size > 0;
   const filteredSummary = useMemo(() => {
     const count = filteredTransactions.length;
     if (count === 0) {
-      return entityFilter
+      return hasEntitySelection
         ? { transaction_count: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 }
         : { transaction_count: 0, total_volume: 0, unique_entities: 0, avg_amount: 0 };
     }
 
-    if (entityFilter) {
-      // Entity mode: classify relative to the selected entity
-      const matchKey = entityFilter.key || entityFilter.name;
+    if (hasEntitySelection) {
+      // Entity mode: classify flows relative to selected entities
       let inflows = 0, outflows = 0;
       filteredTransactions.forEach(t => {
         const amt = Math.abs(parseFloat(t.amount) || 0);
-        const isTo = t.to_entity && (t.to_entity.key === matchKey || t.to_entity.name === matchKey);
-        const isFrom = t.from_entity && (t.from_entity.key === matchKey || t.from_entity.name === matchKey);
-        if (isTo) inflows += amt;
-        if (isFrom) outflows += amt;
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        // Use From selection as primary perspective; fall back to To
+        if (selectedFromEntities.size > 0) {
+          if (fromKey && selectedFromEntities.has(fromKey)) outflows += amt;
+          if (toKey && selectedFromEntities.has(toKey)) inflows += amt;
+        } else if (selectedToEntities.size > 0) {
+          if (toKey && selectedToEntities.has(toKey)) inflows += amt;
+          if (fromKey && selectedToEntities.has(fromKey)) outflows += amt;
+        }
       });
       return {
         transaction_count: count,
@@ -183,7 +264,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         avg_amount: Math.round((volume / count) * 100) / 100,
       };
     }
-  }, [filteredTransactions, entityFilter]);
+  }, [filteredTransactions, hasEntitySelection, selectedFromEntities, selectedToEntities]);
 
   // Compute volume data from filtered transactions so charts update with filters
   const filteredVolumeData = useMemo(() => {
@@ -353,9 +434,11 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     }
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
-    if (entityFilter) {
-      params.append('entity_key', entityFilter.key);
-      if (entityFilter.name) params.append('entity_name', entityFilter.name);
+    if (selectedFromEntities.size > 0) {
+      params.append('from_entities', [...selectedFromEntities].join(','));
+    }
+    if (selectedToEntities.size > 0) {
+      params.append('to_entities', [...selectedToEntities].join(','));
     }
     if (searchQuery && searchQuery.trim()) {
       params.append('search', searchQuery.trim());
@@ -455,7 +538,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
+    <div ref={containerRef} className="h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-2 border-b border-light-200 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -527,7 +610,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       </div>
 
       {/* Top: Filters + Summary Cards */}
-      <div className="flex-shrink-0 px-4 py-3 space-y-3">
+      <div className="flex-shrink-0 px-4 py-2 space-y-2">
         <FinancialFilterPanel
           transactionTypes={transactionTypes}
           selectedTypes={selectedTypes}
@@ -543,9 +626,6 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           endDate={endDate}
           onStartDateChange={setStartDate}
           onEndDateChange={setEndDate}
-          entityFilter={entityFilter}
-          onEntityFilterChange={setEntityFilter}
-          allEntities={allEntities}
           isExpanded={filterExpanded}
           onToggleExpand={() => setFilterExpanded(!filterExpanded)}
           categoryColorMap={categoryColorMap}
@@ -553,34 +633,87 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />
-        <FinancialSummaryCards summary={filteredSummary} entityFilter={entityFilter} />
+        <FinancialSummaryCards
+          summary={filteredSummary}
+          hasEntitySelection={hasEntitySelection}
+          entitySelectionLabel={
+            [
+              selectedFromEntities.size > 0 ? `${selectedFromEntities.size} sender(s)` : '',
+              selectedToEntities.size > 0 ? `${selectedToEntities.size} recipient(s)` : '',
+            ].filter(Boolean).join(' and ')
+          }
+        />
       </div>
 
-      {/* Bottom: Table (left) + Charts (right) side by side */}
-      <div className="flex-1 min-h-0 flex border-t border-light-200">
-        {/* Left: Transaction table */}
-        <div className="w-[80%] min-w-0 border-r border-light-200">
-          <FinancialTable
-            transactions={filteredTransactions}
-            categories={categoryNames}
-            categoryColorMap={categoryColorMap}
-            caseId={caseId}
-            onNodeSelect={onNodeSelect}
-            onCategoryChange={handleCategoryChange}
-            onFromToChange={handleFromToChange}
-            onDetailsChange={handleDetailsChange}
-            onAmountChange={handleAmountChange}
-            onBatchFromTo={handleBatchFromTo}
-            selectedKeys={selectedKeys}
-            onSelectionChange={setSelectedKeys}
-            onBatchCategorize={handleBatchCategorize}
-            onTransactionsRefresh={loadData}
-          />
+      {/* Charts & Entity Flow — full width, collapsible, resizable */}
+      <div
+        ref={chartsSectionRef}
+        className="border-t border-light-200 flex flex-col min-h-0"
+        style={chartsExpanded && chartsSectionHeight != null ? { height: chartsSectionHeight, flexShrink: 0 } : chartsExpanded ? { maxHeight: '30vh', flexShrink: 0 } : {}}
+      >
+        <div
+          className="flex-shrink-0 flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-light-50 select-none"
+          onClick={() => setChartsExpanded(!chartsExpanded)}
+        >
+          {chartsExpanded ? <ChevronDown className="w-4 h-4 text-light-500" /> : <ChevronRight className="w-4 h-4 text-light-500" />}
+          <BarChart3 className="w-4 h-4 text-light-600" />
+          <span className="text-sm font-medium text-light-700">Charts & Entity Flow</span>
+          {hasEntitySelection && (
+            <span className="text-xs text-owl-blue-600">
+              ({[
+                selectedFromEntities.size > 0 ? `${selectedFromEntities.size} senders` : '',
+                selectedToEntities.size > 0 ? `${selectedToEntities.size} recipients` : '',
+              ].filter(Boolean).join(', ')} selected)
+            </span>
+          )}
         </div>
-        {/* Right: Charts */}
-        <div className="w-[20%] min-w-0 overflow-y-auto p-3">
-          <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} categoryColorMap={categoryColorMap} />
+
+        {chartsExpanded && (
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 space-y-3">
+            <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} categoryColorMap={categoryColorMap} />
+            <EntityFlowTables
+              fromEntities={fromEntities}
+              toEntities={toEntities}
+              selectedFromEntities={selectedFromEntities}
+              selectedToEntities={selectedToEntities}
+              onFromSelectionChange={setSelectedFromEntities}
+              onToSelectionChange={setSelectedToEntities}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Drag handle to resize charts vs table */}
+      {chartsExpanded && (
+        <div
+          onMouseDown={handleDragStart}
+          className="flex-shrink-0 h-1.5 border-t border-b border-light-200 cursor-row-resize hover:bg-owl-blue-100 active:bg-owl-blue-200 transition-colors group relative"
+          title="Drag to resize"
+        >
+          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center">
+            <div className="w-8 h-0.5 rounded-full bg-light-300 group-hover:bg-owl-blue-400 transition-colors" />
+          </div>
         </div>
+      )}
+
+      {/* Transaction Table — full width, takes all remaining space */}
+      <div className="flex-1 min-h-0 border-t border-light-200">
+        <FinancialTable
+          transactions={filteredTransactions}
+          categories={categoryNames}
+          categoryColorMap={categoryColorMap}
+          caseId={caseId}
+          onNodeSelect={onNodeSelect}
+          onCategoryChange={handleCategoryChange}
+          onFromToChange={handleFromToChange}
+          onDetailsChange={handleDetailsChange}
+          onAmountChange={handleAmountChange}
+          onBatchFromTo={handleBatchFromTo}
+          selectedKeys={selectedKeys}
+          onSelectionChange={setSelectedKeys}
+          onBatchCategorize={handleBatchCategorize}
+          onTransactionsRefresh={loadData}
+        />
       </div>
 
       {/* Add Category Modal */}
