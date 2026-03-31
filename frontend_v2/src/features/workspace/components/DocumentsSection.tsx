@@ -1,28 +1,26 @@
 import { FileText } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { useQuery } from "@tanstack/react-query"
-import { workspaceAPI } from "../api"
-import { WorkspaceSection } from "./WorkspaceSection"
+import { usePinnedItems } from "../hooks/use-workspace"
 
 interface DocumentsSectionProps {
   caseId: string
 }
 
 export function DocumentsSection({ caseId }: DocumentsSectionProps) {
-  const { data: pinned = [] } = useQuery({
-    queryKey: ["workspace", caseId, "pinned"],
-    queryFn: () => workspaceAPI.getPinnedItems(caseId),
-  })
-
+  const { data: pinned = [] } = usePinnedItems(caseId)
   const documents = pinned.filter((p) => p.item_type === "document")
 
+  if (documents.length === 0) return null
+
   return (
-    <WorkspaceSection
-      title="Linked Documents"
-      icon={FileText}
-      count={documents.length}
-      defaultOpen={false}
-    >
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <FileText className="size-3.5 text-muted-foreground" />
+        <h3 className="text-xs font-semibold">Linked Documents</h3>
+        <Badge variant="slate" className="h-4 px-1.5 text-[10px]">
+          {documents.length}
+        </Badge>
+      </div>
       <div className="space-y-1">
         {documents.map((doc) => (
           <div
@@ -31,19 +29,14 @@ export function DocumentsSection({ caseId }: DocumentsSectionProps) {
           >
             <FileText className="size-3 text-muted-foreground" />
             <span className="flex-1 truncate text-xs">{doc.item_id}</span>
-            {doc.annotations_count !== undefined && doc.annotations_count > 0 && (
+            {doc.annotations_count != null && doc.annotations_count > 0 && (
               <Badge variant="outline" className="text-[10px]">
                 {doc.annotations_count} annotations
               </Badge>
             )}
           </div>
         ))}
-        {documents.length === 0 && (
-          <p className="py-3 text-center text-xs text-muted-foreground">
-            No documents linked
-          </p>
-        )}
       </div>
-    </WorkspaceSection>
+    </div>
   )
 }

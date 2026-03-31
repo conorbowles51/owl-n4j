@@ -1,27 +1,26 @@
 import { Paperclip } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
-import { workspaceAPI } from "../api"
-import { WorkspaceSection } from "./WorkspaceSection"
+import { Badge } from "@/components/ui/badge"
+import { usePinnedItems } from "../hooks/use-workspace"
 
 interface CaseFilesSectionProps {
   caseId: string
 }
 
 export function CaseFilesSection({ caseId }: CaseFilesSectionProps) {
-  const { data: pinned = [] } = useQuery({
-    queryKey: ["workspace", caseId, "pinned"],
-    queryFn: () => workspaceAPI.getPinnedItems(caseId),
-  })
-
+  const { data: pinned = [] } = usePinnedItems(caseId)
   const files = pinned.filter((p) => p.item_type === "file")
 
+  if (files.length === 0) return null
+
   return (
-    <WorkspaceSection
-      title="Case Files"
-      icon={Paperclip}
-      count={files.length}
-      defaultOpen={false}
-    >
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <Paperclip className="size-3.5 text-muted-foreground" />
+        <h3 className="text-xs font-semibold">Case Files</h3>
+        <Badge variant="slate" className="h-4 px-1.5 text-[10px]">
+          {files.length}
+        </Badge>
+      </div>
       <div className="space-y-1">
         {files.map((file) => (
           <div
@@ -32,12 +31,7 @@ export function CaseFilesSection({ caseId }: CaseFilesSectionProps) {
             <span className="flex-1 truncate text-xs">{file.item_id}</span>
           </div>
         ))}
-        {files.length === 0 && (
-          <p className="py-3 text-center text-xs text-muted-foreground">
-            No files attached
-          </p>
-        )}
       </div>
-    </WorkspaceSection>
+    </div>
   )
 }

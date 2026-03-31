@@ -32,7 +32,9 @@
       "Bash(systemctl daemon-reload:*)",
       "Bash(cd:*)",
       "Bash(systemctl restart:*)",
-      "Bash(chown:*)"
+      "Bash(chown:*)",
+      "Bash(docker compose:*)",
+      "Bash(find /c/Users/35386/Documents/Projects/investigations/owl-n4j/frontend_v2 -type f -name *workspace* -o -name *theory*)"
     ]
   }
 }
