@@ -380,6 +380,34 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     }
   }, [caseId]);
 
+  // Handle swap from/to
+  const handleSwapFromTo = useCallback(async (nodeKey, fromEntity, toEntity) => {
+    try {
+      await financialAPI.setFromTo(nodeKey, {
+        caseId,
+        fromKey: toEntity?.key,
+        fromName: toEntity?.name,
+        toKey: fromEntity?.key,
+        toName: fromEntity?.name,
+      });
+      setTransactions(prev =>
+        prev.map(t => {
+          if (t.key !== nodeKey) return t;
+          return {
+            ...t,
+            from_entity: toEntity,
+            to_entity: fromEntity,
+            has_manual_from: true,
+            has_manual_to: true,
+          };
+        })
+      );
+    } catch (err) {
+      console.error('Failed to swap from/to:', err);
+      alert('Failed to swap sender/beneficiary. Please try again.\n\n' + err.message);
+    }
+  }, [caseId]);
+
   // Handle details change (purpose, counterparty_details, notes)
   const handleDetailsChange = useCallback(async (nodeKey, details) => {
     try {
@@ -763,6 +791,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           onSelectionChange={setSelectedKeys}
           onBatchCategorize={handleBatchCategorize}
           onTransactionsRefresh={loadData}
+          onSwapFromTo={handleSwapFromTo}
         />
       </div>
 

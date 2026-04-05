@@ -3716,6 +3716,8 @@ class Neo4jService:
                 WHERE rf_entity.case_id = $case_id AND NOT rf_entity:Document AND NOT rf_entity:Case
                 OPTIONAL MATCH (n)<-[:MADE_PAYMENT|INITIATED]-(initiator)
                 WHERE initiator.case_id = $case_id AND NOT initiator:Document AND NOT initiator:Case
+                OPTIONAL MATCH (n)-[:MENTIONED_IN]->(source_doc:Document)
+                WHERE source_doc.case_id = $case_id
                 RETURN
                     n.key AS key,
                     n.ref_id AS ref_id,
@@ -3750,7 +3752,8 @@ class Neo4jService:
                     n.parent_transaction_key AS parent_transaction_key,
                     n.amount_corrected AS amount_corrected,
                     n.original_amount AS original_amount,
-                    n.correction_reason AS correction_reason
+                    n.correction_reason AS correction_reason,
+                    collect(DISTINCT source_doc.name) AS source_document_names
                 ORDER BY n.date ASC, n.time ASC
             """
 
@@ -3813,6 +3816,7 @@ class Neo4jService:
                     "amount_corrected": record["amount_corrected"] or False,
                     "original_amount": record["original_amount"],
                     "correction_reason": record["correction_reason"],
+                    "source_document": ", ".join(filter(None, record["source_document_names"])) or None,
                 })
             return transactions
 

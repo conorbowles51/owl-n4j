@@ -325,6 +325,7 @@ export default function FinancialTable({
   onBatchCategorize,
   onAmountChange,
   onTransactionsRefresh,
+  onSwapFromTo,
 }) {
   const [sortField, setSortField] = useState('date');
   const [sortDir, setSortDir] = useState('asc');
@@ -377,8 +378,8 @@ export default function FinancialTable({
   const [pageSize, setPageSize] = useState(100);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Reset to page 1 when data or sort changes
-  useEffect(() => { setCurrentPage(1); }, [transactions, sortField, sortDir]);
+  // Reset to page 1 when data count or sort changes (not on in-place edits)
+  useEffect(() => { setCurrentPage(1); }, [transactions.length, sortField, sortDir]);
 
   const totalPages = Math.ceil(sorted.length / pageSize);
   const paginatedRows = useMemo(() => {
@@ -671,6 +672,15 @@ export default function FinancialTable({
                           isManual={txn.has_manual_to}
                           onEdit={() => setEditingFromTo({ key: txn.key, side: 'to' })}
                         />
+                        {(txn.from_entity || txn.to_entity) && onSwapFromTo && (
+                          <button
+                            title="Swap from/to"
+                            className="p-0.5 rounded hover:bg-light-100 text-light-400 hover:text-light-600 flex-shrink-0"
+                            onClick={(e) => { e.stopPropagation(); onSwapFromTo(txn.key, txn.from_entity, txn.to_entity); }}
+                          >
+                            <ArrowLeftRight className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                       {editingFromTo && editingFromTo.key === txn.key && (
                         <EntityEditor

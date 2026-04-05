@@ -263,6 +263,7 @@ def generate_financial_pdf(
             <td class="cell">{_esc(to_name)}</td>
             <td class="cell" style="font-family: monospace; color: {amount_color}; text-align: right; white-space: nowrap;">{amount_str}{corrected_marker}</td>
             <td class="cell">{_esc(t.get("category"))}</td>
+            <td class="cell">{_esc(t.get("source_document") or "-")}</td>
             <td class="cell details">{details_html}</td>
         </tr>
         """
@@ -566,7 +567,8 @@ def generate_financial_pdf(
                     <th class="th" style="width: 11%;">To</th>
                     <th class="th" style="text-align: right; width: 8%;">Amount</th>
                     <th class="th" style="width: 9%;">Category</th>
-                    <th class="th" style="width: 35%;">Details / AI Summary</th>
+                    <th class="th" style="width: 8%;">Source</th>
+                    <th class="th" style="width: 27%;">Details / AI Summary</th>
                 </tr>
             </thead>
             <tbody>
