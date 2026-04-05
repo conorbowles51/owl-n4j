@@ -493,8 +493,8 @@ async def export_financial_pdf(
         if categories:
             cat_list = [c.strip() for c in categories.split(",")]
             cat_set = set(cat_list)
-            # Match frontend: treats missing category as 'Unknown'
-            transactions = [t for t in transactions if (t.get("category") or "Unknown") in cat_set]
+            # Match frontend: treats missing category as 'Uncategorized'
+            transactions = [t for t in transactions if (t.get("category") or "Uncategorized") in cat_set]
             filters.append(f"Categories: {', '.join(cat_list)}")
         if types:
             type_list = [tp.strip() for tp in types.split(",")]
@@ -513,7 +513,7 @@ async def export_financial_pdf(
                 fields = [
                     t.get("name"), t.get("purpose"), t.get("notes"),
                     t.get("counterparty_details"),
-                    t.get("category"),
+                    t.get("category"), t.get("summary"),
                 ]
                 if isinstance(t.get("from_entity"), dict):
                     fields.append(t["from_entity"].get("name"))
@@ -538,6 +538,7 @@ async def export_financial_pdf(
                     or sh in to_name.lower()
                     or sh in (t.get("purpose") or "").lower()
                     or sh in (t.get("notes") or "").lower()
+                    or sh in (t.get("summary") or "").lower()
                 )
             transactions = [t for t in transactions if header_search_match(t)]
             filters.append(f'Search: "{search_header}"')
@@ -585,6 +586,20 @@ async def export_financial_pdf(
                     or (isinstance(t.get("to_entity"), dict) and t["to_entity"].get("name") == entity)
                 ]
                 filters.append(f"Entity: {entity}")
+
+        # --- Include children of any parent that passed filters ---
+        # Sub-transactions may not match search/filter criteria on their own
+        # but should always appear alongside their parent.
+        filtered_keys = set(t["key"] for t in transactions)
+        parent_keys_in_results = set(
+            t["key"] for t in transactions if t.get("is_parent")
+        )
+        if parent_keys_in_results:
+            for t in all_transactions:
+                ptk = t.get("parent_transaction_key")
+                if ptk and ptk in parent_keys_in_results and t["key"] not in filtered_keys:
+                    transactions.append(t)
+                    filtered_keys.add(t["key"])
 
         filters_description = " | ".join(filters) if filters else ""
 
@@ -736,6 +751,23 @@ async def export_financial_pdf(
         # Convert to sorted lists (by amount desc)
         inflow_entities_list = sorted(inflow_by_entity.values(), key=lambda e: e["amount"], reverse=True)
         outflow_entities_list = sorted(outflow_by_entity.values(), key=lambda e: e["amount"], reverse=True)
+
+        # Group sub-transactions under their parents so they appear adjacent in the PDF
+        parent_children = {}  # parent_key -> [child_txns]
+        top_level = []
+        txn_by_key = {t["key"]: t for t in transactions}
+        for t in transactions:
+            ptk = t.get("parent_transaction_key")
+            if ptk and ptk in txn_by_key:
+                parent_children.setdefault(ptk, []).append(t)
+            else:
+                top_level.append(t)
+        grouped_transactions = []
+        for t in top_level:
+            grouped_transactions.append(t)
+            for child in parent_children.get(t["key"], []):
+                grouped_transactions.append(child)
+        transactions = grouped_transactions
 
         html = generate_financial_pdf(
             transactions,

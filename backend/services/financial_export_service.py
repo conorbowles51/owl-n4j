@@ -236,11 +236,24 @@ def generate_financial_pdf(
         elif isinstance(t.get("to_entity"), str):
             to_name = t["to_entity"]
 
-        bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
-
         is_child = t.get("parent_transaction_key")
+        is_parent = t.get("is_parent")
+
+        # Visual grouping: parent rows get a subtle bold treatment,
+        # child rows get a tinted background + left border to show nesting
+        if is_child:
+            bg = "#eef2ff"  # light indigo tint for child rows
+            border_left = "border-left: 3px solid #818cf8;"  # indigo accent bar
+        elif is_parent:
+            bg = "#f1f5f9"  # slightly stronger slate for parent header
+            border_left = ""
+        else:
+            bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
+            border_left = ""
+
         name_prefix = "&#8627; " if is_child else ""
         indent_style = "padding-left: 24px;" if is_child else ""
+        parent_weight = "font-weight: 600;" if is_parent else ""
 
         tx_name = _esc(t.get("name"))
 
@@ -255,10 +268,10 @@ def generate_financial_pdf(
 
         ref_id = _esc(t.get("ref_id") or "-")
         rows_html += f"""
-        <tr style="background: {bg};">
+        <tr style="background: {bg}; {border_left}">
             <td class="cell" style="font-family: monospace; font-size: 9px; letter-spacing: 0.5px; color: #475569;">{ref_id}</td>
             <td class="cell">{_esc(t.get("date"))}</td>
-            <td class="cell" style="{indent_style}">{name_prefix}{_esc(tx_name)}</td>
+            <td class="cell" style="{indent_style} {parent_weight}">{name_prefix}{_esc(tx_name)}</td>
             <td class="cell">{_esc(from_name)}</td>
             <td class="cell">{_esc(to_name)}</td>
             <td class="cell" style="font-family: monospace; color: {amount_color}; text-align: right; white-space: nowrap;">{amount_str}{corrected_marker}</td>

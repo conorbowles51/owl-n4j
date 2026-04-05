@@ -3599,6 +3599,67 @@ class Neo4jService:
             logger.info("[RefID] Assigned %d ref_ids for case %s", count, case_id)
             return count
 
+    def ensure_unique_transaction_keys(self, case_id: str) -> int:
+        """Deduplicate transaction keys within a case.
+
+        Finds transaction nodes that share the same key and appends a short
+        hex suffix (e.g. ``-a3f2``) to each duplicate so every key is unique.
+        The first occurrence (by internal Neo4j id) is left unchanged.
+
+        Idempotent — safe to call repeatedly (no-op when no duplicates exist).
+
+        Returns the number of keys that were renamed.
+        """
+        import uuid as _uuid
+
+        with self._driver.session() as session:
+            # Find all keys that appear more than once
+            dup_result = session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE n.amount IS NOT NULL AND n.key IS NOT NULL
+                WITH n.key AS k, collect(id(n)) AS ids
+                WHERE size(ids) > 1
+                RETURN k AS key, ids
+                """,
+                case_id=case_id,
+            )
+            dup_groups = [(r["key"], r["ids"]) for r in dup_result]
+
+            if not dup_groups:
+                return 0
+
+            # Collect all existing keys for collision avoidance
+            all_keys_result = session.run(
+                "MATCH (n {case_id: $case_id}) WHERE n.key IS NOT NULL "
+                "RETURN collect(n.key) AS keys",
+                case_id=case_id,
+            )
+            used_keys = set(all_keys_result.single()["keys"])
+
+            count = 0
+            for base_key, node_ids in dup_groups:
+                # Keep the first node's key unchanged, rename the rest
+                for nid in node_ids[1:]:
+                    suffix = _uuid.uuid4().hex[:4]
+                    new_key = f"{base_key}-{suffix}"
+                    while new_key in used_keys:
+                        suffix = _uuid.uuid4().hex[:4]
+                        new_key = f"{base_key}-{suffix}"
+                    used_keys.add(new_key)
+                    session.run(
+                        "MATCH (n) WHERE id(n) = $nid SET n.key = $new_key",
+                        nid=nid, new_key=new_key,
+                    )
+                    count += 1
+
+            if count:
+                logger.info(
+                    "[DedupKeys] Renamed %d duplicate transaction keys across %d groups for case %s",
+                    count, len(dup_groups), case_id,
+                )
+            return count
+
     def bulk_append_notes_by_ref_id(self, case_id: str, notes_data: list) -> dict:
         """Append investigator notes to transactions matched by ref_id.
 
@@ -3681,7 +3742,8 @@ class Neo4jService:
         Returns:
             List of transaction dicts with from/to entity resolution
         """
-        # Lazy backfill: ensure every transaction has a ref_id
+        # Lazy backfill: deduplicate keys, then ensure every transaction has a ref_id
+        self.ensure_unique_transaction_keys(case_id)
         self.ensure_transaction_ref_ids(case_id)
 
         with self._driver.session() as session:
@@ -3703,19 +3765,15 @@ class Neo4jService:
 
             extra_filter = (" AND " + " AND ".join(conditions)) if conditions else ""
 
-            query = f"""
+            # ── Phase 1: Fast property-only query (no relationship traversal) ──
+            # Reads node properties directly — handles manual overrides and
+            # previously-stored entity keys.  Only one lightweight OPTIONAL
+            # MATCH for source_doc.
+            fast_query = f"""
                 MATCH (n)
                 WHERE n.amount IS NOT NULL
                 AND n.case_id = $case_id
                 {extra_filter}
-                OPTIONAL MATCH (n)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(to_entity)
-                WHERE to_entity.case_id = $case_id AND NOT to_entity:Document AND NOT to_entity:Case
-                OPTIONAL MATCH (from_entity)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(n)
-                WHERE from_entity.case_id = $case_id AND NOT from_entity:Document AND NOT from_entity:Case
-                OPTIONAL MATCH (n)-[:RECEIVED_FROM]->(rf_entity)
-                WHERE rf_entity.case_id = $case_id AND NOT rf_entity:Document AND NOT rf_entity:Case
-                OPTIONAL MATCH (n)<-[:MADE_PAYMENT|INITIATED]-(initiator)
-                WHERE initiator.case_id = $case_id AND NOT initiator:Document AND NOT initiator:Case
                 OPTIONAL MATCH (n)-[:MENTIONED_IN]->(source_doc:Document)
                 WHERE source_doc.case_id = $case_id
                 RETURN
@@ -3740,14 +3798,6 @@ class Neo4jService:
                     n.to_entity_name AS to_entity_name,
                     n.has_manual_from AS has_manual_from,
                     n.has_manual_to AS has_manual_to,
-                    collect(DISTINCT to_entity.key)[0] AS rel_to_key,
-                    collect(DISTINCT to_entity.name)[0] AS rel_to_name,
-                    collect(DISTINCT from_entity.key)[0] AS rel_from_key,
-                    collect(DISTINCT from_entity.name)[0] AS rel_from_name,
-                    collect(DISTINCT rf_entity.key)[0] AS rf_key,
-                    collect(DISTINCT rf_entity.name)[0] AS rf_name,
-                    collect(DISTINCT initiator.key)[0] AS initiator_key,
-                    collect(DISTINCT initiator.name)[0] AS initiator_name,
                     n.is_parent AS is_parent,
                     n.parent_transaction_key AS parent_transaction_key,
                     n.amount_corrected AS amount_corrected,
@@ -3757,25 +3807,12 @@ class Neo4jService:
                 ORDER BY n.date ASC, n.time ASC
             """
 
-            result = session.run(query, **params)
+            result = session.run(fast_query, **params)
             transactions = []
-            for record in result:
-                # Resolve from entity: manual override > relationship-derived
-                # Use has_manual_from flag to detect manual overrides (including custom names with null key)
-                if record["has_manual_from"]:
-                    from_key = record["from_entity_key"]
-                    from_name = record["from_entity_name"]
-                else:
-                    from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
-                    from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"]
-                # Resolve to entity: manual override > relationship-derived
-                if record["has_manual_to"]:
-                    to_key = record["to_entity_key"]
-                    to_name = record["to_entity_name"]
-                else:
-                    to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
-                    to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"]
+            # Track keys that need relationship-based entity resolution
+            needs_rel_lookup = []
 
+            for record in result:
                 amount_val = safe_float(record["amount"])
                 if amount_val == 0:
                     raw = record.get("raw_amount")
@@ -3793,7 +3830,18 @@ class Neo4jService:
                                 record["key"], raw
                             )
 
-                transactions.append({
+                from_key = record["from_entity_key"]
+                from_name = record["from_entity_name"]
+                to_key = record["to_entity_key"]
+                to_name = record["to_entity_name"]
+
+                # Check if this transaction needs relationship fallback
+                has_from = bool(record["has_manual_from"]) or from_key or from_name
+                has_to = bool(record["has_manual_to"]) or to_key or to_name
+                if not has_from or not has_to:
+                    needs_rel_lookup.append(record["key"])
+
+                txn = {
                     "key": record["key"],
                     "ref_id": record["ref_id"],
                     "name": record["name"],
@@ -3813,11 +3861,69 @@ class Neo4jService:
                     "has_manual_to": bool(record["has_manual_to"]),
                     "is_parent": record["is_parent"] or False,
                     "parent_transaction_key": record["parent_transaction_key"],
-                    "amount_corrected": record["amount_corrected"] or False,
-                    "original_amount": record["original_amount"],
-                    "correction_reason": record["correction_reason"],
                     "source_document": ", ".join(filter(None, record["source_document_names"])) or None,
-                })
+                }
+                # Only include correction fields when they have values
+                if record["amount_corrected"]:
+                    txn["amount_corrected"] = True
+                    txn["original_amount"] = record["original_amount"]
+                    txn["correction_reason"] = record["correction_reason"]
+
+                transactions.append(txn)
+
+            # ── Phase 2: Relationship fallback for unresolved entities ──
+            # Only runs for the subset of transactions that lack stored entity
+            # properties AND have no manual override.
+            if needs_rel_lookup:
+                logger.info(
+                    "Financial query phase 2: resolving entities for %d/%d transactions via relationships",
+                    len(needs_rel_lookup), len(transactions),
+                )
+                rel_query = """
+                    MATCH (n)
+                    WHERE n.key IN $keys AND n.case_id = $case_id
+                    OPTIONAL MATCH (n)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(to_entity)
+                    WHERE to_entity.case_id = $case_id AND NOT to_entity:Document AND NOT to_entity:Case
+                    OPTIONAL MATCH (from_entity)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(n)
+                    WHERE from_entity.case_id = $case_id AND NOT from_entity:Document AND NOT from_entity:Case
+                    OPTIONAL MATCH (n)-[:RECEIVED_FROM]->(rf_entity)
+                    WHERE rf_entity.case_id = $case_id AND NOT rf_entity:Document AND NOT rf_entity:Case
+                    OPTIONAL MATCH (n)<-[:MADE_PAYMENT|INITIATED]-(initiator)
+                    WHERE initiator.case_id = $case_id AND NOT initiator:Document AND NOT initiator:Case
+                    RETURN n.key AS key,
+                        collect(DISTINCT to_entity.key)[0] AS rel_to_key,
+                        collect(DISTINCT to_entity.name)[0] AS rel_to_name,
+                        collect(DISTINCT from_entity.key)[0] AS rel_from_key,
+                        collect(DISTINCT from_entity.name)[0] AS rel_from_name,
+                        collect(DISTINCT rf_entity.key)[0] AS rf_key,
+                        collect(DISTINCT rf_entity.name)[0] AS rf_name,
+                        collect(DISTINCT initiator.key)[0] AS initiator_key,
+                        collect(DISTINCT initiator.name)[0] AS initiator_name
+                """
+                rel_result = session.run(rel_query, keys=needs_rel_lookup, case_id=case_id)
+                rel_map = {}
+                for r in rel_result:
+                    rel_map[r["key"]] = r
+
+                # Build lookup for fast merge
+                txn_by_key = {t["key"]: t for t in transactions}
+                for key, r in rel_map.items():
+                    txn = txn_by_key.get(key)
+                    if not txn:
+                        continue
+                    # Fill in from_entity if missing
+                    if not txn["from_entity"]:
+                        fk = r["rel_from_key"] or r["initiator_key"]
+                        fn = r["rel_from_name"] or r["initiator_name"]
+                        if fk or fn:
+                            txn["from_entity"] = {"key": fk, "name": fn}
+                    # Fill in to_entity if missing
+                    if not txn["to_entity"]:
+                        tk = r["rel_to_key"] or r["rf_key"]
+                        tn = r["rel_to_name"] or r["rf_name"]
+                        if tk or tn:
+                            txn["to_entity"] = {"key": tk, "name": tn}
+
             return transactions
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:

@@ -347,6 +347,52 @@ export default function FinancialTable({
   const [subTxnModalOpen, setSubTxnModalOpen] = useState(false);
   const [subTxnModalParent, setSubTxnModalParent] = useState(null);
 
+  // Auto-expand all parent transactions and pre-fetch their children
+  useEffect(() => {
+    const parentKeys = transactions.filter(t => t.is_parent).map(t => t.key);
+    if (parentKeys.length === 0) return;
+
+    setExpandedParentKeys(new Set(parentKeys));
+
+    // Fetch children for any parents not already cached
+    const uncached = parentKeys.filter(k => !childrenCache[k]);
+    if (uncached.length === 0) return;
+
+    setLoadingChildren(prev => {
+      const next = new Set(prev);
+      uncached.forEach(k => next.add(k));
+      return next;
+    });
+
+    let cancelled = false;
+    Promise.all(
+      uncached.map(async (parentKey) => {
+        try {
+          const res = await financialAPI.getSubTransactions(parentKey, caseId);
+          return { parentKey, children: res.children || [] };
+        } catch (err) {
+          console.error('Failed to fetch sub-transactions for', parentKey, err);
+          return { parentKey, children: [] };
+        }
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      setChildrenCache(prev => {
+        const next = { ...prev };
+        results.forEach(({ parentKey, children }) => { next[parentKey] = children; });
+        return next;
+      });
+      setLoadingChildren(prev => {
+        const next = new Set(prev);
+        uncached.forEach(k => next.delete(k));
+        return next;
+      });
+    });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, caseId]);
+
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -357,7 +403,23 @@ export default function FinancialTable({
   };
 
   const sorted = useMemo(() => {
-    const arr = [...transactions];
+    // 1. Deduplicate by key (guard against data issues)
+    const seen = new Set();
+    const deduped = [];
+    for (const t of transactions) {
+      if (!seen.has(t.key)) {
+        seen.add(t.key);
+        deduped.push(t);
+      }
+    }
+    // 2. Exclude child transactions whose parent is also present — those children
+    //    are already rendered as expanded sub-rows under the parent row.
+    const parentKeysInList = new Set(
+      deduped.filter(t => t.is_parent).map(t => t.key)
+    );
+    const arr = deduped.filter(
+      t => !t.parent_transaction_key || !parentKeysInList.has(t.parent_transaction_key)
+    );
     arr.sort((a, b) => {
       let va = a[sortField];
       let vb = b[sortField];
@@ -603,7 +665,7 @@ export default function FinancialTable({
               const children = childrenCache[txn.key] || [];
 
               return (
-                <React.Fragment key={txn.key}>
+                <React.Fragment key={txn.key || `row-${rowIndex}`}>
                   <tr
                     className={`border-b border-light-100 hover:bg-light-50 cursor-pointer group ${isSelected(txn.key) ? 'bg-owl-blue-50' : ''} ${isChild ? 'bg-indigo-50/30' : ''}`}
                     onClick={() => onNodeSelect && onNodeSelect(txn.key)}

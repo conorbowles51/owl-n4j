@@ -67,8 +67,20 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   // Selection state for batch operations
   const [selectedKeys, setSelectedKeys] = useState([]);
 
-  // Search state
+  // Search state — inputs update immediately, filtering uses debounced values
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchTerm(searchTerm), 300);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   // Add category modal
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
@@ -139,34 +151,51 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   }, [transactions]);
 
   // Stage 1: Filter transactions by type/category/date/search (before entity selection)
-  // This feeds the entity flow tables so they reflect non-entity filters
+  // This feeds the entity flow tables so they reflect non-entity filters.
+  // Uses debounced search values so filtering only runs after typing pauses.
   const baseFilteredTransactions = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    return transactions.filter(t => {
+    const q = debouncedSearchQuery.toLowerCase().trim();
+    const st = debouncedSearchTerm.toLowerCase().trim();
+    const filtered = transactions.filter(t => {
       if (selectedTypes.size > 0 && !selectedTypes.has(t.type)) return false;
-      if (selectedCategories.size > 0 && !selectedCategories.has(t.category || 'Unknown')) return false;
+      if (selectedCategories.size > 0 && !selectedCategories.has(t.category || 'Uncategorized')) return false;
       if (startDate && t.date && t.date < startDate) return false;
       if (endDate && t.date && t.date > endDate) return false;
       if (q) {
         const fields = [
           t.name, t.purpose, t.notes, t.counterparty_details,
           t.from_entity?.name, t.to_entity?.name,
-          t.category,
+          t.category, t.summary,
         ].filter(Boolean).map(f => f.toLowerCase());
         if (!fields.some(f => f.includes(q))) return false;
       }
-      if (searchTerm.trim()) {
-        const st = searchTerm.toLowerCase();
+      if (st) {
         const nameMatch = (t.name || '').toLowerCase().includes(st);
         const fromMatch = (t.from_entity?.name || '').toLowerCase().includes(st);
         const toMatch = (t.to_entity?.name || '').toLowerCase().includes(st);
         const purposeMatch = (t.purpose || '').toLowerCase().includes(st);
         const notesMatch = (t.notes || '').toLowerCase().includes(st);
-        if (!nameMatch && !fromMatch && !toMatch && !purposeMatch && !notesMatch) return false;
+        const summaryMatch = (t.summary || '').toLowerCase().includes(st);
+        if (!nameMatch && !fromMatch && !toMatch && !purposeMatch && !notesMatch && !summaryMatch) return false;
       }
       return true;
     });
-  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, searchQuery, searchTerm]);
+    // Include children of any matching parent (sub-transactions may not match
+    // filters on their own but should always appear alongside their parent)
+    const filteredKeys = new Set(filtered.map(t => t.key));
+    const parentKeysInResults = new Set(
+      filtered.filter(t => t.is_parent).map(t => t.key)
+    );
+    if (parentKeysInResults.size > 0) {
+      for (const t of transactions) {
+        if (t.parent_transaction_key && parentKeysInResults.has(t.parent_transaction_key) && !filteredKeys.has(t.key)) {
+          filtered.push(t);
+          filteredKeys.add(t.key);
+        }
+      }
+    }
+    return filtered;
+  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, debouncedSearchQuery, debouncedSearchTerm]);
 
   // Compute From entities (senders), constrained by To selection for cross-filtering
   const fromEntities = useMemo(() => {
@@ -638,7 +667,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             />
             {searchTerm && (
               <button
-                onClick={() => setSearchTerm('')}
+                onClick={() => { setSearchTerm(''); setDebouncedSearchTerm(''); }}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-light-400 hover:text-light-600"
               >
                 <X className="w-3 h-3" />
@@ -709,7 +738,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           categoryColorMap={categoryColorMap}
           onAddCategory={() => setShowAddCategoryModal(true)}
           searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
+          onSearchChange={(val) => { setSearchQuery(val); if (!val) setDebouncedSearchQuery(''); }}
         />
         <FinancialSummaryCards
           summary={filteredSummary}
