@@ -2465,6 +2465,48 @@ class Neo4jService:
                         )
                     relationships_updated += 1
             
+            # Update transaction nodes that reference source entity in from/to properties
+            merged_name = merged_data.get("name") or target_record["name"]
+            session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE n.from_entity_key = $source_key
+                SET n.from_entity_key = $target_key, n.from_entity_name = $merged_name
+                """,
+                case_id=case_id, source_key=source_key,
+                target_key=target_key, merged_name=merged_name,
+            )
+            session.run(
+                """
+                MATCH (n {case_id: $case_id})
+                WHERE n.to_entity_key = $source_key
+                SET n.to_entity_key = $target_key, n.to_entity_name = $merged_name
+                """,
+                case_id=case_id, source_key=source_key,
+                target_key=target_key, merged_name=merged_name,
+            )
+            # Also match by source name for transactions set by name rather than key
+            source_name = source_record["name"]
+            if source_name:
+                session.run(
+                    """
+                    MATCH (n {case_id: $case_id})
+                    WHERE n.from_entity_name = $source_name AND (n.from_entity_key IS NULL OR n.from_entity_key = $source_key)
+                    SET n.from_entity_key = $target_key, n.from_entity_name = $merged_name
+                    """,
+                    case_id=case_id, source_key=source_key, source_name=source_name,
+                    target_key=target_key, merged_name=merged_name,
+                )
+                session.run(
+                    """
+                    MATCH (n {case_id: $case_id})
+                    WHERE n.to_entity_name = $source_name AND (n.to_entity_key IS NULL OR n.to_entity_key = $source_key)
+                    SET n.to_entity_key = $target_key, n.to_entity_name = $merged_name
+                    """,
+                    case_id=case_id, source_key=source_key, source_name=source_name,
+                    target_key=target_key, merged_name=merged_name,
+                )
+
             # Soft-delete source entity to recycling bin (so it can be recovered)
             try:
                 self.soft_delete_entity(
@@ -2636,6 +2678,54 @@ class Neo4jService:
                     else:
                         session.run(cypher, target_key=target_key, other_key=other_key)
                     total_relationships += 1
+
+                # Update transaction nodes that reference this source entity in from/to properties
+                merged_name = merged_data.get("name") or target_record["name"]
+                # Get source name for name-based matching
+                src_name_result = session.run(
+                    "MATCH (s {key: $key, case_id: $case_id}) RETURN s.name AS name",
+                    key=source_key, case_id=case_id,
+                )
+                src_name_rec = src_name_result.single()
+                src_name = src_name_rec["name"] if src_name_rec else None
+
+                session.run(
+                    """
+                    MATCH (n {case_id: $case_id})
+                    WHERE n.from_entity_key = $source_key
+                    SET n.from_entity_key = $target_key, n.from_entity_name = $merged_name
+                    """,
+                    case_id=case_id, source_key=source_key,
+                    target_key=target_key, merged_name=merged_name,
+                )
+                session.run(
+                    """
+                    MATCH (n {case_id: $case_id})
+                    WHERE n.to_entity_key = $source_key
+                    SET n.to_entity_key = $target_key, n.to_entity_name = $merged_name
+                    """,
+                    case_id=case_id, source_key=source_key,
+                    target_key=target_key, merged_name=merged_name,
+                )
+                if src_name:
+                    session.run(
+                        """
+                        MATCH (n {case_id: $case_id})
+                        WHERE n.from_entity_name = $source_name AND (n.from_entity_key IS NULL OR n.from_entity_key = $source_key)
+                        SET n.from_entity_key = $target_key, n.from_entity_name = $merged_name
+                        """,
+                        case_id=case_id, source_key=source_key, source_name=src_name,
+                        target_key=target_key, merged_name=merged_name,
+                    )
+                    session.run(
+                        """
+                        MATCH (n {case_id: $case_id})
+                        WHERE n.to_entity_name = $source_name AND (n.to_entity_key IS NULL OR n.to_entity_key = $source_key)
+                        SET n.to_entity_key = $target_key, n.to_entity_name = $merged_name
+                        """,
+                        case_id=case_id, source_key=source_key, source_name=src_name,
+                        target_key=target_key, merged_name=merged_name,
+                    )
 
                 # Soft-delete the source
                 try:

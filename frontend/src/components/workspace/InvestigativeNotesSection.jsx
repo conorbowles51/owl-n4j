@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, FileText, Focus, Link2, Plus, Trash2, Calendar, Pencil } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, Focus, Link2, Plus, Trash2, Calendar, Pencil, Network } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
 import AttachToTheoryModal from './AttachToTheoryModal';
 import AddInvestigativeNoteModal from './AddInvestigativeNoteModal';
+import BuildGraphFromTextModal from './BuildGraphFromTextModal';
 
 /**
  * Investigative Notes Section
@@ -21,6 +22,7 @@ export default function InvestigativeNotesSection({
   const [attachModal, setAttachModal] = useState({ open: false, note: null });
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [buildGraphNote, setBuildGraphNote] = useState(null);
 
   useEffect(() => {
     const loadNotes = async () => {
@@ -92,6 +94,24 @@ export default function InvestigativeNotesSection({
       console.error('Failed to attach note to theory:', err);
       throw err;
     }
+  };
+
+  const handleBuildGraph = async () => {
+    if (!buildGraphNote || !caseId) return;
+    const noteContent = buildGraphNote.content || buildGraphNote.text || '';
+    const result = await workspaceAPI.buildGraphFromText(caseId, {
+      text: noteContent,
+      title: noteContent.slice(0, 60) + (noteContent.length > 60 ? '...' : ''),
+      source_type: 'note',
+      top_k: 20,
+    });
+    window.dispatchEvent(new CustomEvent('theory-graph-built', {
+      detail: {
+        entity_keys: result.entity_keys || [],
+        title: 'Investigative Note',
+      }
+    }));
+    alert(`Graph built! Found ${result.entity_keys?.length || 0} relevant entities. The graph view will now show these entities.`);
   };
 
   const formatDate = (dateString) => {
@@ -204,6 +224,16 @@ export default function InvestigativeNotesSection({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
+                            setBuildGraphNote(note);
+                          }}
+                          className="p-1.5 hover:bg-owl-blue-100 rounded transition-colors"
+                          title="Build graph from note"
+                        >
+                          <Network className="w-4 h-4 text-owl-blue-600" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
                             handleDeleteNote(noteId);
                           }}
                           className="p-1.5 hover:bg-red-100 rounded transition-colors"
@@ -239,6 +269,16 @@ export default function InvestigativeNotesSection({
           itemId={attachModal.note.id}
           itemName={attachModal.note.content || 'Note'}
           onAttach={handleAttachToTheory}
+        />
+      )}
+
+      {buildGraphNote && (
+        <BuildGraphFromTextModal
+          isOpen={!!buildGraphNote}
+          onClose={() => setBuildGraphNote(null)}
+          title={(buildGraphNote.content || buildGraphNote.text || 'Note').slice(0, 60) + ((buildGraphNote.content || buildGraphNote.text || '').length > 60 ? '...' : '')}
+          description={buildGraphNote.content || buildGraphNote.text || ''}
+          onBuild={handleBuildGraph}
         />
       )}
     </div>

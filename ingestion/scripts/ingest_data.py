@@ -70,6 +70,20 @@ def ingest_file(
     if not case_id:
         raise ValueError("case_id is required for file ingestion")
 
+    # Handle directories: check for Cellebrite report
+    if path.is_dir():
+        from cellebrite.ingestion import detect_cellebrite_xml, ingest_cellebrite_report
+        if detect_cellebrite_xml(path):
+            log_progress(f"Detected Cellebrite UFED report in {path.name}", log_callback)
+            return ingest_cellebrite_report(
+                report_dir=path,
+                case_id=case_id,
+                log_callback=log_callback,
+                profile_name=profile_name,
+            )
+        log_warning(f"Directory not recognized as a supported report format: {path}", log_callback)
+        return {"status": "skipped", "reason": "unsupported_directory", "file": str(path)}
+
     log_progress(f"Using LLM profile: {profile_name}", log_callback)
     log_progress(f"Case ID: {case_id}", log_callback)
     suffix = path.suffix.lower()

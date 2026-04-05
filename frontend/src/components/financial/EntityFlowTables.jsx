@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Search, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 function formatCompactAmount(amount) {
@@ -26,12 +26,13 @@ function EntityTable({ title, entities, selectedEntities, onSelectionChange, acc
     });
   }, [entities, search, sortField, sortDir]);
 
-  // Build a lookup for selected entities that may have been cross-filtered out of the current list
-  const selectedEntityNames = useMemo(() => {
-    const nameMap = new Map();
-    entities.forEach(e => nameMap.set(e.key, e.name));
-    return nameMap;
+  // Persistent name cache — survives cross-filtering so chips always show names
+  const nameCacheRef = useRef(new Map());
+  useEffect(() => {
+    entities.forEach(e => nameCacheRef.current.set(e.key, e.name));
   }, [entities]);
+
+  const getEntityName = (key) => nameCacheRef.current.get(key) || key;
 
   const toggleSort = (field) => {
     if (sortField === field) {
@@ -42,18 +43,22 @@ function EntityTable({ title, entities, selectedEntities, onSelectionChange, acc
     }
   };
 
-  const toggleEntity = (key) => {
-    const next = new Set(selectedEntities);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    onSelectionChange(next);
-  };
+  const toggleEntity = useCallback((key) => {
+    onSelectionChange(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, [onSelectionChange]);
 
-  const removeEntity = (key) => {
-    const next = new Set(selectedEntities);
-    next.delete(key);
-    onSelectionChange(next);
-  };
+  const removeEntity = useCallback((key) => {
+    onSelectionChange(prev => {
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, [onSelectionChange]);
 
   const SortIcon = ({ field }) => {
     if (sortField !== field) return <ArrowUpDown className="w-3 h-3 text-light-300" />;
@@ -72,7 +77,7 @@ function EntityTable({ title, entities, selectedEntities, onSelectionChange, acc
         </div>
         {selectedEntities.size > 0 && (
           <button
-            onClick={() => onSelectionChange(new Set())}
+            onClick={() => onSelectionChange(() => new Set())}
             className="flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 px-1.5 py-0.5 rounded hover:bg-red-50 transition-colors"
           >
             <X className="w-3 h-3" />
@@ -86,7 +91,7 @@ function EntityTable({ title, entities, selectedEntities, onSelectionChange, acc
         <div className="px-2 py-1.5 border-b border-light-100 bg-owl-blue-50/50">
           <div className="flex flex-wrap gap-1">
             {[...selectedEntities].map(key => {
-              const name = selectedEntityNames.get(key) || key;
+              const name = getEntityName(key);
               return (
                 <span
                   key={key}
@@ -220,7 +225,7 @@ export default function EntityFlowTables({
             selected — transactions filtered
           </span>
           <button
-            onClick={() => { onFromSelectionChange(new Set()); onToSelectionChange(new Set()); }}
+            onClick={() => { onFromSelectionChange(() => new Set()); onToSelectionChange(() => new Set()); }}
             className="flex items-center gap-1 text-[11px] text-red-600 hover:text-red-800 px-2 py-0.5 rounded hover:bg-red-50 font-medium transition-colors"
           >
             <X className="w-3.5 h-3.5" />

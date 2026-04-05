@@ -52,11 +52,14 @@ export default function WorkspaceView({
   const [deadlines, setDeadlines] = useState([]);
   const [pinnedItems, setPinnedItems] = useState([]);
 
+  // Cap the graph view to the top N nodes by connection degree (matches App.jsx)
+  const GRAPH_VIEW_NODE_LIMIT = 100;
+
   // Load case data and context
   useEffect(() => {
     const loadData = async () => {
       if (!caseId) return;
-      
+
       setLoading(true);
       try {
         // Load case metadata
@@ -67,33 +70,42 @@ export default function WorkspaceView({
         const context = await workspaceAPI.getCaseContext(caseId);
         setCaseContext(context);
 
-        // Load graph data
-        const graph = await graphAPI.getGraph({ case_id: caseId });
-        setGraphData(graph);
-        setFullGraphData(graph); // Store full graph
+        // Phase 1: Lightweight top-100 by degree for fast graph render
+        const preview = await graphAPI.getGraph({
+          case_id: caseId,
+          lightweight: true,
+          limit: GRAPH_VIEW_NODE_LIMIT,
+          sort_by: 'degree',
+        });
+        setGraphData(preview);
         setTheoryGraphKeys(null); // Reset theory graph filter when case changes
         setTheoryName(null);
         setTableScope('theory');
 
-        // Load presence
-        const presence = await workspaceAPI.getPresence(caseId);
-        setOnlineUsers(presence.online_users || []);
+        // Show workspace immediately with preview graph while full graph loads
+        setLoading(false);
 
-        // Load workspace data
-        const [witnessesData, tasksData, deadlinesData, pinnedData] = await Promise.all([
+        // Load presence + workspace data in parallel with full graph
+        const [presence, witnessesData, tasksData, deadlinesData, pinnedData, fullGraph] = await Promise.all([
+          workspaceAPI.getPresence(caseId).catch(() => ({ online_users: [] })),
           workspaceAPI.getWitnesses(caseId).catch(() => ({ witnesses: [] })),
           workspaceAPI.getTasks(caseId).catch(() => ({ tasks: [] })),
           workspaceAPI.getDeadlines(caseId).catch(() => ({ deadlines: [] })),
           workspaceAPI.getPinnedItems(caseId).catch(() => ({ pinned_items: [] })),
+          // Phase 2: Full graph in background (for table/search/theory filtering)
+          graphAPI.getGraph({ case_id: caseId }),
         ]);
 
+        setOnlineUsers(presence.online_users || []);
         setWitnesses(witnessesData.witnesses || []);
         setTasks(tasksData.tasks || []);
         setDeadlines(deadlinesData.deadlines || []);
         setPinnedItems(pinnedData.pinned_items || []);
+        setFullGraphData(fullGraph);
+        // Re-apply filter — will cap to top-100 for graph view, but fullGraphData has all nodes
+        applyGraphFilter(fullGraph, graphSearchTerm);
       } catch (err) {
         console.error('Failed to load workspace data:', err);
-      } finally {
         setLoading(false);
       }
     };
@@ -101,17 +113,88 @@ export default function WorkspaceView({
     loadData();
   }, [caseId]);
 
-  // Refresh handlers
+  // Cap nodes to top N by connection degree (for graph view performance).
+  // Searches and theory filters show all matches — cap only applies to unfiltered full graph.
+  const capNodesByDegree = useCallback((nodes, links) => {
+    if (nodes.length <= GRAPH_VIEW_NODE_LIMIT) return nodes;
+    const degree = {};
+    for (const link of links) {
+      const sk = typeof link.source === 'string' ? link.source : link.source?.key;
+      const tk = typeof link.target === 'string' ? link.target : link.target?.key;
+      if (sk) degree[sk] = (degree[sk] || 0) + 1;
+      if (tk) degree[tk] = (degree[tk] || 0) + 1;
+    }
+    return [...nodes].sort((a, b) => (degree[b.key] || 0) - (degree[a.key] || 0)).slice(0, GRAPH_VIEW_NODE_LIMIT);
+  }, []);
+
+  // Apply search filter to graph data
+  // Always creates new array references to ensure React detects changes
+  const applyGraphFilter = useCallback((data, searchTerm) => {
+    if (!searchTerm) {
+      // If no search term, apply theory filter if active
+      if (theoryGraphKeys && theoryGraphKeys.length > 0 && data.nodes.length > 0) {
+        const keysSet = new Set(theoryGraphKeys);
+        const filteredNodes = data.nodes.filter(node => keysSet.has(node.key));
+        const filteredNodeKeys = new Set(filteredNodes.map(n => n.key));
+        const filteredLinks = data.links.filter(link => {
+          const sourceKey = typeof link.source === 'object' ? link.source?.key : link.source;
+          const targetKey = typeof link.target === 'object' ? link.target?.key : link.target;
+          return filteredNodeKeys.has(sourceKey) && filteredNodeKeys.has(targetKey);
+        });
+        // Create new array references
+        setGraphData({ nodes: [...filteredNodes], links: [...filteredLinks] });
+      } else {
+        // No search, no theory — cap to top N by degree for graph view performance
+        const capped = capNodesByDegree(data.nodes, data.links);
+        const cappedKeys = new Set(capped.map(n => n.key));
+        const cappedLinks = data.links.filter(link => {
+          const sk = typeof link.source === 'string' ? link.source : link.source?.key;
+          const tk = typeof link.target === 'string' ? link.target : link.target?.key;
+          return cappedKeys.has(sk) && cappedKeys.has(tk);
+        });
+        setGraphData({ nodes: [...capped], links: [...cappedLinks] });
+      }
+      return;
+    }
+
+    // Parse the search query
+    const queryAST = parseSearchQuery(searchTerm);
+
+    // Filter nodes that match the query (allFields when scope is 'all')
+    const searchOpts = { allFields: graphSearchFieldScope === 'all' };
+    let matchingNodes = data.nodes.filter(node => matchesQuery(queryAST, node, searchOpts));
+
+    // Apply theory filter on top of search if active
+    if (theoryGraphKeys && theoryGraphKeys.length > 0) {
+      const keysSet = new Set(theoryGraphKeys);
+      matchingNodes = matchingNodes.filter(node => keysSet.has(node.key));
+    }
+
+    const matchingNodeKeys = new Set(matchingNodes.map(n => n.key));
+
+    // Filter links to only include connections between matching nodes
+    const matchingLinks = data.links.filter(link => {
+      const sourceKey = typeof link.source === 'string' ? link.source : link.source.key;
+      const targetKey = typeof link.target === 'string' ? link.target : link.target.key;
+      return matchingNodeKeys.has(sourceKey) && matchingNodeKeys.has(targetKey);
+    });
+
+    // Create new array references
+    setGraphData({ nodes: [...matchingNodes], links: [...matchingLinks] });
+  }, [theoryGraphKeys, graphSearchFieldScope, capNodesByDegree]);
+
+  // Refresh handlers (defined after applyGraphFilter)
   const handleRefreshGraph = useCallback(async () => {
     if (!caseId) return;
     try {
       const graph = await graphAPI.getGraph({ case_id: caseId });
-      setGraphData(graph);
-      setFullGraphData(graph);
+      const newGraph = { nodes: [...graph.nodes], links: [...graph.links] };
+      setFullGraphData(newGraph);
+      applyGraphFilter(newGraph, graphSearchTerm);
     } catch (err) {
       console.error('Failed to refresh graph data:', err);
     }
-  }, [caseId]);
+  }, [caseId, graphSearchTerm, applyGraphFilter]);
 
   const handleRefreshPinned = useCallback(async () => {
     try {
@@ -155,54 +238,6 @@ export default function WorkspaceView({
     };
   }, [handleRefreshGraph]);
 
-  // Apply search filter to graph data
-  // Always creates new array references to ensure React detects changes
-  const applyGraphFilter = useCallback((data, searchTerm) => {
-    if (!searchTerm) {
-      // If no search term, apply theory filter if active
-      if (theoryGraphKeys && theoryGraphKeys.length > 0 && data.nodes.length > 0) {
-        const keysSet = new Set(theoryGraphKeys);
-        const filteredNodes = data.nodes.filter(node => keysSet.has(node.key));
-        const filteredLinks = data.links.filter(link => {
-          const sourceKey = typeof link.source === 'object' ? link.source?.key : link.source;
-          const targetKey = typeof link.target === 'object' ? link.target?.key : link.target;
-          return keysSet.has(sourceKey) && keysSet.has(targetKey);
-        });
-        // Create new array references
-        setGraphData({ nodes: [...filteredNodes], links: [...filteredLinks] });
-      } else {
-        // Create new array references even when no filtering
-        setGraphData({ nodes: [...data.nodes], links: [...data.links] });
-      }
-      return;
-    }
-
-    // Parse the search query
-    const queryAST = parseSearchQuery(searchTerm);
-    
-    // Filter nodes that match the query (allFields when scope is 'all')
-    const searchOpts = { allFields: graphSearchFieldScope === 'all' };
-    let matchingNodes = data.nodes.filter(node => matchesQuery(queryAST, node, searchOpts));
-    
-    // Apply theory filter on top of search if active
-    if (theoryGraphKeys && theoryGraphKeys.length > 0) {
-      const keysSet = new Set(theoryGraphKeys);
-      matchingNodes = matchingNodes.filter(node => keysSet.has(node.key));
-    }
-
-    const matchingNodeKeys = new Set(matchingNodes.map(n => n.key));
-
-    // Filter links to only include connections between matching nodes
-    const matchingLinks = data.links.filter(link => {
-      const sourceKey = typeof link.source === 'string' ? link.source : link.source.key;
-      const targetKey = typeof link.target === 'string' ? link.target : link.target.key;
-      return matchingNodeKeys.has(sourceKey) && matchingNodeKeys.has(targetKey);
-    });
-
-    // Create new array references
-    setGraphData({ nodes: [...matchingNodes], links: [...matchingLinks] });
-  }, [theoryGraphKeys, graphSearchFieldScope]);
-
   // Filter graph when theory keys or search term changes
   useEffect(() => {
     if (fullGraphData.nodes.length > 0) {
@@ -233,12 +268,8 @@ export default function WorkspaceView({
         links: [...graph.links],
       };
       setFullGraphData(newGraph);
-      // Reapply filters if needed
-      if (graphSearchTerm || theoryGraphKeys) {
-        applyGraphFilter(newGraph, graphSearchTerm);
-      } else {
-        setGraphData(newGraph);
-      }
+      // Always route through applyGraphFilter (handles search, theory, and degree cap)
+      applyGraphFilter(newGraph, graphSearchTerm);
       // Refresh selected node details if the updated node is selected
       if (selectedNode && selectedNode.key === nodeKey) {
         const nodeDetails = await graphAPI.getNodeDetails(nodeKey, caseId);
@@ -258,12 +289,8 @@ export default function WorkspaceView({
       links: [...graph.links],
     };
     setFullGraphData(newGraph);
-    // Reapply filters if needed
-    if (graphSearchTerm || theoryGraphKeys) {
-      applyGraphFilter(newGraph, graphSearchTerm);
-    } else {
-      setGraphData(newGraph);
-    }
+    // Always route through applyGraphFilter (handles search, theory, and degree cap)
+    applyGraphFilter(newGraph, graphSearchTerm);
   }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
 
   const handleGraphRefresh = useCallback(async () => {
@@ -275,12 +302,8 @@ export default function WorkspaceView({
       links: [...graph.links],
     };
     setFullGraphData(newGraph);
-    // Reapply filters if needed
-    if (graphSearchTerm || theoryGraphKeys) {
-      applyGraphFilter(newGraph, graphSearchTerm);
-    } else {
-      setGraphData(newGraph);
-    }
+    // Always route through applyGraphFilter (handles search, theory, and degree cap)
+    applyGraphFilter(newGraph, graphSearchTerm);
   }, [caseId, graphSearchTerm, theoryGraphKeys, applyGraphFilter]);
 
   const handleMergeNodes = useCallback(async (sourceKey, targetKey, mergedData) => {
@@ -289,11 +312,8 @@ export default function WorkspaceView({
       const graph = await graphAPI.getGraph({ case_id: caseId });
       const newGraph = { nodes: [...graph.nodes], links: [...graph.links] };
       setFullGraphData(newGraph);
-      if (graphSearchTerm || theoryGraphKeys) {
-        applyGraphFilter(newGraph, graphSearchTerm);
-      } else {
-        setGraphData(newGraph);
-      }
+      // Always route through applyGraphFilter (handles search, theory, and degree cap)
+      applyGraphFilter(newGraph, graphSearchTerm);
       window.dispatchEvent(new Event('entities-refresh'));
     } catch (err) {
       console.error('Failed to merge nodes:', err);
@@ -315,12 +335,8 @@ export default function WorkspaceView({
         links: [...graph.links],
       };
       setFullGraphData(newGraph);
-      // Reapply filters if needed
-      if (graphSearchTerm || theoryGraphKeys) {
-        applyGraphFilter(newGraph, graphSearchTerm);
-      } else {
-        setGraphData(newGraph);
-      }
+      // Always route through applyGraphFilter (handles search, theory, and degree cap)
+      applyGraphFilter(newGraph, graphSearchTerm);
       // Clear selected nodes if any deleted nodes were selected
       setSelectedNodes(prev => prev.filter(n => !nodesToDelete.some(d => d.key === n.key)));
       setSelectedNodesDetails(prev => prev.filter(n => !nodesToDelete.some(d => d.key === n.key)));

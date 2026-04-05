@@ -18,6 +18,7 @@ from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
 from services.evidence_log_storage import evidence_log_storage
 from services.wiretap_tracking import list_processed_wiretaps, is_wiretap_processed, mark_wiretap_processed
 from services.wiretap_service import check_wiretap_suitable, process_wiretap_folder_async
+from services.cellebrite_service import check_cellebrite_report, process_cellebrite_report
 from services.background_task_storage import background_task_storage, TaskStatus
 from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
@@ -792,6 +793,139 @@ async def process_wiretap_folders(
             success=True,
             message=f"Processing {len(validated_paths)} wiretap folder(s) in background ({len(task_ids)} task(s) created)",
             task_id=task_ids[0] if task_ids else None
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ------------------------------------------------------------------
+# Cellebrite UFED Report endpoints
+# ------------------------------------------------------------------
+
+
+@router.get("/cellebrite/check")
+async def check_cellebrite_folder(
+    case_id: str = Query(..., description="Case ID"),
+    folder_path: str = Query(..., description="Relative folder path from case data directory"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Check if a folder contains a Cellebrite UFED phone extraction report.
+    Returns report metadata if detected.
+    """
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        case_data_dir = BASE_DIR / "ingestion" / "data" / case_id
+        full_folder_path = case_data_dir / folder_path
+
+        # Security: ensure path is within case directory
+        try:
+            full_folder_path.resolve().relative_to(case_data_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path outside case directory")
+
+        result = check_cellebrite_report(full_folder_path)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class CellebriteProcessRequest(BaseModel):
+    """Request to process a Cellebrite report folder."""
+    case_id: str
+    folder_path: str  # Folder path relative to case data directory
+
+
+class CellebriteProcessResponse(BaseModel):
+    """Response from Cellebrite processing."""
+    success: bool
+    message: str
+    task_id: Optional[str] = None
+
+
+@router.post("/cellebrite/process", response_model=CellebriteProcessResponse)
+async def process_cellebrite_folder(
+    request: CellebriteProcessRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Process a Cellebrite UFED report folder.
+    Creates a background task for the ingestion pipeline.
+    """
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(request.case_id), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        case_data_dir = BASE_DIR / "ingestion" / "data" / request.case_id
+        full_folder_path = case_data_dir / request.folder_path
+
+        # Security: path traversal check
+        try:
+            full_folder_path.resolve().relative_to(case_data_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path outside case directory")
+
+        if not full_folder_path.exists() or not full_folder_path.is_dir():
+            raise HTTPException(status_code=404, detail="Folder not found")
+
+        # Quick pre-check that it looks like a Cellebrite report
+        detection = check_cellebrite_report(full_folder_path)
+        if not detection.get("suitable"):
+            raise HTTPException(
+                status_code=400,
+                detail=detection.get("message", "Not a valid Cellebrite report"),
+            )
+
+        # Create background task
+        task = background_task_storage.create_task(
+            task_type="cellebrite_ingestion",
+            task_name=f"Cellebrite report: {detection.get('report_name', request.folder_path)}",
+            case_id=request.case_id,
+            owner=current_user.email,
+            metadata={
+                "folder_path": request.folder_path,
+                "report_name": detection.get("report_name"),
+                "case_number": detection.get("case_number"),
+                "evidence_number": detection.get("evidence_number"),
+                "model_count": detection.get("model_count"),
+            },
+        )
+        task_id = task["id"]
+        user_email = current_user.email
+
+        def run_cellebrite_background():
+            process_cellebrite_report(
+                folder_path=full_folder_path,
+                case_id=request.case_id,
+                task_id=task_id,
+                owner=user_email,
+            )
+
+        import threading
+        thread = threading.Thread(target=run_cellebrite_background, daemon=False)
+        thread.start()
+
+        return CellebriteProcessResponse(
+            success=True,
+            message=f"Cellebrite ingestion started ({detection.get('model_count', 0)} models to process)",
+            task_id=task_id,
         )
     except HTTPException:
         raise

@@ -439,6 +439,14 @@ class BuildTheoryGraphRequest(BaseModel):
     top_k: int = 20  # Number of similar entities to return
 
 
+class BuildGraphFromTextRequest(BaseModel):
+    """Request model for building a graph from arbitrary text."""
+    text: str  # The text content to create an embedding from
+    title: str = ""  # Display title for the source (e.g. witness name, note excerpt)
+    source_type: str = "text"  # "witness" or "note" or "text"
+    top_k: int = 20
+
+
 @router.post("/{case_id}/theories/{theory_id}/build-graph")
 async def build_theory_graph(
     case_id: str,
@@ -592,6 +600,80 @@ async def build_theory_graph(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to search entities: {str(e)}")
             
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{case_id}/build-graph-from-text")
+async def build_graph_from_text(
+    case_id: str,
+    request: BuildGraphFromTextRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Build a graph from arbitrary text (e.g. witness statements, investigative notes).
+    Creates a vector embedding from the text and searches for similar entities.
+    """
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        if not request.text.strip():
+            raise HTTPException(status_code=400, detail="No text provided to create embedding")
+
+        # Create embedding
+        try:
+            embedding_service = EmbeddingService()
+            query_embedding = embedding_service.generate_embedding(request.text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to create embedding: {str(e)}")
+
+        # Search for similar entities
+        try:
+            similar_entities = vector_db_service.search_entities(
+                query_embedding=query_embedding,
+                top_k=request.top_k * 2,
+                filter_metadata=None,
+            )
+
+            entity_keys = []
+            entities_data = []
+            for entity in similar_entities:
+                entity_key = entity.get("id")
+                if not entity_key:
+                    continue
+
+                try:
+                    entity_details = neo4j_service.get_node_details(entity_key, case_id=case_id)
+                    if entity_details:
+                        entity_keys.append(entity_key)
+                        entities_data.append({
+                            "key": entity_key,
+                            "name": entity_details.get("name"),
+                            "type": entity_details.get("type"),
+                            "summary": entity_details.get("summary"),
+                            "distance": entity.get("distance"),
+                        })
+                        if len(entity_keys) >= request.top_k:
+                            break
+                except Exception:
+                    continue
+
+            return {
+                "entity_keys": entity_keys,
+                "entities": entities_data,
+                "text_length": len(request.text),
+                "source_type": request.source_type,
+                "title": request.title,
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to search entities: {str(e)}")
+
     except HTTPException:
         raise
     except Exception as e:

@@ -125,6 +125,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     loadData();
   }, [loadData]);
 
+  // Refresh financial data when entities are merged/changed elsewhere
+  useEffect(() => {
+    const handleEntitiesRefresh = () => loadData();
+    window.addEventListener('entities-refresh', handleEntitiesRefresh);
+    return () => window.removeEventListener('entities-refresh', handleEntitiesRefresh);
+  }, [loadData]);
+
   // Derive available transaction types from data
   const transactionTypes = useMemo(() => {
     const types = new Set(transactions.map(t => t.type));
@@ -221,37 +228,74 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (count === 0) {
       return hasEntitySelection
         ? { transaction_count: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 }
-        : { transaction_count: 0, total_volume: 0, unique_entities: 0, avg_amount: 0 };
+        : { transaction_count: 0, total_volume: 0, unique_entities: 0, avg_amount: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 };
     }
 
     if (hasEntitySelection) {
       // Entity mode: classify flows relative to selected entities
+      // From the selected entity's perspective:
+      //   - Entity appears as from_entity (sender) → money leaving = OUTFLOW
+      //   - Entity appears as to_entity (recipient) → money arriving = INFLOW
       let inflows = 0, outflows = 0;
+      // Track per-entity breakdown for the comparison bar
+      const inflowByEntity = new Map();  // key → { name, amount }
+      const outflowByEntity = new Map();
+      const addToMap = (map, key, name, amt) => {
+        const entry = map.get(key) || { name, amount: 0 };
+        entry.amount += amt;
+        map.set(key, entry);
+      };
       filteredTransactions.forEach(t => {
         const amt = Math.abs(parseFloat(t.amount) || 0);
         const toKey = t.to_entity?.key || t.to_entity?.name;
+        const toName = t.to_entity?.name || toKey;
         const fromKey = t.from_entity?.key || t.from_entity?.name;
-        // Use From selection as primary perspective; fall back to To
+        const fromName = t.from_entity?.name || fromKey;
         if (selectedFromEntities.size > 0) {
-          if (fromKey && selectedFromEntities.has(fromKey)) outflows += amt;
-          if (toKey && selectedFromEntities.has(toKey)) inflows += amt;
+          // Viewing from sender perspective
+          if (fromKey && selectedFromEntities.has(fromKey)) {
+            outflows += amt;
+            if (toName) addToMap(outflowByEntity, toKey || toName, toName, amt);
+          }
+          if (toKey && selectedFromEntities.has(toKey)) {
+            inflows += amt;
+            if (fromName) addToMap(inflowByEntity, fromKey || fromName, fromName, amt);
+          }
         } else if (selectedToEntities.size > 0) {
-          if (toKey && selectedToEntities.has(toKey)) inflows += amt;
-          if (fromKey && selectedToEntities.has(fromKey)) outflows += amt;
+          // Viewing from recipient perspective
+          if (toKey && selectedToEntities.has(toKey)) {
+            inflows += amt;
+            if (fromName) addToMap(inflowByEntity, fromKey || fromName, fromName, amt);
+          }
+          if (fromKey && selectedToEntities.has(fromKey)) {
+            outflows += amt;
+            if (toName) addToMap(outflowByEntity, toKey || toName, toName, amt);
+          }
         }
       });
+      // Convert maps to sorted arrays (by amount desc)
+      const toSorted = (map) => [...map.values()].sort((a, b) => b.amount - a.amount);
       return {
         transaction_count: count,
         total_inflows: Math.round(inflows * 100) / 100,
         total_outflows: Math.round(outflows * 100) / 100,
         net_flow: Math.round((inflows - outflows) * 100) / 100,
+        inflow_entities: toSorted(inflowByEntity),
+        outflow_entities: toSorted(outflowByEntity),
       };
     } else {
-      // Overview mode: aggregate metrics without directional flow
+      // Overview mode: aggregate metrics
+      // Sign-based: positive amounts = outflows (money leaving accounts),
+      // negative amounts = inflows (credits/refunds coming in)
       let volume = 0;
+      let inflows = 0, outflows = 0;
       const entityKeys = new Set();
       filteredTransactions.forEach(t => {
-        volume += Math.abs(parseFloat(t.amount) || 0);
+        const raw = parseFloat(t.amount) || 0;
+        const amt = Math.abs(raw);
+        volume += amt;
+        if (raw >= 0) outflows += amt;
+        else inflows += amt;
         if (t.from_entity?.key) entityKeys.add(t.from_entity.key);
         else if (t.from_entity?.name) entityKeys.add(t.from_entity.name);
         if (t.to_entity?.key) entityKeys.add(t.to_entity.key);
@@ -262,6 +306,9 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         total_volume: Math.round(volume * 100) / 100,
         unique_entities: entityKeys.size,
         avg_amount: Math.round((volume / count) * 100) / 100,
+        total_inflows: Math.round(inflows * 100) / 100,
+        total_outflows: Math.round(outflows * 100) / 100,
+        net_flow: Math.round((inflows - outflows) * 100) / 100,
       };
     }
   }, [filteredTransactions, hasEntitySelection, selectedFromEntities, selectedToEntities]);
@@ -426,10 +473,11 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
     params.append('case_name', caseId); // Case ID used as name if no name prop
-    if (selectedCategories.size > 0 && selectedCategories.size < categoryNames.length) {
+    // Always send active category and type filters so backend matches frontend exactly
+    if (selectedCategories.size > 0) {
       params.append('categories', [...selectedCategories].join(','));
     }
-    if (selectedTypes.size > 0 && selectedTypes.size < transactionTypes.length) {
+    if (selectedTypes.size > 0) {
       params.append('types', [...selectedTypes].join(','));
     }
     if (startDate) params.append('start_date', startDate);
@@ -440,10 +488,12 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (selectedToEntities.size > 0) {
       params.append('to_entities', [...selectedToEntities].join(','));
     }
+    // Send both search fields so backend can apply them the same way frontend does
     if (searchQuery && searchQuery.trim()) {
       params.append('search', searchQuery.trim());
-    } else if (searchTerm.trim()) {
-      params.append('search', searchTerm.trim());
+    }
+    if (searchTerm.trim()) {
+      params.append('search_header', searchTerm.trim());
     }
     params.append('include_entity_notes', 'true');
     window.open(`/api/financial/export/pdf?${params.toString()}`, '_blank');

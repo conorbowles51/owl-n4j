@@ -27,22 +27,27 @@ export default function TheoriesSection({
   const [buildGraphTheory, setBuildGraphTheory] = useState(null);
   const [markingRelevant, setMarkingRelevant] = useState(null);
 
-  useEffect(() => {
-    const loadTheories = async () => {
-      if (!caseId) return;
-      
-      setLoading(true);
-      try {
-        const data = await workspaceAPI.getTheories(caseId);
-        setTheories(data.theories || []);
-      } catch (err) {
-        console.error('Failed to load theories:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const refreshTheories = async () => {
+    if (!caseId) return;
+    try {
+      const data = await workspaceAPI.getTheories(caseId);
+      setTheories(data.theories || []);
+    } catch (err) {
+      console.error('Failed to load theories:', err);
+    }
+  };
 
-    loadTheories();
+  useEffect(() => {
+    if (!caseId) return;
+    setLoading(true);
+    refreshTheories().finally(() => setLoading(false));
+  }, [caseId]);
+
+  // Listen for cross-instance refresh (e.g. another TheoriesSection created/deleted a theory)
+  useEffect(() => {
+    const handler = () => refreshTheories();
+    window.addEventListener('theories-refresh', handler);
+    return () => window.removeEventListener('theories-refresh', handler);
   }, [caseId]);
 
   const handleCreate = () => {
@@ -57,10 +62,11 @@ export default function TheoriesSection({
 
   const handleDelete = async (theoryId) => {
     if (!confirm('Are you sure you want to delete this theory?')) return;
-    
+
     try {
       await workspaceAPI.deleteTheory(caseId, theoryId);
       setTheories(theories.filter(t => t.theory_id !== theoryId));
+      window.dispatchEvent(new Event('theories-refresh'));
     } catch (err) {
       console.error('Failed to delete theory:', err);
       alert('Failed to delete theory');
@@ -79,6 +85,7 @@ export default function TheoriesSection({
       // Reload theories
       const data = await workspaceAPI.getTheories(caseId);
       setTheories(data.theories || []);
+      window.dispatchEvent(new Event('theories-refresh'));
     } catch (err) {
       console.error('Failed to save theory:', err);
       alert('Failed to save theory');

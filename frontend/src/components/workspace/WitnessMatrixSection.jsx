@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, ChevronUp, Plus, User, Focus, Link2, MessageSquare, Edit2, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronUp, Plus, User, Focus, Link2, MessageSquare, Edit2, Trash2, Network } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
 import { formatDate } from '../../utils/dateFormat';
 import AttachToTheoryModal from './AttachToTheoryModal';
 import WitnessInterviewModal from './WitnessInterviewModal';
 import WitnessModal from './WitnessModal';
+import BuildGraphFromTextModal from './BuildGraphFromTextModal';
 
 /**
  * Witness Matrix Section
@@ -25,6 +26,7 @@ export default function WitnessMatrixSection({
   const [attachModal, setAttachModal] = useState({ open: false, witness: null });
   const [interviewModal, setInterviewModal] = useState({ open: false, witness: null, interview: null });
   const [expandedWitnessId, setExpandedWitnessId] = useState(null);
+  const [buildGraphWitness, setBuildGraphWitness] = useState(null);
 
   const categorizeWitnesses = (witnesses) => {
     const categories = {
@@ -98,6 +100,38 @@ export default function WitnessMatrixSection({
       console.error('Failed to delete interview:', err);
       alert('Failed to delete interview');
     }
+  };
+
+  const buildWitnessText = (witness) => {
+    const parts = [];
+    if (witness.name) parts.push(`Witness: ${witness.name}`);
+    if (witness.role) parts.push(`Role: ${witness.role}`);
+    if (witness.organization) parts.push(`Organization: ${witness.organization}`);
+    if (witness.statement_summary) parts.push(`Summary: ${witness.statement_summary}`);
+    const interviews = witness.interviews || [];
+    for (const interview of interviews) {
+      if (interview.statement) parts.push(`Interview Statement: ${interview.statement}`);
+      if (interview.risk_assessment) parts.push(`Risk Assessment: ${interview.risk_assessment}`);
+    }
+    return parts.join('\n\n');
+  };
+
+  const handleBuildGraph = async () => {
+    if (!buildGraphWitness || !caseId) return;
+    const text = buildWitnessText(buildGraphWitness);
+    const result = await workspaceAPI.buildGraphFromText(caseId, {
+      text,
+      title: buildGraphWitness.name || 'Witness',
+      source_type: 'witness',
+      top_k: 20,
+    });
+    window.dispatchEvent(new CustomEvent('theory-graph-built', {
+      detail: {
+        entity_keys: result.entity_keys || [],
+        title: buildGraphWitness.name || 'Witness',
+      }
+    }));
+    alert(`Graph built! Found ${result.entity_keys?.length || 0} relevant entities. The graph view will now show these entities.`);
   };
 
   return (
@@ -234,6 +268,16 @@ export default function WitnessMatrixSection({
                                 title="Attach to theory"
                               >
                                 <Link2 className="w-4 h-4 text-owl-blue-600" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setBuildGraphWitness(witness);
+                                }}
+                                className="p-1.5 hover:bg-owl-blue-100 rounded transition-colors"
+                                title="Build graph from witness"
+                              >
+                                <Network className="w-4 h-4 text-owl-blue-600" />
                               </button>
                               {interviews.length > 0 && (
                                 <button
@@ -399,6 +443,16 @@ export default function WitnessMatrixSection({
               onRefresh();
             }
           }}
+        />
+      )}
+
+      {buildGraphWitness && (
+        <BuildGraphFromTextModal
+          isOpen={!!buildGraphWitness}
+          onClose={() => setBuildGraphWitness(null)}
+          title={buildGraphWitness.name || 'Witness'}
+          description={buildWitnessText(buildGraphWitness)}
+          onBuild={handleBuildGraph}
         />
       )}
     </div>

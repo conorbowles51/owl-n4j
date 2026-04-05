@@ -2134,6 +2134,10 @@ export const workspaceAPI = {
     method: 'POST',
     body: options,
   }),
+  buildGraphFromText: (caseId, options) => fetchAPI(`/workspace/${caseId}/build-graph-from-text`, {
+    method: 'POST',
+    body: options,
+  }),
 
   // Tasks
   getTasks: (caseId) => fetchAPI(`/workspace/${caseId}/tasks`),
