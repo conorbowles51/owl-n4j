@@ -32,7 +32,23 @@
       "Bash(systemctl daemon-reload:*)",
       "Bash(cd:*)",
       "Bash(systemctl restart:*)",
-      "Bash(chown:*)"
+      "Bash(chown:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(find:*)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j log --all --oneline)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j show a1d2c51 --stat)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j log --oneline -10 -- frontend/src/components/financial/FinancialView.jsx frontend/src/components/financial/FinancialTable.jsx frontend/src/services/api.js backend/routers/financial.py backend/services/neo4j_service.py)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j diff --stat HEAD)",
+      "Bash(python -c:*)",
+      "mcp__Roblox_Studio__get_studio_mode",
+      "mcp__Roblox_Studio__run_code",
+      "mcp__Roblox_Studio__run_script_in_play_mode",
+      "Bash(cat:*)",
+      "Bash(source:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(npx eslint:*)"
     ]
   }
 }

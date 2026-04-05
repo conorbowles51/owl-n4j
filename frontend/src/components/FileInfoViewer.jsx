@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { FileText, Calendar, CheckCircle2, AlertTriangle, Copy, X, Folder, Settings, Radio, PlayCircle, Loader2, RefreshCw, Edit } from 'lucide-react';
+import { FileText, Calendar, CheckCircle2, AlertTriangle, Copy, X, Folder, Settings, Radio, PlayCircle, Loader2, RefreshCw, Edit, Smartphone } from 'lucide-react';
 import { evidenceAPI, backgroundTasksAPI } from '../services/api';
 import FilePreview from './FilePreview';
 
@@ -131,6 +131,7 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
   const [duplicates, setDuplicates] = useState({});
   const [loadingDuplicates, setLoadingDuplicates] = useState(false);
   const [activeTask, setActiveTask] = useState(null); // Track active wiretap processing task for this folder
+  const [cellebriteTask, setCellebriteTask] = useState(null); // Track active Cellebrite processing task
   const [activeTasksByFolder, setActiveTasksByFolder] = useState({}); // Track active tasks for multiple folders: {folderPath: task}
   const [previewedFileId, setPreviewedFileId] = useState(null); // Track which file is being previewed
   const [selectedFolderProfile, setSelectedFolderProfile] = useState(null); // Selected profile for folder processing
@@ -268,6 +269,47 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
 
     return () => clearInterval(intervalId);
   }, [caseId, folderInfo?.path, activeTask?.id]); // Removed onProcessWiretap from dependencies - we don't want to restart processing when task completes
+
+  // Check for active Cellebrite processing tasks for this folder
+  useEffect(() => {
+    if (!caseId || !folderInfo?.path || !folderInfo?.cellebriteInfo?.suitable) {
+      setCellebriteTask(null);
+      return;
+    }
+
+    const checkCellebriteTask = async () => {
+      try {
+        const tasks = await backgroundTasksAPI.list(null, caseId, null, 50);
+        const cellebriteTasks = (tasks?.tasks || []).filter(
+          task =>
+            task.task_type === 'cellebrite_ingestion' &&
+            task.metadata?.folder_path === folderInfo.path
+        );
+
+        const active = cellebriteTasks.find(
+          task => task.status === 'running' || task.status === 'pending'
+        );
+
+        if (active) {
+          setCellebriteTask({
+            id: active.id,
+            status: active.status,
+            progress: active.progress?.completed || 0,
+            total: active.progress?.total || 0,
+          });
+        } else if (cellebriteTask && cellebriteTask.id) {
+          // Task was being tracked but is now done
+          setCellebriteTask(null);
+        }
+      } catch (err) {
+        console.error('Failed to check Cellebrite tasks:', err);
+      }
+    };
+
+    checkCellebriteTask();
+    const intervalId = setInterval(checkCellebriteTask, 3000);
+    return () => clearInterval(intervalId);
+  }, [caseId, folderInfo?.path, folderInfo?.cellebriteInfo?.suitable, cellebriteTask?.id]);
 
   // Check for active wiretap processing tasks for multiple folders
   useEffect(() => {
@@ -911,6 +953,85 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                         </div>
                       );
                     })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Cellebrite Report Detection */}
+              {folderInfo.cellebriteInfo && folderInfo.cellebriteInfo.suitable && (
+                <div className="mt-4 pt-4 border-t border-light-200">
+                  <div className="flex items-center gap-2 text-xs text-light-700 mb-2">
+                    <Smartphone className="w-3 h-3" />
+                    <span className="font-medium">Cellebrite UFED Report:</span>
+                  </div>
+                  <div className="ml-5 space-y-2">
+                    <div className={`text-xs p-2 rounded border ${
+                      cellebriteTask !== null
+                        ? 'bg-yellow-50 border-yellow-300 text-yellow-800'
+                        : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                    }`}>
+                      <div className="font-medium mb-1 flex items-center gap-2">
+                        {cellebriteTask !== null && (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        )}
+                        {cellebriteTask !== null
+                          ? 'Processing Cellebrite report...'
+                          : 'Cellebrite UFED report detected'}
+                      </div>
+                      <div className="text-xs mt-1 space-y-0.5 opacity-90">
+                        {folderInfo.cellebriteInfo.device_model && (
+                          <div><span className="font-medium">Device:</span> {folderInfo.cellebriteInfo.device_model}</div>
+                        )}
+                        {folderInfo.cellebriteInfo.phone_numbers && (
+                          <div><span className="font-medium">Phone:</span> {folderInfo.cellebriteInfo.phone_numbers}</div>
+                        )}
+                        {folderInfo.cellebriteInfo.case_number && (
+                          <div><span className="font-medium">Case #:</span> {folderInfo.cellebriteInfo.case_number}</div>
+                        )}
+                        {folderInfo.cellebriteInfo.examiner && (
+                          <div><span className="font-medium">Examiner:</span> {folderInfo.cellebriteInfo.examiner}</div>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={async () => {
+                        try {
+                          setCellebriteTask({ id: 'pending', status: 'pending', progress: 0, total: 0 });
+                          await evidenceAPI.processCellebriteFolder(caseId, folderInfo.path);
+                        } catch (err) {
+                          console.error('Failed to start Cellebrite processing:', err);
+                          setCellebriteTask(null);
+                        }
+                      }}
+                      disabled={cellebriteTask !== null}
+                      className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs rounded transition-colors ${
+                        cellebriteTask !== null
+                          ? 'bg-light-300 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-700'
+                      }`}
+                    >
+                      {cellebriteTask !== null ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          {cellebriteTask.status === 'pending' ? 'Starting...' : `Processing (${cellebriteTask.progress}/${cellebriteTask.total})`}
+                        </>
+                      ) : (
+                        <>
+                          <Smartphone className="w-3.5 h-3.5" />
+                          Process as Cellebrite Report
+                        </>
+                      )}
+                    </button>
+
+                    {cellebriteTask !== null && cellebriteTask.status === 'running' && cellebriteTask.total > 0 && (
+                      <div className="w-full h-1.5 bg-light-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 transition-all"
+                          style={{ width: `${Math.min(100, (cellebriteTask.progress / cellebriteTask.total) * 100)}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

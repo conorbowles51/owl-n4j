@@ -35,6 +35,7 @@ from routers import (
     financial_router,
     maintenance_router,
     case_deadlines_router,
+    cellebrite_router,
 )
 from services.neo4j_service import neo4j_service
 from services.snapshot_storage import snapshot_storage
@@ -110,6 +111,7 @@ app.include_router(cost_ledger_router)
 app.include_router(financial_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
+app.include_router(cellebrite_router)
 
 
 @app.get("/")

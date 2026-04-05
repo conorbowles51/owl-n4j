@@ -1507,6 +1507,29 @@ export const evidenceAPI = {
   },
 
   /**
+   * Check if a folder contains a Cellebrite UFED report
+   */
+  checkCellebriteFolder: (caseId, folderPath) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    params.append('folder_path', folderPath);
+    return fetchAPI(`/evidence/cellebrite/check?${params.toString()}`);
+  },
+
+  /**
+   * Process a Cellebrite UFED report folder
+   */
+  processCellebriteFolder: (caseId, folderPath) =>
+    fetchAPI('/evidence/cellebrite/process', {
+      method: 'POST',
+      body: JSON.stringify({
+        case_id: caseId,
+        folder_path: folderPath,
+      }),
+      timeout: 60000,
+    }),
+
+  /**
    * List files in a folder for profile creation
    */
   listFolderFiles: (caseId, folderPath) => {
@@ -2322,4 +2345,47 @@ export const usersAPI = {
       method: 'POST',
       body: JSON.stringify(userData),
     }),
+};
+
+/**
+ * Cellebrite Multi-Phone Analytics API
+ */
+export const cellebriteAPI = {
+  /**
+   * List all ingested PhoneReport nodes for a case
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getReports: (caseId) =>
+    fetchAPI(`/cellebrite/reports?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
+   * Get cross-phone graph (shared contacts across devices)
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getCrossPhoneGraph: (caseId) =>
+    fetchAPI(`/cellebrite/cross-phone-graph?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
+   * Get multi-device event timeline
+   * @param {string} caseId - REQUIRED: Case ID
+   * @param {string[]} reportKeys - Optional report keys to filter
+   * @param {Object} options - Optional filters (startDate, endDate, eventTypes, limit, offset)
+   */
+  getTimeline: (caseId, reportKeys = null, options = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (options.startDate) params.append('start_date', options.startDate);
+    if (options.endDate) params.append('end_date', options.endDate);
+    if (options.eventTypes?.length) params.append('event_types', options.eventTypes.join(','));
+    params.append('limit', String(options.limit || 200));
+    params.append('offset', String(options.offset || 0));
+    return fetchAPI(`/cellebrite/timeline?${params.toString()}`);
+  },
+
+  /**
+   * Get communication network analysis
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getCommunicationNetwork: (caseId) =>
+    fetchAPI(`/cellebrite/communication-network?case_id=${encodeURIComponent(caseId)}`),
 };

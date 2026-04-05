@@ -573,7 +573,16 @@ export default function EvidenceProcessingView({
         } catch (err) {
           console.error('Failed to check wiretap suitability:', err);
         }
-        
+
+        // Check Cellebrite report suitability
+        let cellebriteInfo = null;
+        try {
+          const cellebriteCheck = await evidenceAPI.checkCellebriteFolder(caseId, item.path);
+          cellebriteInfo = cellebriteCheck;
+        } catch (err) {
+          // Not a Cellebrite folder — ignore
+        }
+
         setSelectedFolderInfo({
           path: item.path,
           name: item.name,
@@ -585,7 +594,8 @@ export default function EvidenceProcessingView({
             name: p.name,
             description: p.description || ''
           })),
-          wiretapInfo
+          wiretapInfo,
+          cellebriteInfo
         });
         
         // Clear file selection when showing folder info
@@ -793,7 +803,16 @@ export default function EvidenceProcessingView({
           } catch (err) {
             console.error('Failed to check wiretap suitability:', err);
           }
-          
+
+          // Check Cellebrite report suitability
+          let cellebriteInfo = null;
+          try {
+            const cellebriteCheck = await evidenceAPI.checkCellebriteFolder(caseId, folderPath);
+            cellebriteInfo = cellebriteCheck;
+          } catch (err) {
+            // Not a Cellebrite folder — ignore
+          }
+
           foldersInfoArray.push({
             path: folderPath,
             name: folderName,
@@ -805,7 +824,8 @@ export default function EvidenceProcessingView({
               name: p.name,
               description: p.description || ''
             })),
-            wiretapInfo
+            wiretapInfo,
+            cellebriteInfo
           });
         } catch (err) {
           console.error(`Failed to load info for folder ${folderPath}:`, err);

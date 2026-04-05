@@ -326,6 +326,18 @@ class Neo4jClient:
         if not case_id:
             raise ValueError("case_id is required for creating entities")
 
+        # Guard against duplicate keys for financial entities (same date + amount
+        # can produce the same LLM-suggested key).  Append a short hex suffix
+        # until the key is unique within the case.
+        if amount and key:
+            existing = self.find_entity_by_key(key, case_id)
+            if existing:
+                base_key = key
+                for _ in range(20):
+                    key = f"{base_key}-{uuid.uuid4().hex[:4]}"
+                    if not self.find_entity_by_key(key, case_id):
+                        break
+
         entity_id = str(uuid.uuid4())
 
         props = {

@@ -15,6 +15,7 @@ import CaseFilesSection from './CaseFilesSection';
 import EntitySummarySection from './EntitySummarySection';
 import SnapshotsSection from './SnapshotsSection';
 import InvestigationTimelineSection from './InvestigationTimelineSection';
+import CellebritePhonesSection from '../cellebrite/CellebritePhonesSection';
 
 /**
  * Case Context Panel Component
@@ -47,6 +48,7 @@ export default function CaseContextPanel({
     'audit-log',
     'snapshots',
     'investigation-timeline',
+    'cellebrite',
   ]));
   const [witnesses, setWitnesses] = useState([]);
   const [pinnedItems, setPinnedItems] = useState([]);
@@ -284,6 +286,16 @@ export default function CaseContextPanel({
           isCollapsed={isCollapsed('pinned-evidence')}
           onToggle={(e) => toggleSection('pinned-evidence', e)}
           onFocus={(e) => focusSection('pinned-evidence', e)}
+        />
+      </div>
+
+      {/* Phone Reports (Cellebrite) — only renders if reports exist */}
+      <div className={selectedSection === 'cellebrite' ? 'bg-owl-blue-50' : ''}>
+        <CellebritePhonesSection
+          caseId={caseId}
+          isCollapsed={isCollapsed('cellebrite')}
+          onToggle={(e) => toggleSection('cellebrite', e)}
+          onFocus={(e) => focusSection('cellebrite', e)}
         />
       </div>
 

@@ -4741,6 +4741,355 @@ class Neo4jService:
             )
             return result.single() is not None
 
+    # -------------------------------------------------------------------------
+    # Cellebrite Multi-Phone Analytics
+    # -------------------------------------------------------------------------
+
+    def get_cellebrite_reports(self, case_id: str) -> list:
+        """Get all PhoneReport nodes for a case with owner info and stats."""
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id})
+                OPTIONAL MATCH (r)-[:BELONGS_TO]->(owner:Person)
+
+                // Count related nodes by label
+                OPTIONAL MATCH (contact:Person {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                  WHERE contact.source_type = 'cellebrite'
+                    AND contact <> owner
+                WITH r, owner, count(DISTINCT contact) AS contact_count
+
+                OPTIONAL MATCH (call:PhoneCall {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                WITH r, owner, contact_count, count(DISTINCT call) AS call_count
+
+                OPTIONAL MATCH (msg:Communication {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                WITH r, owner, contact_count, call_count, count(DISTINCT msg) AS message_count
+
+                OPTIONAL MATCH (loc:Location {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                WITH r, owner, contact_count, call_count, message_count, count(DISTINCT loc) AS location_count
+
+                OPTIONAL MATCH (email:Email {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                WITH r, owner, contact_count, call_count, message_count, location_count, count(DISTINCT email) AS email_count
+
+                RETURN r, owner,
+                       contact_count, call_count, message_count, location_count, email_count
+                ORDER BY r.report_name
+                """,
+                case_id=case_id,
+            )
+
+            reports = []
+            for record in result:
+                r = dict(record["r"])
+                owner = dict(record["owner"]) if record["owner"] else None
+                reports.append({
+                    "report_key": r.get("cellebrite_report_key", ""),
+                    "report_name": r.get("report_name", ""),
+                    "device_model": r.get("device_model", "Unknown Device"),
+                    "phone_numbers": r.get("phone_numbers", ""),
+                    "imei": r.get("imei", ""),
+                    "extraction_type": r.get("extraction_type", ""),
+                    "extraction_date": r.get("extraction_start", ""),
+                    "examiner": r.get("examiner", ""),
+                    "case_number": r.get("case_number", ""),
+                    "evidence_number": r.get("evidence_number", ""),
+                    "phone_owner_name": owner.get("name", "") if owner else "",
+                    "phone_owner_key": owner.get("key", "") if owner else "",
+                    "stats": {
+                        "contacts": record["contact_count"],
+                        "calls": record["call_count"],
+                        "messages": record["message_count"],
+                        "locations": record["location_count"],
+                        "emails": record["email_count"],
+                    },
+                })
+            return reports
+
+    def get_cellebrite_cross_phone_graph(self, case_id: str) -> dict:
+        """
+        Get cross-phone graph showing shared entities across devices.
+
+        Returns nodes and links in react-force-graph-2d format.
+        """
+        nodes = []
+        links = []
+        seen_nodes = set()
+
+        with self._driver.session() as session:
+            # 1. Get PhoneReport nodes
+            result = session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id})
+                OPTIONAL MATCH (r)-[:BELONGS_TO]->(owner:Person)
+                RETURN r, owner
+                """,
+                case_id=case_id,
+            )
+            report_keys = []
+            for record in result:
+                r = dict(record["r"])
+                rkey = r.get("cellebrite_report_key", "")
+                report_keys.append(rkey)
+                node_id = f"report-{rkey}"
+                if node_id not in seen_nodes:
+                    seen_nodes.add(node_id)
+                    owner = dict(record["owner"]) if record["owner"] else None
+                    nodes.append({
+                        "id": node_id,
+                        "name": r.get("device_model", "Unknown Device"),
+                        "type": "PhoneReport",
+                        "report_key": rkey,
+                        "phone_owner": owner.get("name", "") if owner else "",
+                        "val": 8,
+                    })
+                    # Link report to its owner
+                    if owner:
+                        owner_id = f"person-{owner.get('key', '')}"
+                        links.append({
+                            "source": node_id,
+                            "target": owner_id,
+                            "label": "BELONGS_TO",
+                        })
+
+            if len(report_keys) < 1:
+                return {"nodes": nodes, "links": links}
+
+            # 2. Find persons connected to PhoneReport nodes via relationships
+            result = session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id})
+                MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                WHERE p.cellebrite_report_key = r.cellebrite_report_key
+                WITH p, collect(DISTINCT r.cellebrite_report_key) AS device_keys,
+                     count(DISTINCT r) AS device_count
+                // Get communication counts
+                OPTIONAL MATCH (p)-[rel]->()
+                WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED', 'PARTICIPATED_IN']
+                WITH p, device_keys, device_count, count(rel) AS comm_count
+                ORDER BY device_count DESC, comm_count DESC
+                LIMIT 200
+                RETURN p, device_keys, device_count, comm_count
+                """,
+                case_id=case_id,
+            )
+
+            for record in result:
+                p = dict(record["p"])
+                pkey = p.get("key", "")
+                node_id = f"person-{pkey}"
+                device_keys = list(record["device_keys"])
+                device_count = record["device_count"]
+
+                if node_id not in seen_nodes:
+                    seen_nodes.add(node_id)
+                    nodes.append({
+                        "id": node_id,
+                        "name": p.get("name", pkey),
+                        "type": "Person",
+                        "phone": p.get("phone", ""),
+                        "device_count": device_count,
+                        "shared": device_count > 1,
+                        "comm_count": record["comm_count"],
+                        "val": 3 + min(record["comm_count"], 10),
+                    })
+
+                # Link person to each device's report
+                for dk in device_keys:
+                    report_node_id = f"report-{dk}"
+                    if report_node_id in seen_nodes:
+                        links.append({
+                            "source": report_node_id,
+                            "target": node_id,
+                            "label": "CONTAINS_CONTACT",
+                        })
+
+            # 3. Find direct communication links between persons
+            result = session.run(
+                """
+                MATCH (a:Person {case_id: $case_id, source_type: 'cellebrite'})
+                      -[rel]->(comm)
+                      -[rel2]->(b:Person {case_id: $case_id})
+                WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED']
+                  AND type(rel2) IN ['CALLED_TO', 'SENT_TO']
+                  AND a <> b
+                WITH a.key AS src, b.key AS tgt, type(rel) AS rel_type, count(*) AS cnt
+                WHERE cnt >= 2
+                RETURN src, tgt, rel_type, cnt
+                ORDER BY cnt DESC
+                LIMIT 300
+                """,
+                case_id=case_id,
+            )
+
+            for record in result:
+                src_id = f"person-{record['src']}"
+                tgt_id = f"person-{record['tgt']}"
+                if src_id in seen_nodes and tgt_id in seen_nodes:
+                    links.append({
+                        "source": src_id,
+                        "target": tgt_id,
+                        "label": record["rel_type"],
+                        "count": record["cnt"],
+                    })
+
+        return {"nodes": nodes, "links": links}
+
+    def get_cellebrite_timeline(
+        self,
+        case_id: str,
+        report_keys: list = None,
+        start_date: str = None,
+        end_date: str = None,
+        event_types: list = None,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> dict:
+        """Get chronological events across all phone reports."""
+        # Build WHERE clause fragments
+        where_parts = ["n.case_id = $case_id"]
+        params = {"case_id": case_id, "limit": limit, "skip_count": offset}
+
+        if report_keys:
+            where_parts.append("n.cellebrite_report_key IN $report_keys")
+            params["report_keys"] = report_keys
+
+        if start_date:
+            where_parts.append("n.timestamp >= $start_date")
+            params["start_date"] = start_date
+
+        if end_date:
+            where_parts.append("n.timestamp <= $end_date")
+            params["end_date"] = end_date
+
+        where_clause = " AND ".join(where_parts)
+
+        # Build UNION query across event types
+        union_parts = []
+        type_map = {
+            "call": ("PhoneCall", "phone_number_to", "CALLED"),
+            "message": ("Communication", "body", "SENT_MESSAGE"),
+            "location": ("Location", "name", "WAS_AT"),
+            "email": ("Email", "subject", "EMAILED"),
+        }
+
+        active_types = event_types if event_types else list(type_map.keys())
+
+        for etype in active_types:
+            if etype not in type_map:
+                continue
+            label, summary_field, _ = type_map[etype]
+            union_parts.append(f"""
+                MATCH (n:{label})
+                WHERE {where_clause}
+                  AND n.timestamp IS NOT NULL
+                  AND n.source_type = 'cellebrite'
+                RETURN n.timestamp AS timestamp,
+                       '{etype}' AS event_type,
+                       coalesce(n.{summary_field}, '') AS summary,
+                       n.cellebrite_report_key AS report_key,
+                       n.key AS node_key
+            """)
+
+        if not union_parts:
+            return {"events": [], "total_estimate": 0}
+
+        query = " UNION ALL ".join(union_parts)
+        query += """
+            ORDER BY timestamp
+            SKIP $skip_count
+            LIMIT $limit
+        """
+
+        with self._driver.session() as session:
+            result = session.run(query, params)
+            events = []
+            for record in result:
+                events.append({
+                    "timestamp": record["timestamp"],
+                    "event_type": record["event_type"],
+                    "summary": record["summary"],
+                    "report_key": record["report_key"],
+                    "node_key": record["node_key"],
+                })
+
+        return {"events": events, "total_estimate": len(events)}
+
+    def get_cellebrite_communication_network(self, case_id: str) -> dict:
+        """Get contact frequency analysis and shared contacts across devices."""
+        with self._driver.session() as session:
+            # Get all persons with communication counts per report
+            result = session.run(
+                """
+                MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                OPTIONAL MATCH (p)-[:CALLED]->(call:PhoneCall {case_id: $case_id})
+                WITH p, count(DISTINCT call) AS calls_made
+                OPTIONAL MATCH ()-[:CALLED]->(call2:PhoneCall {case_id: $case_id})-[:CALLED_TO]->(p)
+                WITH p, calls_made, count(DISTINCT call2) AS calls_received
+                OPTIONAL MATCH (p)-[:SENT_MESSAGE]->(msg:Communication {case_id: $case_id})
+                WITH p, calls_made, calls_received, count(DISTINCT msg) AS messages_sent
+                OPTIONAL MATCH (p)-[:EMAILED]->(e:Email {case_id: $case_id})
+                WITH p, calls_made, calls_received, messages_sent, count(DISTINCT e) AS emails_sent
+
+                // Find which devices this person appears on
+                WITH p, calls_made, calls_received, messages_sent, emails_sent,
+                     CASE WHEN p.cellebrite_report_key IS NOT NULL
+                          THEN [p.cellebrite_report_key]
+                          ELSE [] END AS device_keys
+
+                WHERE calls_made + calls_received + messages_sent + emails_sent > 0
+
+                RETURN p.key AS person_key,
+                       p.name AS name,
+                       p.phone AS phone,
+                       calls_made + calls_received AS call_count,
+                       messages_sent AS message_count,
+                       emails_sent AS email_count,
+                       device_keys
+                ORDER BY calls_made + calls_received + messages_sent + emails_sent DESC
+                LIMIT 500
+                """,
+                case_id=case_id,
+            )
+
+            contacts = []
+            shared_contacts = []
+            for record in result:
+                contact = {
+                    "person_key": record["person_key"],
+                    "name": record["name"] or record["person_key"],
+                    "phone": record["phone"] or "",
+                    "call_count": record["call_count"],
+                    "message_count": record["message_count"],
+                    "email_count": record["email_count"],
+                    "devices": list(record["device_keys"]),
+                }
+                contacts.append(contact)
+
+            # Find contacts appearing on multiple devices
+            result = session.run(
+                """
+                MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                WITH p, p.cellebrite_report_key AS rk
+                WHERE rk IS NOT NULL
+                WITH p.key AS person_key, p.name AS name, p.phone AS phone,
+                     collect(DISTINCT rk) AS device_keys
+                WHERE size(device_keys) > 1
+                RETURN person_key, name, phone, device_keys
+                ORDER BY size(device_keys) DESC, name
+                """,
+                case_id=case_id,
+            )
+
+            for record in result:
+                shared_contacts.append({
+                    "person_key": record["person_key"],
+                    "name": record["name"] or record["person_key"],
+                    "phone": record["phone"] or "",
+                    "devices": list(record["device_keys"]),
+                })
+
+        return {"contacts": contacts, "shared_contacts": shared_contacts}
+
 
 # Singleton instance
 neo4j_service = Neo4jService()

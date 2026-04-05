@@ -8,6 +8,7 @@ import CaseHeaderBar from './workspace/CaseHeaderBar';
 import SectionContentPanel from './workspace/SectionContentPanel';
 import CaseOverviewView from './workspace/CaseOverviewView';
 import VisualInvestigationTimeline from './workspace/VisualInvestigationTimeline';
+import CellebriteView from './cellebrite/CellebriteView';
 import NodeDetails from './NodeDetails';
 
 /**
@@ -590,6 +591,11 @@ export default function WorkspaceView({
               width={null}
               height={null}
             />
+          </div>
+        ) : selectedSection === 'cellebrite' ? (
+          /* Cellebrite Multi-Phone View: Full width */
+          <div className="flex-1 overflow-hidden bg-white flex flex-col min-h-0">
+            <CellebriteView caseId={caseId} />
           </div>
         ) : (
           /* Normal Mode: Graph/Table + Section Content. Table view: 75/25 split; else 45/55 */

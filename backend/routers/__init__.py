@@ -26,6 +26,7 @@ from routers.cost_ledger import router as cost_ledger_router
 from routers.financial import router as financial_router
 from routers.maintenance import router as maintenance_router
 from routers.case_deadlines import router as case_deadlines_router
+from routers.cellebrite import router as cellebrite_router
 
 __all__ = [
     "graph_router",
@@ -52,4 +53,5 @@ __all__ = [
     "financial_router",
     "maintenance_router",
     "case_deadlines_router",
+    "cellebrite_router",
 ]
