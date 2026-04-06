@@ -4056,6 +4056,7 @@ class Neo4jService:
             summary = None
             if not skip_aggregations:
                 logger.info("[FinQuery] Phase A: Summary query for case %s", case_id)
+                has_entity_selection = bool(from_entity_keys or to_entity_keys)
                 params_a = {"case_id": case_id}
                 where_a = self._build_financial_where(params_a, **filter_kw)
 
@@ -4072,8 +4073,8 @@ class Neo4jService:
                         avg(abs(amt)) AS avg_amount,
                         count(DISTINCT coalesce(n.from_entity_key, n.from_entity_name)) +
                         count(DISTINCT coalesce(n.to_entity_key, n.to_entity_name)) AS unique_entity_refs,
-                        sum(CASE WHEN amt > 0 THEN amt ELSE 0 END) AS total_inflows,
-                        sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_outflows
+                        sum(CASE WHEN amt >= 0 THEN abs(amt) ELSE 0 END) AS total_outflows,
+                        sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_inflows
                 """
                 sr = session.run(summary_query, **params_a).single()
                 summary = {
@@ -4086,12 +4087,24 @@ class Neo4jService:
                     "net_flow": safe_float(sr["total_inflows"]) - safe_float(sr["total_outflows"]),
                 }
 
-                # Entity-mode directional flow summary
-                has_entity_selection = bool(from_entity_keys or to_entity_keys)
+                # Entity-mode directional flow summary + per-entity breakdown
+                # When entities are selected, classify flows relative to those entities:
+                #   - Selected entity appears as from_entity → money leaving = OUTFLOW
+                #   - Selected entity appears as to_entity → money arriving = INFLOW
+                # When user selected FROM entities, perspective = from_entity_keys
+                # When user selected TO entities, perspective = to_entity_keys
+                # This matches the old client-side logic exactly.
                 if has_entity_selection and summary["transaction_count"] > 0:
-                    perspective_keys = from_entity_keys or to_entity_keys
-                    params_flow = {"case_id": case_id, "perspective_keys": perspective_keys}
+                    params_flow = {"case_id": case_id}
                     where_flow = self._build_financial_where(params_flow, **filter_kw)
+
+                    # Compute per-entity breakdown of inflows and outflows
+                    # from_entity perspective: entity is sender → outflow; entity is receiver → inflow
+                    # to_entity perspective: entity is receiver → inflow; entity is sender → outflow
+                    if from_entity_keys:
+                        params_flow["perspective_keys"] = from_entity_keys
+                    else:
+                        params_flow["perspective_keys"] = to_entity_keys
 
                     flow_query = f"""
                         MATCH (n)
@@ -4104,9 +4117,14 @@ class Neo4jService:
                              coalesce(n.to_entity_key, n.to_entity_name) AS tk,
                              n.from_entity_name AS fn,
                              n.to_entity_name AS tn
+                        WITH n, abs(amt) AS amt, fk, tk, fn, tn,
+                             CASE WHEN fk IN $perspective_keys THEN true ELSE false END AS is_outflow,
+                             CASE WHEN tk IN $perspective_keys THEN true ELSE false END AS is_inflow
                         RETURN
-                            sum(CASE WHEN tk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_inflows,
-                            sum(CASE WHEN fk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_outflows
+                            sum(CASE WHEN is_inflow THEN amt ELSE 0 END) AS entity_inflows,
+                            sum(CASE WHEN is_outflow THEN amt ELSE 0 END) AS entity_outflows,
+                            collect(CASE WHEN is_outflow THEN {{key: coalesce(tk, 'Unknown'), name: coalesce(tn, tk, 'Unknown'), amount: amt}} END) AS outflow_details,
+                            collect(CASE WHEN is_inflow THEN {{key: coalesce(fk, 'Unknown'), name: coalesce(fn, fk, 'Unknown'), amount: amt}} END) AS inflow_details
                     """
                     fr = session.run(flow_query, **params_flow).single()
                     entity_inflows = safe_float(fr["entity_inflows"])
@@ -4114,6 +4132,25 @@ class Neo4jService:
                     summary["total_inflows"] = entity_inflows
                     summary["total_outflows"] = entity_outflows
                     summary["net_flow"] = entity_inflows - entity_outflows
+
+                    # Build per-entity breakdown (aggregate amounts by entity key)
+                    def aggregate_entity_list(details):
+                        """Aggregate a list of {key, name, amount} dicts by key."""
+                        by_key = {}
+                        for d in details:
+                            if d is None:
+                                continue
+                            k = d.get("key", "Unknown")
+                            n = d.get("name", k)
+                            a = safe_float(d.get("amount", 0))
+                            if k in by_key:
+                                by_key[k]["amount"] += a
+                            else:
+                                by_key[k] = {"name": n, "amount": a}
+                        return sorted(by_key.values(), key=lambda x: x["amount"], reverse=True)
+
+                    summary["inflow_entities"] = aggregate_entity_list(fr["inflow_details"])
+                    summary["outflow_entities"] = aggregate_entity_list(fr["outflow_details"])
 
             # ═══════════════════════════════════════════════════════════
             # Query B: Paginated rows
