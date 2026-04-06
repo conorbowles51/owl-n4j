@@ -509,97 +509,103 @@ export default function EvidenceProcessingView({
       // Single folder click - clear multi-select
       setSelectedFolderPaths(new Set());
       setSelectedFoldersInfo([]);
-      // Gather folder statistics
       setSelectedFilePath(item.path);
       setSelectedFolderInfo(null); // Clear while loading
-      
+
       try {
-        // Get all files in the folder (recursively)
-        const folderFiles = await getFolderFilesRecursive(item.path);
-        
-        // Match with evidence files
-        const folderEvidenceFiles = folderFiles.map(filePath => {
-          const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-          const fileName = normalizedFP.split('/').pop() || normalizedFP;
-          // Find matching evidence file
-          return files.find(f => {
-            const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
-            const originalFilename = f.original_filename || '';
-            return normalizedStored === normalizedFP ||
-                   normalizedStored.endsWith('/' + normalizedFP) ||
-                   normalizedFP.endsWith('/' + normalizedStored) ||
-                   originalFilename === fileName ||
-                   normalizedFP.endsWith(originalFilename);
-          });
-        }).filter(Boolean);
-        
-        // Calculate statistics
-        const processedCount = folderEvidenceFiles.filter(f => 
-          f.status === 'processed'
-        ).length;
-        const unprocessedCount = folderEvidenceFiles.filter(f => 
-          f.status === 'unprocessed' || f.status === 'failed'
-        ).length;
-        
-        // Get file types
-        const fileTypes = new Set();
-        folderEvidenceFiles.forEach(f => {
-          const ext = (f.original_filename || '').split('.').pop()?.toLowerCase() || '';
-          if (ext) {
-            const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
-            const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
-            const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
-            const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
-            const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
-            
-            if (imageTypes.includes(ext)) fileTypes.add('Image');
-            else if (docTypes.includes(ext)) fileTypes.add('Document');
-            else if (audioTypes.includes(ext)) fileTypes.add('Audio');
-            else if (videoTypes.includes(ext)) fileTypes.add('Video');
-            else if (dataTypes.includes(ext)) fileTypes.add('Data');
-            else if (ext) fileTypes.add('Other');
-          }
-        });
-        
-        // Check wiretap suitability
+        // Show folder info immediately with detection checks (fast API calls),
+        // then backfill file statistics asynchronously to avoid UI lag on large folders.
+
+        // Run wiretap + cellebrite checks in parallel (fast — header-only parsing)
+        const [wiretapResult, cellebriteResult] = await Promise.allSettled([
+          evidenceAPI.checkWiretapFolder(caseId, item.path),
+          evidenceAPI.checkCellebriteFolder(caseId, item.path),
+        ]);
+
         let wiretapInfo = null;
-        try {
-          const wiretapCheck = await evidenceAPI.checkWiretapFolder(caseId, item.path);
-          wiretapInfo = wiretapCheck;
-          // Update wiretap processed folders set
-          if (wiretapCheck.processed) {
+        if (wiretapResult.status === 'fulfilled') {
+          wiretapInfo = wiretapResult.value;
+          if (wiretapInfo.processed) {
             setWiretapProcessedFolders(prev => new Set([...prev, item.path]));
           }
-        } catch (err) {
-          console.error('Failed to check wiretap suitability:', err);
         }
 
-        // Check Cellebrite report suitability
         let cellebriteInfo = null;
-        try {
-          const cellebriteCheck = await evidenceAPI.checkCellebriteFolder(caseId, item.path);
-          cellebriteInfo = cellebriteCheck;
-        } catch (err) {
-          // Not a Cellebrite folder — ignore
+        if (cellebriteResult.status === 'fulfilled') {
+          cellebriteInfo = cellebriteResult.value;
         }
 
-        setSelectedFolderInfo({
+        // Set folder info immediately so the UI responds fast
+        const folderInfoBase = {
           path: item.path,
           name: item.name,
-          totalFiles: folderEvidenceFiles.length,
-          processedCount,
-          unprocessedCount,
-          fileTypes: Array.from(fileTypes).sort(),
+          totalFiles: null, // Will be filled in by background scan
+          processedCount: null,
+          unprocessedCount: null,
+          fileTypes: [],
           availableProcessors: profiles.map(p => ({
             name: p.name,
             description: p.description || ''
           })),
           wiretapInfo,
           cellebriteInfo
-        });
-        
+        };
+        setSelectedFolderInfo(folderInfoBase);
+
         // Clear file selection when showing folder info
         setSelectedIds(new Set());
+
+        // Background: scan folder files for statistics (non-blocking)
+        getFolderFilesRecursive(item.path).then(folderFiles => {
+          const folderEvidenceFiles = folderFiles.map(filePath => {
+            const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+            const fileName = normalizedFP.split('/').pop() || normalizedFP;
+            return files.find(f => {
+              const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
+              const originalFilename = f.original_filename || '';
+              return normalizedStored === normalizedFP ||
+                     normalizedStored.endsWith('/' + normalizedFP) ||
+                     normalizedFP.endsWith('/' + normalizedStored) ||
+                     originalFilename === fileName ||
+                     normalizedFP.endsWith(originalFilename);
+            });
+          }).filter(Boolean);
+
+          const processedCount = folderEvidenceFiles.filter(f => f.status === 'processed').length;
+          const unprocessedCount = folderEvidenceFiles.filter(f => f.status === 'unprocessed' || f.status === 'failed').length;
+
+          const fileTypes = new Set();
+          folderEvidenceFiles.forEach(f => {
+            const ext = (f.original_filename || '').split('.').pop()?.toLowerCase() || '';
+            if (ext) {
+              const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
+              const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
+              const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
+              const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
+              const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
+              if (imageTypes.includes(ext)) fileTypes.add('Image');
+              else if (docTypes.includes(ext)) fileTypes.add('Document');
+              else if (audioTypes.includes(ext)) fileTypes.add('Audio');
+              else if (videoTypes.includes(ext)) fileTypes.add('Video');
+              else if (dataTypes.includes(ext)) fileTypes.add('Data');
+              else if (ext) fileTypes.add('Other');
+            }
+          });
+
+          // Update folder info with file statistics (only if still viewing the same folder)
+          setSelectedFolderInfo(prev => {
+            if (prev?.path !== item.path) return prev; // User navigated away
+            return {
+              ...prev,
+              totalFiles: folderEvidenceFiles.length,
+              processedCount,
+              unprocessedCount,
+              fileTypes: Array.from(fileTypes).sort(),
+            };
+          });
+        }).catch(err => {
+          console.error('Failed to scan folder files:', err);
+        });
       } catch (err) {
         console.error('Failed to load folder information:', err);
         setSelectedFolderInfo({

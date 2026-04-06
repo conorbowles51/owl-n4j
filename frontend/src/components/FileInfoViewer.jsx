@@ -749,15 +749,21 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                   <span className="font-medium">File Statistics:</span>
                 </div>
                 <div className="ml-5 space-y-1">
-                  <div className="text-xs text-light-600">
-                    <span className="font-medium">Total Files:</span> {folderInfo.totalFiles || 0}
-                  </div>
-                  <div className="text-xs text-light-600">
-                    <span className="font-medium text-green-700">Processed:</span> {folderInfo.processedCount || 0}
-                  </div>
-                  <div className="text-xs text-light-600">
-                    <span className="font-medium text-orange-700">Unprocessed:</span> {folderInfo.unprocessedCount || 0}
-                  </div>
+                  {folderInfo.totalFiles === null ? (
+                    <div className="text-xs text-light-500 italic">Scanning files...</div>
+                  ) : (
+                    <>
+                      <div className="text-xs text-light-600">
+                        <span className="font-medium">Total Files:</span> {folderInfo.totalFiles || 0}
+                      </div>
+                      <div className="text-xs text-light-600">
+                        <span className="font-medium text-green-700">Processed:</span> {folderInfo.processedCount || 0}
+                      </div>
+                      <div className="text-xs text-light-600">
+                        <span className="font-medium text-orange-700">Unprocessed:</span> {folderInfo.unprocessedCount || 0}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 

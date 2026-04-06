@@ -4754,26 +4754,26 @@ class Neo4jService:
                 OPTIONAL MATCH (r)-[:BELONGS_TO]->(owner:Person)
 
                 // Count related nodes by label
-                OPTIONAL MATCH (contact:Person {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                OPTIONAL MATCH (contact:Person {case_id: $case_id, cellebrite_report_key: r.key})
                   WHERE contact.source_type = 'cellebrite'
                     AND contact <> owner
                 WITH r, owner, count(DISTINCT contact) AS contact_count
 
-                OPTIONAL MATCH (call:PhoneCall {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                OPTIONAL MATCH (call:PhoneCall {case_id: $case_id, cellebrite_report_key: r.key})
                 WITH r, owner, contact_count, count(DISTINCT call) AS call_count
 
-                OPTIONAL MATCH (msg:Communication {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                OPTIONAL MATCH (msg:Communication {case_id: $case_id, cellebrite_report_key: r.key})
                 WITH r, owner, contact_count, call_count, count(DISTINCT msg) AS message_count
 
-                OPTIONAL MATCH (loc:Location {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                OPTIONAL MATCH (loc:Location {case_id: $case_id, cellebrite_report_key: r.key})
                 WITH r, owner, contact_count, call_count, message_count, count(DISTINCT loc) AS location_count
 
-                OPTIONAL MATCH (email:Email {case_id: $case_id, cellebrite_report_key: r.cellebrite_report_key})
+                OPTIONAL MATCH (email:Email {case_id: $case_id, cellebrite_report_key: r.key})
                 WITH r, owner, contact_count, call_count, message_count, location_count, count(DISTINCT email) AS email_count
 
                 RETURN r, owner,
                        contact_count, call_count, message_count, location_count, email_count
-                ORDER BY r.report_name
+                ORDER BY r.name
                 """,
                 case_id=case_id,
             )
@@ -4783,8 +4783,8 @@ class Neo4jService:
                 r = dict(record["r"])
                 owner = dict(record["owner"]) if record["owner"] else None
                 reports.append({
-                    "report_key": r.get("cellebrite_report_key", ""),
-                    "report_name": r.get("report_name", ""),
+                    "report_key": r.get("key", ""),
+                    "report_name": r.get("name", ""),
                     "device_model": r.get("device_model", "Unknown Device"),
                     "phone_numbers": r.get("phone_numbers", ""),
                     "imei": r.get("imei", ""),
@@ -4828,7 +4828,7 @@ class Neo4jService:
             report_keys = []
             for record in result:
                 r = dict(record["r"])
-                rkey = r.get("cellebrite_report_key", "")
+                rkey = r.get("key", "")
                 report_keys.append(rkey)
                 node_id = f"report-{rkey}"
                 if node_id not in seen_nodes:
@@ -4859,8 +4859,8 @@ class Neo4jService:
                 """
                 MATCH (r:PhoneReport {case_id: $case_id})
                 MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
-                WHERE p.cellebrite_report_key = r.cellebrite_report_key
-                WITH p, collect(DISTINCT r.cellebrite_report_key) AS device_keys,
+                WHERE p.cellebrite_report_key = r.key
+                WITH p, collect(DISTINCT r.key) AS device_keys,
                      count(DISTINCT r) AS device_count
                 // Get communication counts
                 OPTIONAL MATCH (p)-[rel]->()
