@@ -4027,8 +4027,14 @@ class Neo4jService:
         """
         from math import fabs
 
-        self.ensure_unique_transaction_keys(case_id)
-        self.ensure_transaction_ref_ids(case_id)
+        try:
+            self.ensure_unique_transaction_keys(case_id)
+        except Exception as e:
+            logger.warning("[FinQuery] ensure_unique_transaction_keys failed (non-fatal): %s", e)
+        try:
+            self.ensure_transaction_ref_ids(case_id)
+        except Exception as e:
+            logger.warning("[FinQuery] ensure_transaction_ref_ids failed (non-fatal): %s", e)
 
         # Sort field mapping
         sort_map = {
@@ -4056,6 +4062,7 @@ class Neo4jService:
             # ═══════════════════════════════════════════════════════════
             # Query A: Count + Summary (full filtered set)
             # ═══════════════════════════════════════════════════════════
+            logger.info("[FinQuery] Phase A: Summary query for case %s", case_id)
             params_a = {"case_id": case_id}
             where_a = self._build_financial_where(params_a, **filter_kw)
 
@@ -4078,12 +4085,12 @@ class Neo4jService:
             sr = session.run(summary_query, **params_a).single()
             summary = {
                 "transaction_count": sr["total"] or 0,
-                "total_volume": sr["total_volume"] or 0,
-                "avg_amount": sr["avg_amount"] or 0,
+                "total_volume": safe_float(sr["total_volume"]),
+                "avg_amount": safe_float(sr["avg_amount"]),
                 "unique_entities": sr["unique_entity_refs"] or 0,
-                "total_inflows": sr["total_inflows"] or 0,
-                "total_outflows": sr["total_outflows"] or 0,
-                "net_flow": (sr["total_inflows"] or 0) - (sr["total_outflows"] or 0),
+                "total_inflows": safe_float(sr["total_inflows"]),
+                "total_outflows": safe_float(sr["total_outflows"]),
+                "net_flow": safe_float(sr["total_inflows"]) - safe_float(sr["total_outflows"]),
             }
 
             # Entity-mode directional flow summary
@@ -4113,8 +4120,8 @@ class Neo4jService:
                         sum(CASE WHEN fk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_outflows
                 """
                 fr = session.run(flow_query, **params_flow).single()
-                entity_inflows = fr["entity_inflows"] or 0
-                entity_outflows = fr["entity_outflows"] or 0
+                entity_inflows = safe_float(fr["entity_inflows"])
+                entity_outflows = safe_float(fr["entity_outflows"])
                 summary["total_inflows"] = entity_inflows
                 summary["total_outflows"] = entity_outflows
                 summary["net_flow"] = entity_inflows - entity_outflows
@@ -4122,6 +4129,7 @@ class Neo4jService:
             # ═══════════════════════════════════════════════════════════
             # Query B: Paginated rows
             # ═══════════════════════════════════════════════════════════
+            logger.info("[FinQuery] Phase B: Paginated rows (offset=%d, limit=%d)", offset, limit)
             # Pre-fetch parent keys so we can exclude children whose parent
             # is in the filtered dataset (they render as expanded sub-rows instead).
             params_pk = {"case_id": case_id}
@@ -4289,6 +4297,7 @@ class Neo4jService:
             # Query C: Entity flow (base-filtered, no entity selection)
             # with cross-filtering applied
             # ═══════════════════════════════════════════════════════════
+            logger.info("[FinQuery] Phase C: Entity flow aggregation")
             params_c = {"case_id": case_id}
             # Build WHERE without entity filter (base-filtered set)
             base_filter_kw = dict(
@@ -4322,7 +4331,7 @@ class Neo4jService:
                 ORDER BY totalAmount DESC
             """
             from_entities = [
-                {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": r["totalAmount"] or 0}
+                {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": safe_float(r["totalAmount"])}
                 for r in session.run(from_entity_query, **params_c)
             ]
 
@@ -4351,13 +4360,14 @@ class Neo4jService:
                 ORDER BY totalAmount DESC
             """
             to_entities = [
-                {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": r["totalAmount"] or 0}
+                {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": safe_float(r["totalAmount"])}
                 for r in session.run(to_entity_query, **params_c2)
             ]
 
             # ═══════════════════════════════════════════════════════════
             # Query D: Volume-over-time + category breakdown
             # ═══════════════════════════════════════════════════════════
+            logger.info("[FinQuery] Phase D: Charts data")
             params_d = {"case_id": case_id}
             where_d = self._build_financial_where(params_d, **filter_kw)
 
@@ -4376,7 +4386,7 @@ class Neo4jService:
             """
             volume_data = [
                 {"date": r["date"], "category": r["category"],
-                 "total_amount": r["total_amount"] or 0, "count": r["count"]}
+                 "total_amount": safe_float(r["total_amount"]), "count": r["count"]}
                 for r in session.run(charts_query, **params_d)
             ]
 
@@ -4394,9 +4404,12 @@ class Neo4jService:
                 ORDER BY amount DESC
             """
             category_breakdown = {
-                r["category"]: {"count": r["count"], "amount": r["amount"] or 0}
+                r["category"]: {"count": r["count"], "amount": safe_float(r["amount"])}
                 for r in session.run(cat_query, **params_e)
             }
+
+            logger.info("[FinQuery] Complete: %d txns, %d total, %d from_entities, %d to_entities",
+                        len(transactions), total, len(from_entities), len(to_entities))
 
             return {
                 "transactions": transactions,

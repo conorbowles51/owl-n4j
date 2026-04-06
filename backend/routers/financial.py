@@ -2,15 +2,21 @@
 Financial Router - endpoints for financial analysis and transaction visualization.
 """
 
+import json
+import logging
+import math
+import traceback
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from services import neo4j_service
 from services.financial_export_service import generate_financial_pdf
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
 
@@ -105,6 +111,11 @@ async def query_financial(
     volume-over-time, and category breakdown — all computed server-side.
     """
     try:
+        logger.info("[FinQuery] case_id=%s types=%s categories=%s page=%d page_size=%d sort=%s/%s",
+                     case_id, types[:50] if types else None,
+                     categories[:50] if categories else None,
+                     page, page_size, sort_field, sort_dir)
+
         parsed_types = [t.strip() for t in types.split(",") if t.strip()] if types else None
         parsed_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else None
         parsed_from = [k.strip() for k in from_entities.split(",") if k.strip()] if from_entities else None
@@ -128,17 +139,64 @@ async def query_financial(
         )
 
         total = result["total"]
-        import math
         total_pages = math.ceil(total / page_size) if total > 0 else 0
 
-        return {
+        logger.info("[FinQuery] Success: %d transactions, %d total, %d pages",
+                     len(result.get("transactions", [])), total, total_pages)
+
+        response = {
             **result,
             "page": page,
             "page_size": page_size,
             "total_pages": total_pages,
         }
+
+        # Return via JSONResponse with a safe serializer so Neo4j temporal/spatial
+        # types don't crash Starlette's response handler (which produces a plain-text
+        # 500 that bypasses our try/except).
+        return JSONResponse(content=json.loads(json.dumps(response, default=str)))
     except Exception as e:
+        logger.error("[FinQuery] Error: %s\n%s", str(e), traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/query-debug")
+async def query_financial_debug(
+    case_id: str = Query(..., description="REQUIRED: Case ID"),
+):
+    """Diagnostic endpoint to test each query phase individually."""
+    phases = {}
+    try:
+        # Test summary query
+        try:
+            from services.neo4j_service import Neo4jService
+            svc = neo4j_service
+            svc._driver.session().close()  # Test connection
+            phases["connection"] = "OK"
+        except Exception as e:
+            phases["connection"] = f"FAIL: {e}"
+
+        try:
+            result = neo4j_service.query_financial_transactions(
+                case_id=case_id,
+                sort_field="date",
+                sort_dir="asc",
+                offset=0,
+                limit=5,
+            )
+            phases["query"] = "OK"
+            phases["total"] = result.get("total", 0)
+            phases["txn_count"] = len(result.get("transactions", []))
+            phases["from_entities_count"] = len(result.get("from_entities", []))
+            phases["to_entities_count"] = len(result.get("to_entities", []))
+        except Exception as e:
+            phases["query"] = f"FAIL: {type(e).__name__}: {e}"
+            logger.error("[FinQueryDebug] %s\n%s", e, traceback.format_exc())
+
+        return phases
+    except Exception as e:
+        logger.error("[FinQueryDebug] Outer error: %s\n%s", e, traceback.format_exc())
+        return {"error": str(e)}
 
 
 @router.get("/types")
