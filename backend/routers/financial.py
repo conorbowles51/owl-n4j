@@ -104,11 +104,14 @@ async def query_financial(
     sort_dir: str = Query("asc", description="Sort direction: asc or desc"),
     page: int = Query(1, ge=1, description="Page number (1-based)"),
     page_size: int = Query(100, ge=1, le=500, description="Results per page"),
+    skip_aggregations: bool = Query(False, description="Skip aggregation queries for sort/page-only changes"),
 ):
     """Server-side paginated financial query with aggregations.
 
     Returns one page of transactions plus summary stats, entity flow data,
     volume-over-time, and category breakdown — all computed server-side.
+    When skip_aggregations=True, only pagination queries run (summary, entity
+    flow, charts, category breakdown return None — frontend uses cached values).
     """
     try:
         logger.info("[FinQuery] case_id=%s types=%s categories=%s page=%d page_size=%d sort=%s/%s",
@@ -136,6 +139,7 @@ async def query_financial(
             sort_dir=sort_dir,
             offset=offset,
             limit=page_size,
+            skip_aggregations=skip_aggregations,
         )
 
         total = result["total"]

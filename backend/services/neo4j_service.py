@@ -4013,6 +4013,7 @@ class Neo4jService:
         sort_dir: str = "asc",
         offset: int = 0,
         limit: int = 100,
+        skip_aggregations: bool = False,
     ) -> Dict:
         """Server-side paginated financial query with aggregations.
 
@@ -4025,17 +4026,6 @@ class Neo4jService:
           volume_data   – date+category grouped volumes (for charts)
           category_breakdown – category counts/amounts (for donut chart)
         """
-        from math import fabs
-
-        try:
-            self.ensure_unique_transaction_keys(case_id)
-        except Exception as e:
-            logger.warning("[FinQuery] ensure_unique_transaction_keys failed (non-fatal): %s", e)
-        try:
-            self.ensure_transaction_ref_ids(case_id)
-        except Exception as e:
-            logger.warning("[FinQuery] ensure_transaction_ref_ids failed (non-fatal): %s", e)
-
         # Sort field mapping
         sort_map = {
             "date": "n.date",
@@ -4061,70 +4051,69 @@ class Neo4jService:
 
             # ═══════════════════════════════════════════════════════════
             # Query A: Count + Summary (full filtered set)
+            # — skipped when skip_aggregations=True (sort/page only)
             # ═══════════════════════════════════════════════════════════
-            logger.info("[FinQuery] Phase A: Summary query for case %s", case_id)
-            params_a = {"case_id": case_id}
-            where_a = self._build_financial_where(params_a, **filter_kw)
+            summary = None
+            if not skip_aggregations:
+                logger.info("[FinQuery] Phase A: Summary query for case %s", case_id)
+                params_a = {"case_id": case_id}
+                where_a = self._build_financial_where(params_a, **filter_kw)
 
-            summary_query = f"""
-                MATCH (n)
-                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                {where_a}
-                WITH n,
-                     toFloat(replace(replace(replace(replace(
-                       trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
-                RETURN
-                    count(n) AS total,
-                    sum(abs(amt)) AS total_volume,
-                    avg(abs(amt)) AS avg_amount,
-                    count(DISTINCT coalesce(n.from_entity_key, n.from_entity_name)) +
-                    count(DISTINCT coalesce(n.to_entity_key, n.to_entity_name)) AS unique_entity_refs,
-                    sum(CASE WHEN amt > 0 THEN amt ELSE 0 END) AS total_inflows,
-                    sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_outflows
-            """
-            sr = session.run(summary_query, **params_a).single()
-            summary = {
-                "transaction_count": sr["total"] or 0,
-                "total_volume": safe_float(sr["total_volume"]),
-                "avg_amount": safe_float(sr["avg_amount"]),
-                "unique_entities": sr["unique_entity_refs"] or 0,
-                "total_inflows": safe_float(sr["total_inflows"]),
-                "total_outflows": safe_float(sr["total_outflows"]),
-                "net_flow": safe_float(sr["total_inflows"]) - safe_float(sr["total_outflows"]),
-            }
-
-            # Entity-mode directional flow summary
-            # When entities are selected, classify flows relative to those entities:
-            #   FROM selected entity → money leaving = OUTFLOW
-            #   TO selected entity → money arriving = INFLOW
-            has_entity_selection = bool(from_entity_keys or to_entity_keys)
-            if has_entity_selection and summary["transaction_count"] > 0:
-                # Determine the "perspective" entity keys
-                perspective_keys = from_entity_keys or to_entity_keys
-                params_flow = {"case_id": case_id, "perspective_keys": perspective_keys}
-                where_flow = self._build_financial_where(params_flow, **filter_kw)
-
-                flow_query = f"""
+                summary_query = f"""
                     MATCH (n)
                     WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                    {where_flow}
+                    {where_a}
                     WITH n,
                          toFloat(replace(replace(replace(replace(
-                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt,
-                         coalesce(n.from_entity_key, n.from_entity_name) AS fk,
-                         coalesce(n.to_entity_key, n.to_entity_name) AS tk,
-                         n.from_entity_name AS fn,
-                         n.to_entity_name AS tn
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
                     RETURN
-                        sum(CASE WHEN tk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_inflows,
-                        sum(CASE WHEN fk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_outflows
+                        count(n) AS total,
+                        sum(abs(amt)) AS total_volume,
+                        avg(abs(amt)) AS avg_amount,
+                        count(DISTINCT coalesce(n.from_entity_key, n.from_entity_name)) +
+                        count(DISTINCT coalesce(n.to_entity_key, n.to_entity_name)) AS unique_entity_refs,
+                        sum(CASE WHEN amt > 0 THEN amt ELSE 0 END) AS total_inflows,
+                        sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_outflows
                 """
-                fr = session.run(flow_query, **params_flow).single()
-                entity_inflows = safe_float(fr["entity_inflows"])
-                entity_outflows = safe_float(fr["entity_outflows"])
-                summary["total_inflows"] = entity_inflows
-                summary["total_outflows"] = entity_outflows
-                summary["net_flow"] = entity_inflows - entity_outflows
+                sr = session.run(summary_query, **params_a).single()
+                summary = {
+                    "transaction_count": sr["total"] or 0,
+                    "total_volume": safe_float(sr["total_volume"]),
+                    "avg_amount": safe_float(sr["avg_amount"]),
+                    "unique_entities": sr["unique_entity_refs"] or 0,
+                    "total_inflows": safe_float(sr["total_inflows"]),
+                    "total_outflows": safe_float(sr["total_outflows"]),
+                    "net_flow": safe_float(sr["total_inflows"]) - safe_float(sr["total_outflows"]),
+                }
+
+                # Entity-mode directional flow summary
+                has_entity_selection = bool(from_entity_keys or to_entity_keys)
+                if has_entity_selection and summary["transaction_count"] > 0:
+                    perspective_keys = from_entity_keys or to_entity_keys
+                    params_flow = {"case_id": case_id, "perspective_keys": perspective_keys}
+                    where_flow = self._build_financial_where(params_flow, **filter_kw)
+
+                    flow_query = f"""
+                        MATCH (n)
+                        WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                        {where_flow}
+                        WITH n,
+                             toFloat(replace(replace(replace(replace(
+                               trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt,
+                             coalesce(n.from_entity_key, n.from_entity_name) AS fk,
+                             coalesce(n.to_entity_key, n.to_entity_name) AS tk,
+                             n.from_entity_name AS fn,
+                             n.to_entity_name AS tn
+                        RETURN
+                            sum(CASE WHEN tk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_inflows,
+                            sum(CASE WHEN fk IN $perspective_keys THEN abs(amt) ELSE 0 END) AS entity_outflows
+                    """
+                    fr = session.run(flow_query, **params_flow).single()
+                    entity_inflows = safe_float(fr["entity_inflows"])
+                    entity_outflows = safe_float(fr["entity_outflows"])
+                    summary["total_inflows"] = entity_inflows
+                    summary["total_outflows"] = entity_outflows
+                    summary["net_flow"] = entity_inflows - entity_outflows
 
             # ═══════════════════════════════════════════════════════════
             # Query B: Paginated rows
@@ -4294,122 +4283,125 @@ class Neo4jService:
                             txn["to_entity"] = {"key": tk, "name": tn}
 
             # ═══════════════════════════════════════════════════════════
-            # Query C: Entity flow (base-filtered, no entity selection)
-            # with cross-filtering applied
+            # Query C: Entity flow + Query D: Charts
+            # — skipped when skip_aggregations=True (sort/page only)
             # ═══════════════════════════════════════════════════════════
-            logger.info("[FinQuery] Phase C: Entity flow aggregation")
-            params_c = {"case_id": case_id}
-            # Build WHERE without entity filter (base-filtered set)
-            base_filter_kw = dict(
-                types=types, categories=categories,
-                start_date=start_date, end_date=end_date,
-                search=search, search_header=search_header,
-                from_entity_keys=None, to_entity_keys=None,
-            )
-            where_c = self._build_financial_where(params_c, **base_filter_kw)
+            from_entities = None
+            to_entities = None
+            volume_data = None
+            category_breakdown = None
 
-            # From entities — cross-constrained by to_entity_keys
-            from_cross = ""
-            if to_entity_keys:
-                params_c["cross_to_keys"] = to_entity_keys
-                from_cross = "AND (coalesce(n.to_entity_key, n.to_entity_name) IN $cross_to_keys)"
+            if not skip_aggregations:
+                logger.info("[FinQuery] Phase C: Entity flow aggregation")
+                params_c = {"case_id": case_id}
+                # Build WHERE without entity filter (base-filtered set)
+                base_filter_kw = dict(
+                    types=types, categories=categories,
+                    start_date=start_date, end_date=end_date,
+                    search=search, search_header=search_header,
+                    from_entity_keys=None, to_entity_keys=None,
+                )
+                where_c = self._build_financial_where(params_c, **base_filter_kw)
 
-            from_entity_query = f"""
-                MATCH (n)
-                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                {where_c}
-                AND (n.from_entity_key IS NOT NULL OR n.from_entity_name IS NOT NULL)
-                {from_cross}
-                WITH coalesce(n.from_entity_key, n.from_entity_name) AS ekey,
-                     n.from_entity_name AS ename,
-                     toFloat(replace(replace(replace(replace(
-                       trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
-                RETURN ekey AS key,
-                       collect(DISTINCT ename)[0] AS name,
-                       count(*) AS count,
-                       sum(abs(amt)) AS totalAmount
-                ORDER BY totalAmount DESC
-            """
-            from_entities = [
-                {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": safe_float(r["totalAmount"])}
-                for r in session.run(from_entity_query, **params_c)
-            ]
+                # From entities — cross-constrained by to_entity_keys
+                from_cross = ""
+                if to_entity_keys:
+                    params_c["cross_to_keys"] = to_entity_keys
+                    from_cross = "AND (coalesce(n.to_entity_key, n.to_entity_name) IN $cross_to_keys)"
 
-            # To entities — cross-constrained by from_entity_keys
-            params_c2 = {"case_id": case_id}
-            where_c2 = self._build_financial_where(params_c2, **base_filter_kw)
-            to_cross = ""
-            if from_entity_keys:
-                params_c2["cross_from_keys"] = from_entity_keys
-                to_cross = "AND (coalesce(n.from_entity_key, n.from_entity_name) IN $cross_from_keys)"
+                from_entity_query = f"""
+                    MATCH (n)
+                    WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                    {where_c}
+                    AND (n.from_entity_key IS NOT NULL OR n.from_entity_name IS NOT NULL)
+                    {from_cross}
+                    WITH coalesce(n.from_entity_key, n.from_entity_name) AS ekey,
+                         n.from_entity_name AS ename,
+                         toFloat(replace(replace(replace(replace(
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                    RETURN ekey AS key,
+                           collect(DISTINCT ename)[0] AS name,
+                           count(*) AS count,
+                           sum(abs(amt)) AS totalAmount
+                    ORDER BY totalAmount DESC
+                """
+                from_entities = [
+                    {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": safe_float(r["totalAmount"])}
+                    for r in session.run(from_entity_query, **params_c)
+                ]
 
-            to_entity_query = f"""
-                MATCH (n)
-                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                {where_c2}
-                AND (n.to_entity_key IS NOT NULL OR n.to_entity_name IS NOT NULL)
-                {to_cross}
-                WITH coalesce(n.to_entity_key, n.to_entity_name) AS ekey,
-                     n.to_entity_name AS ename,
-                     toFloat(replace(replace(replace(replace(
-                       trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
-                RETURN ekey AS key,
-                       collect(DISTINCT ename)[0] AS name,
-                       count(*) AS count,
-                       sum(abs(amt)) AS totalAmount
-                ORDER BY totalAmount DESC
-            """
-            to_entities = [
-                {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": safe_float(r["totalAmount"])}
-                for r in session.run(to_entity_query, **params_c2)
-            ]
+                # To entities — cross-constrained by from_entity_keys
+                params_c2 = {"case_id": case_id}
+                where_c2 = self._build_financial_where(params_c2, **base_filter_kw)
+                to_cross = ""
+                if from_entity_keys:
+                    params_c2["cross_from_keys"] = from_entity_keys
+                    to_cross = "AND (coalesce(n.from_entity_key, n.from_entity_name) IN $cross_from_keys)"
 
-            # ═══════════════════════════════════════════════════════════
-            # Query D: Volume-over-time + category breakdown
-            # ═══════════════════════════════════════════════════════════
-            logger.info("[FinQuery] Phase D: Charts data")
-            params_d = {"case_id": case_id}
-            where_d = self._build_financial_where(params_d, **filter_kw)
+                to_entity_query = f"""
+                    MATCH (n)
+                    WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                    {where_c2}
+                    AND (n.to_entity_key IS NOT NULL OR n.to_entity_name IS NOT NULL)
+                    {to_cross}
+                    WITH coalesce(n.to_entity_key, n.to_entity_name) AS ekey,
+                         n.to_entity_name AS ename,
+                         toFloat(replace(replace(replace(replace(
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                    RETURN ekey AS key,
+                           collect(DISTINCT ename)[0] AS name,
+                           count(*) AS count,
+                           sum(abs(amt)) AS totalAmount
+                    ORDER BY totalAmount DESC
+                """
+                to_entities = [
+                    {"key": r["key"], "name": r["name"], "count": r["count"], "totalAmount": safe_float(r["totalAmount"])}
+                    for r in session.run(to_entity_query, **params_c2)
+                ]
 
-            charts_query = f"""
-                MATCH (n)
-                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                {where_d}
-                WITH n.date AS date,
-                     coalesce(n.financial_category, 'Uncategorized') AS category,
-                     toFloat(replace(replace(replace(replace(
-                       trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
-                RETURN date, category,
-                       sum(abs(amt)) AS total_amount,
-                       count(*) AS count
-                ORDER BY date ASC, category ASC
-            """
-            volume_data = [
-                {"date": r["date"], "category": r["category"],
-                 "total_amount": safe_float(r["total_amount"]), "count": r["count"]}
-                for r in session.run(charts_query, **params_d)
-            ]
+                # Volume-over-time + category breakdown
+                logger.info("[FinQuery] Phase D: Charts data")
+                params_d = {"case_id": case_id}
+                where_d = self._build_financial_where(params_d, **filter_kw)
 
-            # Category breakdown (aggregated from same filtered set)
-            params_e = {"case_id": case_id}
-            where_e = self._build_financial_where(params_e, **filter_kw)
-            cat_query = f"""
-                MATCH (n)
-                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                {where_e}
-                WITH coalesce(n.financial_category, 'Uncategorized') AS category,
-                     toFloat(replace(replace(replace(replace(
-                       trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
-                RETURN category, count(*) AS count, sum(abs(amt)) AS amount
-                ORDER BY amount DESC
-            """
-            category_breakdown = {
-                r["category"]: {"count": r["count"], "amount": safe_float(r["amount"])}
-                for r in session.run(cat_query, **params_e)
-            }
+                charts_query = f"""
+                    MATCH (n)
+                    WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                    {where_d}
+                    WITH n.date AS date,
+                         coalesce(n.financial_category, 'Uncategorized') AS category,
+                         toFloat(replace(replace(replace(replace(
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                    RETURN date, category,
+                           sum(abs(amt)) AS total_amount,
+                           count(*) AS count
+                    ORDER BY date ASC, category ASC
+                """
+                volume_data = [
+                    {"date": r["date"], "category": r["category"],
+                     "total_amount": safe_float(r["total_amount"]), "count": r["count"]}
+                    for r in session.run(charts_query, **params_d)
+                ]
 
-            logger.info("[FinQuery] Complete: %d txns, %d total, %d from_entities, %d to_entities",
-                        len(transactions), total, len(from_entities), len(to_entities))
+                # Category breakdown (aggregated from same filtered set)
+                params_e = {"case_id": case_id}
+                where_e = self._build_financial_where(params_e, **filter_kw)
+                cat_query = f"""
+                    MATCH (n)
+                    WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                    {where_e}
+                    WITH coalesce(n.financial_category, 'Uncategorized') AS category,
+                         toFloat(replace(replace(replace(replace(
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                    RETURN category, count(*) AS count, sum(abs(amt)) AS amount
+                    ORDER BY amount DESC
+                """
+                category_breakdown = {
+                    r["category"]: {"count": r["count"], "amount": safe_float(r["amount"])}
+                    for r in session.run(cat_query, **params_e)
+                }
+
+            logger.info("[FinQuery] Complete: %d txns, %d total, skip_agg=%s", len(transactions), total, skip_aggregations)
 
             return {
                 "transactions": transactions,

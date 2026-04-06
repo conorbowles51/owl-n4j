@@ -48,7 +48,12 @@ async function fetchAPI(endpoint, options = {}) {
   const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : endpoint.includes('/auth/me') ? 30000 : 300000);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
+
+  // Support external abort signal (e.g. for request deduplication)
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => controller.abort());
+  }
+
   try {
     const response = await fetch(url, {
       ...config,
@@ -868,6 +873,7 @@ export const financialAPI = {
     fromEntities, toEntities,
     sortField, sortDir,
     page, pageSize,
+    skipAggregations, signal,
   } = {}) => {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
@@ -883,7 +889,8 @@ export const financialAPI = {
     if (sortDir) params.append('sort_dir', sortDir);
     if (page) params.append('page', String(page));
     if (pageSize) params.append('page_size', String(pageSize));
-    return fetchAPI(`/financial/query?${params.toString()}`);
+    if (skipAggregations) params.append('skip_aggregations', 'true');
+    return fetchAPI(`/financial/query?${params.toString()}`, { signal });
   },
 
   /**

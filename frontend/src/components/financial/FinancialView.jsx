@@ -39,6 +39,10 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
 
+  // When true, fetchPage will skip heavy aggregation queries (summary, entity flow, charts).
+  // Set to true by sort/page handlers, reset to false after each fetch.
+  const skipAggsRef = useRef(false);
+
   // ── Resizable charts section ──
   const [chartsSectionHeight, setChartsSectionHeight] = useState(null);
   const containerRef = useRef(null);
@@ -151,8 +155,10 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   // fetchPage: main data-fetching function — called whenever filters,
   // sort, or pagination change
   // ═══════════════════════════════════════════════════════════════════════
-  const fetchPage = useCallback(async () => {
+  const fetchPage = useCallback(async (signal) => {
     if (!caseId || !initDoneRef.current) return;
+    const skipAgg = skipAggsRef.current;
+    skipAggsRef.current = false; // reset for next call
     setIsQuerying(true);
     try {
       // Omit types/categories when ALL are selected — backend treats absent
@@ -173,9 +179,24 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         sortDir,
         page,
         pageSize,
+        skipAggregations: skipAgg,
+        signal,
       });
-      setQueryResult(result);
+      if (skipAgg) {
+        // Merge: keep cached aggregations, update only page data
+        setQueryResult(prev => prev ? {
+          ...prev,
+          transactions: result.transactions,
+          total: result.total,
+          total_pages: result.total_pages,
+          page: result.page,
+          page_size: result.page_size,
+        } : result);
+      } else {
+        setQueryResult(result);
+      }
     } catch (err) {
+      if (err.name === 'AbortError') return; // request was superseded — ignore
       console.error('Failed to query transactions:', err);
       // Don't clobber existing data on transient errors — just log
     }
@@ -187,9 +208,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     sortField, sortDir, page, pageSize,
   ]);
 
-  // Trigger fetchPage whenever any dependency changes
+  // Trigger fetchPage whenever any dependency changes.
+  // AbortController cancels the previous in-flight request when a new one starts
+  // (prevents the double-fire from filter→setPage(1)→fetchPage cascade).
   useEffect(() => {
-    fetchPage();
+    const controller = new AbortController();
+    fetchPage(controller.signal);
+    return () => controller.abort();
   }, [fetchPage]);
 
   // Reset to page 1 when any filter (not sort/page) changes
@@ -467,17 +492,20 @@ export default function FinancialView({ caseId, onNodeSelect }) {
 
   // Sort change handler (passed to FinancialTable)
   const handleSortChange = useCallback((field, dir) => {
+    skipAggsRef.current = true;
     setSortField(field);
     setSortDir(dir);
   }, []);
 
   // Page change handler
   const handlePageChange = useCallback((newPage) => {
+    skipAggsRef.current = true;
     setPage(newPage);
   }, []);
 
   // Page size change handler
   const handlePageSizeChange = useCallback((newSize) => {
+    skipAggsRef.current = true;
     setPageSize(newSize);
     setPage(1);
   }, []);
