@@ -4076,9 +4076,8 @@ class Neo4jService:
                     sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_outflows
             """
             sr = session.run(summary_query, **params_a).single()
-            total = sr["total"] or 0
             summary = {
-                "transaction_count": total,
+                "transaction_count": sr["total"] or 0,
                 "total_volume": sr["total_volume"] or 0,
                 "avg_amount": sr["avg_amount"] or 0,
                 "unique_entities": sr["unique_entity_refs"] or 0,
@@ -4092,7 +4091,7 @@ class Neo4jService:
             #   FROM selected entity → money leaving = OUTFLOW
             #   TO selected entity → money arriving = INFLOW
             has_entity_selection = bool(from_entity_keys or to_entity_keys)
-            if has_entity_selection and total > 0:
+            if has_entity_selection and summary["transaction_count"] > 0:
                 # Determine the "perspective" entity keys
                 perspective_keys = from_entity_keys or to_entity_keys
                 params_flow = {"case_id": case_id, "perspective_keys": perspective_keys}
@@ -4123,7 +4122,35 @@ class Neo4jService:
             # ═══════════════════════════════════════════════════════════
             # Query B: Paginated rows
             # ═══════════════════════════════════════════════════════════
-            params_b = {"case_id": case_id, "offset": offset, "limit": limit}
+            # Pre-fetch parent keys so we can exclude children whose parent
+            # is in the filtered dataset (they render as expanded sub-rows instead).
+            params_pk = {"case_id": case_id}
+            where_pk = self._build_financial_where(params_pk, **filter_kw)
+            pk_query = f"""
+                MATCH (n)
+                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                  AND n.is_parent = true
+                {where_pk}
+                RETURN collect(n.key) AS parent_keys
+            """
+            pk_result = session.run(pk_query, **params_pk).single()
+            active_parent_keys = pk_result["parent_keys"] if pk_result else []
+
+            # Count rows for pagination (same filter as page query — excludes children)
+            params_cnt = {"case_id": case_id, "active_parent_keys": active_parent_keys}
+            where_cnt = self._build_financial_where(params_cnt, **filter_kw)
+            cnt_query = f"""
+                MATCH (n)
+                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                {where_cnt}
+                AND (n.parent_transaction_key IS NULL
+                     OR NOT n.parent_transaction_key IN $active_parent_keys)
+                RETURN count(n) AS total
+            """
+            total = session.run(cnt_query, **params_cnt).single()["total"] or 0
+
+            params_b = {"case_id": case_id, "offset": offset, "limit": limit,
+                        "active_parent_keys": active_parent_keys}
             where_b = self._build_financial_where(params_b, **filter_kw)
 
             page_query = f"""
@@ -4131,11 +4158,7 @@ class Neo4jService:
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id
                 {where_b}
                 AND (n.parent_transaction_key IS NULL
-                     OR NOT EXISTS {{
-                         MATCH (parent {{case_id: $case_id}})
-                         WHERE parent.key = n.parent_transaction_key
-                           AND parent.amount IS NOT NULL
-                     }})
+                     OR NOT n.parent_transaction_key IN $active_parent_keys)
                 OPTIONAL MATCH (n)-[:MENTIONED_IN]->(source_doc:Document)
                 WHERE source_doc.case_id = $case_id
                 WITH n, collect(DISTINCT source_doc.name) AS source_document_names
