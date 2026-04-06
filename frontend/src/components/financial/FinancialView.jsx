@@ -155,10 +155,14 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (!caseId || !initDoneRef.current) return;
     setIsQuerying(true);
     try {
+      // Omit types/categories when ALL are selected — backend treats absent
+      // param as "no filter" (return all). This avoids huge URLs with 250+ types.
+      const allTypesSelected = selectedTypes.size >= transactionTypes.length && transactionTypes.length > 0;
+      const allCatsSelected = selectedCategories.size >= categoryNames.length && categoryNames.length > 0;
       const result = await financialAPI.queryTransactions({
         caseId,
-        types: selectedTypes.size > 0 ? [...selectedTypes].join(',') : undefined,
-        categories: selectedCategories.size > 0 ? [...selectedCategories].join(',') : undefined,
+        types: allTypesSelected ? undefined : (selectedTypes.size > 0 ? [...selectedTypes].join(',') : undefined),
+        categories: allCatsSelected ? undefined : (selectedCategories.size > 0 ? [...selectedCategories].join(',') : undefined),
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         search: debouncedSearchQuery || undefined,
@@ -402,10 +406,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
     params.append('case_name', caseId);
-    if (selectedCategories.size > 0) {
+    // Omit types/categories when all are selected (backend returns all by default)
+    const allTypesForPdf = selectedTypes.size >= transactionTypes.length && transactionTypes.length > 0;
+    const allCatsForPdf = selectedCategories.size >= categoryNames.length && categoryNames.length > 0;
+    if (selectedCategories.size > 0 && !allCatsForPdf) {
       params.append('categories', [...selectedCategories].join(','));
     }
-    if (selectedTypes.size > 0) {
+    if (selectedTypes.size > 0 && !allTypesForPdf) {
       params.append('types', [...selectedTypes].join(','));
     }
     if (startDate) params.append('start_date', startDate);
