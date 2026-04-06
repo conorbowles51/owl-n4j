@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect, memo } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react';
 import { ArrowUpDown, ArrowUp, ArrowDown, Pencil, Search, X, Check, Tag, ChevronDown, ChevronRight, ArrowLeftRight, MoreHorizontal, Link2, Unlink, CornerDownRight, FileText, ChevronsLeft, ChevronLeft, ChevronsRight } from 'lucide-react';
 import CategoryBadge from './CategoryBadge';
 import { CATEGORY_COLORS } from './constants';
@@ -326,17 +326,9 @@ export default function FinancialTable({
   onAmountChange,
   onTransactionsRefresh,
   onSwapFromTo,
-  /* Server-driven sort/pagination props */
-  sortField = 'date',
-  sortDir = 'asc',
-  onSortChange,
-  page = 1,
-  pageSize = 100,
-  totalCount = 0,
-  totalPages = 0,
-  onPageChange,
-  onPageSizeChange,
 }) {
+  const [sortField, setSortField] = useState('date');
+  const [sortDir, setSortDir] = useState('asc');
   const [editingFromTo, setEditingFromTo] = useState(null); // { key, side: 'from'|'to' }
   const [expandedKey, setExpandedKey] = useState(null);
   const [batchFromToSide, setBatchFromToSide] = useState(null); // 'from' | 'to' | null
@@ -402,17 +394,60 @@ export default function FinancialTable({
   }, [transactions, caseId]);
 
   const handleSort = (field) => {
-    if (onSortChange) {
-      if (sortField === field) {
-        onSortChange(field, sortDir === 'asc' ? 'desc' : 'asc');
-      } else {
-        onSortChange(field, 'asc');
-      }
+    if (sortField === field) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDir('asc');
     }
   };
 
-  // Server already returns pre-sorted, pre-paginated rows — use directly
-  const displayRows = transactions;
+  const sorted = useMemo(() => {
+    // 1. Deduplicate by key (guard against data issues)
+    const seen = new Set();
+    const deduped = [];
+    for (const t of transactions) {
+      if (!seen.has(t.key)) {
+        seen.add(t.key);
+        deduped.push(t);
+      }
+    }
+    // 2. Exclude child transactions whose parent is also present — those children
+    //    are already rendered as expanded sub-rows under the parent row.
+    const parentKeysInList = new Set(
+      deduped.filter(t => t.is_parent).map(t => t.key)
+    );
+    const arr = deduped.filter(
+      t => !t.parent_transaction_key || !parentKeysInList.has(t.parent_transaction_key)
+    );
+    arr.sort((a, b) => {
+      let va = a[sortField];
+      let vb = b[sortField];
+      if (sortField === 'amount') {
+        va = parseFloat(va) || 0;
+        vb = parseFloat(vb) || 0;
+        return sortDir === 'asc' ? va - vb : vb - va;
+      }
+      va = (va || '').toString().toLowerCase();
+      vb = (vb || '').toString().toLowerCase();
+      const cmp = va.localeCompare(vb);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return arr;
+  }, [transactions, sortField, sortDir]);
+
+  // Pagination
+  const [pageSize, setPageSize] = useState(100);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Reset to page 1 when data count or sort changes (not on in-place edits)
+  useEffect(() => { setCurrentPage(1); }, [transactions.length, sortField, sortDir]);
+
+  const totalPages = Math.ceil(sorted.length / pageSize);
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sorted.slice(start, start + pageSize);
+  }, [sorted, currentPage, pageSize]);
 
   const isSelected = (key) => selectedKeys.includes(key);
 
@@ -425,7 +460,7 @@ export default function FinancialTable({
   };
 
   const toggleAll = () => {
-    const pageKeys = displayRows.map(t => t.key);
+    const pageKeys = paginatedRows.map(t => t.key);
     const allPageSelected = pageKeys.every(k => selectedKeys.includes(k));
     if (allPageSelected) {
       onSelectionChange(selectedKeys.filter(k => !pageKeys.includes(k)));
@@ -578,7 +613,7 @@ export default function FinancialTable({
               <th className="px-2 py-2 text-left">
                 <input
                   type="checkbox"
-                  checked={displayRows.length > 0 && displayRows.every(t => selectedKeys.includes(t.key))}
+                  checked={paginatedRows.length > 0 && paginatedRows.every(t => selectedKeys.includes(t.key))}
                   onChange={toggleAll}
                   className="rounded border-light-300"
                 />
@@ -618,7 +653,7 @@ export default function FinancialTable({
             </tr>
           </thead>
           <tbody>
-            {displayRows.map((txn, rowIndex) => {
+            {paginatedRows.map((txn, rowIndex) => {
               const amount = parseFloat(txn.amount);
               const amountColor = amount >= 0 ? '#22c55e' : '#ef4444';
               const typeColor = TYPE_COLORS[txn.type] || TYPE_COLORS.Other;
@@ -643,7 +678,7 @@ export default function FinancialTable({
                         className="rounded border-light-300"
                       />
                     </td>
-                    <td className="px-1 py-1.5 text-right text-light-400 tabular-nums">{(page - 1) * pageSize + rowIndex + 1}</td>
+                    <td className="px-1 py-1.5 text-right text-light-400 tabular-nums">{(currentPage - 1) * pageSize + rowIndex + 1}</td>
                     <td
                       className="px-2 py-1.5 font-mono text-[10px] text-light-500 bg-light-25 cursor-pointer hover:text-owl-blue-600 select-none"
                       title="Click to copy"
@@ -912,7 +947,7 @@ export default function FinancialTable({
                 </React.Fragment>
               );
             })}
-            {displayRows.length === 0 && (
+            {paginatedRows.length === 0 && (
               <tr>
                 <td colSpan={12} className="px-4 py-8 text-center text-light-500">
                   No transactions match the current filters
@@ -924,13 +959,13 @@ export default function FinancialTable({
       </div>
 
       {/* Pagination Controls */}
-      {totalCount > 0 && (
+      {sorted.length > 0 && (
         <div className="flex items-center justify-between px-3 py-2 border-t border-light-200 bg-light-50 text-xs text-light-600">
           <div className="flex items-center gap-2">
             <span>Rows per page:</span>
             <select
               value={pageSize}
-              onChange={(e) => onPageSizeChange && onPageSizeChange(Number(e.target.value))}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
               className="border border-light-200 rounded px-1 py-0.5 text-xs focus:outline-none focus:border-owl-blue-400"
             >
               {[50, 100, 200, 500].map(n => (
@@ -938,21 +973,21 @@ export default function FinancialTable({
               ))}
             </select>
             <span className="text-light-500">
-              {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, totalCount)} of {totalCount.toLocaleString()}
+              {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, sorted.length)} of {sorted.length.toLocaleString()}
             </span>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => onPageChange && onPageChange(1)} disabled={page === 1} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+            <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
               <ChevronsLeft className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => onPageChange && onPageChange(page - 1)} disabled={page === 1} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+            <button onClick={() => setCurrentPage(p => p - 1)} disabled={currentPage === 1} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="px-2">Page {page} of {totalPages}</span>
-            <button onClick={() => onPageChange && onPageChange(page + 1)} disabled={page >= totalPages} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+            <span className="px-2">Page {currentPage} of {totalPages}</span>
+            <button onClick={() => setCurrentPage(p => p + 1)} disabled={currentPage >= totalPages} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
-            <button onClick={() => onPageChange && onPageChange(totalPages)} disabled={page >= totalPages} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
+            <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage >= totalPages} className="p-1 rounded hover:bg-light-200 disabled:opacity-30 disabled:cursor-not-allowed">
               <ChevronsRight className="w-3.5 h-3.5" />
             </button>
           </div>

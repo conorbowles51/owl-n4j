@@ -2,21 +2,15 @@
 Financial Router - endpoints for financial analysis and transaction visualization.
 """
 
-import json
-import logging
-import math
-import traceback
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Query, HTTPException, UploadFile, File, Form
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from services import neo4j_service
 from services.financial_export_service import generate_financial_pdf
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
 
@@ -85,132 +79,6 @@ async def get_financial_transactions(
             categories=parsed_categories,
         )
         return {"transactions": transactions, "total": len(transactions)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/query")
-async def query_financial(
-    case_id: str = Query(..., description="REQUIRED: Case ID"),
-    types: Optional[str] = Query(None, description="Comma-separated transaction types"),
-    categories: Optional[str] = Query(None, description="Comma-separated categories"),
-    start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
-    end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
-    search: Optional[str] = Query(None, description="Filter panel search"),
-    search_header: Optional[str] = Query(None, description="Header bar search"),
-    from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
-    to_entities: Optional[str] = Query(None, description="Comma-separated recipient entity keys"),
-    sort_field: str = Query("date", description="Sort field: date, time, name, amount, type, category"),
-    sort_dir: str = Query("asc", description="Sort direction: asc or desc"),
-    page: int = Query(1, ge=1, description="Page number (1-based)"),
-    page_size: int = Query(100, ge=1, le=500, description="Results per page"),
-    skip_aggregations: bool = Query(False, description="Skip aggregation queries for sort/page-only changes"),
-):
-    """Server-side paginated financial query with aggregations.
-
-    Returns one page of transactions plus summary stats, entity flow data,
-    volume-over-time, and category breakdown — all computed server-side.
-    When skip_aggregations=True, only pagination queries run (summary, entity
-    flow, charts, category breakdown return None — frontend uses cached values).
-    """
-    try:
-        logger.info("[FinQuery] case_id=%s types=%s categories=%s page=%d page_size=%d sort=%s/%s",
-                     case_id, types[:50] if types else None,
-                     categories[:50] if categories else None,
-                     page, page_size, sort_field, sort_dir)
-
-        parsed_types = [t.strip() for t in types.split(",") if t.strip()] if types else None
-        parsed_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else None
-        parsed_from = [k.strip() for k in from_entities.split(",") if k.strip()] if from_entities else None
-        parsed_to = [k.strip() for k in to_entities.split(",") if k.strip()] if to_entities else None
-
-        offset = (page - 1) * page_size
-        result = neo4j_service.query_financial_transactions(
-            case_id=case_id,
-            types=parsed_types,
-            categories=parsed_categories,
-            start_date=start_date,
-            end_date=end_date,
-            search=search.strip() if search else None,
-            search_header=search_header.strip() if search_header else None,
-            from_entity_keys=parsed_from,
-            to_entity_keys=parsed_to,
-            sort_field=sort_field,
-            sort_dir=sort_dir,
-            offset=offset,
-            limit=page_size,
-            skip_aggregations=skip_aggregations,
-        )
-
-        total = result["total"]
-        total_pages = math.ceil(total / page_size) if total > 0 else 0
-
-        logger.info("[FinQuery] Success: %d transactions, %d total, %d pages",
-                     len(result.get("transactions", [])), total, total_pages)
-
-        response = {
-            **result,
-            "page": page,
-            "page_size": page_size,
-            "total_pages": total_pages,
-        }
-
-        # Return via JSONResponse with a safe serializer so Neo4j temporal/spatial
-        # types don't crash Starlette's response handler (which produces a plain-text
-        # 500 that bypasses our try/except).
-        return JSONResponse(content=json.loads(json.dumps(response, default=str)))
-    except Exception as e:
-        logger.error("[FinQuery] Error: %s\n%s", str(e), traceback.format_exc())
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/query-debug")
-async def query_financial_debug(
-    case_id: str = Query(..., description="REQUIRED: Case ID"),
-):
-    """Diagnostic endpoint to test each query phase individually."""
-    phases = {}
-    try:
-        # Test summary query
-        try:
-            from services.neo4j_service import Neo4jService
-            svc = neo4j_service
-            svc._driver.session().close()  # Test connection
-            phases["connection"] = "OK"
-        except Exception as e:
-            phases["connection"] = f"FAIL: {e}"
-
-        try:
-            result = neo4j_service.query_financial_transactions(
-                case_id=case_id,
-                sort_field="date",
-                sort_dir="asc",
-                offset=0,
-                limit=5,
-            )
-            phases["query"] = "OK"
-            phases["total"] = result.get("total", 0)
-            phases["txn_count"] = len(result.get("transactions", []))
-            phases["from_entities_count"] = len(result.get("from_entities", []))
-            phases["to_entities_count"] = len(result.get("to_entities", []))
-        except Exception as e:
-            phases["query"] = f"FAIL: {type(e).__name__}: {e}"
-            logger.error("[FinQueryDebug] %s\n%s", e, traceback.format_exc())
-
-        return phases
-    except Exception as e:
-        logger.error("[FinQueryDebug] Outer error: %s\n%s", e, traceback.format_exc())
-        return {"error": str(e)}
-
-
-@router.get("/types")
-async def get_transaction_types(
-    case_id: str = Query(..., description="REQUIRED: Case ID"),
-):
-    """Return all distinct transaction types for a case."""
-    try:
-        types = neo4j_service.get_financial_transaction_types(case_id)
-        return {"types": types}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -601,94 +469,193 @@ async def export_financial_pdf(
     entity_key: Optional[str] = Query(None, description="Filter by entity key (from/to) — legacy single"),
     entity_name: Optional[str] = Query(None, description="Entity name for filter display"),
     entity: Optional[str] = Query(None, description="Entity name to filter by from/to (legacy)"),
-    search: Optional[str] = Query(None, description="Filter panel search"),
-    search_header: Optional[str] = Query(None, description="Header bar search"),
+    search: Optional[str] = Query(None, description="Filter panel search — matches name, purpose, notes, counterparty_details, from/to entity names, category"),
+    search_header: Optional[str] = Query(None, description="Header bar search — matches name, from/to entity names, purpose, notes"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
 ):
     """Export filtered financial transactions as a PDF report.
 
-    Reuses query_financial_transactions() so filtering is identical to the UI.
+    Designed for print-friendly output suitable for attorney-client meetings
+    where laptops and internet are unavailable (e.g., jail visits).
+    Includes transaction names, AI summaries, charts, entity flow tables,
+    and entity notes appendix.
     """
     from math import fabs
 
     try:
-        # Parse filter params
-        parsed_types = [t.strip() for t in types.split(",") if t.strip()] if types else None
-        parsed_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else None
-        parsed_from = [k.strip() for k in from_entities.split(",") if k.strip()] if from_entities else None
-        parsed_to = [k.strip() for k in to_entities.split(",") if k.strip()] if to_entities else None
+        result = neo4j_service.get_financial_transactions(case_id=case_id)
+        all_transactions = result.get("transactions", []) if isinstance(result, dict) else result
 
-        # Legacy single-entity filter → map to from/to entity filters
-        if not parsed_from and not parsed_to:
-            if entity_key:
-                parsed_from = [entity_key]
-                parsed_to = [entity_key]
-            elif entity:
-                parsed_from = [entity]
-                parsed_to = [entity]
-
-        # Use shared query with large limit to get all matching transactions
-        qr = neo4j_service.query_financial_transactions(
-            case_id=case_id,
-            types=parsed_types,
-            categories=parsed_categories,
-            start_date=start_date,
-            end_date=end_date,
-            search=search.strip() if search else None,
-            search_header=search_header.strip() if search_header else None,
-            from_entity_keys=parsed_from,
-            to_entity_keys=parsed_to,
-            sort_field="date",
-            sort_dir="asc",
-            offset=0,
-            limit=999999,
-        )
-
-        transactions = qr["transactions"]
-        from_entities_list = [
-            {"name": e["name"], "count": e["count"], "total": e["totalAmount"]}
-            for e in qr["from_entities"]
-        ]
-        to_entities_list = [
-            {"name": e["name"], "count": e["count"], "total": e["totalAmount"]}
-            for e in qr["to_entities"]
-        ]
-
-        # Build filters description for header
+        # --- Stage 1: Base filters (type, category, date, search) ---
+        transactions = list(all_transactions)
         filters = []
-        if parsed_categories:
-            filters.append(f"Categories: {', '.join(parsed_categories)}")
-        if parsed_types:
-            filters.append(f"Types: {', '.join(parsed_types)}")
+
+        if categories:
+            cat_list = [c.strip() for c in categories.split(",")]
+            cat_set = set(cat_list)
+            # Match frontend: treats missing category as 'Uncategorized'
+            transactions = [t for t in transactions if (t.get("category") or "Uncategorized") in cat_set]
+            filters.append(f"Categories: {', '.join(cat_list)}")
+        if types:
+            type_list = [tp.strip() for tp in types.split(",")]
+            transactions = [t for t in transactions if t.get("type") in type_list]
+            filters.append(f"Types: {', '.join(type_list)}")
         if start_date:
+            transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
             filters.append(f"From: {start_date}")
         if end_date:
+            transactions = [t for t in transactions if t.get("date") and t["date"] <= end_date]
             filters.append(f"To: {end_date}")
+        # Filter panel search — matches same fields as frontend searchQuery
         if search:
-            filters.append(f'Search: "{search.strip()}"')
+            q = search.lower()
+            def filter_panel_match(t):
+                fields = [
+                    t.get("name"), t.get("purpose"), t.get("notes"),
+                    t.get("counterparty_details"),
+                    t.get("category"), t.get("summary"),
+                ]
+                if isinstance(t.get("from_entity"), dict):
+                    fields.append(t["from_entity"].get("name"))
+                if isinstance(t.get("to_entity"), dict):
+                    fields.append(t["to_entity"].get("name"))
+                return any(q in (f or "").lower() for f in fields)
+            transactions = [t for t in transactions if filter_panel_match(t)]
+            filters.append(f'Search: "{search}"')
+        # Header bar search — matches same fields as frontend searchTerm
         if search_header:
-            filters.append(f'Search: "{search_header.strip()}"')
+            sh = search_header.lower()
+            def header_search_match(t):
+                from_name = ""
+                to_name = ""
+                if isinstance(t.get("from_entity"), dict):
+                    from_name = t["from_entity"].get("name", "")
+                if isinstance(t.get("to_entity"), dict):
+                    to_name = t["to_entity"].get("name", "")
+                return (
+                    sh in (t.get("name") or "").lower()
+                    or sh in from_name.lower()
+                    or sh in to_name.lower()
+                    or sh in (t.get("purpose") or "").lower()
+                    or sh in (t.get("notes") or "").lower()
+                    or sh in (t.get("summary") or "").lower()
+                )
+            transactions = [t for t in transactions if header_search_match(t)]
+            filters.append(f'Search: "{search_header}"')
+
+        # base_filtered = transactions before entity filtering (for entity flow tables)
+        base_filtered = list(transactions)
+
+        # --- Stage 2: Entity selection filters ---
+        from_keys_set = None
+        to_keys_set = None
+
         if from_entities:
-            filters.append(f"Senders: {len(parsed_from)} selected")
+            from_keys_set = set(k.strip() for k in from_entities.split(",") if k.strip())
+            transactions = [
+                t for t in transactions
+                if isinstance(t.get("from_entity"), dict)
+                and (t["from_entity"].get("key") or t["from_entity"].get("name")) in from_keys_set
+            ]
+            filters.append(f"Senders: {len(from_keys_set)} selected")
         if to_entities:
-            filters.append(f"Recipients: {len(parsed_to)} selected")
+            to_keys_set = set(k.strip() for k in to_entities.split(",") if k.strip())
+            transactions = [
+                t for t in transactions
+                if isinstance(t.get("to_entity"), dict)
+                and (t["to_entity"].get("key") or t["to_entity"].get("name")) in to_keys_set
+            ]
+            filters.append(f"Recipients: {len(to_keys_set)} selected")
+
+        # Legacy single-entity filter (backwards compatibility)
+        if not from_entities and not to_entities:
+            if entity_key:
+                display_name = entity_name or entity_key
+                transactions = [
+                    t for t in transactions
+                    if (isinstance(t.get("from_entity"), dict) and t["from_entity"].get("key") == entity_key)
+                    or (isinstance(t.get("to_entity"), dict) and t["to_entity"].get("key") == entity_key)
+                    or t.get("from_entity") == entity_key
+                    or t.get("to_entity") == entity_key
+                ]
+                filters.append(f"Entity: {display_name}")
+            elif entity:
+                transactions = [
+                    t for t in transactions
+                    if (isinstance(t.get("from_entity"), dict) and t["from_entity"].get("name") == entity)
+                    or (isinstance(t.get("to_entity"), dict) and t["to_entity"].get("name") == entity)
+                ]
+                filters.append(f"Entity: {entity}")
+
+        # --- Include children of any parent that passed filters ---
+        # Sub-transactions may not match search/filter criteria on their own
+        # but should always appear alongside their parent.
+        filtered_keys = set(t["key"] for t in transactions)
+        parent_keys_in_results = set(
+            t["key"] for t in transactions if t.get("is_parent")
+        )
+        if parent_keys_in_results:
+            for t in all_transactions:
+                ptk = t.get("parent_transaction_key")
+                if ptk and ptk in parent_keys_in_results and t["key"] not in filtered_keys:
+                    transactions.append(t)
+                    filtered_keys.add(t["key"])
+
         filters_description = " | ".join(filters) if filters else ""
 
-        # Category breakdown from server
-        category_counts = {cat: data["count"] for cat, data in qr["category_breakdown"].items()}
-        category_amounts = {cat: data["amount"] for cat, data in qr["category_breakdown"].items()}
+        # --- Build entity flow data from base_filtered (pre-entity-filter) with cross-filtering ---
+        def _entity_key(e):
+            if isinstance(e, dict):
+                return e.get("key") or e.get("name")
+            return None
 
-        # Volume timeline from server data
+        from_entities_data = {}
+        to_entities_data = {}
+        for t in base_filtered:
+            amt = fabs(float(t.get("amount") or 0))
+            fk = _entity_key(t.get("from_entity"))
+            tk = _entity_key(t.get("to_entity"))
+            fn = t["from_entity"].get("name", fk) if isinstance(t.get("from_entity"), dict) else None
+            tn = t["to_entity"].get("name", tk) if isinstance(t.get("to_entity"), dict) else None
+
+            # From entities — constrained by to_keys_set (cross-filter)
+            if fk and fn:
+                if to_keys_set is None or (tk and tk in to_keys_set):
+                    if fk not in from_entities_data:
+                        from_entities_data[fk] = {"name": fn, "count": 0, "total": 0.0}
+                    from_entities_data[fk]["count"] += 1
+                    from_entities_data[fk]["total"] += amt
+
+            # To entities — constrained by from_keys_set (cross-filter)
+            if tk and tn:
+                if from_keys_set is None or (fk and fk in from_keys_set):
+                    if tk not in to_entities_data:
+                        to_entities_data[tk] = {"name": tn, "count": 0, "total": 0.0}
+                    to_entities_data[tk]["count"] += 1
+                    to_entities_data[tk]["total"] += amt
+
+        from_entities_list = sorted(from_entities_data.values(), key=lambda e: e["total"], reverse=True)
+        to_entities_list = sorted(to_entities_data.values(), key=lambda e: e["total"], reverse=True)
+
+        # --- Build category breakdown for chart from filtered transactions ---
+        category_counts = {}
+        category_amounts = {}
+        for t in transactions:
+            cat = t.get("category") or "Uncategorized"
+            category_counts[cat] = category_counts.get(cat, 0) + 1
+            category_amounts[cat] = category_amounts.get(cat, 0.0) + fabs(float(t.get("amount") or 0))
+
+        # --- Build volume-over-time data from filtered transactions ---
         volume_by_month = {}
-        for v in qr["volume_data"]:
-            d = v.get("date")
+        for t in transactions:
+            d = t.get("date")
             if not d:
                 continue
-            month_key = d[:7]
-            volume_by_month[month_key] = volume_by_month.get(month_key, 0.0) + (v.get("total_amount") or 0)
+            month_key = d[:7]  # YYYY-MM
+            volume_by_month[month_key] = volume_by_month.get(month_key, 0.0) + fabs(float(t.get("amount") or 0))
         volume_timeline = sorted(volume_by_month.items())
 
-        # Entity notes appendix
+        # --- Collect entity notes for appendix ---
         entity_notes = None
         if include_entity_notes:
             try:
@@ -722,24 +689,19 @@ async def export_financial_pdf(
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
 
-        # Compute directional inflow/outflow
-        from_keys_set = set(parsed_from) if parsed_from else None
-        to_keys_set = set(parsed_to) if parsed_to else None
-        has_entity_selection = bool(from_keys_set or to_keys_set)
-        total_inflows = 0.0
-        total_outflows = 0.0
-        inflow_by_entity = {}
-        outflow_by_entity = {}
-
-        def _entity_key(e):
-            if isinstance(e, dict):
-                return e.get("key") or e.get("name")
-            return None
-
+        # --- Compute directional inflow/outflow ---
+        # Mirrors frontend filteredSummary logic exactly
         def _entity_name(e):
             if isinstance(e, dict):
                 return e.get("name") or e.get("key")
             return None
+
+        has_entity_selection = bool(from_keys_set or to_keys_set)
+        total_inflows = 0.0
+        total_outflows = 0.0
+        # Per-entity breakdown: key → {name, amount}
+        inflow_by_entity = {}
+        outflow_by_entity = {}
 
         def _add_to_map(m, key, name, amt):
             if key not in m:
@@ -747,6 +709,9 @@ async def export_financial_pdf(
             m[key]["amount"] += amt
 
         if has_entity_selection:
+            # Entity mode: classify flows relative to selected entities
+            # from_entity match = money leaving that entity = OUTFLOW
+            # to_entity match = money arriving at that entity = INFLOW
             for t in transactions:
                 amt = fabs(float(t.get("amount") or 0))
                 tk = _entity_key(t.get("to_entity"))
@@ -772,6 +737,9 @@ async def export_financial_pdf(
                         if tn:
                             _add_to_map(outflow_by_entity, tk or tn, tn, amt)
         else:
+            # Overview mode: sign-based
+            # positive amounts = outflows (money leaving accounts)
+            # negative amounts = inflows (credits/refunds)
             for t in transactions:
                 raw = float(t.get("amount") or 0)
                 amt = fabs(raw)
@@ -780,11 +748,12 @@ async def export_financial_pdf(
                 else:
                     total_inflows += amt
 
+        # Convert to sorted lists (by amount desc)
         inflow_entities_list = sorted(inflow_by_entity.values(), key=lambda e: e["amount"], reverse=True)
         outflow_entities_list = sorted(outflow_by_entity.values(), key=lambda e: e["amount"], reverse=True)
 
-        # Group sub-transactions under their parents for adjacent display
-        parent_children = {}
+        # Group sub-transactions under their parents so they appear adjacent in the PDF
+        parent_children = {}  # parent_key -> [child_txns]
         top_level = []
         txn_by_key = {t["key"]: t for t in transactions}
         for t in transactions:
@@ -819,6 +788,7 @@ async def export_financial_pdf(
             outflow_entities=outflow_entities_list if has_entity_selection else None,
         )
 
+        # Serve as printable HTML — browser's Print → Save as PDF handles pagination
         return Response(content=html, media_type="text/html")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

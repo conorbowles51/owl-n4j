@@ -59,7 +59,7 @@ function formatPeriodLabel(period, grouping) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function FinancialCharts({ volumeData = [], categoryBreakdown = {}, categoryColorMap = {} }) {
+export default function FinancialCharts({ volumeData = [], transactions = [], categoryColorMap = {} }) {
   const dates = useMemo(() => volumeData.map(d => d.date).filter(Boolean), [volumeData]);
   const grouping = useMemo(() => detectGrouping(dates), [dates]);
   const barData = useMemo(() => groupByPeriod(volumeData, grouping), [volumeData, grouping]);
@@ -70,17 +70,20 @@ export default function FinancialCharts({ volumeData = [], categoryBreakdown = {
     return [...cats];
   }, [volumeData]);
 
-  // Build donut chart data from server-provided category breakdown
   const categoryData = useMemo(() => {
-    return Object.entries(categoryBreakdown).map(([name, data]) => ({
+    const counts = {};
+    transactions.forEach(t => {
+      const cat = t.category || 'Uncategorized';
+      counts[cat] = (counts[cat] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({
       name,
-      value: data.count,
+      value,
       color: categoryColorMap[name] || CATEGORY_COLORS[name] || '#9ca3af',
     }));
-  }, [categoryBreakdown, categoryColorMap]);
+  }, [transactions, categoryColorMap]);
 
-  const hasCategoryData = Object.keys(categoryBreakdown).length > 0;
-  if (volumeData.length === 0 && !hasCategoryData) return null;
+  if (volumeData.length === 0 && transactions.length === 0) return null;
 
   return (
     <div className="border border-light-200 rounded-lg bg-white p-2">

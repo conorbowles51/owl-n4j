@@ -48,12 +48,7 @@ async function fetchAPI(endpoint, options = {}) {
   const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : endpoint.includes('/auth/me') ? 30000 : 300000);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-  // Support external abort signal (e.g. for request deduplication)
-  if (options.signal) {
-    options.signal.addEventListener('abort', () => controller.abort());
-  }
-
+  
   try {
     const response = await fetch(url, {
       ...config,
@@ -861,43 +856,6 @@ export const financialAPI = {
     if (endDate) params.append('end_date', endDate);
     if (categories) params.append('categories', categories);
     return fetchAPI(`/financial?${params.toString()}`);
-  },
-
-  /**
-   * Server-side paginated financial query with aggregations.
-   * Returns one page of transactions + summary, entity flow, charts data.
-   */
-  queryTransactions: async ({
-    caseId, types, categories, startDate, endDate,
-    search, searchHeader,
-    fromEntities, toEntities,
-    sortField, sortDir,
-    page, pageSize,
-    skipAggregations, signal,
-  } = {}) => {
-    const params = new URLSearchParams();
-    params.append('case_id', caseId);
-    if (types) params.append('types', types);
-    if (categories) params.append('categories', categories);
-    if (startDate) params.append('start_date', startDate);
-    if (endDate) params.append('end_date', endDate);
-    if (search) params.append('search', search);
-    if (searchHeader) params.append('search_header', searchHeader);
-    if (fromEntities) params.append('from_entities', fromEntities);
-    if (toEntities) params.append('to_entities', toEntities);
-    if (sortField) params.append('sort_field', sortField);
-    if (sortDir) params.append('sort_dir', sortDir);
-    if (page) params.append('page', String(page));
-    if (pageSize) params.append('page_size', String(pageSize));
-    if (skipAggregations) params.append('skip_aggregations', 'true');
-    return fetchAPI(`/financial/query?${params.toString()}`, { signal });
-  },
-
-  /**
-   * Get all distinct transaction types for filter panel init.
-   */
-  getTransactionTypes: (caseId) => {
-    return fetchAPI(`/financial/types?case_id=${encodeURIComponent(caseId)}`);
   },
 
   /**

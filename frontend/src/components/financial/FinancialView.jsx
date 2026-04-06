@@ -12,41 +12,25 @@ import AutoExtractPreviewModal from './AutoExtractPreviewModal';
 import NotesUploadModal from './NotesUploadModal';
 
 export default function FinancialView({ caseId, onNodeSelect }) {
-  // ── Server-driven query result ──
-  const [queryResult, setQueryResult] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [volumeData, setVolumeData] = useState([]);
+  const [categories, setCategories] = useState([]); // {name, color, builtin}[]
   const [isLoading, setIsLoading] = useState(true);
-  const [isQuerying, setIsQuerying] = useState(false);
   const [error, setError] = useState(null);
 
-  // ── Init data (transaction types + categories) ──
-  const [transactionTypes, setTransactionTypes] = useState([]);
-  const [categories, setCategories] = useState([]); // {name, color, builtin}[]
-
-  // ── Filter state ──
+  // Filter state
   const [selectedTypes, setSelectedTypes] = useState(new Set());
   const [selectedCategories, setSelectedCategories] = useState(new Set());
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
-  const [selectedFromEntities, setSelectedFromEntities] = useState(new Set());
-  const [selectedToEntities, setSelectedToEntities] = useState(new Set());
-  const [searchQuery, setSearchQuery] = useState(''); // Filter panel search
+  const [selectedFromEntities, setSelectedFromEntities] = useState(new Set()); // Set of entity keys
+  const [selectedToEntities, setSelectedToEntities] = useState(new Set());     // Set of entity keys
+  const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
   const [filterExpanded, setFilterExpanded] = useState(false);
   const [chartsExpanded, setChartsExpanded] = useState(true);
 
-  // ── Sort + Pagination (lifted from FinancialTable) ──
-  const [sortField, setSortField] = useState('date');
-  const [sortDir, setSortDir] = useState('asc');
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
-
-  // When true, the next fetch will skip heavy aggregation queries (summary, entity flow, charts).
-  // Set to true by sort/page handlers, reset to false after each fetch.
-  const skipAggsRef = useRef(false);
-  // Bumped to force a re-fetch (e.g. after entities-refresh event).
-  const [refreshCounter, setRefreshCounter] = useState(0);
-
-  // ── Resizable charts section ──
-  const [chartsSectionHeight, setChartsSectionHeight] = useState(null);
+  // Resizable charts section — user drags the divider to control height
+  const [chartsSectionHeight, setChartsSectionHeight] = useState(null); // null = auto (use default)
   const containerRef = useRef(null);
   const chartsSectionRef = useRef(null);
   const isDraggingRef = useRef(false);
@@ -80,10 +64,10 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     document.body.style.userSelect = 'none';
   }, []);
 
-  // ── Selection state for batch operations ──
+  // Selection state for batch operations
   const [selectedKeys, setSelectedKeys] = useState([]);
 
-  // ── Search state — inputs update immediately, API calls use debounced values ──
+  // Search state — inputs update immediately, filtering uses debounced values
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -98,17 +82,23 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  // ── Modal state ──
+  // Add category modal
   const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+
+  // Bulk correction modal
   const [showBulkCorrectionModal, setShowBulkCorrectionModal] = useState(false);
+
+  // Notes upload modal
   const [showNotesUploadModal, setShowNotesUploadModal] = useState(false);
+
+  // Auto-extract from/to modal
   const [showAutoExtractModal, setShowAutoExtractModal] = useState(false);
   const [autoExtractLoading, setAutoExtractLoading] = useState(false);
   const [autoExtractApplying, setAutoExtractApplying] = useState(false);
   const [autoExtractPreview, setAutoExtractPreview] = useState(null);
   const [autoExtractError, setAutoExtractError] = useState(null);
 
-  // ── Derived from categories ──
+  // Derived helpers from category objects
   const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
   const categoryColorMap = useMemo(() => {
     const map = {};
@@ -116,212 +106,281 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     return map;
   }, [categories]);
 
-  // ── Track whether initial load is complete (so we don't show "no data" flash) ──
-  const initDoneRef = useRef(false);
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // Initial load: fetch transaction types + categories, then first page
-  // ═══════════════════════════════════════════════════════════════════════
-  const loadInit = useCallback(async () => {
+  // Load all financial data
+  const loadData = useCallback(async () => {
     if (!caseId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const [typesRes, catRes] = await Promise.all([
-        financialAPI.getTransactionTypes(caseId),
+      const [txnRes, volumeRes, catRes] = await Promise.all([
+        financialAPI.getTransactions({ caseId }),
+        financialAPI.getVolume(caseId),
         financialAPI.getCategories(caseId),
       ]);
-
-      const types = typesRes.types || [];
+      setTransactions(txnRes.transactions || []);
+      setVolumeData(volumeRes.data || []);
       const cats = catRes.categories || [];
-      setTransactionTypes(types);
       setCategories(cats);
 
       // Initialize filters with all types and categories selected
-      setSelectedTypes(new Set(types));
+      const types = new Set((txnRes.transactions || []).map(t => t.type));
+      setSelectedTypes(types);
       setSelectedCategories(new Set(cats.map(c => c.name)));
-
-      initDoneRef.current = true;
     } catch (err) {
-      console.error('Failed to load financial init data:', err);
+      console.error('Failed to load financial data:', err);
       setError(err.message || 'Failed to load financial data');
     }
     setIsLoading(false);
   }, [caseId]);
 
   useEffect(() => {
-    loadInit();
-  }, [loadInit]);
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // fetchPage: main data-fetching function.
-  //
-  // Uses a "fetch key" approach: all query parameters are collapsed into
-  // a single string key.  A filter change auto-resets page to 1 inside
-  // the key computation, so there is exactly ONE useEffect trigger per
-  // user interaction — no cascading setPage → re-render → re-fetch.
-  // ═══════════════════════════════════════════════════════════════════════
-
-  // Fingerprint of filter-only deps (excludes sort/page).
-  const filterFingerprint = useMemo(() => JSON.stringify([
-    [...selectedTypes].sort(),
-    [...selectedCategories].sort(),
-    startDate, endDate,
-    debouncedSearchQuery, debouncedSearchTerm,
-    [...selectedFromEntities].sort(),
-    [...selectedToEntities].sort(),
-  ]), [selectedTypes, selectedCategories, startDate, endDate,
-       debouncedSearchQuery, debouncedSearchTerm,
-       selectedFromEntities, selectedToEntities]);
-
-  // Track previous filter fingerprint to detect filter changes.
-  const lastFilterRef = useRef(filterFingerprint);
-  // Track what page was actually used in the last fetch.
-  const pageRef = useRef(page);
-  pageRef.current = page; // always sync
-
-  // Build a single "fetch key" that drives the useEffect.
-  // When filters change, we force page=1 in the key so the API gets
-  // the right page without a separate setPage call.
-  const fetchKey = useMemo(() => {
-    const filtersChanged = lastFilterRef.current !== filterFingerprint;
-    if (filtersChanged) lastFilterRef.current = filterFingerprint;
-    const effectivePage = filtersChanged ? 1 : page;
-    return JSON.stringify([filterFingerprint, sortField, sortDir, effectivePage, pageSize, refreshCounter]);
-  }, [filterFingerprint, sortField, sortDir, page, pageSize, refreshCounter]);
-
-  // Single useEffect: fires exactly once per fetchKey change.
-  useEffect(() => {
-    if (!caseId || !initDoneRef.current) return;
-    const controller = new AbortController();
-    const skipAgg = skipAggsRef.current;
-    skipAggsRef.current = false;
-
-    // Parse the effective page from the key (avoids stale closure issues).
-    const params = JSON.parse(fetchKey);
-    const effectivePage = params[3];
-
-    const doFetch = async () => {
-      setIsQuerying(true);
-      try {
-        const allTypesSelected = selectedTypes.size >= transactionTypes.length && transactionTypes.length > 0;
-        const allCatsSelected = selectedCategories.size >= categoryNames.length && categoryNames.length > 0;
-        const result = await financialAPI.queryTransactions({
-          caseId,
-          types: allTypesSelected ? undefined : (selectedTypes.size > 0 ? [...selectedTypes].join(',') : undefined),
-          categories: allCatsSelected ? undefined : (selectedCategories.size > 0 ? [...selectedCategories].join(',') : undefined),
-          startDate: startDate || undefined,
-          endDate: endDate || undefined,
-          search: debouncedSearchQuery || undefined,
-          searchHeader: debouncedSearchTerm || undefined,
-          fromEntities: selectedFromEntities.size > 0 ? [...selectedFromEntities].join(',') : undefined,
-          toEntities: selectedToEntities.size > 0 ? [...selectedToEntities].join(',') : undefined,
-          sortField,
-          sortDir,
-          page: effectivePage,
-          pageSize,
-          skipAggregations: skipAgg,
-          signal: controller.signal,
-        });
-        if (skipAgg) {
-          setQueryResult(prev => prev ? {
-            ...prev,
-            transactions: result.transactions,
-            total: result.total,
-            total_pages: result.total_pages,
-            page: result.page,
-            page_size: result.page_size,
-          } : result);
-        } else {
-          setQueryResult(result);
-        }
-        // Sync page state if we auto-reset to page 1 on filter change.
-        if (effectivePage !== pageRef.current) {
-          setPage(effectivePage);
-        }
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-        console.error('Failed to query transactions:', err);
-      }
-      setIsQuerying(false);
-    };
-    doFetch();
-    return () => controller.abort();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchKey, caseId]);
+    loadData();
+  }, [loadData]);
 
   // Refresh financial data when entities are merged/changed elsewhere
   useEffect(() => {
-    const handleEntitiesRefresh = () => {
-      loadInit().then(() => setRefreshCounter(c => c + 1));
-    };
+    const handleEntitiesRefresh = () => loadData();
     window.addEventListener('entities-refresh', handleEntitiesRefresh);
     return () => window.removeEventListener('entities-refresh', handleEntitiesRefresh);
-  }, [loadInit]);
+  }, [loadData]);
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Derived from queryResult
-  // ═══════════════════════════════════════════════════════════════════════
-  const transactions = queryResult?.transactions || [];
-  const totalCount = queryResult?.total || 0;
-  const totalPages = queryResult?.total_pages || 0;
-  const summary = queryResult?.summary || null;
-  const fromEntities = queryResult?.from_entities || [];
-  const toEntities = queryResult?.to_entities || [];
-  const volumeData = queryResult?.volume_data || [];
-  const categoryBreakdown = queryResult?.category_breakdown || {};
+  // Derive available transaction types from data
+  const transactionTypes = useMemo(() => {
+    const types = new Set(transactions.map(t => t.type));
+    return [...types].sort();
+  }, [transactions]);
 
+  // Stage 1: Filter transactions by type/category/date/search (before entity selection)
+  // This feeds the entity flow tables so they reflect non-entity filters.
+  // Uses debounced search values so filtering only runs after typing pauses.
+  const baseFilteredTransactions = useMemo(() => {
+    const q = debouncedSearchQuery.toLowerCase().trim();
+    const st = debouncedSearchTerm.toLowerCase().trim();
+    const filtered = transactions.filter(t => {
+      if (selectedTypes.size > 0 && !selectedTypes.has(t.type)) return false;
+      if (selectedCategories.size > 0 && !selectedCategories.has(t.category || 'Uncategorized')) return false;
+      if (startDate && t.date && t.date < startDate) return false;
+      if (endDate && t.date && t.date > endDate) return false;
+      if (q) {
+        const fields = [
+          t.name, t.purpose, t.notes, t.counterparty_details,
+          t.from_entity?.name, t.to_entity?.name,
+          t.category, t.summary,
+        ].filter(Boolean).map(f => f.toLowerCase());
+        if (!fields.some(f => f.includes(q))) return false;
+      }
+      if (st) {
+        const nameMatch = (t.name || '').toLowerCase().includes(st);
+        const fromMatch = (t.from_entity?.name || '').toLowerCase().includes(st);
+        const toMatch = (t.to_entity?.name || '').toLowerCase().includes(st);
+        const purposeMatch = (t.purpose || '').toLowerCase().includes(st);
+        const notesMatch = (t.notes || '').toLowerCase().includes(st);
+        const summaryMatch = (t.summary || '').toLowerCase().includes(st);
+        if (!nameMatch && !fromMatch && !toMatch && !purposeMatch && !notesMatch && !summaryMatch) return false;
+      }
+      return true;
+    });
+    // Include children of any matching parent (sub-transactions may not match
+    // filters on their own but should always appear alongside their parent)
+    const filteredKeys = new Set(filtered.map(t => t.key));
+    const parentKeysInResults = new Set(
+      filtered.filter(t => t.is_parent).map(t => t.key)
+    );
+    if (parentKeysInResults.size > 0) {
+      for (const t of transactions) {
+        if (t.parent_transaction_key && parentKeysInResults.has(t.parent_transaction_key) && !filteredKeys.has(t.key)) {
+          filtered.push(t);
+          filteredKeys.add(t.key);
+        }
+      }
+    }
+    return filtered;
+  }, [transactions, selectedTypes, selectedCategories, startDate, endDate, debouncedSearchQuery, debouncedSearchTerm]);
+
+  // Compute From entities (senders), constrained by To selection for cross-filtering
+  const fromEntities = useMemo(() => {
+    const map = new Map();
+    baseFilteredTransactions.forEach(t => {
+      if (!t.from_entity?.name) return;
+      // If To entities are selected, only include senders on those recipients' transactions
+      if (selectedToEntities.size > 0) {
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        if (!toKey || !selectedToEntities.has(toKey)) return;
+      }
+      const key = t.from_entity.key || t.from_entity.name;
+      const existing = map.get(key) || { key, name: t.from_entity.name, count: 0, totalAmount: 0 };
+      existing.count += 1;
+      existing.totalAmount += Math.abs(parseFloat(t.amount) || 0);
+      map.set(key, existing);
+    });
+    return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [baseFilteredTransactions, selectedToEntities]);
+
+  // Compute To entities (recipients), constrained by From selection for cross-filtering
+  const toEntities = useMemo(() => {
+    const map = new Map();
+    baseFilteredTransactions.forEach(t => {
+      if (!t.to_entity?.name) return;
+      // If From entities are selected, only include recipients on those senders' transactions
+      if (selectedFromEntities.size > 0) {
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        if (!fromKey || !selectedFromEntities.has(fromKey)) return;
+      }
+      const key = t.to_entity.key || t.to_entity.name;
+      const existing = map.get(key) || { key, name: t.to_entity.name, count: 0, totalAmount: 0 };
+      existing.count += 1;
+      existing.totalAmount += Math.abs(parseFloat(t.amount) || 0);
+      map.set(key, existing);
+    });
+    return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [baseFilteredTransactions, selectedFromEntities]);
+
+  // Stage 2: Apply entity selection filtering on top of base
+  const filteredTransactions = useMemo(() => {
+    return baseFilteredTransactions.filter(t => {
+      if (selectedFromEntities.size > 0) {
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        if (!fromKey || !selectedFromEntities.has(fromKey)) return false;
+      }
+      if (selectedToEntities.size > 0) {
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        if (!toKey || !selectedToEntities.has(toKey)) return false;
+      }
+      return true;
+    });
+  }, [baseFilteredTransactions, selectedFromEntities, selectedToEntities]);
+
+  // Compute summary from filtered transactions — context-aware based on entity selection
   const hasEntitySelection = selectedFromEntities.size > 0 || selectedToEntities.size > 0;
+  const filteredSummary = useMemo(() => {
+    const count = filteredTransactions.length;
+    if (count === 0) {
+      return hasEntitySelection
+        ? { transaction_count: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 }
+        : { transaction_count: 0, total_volume: 0, unique_entities: 0, avg_amount: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 };
+    }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // Inline edit handlers — optimistic updates on queryResult.transactions
-  // ═══════════════════════════════════════════════════════════════════════
-  const updateTransaction = useCallback((key, updater) => {
-    setQueryResult(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        transactions: prev.transactions.map(t =>
-          t.key === key ? updater(t) : t
-        ),
+    if (hasEntitySelection) {
+      // Entity mode: classify flows relative to selected entities
+      // From the selected entity's perspective:
+      //   - Entity appears as from_entity (sender) → money leaving = OUTFLOW
+      //   - Entity appears as to_entity (recipient) → money arriving = INFLOW
+      let inflows = 0, outflows = 0;
+      // Track per-entity breakdown for the comparison bar
+      const inflowByEntity = new Map();  // key → { name, amount }
+      const outflowByEntity = new Map();
+      const addToMap = (map, key, name, amt) => {
+        const entry = map.get(key) || { name, amount: 0 };
+        entry.amount += amt;
+        map.set(key, entry);
       };
-    });
-  }, []);
+      filteredTransactions.forEach(t => {
+        const amt = Math.abs(parseFloat(t.amount) || 0);
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        const toName = t.to_entity?.name || toKey;
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        const fromName = t.from_entity?.name || fromKey;
+        if (selectedFromEntities.size > 0) {
+          // Viewing from sender perspective
+          if (fromKey && selectedFromEntities.has(fromKey)) {
+            outflows += amt;
+            if (toName) addToMap(outflowByEntity, toKey || toName, toName, amt);
+          }
+          if (toKey && selectedFromEntities.has(toKey)) {
+            inflows += amt;
+            if (fromName) addToMap(inflowByEntity, fromKey || fromName, fromName, amt);
+          }
+        } else if (selectedToEntities.size > 0) {
+          // Viewing from recipient perspective
+          if (toKey && selectedToEntities.has(toKey)) {
+            inflows += amt;
+            if (fromName) addToMap(inflowByEntity, fromKey || fromName, fromName, amt);
+          }
+          if (fromKey && selectedToEntities.has(fromKey)) {
+            outflows += amt;
+            if (toName) addToMap(outflowByEntity, toKey || toName, toName, amt);
+          }
+        }
+      });
+      // Convert maps to sorted arrays (by amount desc)
+      const toSorted = (map) => [...map.values()].sort((a, b) => b.amount - a.amount);
+      return {
+        transaction_count: count,
+        total_inflows: Math.round(inflows * 100) / 100,
+        total_outflows: Math.round(outflows * 100) / 100,
+        net_flow: Math.round((inflows - outflows) * 100) / 100,
+        inflow_entities: toSorted(inflowByEntity),
+        outflow_entities: toSorted(outflowByEntity),
+      };
+    } else {
+      // Overview mode: aggregate metrics
+      // Sign-based: positive amounts = outflows (money leaving accounts),
+      // negative amounts = inflows (credits/refunds coming in)
+      let volume = 0;
+      let inflows = 0, outflows = 0;
+      const entityKeys = new Set();
+      filteredTransactions.forEach(t => {
+        const raw = parseFloat(t.amount) || 0;
+        const amt = Math.abs(raw);
+        volume += amt;
+        if (raw >= 0) outflows += amt;
+        else inflows += amt;
+        if (t.from_entity?.key) entityKeys.add(t.from_entity.key);
+        else if (t.from_entity?.name) entityKeys.add(t.from_entity.name);
+        if (t.to_entity?.key) entityKeys.add(t.to_entity.key);
+        else if (t.to_entity?.name) entityKeys.add(t.to_entity.name);
+      });
+      return {
+        transaction_count: count,
+        total_volume: Math.round(volume * 100) / 100,
+        unique_entities: entityKeys.size,
+        avg_amount: Math.round((volume / count) * 100) / 100,
+        total_inflows: Math.round(inflows * 100) / 100,
+        total_outflows: Math.round(outflows * 100) / 100,
+        net_flow: Math.round((inflows - outflows) * 100) / 100,
+      };
+    }
+  }, [filteredTransactions, hasEntitySelection, selectedFromEntities, selectedToEntities]);
 
-  const updateTransactionsBatch = useCallback((keys, updater) => {
-    setQueryResult(prev => {
-      if (!prev) return prev;
-      const keySet = new Set(keys);
-      return {
-        ...prev,
-        transactions: prev.transactions.map(t =>
-          keySet.has(t.key) ? updater(t) : t
-        ),
-      };
+  // Compute volume data from filtered transactions so charts update with filters
+  const filteredVolumeData = useMemo(() => {
+    const groups = {};
+    filteredTransactions.forEach(t => {
+      if (!t.date) return;
+      const cat = t.category || 'Uncategorized';
+      const key = `${t.date}|${cat}`;
+      if (!groups[key]) groups[key] = { date: t.date, category: cat, total_amount: 0, count: 0 };
+      groups[key].total_amount += Math.abs(parseFloat(t.amount) || 0);
+      groups[key].count += 1;
     });
-  }, []);
+    return Object.values(groups).sort((a, b) => a.date.localeCompare(b.date) || a.category.localeCompare(b.category));
+  }, [filteredTransactions]);
 
   // Handle category change on a single transaction
   const handleCategoryChange = useCallback(async (nodeKey, category) => {
     try {
       await financialAPI.categorize(nodeKey, category, caseId);
-      updateTransaction(nodeKey, t => ({ ...t, category }));
+      setTransactions(prev =>
+        prev.map(t => t.key === nodeKey ? { ...t, category: category } : t)
+      );
     } catch (err) {
       console.error('Failed to categorize:', err);
       alert('Failed to save category. Please try selecting the category again.\n\n' + err.message);
     }
-  }, [caseId, updateTransaction]);
+  }, [caseId]);
 
   // Handle batch categorize
   const handleBatchCategorize = useCallback(async (nodeKeys, category) => {
     try {
       await financialAPI.batchCategorize(nodeKeys, category, caseId);
-      updateTransactionsBatch(nodeKeys, t => ({ ...t, category }));
+      setTransactions(prev =>
+        prev.map(t => nodeKeys.includes(t.key) ? { ...t, category: category } : t)
+      );
     } catch (err) {
       console.error('Failed to batch categorize:', err);
       alert('Failed to save category for ' + nodeKeys.length + ' transactions. Please try again.\n\n' + err.message);
     }
-  }, [caseId, updateTransactionsBatch]);
+  }, [caseId]);
 
   // Handle from/to change
   const handleFromToChange = useCallback(async (nodeKey, side, entity) => {
@@ -335,17 +394,20 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         payload.toName = entity.name;
       }
       await financialAPI.setFromTo(nodeKey, payload);
-      updateTransaction(nodeKey, t => {
-        if (side === 'from') {
-          return { ...t, from_entity: entity, has_manual_from: true };
-        }
-        return { ...t, to_entity: entity, has_manual_to: true };
-      });
+      setTransactions(prev =>
+        prev.map(t => {
+          if (t.key !== nodeKey) return t;
+          if (side === 'from') {
+            return { ...t, from_entity: entity, has_manual_from: true };
+          }
+          return { ...t, to_entity: entity, has_manual_to: true };
+        })
+      );
     } catch (err) {
       console.error('Failed to update from/to:', err);
       alert('Failed to save sender/beneficiary. Please click the edit icon and try again.\n\n' + err.message);
     }
-  }, [caseId, updateTransaction]);
+  }, [caseId]);
 
   // Handle swap from/to
   const handleSwapFromTo = useCallback(async (nodeKey, fromEntity, toEntity) => {
@@ -357,18 +419,23 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         toKey: fromEntity?.key,
         toName: fromEntity?.name,
       });
-      updateTransaction(nodeKey, t => ({
-        ...t,
-        from_entity: toEntity,
-        to_entity: fromEntity,
-        has_manual_from: true,
-        has_manual_to: true,
-      }));
+      setTransactions(prev =>
+        prev.map(t => {
+          if (t.key !== nodeKey) return t;
+          return {
+            ...t,
+            from_entity: toEntity,
+            to_entity: fromEntity,
+            has_manual_from: true,
+            has_manual_to: true,
+          };
+        })
+      );
     } catch (err) {
       console.error('Failed to swap from/to:', err);
       alert('Failed to swap sender/beneficiary. Please try again.\n\n' + err.message);
     }
-  }, [caseId, updateTransaction]);
+  }, [caseId]);
 
   // Handle details change (purpose, counterparty_details, notes)
   const handleDetailsChange = useCallback(async (nodeKey, details) => {
@@ -379,18 +446,21 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         counterpartyDetails: details.counterpartyDetails,
         notes: details.notes,
       });
-      updateTransaction(nodeKey, t => {
-        const updated = { ...t };
-        if (details.purpose !== undefined) updated.purpose = details.purpose;
-        if (details.counterpartyDetails !== undefined) updated.counterparty_details = details.counterpartyDetails;
-        if (details.notes !== undefined) updated.notes = details.notes;
-        return updated;
-      });
+      setTransactions(prev =>
+        prev.map(t => {
+          if (t.key !== nodeKey) return t;
+          const updated = { ...t };
+          if (details.purpose !== undefined) updated.purpose = details.purpose;
+          if (details.counterpartyDetails !== undefined) updated.counterparty_details = details.counterpartyDetails;
+          if (details.notes !== undefined) updated.notes = details.notes;
+          return updated;
+        })
+      );
     } catch (err) {
       console.error('Failed to update details:', err);
       alert('Failed to save transaction details. Please click into the field and try again.\n\n' + err.message);
     }
-  }, [caseId, updateTransaction]);
+  }, [caseId]);
 
   const handleAmountChange = useCallback(async (nodeKey, newAmount, correctionReason) => {
     try {
@@ -399,18 +469,20 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         newAmount,
         correctionReason,
       });
-      updateTransaction(nodeKey, t => ({
-        ...t,
-        amount: newAmount,
-        amount_corrected: true,
-        original_amount: t.original_amount ?? t.amount,
-        correction_reason: correctionReason,
-      }));
+      setTransactions(prev =>
+        prev.map(t => t.key === nodeKey ? {
+          ...t,
+          amount: newAmount,
+          amount_corrected: true,
+          original_amount: t.original_amount ?? t.amount,
+          correction_reason: correctionReason,
+        } : t)
+      );
     } catch (err) {
       console.error('Failed to update amount:', err);
       alert('Failed to save amount correction. Please click the amount and try again.\n\n' + err.message);
     }
-  }, [caseId, updateTransaction]);
+  }, [caseId]);
 
   // Handle batch from/to change
   const handleBatchFromTo = useCallback(async (nodeKeys, side, entity) => {
@@ -424,17 +496,20 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         payload.toName = entity.name;
       }
       await financialAPI.batchSetFromTo(nodeKeys, payload);
-      updateTransactionsBatch(nodeKeys, t => {
-        if (side === 'from') {
-          return { ...t, from_entity: entity, has_manual_from: true };
-        }
-        return { ...t, to_entity: entity, has_manual_to: true };
-      });
+      setTransactions(prev =>
+        prev.map(t => {
+          if (!nodeKeys.includes(t.key)) return t;
+          if (side === 'from') {
+            return { ...t, from_entity: entity, has_manual_from: true };
+          }
+          return { ...t, to_entity: entity, has_manual_to: true };
+        })
+      );
     } catch (err) {
       console.error('Failed to batch update from/to:', err);
       alert('Failed to save sender/beneficiary for ' + nodeKeys.length + ' transactions. Please try again.\n\n' + err.message);
     }
-  }, [caseId, updateTransactionsBatch]);
+  }, [caseId]);
 
   // Handle creating a new custom category
   const handleCreateCategory = useCallback(async (name, color) => {
@@ -454,14 +529,12 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const handleExportPDF = () => {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
-    params.append('case_name', caseId);
-    // Omit types/categories when all are selected (backend returns all by default)
-    const allTypesForPdf = selectedTypes.size >= transactionTypes.length && transactionTypes.length > 0;
-    const allCatsForPdf = selectedCategories.size >= categoryNames.length && categoryNames.length > 0;
-    if (selectedCategories.size > 0 && !allCatsForPdf) {
+    params.append('case_name', caseId); // Case ID used as name if no name prop
+    // Always send active category and type filters so backend matches frontend exactly
+    if (selectedCategories.size > 0) {
       params.append('categories', [...selectedCategories].join(','));
     }
-    if (selectedTypes.size > 0 && !allTypesForPdf) {
+    if (selectedTypes.size > 0) {
       params.append('types', [...selectedTypes].join(','));
     }
     if (startDate) params.append('start_date', startDate);
@@ -472,6 +545,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (selectedToEntities.size > 0) {
       params.append('to_entities', [...selectedToEntities].join(','));
     }
+    // Send both search fields so backend can apply them the same way frontend does
     if (searchQuery && searchQuery.trim()) {
       params.append('search', searchQuery.trim());
     }
@@ -506,33 +580,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       await financialAPI.autoExtractFromTo(caseId, { dryRun: false });
       setShowAutoExtractModal(false);
       setAutoExtractPreview(null);
-      setRefreshCounter(c => c + 1);
+      await loadData();
     } catch (err) {
       console.error('Auto-extract apply failed:', err);
       setAutoExtractError(err.message || 'Failed to apply extractions');
     }
     setAutoExtractApplying(false);
-  }, [caseId]);
-
-  // Sort change handler (passed to FinancialTable)
-  const handleSortChange = useCallback((field, dir) => {
-    skipAggsRef.current = true;
-    setSortField(field);
-    setSortDir(dir);
-  }, []);
-
-  // Page change handler
-  const handlePageChange = useCallback((newPage) => {
-    skipAggsRef.current = true;
-    setPage(newPage);
-  }, []);
-
-  // Page size change handler
-  const handlePageSizeChange = useCallback((newSize) => {
-    skipAggsRef.current = true;
-    setPageSize(newSize);
-    setPage(1);
-  }, []);
+  }, [caseId, loadData]);
 
   // Filter handlers
   const toggleType = (type) => {
@@ -553,15 +607,6 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     });
   };
 
-  // Trigger a data re-fetch (bumps counter → fetchKey changes → useEffect fires)
-  const triggerRefresh = useCallback(() => setRefreshCounter(c => c + 1), []);
-
-  // Full refresh (re-init + re-fetch)
-  const handleFullRefresh = useCallback(async () => {
-    await loadInit();
-    triggerRefresh();
-  }, [loadInit, triggerRefresh]);
-
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -579,7 +624,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         <div className="text-center">
           <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-2" />
           <p className="text-sm text-light-600">{error}</p>
-          <button onClick={handleFullRefresh} className="mt-2 text-sm text-owl-blue-600 hover:underline flex items-center gap-1 mx-auto">
+          <button onClick={loadData} className="mt-2 text-sm text-owl-blue-600 hover:underline flex items-center gap-1 mx-auto">
             <RefreshCw className="w-3.5 h-3.5" /> Retry
           </button>
         </div>
@@ -587,7 +632,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     );
   }
 
-  if (!queryResult && !isQuerying) {
+  if (transactions.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
@@ -607,11 +652,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           <DollarSign className="w-4 h-4 text-owl-blue-600" />
           <span className="text-sm font-medium text-light-800">Financial Analysis</span>
           <span className="text-xs text-light-500">
-            {totalCount > 0
-              ? `${transactions.length} of ${totalCount.toLocaleString()} transactions (page ${page})`
-              : '0 transactions'}
+            {filteredTransactions.length} of {transactions.length} transactions
           </span>
-          {isQuerying && <Loader2 className="w-3 h-3 animate-spin text-owl-blue-500" />}
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
@@ -664,7 +706,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             <Download className="w-3.5 h-3.5" />
           </button>
           <button
-            onClick={handleFullRefresh}
+            onClick={loadData}
             className="p-1 text-light-500 hover:text-owl-blue-600 rounded hover:bg-light-50"
             title="Refresh"
           >
@@ -699,7 +741,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           onSearchChange={(val) => { setSearchQuery(val); if (!val) setDebouncedSearchQuery(''); }}
         />
         <FinancialSummaryCards
-          summary={summary}
+          summary={filteredSummary}
           hasEntitySelection={hasEntitySelection}
           entitySelectionLabel={
             [
@@ -735,11 +777,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
 
         {chartsExpanded && (
           <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 space-y-3">
-            <FinancialCharts
-              volumeData={volumeData}
-              categoryBreakdown={categoryBreakdown}
-              categoryColorMap={categoryColorMap}
-            />
+            <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} categoryColorMap={categoryColorMap} />
             <EntityFlowTables
               fromEntities={fromEntities}
               toEntities={toEntities}
@@ -768,7 +806,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       {/* Transaction Table — full width, takes all remaining space */}
       <div className="flex-1 min-h-0 border-t border-light-200">
         <FinancialTable
-          transactions={transactions}
+          transactions={filteredTransactions}
           categories={categoryNames}
           categoryColorMap={categoryColorMap}
           caseId={caseId}
@@ -781,18 +819,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
           onBatchCategorize={handleBatchCategorize}
-          onTransactionsRefresh={triggerRefresh}
+          onTransactionsRefresh={loadData}
           onSwapFromTo={handleSwapFromTo}
-          /* Server-driven sort/pagination */
-          sortField={sortField}
-          sortDir={sortDir}
-          onSortChange={handleSortChange}
-          page={page}
-          pageSize={pageSize}
-          totalCount={totalCount}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-          onPageSizeChange={handlePageSizeChange}
         />
       </div>
 
@@ -810,7 +838,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         onClose={() => setShowBulkCorrectionModal(false)}
         caseId={caseId}
         transactions={transactions}
-        onComplete={triggerRefresh}
+        onComplete={loadData}
       />
 
       {/* Notes Upload Modal */}
@@ -819,7 +847,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         onClose={() => setShowNotesUploadModal(false)}
         caseId={caseId}
         transactions={transactions}
-        onComplete={triggerRefresh}
+        onComplete={loadData}
       />
 
       {/* Auto-Extract From/To Modal */}
