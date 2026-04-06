@@ -859,6 +859,41 @@ export const financialAPI = {
   },
 
   /**
+   * Server-side paginated financial query with aggregations.
+   * Returns one page of transactions + summary, entity flow, charts data.
+   */
+  queryTransactions: async ({
+    caseId, types, categories, startDate, endDate,
+    search, searchHeader,
+    fromEntities, toEntities,
+    sortField, sortDir,
+    page, pageSize,
+  } = {}) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    if (types) params.append('types', types);
+    if (categories) params.append('categories', categories);
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (search) params.append('search', search);
+    if (searchHeader) params.append('search_header', searchHeader);
+    if (fromEntities) params.append('from_entities', fromEntities);
+    if (toEntities) params.append('to_entities', toEntities);
+    if (sortField) params.append('sort_field', sortField);
+    if (sortDir) params.append('sort_dir', sortDir);
+    if (page) params.append('page', String(page));
+    if (pageSize) params.append('page_size', String(pageSize));
+    return fetchAPI(`/financial/query?${params.toString()}`);
+  },
+
+  /**
+   * Get all distinct transaction types for filter panel init.
+   */
+  getTransactionTypes: (caseId) => {
+    return fetchAPI(`/financial/types?case_id=${encodeURIComponent(caseId)}`);
+  },
+
+  /**
    * Get financial summary statistics
    * @param {string} caseId - REQUIRED: Case ID
    */
