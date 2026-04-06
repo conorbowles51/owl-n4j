@@ -39,9 +39,11 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(100);
 
-  // When true, fetchPage will skip heavy aggregation queries (summary, entity flow, charts).
+  // When true, the next fetch will skip heavy aggregation queries (summary, entity flow, charts).
   // Set to true by sort/page handlers, reset to false after each fetch.
   const skipAggsRef = useRef(false);
+  // Bumped to force a re-fetch (e.g. after entities-refresh event).
+  const [refreshCounter, setRefreshCounter] = useState(0);
 
   // ── Resizable charts section ──
   const [chartsSectionHeight, setChartsSectionHeight] = useState(null);
@@ -152,88 +154,110 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   }, [loadInit]);
 
   // ═══════════════════════════════════════════════════════════════════════
-  // fetchPage: main data-fetching function — called whenever filters,
-  // sort, or pagination change
+  // fetchPage: main data-fetching function.
+  //
+  // Uses a "fetch key" approach: all query parameters are collapsed into
+  // a single string key.  A filter change auto-resets page to 1 inside
+  // the key computation, so there is exactly ONE useEffect trigger per
+  // user interaction — no cascading setPage → re-render → re-fetch.
   // ═══════════════════════════════════════════════════════════════════════
-  const fetchPage = useCallback(async (signal) => {
+
+  // Fingerprint of filter-only deps (excludes sort/page).
+  const filterFingerprint = useMemo(() => JSON.stringify([
+    [...selectedTypes].sort(),
+    [...selectedCategories].sort(),
+    startDate, endDate,
+    debouncedSearchQuery, debouncedSearchTerm,
+    [...selectedFromEntities].sort(),
+    [...selectedToEntities].sort(),
+  ]), [selectedTypes, selectedCategories, startDate, endDate,
+       debouncedSearchQuery, debouncedSearchTerm,
+       selectedFromEntities, selectedToEntities]);
+
+  // Track previous filter fingerprint to detect filter changes.
+  const lastFilterRef = useRef(filterFingerprint);
+  // Track what page was actually used in the last fetch.
+  const pageRef = useRef(page);
+  pageRef.current = page; // always sync
+
+  // Build a single "fetch key" that drives the useEffect.
+  // When filters change, we force page=1 in the key so the API gets
+  // the right page without a separate setPage call.
+  const fetchKey = useMemo(() => {
+    const filtersChanged = lastFilterRef.current !== filterFingerprint;
+    if (filtersChanged) lastFilterRef.current = filterFingerprint;
+    const effectivePage = filtersChanged ? 1 : page;
+    return JSON.stringify([filterFingerprint, sortField, sortDir, effectivePage, pageSize, refreshCounter]);
+  }, [filterFingerprint, sortField, sortDir, page, pageSize, refreshCounter]);
+
+  // Single useEffect: fires exactly once per fetchKey change.
+  useEffect(() => {
     if (!caseId || !initDoneRef.current) return;
-    const skipAgg = skipAggsRef.current;
-    skipAggsRef.current = false; // reset for next call
-    setIsQuerying(true);
-    try {
-      // Omit types/categories when ALL are selected — backend treats absent
-      // param as "no filter" (return all). This avoids huge URLs with 250+ types.
-      const allTypesSelected = selectedTypes.size >= transactionTypes.length && transactionTypes.length > 0;
-      const allCatsSelected = selectedCategories.size >= categoryNames.length && categoryNames.length > 0;
-      const result = await financialAPI.queryTransactions({
-        caseId,
-        types: allTypesSelected ? undefined : (selectedTypes.size > 0 ? [...selectedTypes].join(',') : undefined),
-        categories: allCatsSelected ? undefined : (selectedCategories.size > 0 ? [...selectedCategories].join(',') : undefined),
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        search: debouncedSearchQuery || undefined,
-        searchHeader: debouncedSearchTerm || undefined,
-        fromEntities: selectedFromEntities.size > 0 ? [...selectedFromEntities].join(',') : undefined,
-        toEntities: selectedToEntities.size > 0 ? [...selectedToEntities].join(',') : undefined,
-        sortField,
-        sortDir,
-        page,
-        pageSize,
-        skipAggregations: skipAgg,
-        signal,
-      });
-      if (skipAgg) {
-        // Merge: keep cached aggregations, update only page data
-        setQueryResult(prev => prev ? {
-          ...prev,
-          transactions: result.transactions,
-          total: result.total,
-          total_pages: result.total_pages,
-          page: result.page,
-          page_size: result.page_size,
-        } : result);
-      } else {
-        setQueryResult(result);
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') return; // request was superseded — ignore
-      console.error('Failed to query transactions:', err);
-      // Don't clobber existing data on transient errors — just log
-    }
-    setIsQuerying(false);
-  }, [
-    caseId, selectedTypes, selectedCategories, startDate, endDate,
-    debouncedSearchQuery, debouncedSearchTerm,
-    selectedFromEntities, selectedToEntities,
-    sortField, sortDir, page, pageSize,
-  ]);
-
-  // Trigger fetchPage whenever any dependency changes.
-  // AbortController cancels the previous in-flight request when a new one starts
-  // (prevents the double-fire from filter→setPage(1)→fetchPage cascade).
-  useEffect(() => {
     const controller = new AbortController();
-    fetchPage(controller.signal);
-    return () => controller.abort();
-  }, [fetchPage]);
+    const skipAgg = skipAggsRef.current;
+    skipAggsRef.current = false;
 
-  // Reset to page 1 when any filter (not sort/page) changes
-  useEffect(() => {
-    setPage(1);
-  }, [
-    selectedTypes, selectedCategories, startDate, endDate,
-    debouncedSearchQuery, debouncedSearchTerm,
-    selectedFromEntities, selectedToEntities,
-  ]);
+    // Parse the effective page from the key (avoids stale closure issues).
+    const params = JSON.parse(fetchKey);
+    const effectivePage = params[3];
+
+    const doFetch = async () => {
+      setIsQuerying(true);
+      try {
+        const allTypesSelected = selectedTypes.size >= transactionTypes.length && transactionTypes.length > 0;
+        const allCatsSelected = selectedCategories.size >= categoryNames.length && categoryNames.length > 0;
+        const result = await financialAPI.queryTransactions({
+          caseId,
+          types: allTypesSelected ? undefined : (selectedTypes.size > 0 ? [...selectedTypes].join(',') : undefined),
+          categories: allCatsSelected ? undefined : (selectedCategories.size > 0 ? [...selectedCategories].join(',') : undefined),
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          search: debouncedSearchQuery || undefined,
+          searchHeader: debouncedSearchTerm || undefined,
+          fromEntities: selectedFromEntities.size > 0 ? [...selectedFromEntities].join(',') : undefined,
+          toEntities: selectedToEntities.size > 0 ? [...selectedToEntities].join(',') : undefined,
+          sortField,
+          sortDir,
+          page: effectivePage,
+          pageSize,
+          skipAggregations: skipAgg,
+          signal: controller.signal,
+        });
+        if (skipAgg) {
+          setQueryResult(prev => prev ? {
+            ...prev,
+            transactions: result.transactions,
+            total: result.total,
+            total_pages: result.total_pages,
+            page: result.page,
+            page_size: result.page_size,
+          } : result);
+        } else {
+          setQueryResult(result);
+        }
+        // Sync page state if we auto-reset to page 1 on filter change.
+        if (effectivePage !== pageRef.current) {
+          setPage(effectivePage);
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        console.error('Failed to query transactions:', err);
+      }
+      setIsQuerying(false);
+    };
+    doFetch();
+    return () => controller.abort();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchKey, caseId]);
 
   // Refresh financial data when entities are merged/changed elsewhere
   useEffect(() => {
     const handleEntitiesRefresh = () => {
-      loadInit().then(() => fetchPage());
+      loadInit().then(() => setRefreshCounter(c => c + 1));
     };
     window.addEventListener('entities-refresh', handleEntitiesRefresh);
     return () => window.removeEventListener('entities-refresh', handleEntitiesRefresh);
-  }, [loadInit, fetchPage]);
+  }, [loadInit]);
 
   // ═══════════════════════════════════════════════════════════════════════
   // Derived from queryResult
@@ -482,13 +506,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       await financialAPI.autoExtractFromTo(caseId, { dryRun: false });
       setShowAutoExtractModal(false);
       setAutoExtractPreview(null);
-      await fetchPage();
+      setRefreshCounter(c => c + 1);
     } catch (err) {
       console.error('Auto-extract apply failed:', err);
       setAutoExtractError(err.message || 'Failed to apply extractions');
     }
     setAutoExtractApplying(false);
-  }, [caseId, fetchPage]);
+  }, [caseId]);
 
   // Sort change handler (passed to FinancialTable)
   const handleSortChange = useCallback((field, dir) => {
@@ -529,11 +553,14 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     });
   };
 
+  // Trigger a data re-fetch (bumps counter → fetchKey changes → useEffect fires)
+  const triggerRefresh = useCallback(() => setRefreshCounter(c => c + 1), []);
+
   // Full refresh (re-init + re-fetch)
   const handleFullRefresh = useCallback(async () => {
     await loadInit();
-    // fetchPage will be triggered by the state changes from loadInit
-  }, [loadInit]);
+    triggerRefresh();
+  }, [loadInit, triggerRefresh]);
 
   if (isLoading) {
     return (
@@ -754,7 +781,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           selectedKeys={selectedKeys}
           onSelectionChange={setSelectedKeys}
           onBatchCategorize={handleBatchCategorize}
-          onTransactionsRefresh={fetchPage}
+          onTransactionsRefresh={triggerRefresh}
           onSwapFromTo={handleSwapFromTo}
           /* Server-driven sort/pagination */
           sortField={sortField}
@@ -783,7 +810,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         onClose={() => setShowBulkCorrectionModal(false)}
         caseId={caseId}
         transactions={transactions}
-        onComplete={fetchPage}
+        onComplete={triggerRefresh}
       />
 
       {/* Notes Upload Modal */}
@@ -792,7 +819,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         onClose={() => setShowNotesUploadModal(false)}
         caseId={caseId}
         transactions={transactions}
-        onComplete={fetchPage}
+        onComplete={triggerRefresh}
       />
 
       {/* Auto-Extract From/To Modal */}

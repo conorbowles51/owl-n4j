@@ -4066,7 +4066,8 @@ class Neo4jService:
                     {where_a}
                     WITH n,
                          toFloat(replace(replace(replace(replace(
-                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS rawAmt
+                    WITH n, CASE WHEN rawAmt IS NOT NULL AND rawAmt = rawAmt THEN rawAmt ELSE 0 END AS amt
                     RETURN
                         count(n) AS total,
                         sum(abs(amt)) AS total_volume,
@@ -4112,12 +4113,12 @@ class Neo4jService:
                         {where_flow}
                         WITH n,
                              toFloat(replace(replace(replace(replace(
-                               trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt,
+                               trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS rawAmt,
                              coalesce(n.from_entity_key, n.from_entity_name) AS fk,
                              coalesce(n.to_entity_key, n.to_entity_name) AS tk,
                              n.from_entity_name AS fn,
                              n.to_entity_name AS tn
-                        WITH n, abs(amt) AS amt, fk, tk, fn, tn,
+                        WITH n, abs(CASE WHEN rawAmt IS NOT NULL AND rawAmt = rawAmt THEN rawAmt ELSE 0 END) AS amt, fk, tk, fn, tn,
                              CASE WHEN fk IN $perspective_keys THEN true ELSE false END AS is_outflow,
                              CASE WHEN tk IN $perspective_keys THEN true ELSE false END AS is_inflow
                         RETURN
@@ -4355,7 +4356,8 @@ class Neo4jService:
                     WITH coalesce(n.from_entity_key, n.from_entity_name) AS ekey,
                          n.from_entity_name AS ename,
                          toFloat(replace(replace(replace(replace(
-                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS rawAmt
+                    WITH ekey, ename, CASE WHEN rawAmt IS NOT NULL AND rawAmt = rawAmt THEN rawAmt ELSE 0 END AS amt
                     RETURN ekey AS key,
                            collect(DISTINCT ename)[0] AS name,
                            count(*) AS count,
@@ -4384,7 +4386,8 @@ class Neo4jService:
                     WITH coalesce(n.to_entity_key, n.to_entity_name) AS ekey,
                          n.to_entity_name AS ename,
                          toFloat(replace(replace(replace(replace(
-                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS rawAmt
+                    WITH ekey, ename, CASE WHEN rawAmt IS NOT NULL AND rawAmt = rawAmt THEN rawAmt ELSE 0 END AS amt
                     RETURN ekey AS key,
                            collect(DISTINCT ename)[0] AS name,
                            count(*) AS count,
@@ -4408,7 +4411,8 @@ class Neo4jService:
                     WITH n.date AS date,
                          coalesce(n.financial_category, 'Uncategorized') AS category,
                          toFloat(replace(replace(replace(replace(
-                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS rawAmt
+                    WITH date, category, CASE WHEN rawAmt IS NOT NULL AND rawAmt = rawAmt THEN rawAmt ELSE 0 END AS amt
                     RETURN date, category,
                            sum(abs(amt)) AS total_amount,
                            count(*) AS count
@@ -4429,7 +4433,8 @@ class Neo4jService:
                     {where_e}
                     WITH coalesce(n.financial_category, 'Uncategorized') AS category,
                          toFloat(replace(replace(replace(replace(
-                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS amt
+                           trim(toString(n.amount)), '$', ''), ',', ''), '€', ''), '£', '')) AS rawAmt
+                    WITH category, CASE WHEN rawAmt IS NOT NULL AND rawAmt = rawAmt THEN rawAmt ELSE 0 END AS amt
                     RETURN category, count(*) AS count, sum(abs(amt)) AS amount
                     ORDER BY amount DESC
                 """
