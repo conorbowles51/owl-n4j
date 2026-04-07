@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare, ChevronDown, ChevronRight, BarChart3 } from 'lucide-react';
+import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare, ChevronDown, ChevronRight, BarChart3, ArrowLeftRight } from 'lucide-react';
 import { financialAPI } from '../../services/api';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
@@ -27,27 +27,29 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [selectedToEntities, setSelectedToEntities] = useState(new Set());     // Set of entity keys
   const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
   const [filterExpanded, setFilterExpanded] = useState(false);
+  // Charts and Entity Flow are independently collapsible (per user feedback)
   const [chartsExpanded, setChartsExpanded] = useState(true);
+  const [entityFlowExpanded, setEntityFlowExpanded] = useState(true);
 
-  // Resizable charts section — user drags the divider to control height
-  const [chartsSectionHeight, setChartsSectionHeight] = useState(null); // null = auto (use default)
+  // Resizable visualisation section — user drags the divider to control combined height
+  const [visSectionHeight, setVisSectionHeight] = useState(null); // null = auto (use default)
   const containerRef = useRef(null);
-  const chartsSectionRef = useRef(null);
+  const visSectionRef = useRef(null);
   const isDraggingRef = useRef(false);
 
   const handleDragStart = useCallback((e) => {
     e.preventDefault();
     isDraggingRef.current = true;
     const startY = e.clientY;
-    const startHeight = chartsSectionRef.current?.getBoundingClientRect().height || 200;
+    const startHeight = visSectionRef.current?.getBoundingClientRect().height || 200;
 
     const onMouseMove = (moveEvent) => {
       if (!isDraggingRef.current) return;
       const containerRect = containerRef.current?.getBoundingClientRect();
       if (!containerRect) return;
       const delta = startY - moveEvent.clientY;
-      const newHeight = Math.max(60, Math.min(startHeight - delta, containerRect.height * 0.6));
-      setChartsSectionHeight(newHeight);
+      const newHeight = Math.max(60, Math.min(startHeight - delta, containerRect.height * 0.65));
+      setVisSectionHeight(newHeight);
     };
 
     const onMouseUp = () => {
@@ -250,97 +252,51 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     });
   }, [baseFilteredTransactions, selectedFromEntities, selectedToEntities]);
 
-  // Compute summary from filtered transactions — context-aware based on entity selection
+  // Compute summary from filtered transactions.
+  //
+  // Convention (kept SIMPLE per user feedback):
+  //   total_outflows = sum of abs(amount) for positive-amount transactions  → "Money Out"
+  //   total_inflows  = sum of abs(amount) for negative-amount transactions  → "Money In"
+  //
+  // The same labels apply whether or not entities are selected — entity selection
+  // simply changes which transactions are included in the count.
   const hasEntitySelection = selectedFromEntities.size > 0 || selectedToEntities.size > 0;
   const filteredSummary = useMemo(() => {
     const count = filteredTransactions.length;
     if (count === 0) {
-      return hasEntitySelection
-        ? { transaction_count: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 }
-        : { transaction_count: 0, total_volume: 0, unique_entities: 0, avg_amount: 0, total_inflows: 0, total_outflows: 0, net_flow: 0 };
+      return {
+        transaction_count: 0,
+        total_inflows: 0,
+        total_outflows: 0,
+        net_flow: 0,
+        unique_entities: hasEntitySelection ? undefined : 0,
+      };
     }
 
-    if (hasEntitySelection) {
-      // Entity mode: classify flows relative to selected entities
-      // From the selected entity's perspective:
-      //   - Entity appears as from_entity (sender) → money leaving = OUTFLOW
-      //   - Entity appears as to_entity (recipient) → money arriving = INFLOW
-      let inflows = 0, outflows = 0;
-      // Track per-entity breakdown for the comparison bar
-      const inflowByEntity = new Map();  // key → { name, amount }
-      const outflowByEntity = new Map();
-      const addToMap = (map, key, name, amt) => {
-        const entry = map.get(key) || { name, amount: 0 };
-        entry.amount += amt;
-        map.set(key, entry);
-      };
-      filteredTransactions.forEach(t => {
-        const amt = Math.abs(parseFloat(t.amount) || 0);
-        const toKey = t.to_entity?.key || t.to_entity?.name;
-        const toName = t.to_entity?.name || toKey;
-        const fromKey = t.from_entity?.key || t.from_entity?.name;
-        const fromName = t.from_entity?.name || fromKey;
-        if (selectedFromEntities.size > 0) {
-          // Viewing from sender perspective
-          if (fromKey && selectedFromEntities.has(fromKey)) {
-            outflows += amt;
-            if (toName) addToMap(outflowByEntity, toKey || toName, toName, amt);
-          }
-          if (toKey && selectedFromEntities.has(toKey)) {
-            inflows += amt;
-            if (fromName) addToMap(inflowByEntity, fromKey || fromName, fromName, amt);
-          }
-        } else if (selectedToEntities.size > 0) {
-          // Viewing from recipient perspective
-          if (toKey && selectedToEntities.has(toKey)) {
-            inflows += amt;
-            if (fromName) addToMap(inflowByEntity, fromKey || fromName, fromName, amt);
-          }
-          if (fromKey && selectedToEntities.has(fromKey)) {
-            outflows += amt;
-            if (toName) addToMap(outflowByEntity, toKey || toName, toName, amt);
-          }
-        }
-      });
-      // Convert maps to sorted arrays (by amount desc)
-      const toSorted = (map) => [...map.values()].sort((a, b) => b.amount - a.amount);
-      return {
-        transaction_count: count,
-        total_inflows: Math.round(inflows * 100) / 100,
-        total_outflows: Math.round(outflows * 100) / 100,
-        net_flow: Math.round((inflows - outflows) * 100) / 100,
-        inflow_entities: toSorted(inflowByEntity),
-        outflow_entities: toSorted(outflowByEntity),
-      };
-    } else {
-      // Overview mode: aggregate metrics
-      // Sign-based: positive amounts = outflows (money leaving accounts),
-      // negative amounts = inflows (credits/refunds coming in)
-      let volume = 0;
-      let inflows = 0, outflows = 0;
-      const entityKeys = new Set();
-      filteredTransactions.forEach(t => {
-        const raw = parseFloat(t.amount) || 0;
-        const amt = Math.abs(raw);
-        volume += amt;
-        if (raw >= 0) outflows += amt;
-        else inflows += amt;
+    let inflows = 0;   // sum of negative-amount txns (Money In)
+    let outflows = 0;  // sum of positive-amount txns (Money Out)
+    const entityKeys = new Set();
+    filteredTransactions.forEach(t => {
+      const raw = parseFloat(t.amount) || 0;
+      const amt = Math.abs(raw);
+      if (raw >= 0) outflows += amt;
+      else inflows += amt;
+      if (!hasEntitySelection) {
         if (t.from_entity?.key) entityKeys.add(t.from_entity.key);
         else if (t.from_entity?.name) entityKeys.add(t.from_entity.name);
         if (t.to_entity?.key) entityKeys.add(t.to_entity.key);
         else if (t.to_entity?.name) entityKeys.add(t.to_entity.name);
-      });
-      return {
-        transaction_count: count,
-        total_volume: Math.round(volume * 100) / 100,
-        unique_entities: entityKeys.size,
-        avg_amount: Math.round((volume / count) * 100) / 100,
-        total_inflows: Math.round(inflows * 100) / 100,
-        total_outflows: Math.round(outflows * 100) / 100,
-        net_flow: Math.round((inflows - outflows) * 100) / 100,
-      };
-    }
-  }, [filteredTransactions, hasEntitySelection, selectedFromEntities, selectedToEntities]);
+      }
+    });
+
+    return {
+      transaction_count: count,
+      total_inflows: Math.round(inflows * 100) / 100,
+      total_outflows: Math.round(outflows * 100) / 100,
+      net_flow: Math.round((inflows - outflows) * 100) / 100,
+      unique_entities: hasEntitySelection ? undefined : entityKeys.size,
+    };
+  }, [filteredTransactions, hasEntitySelection]);
 
   // Compute volume data from filtered transactions so charts update with filters
   const filteredVolumeData = useMemo(() => {
@@ -752,46 +708,92 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         />
       </div>
 
-      {/* Charts & Entity Flow — full width, collapsible, resizable */}
-      <div
-        ref={chartsSectionRef}
-        className="border-t border-light-200 flex flex-col min-h-0"
-        style={chartsExpanded && chartsSectionHeight != null ? { height: chartsSectionHeight, flexShrink: 0 } : chartsExpanded ? { maxHeight: '30vh', flexShrink: 0 } : {}}
-      >
+      {/* Visualisation area — Charts and Entity Flow are now INDEPENDENTLY collapsible */}
+      {(chartsExpanded || entityFlowExpanded) ? (
         <div
-          className="flex-shrink-0 flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-light-50 select-none"
-          onClick={() => setChartsExpanded(!chartsExpanded)}
+          ref={visSectionRef}
+          className="border-t border-light-200 flex flex-col min-h-0"
+          style={visSectionHeight != null ? { height: visSectionHeight, flexShrink: 0 } : { maxHeight: '40vh', flexShrink: 0 }}
         >
-          {chartsExpanded ? <ChevronDown className="w-4 h-4 text-light-500" /> : <ChevronRight className="w-4 h-4 text-light-500" />}
-          <BarChart3 className="w-4 h-4 text-light-600" />
-          <span className="text-sm font-medium text-light-700">Charts & Entity Flow</span>
-          {hasEntitySelection && (
-            <span className="text-xs text-owl-blue-600">
-              ({[
-                selectedFromEntities.size > 0 ? `${selectedFromEntities.size} senders` : '',
-                selectedToEntities.size > 0 ? `${selectedToEntities.size} recipients` : '',
-              ].filter(Boolean).join(', ')} selected)
-            </span>
-          )}
-        </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            {/* Charts section */}
+            <div className="border-b border-light-100">
+              <div
+                className="flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-light-50 select-none"
+                onClick={() => setChartsExpanded(!chartsExpanded)}
+              >
+                {chartsExpanded ? <ChevronDown className="w-4 h-4 text-light-500" /> : <ChevronRight className="w-4 h-4 text-light-500" />}
+                <BarChart3 className="w-4 h-4 text-light-600" />
+                <span className="text-sm font-medium text-light-700">Charts</span>
+              </div>
+              {chartsExpanded && (
+                <div className="px-4 pb-3">
+                  <FinancialCharts
+                    volumeData={filteredVolumeData}
+                    transactions={filteredTransactions}
+                    categoryColorMap={categoryColorMap}
+                  />
+                </div>
+              )}
+            </div>
 
-        {chartsExpanded && (
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-3 space-y-3">
-            <FinancialCharts volumeData={filteredVolumeData} transactions={filteredTransactions} categoryColorMap={categoryColorMap} />
-            <EntityFlowTables
-              fromEntities={fromEntities}
-              toEntities={toEntities}
-              selectedFromEntities={selectedFromEntities}
-              selectedToEntities={selectedToEntities}
-              onFromSelectionChange={setSelectedFromEntities}
-              onToSelectionChange={setSelectedToEntities}
-            />
+            {/* Entity Flow section */}
+            <div>
+              <div
+                className="flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-light-50 select-none"
+                onClick={() => setEntityFlowExpanded(!entityFlowExpanded)}
+              >
+                {entityFlowExpanded ? <ChevronDown className="w-4 h-4 text-light-500" /> : <ChevronRight className="w-4 h-4 text-light-500" />}
+                <ArrowLeftRight className="w-4 h-4 text-light-600" />
+                <span className="text-sm font-medium text-light-700">From &amp; To Entities</span>
+                {hasEntitySelection && (
+                  <span className="text-xs text-owl-blue-600">
+                    ({[
+                      selectedFromEntities.size > 0 ? `${selectedFromEntities.size} senders` : '',
+                      selectedToEntities.size > 0 ? `${selectedToEntities.size} recipients` : '',
+                    ].filter(Boolean).join(', ')} selected)
+                  </span>
+                )}
+              </div>
+              {entityFlowExpanded && (
+                <div className="px-4 pb-3">
+                  <EntityFlowTables
+                    fromEntities={fromEntities}
+                    toEntities={toEntities}
+                    selectedFromEntities={selectedFromEntities}
+                    selectedToEntities={selectedToEntities}
+                    onFromSelectionChange={setSelectedFromEntities}
+                    onToSelectionChange={setSelectedToEntities}
+                  />
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        /* Both collapsed — show a compact strip with both toggles */
+        <div className="border-t border-light-200 flex items-center px-4 py-1.5 gap-4 bg-light-50/50">
+          <button
+            onClick={() => setChartsExpanded(true)}
+            className="flex items-center gap-1.5 text-xs text-light-600 hover:text-owl-blue-600"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Charts</span>
+          </button>
+          <button
+            onClick={() => setEntityFlowExpanded(true)}
+            className="flex items-center gap-1.5 text-xs text-light-600 hover:text-owl-blue-600"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+            <ArrowLeftRight className="w-3.5 h-3.5" />
+            <span>From &amp; To Entities</span>
+          </button>
+        </div>
+      )}
 
-      {/* Drag handle to resize charts vs table */}
-      {chartsExpanded && (
+      {/* Drag handle to resize visualisation area vs table */}
+      {(chartsExpanded || entityFlowExpanded) && (
         <div
           onMouseDown={handleDragStart}
           className="flex-shrink-0 h-1.5 border-t border-b border-light-200 cursor-row-resize hover:bg-owl-blue-100 active:bg-owl-blue-200 transition-colors group relative"

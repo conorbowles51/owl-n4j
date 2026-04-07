@@ -3,8 +3,16 @@ Financial Export Service — Generates PDF reports for financial transactions.
 
 Designed for print-friendly output suitable for attorney-client meetings
 where laptops and internet are unavailable (e.g., jail visits).
-Includes transaction table, entity flow tables, category chart, volume
-timeline, and entity notes appendix — all filtered to match the current view.
+
+Renders to a real PDF via WeasyPrint, with proper page breaks, repeating
+table headers, and a compact layout. Falls back to printable HTML if
+WeasyPrint isn't available.
+
+Per user feedback (Apr 2026):
+  - Show two clear numbers: Money Out (positive amounts) and Money In (negative).
+  - Drop confusing directional inflow/outflow visualisations.
+  - From/To tables only show entities present in the filtered view.
+  - Generate native PDF (server-side) instead of browser-print HTML.
 """
 from datetime import datetime
 from html import escape
@@ -57,42 +65,26 @@ def generate_financial_pdf(
     has_entity_selection: bool = False,
     total_inflows: float = 0.0,
     total_outflows: float = 0.0,
-    inflow_entities: list = None,
-    outflow_entities: list = None,
+    inflow_entities: list = None,   # kept for back-compat, ignored
+    outflow_entities: list = None,  # kept for back-compat, ignored
 ) -> str:
-    """Generate a financial transactions report as printable HTML.
+    """Generate a financial transactions report as print-friendly HTML.
 
-    Args:
-        transactions: List of filtered transaction dicts
-        case_name: Name of the case for the header
-        filters_description: Description of active filters applied
-        entity_notes: Optional list of dicts {name, type, notes, summary}
-        from_entities: List of {name, count, total} for sender entities
-        to_entities: List of {name, count, total} for recipient entities
-        selected_from_keys: Set of selected sender entity keys (or None)
-        selected_to_keys: Set of selected recipient entity keys (or None)
-        category_counts: Dict of category -> transaction count
-        category_amounts: Dict of category -> total amount
-        volume_timeline: List of (month_key, amount) tuples sorted by date
-        has_entity_selection: Whether entity filters are active
-        total_inflows: Directional inflows relative to selected entities
-        total_outflows: Directional outflows relative to selected entities
-        inflow_entities: List of {name, amount} for entities on inflow side (entity mode only)
-        outflow_entities: List of {name, amount} for entities on outflow side (entity mode only)
-
-    Returns:
-        HTML string
+    Sign convention (matches frontend):
+      total_outflows = sum of abs(amount) for positive amounts → "Money Out"
+      total_inflows  = sum of abs(amount) for negative amounts → "Money In"
     """
     now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
 
     total_count = len(transactions)
-    total_value = sum(abs(float(t.get("amount") or 0)) for t in transactions)
+    total_value = total_outflows + total_inflows  # all money flowing, in either direction
+    net_flow = total_inflows - total_outflows  # negative if more spent than received
+    net_color = "#16a34a" if net_flow >= 0 else "#dc2626"
 
     categories_summary = {}
     for t in transactions:
         cat = t.get("category") or "Uncategorized"
         categories_summary[cat] = categories_summary.get(cat, 0) + 1
-    category_summary_text = ", ".join(f"{cat}: {count}" for cat, count in sorted(categories_summary.items()))
 
     corrected_rows = [t for t in transactions if t.get("amount_corrected")]
 
@@ -103,24 +95,21 @@ def generate_financial_pdf(
         bars_html = ""
         for month_key, amount in volume_timeline:
             pct = _bar_width(amount, max_vol)
-            label = month_key  # YYYY-MM
             bars_html += f"""
-            <div style="display: flex; align-items: center; margin-bottom: 3px;">
-                <div style="width: 55px; font-size: 9px; color: #64748b; text-align: right; padding-right: 8px; flex-shrink: 0;">{_esc(label)}</div>
-                <div style="flex: 1; background: #f1f5f9; border-radius: 3px; overflow: hidden; height: 16px;">
-                    <div style="width: {pct:.1f}%; background: linear-gradient(90deg, #3b82f6, #1d4ed8); height: 100%; border-radius: 3px;"></div>
-                </div>
-                <div style="width: 70px; font-size: 9px; color: #334155; text-align: right; padding-left: 6px; flex-shrink: 0;">{_fmt_amount(amount)}</div>
+            <div class="chart-row">
+                <div class="chart-label">{_esc(month_key)}</div>
+                <div class="chart-track"><div class="chart-bar" style="width: {pct:.1f}%; background: linear-gradient(90deg, #3b82f6, #1d4ed8);"></div></div>
+                <div class="chart-value">{_fmt_amount(amount)}</div>
             </div>
             """
         volume_chart_html = f"""
-        <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;">Volume Over Time (Monthly)</div>
+        <div class="chart-block">
+            <div class="chart-title">Volume Over Time (Monthly)</div>
             {bars_html}
         </div>
         """
 
-    # ── Category Breakdown Chart (horizontal bars) ──
+    # ── Category Breakdown Chart ──
     category_chart_html = ""
     if category_amounts and len(category_amounts) > 0:
         max_cat_amt = max(category_amounts.values(), default=1)
@@ -131,17 +120,15 @@ def generate_financial_pdf(
             count = (category_counts or {}).get(cat, 0)
             pct = _bar_width(amt, max_cat_amt)
             cat_bars += f"""
-            <div style="display: flex; align-items: center; margin-bottom: 3px;">
-                <div style="width: 90px; font-size: 9px; color: #334155; text-align: right; padding-right: 8px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{_esc(cat)}">{_esc(cat)}</div>
-                <div style="flex: 1; background: #f1f5f9; border-radius: 3px; overflow: hidden; height: 16px;">
-                    <div style="width: {pct:.1f}%; background: {color}; height: 100%; border-radius: 3px;"></div>
-                </div>
-                <div style="width: 80px; font-size: 9px; color: #334155; text-align: right; padding-left: 6px; flex-shrink: 0;">{_fmt_amount(amt)} ({count})</div>
+            <div class="chart-row">
+                <div class="chart-label" title="{_esc(cat)}">{_esc(cat)}</div>
+                <div class="chart-track"><div class="chart-bar" style="width: {pct:.1f}%; background: {color};"></div></div>
+                <div class="chart-value">{_fmt_amount(amt)} ({count})</div>
             </div>
             """
         category_chart_html = f"""
-        <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; font-weight: 600;">Category Breakdown</div>
+        <div class="chart-block">
+            <div class="chart-title">Category Breakdown</div>
             {cat_bars}
         </div>
         """
@@ -149,51 +136,41 @@ def generate_financial_pdf(
     charts_section_html = ""
     if volume_chart_html or category_chart_html:
         charts_section_html = f"""
-        <div style="display: flex; gap: 24px; margin-bottom: 16px; padding: 14px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <div class="section-charts">
             {volume_chart_html}
             {category_chart_html}
         </div>
         """
 
     # ── Entity Flow Tables ──
-    def _entity_table_html(title, entities, selected_keys, accent_color):
+    def _entity_table_html(title, entities, accent_color):
         if not entities:
             return ""
         max_total = max((e["total"] for e in entities), default=1)
         rows = ""
         for e in entities:
             name = _esc(e["name"])
-            is_selected = selected_keys and e.get("name") and any(
-                k == e.get("key", e["name"]) for k in selected_keys
-            ) if selected_keys else False
-            bg = "#eff6ff" if is_selected else ""
-            bg_style = f"background: {bg};" if bg else ""
             bar_pct = _bar_width(e["total"], max_total)
             rows += f"""
-            <tr style="{bg_style}">
-                <td style="padding: 4px 8px; font-size: 10px; border-bottom: 1px solid #e2e8f0; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="{name}">
-                    {'<strong>' if is_selected else ''}{name}{'</strong>' if is_selected else ''}
+            <tr>
+                <td class="ent-name" title="{name}">{name}</td>
+                <td class="ent-count">{e['count']}</td>
+                <td class="ent-bar">
+                    <div class="ent-bar-track"><div class="ent-bar-fill" style="width: {bar_pct:.1f}%; background: {accent_color};"></div></div>
                 </td>
-                <td style="padding: 4px 6px; font-size: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #64748b;">{e['count']}</td>
-                <td style="padding: 4px 8px; font-size: 10px; border-bottom: 1px solid #e2e8f0; width: 40%;">
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                        <div style="flex: 1; background: #f1f5f9; border-radius: 2px; height: 10px; overflow: hidden;">
-                            <div style="width: {bar_pct:.1f}%; background: {accent_color}; height: 100%; border-radius: 2px;"></div>
-                        </div>
-                        <span style="font-size: 9px; color: #334155; white-space: nowrap;">{_fmt_amount(e['total'])}</span>
-                    </div>
-                </td>
+                <td class="ent-amt">{_fmt_amount(e['total'])}</td>
             </tr>
             """
         return f"""
-        <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 10px; font-weight: 600; color: {accent_color}; margin-bottom: 6px;">{title} ({len(entities)})</div>
-            <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden;">
+        <div class="entity-block">
+            <div class="entity-title" style="color: {accent_color};">{title} ({len(entities)})</div>
+            <table class="entity-table">
                 <thead>
-                    <tr style="background: #f8fafc;">
-                        <th style="padding: 4px 8px; font-size: 9px; text-align: left; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Entity</th>
-                        <th style="padding: 4px 6px; font-size: 9px; text-align: right; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Txns</th>
-                        <th style="padding: 4px 8px; font-size: 9px; text-align: left; color: #64748b; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Amount</th>
+                    <tr>
+                        <th>Entity</th>
+                        <th>Txns</th>
+                        <th>Distribution</th>
+                        <th>Amount</th>
                     </tr>
                 </thead>
                 <tbody>{rows}</tbody>
@@ -203,26 +180,52 @@ def generate_financial_pdf(
 
     entity_flow_html = ""
     if from_entities or to_entities:
-        from_html = _entity_table_html("Senders (From)", from_entities or [], selected_from_keys, "#ef4444")
-        to_html = _entity_table_html("Recipients (To)", to_entities or [], selected_to_keys, "#22c55e")
+        from_html = _entity_table_html("Senders (From)", from_entities or [], "#dc2626")
+        to_html = _entity_table_html("Recipients (To)", to_entities or [], "#16a34a")
         entity_flow_html = f"""
-        <div style="display: flex; gap: 16px; margin-bottom: 16px;">
+        <div class="section-entities">
             {from_html}
             {to_html}
         </div>
         """
 
+    # ── Summary Cards — Money Out / Money In / Transactions / Net ──
+    summary_cards_html = f"""
+    <div class="summary-grid">
+        <div class="summary-card card-out">
+            <div class="summary-label">Money Out</div>
+            <div class="summary-sub">Positive transactions</div>
+            <div class="summary-value">{_fmt_amount(total_outflows)}</div>
+        </div>
+        <div class="summary-card card-in">
+            <div class="summary-label">Money In</div>
+            <div class="summary-sub">Negative transactions</div>
+            <div class="summary-value">{_fmt_amount(total_inflows)}</div>
+        </div>
+        <div class="summary-card card-net" style="border-color: {net_color}33;">
+            <div class="summary-label" style="color: {net_color};">Net</div>
+            <div class="summary-sub">In − Out</div>
+            <div class="summary-value" style="color: {net_color};">{_fmt_amount(net_flow)}</div>
+        </div>
+        <div class="summary-card card-count">
+            <div class="summary-label">Transactions</div>
+            <div class="summary-sub">{'Filtered' if has_entity_selection else 'Total'}</div>
+            <div class="summary-value">{total_count:,}</div>
+        </div>
+    </div>
+    """
+
     # ── Transaction Rows ──
     rows_html = ""
     for i, t in enumerate(transactions):
         amount_val = float(t.get("amount") or 0)
-        amount_color = "#16a34a" if amount_val >= 0 else "#dc2626"
+        amount_color = "#dc2626" if amount_val >= 0 else "#16a34a"
         abs_amount = abs(amount_val)
         amount_str = f"${abs_amount:,.2f}" if amount_val >= 0 else f"-${abs_amount:,.2f}"
 
         corrected_marker = ""
         if t.get("amount_corrected"):
-            corrected_marker = ' <span style="color: #d97706; font-size: 10px;" title="Manually corrected">&#9998;</span>'
+            corrected_marker = ' <span style="color: #d97706;" title="Manually corrected">&#9998;</span>'
 
         from_name = ""
         if isinstance(t.get("from_entity"), dict):
@@ -239,21 +242,15 @@ def generate_financial_pdf(
         is_child = t.get("parent_transaction_key")
         is_parent = t.get("is_parent")
 
-        # Visual grouping: parent rows get a subtle bold treatment,
-        # child rows get a tinted background + left border to show nesting
+        row_class = "txn-row"
         if is_child:
-            bg = "#eef2ff"  # light indigo tint for child rows
-            border_left = "border-left: 3px solid #818cf8;"  # indigo accent bar
+            row_class += " txn-child"
         elif is_parent:
-            bg = "#f1f5f9"  # slightly stronger slate for parent header
-            border_left = ""
-        else:
-            bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
-            border_left = ""
+            row_class += " txn-parent"
+        elif i % 2 == 0:
+            row_class += " txn-alt"
 
         name_prefix = "&#8627; " if is_child else ""
-        indent_style = "padding-left: 24px;" if is_child else ""
-        parent_weight = "font-weight: 600;" if is_parent else ""
 
         tx_name = _esc(t.get("name"))
 
@@ -263,18 +260,18 @@ def generate_financial_pdf(
         if purpose:
             details_parts.append(_esc(purpose))
         if summary and summary != purpose:
-            details_parts.append(f'<span style="color: #6366f1; font-style: italic;">[AI] {_esc(summary)}</span>')
+            details_parts.append(f'<span class="ai-summary">[AI] {_esc(summary)}</span>')
         details_html = "<br>".join(details_parts) if details_parts else "-"
 
         ref_id = _esc(t.get("ref_id") or "-")
         rows_html += f"""
-        <tr style="background: {bg}; {border_left}">
-            <td class="cell" style="font-family: monospace; font-size: 9px; letter-spacing: 0.5px; color: #475569;">{ref_id}</td>
+        <tr class="{row_class}">
+            <td class="cell ref">{ref_id}</td>
             <td class="cell">{_esc(t.get("date"))}</td>
-            <td class="cell" style="{indent_style} {parent_weight}">{name_prefix}{_esc(tx_name)}</td>
+            <td class="cell name-cell">{name_prefix}{_esc(tx_name)}</td>
             <td class="cell">{_esc(from_name)}</td>
             <td class="cell">{_esc(to_name)}</td>
-            <td class="cell" style="font-family: monospace; color: {amount_color}; text-align: right; white-space: nowrap;">{amount_str}{corrected_marker}</td>
+            <td class="cell amt" style="color: {amount_color};">{amount_str}{corrected_marker}</td>
             <td class="cell">{_esc(t.get("category"))}</td>
             <td class="cell">{_esc(t.get("source_document") or "-")}</td>
             <td class="cell details">{details_html}</td>
@@ -284,7 +281,7 @@ def generate_financial_pdf(
     footnote_html = ""
     if corrected_rows:
         footnote_html = """
-        <div style="margin-top: 16px; padding: 10px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 10px; color: #92400e;">
+        <div class="footnote">
             <strong>&#9998; Manually Corrected Amounts</strong> — Original values preserved on file for audit purposes.
         </div>
         """
@@ -296,7 +293,7 @@ def generate_financial_pdf(
         if notes_with_content:
             entity_rows = ""
             for i, e in enumerate(notes_with_content):
-                bg = "#f8fafc" if i % 2 == 0 else "#ffffff"
+                row_class = "txn-alt" if i % 2 == 0 else ""
                 name = _esc(e.get("name"))
                 etype = _esc(e.get("type"))
                 enotes = _esc(e.get("notes")) if e.get("notes") else ""
@@ -306,11 +303,11 @@ def generate_financial_pdf(
                 if enotes and enotes != "-":
                     details.append(enotes)
                 if esummary:
-                    details.append(f'<span style="color: #6366f1; font-style: italic;">[AI] {_esc(esummary)}</span>')
+                    details.append(f'<span class="ai-summary">[AI] {_esc(esummary)}</span>')
                 details_str = "<br>".join(details) if details else "-"
 
                 entity_rows += f"""
-                <tr style="background: {bg};">
+                <tr class="{row_class}">
                     <td class="cell" style="font-weight: 600;">{name}</td>
                     <td class="cell">{etype}</td>
                     <td class="cell details">{details_str}</td>
@@ -318,17 +315,17 @@ def generate_financial_pdf(
                 """
 
             entity_notes_html = f"""
-            <div style="page-break-before: always;"></div>
-            <div style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); color: white; padding: 16px 24px; border-radius: 8px; margin-bottom: 16px; margin-top: 24px;">
-                <div style="font-size: 16px; font-weight: 700;">Entity Notes &amp; Summaries</div>
-                <div style="font-size: 11px; opacity: 0.7; margin-top: 4px;">{len(notes_with_content)} entities with notes or AI summaries</div>
+            <div class="page-break"></div>
+            <div class="section-header">
+                <div class="section-title">Entity Notes &amp; Summaries</div>
+                <div class="section-sub">{len(notes_with_content)} entities with notes or AI summaries</div>
             </div>
-            <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
+            <table class="data-table">
                 <thead>
-                    <tr style="background: #1e3a5f; color: white;">
-                        <th class="th" style="width: 20%;">Entity Name</th>
-                        <th class="th" style="width: 10%;">Type</th>
-                        <th class="th" style="width: 70%;">Notes / AI Summary</th>
+                    <tr>
+                        <th style="width: 22%;">Entity Name</th>
+                        <th style="width: 12%;">Type</th>
+                        <th style="width: 66%;">Notes / AI Summary</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -337,265 +334,327 @@ def generate_financial_pdf(
             </table>
             """
 
-    # ── Summary Cards — context-aware like frontend ──
-    net_flow = total_inflows - total_outflows
-    net_color = "#16a34a" if net_flow >= 0 else "#dc2626"
-    net_bg = "#dcfce7" if net_flow >= 0 else "#fef2f2"
-
-    if has_entity_selection:
-        summary_cards_html = f"""
-        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-            <div style="flex: 1; background: #dcfce7; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #16a34a; text-transform: uppercase; letter-spacing: 0.5px;">Inflows</div>
-                <div style="font-size: 18px; font-weight: 700; color: #16a34a;">${total_inflows:,.2f}</div>
-            </div>
-            <div style="flex: 1; background: #fef2f2; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #dc2626; text-transform: uppercase; letter-spacing: 0.5px;">Outflows</div>
-                <div style="font-size: 18px; font-weight: 700; color: #dc2626;">${total_outflows:,.2f}</div>
-            </div>
-            <div style="flex: 1; background: {net_bg}; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: {net_color}; text-transform: uppercase; letter-spacing: 0.5px;">Net Flow</div>
-                <div style="font-size: 18px; font-weight: 700; color: {net_color};">${net_flow:,.2f}</div>
-            </div>
-            <div style="flex: 1; background: #f1f5f9; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Transactions</div>
-                <div style="font-size: 20px; font-weight: 700; color: #0f172a;">{total_count}</div>
-            </div>
-        </div>
-        """
-    else:
-        # Compute unique entities for overview mode
-        entity_keys_set = set()
-        for t in transactions:
-            if isinstance(t.get("from_entity"), dict) and t["from_entity"].get("key"):
-                entity_keys_set.add(t["from_entity"]["key"])
-            elif isinstance(t.get("from_entity"), dict) and t["from_entity"].get("name"):
-                entity_keys_set.add(t["from_entity"]["name"])
-            if isinstance(t.get("to_entity"), dict) and t["to_entity"].get("key"):
-                entity_keys_set.add(t["to_entity"]["key"])
-            elif isinstance(t.get("to_entity"), dict) and t["to_entity"].get("name"):
-                entity_keys_set.add(t["to_entity"]["name"])
-        avg_amount = (total_value / total_count) if total_count > 0 else 0
-
-        summary_cards_html = f"""
-        <div style="display: flex; gap: 12px; margin-bottom: 16px;">
-            <div style="flex: 1; background: #f1f5f9; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Total Volume</div>
-                <div style="font-size: 20px; font-weight: 700; color: #0f172a;">${total_value:,.2f}</div>
-            </div>
-            <div style="flex: 1; background: #f1f5f9; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Transactions</div>
-                <div style="font-size: 20px; font-weight: 700; color: #0f172a;">{total_count}</div>
-            </div>
-            <div style="flex: 1; background: #f1f5f9; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Unique Entities</div>
-                <div style="font-size: 20px; font-weight: 700; color: #0f172a;">{len(entity_keys_set)}</div>
-            </div>
-            <div style="flex: 1; background: #f1f5f9; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Avg Transaction</div>
-                <div style="font-size: 20px; font-weight: 700; color: #0f172a;">${avg_amount:,.2f}</div>
-            </div>
-            <div style="flex: 2; background: #f1f5f9; border-radius: 6px; padding: 12px 16px;">
-                <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Categories</div>
-                <div style="font-size: 11px; color: #334155; margin-top: 4px;">{category_summary_text or "None"}</div>
-            </div>
-        </div>
-        """
-
-    # ── Inflow vs Outflow comparison bar — always visible when there's flow data ──
-    flow_comparison_html = ""
-    if total_inflows > 0 or total_outflows > 0:
-        flow_total = total_inflows + total_outflows
-        in_pct = (total_inflows / flow_total * 100) if flow_total > 0 else 50
-        out_pct = 100 - in_pct
-        hint_html = ""
-        if not has_entity_selection and total_outflows == 0:
-            hint_html = '<span style="font-size: 9px; color: #94a3b8; font-style: italic; margin-left: 8px;">Select entities for directional flow analysis</span>'
-        # Build the bar sections — only include sections with width > 0
-        bar_sections = ""
-        if in_pct > 0:
-            bar_sections += f"""<div style="width: {in_pct:.1f}%; background: linear-gradient(90deg, #22c55e, #16a34a); display: flex; align-items: center; justify-content: center;">
-                    <span style="font-size: 10px; font-weight: 600; color: white;">{_fmt_amount(total_inflows)}</span>
-                </div>"""
-        if out_pct > 0:
-            bar_sections += f"""<div style="width: {out_pct:.1f}%; background: linear-gradient(90deg, #ef4444, #dc2626); display: flex; align-items: center; justify-content: center;">
-                    <span style="font-size: 10px; font-weight: 600; color: white;">{_fmt_amount(total_outflows)}</span>
-                </div>"""
-        # Entity breakdown lists — only when entities are selected
-        entity_breakdown_html = ""
-        if has_entity_selection and (inflow_entities or outflow_entities):
-            inflow_list_html = ""
-            if inflow_entities:
-                inflow_items = ""
-                for e in inflow_entities[:5]:
-                    inflow_items += f'<div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;"><span style="color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px;">{_esc(e["name"])}</span><span style="color: #16a34a; font-weight: 600; white-space: nowrap;">{_fmt_amount(e["amount"])}</span></div>'
-                if len(inflow_entities) > 5:
-                    inflow_items += f'<div style="font-size: 8px; color: #94a3b8;">+{len(inflow_entities) - 5} more</div>'
-                inflow_list_html = f"""
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-size: 9px; color: #16a34a; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Inflow From</div>
-                    {inflow_items}
-                </div>
-                """
-            outflow_list_html = ""
-            if outflow_entities:
-                outflow_items = ""
-                for e in outflow_entities[:5]:
-                    outflow_items += f'<div style="display: flex; justify-content: space-between; font-size: 9px; margin-bottom: 2px;"><span style="color: #475569; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 8px;">{_esc(e["name"])}</span><span style="color: #dc2626; font-weight: 600; white-space: nowrap;">{_fmt_amount(e["amount"])}</span></div>'
-                if len(outflow_entities) > 5:
-                    outflow_items += f'<div style="font-size: 8px; color: #94a3b8;">+{len(outflow_entities) - 5} more</div>'
-                outflow_list_html = f"""
-                <div style="flex: 1; min-width: 0;">
-                    <div style="font-size: 9px; color: #dc2626; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Outflow To</div>
-                    {outflow_items}
-                </div>
-                """
-            entity_breakdown_html = f"""
-            <div style="display: flex; gap: 16px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #e2e8f0;">
-                {inflow_list_html}
-                {outflow_list_html}
-            </div>
-            """
-
-        flow_comparison_html = f"""
-        <div style="margin-bottom: 16px; padding: 14px 16px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
-            <div style="font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 600;">Inflow vs Outflow{hint_html}</div>
-            <div style="display: flex; height: 28px; border-radius: 6px; overflow: hidden; margin-bottom: 8px;">
-                {bar_sections}
-            </div>
-            <div style="display: flex; justify-content: space-between; font-size: 10px;">
-                <div style="color: #16a34a;">&#9650; Inflows ({in_pct:.0f}%)</div>
-                <div style="color: #64748b; font-weight: 600;">Net: <span style="color: {net_color};">${net_flow:,.2f}</span></div>
-                <div style="color: #dc2626;">&#9660; Outflows ({out_pct:.0f}%)</div>
-            </div>
-            {entity_breakdown_html}
-        </div>
-        """
-
-    html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>Financial Report — {_esc(case_name)}</title>
-        <style>
-            @page {{
-                size: A4 landscape;
-                margin: 1.5cm;
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Financial Report — {_esc(case_name)}</title>
+    <style>
+        @page {{
+            size: A4 landscape;
+            margin: 1.2cm 1cm 1.4cm 1cm;
+            @bottom-center {{
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 8pt;
+                color: #64748b;
+                font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
             }}
-            @media print {{
-                body {{ padding: 0; margin: 0; }}
-                .no-print {{ display: none !important; }}
-                thead {{ display: table-header-group; }}
-                tr {{ page-break-inside: avoid; }}
+            @bottom-left {{
+                content: "{_esc(case_name)} — Financial Report";
+                font-size: 8pt;
+                color: #94a3b8;
+                font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
             }}
-            body {{
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                color: #1e293b;
-                margin: 0;
-                padding: 24px;
-                background: #f1f5f9;
+            @bottom-right {{
+                content: "ATTORNEY-CLIENT PRIVILEGED";
+                font-size: 7pt;
+                color: #94a3b8;
+                font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
             }}
-            .report-wrap {{
-                max-width: 1400px;
-                margin: 0 auto;
-                background: white;
-                padding: 32px;
-                border-radius: 8px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            }}
-            @media print {{
-                body {{ background: white; padding: 0; }}
-                .report-wrap {{ box-shadow: none; padding: 0; border-radius: 0; max-width: none; }}
-            }}
-            .cell {{
-                padding: 5px 8px;
-                border-bottom: 1px solid #e2e8f0;
-                font-size: 10px;
-                vertical-align: top;
-            }}
-            .details {{
-                max-width: 260px;
-                word-wrap: break-word;
-                overflow-wrap: break-word;
-                line-height: 1.4;
-            }}
-            .th {{
-                padding: 7px 8px;
-                text-align: left;
-                font-size: 10px;
-                font-weight: 600;
-            }}
-            .print-btn {{
-                position: fixed;
-                bottom: 24px;
-                right: 24px;
-                background: #1e3a5f;
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-                z-index: 999;
-            }}
-            .print-btn:hover {{ background: #0f172a; }}
-        </style>
-    </head>
-    <body>
-        <button class="print-btn no-print" onclick="window.print()">&#128438; Print / Save as PDF</button>
-        <div class="report-wrap">
-        <!-- Header -->
-        <div style="background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%); color: white; padding: 20px 24px; border-radius: 8px; margin-bottom: 16px;">
-            <div style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">Financial Transaction Report</div>
-            <div style="font-size: 13px; opacity: 0.85;">{_esc(case_name)}</div>
-            <div style="font-size: 11px; opacity: 0.7; margin-top: 6px;">Generated: {now}</div>
-            <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">ATTORNEY-CLIENT PRIVILEGED AND CONFIDENTIAL</div>
-        </div>
+        }}
 
-        <!-- Summary Cards -->
-        {summary_cards_html}
+        * {{ box-sizing: border-box; }}
 
-        {f'<div style="font-size: 11px; color: #64748b; margin-bottom: 12px; padding: 8px 12px; background: #f8fafc; border-radius: 4px; border-left: 3px solid #3b82f6;">Active filters: {_esc(filters_description)}</div>' if filters_description else ''}
+        html, body {{
+            font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+            color: #1e293b;
+            margin: 0;
+            padding: 0;
+            font-size: 9pt;
+            line-height: 1.35;
+        }}
 
-        <!-- Inflow vs Outflow -->
-        {flow_comparison_html}
+        /* ── HEADER ── */
+        .report-header {{
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+            color: white;
+            padding: 14px 20px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+        }}
+        .report-title {{ font-size: 16pt; font-weight: 700; margin-bottom: 2px; }}
+        .report-case {{ font-size: 10pt; opacity: 0.9; }}
+        .report-meta {{ font-size: 8pt; opacity: 0.7; margin-top: 4px; }}
 
-        <!-- Charts -->
-        {charts_section_html}
+        /* ── SUMMARY CARDS ── */
+        .summary-grid {{
+            display: table;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 8px 0;
+            margin-bottom: 12px;
+            margin-left: -8px;
+            margin-right: -8px;
+        }}
+        .summary-card {{
+            display: table-cell;
+            width: 25%;
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            vertical-align: top;
+        }}
+        .summary-label {{
+            font-size: 9pt;
+            font-weight: 600;
+            color: #334155;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }}
+        .summary-sub {{ font-size: 7pt; color: #94a3b8; margin-top: 1px; }}
+        .summary-value {{ font-size: 16pt; font-weight: 700; color: #0f172a; margin-top: 4px; }}
+        .card-out {{ background: #fef2f2; border-color: #fecaca; }}
+        .card-out .summary-label, .card-out .summary-value {{ color: #dc2626; }}
+        .card-in {{ background: #dcfce7; border-color: #bbf7d0; }}
+        .card-in .summary-label, .card-in .summary-value {{ color: #16a34a; }}
+        .card-net {{ background: #f8fafc; }}
+        .card-count {{ background: #eff6ff; border-color: #bfdbfe; }}
+        .card-count .summary-label, .card-count .summary-value {{ color: #1d4ed8; }}
 
-        <!-- Entity Flow Tables -->
-        {entity_flow_html}
+        /* ── FILTER BANNER ── */
+        .filter-banner {{
+            font-size: 8pt;
+            color: #475569;
+            margin-bottom: 10px;
+            padding: 6px 10px;
+            background: #f8fafc;
+            border-left: 3px solid #3b82f6;
+            border-radius: 3px;
+        }}
 
-        <!-- Transaction Table -->
-        <table style="width: 100%; border-collapse: collapse; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
-            <thead>
-                <tr style="background: #1e3a5f; color: white;">
-                    <th class="th" style="width: 6%;">Ref</th>
-                    <th class="th" style="width: 7%;">Date</th>
-                    <th class="th" style="width: 13%;">Name</th>
-                    <th class="th" style="width: 11%;">From</th>
-                    <th class="th" style="width: 11%;">To</th>
-                    <th class="th" style="text-align: right; width: 8%;">Amount</th>
-                    <th class="th" style="width: 9%;">Category</th>
-                    <th class="th" style="width: 8%;">Source</th>
-                    <th class="th" style="width: 27%;">Details / AI Summary</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows_html}
-            </tbody>
-        </table>
+        /* ── CHARTS ── */
+        .section-charts {{
+            display: table;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 12px 0;
+            margin: 0 -12px 12px -12px;
+            page-break-inside: avoid;
+        }}
+        .chart-block {{
+            display: table-cell;
+            width: 50%;
+            padding: 10px 12px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            vertical-align: top;
+        }}
+        .chart-title {{
+            font-size: 8pt;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }}
+        .chart-row {{ display: table; width: 100%; margin-bottom: 2px; }}
+        .chart-label {{
+            display: table-cell;
+            width: 70px;
+            font-size: 7pt;
+            color: #64748b;
+            text-align: right;
+            padding-right: 6px;
+            vertical-align: middle;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .chart-track {{
+            display: table-cell;
+            background: #f1f5f9;
+            border-radius: 2px;
+            overflow: hidden;
+            height: 12px;
+            vertical-align: middle;
+        }}
+        .chart-bar {{ height: 12px; border-radius: 2px; }}
+        .chart-value {{
+            display: table-cell;
+            width: 80px;
+            font-size: 7pt;
+            color: #334155;
+            text-align: right;
+            padding-left: 6px;
+            vertical-align: middle;
+            white-space: nowrap;
+        }}
 
-        {footnote_html}
+        /* ── ENTITY FLOW ── */
+        .section-entities {{
+            display: table;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 12px 0;
+            margin: 0 -12px 12px -12px;
+            page-break-inside: avoid;
+        }}
+        .entity-block {{
+            display: table-cell;
+            width: 50%;
+            vertical-align: top;
+        }}
+        .entity-title {{
+            font-size: 8pt;
+            font-weight: 700;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }}
+        .entity-table {{
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+        }}
+        .entity-table th {{
+            background: #f8fafc;
+            font-size: 7pt;
+            text-align: left;
+            color: #64748b;
+            font-weight: 600;
+            padding: 4px 6px;
+            border-bottom: 1px solid #e2e8f0;
+        }}
+        .entity-table td {{
+            font-size: 7.5pt;
+            padding: 3px 6px;
+            border-bottom: 1px solid #f1f5f9;
+        }}
+        .ent-name {{
+            max-width: 140px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        .ent-count {{ width: 30px; text-align: right; color: #64748b; }}
+        .ent-bar {{ width: 35%; }}
+        .ent-bar-track {{ background: #f1f5f9; border-radius: 2px; height: 8px; overflow: hidden; }}
+        .ent-bar-fill {{ height: 8px; border-radius: 2px; }}
+        .ent-amt {{ width: 70px; text-align: right; font-weight: 600; color: #334155; }}
 
-        {entity_notes_html}
-        </div>
-    </body>
-    </html>
-    """
+        /* ── DATA TABLE (transactions / notes appendix) ── */
+        .data-table {{
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #cbd5e1;
+        }}
+        .data-table thead {{
+            display: table-header-group;  /* repeat on every page */
+        }}
+        .data-table thead th {{
+            background: #1e3a5f;
+            color: white;
+            padding: 6px 7px;
+            text-align: left;
+            font-size: 8pt;
+            font-weight: 600;
+            border-right: 1px solid #2d4a6f;
+        }}
+        .data-table tbody tr {{
+            page-break-inside: avoid;  /* don't split a row across pages */
+        }}
+        .cell {{
+            padding: 4px 7px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 7.5pt;
+            vertical-align: top;
+            line-height: 1.35;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }}
+        .cell.ref {{ font-family: "SF Mono", "Menlo", monospace; font-size: 7pt; color: #475569; letter-spacing: 0.3px; }}
+        .cell.amt {{ font-family: "SF Mono", "Menlo", monospace; text-align: right; white-space: nowrap; }}
+        .cell.details {{ max-width: 220px; }}
+        .ai-summary {{ color: #6366f1; font-style: italic; }}
+
+        .txn-alt {{ background: #f8fafc; }}
+        .txn-parent {{ background: #f1f5f9; font-weight: 600; }}
+        .txn-child {{ background: #eef2ff; border-left: 3px solid #818cf8; }}
+        .txn-child .name-cell {{ padding-left: 18px; }}
+
+        /* ── SECTION HEADERS (e.g. Notes appendix) ── */
+        .section-header {{
+            background: linear-gradient(135deg, #1e3a5f 0%, #0f172a 100%);
+            color: white;
+            padding: 12px 18px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }}
+        .section-title {{ font-size: 14pt; font-weight: 700; }}
+        .section-sub {{ font-size: 9pt; opacity: 0.8; margin-top: 2px; }}
+
+        /* ── FOOTNOTE ── */
+        .footnote {{
+            margin-top: 12px;
+            padding: 8px 12px;
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            border-radius: 4px;
+            font-size: 8pt;
+            color: #92400e;
+            page-break-inside: avoid;
+        }}
+
+        /* ── PAGE BREAKS ── */
+        .page-break {{ page-break-before: always; }}
+
+        /* Avoid orphaning section headers */
+        h1, h2, h3, .section-header, .section-charts, .section-entities, .summary-grid {{
+            page-break-after: avoid;
+        }}
+    </style>
+</head>
+<body>
+    <div class="report-header">
+        <div class="report-title">Financial Transaction Report</div>
+        <div class="report-case">{_esc(case_name)}</div>
+        <div class="report-meta">Generated: {now} &nbsp;·&nbsp; ATTORNEY-CLIENT PRIVILEGED AND CONFIDENTIAL</div>
+    </div>
+
+    {summary_cards_html}
+
+    {f'<div class="filter-banner">Active filters: {_esc(filters_description)}</div>' if filters_description else ''}
+
+    {charts_section_html}
+
+    {entity_flow_html}
+
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th style="width: 6%;">Ref</th>
+                <th style="width: 7%;">Date</th>
+                <th style="width: 13%;">Name</th>
+                <th style="width: 11%;">From</th>
+                <th style="width: 11%;">To</th>
+                <th style="width: 8%; text-align: right;">Amount</th>
+                <th style="width: 9%;">Category</th>
+                <th style="width: 8%;">Source</th>
+                <th style="width: 27%;">Details / AI Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            {rows_html}
+        </tbody>
+    </table>
+
+    {footnote_html}
+
+    {entity_notes_html}
+</body>
+</html>"""
 
     return html
 

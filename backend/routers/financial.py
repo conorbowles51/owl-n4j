@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from services import neo4j_service
-from services.financial_export_service import generate_financial_pdf
+from services.financial_export_service import generate_financial_pdf, render_pdf
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
 
@@ -603,7 +603,12 @@ async def export_financial_pdf(
 
         filters_description = " | ".join(filters) if filters else ""
 
-        # --- Build entity flow data from base_filtered (pre-entity-filter) with cross-filtering ---
+        # --- Build entity flow data ---
+        # Per user feedback: when entity filters are active, the export should ONLY
+        # show the filtered/selected entities (not the full universe).
+        #
+        # We build the lists from the post-entity-filter `transactions`, which guarantees
+        # any sender/recipient appearing here is part of the filtered view.
         def _entity_key(e):
             if isinstance(e, dict):
                 return e.get("key") or e.get("name")
@@ -611,28 +616,24 @@ async def export_financial_pdf(
 
         from_entities_data = {}
         to_entities_data = {}
-        for t in base_filtered:
+        for t in transactions:
             amt = fabs(float(t.get("amount") or 0))
             fk = _entity_key(t.get("from_entity"))
             tk = _entity_key(t.get("to_entity"))
             fn = t["from_entity"].get("name", fk) if isinstance(t.get("from_entity"), dict) else None
             tn = t["to_entity"].get("name", tk) if isinstance(t.get("to_entity"), dict) else None
 
-            # From entities — constrained by to_keys_set (cross-filter)
             if fk and fn:
-                if to_keys_set is None or (tk and tk in to_keys_set):
-                    if fk not in from_entities_data:
-                        from_entities_data[fk] = {"name": fn, "count": 0, "total": 0.0}
-                    from_entities_data[fk]["count"] += 1
-                    from_entities_data[fk]["total"] += amt
+                if fk not in from_entities_data:
+                    from_entities_data[fk] = {"key": fk, "name": fn, "count": 0, "total": 0.0}
+                from_entities_data[fk]["count"] += 1
+                from_entities_data[fk]["total"] += amt
 
-            # To entities — constrained by from_keys_set (cross-filter)
             if tk and tn:
-                if from_keys_set is None or (fk and fk in from_keys_set):
-                    if tk not in to_entities_data:
-                        to_entities_data[tk] = {"name": tn, "count": 0, "total": 0.0}
-                    to_entities_data[tk]["count"] += 1
-                    to_entities_data[tk]["total"] += amt
+                if tk not in to_entities_data:
+                    to_entities_data[tk] = {"key": tk, "name": tn, "count": 0, "total": 0.0}
+                to_entities_data[tk]["count"] += 1
+                to_entities_data[tk]["total"] += amt
 
         from_entities_list = sorted(from_entities_data.values(), key=lambda e: e["total"], reverse=True)
         to_entities_list = sorted(to_entities_data.values(), key=lambda e: e["total"], reverse=True)
@@ -689,68 +690,24 @@ async def export_financial_pdf(
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
 
-        # --- Compute directional inflow/outflow ---
-        # Mirrors frontend filteredSummary logic exactly
-        def _entity_name(e):
-            if isinstance(e, dict):
-                return e.get("name") or e.get("key")
-            return None
-
+        # --- Compute Money In / Money Out (sign-based, mirrors frontend) ---
+        # User-requested simplification:
+        #   total_outflows = sum of abs(amount) for positive transactions  → "Money Out"
+        #   total_inflows  = sum of abs(amount) for negative transactions  → "Money In"
         has_entity_selection = bool(from_keys_set or to_keys_set)
         total_inflows = 0.0
         total_outflows = 0.0
-        # Per-entity breakdown: key → {name, amount}
-        inflow_by_entity = {}
-        outflow_by_entity = {}
+        for t in transactions:
+            raw = float(t.get("amount") or 0)
+            amt = fabs(raw)
+            if raw >= 0:
+                total_outflows += amt
+            else:
+                total_inflows += amt
 
-        def _add_to_map(m, key, name, amt):
-            if key not in m:
-                m[key] = {"name": name or key, "amount": 0.0}
-            m[key]["amount"] += amt
-
-        if has_entity_selection:
-            # Entity mode: classify flows relative to selected entities
-            # from_entity match = money leaving that entity = OUTFLOW
-            # to_entity match = money arriving at that entity = INFLOW
-            for t in transactions:
-                amt = fabs(float(t.get("amount") or 0))
-                tk = _entity_key(t.get("to_entity"))
-                tn = _entity_name(t.get("to_entity"))
-                fk = _entity_key(t.get("from_entity"))
-                fn = _entity_name(t.get("from_entity"))
-                if from_keys_set:
-                    if fk and fk in from_keys_set:
-                        total_outflows += amt
-                        if tn:
-                            _add_to_map(outflow_by_entity, tk or tn, tn, amt)
-                    if tk and tk in from_keys_set:
-                        total_inflows += amt
-                        if fn:
-                            _add_to_map(inflow_by_entity, fk or fn, fn, amt)
-                elif to_keys_set:
-                    if tk and tk in to_keys_set:
-                        total_inflows += amt
-                        if fn:
-                            _add_to_map(inflow_by_entity, fk or fn, fn, amt)
-                    if fk and fk in to_keys_set:
-                        total_outflows += amt
-                        if tn:
-                            _add_to_map(outflow_by_entity, tk or tn, tn, amt)
-        else:
-            # Overview mode: sign-based
-            # positive amounts = outflows (money leaving accounts)
-            # negative amounts = inflows (credits/refunds)
-            for t in transactions:
-                raw = float(t.get("amount") or 0)
-                amt = fabs(raw)
-                if raw >= 0:
-                    total_outflows += amt
-                else:
-                    total_inflows += amt
-
-        # Convert to sorted lists (by amount desc)
-        inflow_entities_list = sorted(inflow_by_entity.values(), key=lambda e: e["amount"], reverse=True)
-        outflow_entities_list = sorted(outflow_by_entity.values(), key=lambda e: e["amount"], reverse=True)
+        # No directional per-entity breakdowns needed for the simplified PDF
+        inflow_entities_list = None
+        outflow_entities_list = None
 
         # Group sub-transactions under their parents so they appear adjacent in the PDF
         parent_children = {}  # parent_key -> [child_txns]
@@ -784,12 +741,29 @@ async def export_financial_pdf(
             has_entity_selection=has_entity_selection,
             total_inflows=total_inflows,
             total_outflows=total_outflows,
-            inflow_entities=inflow_entities_list if has_entity_selection else None,
-            outflow_entities=outflow_entities_list if has_entity_selection else None,
         )
 
-        # Serve as printable HTML — browser's Print → Save as PDF handles pagination
-        return Response(content=html, media_type="text/html")
+        # Render to a real PDF server-side via WeasyPrint.
+        # This avoids the browser-print path that crashes on large datasets
+        # and gives us proper page breaks + repeating table headers.
+        # If WeasyPrint isn't available (missing system libs), fall back to
+        # printable HTML so the user still gets *something*.
+        try:
+            pdf_bytes = render_pdf(html)
+            safe_name = "".join(c if c.isalnum() or c in "-_." else "_" for c in case_name)[:60] or "case"
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition": f'inline; filename="financial_report_{safe_name}.pdf"',
+                },
+            )
+        except Exception as pdf_err:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"WeasyPrint rendering failed, falling back to printable HTML: {pdf_err}"
+            )
+            return Response(content=html, media_type="text/html")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
