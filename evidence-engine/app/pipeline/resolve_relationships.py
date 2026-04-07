@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from app.ontology.schema_builder import get_relationship_resolution_schema
+from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.pipeline.resolve_entities import ResolvedRelationship
 from app.services.openai_client import chat_completion
 
@@ -60,6 +61,9 @@ def _merge_group(rels: list[ResolvedRelationship]) -> ResolvedRelationship:
         source_quotes=unique_quotes,
         confidence=max(r.confidence for r in rels),
         source_files=sorted(all_files),
+        mandatory_instructions=merge_mandatory_instructions(
+            *[r.mandatory_instructions for r in rels]
+        ),
     )
 
 
@@ -106,24 +110,40 @@ async def _normalize_near_duplicate_types(
                         "type": merged[a].type,
                         "detail": merged[a].detail,
                         "confidence": merged[a].confidence,
+                        "mandatory_instructions": merged[a].mandatory_instructions,
                     },
                     "relationship_b": {
                         "type": merged[b].type,
                         "detail": merged[b].detail,
                         "confidence": merged[b].confidence,
+                        "mandatory_instructions": merged[b].mandatory_instructions,
                     },
                 }
                 for j, (a, b) in enumerate(batch)
             ],
             indent=2,
         )
-        prompt = template.format(pairs_json=pairs_json)
+        prompt = prepend_mandatory_rules(
+            template.format(pairs_json=pairs_json),
+            merge_mandatory_instructions(
+                *[
+                    merge_mandatory_instructions(
+                        merged[a].mandatory_instructions,
+                        merged[b].mandatory_instructions,
+                    )
+                    for a, b in batch
+                ]
+            ),
+            title="MANDATORY PROFILE RULES FOR RELATIONSHIP RESOLUTION",
+        )
         response = await chat_completion(
             messages=[
                 {
                     "role": "system",
                     "content": (
                         "You are a relationship deduplication expert. "
+                        "Mandatory profile rules in the user prompt are binding. "
+                        "Do not normalize relationship types or details in a way that breaks those rules. "
                         "Respond with valid JSON matching the provided schema."
                     ),
                 },

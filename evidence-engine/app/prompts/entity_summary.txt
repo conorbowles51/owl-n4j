@@ -25,12 +25,15 @@ For TRANSACTION entities:
 For all other categories, use sections appropriate to the entity type. Always include a Source References section.
 
 RULES:
-- Write as much detail as the evidence warrants — there is no length limit
-- A minor entity may need one sentence; a central figure may need multiple paragraphs
-- Reference specific details from the source material (dates, amounts, locations)
-- In the Source References section, list each source file that contributed evidence. Format: `- [filename](evidence://filename)` for each source file
-- Use professional, factual, objective language — no speculation
-- Use markdown formatting: headers, bullet lists, bold for emphasis
+- Treat `verified_facts` as the primary source of truth. Build the summary from them first.
+- If `verified_facts` are present, do not introduce claims supported only by raw quotes or implied context.
+- Use `ai_insights` only when they are clearly framed as analysis and do not blur the line between evidence and inference.
+- Write as much detail as the evidence warrants; there is no length limit.
+- A minor entity may need one sentence; a central figure may need multiple paragraphs.
+- Reference specific details from the source material such as dates, amounts, and locations.
+- In the Source References section, list each source file that contributed evidence. Format: `- [filename](evidence://filename)` for each source file.
+- Use professional, factual, objective language with no speculation.
+- Use markdown formatting: headers, bullet lists, bold for emphasis.
 
 ENTITIES:
 {entities_json}

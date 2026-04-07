@@ -59,9 +59,11 @@ class EvidenceFolder(Base, TimestampMixin):
 
     # Folder context & profile — used for LLM extraction prompt enrichment.
     # context_instructions: free-text context injected into entity extraction prompts.
+    # mandatory_instructions: ordered list of one-line extraction rules.
     # profile_overrides: structured JSONB for additive profile settings
-    #   (e.g. special_entity_types, temperature).
+    #   (currently only special_entity_types).
     context_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    mandatory_instructions: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
     profile_overrides: Mapped[dict | None] = mapped_column("profile_overrides", JSONB, nullable=True)
 
     # Relationships
@@ -69,7 +71,12 @@ class EvidenceFolder(Base, TimestampMixin):
     created_by = relationship("User", foreign_keys=[created_by_id])
     parent = relationship("EvidenceFolder", remote_side=[id], foreign_keys=[parent_id], back_populates="children")
     children = relationship("EvidenceFolder", foreign_keys=[parent_id], cascade="all, delete-orphan", back_populates="parent")
-    files = relationship("EvidenceFile", back_populates="folder", cascade="all, delete-orphan")
+    files = relationship(
+        "EvidenceFile",
+        back_populates="folder",
+        cascade="all, delete-orphan",
+        foreign_keys="EvidenceFile.folder_id",
+    )
 
 
 class EvidenceFile(Base, TimestampMixin):
@@ -129,11 +136,23 @@ class EvidenceFile(Base, TimestampMixin):
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     entity_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     relationship_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    processing_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    last_processed_profile_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_processed_folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_folders.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
 
     # Relationships
     case = relationship("Case", foreign_keys=[case_id])
-    folder = relationship("EvidenceFolder", back_populates="files", foreign_keys=[folder_id])
+    folder = relationship(
+        "EvidenceFolder",
+        back_populates="files",
+        foreign_keys=[folder_id],
+    )
+    last_processed_folder = relationship("EvidenceFolder", foreign_keys=[last_processed_folder_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     duplicate_of = relationship("EvidenceFile", remote_side=[id], foreign_keys=[duplicate_of_id])
 

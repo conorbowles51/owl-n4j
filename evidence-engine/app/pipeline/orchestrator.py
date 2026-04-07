@@ -69,7 +69,11 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             job.folder_context, job.sibling_files, job.llm_profile or ""
         )
         raw_entities, raw_rels = await extract_entities_and_relationships(
-            chunks, enriched_context, job.file_name
+            chunks,
+            job.effective_context or enriched_context,
+            job.file_name,
+            mandatory_instructions=job.effective_mandatory_instructions or [],
+            special_entity_types=job.effective_special_entity_types or [],
         )
         await _update_job(
             job,

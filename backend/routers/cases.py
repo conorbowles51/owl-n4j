@@ -21,6 +21,7 @@ from routers.users import get_current_db_user
 from services.case_service import (
     CaseAccessDenied,
     CaseNotFound,
+    check_case_access,
     create_case,
     delete_case,
     list_cases_for_user,
@@ -30,6 +31,14 @@ from services.case_service import (
     is_super_admin,
 )
 from services.deadline_service import get_next_deadline_for_cases
+from services.evidence_db_storage import EvidenceDBStorage
+from services.processing_profile_service import (
+    get_case_processing_config,
+    get_processing_profile,
+    normalize_instruction_list,
+    normalize_special_entity_types,
+    upsert_case_processing_config,
+)
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -78,6 +87,26 @@ class CaseListResponse(BaseModel):
 
     cases: list[CaseResponse]
     total: int
+
+
+class SpecialEntityType(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class CaseProcessingProfileResponse(BaseModel):
+    source_profile_name: str | None = None
+    source_profile_exists: bool = False
+    context_instructions: str | None = None
+    mandatory_instructions: list[str] = []
+    special_entity_types: list[SpecialEntityType] = []
+
+
+class CaseProcessingProfileUpdateRequest(BaseModel):
+    source_profile_name: str | None = None
+    context_instructions: str | None = None
+    mandatory_instructions: list[str] = []
+    special_entity_types: list[SpecialEntityType] = []
 
 
 # --- Routes ---
@@ -226,6 +255,79 @@ def update_existing_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied - case.edit permission required",
         )
+
+
+@router.get("/{case_id}/processing-profile", response_model=CaseProcessingProfileResponse)
+def get_case_processing_profile(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        get_case_if_allowed(db=db, case_id=case_id, user=current_user)
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    config = get_case_processing_config(db, case_id)
+    if config is None:
+        return CaseProcessingProfileResponse()
+
+    source_profile_exists = False
+    if config.source_profile_name_snapshot:
+        source_profile_exists = (
+            get_processing_profile(db, config.source_profile_name_snapshot) is not None
+        )
+
+    return CaseProcessingProfileResponse(
+        source_profile_name=config.source_profile_name_snapshot,
+        source_profile_exists=source_profile_exists,
+        context_instructions=config.context_instructions,
+        mandatory_instructions=normalize_instruction_list(config.mandatory_instructions),
+        special_entity_types=normalize_special_entity_types(config.special_entity_types),
+    )
+
+
+@router.put("/{case_id}/processing-profile", response_model=CaseProcessingProfileResponse)
+def update_case_processing_profile(
+    case_id: UUID,
+    request: CaseProcessingProfileUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        check_case_access(db, case_id, current_user, required_permission=("case", "edit"))
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied - case.edit permission required",
+        )
+
+    try:
+        config = upsert_case_processing_config(
+            db,
+            case_id=case_id,
+            source_profile_name=request.source_profile_name,
+            context_instructions=request.context_instructions,
+            mandatory_instructions=request.mandatory_instructions,
+            special_entity_types=[item.model_dump() for item in request.special_entity_types],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    EvidenceDBStorage.mark_case_files_stale(db, case_id)
+    db.commit()
+    db.refresh(config)
+
+    return CaseProcessingProfileResponse(
+        source_profile_name=config.source_profile_name_snapshot,
+        source_profile_exists=bool(config.source_profile_name_snapshot),
+        context_instructions=config.context_instructions,
+        mandatory_instructions=normalize_instruction_list(config.mandatory_instructions),
+        special_entity_types=normalize_special_entity_types(config.special_entity_types),
+    )
 
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)

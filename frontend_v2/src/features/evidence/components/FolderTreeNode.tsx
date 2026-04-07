@@ -29,6 +29,7 @@ interface FolderTreeNodeProps {
   caseId: string
   onCreateFolder: (parentId: string | null) => void
   onDeleteFolder: (id: string, name: string, fileCount: number) => void
+  onEditProfile: (folderId: string) => void
 }
 
 export function FolderTreeNode({
@@ -37,6 +38,7 @@ export function FolderTreeNode({
   caseId,
   onCreateFolder,
   onDeleteFolder,
+  onEditProfile,
 }: FolderTreeNodeProps) {
   const {
     currentFolderId,
@@ -158,7 +160,7 @@ export function FolderTreeNode({
             <FolderPlus className="size-4" />
             New Subfolder
           </ContextMenuItem>
-          <ContextMenuItem onClick={() => {/* TODO: open profile dialog */}}>
+          <ContextMenuItem onClick={() => onEditProfile(node.id)}>
             <Settings className="size-4" />
             Set Profile
           </ContextMenuItem>
@@ -192,6 +194,7 @@ export function FolderTreeNode({
               caseId={caseId}
               onCreateFolder={onCreateFolder}
               onDeleteFolder={onDeleteFolder}
+              onEditProfile={onEditProfile}
             />
           ))}
         </div>

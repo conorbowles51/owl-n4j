@@ -22,6 +22,41 @@ def _entity_item_schema(categories: list[str]) -> dict[str, Any]:
             "properties": {"type": "object"},
             "source_quote": {"type": "string"},
             "confidence": {"type": "number"},
+            "verified_facts": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "quote": {"type": "string"},
+                        "page": {
+                            "anyOf": [
+                                {"type": "integer"},
+                                {"type": "null"},
+                            ]
+                        },
+                        "importance": {"type": "integer"},
+                    },
+                    "required": ["text", "quote", "page", "importance"],
+                    "additionalProperties": False,
+                },
+            },
+            "ai_insights": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "confidence": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low"],
+                        },
+                        "reasoning": {"type": "string"},
+                    },
+                    "required": ["text", "confidence", "reasoning"],
+                    "additionalProperties": False,
+                },
+            },
         },
         "required": [
             "category",
@@ -30,6 +65,8 @@ def _entity_item_schema(categories: list[str]) -> dict[str, Any]:
             "properties",
             "source_quote",
             "confidence",
+            "verified_facts",
+            "ai_insights",
         ],
         "additionalProperties": False,
     }

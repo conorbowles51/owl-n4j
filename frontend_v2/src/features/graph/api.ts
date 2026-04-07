@@ -85,7 +85,11 @@ export const graphAPI = {
         type: c.type,
       })
     }
-    return { ...raw, connections: Array.from(grouped.values()) } as NodeDetail
+    return {
+      ...raw,
+      label: raw.name || raw.label || raw.key,
+      connections: Array.from(grouped.values()),
+    } as NodeDetail
   },
 
   getNodeNeighbours: async (key: string, depth: number, caseId: string) => {

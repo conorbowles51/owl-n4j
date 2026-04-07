@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Any
+import re
 
 from app.pipeline.extract_text import ExtractedDocument
 from app.services.chroma_client import add_embeddings, get_or_create_collection
@@ -65,16 +66,40 @@ def _extract_sheet_name(table_text: str) -> str:
     return ""
 
 
+def _page_range_for_span(
+    start_char: int,
+    end_char: int,
+    page_map: list[dict[str, int]],
+) -> tuple[int | None, int | None]:
+    if not page_map:
+        return None, None
+
+    covered_pages: list[int] = []
+    for page_info in page_map:
+        page_start = page_info["start_char"]
+        page_end = page_info["end_char"]
+        page_number = page_info["page"]
+        if start_char < page_end and end_char > page_start:
+            covered_pages.append(page_number)
+
+    if not covered_pages:
+        return None, None
+
+    return covered_pages[0], covered_pages[-1]
+
+
 def chunk_document(
     doc: ExtractedDocument, file_name: str, job_id: str
 ) -> list[TextChunk]:
     """Split extracted document into chunks."""
     chunks: list[TextChunk] = []
     index = 0
+    page_map = doc.metadata.get("page_spans", []) if doc.metadata.get("file_type") == "pdf" else []
 
     # Chunk main text
     if doc.text.strip():
         for start, end in split_text(doc.text):
+            page_start, page_end = _page_range_for_span(start, end, page_map)
             chunks.append(
                 TextChunk(
                     text=doc.text[start:end],
@@ -82,7 +107,12 @@ def chunk_document(
                     start_char=start,
                     end_char=end,
                     is_table=False,
-                    metadata={"file_name": file_name, "job_id": job_id},
+                    metadata={
+                        "file_name": file_name,
+                        "job_id": job_id,
+                        "page_start": page_start,
+                        "page_end": page_end,
+                    },
                 )
             )
             index += 1
@@ -90,7 +120,17 @@ def chunk_document(
     # Table chunks
     for table_text in doc.tables:
         sheet_name = _extract_sheet_name(table_text)
-        meta = {"file_name": file_name, "job_id": job_id, "sheet_name": sheet_name}
+        inferred_page = None
+        page_match = re.search(r"\[Page:\s*(\d+)\]", table_text)
+        if page_match:
+            inferred_page = int(page_match.group(1))
+        meta = {
+            "file_name": file_name,
+            "job_id": job_id,
+            "sheet_name": sheet_name,
+            "page_start": inferred_page,
+            "page_end": inferred_page,
+        }
 
         if len(table_text) > CHUNK_SIZE:
             for start, end in split_text(table_text):
@@ -153,6 +193,8 @@ async def chunk_and_embed(
                 "start_char": c.start_char,
                 "end_char": c.end_char,
                 "is_table": c.is_table,
+                "page_start": c.metadata.get("page_start"),
+                "page_end": c.metadata.get("page_end"),
             }
             for c in chunks
         ],

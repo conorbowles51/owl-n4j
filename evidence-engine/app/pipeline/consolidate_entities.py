@@ -18,6 +18,7 @@ from pathlib import Path
 from app.config import settings
 from app.ontology.schema_builder import get_consolidation_schema
 from app.pipeline.extract_entities import RawEntity, RawRelationship
+from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.services.openai_client import chat_completion
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,9 @@ def _deterministic_consolidate(
 
         primary.properties = merged_props
         primary.confidence = best_confidence
+        primary.mandatory_instructions = merge_mandatory_instructions(
+            *[entities[idx].mandatory_instructions for idx in indices]
+        )
 
     # Filter out merged entities
     kept_entities = [e for i, e in enumerate(entities) if i not in remove_indices]
@@ -210,6 +214,8 @@ async def _llm_consolidate(
                 "specific_type": e.specific_type,
                 "source_file": e.source_file,
             }
+            if e.mandatory_instructions:
+                entry["mandatory_instructions"] = e.mandatory_instructions
             aliases = e.properties.get("aliases")
             if aliases:
                 entry["aliases"] = aliases
@@ -219,7 +225,13 @@ async def _llm_consolidate(
             entity_list.append(entry)
 
         entities_json = json.dumps(entity_list, indent=2)
-        prompt = template.format(entities_json=entities_json)
+        prompt = prepend_mandatory_rules(
+            template.format(entities_json=entities_json),
+            merge_mandatory_instructions(
+                *[entities[global_idx].mandatory_instructions for global_idx in indices]
+            ),
+            title="MANDATORY PROFILE RULES FOR CONSOLIDATION",
+        )
 
         try:
             response = await chat_completion(
@@ -228,6 +240,8 @@ async def _llm_consolidate(
                         "role": "system",
                         "content": (
                             "You are an entity consolidation expert. "
+                            "Mandatory profile rules in the user prompt are binding. "
+                            "Preserve rule-compliant naming and typing instead of normalizing outputs back to defaults. "
                             "Respond with valid JSON matching the provided schema."
                         ),
                     },
@@ -299,6 +313,9 @@ async def _llm_consolidate(
 
                 primary.properties = merged_props
                 primary.confidence = best_confidence
+                primary.mandatory_instructions = merge_mandatory_instructions(
+                    *[entities[idx].mandatory_instructions for idx in global_indices]
+                )
                 total_merges += len(global_indices) - 1
 
                 logger.info(

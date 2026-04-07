@@ -1,12 +1,7 @@
 import { fetchAPI } from "@/lib/api-client"
+import type { ProcessingProfile } from "@/types/evidence.types"
 
-export interface Profile {
-  name: string
-  description?: string
-  provider?: string
-  model?: string
-  settings?: Record<string, unknown>
-}
+export type Profile = ProcessingProfile
 
 export interface SetupStatus {
   needs_setup: boolean

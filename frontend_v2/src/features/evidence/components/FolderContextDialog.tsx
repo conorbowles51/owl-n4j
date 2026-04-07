@@ -1,92 +1,29 @@
-import { useState, useEffect, useCallback } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
+  DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Slider } from "@/components/ui/slider"
+import { InstructionListEditor } from "@/components/ui/instruction-list-editor"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { cn } from "@/lib/cn"
-import {
-  FolderOpen,
-  ChevronDown,
-  ChevronUp,
-  Plus,
-  X,
-  Settings2,
-  Sparkles,
-} from "lucide-react"
+import { FolderOpen, Plus, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
 import {
-  useFolderProfile,
   useEffectiveProfile,
+  useFolderProfile,
   useUpdateFolderProfile,
 } from "../hooks/use-folder-context"
 import { ProfileChainPreview } from "./ProfileChainPreview"
-import type { ProfileOverrides, ProfileTemplate } from "@/types/evidence.types"
-
-/* ------------------------------------------------------------------ */
-/*  Built-in templates                                                */
-/* ------------------------------------------------------------------ */
-
-const BUILT_IN_TEMPLATES: ProfileTemplate[] = [
-  {
-    id: "generic",
-    name: "Generic",
-    description: "No specific context. Files processed with default settings.",
-    context_instructions: "",
-  },
-  {
-    id: "financial",
-    name: "Financial Records",
-    description:
-      "Bank statements, transaction records, and account statements.",
-    context_instructions:
-      "This folder contains financial documents including bank statements, transaction records, and account statements. Focus on extracting transaction amounts, dates, account numbers, counterparties, and financial patterns.",
-  },
-  {
-    id: "wiretap",
-    name: "Wiretap / Communications",
-    description:
-      "Communication recordings and their associated metadata files.",
-    context_instructions:
-      "This folder contains communication recordings and their associated metadata files. Each subfolder may contain an audio recording and related metadata. Link participants mentioned in metadata as parties to communication events.",
-  },
-  {
-    id: "legal",
-    name: "Legal Documents",
-    description: "Contracts, court filings, and legal correspondence.",
-    context_instructions:
-      "This folder contains legal documents including contracts, court filings, and legal correspondence. Extract parties, dates, obligations, case references, and legal terms.",
-  },
-  {
-    id: "correspondence",
-    name: "Correspondence",
-    description: "Emails, letters, and messages.",
-    context_instructions:
-      "This folder contains emails, letters, and messages. Extract senders, recipients, dates, subjects, and key topics discussed.",
-  },
-]
-
-/* ------------------------------------------------------------------ */
-/*  Props                                                             */
-/* ------------------------------------------------------------------ */
+import type { ProfileOverrides } from "@/types/evidence.types"
 
 interface FolderContextDialogProps {
   folderId: string
@@ -95,147 +32,178 @@ interface FolderContextDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-/* ------------------------------------------------------------------ */
-/*  Component                                                         */
-/* ------------------------------------------------------------------ */
-
 export function FolderContextDialog({
   folderId,
   caseId,
   open,
   onOpenChange,
 }: FolderContextDialogProps) {
-  /* ---- queries ---- */
   const { data: profile, isLoading: profileLoading } =
     useFolderProfile(open ? folderId : null)
   const { data: effective, isLoading: effectiveLoading } =
     useEffectiveProfile(open ? folderId : null, caseId)
   const updateProfile = useUpdateFolderProfile(caseId)
 
-  /* ---- local state ---- */
   const [contextInstructions, setContextInstructions] = useState("")
-  const [selectedTemplate, setSelectedTemplate] = useState("generic")
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [mandatoryInstructions, setMandatoryInstructions] = useState<string[]>([])
   const [entityTypes, setEntityTypes] = useState<
     { name: string; description: string }[]
   >([])
-  const [temperature, setTemperature] = useState(0.3)
   const [newEntityName, setNewEntityName] = useState("")
   const [newEntityDesc, setNewEntityDesc] = useState("")
 
-  /* ---- seed form from fetched profile ---- */
   useEffect(() => {
     if (!open) return
-    if (profile) {
-      setContextInstructions(profile.context_instructions ?? "")
-      setEntityTypes(
-        (profile.profile_overrides?.special_entity_types ?? []).map((e) => ({
-          name: e.name,
-          description: e.description ?? "",
-        }))
-      )
-      setTemperature(profile.profile_overrides?.temperature ?? 0.3)
 
-      // Detect if current instructions match a template
-      const match = BUILT_IN_TEMPLATES.find(
-        (t) => t.context_instructions === (profile.context_instructions ?? "")
-      )
-      setSelectedTemplate(match?.id ?? "generic")
-    } else {
-      // Reset for new / empty profile
-      setContextInstructions("")
-      setSelectedTemplate("generic")
-      setEntityTypes([])
-      setTemperature(0.3)
-    }
-    setAdvancedOpen(false)
+    setContextInstructions(profile?.context_instructions ?? "")
+    setMandatoryInstructions(profile?.mandatory_instructions ?? [])
+    setEntityTypes(
+      (profile?.profile_overrides?.special_entity_types ?? []).map((entity) => ({
+        name: entity.name,
+        description: entity.description ?? "",
+      }))
+    )
     setNewEntityName("")
     setNewEntityDesc("")
   }, [open, profile])
 
-  /* ---- template selection ---- */
-  const handleTemplateChange = useCallback((templateId: string) => {
-    setSelectedTemplate(templateId)
-    const tmpl = BUILT_IN_TEMPLATES.find((t) => t.id === templateId)
-    if (tmpl) {
-      setContextInstructions(tmpl.context_instructions)
-    }
-  }, [])
-
-  /* ---- entity type helpers ---- */
   const addEntityType = useCallback(() => {
     const name = newEntityName.trim()
     if (!name) return
-    if (entityTypes.some((e) => e.name.toLowerCase() === name.toLowerCase())) {
+
+    if (entityTypes.some((entity) => entity.name.toLowerCase() === name.toLowerCase())) {
       toast.error("Entity type already exists")
       return
     }
+
     setEntityTypes((prev) => [
       ...prev,
       { name, description: newEntityDesc.trim() },
     ])
     setNewEntityName("")
     setNewEntityDesc("")
-  }, [newEntityName, newEntityDesc, entityTypes])
+  }, [entityTypes, newEntityDesc, newEntityName])
 
   const removeEntityType = useCallback((index: number) => {
     setEntityTypes((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
-  /* ---- save ---- */
   const handleSave = useCallback(() => {
     const overrides: ProfileOverrides = {}
+
     if (entityTypes.length > 0) {
-      overrides.special_entity_types = entityTypes.map((e) => ({
-        name: e.name,
-        ...(e.description ? { description: e.description } : {}),
+      overrides.special_entity_types = entityTypes.map((entity) => ({
+        name: entity.name,
+        ...(entity.description ? { description: entity.description } : {}),
       }))
     }
-    if (temperature !== 0.3) {
-      overrides.temperature = temperature
-    }
-
-    const hasOverrides = Object.keys(overrides).length > 0
 
     updateProfile.mutate(
       {
         folderId,
-        context_instructions: contextInstructions || null,
-        profile_overrides: hasOverrides ? overrides : null,
+        context_instructions: contextInstructions.trim() || null,
+        mandatory_instructions: mandatoryInstructions,
+        profile_overrides:
+          Object.keys(overrides).length > 0
+            ? (overrides as Record<string, unknown>)
+            : null,
       },
       {
         onSuccess: () => {
           toast.success("Folder profile saved")
           onOpenChange(false)
         },
-        onError: () => {
-          toast.error("Failed to save folder profile")
+        onError: (error) => {
+          toast.error(error.message || "Failed to save folder profile")
         },
       }
     )
-  }, [
-    folderId,
-    contextInstructions,
-    entityTypes,
-    temperature,
-    updateProfile,
-    onOpenChange,
-  ])
+  }, [contextInstructions, entityTypes, folderId, mandatoryInstructions, onOpenChange, updateProfile])
 
-  /* ---- loading state ---- */
   const isLoading = profileLoading || effectiveLoading
+  const previewOverrides = useMemo<ProfileOverrides | null>(() => {
+    if (entityTypes.length === 0) {
+      return null
+    }
+
+    return {
+      special_entity_types: entityTypes.map((entity) => ({
+        name: entity.name,
+        ...(entity.description ? { description: entity.description } : {}),
+      })),
+    }
+  }, [entityTypes])
+
+  const previewChain = useMemo(() => {
+    if (!effective) {
+      return []
+    }
+
+    return effective.chain.map((link) => {
+      if (link.folder_id !== folderId) {
+        return link
+      }
+
+      return {
+        ...link,
+        context_instructions: contextInstructions.trim() || null,
+        mandatory_instructions: mandatoryInstructions,
+        profile_overrides: previewOverrides,
+      }
+    })
+  }, [contextInstructions, effective, folderId, mandatoryInstructions, previewOverrides])
+
+  const previewEffectiveContext = useMemo(() => {
+    return previewChain
+      .map((link) => {
+        if (!link.context_instructions?.trim()) {
+          return null
+        }
+        return `[${link.folder_name}]\n${link.context_instructions.trim()}`
+      })
+      .filter(Boolean)
+      .join("\n\n")
+  }, [previewChain])
+
+  const previewEffectiveEntityTypes = useMemo(() => {
+    const merged = new Map<string, { name: string; description?: string | null }>()
+
+    for (const link of previewChain) {
+      for (const entity of link.profile_overrides?.special_entity_types ?? []) {
+        merged.set(entity.name.toLowerCase(), entity)
+      }
+    }
+
+    return Array.from(merged.values())
+  }, [previewChain])
+
+  const previewEffectiveInstructions = useMemo(() => {
+    const seen = new Set<string>()
+    const merged: string[] = []
+
+    for (const instruction of previewChain.flatMap((link) => link.mandatory_instructions ?? [])) {
+      const normalized = instruction.trim().toLowerCase()
+      if (!normalized || seen.has(normalized)) {
+        continue
+      }
+      seen.add(normalized)
+      merged.push(instruction)
+    }
+
+    return merged
+  }, [previewChain])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden">
+      <DialogContent className="flex max-h-[85vh] w-[92vw] flex-col overflow-hidden sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FolderOpen className="size-4 text-amber-500" />
-            Folder Context &amp; Profile
+            Folder Processing Profile
           </DialogTitle>
           <DialogDescription>
-            Set processing instructions for this folder. Sub-folders inherit
-            parent context and can add their own.
+            Add folder-specific extraction instructions. Files inherit the case
+            base profile plus every folder layer above them.
           </DialogDescription>
         </DialogHeader>
 
@@ -246,204 +214,168 @@ export function FolderContextDialog({
         ) : (
           <ScrollArea className="flex-1 -mx-6 px-6">
             <div className="space-y-5 py-1">
-              {/* ---- Template selector ---- */}
               <div className="space-y-1.5">
-                <Label htmlFor="template-select">Template</Label>
-                <Select
-                  value={selectedTemplate}
-                  onValueChange={handleTemplateChange}
-                >
-                  <SelectTrigger id="template-select" className="w-full">
-                    <SelectValue placeholder="Choose a template..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {BUILT_IN_TEMPLATES.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>
-                        <span className="font-medium">{t.name}</span>
-                        <span className="ml-1.5 text-muted-foreground">
-                          — {t.description}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* ---- Context instructions ---- */}
-              <div className="space-y-1.5">
-                <Label htmlFor="context-textarea">Context Instructions</Label>
+                <Label htmlFor="folder-context-textarea">Folder Context</Label>
                 <Textarea
-                  id="context-textarea"
+                  id="folder-context-textarea"
                   value={contextInstructions}
-                  onChange={(e) => {
-                    setContextInstructions(e.target.value)
-                    // If user edits, deselect template match
-                    const match = BUILT_IN_TEMPLATES.find(
-                      (t) => t.context_instructions === e.target.value
-                    )
-                    setSelectedTemplate(match?.id ?? "generic")
-                  }}
-                  placeholder="Describe how files in this folder should be analyzed..."
-                  className="min-h-[120px] text-sm"
+                  onChange={(event) => setContextInstructions(event.target.value)}
+                  placeholder="Describe what kinds of documents are in this folder and any useful background..."
+                  className="min-h-[140px] text-sm"
                 />
                 <p className="text-[10px] text-muted-foreground">
-                  These instructions are prepended to the LLM prompt during
-                  entity extraction.
+                  This background context is appended after the case base profile and
+                  any ancestor folder context.
                 </p>
               </div>
 
-              {/* ---- Advanced settings (collapsible) ---- */}
-              <div className="rounded-lg border border-border">
-                <button
-                  type="button"
-                  onClick={() => setAdvancedOpen((v) => !v)}
-                  className={cn(
-                    "flex w-full items-center justify-between px-3.5 py-2.5 text-left text-sm font-medium transition-colors hover:bg-muted/50",
-                    advancedOpen && "border-b border-border"
-                  )}
-                >
-                  <span className="flex items-center gap-2">
-                    <Settings2 className="size-3.5 text-muted-foreground" />
-                    Advanced Settings
-                  </span>
-                  {advancedOpen ? (
-                    <ChevronUp className="size-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="size-4 text-muted-foreground" />
-                  )}
-                </button>
+              <InstructionListEditor
+                label="Folder Mandatory Instructions"
+                description="Add one-line extraction rules for this folder. Rules are applied in order from the case down into deeper folders, so later rules are more specific and take priority."
+                instructions={mandatoryInstructions}
+                onChange={setMandatoryInstructions}
+                placeholder="Ignore opening-balance and balance-forward rows."
+                badgeVariant="amber"
+              />
 
-                {advancedOpen && (
-                  <div className="space-y-5 p-3.5">
-                    {/* Special entity types */}
-                    <div className="space-y-2">
-                      <Label>
-                        <span className="flex items-center gap-1.5">
-                          <Sparkles className="size-3 text-amber-500" />
-                          Special Entity Types
-                        </span>
-                      </Label>
-                      <p className="text-[10px] text-muted-foreground">
-                        Define custom entity types the LLM should look for in
-                        addition to standard entities.
-                      </p>
+              <div className="space-y-2 rounded-lg border border-border p-4">
+                <div className="space-y-1">
+                  <Label>
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="size-3 text-amber-500" />
+                      Special Entity Types
+                    </span>
+                  </Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    Add structured entity types this folder should emphasize.
+                    Child folders can replace matching types by name.
+                  </p>
+                </div>
 
-                      {/* Existing entity types */}
-                      {entityTypes.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {entityTypes.map((entity, idx) => (
-                            <Badge
-                              key={idx}
-                              variant="amber"
-                              className="gap-1 pr-1"
-                            >
-                              <span>{entity.name}</span>
-                              {entity.description && (
-                                <span
-                                  className="text-amber-500/60"
-                                  title={entity.description}
-                                >
-                                  *
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => removeEntityType(idx)}
-                                className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-amber-500/20"
-                                aria-label={`Remove ${entity.name}`}
-                              >
-                                <X className="size-2.5" />
-                              </button>
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Add new entity type */}
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Input
-                            value={newEntityName}
-                            onChange={(e) => setNewEntityName(e.target.value)}
-                            placeholder="Entity type name"
-                            className="h-7 text-xs"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault()
-                                addEntityType()
-                              }
-                            }}
-                          />
-                        </div>
-                        <div className="flex-1">
-                          <Input
-                            value={newEntityDesc}
-                            onChange={(e) => setNewEntityDesc(e.target.value)}
-                            placeholder="Description (optional)"
-                            className="h-7 text-xs"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault()
-                                addEntityType()
-                              }
-                            }}
-                          />
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="icon-sm"
-                          onClick={addEntityType}
-                          disabled={!newEntityName.trim()}
-                          aria-label="Add entity type"
+                {entityTypes.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {entityTypes.map((entity, index) => (
+                      <Badge key={`${entity.name}-${index}`} variant="amber" className="gap-1 pr-1">
+                        <span>{entity.name}</span>
+                        {entity.description ? (
+                          <span className="text-amber-500/70" title={entity.description}>
+                            *
+                          </span>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => removeEntityType(index)}
+                          className="ml-0.5 rounded-full p-0.5 transition-colors hover:bg-amber-500/20"
+                          aria-label={`Remove ${entity.name}`}
                         >
-                          <Plus className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Temperature slider */}
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <Label htmlFor="temperature-slider">Temperature</Label>
-                        <span className="text-xs font-mono tabular-nums text-muted-foreground">
-                          {temperature.toFixed(1)}
-                        </span>
-                      </div>
-                      <Slider
-                        id="temperature-slider"
-                        value={[temperature]}
-                        onValueChange={([v]) => setTemperature(v)}
-                        min={0}
-                        max={1}
-                        step={0.1}
-                      />
-                      <div className="flex justify-between text-[10px] text-muted-foreground">
-                        <span>Precise (0.0)</span>
-                        <span>Creative (1.0)</span>
-                      </div>
-                    </div>
+                          <X className="size-2.5" />
+                        </button>
+                      </Badge>
+                    ))}
                   </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No folder-local entity hints set.
+                  </p>
                 )}
+
+                <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+                  <Input
+                    value={newEntityName}
+                    onChange={(event) => setNewEntityName(event.target.value)}
+                    placeholder="Entity type name"
+                    className="h-8 text-xs"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        addEntityType()
+                      }
+                    }}
+                  />
+                  <Input
+                    value={newEntityDesc}
+                    onChange={(event) => setNewEntityDesc(event.target.value)}
+                    placeholder="Description (optional)"
+                    className="h-8 text-xs"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        addEntityType()
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={addEntityType}
+                    disabled={!newEntityName.trim()}
+                  >
+                    <Plus className="size-3.5" />
+                    Add
+                  </Button>
+                </div>
               </div>
 
-              {/* ---- Profile chain preview ---- */}
-              {effective && effective.chain.length > 0 && (
-                <div className="rounded-lg border border-border p-3.5">
-                  <ProfileChainPreview chain={effective.chain} />
-                  {effective.merged_context && (
-                    <div className="mt-3 space-y-1.5">
-                      <p className="text-[10px] font-medium text-muted-foreground">
-                        Merged Context (all ancestors)
-                      </p>
-                      <div className="rounded-md bg-slate-50 p-2.5 dark:bg-slate-900/50">
-                        <p className="text-xs leading-relaxed text-muted-foreground line-clamp-4">
-                          {effective.merged_context}
+              {effective ? (
+                <div className="space-y-4 rounded-lg border border-border p-4">
+                  <ProfileChainPreview chain={previewChain} />
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Effective Context Preview
+                    </p>
+                    <div className="rounded-md bg-slate-50 p-3 dark:bg-slate-900/50">
+                      {previewEffectiveContext ? (
+                        <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                          {previewEffectiveContext}
                         </p>
-                      </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          No inherited or local instructions set yet.
+                        </p>
+                      )}
                     </div>
-                  )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Effective Mandatory Rules
+                    </p>
+                    {previewEffectiveInstructions.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {previewEffectiveInstructions.map((instruction, index) => (
+                          <Badge key={`${instruction}-${index}`} variant="amber" className="text-[10px]">
+                            {instruction}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No effective mandatory rules.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">
+                      Effective Special Entity Types
+                    </p>
+                    {previewEffectiveEntityTypes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {previewEffectiveEntityTypes.map((entity) => (
+                          <Badge key={entity.name} variant="secondary" className="text-[10px]">
+                            {entity.name}
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        No effective entity-type hints.
+                      </p>
+                    )}
+                  </div>
                 </div>
-              )}
+              ) : null}
             </div>
           </ScrollArea>
         )}
@@ -457,7 +389,7 @@ export function FolderContextDialog({
             onClick={handleSave}
             disabled={updateProfile.isPending || isLoading}
           >
-            {updateProfile.isPending ? "Saving..." : "Save Profile"}
+            {updateProfile.isPending ? "Saving..." : "Save Folder Profile"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,291 +1,101 @@
 """
 Profiles Router
 
-Handles listing, retrieving, creating, and updating LLM profile configurations.
-
-Profile Structure:
-{
-    "name": "profile_name",
-    "description": "Profile description",
-    "case_type": "Type of case",
-    "ingestion": {
-        "system_context": "System prompt for entity extraction",
-        "special_entity_types": [{"name": "EntityType", "description": "Description of entity"}],
-        "temperature": 1.0
-    },
-    "chat": {
-        "system_context": "System prompt for chat assistant",
-        "analysis_guidance": "Guidance for analysis",
-        "temperature": 1.0
-    }
-}
+DB-backed processing profile library used by cases as snapshot templates.
 """
 
-import json
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, HTTPException
+from __future__ import annotations
+
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from postgres.session import get_db
+from services.processing_profile_service import (
+    delete_processing_profile,
+    get_processing_profile,
+    list_processing_profiles,
+    normalize_instruction_list,
+    normalize_special_entity_types,
+    save_processing_profile,
+)
 
 router = APIRouter(prefix="/api/profiles", tags=["profiles"])
 
-# Profiles are at the project root, not in backend/
-# __file__ is backend/routers/profiles.py
-# So we need to go up 3 levels: backend/routers -> backend -> project_root
-PROFILES_DIR = Path(__file__).parent.parent.parent / "profiles"
-
 
 class SpecialEntityType(BaseModel):
-    """Definition of a special entity type for extraction."""
     name: str
-    description: Optional[str] = None
+    description: str | None = None
 
 
-class ProfileSummary(BaseModel):
-    """Summary of a profile (name and description)."""
+class ProcessingProfileSummary(BaseModel):
     name: str
-    description: str
+    description: str | None = None
+    context_instructions: str | None = None
+    mandatory_instructions: list[str] = []
+    special_entity_types: list[SpecialEntityType] = []
 
 
-class ProfileDetail(BaseModel):
-    """Full profile details."""
+class ProcessingProfileCreate(BaseModel):
     name: str
-    description: str
-    case_type: Optional[str] = None
-    ingestion: Dict[str, Any]
-    chat: Dict[str, Any]
-    llm_config: Optional[Dict[str, Any]] = None
-    folder_processing: Optional[Dict[str, Any]] = None  # Folder processing configuration if present
+    description: str | None = None
+    context_instructions: str | None = None
+    mandatory_instructions: list[str] = []
+    special_entity_types: list[SpecialEntityType] = []
 
 
-class ProfileCreate(BaseModel):
-    """Request model for creating/updating a profile."""
-    name: str
-    description: str
-    case_type: Optional[str] = None
-    # Ingestion config
-    ingestion_system_context: Optional[str] = None
-    special_entity_types: Optional[List[SpecialEntityType]] = []
-    ingestion_temperature: Optional[float] = 1.0
-    # LLM config for ingestion
-    llm_provider: Optional[str] = None  # "ollama" or "openai"
-    llm_model_id: Optional[str] = None  # Model ID (e.g., "qwen2.5:7b-instruct")
-    # Chat config
-    chat_system_context: Optional[str] = None
-    chat_analysis_guidance: Optional[str] = None
-    chat_temperature: Optional[float] = 1.0
-    # Folder processing config (optional, preserves existing if not provided when updating)
-    folder_processing: Optional[Dict[str, Any]] = None
+def _to_response(profile) -> ProcessingProfileSummary:
+    return ProcessingProfileSummary(
+        name=profile.name,
+        description=profile.description,
+        context_instructions=profile.context_instructions,
+        mandatory_instructions=normalize_instruction_list(profile.mandatory_instructions),
+        special_entity_types=normalize_special_entity_types(profile.special_entity_types),
+    )
 
 
-@router.get("", response_model=List[ProfileSummary])
-async def list_profiles():
-    """List all available profiles."""
-    profiles = []
-    
-    if not PROFILES_DIR.exists():
-        return profiles
-    
-    for profile_file in PROFILES_DIR.glob("*.json"):
-        try:
-            with open(profile_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                profiles.append(ProfileSummary(
-                    name=data.get("name", profile_file.stem),
-                    description=data.get("description", "")
-                ))
-        except Exception as e:
-            # Skip invalid profile files
-            continue
-    
-    # Sort by name
-    profiles.sort(key=lambda p: p.name)
-    return profiles
+@router.get("", response_model=List[ProcessingProfileSummary])
+async def list_profiles(db: Session = Depends(get_db)):
+    return [_to_response(profile) for profile in list_processing_profiles(db)]
 
 
-@router.get("/{profile_name}", response_model=ProfileDetail)
-async def get_profile(profile_name: str):
-    """Get detailed information about a specific profile."""
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.info(f"Getting profile: {profile_name}")
-    
-    profile_path = PROFILES_DIR / f"{profile_name}.json"
-    logger.info(f"Looking for profile file at: {profile_path}")
-    logger.info(f"Profile file exists: {profile_path.exists()}")
-    
-    if not profile_path.exists():
-        # List available profiles for debugging
-        available_profiles = [f.stem for f in PROFILES_DIR.glob("*.json")] if PROFILES_DIR.exists() else []
-        logger.warning(f"Profile '{profile_name}' not found. Available profiles: {available_profiles}")
-        raise HTTPException(
-            status_code=404, 
-            detail=f"Profile '{profile_name}' not found. Available profiles: {', '.join(available_profiles) if available_profiles else 'none'}"
-        )
-    
-    try:
-        with open(profile_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return ProfileDetail(
-                name=data.get("name", profile_name),
-                description=data.get("description", ""),
-                case_type=data.get("case_type"),
-                ingestion=data.get("ingestion", {}),
-                chat=data.get("chat", {}),
-                llm_config=data.get("llm_config"),
-                folder_processing=data.get("folder_processing")  # Include folder_processing if present
-            )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load profile: {str(e)}")
+@router.get("/{profile_name}", response_model=ProcessingProfileSummary)
+async def get_profile(profile_name: str, db: Session = Depends(get_db)):
+    profile = get_processing_profile(db, profile_name)
+    if profile is None:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
+    return _to_response(profile)
 
 
-@router.post("", response_model=ProfileDetail)
-async def create_or_update_profile(profile: ProfileCreate):
-    """Create or update a profile."""
-    # Validate profile name (must be valid filename)
+@router.post("", response_model=ProcessingProfileSummary)
+async def create_or_update_profile(
+    profile: ProcessingProfileCreate,
+    db: Session = Depends(get_db),
+):
     if not profile.name or not profile.name.replace("-", "").replace("_", "").isalnum():
         raise HTTPException(
             status_code=400,
-            detail="Profile name must contain only alphanumeric characters, hyphens, and underscores"
+            detail="Profile name must contain only alphanumeric characters, hyphens, and underscores",
         )
-    
-    # Ensure profiles directory exists
-    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-    
-    profile_path = PROFILES_DIR / f"{profile.name}.json"
-    
-    # Load existing profile data if updating (to preserve folder_processing if not provided)
-    existing_profile_data = None
-    if profile_path.exists():
-        try:
-            with open(profile_path, 'r', encoding='utf-8') as f:
-                existing_profile_data = json.load(f)
-        except Exception:
-            # If we can't read existing, continue without it
-            pass
-    
-    # Build the profile structure matching the new simplified format
-    # Convert special_entity_types to list of dicts for JSON serialization
-    special_entities = [
-        {"name": e.name, "description": e.description or ""}
-        for e in (profile.special_entity_types or [])
-    ]
-    
-    profile_data = {
-        "name": profile.name,
-        "description": profile.description,
-        "case_type": profile.case_type,
-        "ingestion": {
-            "system_context": profile.ingestion_system_context or _build_default_ingestion_context(profile),
-            "special_entity_types": special_entities,
-            "temperature": profile.ingestion_temperature if profile.ingestion_temperature is not None else 1.0
-        },
-        "chat": {
-            "system_context": profile.chat_system_context or f"You are an AI assistant helping to analyze {profile.case_type or 'case documents'}.",
-            "analysis_guidance": profile.chat_analysis_guidance or "Identify patterns, highlight connections, and provide clear explanations.",
-            "temperature": profile.chat_temperature if profile.chat_temperature is not None else 1.0
-        }
-    }
-    
-    # Add LLM config
-    # Always include llm_config - prioritize provided values, fall back to existing, then defaults
-    # IMPORTANT: When updating, if llm_provider/llm_model_id are provided (even if empty string),
-    # we should use them. Only use existing_profile_data if the fields are None (not provided).
-    provider_value = None
-    model_id_value = None
-    
-    if profile.llm_provider is not None:
-        # Explicitly provided - use it (even if empty string)
-        provider_value = profile.llm_provider
-    elif existing_profile_data and "llm_config" in existing_profile_data:
-        # Not provided - preserve existing
-        provider_value = existing_profile_data["llm_config"].get("provider", "ollama")
-    else:
-        # No existing - use default
-        provider_value = "ollama"
-    
-    if profile.llm_model_id is not None:
-        # Explicitly provided - use it (even if empty string)
-        model_id_value = profile.llm_model_id
-    elif existing_profile_data and "llm_config" in existing_profile_data:
-        # Not provided - preserve existing
-        model_id_value = existing_profile_data["llm_config"].get("model_id", "")
-    else:
-        # No existing - use default
-        model_id_value = ""
-    
-    # Always include llm_config in the saved profile
-    profile_data["llm_config"] = {
-        "provider": provider_value,
-        "model_id": model_id_value
-    }
-    
-    # Handle folder_processing: use provided value, or preserve existing if updating
-    if profile.folder_processing is not None:
-        # Explicitly provided (could be empty dict to clear it)
-        profile_data["folder_processing"] = profile.folder_processing
-    elif existing_profile_data and "folder_processing" in existing_profile_data:
-        # Not provided but exists in current profile - preserve it
-        profile_data["folder_processing"] = existing_profile_data["folder_processing"]
-    
-    try:
-        # Write the profile file
-        # Log what we're saving for debugging
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.info(f"Saving profile {profile.name} with llm_config: {profile_data.get('llm_config')}")
-        
-        with open(profile_path, 'w', encoding='utf-8') as f:
-            json.dump(profile_data, f, indent=2, ensure_ascii=False)
-        
-        # Clear profile cache in ingestion scripts (if they're using the same cache)
-        # Note: This only works if running in the same process. For separate processes,
-        # the cache will be cleared on next load due to file modification time check.
-        # For now, we'll rely on the ingestion scripts checking file modification time
-        # or reloading on each use (which they should do for production reliability)
-        
-        result = ProfileDetail(
-            name=profile_data["name"],
-            description=profile_data["description"],
-            case_type=profile_data["case_type"],
-            ingestion=profile_data["ingestion"],
-            chat=profile_data["chat"],
-            llm_config=profile_data.get("llm_config"),
-            folder_processing=profile_data.get("folder_processing")
-        )
-        
-        # Verify the file was written correctly
-        if not profile_path.exists():
-            logger.error(f"Profile file was not created at {profile_path}")
-            raise HTTPException(status_code=500, detail=f"Profile file was not created")
-        
-        logger.info(f"Profile {profile_data['name']} saved successfully. llm_config: {profile_data.get('llm_config')}")
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save profile: {str(e)}")
+
+    saved = save_processing_profile(
+        db,
+        name=profile.name,
+        description=profile.description,
+        context_instructions=profile.context_instructions,
+        mandatory_instructions=profile.mandatory_instructions,
+        special_entity_types=[item.model_dump() for item in profile.special_entity_types],
+    )
+    db.commit()
+    db.refresh(saved)
+    return _to_response(saved)
 
 
 @router.delete("/{profile_name}")
-async def delete_profile(profile_name: str):
-    """Delete a profile."""
-    profile_path = PROFILES_DIR / f"{profile_name}.json"
-    
-    if not profile_path.exists():
+async def delete_profile(profile_name: str, db: Session = Depends(get_db)):
+    if not delete_processing_profile(db, profile_name):
         raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
-    
-    # Don't allow deleting the generic profile
-    if profile_name == "generic":
-        raise HTTPException(status_code=400, detail="Cannot delete the generic profile")
-    
-    try:
-        profile_path.unlink()
-        return {"status": "deleted", "name": profile_name}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete profile: {str(e)}")
-
-
-def _build_default_ingestion_context(profile: ProfileCreate) -> str:
-    """Build a default ingestion system context from profile configuration."""
-    case_type = profile.case_type or "document analysis"
-    return f"You are an expert analyst extracting entities and relationships from {case_type} documents. Focus on identifying key people, organizations, locations, events, and their connections. Capture dates for events and relevant details that establish relationships between entities."
-
+    db.commit()
+    return {"status": "deleted", "name": profile_name}

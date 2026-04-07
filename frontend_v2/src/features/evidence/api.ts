@@ -49,7 +49,9 @@ export const evidenceAPI = {
     maxWorkers = 4,
     imageProvider?: string
   ) =>
-    fetchAPI<{ task_id: string }>("/api/evidence/process/background", {
+    fetchAPI<{ task_id?: string | null; job_ids?: string[] | null; message?: string }>(
+      "/api/evidence/process/background",
+      {
       method: "POST",
       body: {
         case_id: caseId,

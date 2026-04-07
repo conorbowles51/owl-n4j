@@ -15,6 +15,7 @@ import { cn } from "@/lib/cn"
 import { useEvidenceStore } from "../evidence.store"
 import { useProcessBackground } from "../hooks/use-evidence-detail"
 import { getFileTypeCategory } from "../utils/file-types"
+import { getDisplayStatus } from "../utils/display-status"
 import { toast } from "sonner"
 import type { EvidenceFileRecord, EvidenceFile } from "@/types/evidence.types"
 
@@ -49,6 +50,7 @@ function formatRelativeTime(dateStr: string | null): string {
 
 const STATUS_STYLES: Record<string, string> = {
   processed: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20",
+  stale: "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20",
   processing: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20",
   unprocessed: "bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/20",
   failed: "bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20",
@@ -60,7 +62,8 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
 
   const isSelected = selectedFileIds.has(file.id)
   const typeCategory = getFileTypeCategory(file.original_filename)
-  const statusClass = STATUS_STYLES[file.status] ?? STATUS_STYLES.unprocessed
+  const displayStatus = getDisplayStatus(file)
+  const statusClass = STATUS_STYLES[displayStatus] ?? STATUS_STYLES.unprocessed
 
   const handleProcess = () => {
     processMutation.mutate(
@@ -123,7 +126,7 @@ export function FileRow({ file, caseId, onDelete }: FileRowProps) {
             statusClass
           )}
         >
-          {file.status}
+          {displayStatus}
         </span>
       </TableCell>
 

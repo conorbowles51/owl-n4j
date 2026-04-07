@@ -99,7 +99,9 @@ export function AdminDashboardPage() {
                   <div>
                     <p className="text-xs font-medium">{p.name}</p>
                     <p className="text-[10px] text-muted-foreground">
-                      {p.provider} / {p.model}
+                      {(p.special_entity_types?.length ?? 0) > 0
+                        ? `${p.special_entity_types?.length} entity type${p.special_entity_types?.length !== 1 ? "s" : ""}`
+                        : "No entity types"}
                     </p>
                   </div>
                 </div>

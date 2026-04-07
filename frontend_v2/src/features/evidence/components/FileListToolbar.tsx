@@ -65,6 +65,8 @@ export function FileListToolbar({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 
@@ -135,6 +137,7 @@ export function FileListToolbar({
         <SelectContent>
           <SelectItem value="all">All Status</SelectItem>
           <SelectItem value="unprocessed">Unprocessed</SelectItem>
+          <SelectItem value="stale">Stale</SelectItem>
           <SelectItem value="processing">Processing</SelectItem>
           <SelectItem value="processed">Processed</SelectItem>
           <SelectItem value="failed">Failed</SelectItem>

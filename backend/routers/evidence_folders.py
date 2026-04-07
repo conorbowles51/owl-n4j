@@ -18,7 +18,12 @@ from postgres.session import get_db
 from postgres.models.user import User
 from routers.users import get_current_db_user
 from services.evidence_db_storage import EvidenceDBStorage
-from services.folder_context_service import resolve_effective_profile, gather_sibling_files
+from services.evidence_processing_service import process_db_files
+from services.folder_context_service import resolve_effective_profile
+from services.processing_profile_service import (
+    normalize_instruction_list,
+    normalize_special_entity_types,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +50,7 @@ class MoveFolderRequest(BaseModel):
 
 class UpdateProfileRequest(BaseModel):
     context_instructions: Optional[str] = None
+    mandatory_instructions: Optional[List[str]] = None
     profile_overrides: Optional[Dict[str, Any]] = None
 
 
@@ -68,6 +74,22 @@ class FolderSummary(BaseModel):
 class BreadcrumbItem(BaseModel):
     id: str
     name: str
+
+
+def _normalize_folder_profile_payload(req: UpdateProfileRequest) -> dict[str, Any]:
+    normalized_overrides = None
+    if req.profile_overrides:
+        special_entity_types = normalize_special_entity_types(
+            req.profile_overrides.get("special_entity_types")
+        )
+        if special_entity_types:
+            normalized_overrides = {"special_entity_types": special_entity_types}
+
+    return {
+        "context_instructions": req.context_instructions,
+        "mandatory_instructions": normalize_instruction_list(req.mandatory_instructions),
+        "profile_overrides": normalized_overrides,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +139,11 @@ async def get_folder_contents(
                     "id": str(folder_obj.id),
                     "name": folder_obj.name,
                     "parent_id": str(folder_obj.parent_id) if folder_obj.parent_id else None,
-                    "has_profile": bool(folder_obj.context_instructions or folder_obj.profile_overrides),
+                    "has_profile": bool(
+                        folder_obj.context_instructions
+                        or folder_obj.mandatory_instructions
+                        or folder_obj.profile_overrides
+                    ),
                 }
 
         return {
@@ -256,6 +282,7 @@ async def move_folder(
                 )
 
         updated = EvidenceDBStorage.move_folder(db, uuid.UUID(folder_id), new_parent)
+        EvidenceDBStorage.mark_folder_subtree_stale(db, uuid.UUID(folder_id))
         db.commit()
         return {
             "id": str(updated.id),
@@ -299,12 +326,15 @@ async def update_folder_profile(
             raise HTTPException(status_code=404, detail="Folder not found")
         _check_case_access(db, str(folder.case_id), current_user, permission=("evidence", "upload"))
 
+        payload = _normalize_folder_profile_payload(req)
         EvidenceDBStorage.update_folder_profile(
             db,
             uuid.UUID(folder_id),
-            context_instructions=req.context_instructions,
-            profile_overrides=req.profile_overrides,
+            context_instructions=payload["context_instructions"],
+            mandatory_instructions=payload["mandatory_instructions"],
+            profile_overrides=payload["profile_overrides"],
         )
+        EvidenceDBStorage.mark_folder_subtree_stale(db, uuid.UUID(folder_id))
         db.commit()
         return EvidenceDBStorage.get_folder_profile(db, uuid.UUID(folder_id))
     except HTTPException:
@@ -340,23 +370,44 @@ async def process_folder(
     db: Session = Depends(get_db),
 ):
     """Process all files in a folder (optionally recursive)."""
-    from config import USE_EVIDENCE_ENGINE
-    from services import evidence_engine_client
-
     try:
         _check_case_access(db, req.case_id, current_user, permission=("evidence", "process"))
 
-        fid = uuid.UUID(folder_id)
-
         # Collect file IDs
-        if req.recursive:
-            file_ids = EvidenceDBStorage.collect_recursive_file_ids(db, fid)
+        if folder_id == "root":
+            fid = None
+            if req.recursive:
+                from sqlalchemy import select
+                from postgres.models.evidence import EvidenceFile as EF
+
+                file_ids = list(
+                    db.scalars(
+                        select(EF.id).where(EF.case_id == uuid.UUID(req.case_id))
+                    ).all()
+                )
+            else:
+                from sqlalchemy import select
+                from postgres.models.evidence import EvidenceFile as EF
+
+                file_ids = list(
+                    db.scalars(
+                        select(EF.id).where(
+                            EF.case_id == uuid.UUID(req.case_id),
+                            EF.folder_id.is_(None),
+                        )
+                    ).all()
+                )
         else:
-            from sqlalchemy import select
-            from postgres.models.evidence import EvidenceFile as EF
-            file_ids = list(db.scalars(
-                select(EF.id).where(EF.folder_id == fid)
-            ).all())
+            fid = uuid.UUID(folder_id)
+            if req.recursive:
+                file_ids = EvidenceDBStorage.collect_recursive_file_ids(db, fid)
+            else:
+                from sqlalchemy import select
+                from postgres.models.evidence import EvidenceFile as EF
+
+                file_ids = list(
+                    db.scalars(select(EF.id).where(EF.folder_id == fid)).all()
+                )
 
         if not file_ids:
             return {"job_ids": [], "file_count": 0, "message": "No files found in folder"}
@@ -368,7 +419,7 @@ async def process_folder(
             pending = db.scalars(
                 select(EF.id).where(
                     EF.id.in_(file_ids),
-                    EF.status != "processed",
+                    (EF.status != "processed") | (EF.processing_stale.is_(True)),
                 )
             ).all()
             file_ids = list(pending)
@@ -376,84 +427,16 @@ async def process_folder(
         if not file_ids:
             return {"job_ids": [], "file_count": 0, "message": "All files already processed"}
 
-        # Resolve effective profile for this folder
-        effective = resolve_effective_profile(db, fid, uuid.UUID(req.case_id))
-        sibling_info = gather_sibling_files(db, fid)
-
-        # Mark files as processing
-        EvidenceDBStorage.mark_processing(db, file_ids, force=req.reprocess_completed)
-        db.commit()
-
-        # If evidence engine is enabled, dispatch files to it
-        if USE_EVIDENCE_ENGINE:
-            import json as _json
-            import mimetypes
-            from pathlib import Path
-            from sqlalchemy import select
-            from postgres.models.evidence import EvidenceFile as EF
-
-            files = list(db.scalars(
-                select(EF).where(EF.id.in_(file_ids))
-            ).all())
-
-            # Read file contents from disk and build tuples for the engine
-            file_tuples = []
-            valid_files = []
-            for f in files:
-                p = Path(f.stored_path)
-                if not p.exists():
-                    logger.warning("File not found on disk, skipping: %s", f.stored_path)
-                    continue
-                content = p.read_bytes()
-                ctype = mimetypes.guess_type(f.original_filename)[0] or "application/octet-stream"
-                file_tuples.append((f.original_filename, content, ctype))
-                valid_files.append(f)
-
-            if not file_tuples:
-                return {"job_ids": [], "file_count": 0, "message": "No files found on disk"}
-
-            # Build engine parameters from folder profile
-            folder_context = effective.get("merged_context")
-            llm_profile = effective.get("merged_overrides", {}).get("llm_profile")
-            sibling_files_json = _json.dumps(sibling_info) if sibling_info else None
-
-            # Send files to evidence engine for processing
-            jobs = await evidence_engine_client.upload_files_batch(
-                case_id=req.case_id,
-                files=file_tuples,
-                llm_profile=llm_profile,
-                folder_context=folder_context,
-                sibling_files=sibling_files_json,
-            )
-
-            # Store engine job IDs back to Postgres
-            job_ids_out = []
-            for f, job in zip(valid_files, jobs):
-                f.engine_job_id = str(job["id"])
-                job_ids_out.append(str(job["id"]))
-            db.commit()
-
-            # Register jobs with Redis subscriber for status tracking
-            if job_ids_out:
-                from services.job_status_subscriber import get_subscriber
-                try:
-                    subscriber = get_subscriber()
-                    await subscriber.track_jobs(job_ids_out, req.case_id)
-                except Exception as e:
-                    logger.warning("Failed to register jobs with subscriber: %s", e)
-
-            return {
-                "job_ids": job_ids_out,
-                "file_count": len(valid_files),
-                "effective_profile": effective,
-                "message": f"Processing {len(valid_files)} file(s)",
-            }
-
-        return {
-            "job_ids": [],
-            "file_count": len(file_ids),
-            "message": f"Queued {len(file_ids)} file(s) for processing",
-        }
+        result = await process_db_files(
+            db,
+            case_id=uuid.UUID(req.case_id),
+            file_ids=file_ids,
+            force_reprocess=req.reprocess_completed,
+        )
+        result["effective_profile"] = resolve_effective_profile(
+            db, fid, uuid.UUID(req.case_id)
+        )
+        return result
     except HTTPException:
         raise
     except Exception as e:
@@ -477,6 +460,7 @@ async def move_file(
 
         target = uuid.UUID(new_folder_id) if new_folder_id else None
         EvidenceDBStorage.move_file(db, uuid.UUID(file_id), target)
+        EvidenceDBStorage.mark_files_stale(db, [uuid.UUID(file_id)])
         db.commit()
         return {"id": file_id, "folder_id": new_folder_id}
     except HTTPException:
@@ -506,6 +490,7 @@ async def move_files_batch(
 
         target = uuid.UUID(new_folder_id) if new_folder_id else None
         EvidenceDBStorage.move_files(db, [uuid.UUID(fid) for fid in file_ids], target)
+        EvidenceDBStorage.mark_files_stale(db, [uuid.UUID(fid) for fid in file_ids])
         db.commit()
         return {"moved": len(file_ids), "folder_id": new_folder_id}
     except HTTPException:

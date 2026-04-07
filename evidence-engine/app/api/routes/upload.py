@@ -23,6 +23,7 @@ async def upload_files(
     llm_profile: str | None = Form(None),
     folder_context: str | None = Form(None),
     sibling_files: str | None = Form(None),
+    processing_metadata: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload one or more files for processing.
@@ -32,8 +33,18 @@ async def upload_files(
     """
     batch_id = uuid.uuid4()
     jobs: list[Job] = []
+    import json as _json
 
-    for file in files:
+    parsed_processing_metadata: list[dict] | None = None
+    if processing_metadata:
+        try:
+            parsed_processing_metadata = _json.loads(processing_metadata)
+            if not isinstance(parsed_processing_metadata, list):
+                parsed_processing_metadata = None
+        except (ValueError, TypeError):
+            parsed_processing_metadata = None
+
+    for index, file in enumerate(files):
         job_id = uuid.uuid4()
 
         # Save file to disk: {storage_path}/{case_id}/{job_id}/{filename}
@@ -50,14 +61,21 @@ async def upload_files(
         mime_type = mimetypes.guess_type(file.filename)[0] or "application/octet-stream"
         sha256 = hashlib.sha256(content).hexdigest()
 
+        metadata = None
+        if parsed_processing_metadata and index < len(parsed_processing_metadata):
+            candidate = parsed_processing_metadata[index]
+            if isinstance(candidate, dict):
+                metadata = candidate
+
         # Parse sibling_files JSON if provided
-        import json as _json
         parsed_siblings = None
         if sibling_files:
             try:
                 parsed_siblings = _json.loads(sibling_files)
             except (ValueError, TypeError):
                 parsed_siblings = None
+        if metadata and isinstance(metadata.get("sibling_files"), list):
+            parsed_siblings = metadata.get("sibling_files")
 
         # Create job record
         job = Job(
@@ -69,6 +87,10 @@ async def upload_files(
             llm_profile=llm_profile,
             folder_context=folder_context,
             sibling_files=parsed_siblings,
+            effective_context=(metadata or {}).get("effective_context"),
+            effective_mandatory_instructions=(metadata or {}).get("effective_mandatory_instructions"),
+            effective_special_entity_types=(metadata or {}).get("effective_special_entity_types"),
+            source_folder_id=(metadata or {}).get("source_folder_id"),
             file_size=file_size,
             mime_type=mime_type,
             sha256=sha256,

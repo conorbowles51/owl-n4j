@@ -9,6 +9,7 @@ export function useCreateFolder(caseId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 }
@@ -21,6 +22,7 @@ export function useRenameFolder(caseId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 }
@@ -32,6 +34,7 @@ export function useDeleteFolder(caseId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 }
@@ -44,6 +47,7 @@ export function useMoveFolder(caseId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 }
@@ -56,6 +60,7 @@ export function useMoveFile(caseId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 }

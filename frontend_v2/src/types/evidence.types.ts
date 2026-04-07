@@ -5,6 +5,7 @@ export interface EvidenceFile {
   size: number
   sha256: string
   status: string
+  processing_stale?: boolean
   duplicate_of?: string | null
   created_at: string
   processed_at?: string | null
@@ -31,46 +32,17 @@ export interface SpecialEntityType {
 export interface ProcessingProfile {
   name: string
   description?: string
-  case_type?: string | null
-  provider?: string
-  model?: string
-  settings?: Record<string, unknown>
-}
-
-export interface ProfileDetail {
-  name: string
-  description?: string
-  case_type?: string | null
-  ingestion?: {
-    system_context?: string
-    special_entity_types?: SpecialEntityType[]
-    temperature?: number
-  }
-  chat?: {
-    system_context?: string
-    analysis_guidance?: string
-    temperature?: number
-  }
-  llm_config?: {
-    provider?: string
-    model_id?: string
-  }
-  folder_processing?: Record<string, unknown> | null
+  context_instructions?: string | null
+  mandatory_instructions?: string[]
+  special_entity_types?: SpecialEntityType[]
 }
 
 export interface ProfileSaveData {
   name: string
-  description: string
-  case_type?: string | null
-  ingestion_system_context?: string | null
+  description?: string | null
+  context_instructions?: string | null
+  mandatory_instructions?: string[]
   special_entity_types?: SpecialEntityType[]
-  ingestion_temperature?: number
-  llm_provider?: string
-  llm_model_id?: string
-  chat_system_context?: string | null
-  chat_analysis_guidance?: string | null
-  chat_temperature?: number
-  folder_processing?: Record<string, unknown> | null
 }
 
 // Background Tasks
@@ -200,6 +172,7 @@ export interface EvidenceFileRecord {
   size: number
   sha256: string
   status: "unprocessed" | "processing" | "processed" | "failed"
+  processing_stale: boolean
   is_duplicate: boolean
   duplicate_of: string | null
   is_relevant: boolean
@@ -211,30 +184,35 @@ export interface EvidenceFileRecord {
   summary: string | null
   entity_count: number | null
   relationship_count: number | null
+  last_processed_folder_id: string | null
 }
 
 // Folder profiles
 export interface FolderProfile {
   context_instructions: string | null
+  mandatory_instructions: string[]
   profile_overrides: ProfileOverrides | null
 }
 
 export interface ProfileOverrides {
-  special_entity_types?: { name: string; description?: string }[]
-  temperature?: number
-  system_context?: string
-  llm_profile?: string
+  special_entity_types?: { name: string; description?: string | null }[]
 }
 
 export interface ProfileChainLink {
-  folder_id: string
+  scope?: "case" | "folder"
+  folder_id: string | null
   folder_name: string
   context_instructions: string | null
+  mandatory_instructions?: string[]
   profile_overrides: ProfileOverrides | null
+  source_profile_name?: string | null
 }
 
 export interface EffectiveProfile {
   chain: ProfileChainLink[]
+  effective_context: string
+  effective_mandatory_instructions: string[]
+  effective_special_entity_types: { name: string; description?: string }[]
   merged_context: string
   merged_overrides: ProfileOverrides
 }
@@ -286,4 +264,12 @@ export interface ProfileTemplate {
   description: string
   context_instructions: string
   profile_overrides?: ProfileOverrides
+}
+
+export interface CaseProcessingProfile {
+  source_profile_name: string | null
+  source_profile_exists: boolean
+  context_instructions: string | null
+  mandatory_instructions: string[]
+  special_entity_types: SpecialEntityType[]
 }

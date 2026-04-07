@@ -18,6 +18,8 @@ export function useProcessFolder(caseId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 }

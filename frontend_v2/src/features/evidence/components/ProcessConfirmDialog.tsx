@@ -44,7 +44,11 @@ export function ProcessConfirmDialog({
 
   const hasProfile =
     effective &&
-    (effective.merged_context || Object.keys(effective.merged_overrides ?? {}).length > 0)
+    (
+      effective.effective_context ||
+      effective.effective_mandatory_instructions.length > 0 ||
+      effective.effective_special_entity_types.length > 0
+    )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -99,25 +103,43 @@ export function ProcessConfirmDialog({
                 )}
 
                 {/* ---- Merged context ---- */}
-                {!effectiveLoading && hasProfile && effective.merged_context && (
+                {!effectiveLoading && hasProfile && effective.effective_context && (
                   <div className="space-y-1.5">
                     <p className="text-xs font-medium text-muted-foreground">
                       Effective Context
                     </p>
                     <div className="rounded-md border border-border bg-slate-50 p-3 dark:bg-slate-900/50">
                       <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
-                        {effective.merged_context}
+                        {effective.effective_context}
                       </p>
                     </div>
                   </div>
                 )}
 
+                {!effectiveLoading &&
+                  (effective?.effective_mandatory_instructions?.length ?? 0) > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground">
+                        Mandatory Instructions
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">
+                        These rules are applied in order. Later rules are more specific and take priority.
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {effective?.effective_mandatory_instructions?.map((instruction, index) => (
+                          <Badge key={`${instruction}-${index}`} variant="warning" className="text-[10px]">
+                            {instruction}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                 {/* ---- Merged overrides summary ---- */}
                 {!effectiveLoading &&
-                  effective?.merged_overrides &&
-                  Object.keys(effective.merged_overrides).length > 0 && (
+                  (effective?.effective_special_entity_types?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {effective.merged_overrides.special_entity_types?.map(
+                      {effective?.effective_special_entity_types?.map(
                         (et) => (
                           <Badge
                             key={et.name}
@@ -127,16 +149,6 @@ export function ProcessConfirmDialog({
                             {et.name}
                           </Badge>
                         )
-                      )}
-                      {effective.merged_overrides.temperature !== undefined && (
-                        <Badge variant="slate" className="text-[10px]">
-                          temp {effective.merged_overrides.temperature}
-                        </Badge>
-                      )}
-                      {effective.merged_overrides.llm_profile && (
-                        <Badge variant="info" className="text-[10px]">
-                          {effective.merged_overrides.llm_profile}
-                        </Badge>
                       )}
                     </div>
                   )}

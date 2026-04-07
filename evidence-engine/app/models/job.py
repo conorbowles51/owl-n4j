@@ -48,6 +48,10 @@ class Job(Base):
     folder_context: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Sibling file awareness — JSON list of {name, mime_type, size}
     sibling_files: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    effective_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    effective_mandatory_instructions: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    effective_special_entity_types: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    source_folder_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # AI-generated document summary (first-N-chars → LLM)
     document_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 

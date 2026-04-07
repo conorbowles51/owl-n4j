@@ -67,6 +67,7 @@ def link_transaction_parties(
                         detail=f"{sender} sent payment",
                         confidence=0.85,
                         source_files=tx.source_files,
+                        mandatory_instructions=tx.mandatory_instructions,
                     ))
                     existing.add(key)
 
@@ -83,6 +84,7 @@ def link_transaction_parties(
                         detail=f"{receiver} received payment",
                         confidence=0.85,
                         source_files=tx.source_files,
+                        mandatory_instructions=tx.mandatory_instructions,
                     ))
                     existing.add(key)
 

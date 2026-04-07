@@ -42,12 +42,37 @@ class ExtractedDocument:
 def _extract_pdf(file_path: str) -> ExtractedDocument:
     doc = fitz.open(file_path)
     pages: list[str] = []
+    table_chunks: list[str] = []
     total_chars = 0
+    page_spans: list[dict[str, int]] = []
+    offset = 0
 
-    for page in doc:
+    for page_number, page in enumerate(doc, start=1):
         text = page.get_text()
         pages.append(text)
         total_chars += len(text)
+        page_spans.append(
+            {
+                "page": page_number,
+                "start_char": offset,
+                "end_char": offset + len(text),
+            }
+        )
+        offset += len(text) + 2
+
+        try:
+            tables = page.find_tables()
+            for table in tables.tables:
+                extracted = table.extract()
+                rows: list[str] = []
+                for row in extracted:
+                    cells = [str(cell).strip() if cell is not None else "" for cell in row]
+                    if any(cells):
+                        rows.append(" | ".join(cells))
+                if rows:
+                    table_chunks.append(f"[Page: {page_number}]\n" + "\n".join(rows))
+        except Exception:
+            continue
 
     doc.close()
 
@@ -59,7 +84,9 @@ def _extract_pdf(file_path: str) -> ExtractedDocument:
             "file_type": "pdf",
             "page_count": len(pages),
             "is_scanned": avg_chars < 50,
+            "page_spans": page_spans,
         },
+        tables=table_chunks,
     )
 
 

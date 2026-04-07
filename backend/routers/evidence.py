@@ -23,6 +23,7 @@ from services.evidence_log_storage import evidence_log_storage
 from services.wiretap_tracking import list_processed_wiretaps, is_wiretap_processed, mark_wiretap_processed
 from services.wiretap_service import check_wiretap_suitable, process_wiretap_folder_async
 from services.background_task_storage import background_task_storage, TaskStatus
+from services.evidence_processing_service import process_db_files
 from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
@@ -62,6 +63,7 @@ class EvidenceRecord(BaseModel):
     entity_count: Optional[int] = None
     relationship_count: Optional[int] = None
     engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking
+    processing_stale: bool = False
 
 
 class EvidenceListResponse(BaseModel):
@@ -151,6 +153,7 @@ async def list_evidence(
                 "summary": f.summary,
                 "entity_count": f.entity_count,
                 "relationship_count": f.relationship_count,
+                "processing_stale": f.processing_stale,
             })
 
         return {"files": files}
@@ -464,9 +467,9 @@ async def process_evidence_background(
     """
     Process selected evidence files in the background.
 
-    For engine-managed files, processing is automatic (started on upload).
-    This endpoint returns job status for those files.
-    For legacy files, starts background processing via the ingestion pipeline.
+    DB-backed evidence files are dispatched through the evidence engine using
+    folder-aware processing snapshots. Legacy file IDs still use the older
+    background ingestion pipeline.
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
@@ -487,17 +490,25 @@ async def process_evidence_background(
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
         # Separate engine-managed files from legacy files
-        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids, db)
+        db_backed_ids, legacy_ids = _split_db_backed_legacy(request.file_ids, db)
 
-        if engine_ids and not legacy_ids:
-            # All engine-managed — processing is automatic, return status
-            return {
-                "task_id": None,
-                "message": f"{len(engine_ids)} file(s) are already being processed by the evidence engine",
-            }
+        messages = []
+        job_ids = []
+
+        if db_backed_ids:
+            if not request.case_id:
+                raise HTTPException(status_code=400, detail="case_id is required for DB-backed evidence files")
+            engine_result = await process_db_files(
+                db,
+                case_id=UUID(request.case_id),
+                file_ids=db_backed_ids,
+                force_reprocess=False,
+            )
+            job_ids = engine_result.get("job_ids", [])
+            if engine_result.get("message"):
+                messages.append(engine_result["message"])
 
         if legacy_ids:
-            # Process legacy files via the old pipeline
             task_id = evidence_service.process_files_background(
                 evidence_ids=legacy_ids,
                 case_id=request.case_id,
@@ -506,12 +517,18 @@ async def process_evidence_background(
                 max_workers=request.max_workers,
                 image_provider=request.image_provider,
             )
-            msg = f"Processing {len(legacy_ids)} legacy file(s) in background"
-            if engine_ids:
-                msg += f"; {len(engine_ids)} file(s) already processing via evidence engine"
-            return {"task_id": task_id, "message": msg}
+            messages.append(f"Processing {len(legacy_ids)} legacy file(s) in background")
+            return {
+                "task_id": task_id,
+                "job_ids": job_ids or None,
+                "message": "; ".join(messages) if messages else "No files to process",
+            }
 
-        return {"task_id": None, "message": "No files to process"}
+        return {
+            "task_id": None,
+            "job_ids": job_ids or None,
+            "message": "; ".join(messages) if messages else "No files to process",
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -525,8 +542,9 @@ async def process_evidence(
     """
     Process selected evidence files synchronously.
 
-    For engine-managed files, processing is automatic. This returns their
-    current status counts. Legacy files are processed via the ingestion pipeline.
+    DB-backed evidence files are dispatched through the evidence engine using
+    folder-aware processing snapshots. Legacy file IDs are processed through
+    the older synchronous ingestion pipeline.
     """
     if not request.file_ids:
         raise HTTPException(status_code=400, detail="No file_ids provided")
@@ -540,11 +558,23 @@ async def process_evidence(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        engine_ids, legacy_ids = _split_engine_legacy(request.file_ids, db)
+        db_backed_ids, legacy_ids = _split_db_backed_legacy(request.file_ids, db)
 
-        processed = len(engine_ids)  # engine files are already processing/processed
+        processed = 0
         skipped = 0
         errors = 0
+
+        if db_backed_ids:
+            if not request.case_id:
+                raise HTTPException(status_code=400, detail="case_id is required for DB-backed evidence files")
+            engine_result = await process_db_files(
+                db,
+                case_id=UUID(request.case_id),
+                file_ids=db_backed_ids,
+                force_reprocess=False,
+            )
+            processed += engine_result.get("file_count", 0)
+            skipped += engine_result.get("skipped_count", 0)
 
         if legacy_ids:
             summary = await run_in_threadpool(
@@ -568,24 +598,24 @@ async def process_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _split_engine_legacy(file_ids: List[str], db: Session) -> tuple:
-    """Split file IDs into engine-managed and legacy lists."""
+def _split_db_backed_legacy(file_ids: List[str], db: Session) -> tuple:
+    """Split file IDs into DB-backed evidence files and legacy-only IDs."""
     from services.evidence_db_storage import EvidenceDBStorage
     from uuid import UUID
 
-    engine_ids = []
+    db_backed_ids = []
     legacy_ids = []
     for fid in file_ids:
         rec = None
         try:
             rec = EvidenceDBStorage.get(db, UUID(fid))
         except (ValueError, AttributeError):
-            rec = EvidenceDBStorage.get_by_legacy_id(db, fid)
-        if rec and rec.engine_job_id:
-            engine_ids.append(fid)
+            rec = None
+        if rec:
+            db_backed_ids.append(rec.id)
         else:
             legacy_ids.append(fid)
-    return engine_ids, legacy_ids
+    return db_backed_ids, legacy_ids
 
 
 @router.get("/logs", response_model=EvidenceLogListResponse)

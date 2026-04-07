@@ -14,6 +14,7 @@ from app.ontology.prompt_builder import (
     build_relationship_extraction_prompt,
 )
 from app.ontology.schema_builder import get_entity_schema, get_relationship_schema
+from app.pipeline.mandatory_rules import normalize_mandatory_instructions
 from app.pipeline.chunk_embed import TextChunk
 from app.services.openai_client import chat_completion
 
@@ -36,6 +37,9 @@ class RawEntity:
     confidence: float = 0.5
     source_chunk_index: int = 0
     source_file: str = ""
+    verified_facts: list[dict[str, Any]] = field(default_factory=list)
+    ai_insights: list[dict[str, Any]] = field(default_factory=list)
+    mandatory_instructions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -49,6 +53,7 @@ class RawRelationship:
     confidence: float = 0.5
     source_chunk_index: int = 0
     source_file: str = ""
+    mandatory_instructions: list[str] = field(default_factory=list)
 
 
 async def _extract_entities_from_chunk(
@@ -56,15 +61,24 @@ async def _extract_entities_from_chunk(
     chunk_index: int,
     file_name: str,
     case_context: str,
+    mandatory_instructions: list[str] | None = None,
+    special_entity_types: list[dict[str, Any]] | None = None,
     is_table: bool = False,
     sheet_name: str = "",
+    page_start: int | None = None,
+    page_end: int | None = None,
 ) -> list[RawEntity]:
+    normalized_instructions = normalize_mandatory_instructions(mandatory_instructions)
     prompt = build_entity_extraction_prompt(
         chunk_text=chunk_text,
         file_name=file_name,
         case_context=case_context,
+        mandatory_instructions=normalized_instructions,
+        special_entity_types=special_entity_types,
         is_table=is_table,
         sheet_name=sheet_name,
+        page_start=page_start,
+        page_end=page_end,
     )
 
     response = await chat_completion(
@@ -73,6 +87,9 @@ async def _extract_entities_from_chunk(
                 "role": "system",
                 "content": (
                     "You extract structured entities from investigative documents. "
+                    "The mandatory profile rules in the user prompt are binding and override generic extraction defaults. "
+                    "Apply them exactly whenever the document provides enough evidence to do so. "
+                    "Treat any response that ignores those rules as invalid. "
                     "Respond with valid JSON matching the provided schema."
                 ),
             },
@@ -94,6 +111,16 @@ async def _extract_entities_from_chunk(
         if not name:
             continue
 
+        verified_facts = _normalize_verified_facts(
+            e.get("verified_facts", []),
+            file_name=file_name,
+            fallback_page=page_start,
+        )
+        ai_insights = _normalize_ai_insights(
+            e.get("ai_insights", []),
+            file_name=file_name,
+        )
+
         entities.append(
             RawEntity(
                 temp_id=f"chunk{chunk_index}_E{i}",
@@ -105,6 +132,9 @@ async def _extract_entities_from_chunk(
                 confidence=float(e.get("confidence", 0.5)),
                 source_chunk_index=chunk_index,
                 source_file=file_name,
+                verified_facts=verified_facts,
+                ai_insights=ai_insights,
+                mandatory_instructions=normalized_instructions,
             )
         )
 
@@ -117,9 +147,11 @@ async def _extract_relationships_from_chunk(
     entities: list[RawEntity],
     file_name: str,
     case_context: str,
+    mandatory_instructions: list[str] | None = None,
 ) -> list[RawRelationship]:
     if not entities:
         return []
+    normalized_instructions = normalize_mandatory_instructions(mandatory_instructions)
 
     entities_json = json.dumps(
         [
@@ -139,6 +171,7 @@ async def _extract_relationships_from_chunk(
         file_name=file_name,
         case_context=case_context,
         entities_json=entities_json,
+        mandatory_instructions=normalized_instructions,
     )
 
     response = await chat_completion(
@@ -147,6 +180,9 @@ async def _extract_relationships_from_chunk(
                 "role": "system",
                 "content": (
                     "You extract relationships between entities. "
+                    "The mandatory profile rules in the user prompt are binding and override generic extraction defaults. "
+                    "Apply them exactly whenever the document provides enough evidence to do so. "
+                    "Treat any response that ignores those rules as invalid. "
                     "Respond with valid JSON matching the provided schema."
                 ),
             },
@@ -176,6 +212,7 @@ async def _extract_relationships_from_chunk(
                 confidence=float(r.get("confidence", 0.5)),
                 source_chunk_index=chunk_index,
                 source_file=file_name,
+                mandatory_instructions=normalized_instructions,
             )
         )
 
@@ -197,6 +234,130 @@ def _normalize_name(name: str) -> str:
     if tokens and tokens[0] in _STRIP_PREFIXES:
         tokens = tokens[1:]
     return " ".join(tokens)
+
+
+def _normalize_verified_facts(
+    facts: list[dict[str, Any]],
+    *,
+    file_name: str,
+    fallback_page: int | None,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+
+    for fact in facts or []:
+        text = str(fact.get("text", "")).strip()
+        quote = str(fact.get("quote", "")).strip()
+        if not text or not quote:
+            continue
+
+        page = fact.get("page")
+        if page in ("", None):
+            page = fallback_page
+        try:
+            page = int(page) if page is not None else None
+        except (TypeError, ValueError):
+            page = fallback_page
+
+        importance = fact.get("importance", 3)
+        try:
+            importance = int(importance)
+        except (TypeError, ValueError):
+            importance = 3
+
+        normalized.append(
+            {
+                "text": text,
+                "quote": quote,
+                "page": page,
+                "importance": max(1, min(5, importance)),
+                "source_doc": file_name,
+            }
+        )
+
+    return normalized
+
+
+def _normalize_ai_insights(
+    insights: list[dict[str, Any]],
+    *,
+    file_name: str,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+
+    for insight in insights or []:
+        text = str(insight.get("text", "")).strip()
+        reasoning = str(insight.get("reasoning", "")).strip()
+        confidence = str(insight.get("confidence", "medium")).strip().lower()
+        if not text or not reasoning:
+            continue
+        if confidence not in {"high", "medium", "low"}:
+            confidence = "medium"
+
+        normalized.append(
+            {
+                "text": text,
+                "confidence": confidence,
+                "reasoning": reasoning,
+                "source_doc": file_name,
+                "status": "pending",
+            }
+        )
+
+    return normalized
+
+
+def _merge_verified_facts(
+    existing: list[dict[str, Any]],
+    new_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged = list(existing or [])
+    seen = {
+        (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+            item.get("page"),
+        )
+        for item in merged
+    }
+
+    for item in new_items or []:
+        key = (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+            item.get("page"),
+        )
+        if not key[0] or key in seen:
+            continue
+        merged.append(item)
+        seen.add(key)
+
+    return merged
+
+
+def _merge_ai_insights(
+    existing: list[dict[str, Any]],
+    new_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged = list(existing or [])
+    seen = {
+        (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+        )
+        for item in merged
+    }
+
+    for item in new_items or []:
+        key = (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+        )
+        if not key[0] or key in seen:
+            continue
+        merged.append(item)
+        seen.add(key)
+
+    return merged
 
 
 def _dedup_within_file(
@@ -241,6 +402,12 @@ def _dedup_within_file(
             for k, v in e.properties.items():
                 if k not in merged_props or not merged_props[k]:
                     merged_props[k] = v
+            primary.verified_facts = _merge_verified_facts(
+                primary.verified_facts, e.verified_facts
+            )
+            primary.ai_insights = _merge_ai_insights(
+                primary.ai_insights, e.ai_insights
+            )
 
         all_names.discard(primary.name)
         # Store other name forms as aliases
@@ -276,6 +443,8 @@ async def extract_entities_and_relationships(
     chunks: list[TextChunk],
     case_context: str,
     file_name: str,
+    mandatory_instructions: list[str] | None = None,
+    special_entity_types: list[dict[str, Any]] | None = None,
 ) -> tuple[list[RawEntity], list[RawRelationship]]:
     """Two-pass extraction: entities first, then relationships with known entities."""
     if not chunks:
@@ -288,8 +457,12 @@ async def extract_entities_and_relationships(
             chunk.index,
             file_name,
             case_context,
+            mandatory_instructions=mandatory_instructions,
+            special_entity_types=special_entity_types,
             is_table=chunk.is_table,
             sheet_name=chunk.metadata.get("sheet_name", ""),
+            page_start=chunk.metadata.get("page_start"),
+            page_end=chunk.metadata.get("page_end"),
         )
         for chunk in chunks
     ]
@@ -309,6 +482,7 @@ async def extract_entities_and_relationships(
             entities_by_chunk.get(chunk.index, []),
             file_name,
             case_context,
+            mandatory_instructions=mandatory_instructions,
         )
         for chunk in chunks
     ]

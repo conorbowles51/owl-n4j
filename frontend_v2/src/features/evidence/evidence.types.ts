@@ -3,7 +3,6 @@ export type {
   EvidenceFile,
   IngestionResult,
   ProcessingProfile,
-  ProfileDetail,
   ProfileSaveData,
   SpecialEntityType,
   BackgroundTask,

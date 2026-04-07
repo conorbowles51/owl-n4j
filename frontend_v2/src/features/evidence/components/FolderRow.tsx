@@ -61,6 +61,11 @@ export function FolderRow({ folder, onNavigate, onDropFile, onDropFolder }: Fold
         <div className="flex items-center gap-2">
           <Folder className="size-4 text-amber-500" />
           <span className="hover:text-amber-500 transition-colors">{folder.name}</span>
+          {folder.has_profile ? (
+            <Badge variant="secondary" className="text-[10px]">
+              Profile
+            </Badge>
+          ) : null}
         </div>
       </TableCell>
       <TableCell className="text-xs text-muted-foreground">Folder</TableCell>

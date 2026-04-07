@@ -10,6 +10,7 @@ from typing import Any
 
 from app.config import settings
 from app.pipeline.extract_entities import RawEntity, RawRelationship
+from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.services.chroma_client import (
     add_embeddings,
     delete_collection,
@@ -40,6 +41,9 @@ class ResolvedEntity:
     source_quotes: list[str] = field(default_factory=list)
     confidence: float = 0.5
     source_files: list[str] = field(default_factory=list)
+    verified_facts: list[dict[str, Any]] = field(default_factory=list)
+    ai_insights: list[dict[str, Any]] = field(default_factory=list)
+    mandatory_instructions: list[str] = field(default_factory=list)
     is_existing: bool = False
     summary: str = ""
     existing_summary: str = ""
@@ -55,6 +59,7 @@ class ResolvedRelationship:
     source_quotes: list[str] = field(default_factory=list)
     confidence: float = 0.5
     source_files: list[str] = field(default_factory=list)
+    mandatory_instructions: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +118,73 @@ def _token_overlap(a: str, b: str) -> float:
     if not ta or not tb:
         return 0.0
     return len(ta & tb) / min(len(ta), len(tb))
+
+
+def _parse_json_list(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [item for item in parsed if isinstance(item, dict)]
+        except json.JSONDecodeError:
+            return []
+    return []
+
+
+def _merge_verified_facts(
+    existing: list[dict[str, Any]],
+    new_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged = list(existing or [])
+    seen = {
+        (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+            item.get("page"),
+        )
+        for item in merged
+    }
+
+    for item in new_items or []:
+        key = (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+            item.get("page"),
+        )
+        if not key[0] or key in seen:
+            continue
+        merged.append(item)
+        seen.add(key)
+
+    return merged
+
+
+def _merge_ai_insights(
+    existing: list[dict[str, Any]],
+    new_items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged = list(existing or [])
+    seen = {
+        (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+        )
+        for item in merged
+    }
+
+    for item in new_items or []:
+        key = (
+            str(item.get("text", "")).strip().lower(),
+            str(item.get("source_doc", "")).strip().lower(),
+        )
+        if not key[0] or key in seen:
+            continue
+        merged.append(item)
+        seen.add(key)
+
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +371,7 @@ async def _llm_confirm(
                         "name": entities[a].name,
                         "specific_type": entities[a].specific_type,
                         "properties": entities[a].properties,
+                        "mandatory_instructions": entities[a].mandatory_instructions,
                     },
                     "entity_b": {
                         "id": entities[b].temp_id,
@@ -306,6 +379,7 @@ async def _llm_confirm(
                         "name": entities[b].name,
                         "specific_type": entities[b].specific_type,
                         "properties": entities[b].properties,
+                        "mandatory_instructions": entities[b].mandatory_instructions,
                     },
                 }
                 for j, (a, b) in enumerate(batch)
@@ -313,13 +387,27 @@ async def _llm_confirm(
             indent=2,
         )
 
-        prompt = template.format(pairs_json=pairs_json)
+        prompt = prepend_mandatory_rules(
+            template.format(pairs_json=pairs_json),
+            merge_mandatory_instructions(
+                *[
+                    merge_mandatory_instructions(
+                        entities[a].mandatory_instructions,
+                        entities[b].mandatory_instructions,
+                    )
+                    for a, b in batch
+                ]
+            ),
+            title="MANDATORY PROFILE RULES FOR ENTITY RESOLUTION",
+        )
         response = await chat_completion(
             messages=[
                 {
                     "role": "system",
                     "content": (
                         "You are an entity resolution expert. "
+                        "Mandatory profile rules in the user prompt are binding. "
+                        "Do not merge entities in a way that erases rule-compliant names, types, or distinctions. "
                         "Respond with valid JSON matching the provided schema."
                     ),
                 },
@@ -370,6 +458,8 @@ def _apply_merges(
         all_quotes: list[str] = []
         all_files: set[str] = set()
         merged_props = dict(primary.properties)
+        merged_facts: list[dict[str, Any]] = []
+        merged_insights: list[dict[str, Any]] = []
 
         for idx in indices:
             e = entities[idx]
@@ -377,6 +467,8 @@ def _apply_merges(
             all_names.add(e.name)
             all_quotes.append(e.source_quote)
             all_files.add(e.source_file)
+            merged_facts = _merge_verified_facts(merged_facts, e.verified_facts)
+            merged_insights = _merge_ai_insights(merged_insights, e.ai_insights)
             for k, v in e.properties.items():
                 if k not in merged_props or not merged_props[k]:
                     merged_props[k] = v
@@ -396,6 +488,11 @@ def _apply_merges(
                 source_quotes=[q for q in all_quotes if q],
                 confidence=max(entities[i].confidence for i in indices),
                 source_files=sorted(all_files),
+                verified_facts=merged_facts,
+                ai_insights=merged_insights,
+                mandatory_instructions=merge_mandatory_instructions(
+                    *[entities[i].mandatory_instructions for i in indices]
+                ),
             )
         )
 
@@ -519,7 +616,8 @@ async def _cross_job_dedup(
                 "RETURN n.id AS id, labels(n) AS labels, n.name AS name, "
                 "n.specific_type AS specific_type, n.description AS description, "
                 "n.role AS role, n.aliases AS aliases, "
-                "n.confidence AS confidence",
+                "n.confidence AS confidence, n.verified_facts AS verified_facts, "
+                "n.ai_insights AS ai_insights",
                 {"ids": existing_ids},
             )
             for record in neo4j_data or []:
@@ -544,6 +642,12 @@ async def _cross_job_dedup(
                 }
                 if record.get("aliases"):
                     existing_map[eid]["aliases"] = record["aliases"]
+                existing_map[eid]["verified_facts"] = _parse_json_list(
+                    record.get("verified_facts")
+                )
+                existing_map[eid]["ai_insights"] = _parse_json_list(
+                    record.get("ai_insights")
+                )
         except Exception:
             logger.warning("Neo4j fetch failed for cross-job LLM context, falling back to ChromaDB")
 
@@ -580,6 +684,7 @@ async def _cross_job_dedup(
                         "name": remaining[new_idx].name,
                         "specific_type": remaining[new_idx].specific_type,
                         "properties": remaining[new_idx].properties,
+                        "mandatory_instructions": remaining[new_idx].mandatory_instructions,
                     },
                     "entity_b": existing_map.get(existing_id, {"id": existing_id}),
                 }
@@ -587,13 +692,21 @@ async def _cross_job_dedup(
             ],
             indent=2,
         )
-        prompt = template.format(pairs_json=pairs_json)
+        prompt = prepend_mandatory_rules(
+            template.format(pairs_json=pairs_json),
+            merge_mandatory_instructions(
+                *[remaining[new_idx].mandatory_instructions for new_idx, _ in batch]
+            ),
+            title="MANDATORY PROFILE RULES FOR ENTITY RESOLUTION",
+        )
         response = await chat_completion(
             messages=[
                 {
                     "role": "system",
                     "content": (
                         "You are an entity resolution expert. "
+                        "Mandatory profile rules in the user prompt are binding. "
+                        "Do not merge entities in a way that erases rule-compliant names, types, or distinctions. "
                         "Respond with valid JSON matching the provided schema."
                     ),
                 },
@@ -694,6 +807,14 @@ async def resolve_entities(
                 existing_quotes = props.get("source_quotes", []) or []
                 new_quotes = [q for q in entity.source_quotes if q not in existing_quotes]
                 entity.source_quotes = existing_quotes + new_quotes
+                entity.verified_facts = _merge_verified_facts(
+                    _parse_json_list(props.get("verified_facts")),
+                    entity.verified_facts,
+                )
+                entity.ai_insights = _merge_ai_insights(
+                    _parse_json_list(props.get("ai_insights")),
+                    entity.ai_insights,
+                )
 
                 # Store existing summary for merge in generate_summaries
                 entity.existing_summary = props.get("summary", "") or ""
@@ -750,6 +871,7 @@ async def resolve_entities(
                     source_quotes=[r.source_quote] if r.source_quote else [],
                     confidence=r.confidence,
                     source_files=[r.source_file] if r.source_file else [],
+                    mandatory_instructions=r.mandatory_instructions,
                 )
             )
 

@@ -1,4 +1,5 @@
 import asyncio
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -6,6 +7,12 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.models.job import Base
+
+if os.getenv("ALLOW_ENGINE_ALEMBIC", "").lower() not in {"1", "true", "yes"}:
+    raise RuntimeError(
+        "Evidence-engine Alembic is deprecated for the shared Postgres schema. "
+        "Run backend Alembic instead."
+    )
 
 config = context.config
 if config.config_file_name is not None:

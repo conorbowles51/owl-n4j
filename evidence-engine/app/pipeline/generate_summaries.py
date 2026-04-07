@@ -8,6 +8,7 @@ from pathlib import Path
 
 from app.config import settings
 from app.ontology.schema_builder import get_summary_schema
+from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.pipeline.resolve_entities import ResolvedEntity, ResolvedRelationship
 from app.services.openai_client import chat_completion
 
@@ -53,10 +54,16 @@ def _build_entity_context(
         "category": entity.category,
         "specific_type": entity.specific_type,
     }
+    if entity.mandatory_instructions:
+        context["mandatory_instructions"] = entity.mandatory_instructions
     if entity.aliases:
         context["aliases"] = entity.aliases
-    if quotes:
+    if entity.verified_facts:
+        context["verified_facts"] = entity.verified_facts[:20]
+    elif quotes:
         context["source_quotes"] = quotes
+    if entity.ai_insights:
+        context["ai_insights"] = entity.ai_insights[:10]
     if entity.source_files:
         context["source_files"] = entity.source_files
 
@@ -99,13 +106,19 @@ async def _summarize_batch(
 
     entities_json = json.dumps(items, indent=2)
 
-    prompt = template.format(entities_json=entities_json)
+    prompt = prepend_mandatory_rules(
+        template.format(entities_json=entities_json),
+        merge_mandatory_instructions(*[entity.mandatory_instructions for _, entity in batch]),
+        title="MANDATORY PROFILE RULES FOR SUMMARY GENERATION",
+    )
     response = await chat_completion(
         messages=[
             {
                 "role": "system",
                 "content": (
                     "You are an expert investigative analyst. "
+                    "Mandatory profile rules in the user prompt are binding. "
+                    "Preserve rule-compliant names and classifications in your summaries. "
                     "Respond with valid JSON matching the provided schema."
                 ),
             },

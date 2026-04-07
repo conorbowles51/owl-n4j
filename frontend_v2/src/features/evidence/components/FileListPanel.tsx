@@ -16,6 +16,7 @@ import { evidenceAPI } from "../api"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { getFileTypeCategory } from "../utils/file-types"
+import { getDisplayStatus } from "../utils/display-status"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
 import { FileRow } from "./FileRow"
@@ -40,7 +41,6 @@ export function FileListPanel({
     currentFolderId,
     setCurrentFolder,
     selectedFileIds,
-    toggleFileSelection,
     selectAllFiles,
     clearSelection,
     searchTerm,
@@ -59,6 +59,8 @@ export function FileListPanel({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
     },
   })
 
@@ -84,7 +86,7 @@ export function FileListPanel({
     ) {
       return false
     }
-    if (statusFilter !== "all" && f.status !== statusFilter) return false
+    if (statusFilter !== "all" && getDisplayStatus(f) !== statusFilter) return false
     if (typeFilter && getFileTypeCategory(f.original_filename) !== typeFilter) return false
     return true
   })
@@ -206,8 +208,7 @@ export function FileListPanel({
               <TableRow>
                 <TableHead className="w-8">
                   <Checkbox
-                    checked={allSelected}
-                    indeterminate={someSelected}
+                    checked={allSelected ? true : someSelected ? "indeterminate" : false}
                     onCheckedChange={handleToggleAll}
                   />
                 </TableHead>

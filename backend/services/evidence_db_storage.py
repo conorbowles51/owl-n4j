@@ -16,6 +16,7 @@ from sqlalchemy import func, select, and_
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
+from services.processing_profile_service import normalize_instruction_list
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +238,7 @@ class EvidenceDBStorage:
                 "updated_at": f.updated_at.isoformat() if f.updated_at else None,
                 "file_count": file_count,
                 "subfolder_count": subfolder_count,
+                "has_profile": bool(f.context_instructions or f.mandatory_instructions or f.profile_overrides),
             })
 
         file_dicts = [EvidenceDBStorage._file_to_dict(ef) for ef in files]
@@ -367,7 +369,7 @@ class EvidenceDBStorage:
             # Skip files already being processed; skip processed files unless force=True
             if ef.status == "processing":
                 continue
-            if ef.status == "processed" and not force:
+            if ef.status == "processed" and not force and not ef.processing_stale:
                 continue
             ef.status = "processing"
             ef.last_error = None
@@ -389,8 +391,61 @@ class EvidenceDBStorage:
             else:
                 ef.status = "processed"
                 ef.last_error = None
+                ef.processing_stale = False
             ef.processed_at = now
         db.flush()
+
+    @staticmethod
+    def set_processing_snapshot(
+        db: Session,
+        file_id: uuid.UUID,
+        *,
+        profile_snapshot: Dict[str, Any],
+        folder_id: Optional[uuid.UUID],
+    ) -> None:
+        ef = db.get(EvidenceFile, file_id)
+        if not ef:
+            return
+        ef.last_processed_profile_snapshot = profile_snapshot
+        ef.last_processed_folder_id = folder_id
+        db.flush()
+
+    @staticmethod
+    def get_files_by_ids(db: Session, file_ids: List[uuid.UUID]) -> List[EvidenceFile]:
+        if not file_ids:
+            return []
+        return list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(file_ids))).all())
+
+    @staticmethod
+    def mark_files_stale(db: Session, file_ids: List[uuid.UUID]) -> int:
+        updated = 0
+        for fid in file_ids:
+            ef = db.get(EvidenceFile, fid)
+            if not ef or ef.status != "processed":
+                continue
+            ef.processing_stale = True
+            updated += 1
+        if updated:
+            db.flush()
+        return updated
+
+    @staticmethod
+    def mark_case_files_stale(db: Session, case_id: uuid.UUID) -> int:
+        file_ids = list(
+            db.scalars(
+                select(EvidenceFile.id).where(
+                    EvidenceFile.case_id == case_id,
+                    EvidenceFile.status == "processed",
+                )
+            ).all()
+        )
+        return EvidenceDBStorage.mark_files_stale(db, file_ids)
+
+    @staticmethod
+    def mark_folder_subtree_stale(db: Session, folder_id: uuid.UUID) -> int:
+        return EvidenceDBStorage.mark_files_stale(
+            db, EvidenceDBStorage.collect_recursive_file_ids(db, folder_id)
+        )
 
     @staticmethod
     def set_relevance(
@@ -483,7 +538,7 @@ class EvidenceDBStorage:
             subfolder_counts[f.id] = len(by_parent.get(f.id, []))
 
         def _build_node(folder: EvidenceFolder) -> Dict[str, Any]:
-            has_profile = bool(folder.context_instructions or folder.profile_overrides)
+            has_profile = bool(folder.context_instructions or folder.mandatory_instructions or folder.profile_overrides)
             children = by_parent.get(folder.id, [])
             return {
                 "id": str(folder.id),
@@ -525,24 +580,36 @@ class EvidenceDBStorage:
         db: Session,
         folder_id: uuid.UUID,
         context_instructions: str | None,
+        mandatory_instructions: list[str] | None,
         profile_overrides: dict | None,
     ) -> EvidenceFolder:
         folder = db.get(EvidenceFolder, folder_id)
         if not folder:
             raise ValueError(f"Folder {folder_id} not found")
         folder.context_instructions = context_instructions
+        folder.mandatory_instructions = mandatory_instructions or []
         folder.profile_overrides = profile_overrides
         db.flush()
         return folder
 
     @staticmethod
     def get_folder_profile(db: Session, folder_id: uuid.UUID) -> Dict[str, Any]:
+        from services.processing_profile_service import normalize_special_entity_types
+
         folder = db.get(EvidenceFolder, folder_id)
         if not folder:
             raise ValueError(f"Folder {folder_id} not found")
+        overrides = folder.profile_overrides or {}
+        normalized_overrides = None
+        special_entity_types = normalize_special_entity_types(
+            overrides.get("special_entity_types")
+        )
+        if special_entity_types:
+            normalized_overrides = {"special_entity_types": special_entity_types}
         return {
             "context_instructions": folder.context_instructions,
-            "profile_overrides": folder.profile_overrides,
+            "mandatory_instructions": normalize_instruction_list(folder.mandatory_instructions),
+            "profile_overrides": normalized_overrides,
         }
 
     # --- Helpers ---
@@ -558,6 +625,7 @@ class EvidenceDBStorage:
             "size": ef.size,
             "sha256": ef.sha256,
             "status": ef.status,
+            "processing_stale": ef.processing_stale,
             "is_duplicate": ef.is_duplicate,
             "duplicate_of": str(ef.duplicate_of_id) if ef.duplicate_of_id else None,
             "is_relevant": ef.is_relevant,
@@ -569,6 +637,7 @@ class EvidenceDBStorage:
             "summary": ef.summary,
             "entity_count": ef.entity_count,
             "relationship_count": ef.relationship_count,
+            "last_processed_folder_id": str(ef.last_processed_folder_id) if ef.last_processed_folder_id else None,
         }
 
     @staticmethod

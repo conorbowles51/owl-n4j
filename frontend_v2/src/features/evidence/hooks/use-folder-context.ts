@@ -23,16 +23,20 @@ export function useUpdateFolderProfile(caseId: string) {
     mutationFn: (data: {
       folderId: string
       context_instructions?: string | null
+      mandatory_instructions?: string[]
       profile_overrides?: Record<string, unknown> | null
     }) =>
       foldersAPI.updateProfile(data.folderId, {
         context_instructions: data.context_instructions,
+        mandatory_instructions: data.mandatory_instructions,
         profile_overrides: data.profile_overrides,
       }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["evidence-folder-profile", vars.folderId] })
       qc.invalidateQueries({ queryKey: ["evidence-effective-profile"] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      qc.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
     },
   })
 }

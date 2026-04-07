@@ -15,6 +15,8 @@ import { FileListPanel } from "./FileListPanel"
 import { CreateFolderDialog } from "./CreateFolderDialog"
 import { DeleteFolderDialog } from "./DeleteFolderDialog"
 import { DeleteEvidenceDialog } from "./DeleteEvidenceDialog"
+import { FolderContextDialog } from "./FolderContextDialog"
+import { CaseProcessingProfileDialog } from "./CaseProcessingProfileDialog"
 import { toast } from "sonner"
 import type { EvidenceFile } from "@/types/evidence.types"
 
@@ -40,6 +42,8 @@ export function EvidenceExplorer() {
     name: string
     fileCount: number
   } | null>(null)
+  const [folderProfileFolderId, setFolderProfileFolderId] = useState<string | null>(null)
+  const [caseProfileOpen, setCaseProfileOpen] = useState(false)
   const [deleteEvidenceOpen, setDeleteEvidenceOpen] = useState(false)
   const [deleteEvidenceTarget, setDeleteEvidenceTarget] = useState<EvidenceFile | null>(null)
 
@@ -126,6 +130,8 @@ export function EvidenceExplorer() {
               caseId={caseId!}
               onCreateFolder={handleOpenCreateFolder}
               onDeleteFolder={handleOpenDeleteFolder}
+              onEditFolderProfile={setFolderProfileFolderId}
+              onEditCaseProfile={() => setCaseProfileOpen(true)}
             />
           </ResizablePanel>
 
@@ -165,6 +171,25 @@ export function EvidenceExplorer() {
           fileCount={deleteEvidenceTarget ? 1 : selectedFileIds.size}
           onConfirm={handleConfirmDeleteEvidence}
           isPending={deleteEvidenceMutation.isPending}
+        />
+
+        {folderProfileFolderId ? (
+          <FolderContextDialog
+            folderId={folderProfileFolderId}
+            caseId={caseId!}
+            open={!!folderProfileFolderId}
+            onOpenChange={(nextOpen) => {
+              if (!nextOpen) {
+                setFolderProfileFolderId(null)
+              }
+            }}
+          />
+        ) : null}
+
+        <CaseProcessingProfileDialog
+          caseId={caseId!}
+          open={caseProfileOpen}
+          onOpenChange={setCaseProfileOpen}
         />
       </div>
     </TooltipProvider>

@@ -82,6 +82,9 @@ async def _extract_file(
     llm_profile: str,
     folder_context: str | None = None,
     sibling_files: list | None = None,
+    effective_context: str | None = None,
+    effective_mandatory_instructions: list | None = None,
+    effective_special_entity_types: list | None = None,
 ) -> tuple[list[RawEntity], list[RawRelationship], str | None]:
     """Run stages 1-3 for a single file: extract text, chunk, extract entities."""
     # Stage 1: Text extraction → 0-15%
@@ -110,7 +113,11 @@ async def _extract_file(
         folder_context, sibling_files, llm_profile
     )
     raw_entities, raw_rels = await extract_entities_and_relationships(
-        chunks, enriched_context, file_name
+        chunks,
+        effective_context or enriched_context,
+        file_name,
+        mandatory_instructions=effective_mandatory_instructions or [],
+        special_entity_types=effective_special_entity_types or [],
     )
     await _update_job_status(
         job_id,
@@ -146,6 +153,9 @@ async def run_batch_pipeline(
             "llm_profile": job.llm_profile or "",
             "folder_context": job.folder_context,
             "sibling_files": job.sibling_files,
+            "effective_context": job.effective_context,
+            "effective_mandatory_instructions": job.effective_mandatory_instructions,
+            "effective_special_entity_types": job.effective_special_entity_types,
         }
         for job in jobs
     ]
@@ -163,6 +173,9 @@ async def run_batch_pipeline(
                 case_id, ji["llm_profile"],
                 folder_context=ji.get("folder_context"),
                 sibling_files=ji.get("sibling_files"),
+                effective_context=ji.get("effective_context"),
+                effective_mandatory_instructions=ji.get("effective_mandatory_instructions"),
+                effective_special_entity_types=ji.get("effective_special_entity_types"),
             )
             for ji in job_info
         ),

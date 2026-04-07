@@ -5,6 +5,7 @@ from postgres.models.case_membership import CaseMembership
 from postgres.models.rejected_merge_pair import RejectedMergePair
 from postgres.models.cost_record import CostRecord, CostJobType
 from postgres.models.case_deadline import CaseDeadline
+from postgres.models.processing_profile import ProcessingProfile, CaseProcessingConfig
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -18,6 +19,7 @@ from postgres.models.workspace import (
 __all__ = [
     "User", "Case", "CaseMembership", "RejectedMergePair",
     "CostRecord", "CostJobType", "CaseDeadline",
+    "ProcessingProfile", "CaseProcessingConfig",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
     "WorkspaceTask", "WorkspaceNote", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",

@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 import httpx
@@ -124,6 +125,8 @@ async def _write_entities(
             "source_quotes": e.source_quotes,
             "job_id": job_id,
             "specific_type": e.specific_type,
+            "verified_facts": json.dumps(e.verified_facts),
+            "ai_insights": json.dumps(e.ai_insights),
         }
         for k, v in e.properties.items():
             if k.startswith("_") or k in ("description", "aliases"):
@@ -143,7 +146,8 @@ async def _write_entities(
                 f"n.source_files AS prev_sf, n.source_quotes AS prev_sq, "
                 f"n.description AS prev_desc, n.summary AS prev_summary, "
                 f"n.confidence AS prev_conf, n.role AS prev_role, "
-                f"n.specific_type AS prev_st "
+                f"n.specific_type AS prev_st, n.verified_facts AS prev_vf, "
+                f"n.ai_insights AS prev_ai "
                 f"SET n += node, "
                 # List properties: accumulate with dedup
                 f"n.aliases = reduce(acc = [], x IN (coalesce(prev_aliases, []) + coalesce(node.aliases, [])) "
@@ -177,7 +181,15 @@ async def _write_entities(
                 # specific_type: prefer existing (first extraction has best context)
                 f"n.specific_type = CASE "
                 f"WHEN prev_st IS NULL OR prev_st = '' THEN node.specific_type "
-                f"ELSE prev_st END"
+                f"ELSE prev_st END, "
+                f"n.verified_facts = CASE "
+                f"WHEN prev_vf IS NULL OR prev_vf = '' THEN node.verified_facts "
+                f"WHEN node.verified_facts IS NULL OR node.verified_facts = '' THEN prev_vf "
+                f"ELSE node.verified_facts END, "
+                f"n.ai_insights = CASE "
+                f"WHEN prev_ai IS NULL OR prev_ai = '' THEN node.ai_insights "
+                f"WHEN node.ai_insights IS NULL OR node.ai_insights = '' THEN prev_ai "
+                f"ELSE node.ai_insights END"
             )
             await neo4j_client.execute_write(query, {"nodes": batch})
 
@@ -250,6 +262,22 @@ async def _embed_entities(
             desc += f" — {e.properties['description']}"
         if e.aliases:
             desc += f" (aliases: {', '.join(e.aliases)})"
+        if e.verified_facts:
+            fact_snippets = [
+                fact.get("text", "").strip()
+                for fact in e.verified_facts[:5]
+                if fact.get("text")
+            ]
+            if fact_snippets:
+                desc += f" Facts: {'; '.join(fact_snippets)}"
+        elif e.ai_insights:
+            insight_snippets = [
+                insight.get("text", "").strip()
+                for insight in e.ai_insights[:3]
+                if insight.get("text")
+            ]
+            if insight_snippets:
+                desc += f" Insights: {'; '.join(insight_snippets)}"
         texts.append(desc)
 
     embeddings = await embed_texts(texts)

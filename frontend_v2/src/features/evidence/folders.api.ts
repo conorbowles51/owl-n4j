@@ -51,7 +51,11 @@ export const foldersAPI = {
 
   updateProfile: (
     folderId: string,
-    data: { context_instructions?: string | null; profile_overrides?: Record<string, unknown> | null }
+    data: {
+      context_instructions?: string | null
+      mandatory_instructions?: string[]
+      profile_overrides?: Record<string, unknown> | null
+    }
   ) =>
     fetchAPI<FolderProfile>(`/api/evidence-folders/${folderId}/profile`, {
       method: "PUT",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.ontology.loader import OntologySchema, load_ontology
+from app.pipeline.mandatory_rules import format_mandatory_rules_section
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +62,20 @@ def _relationship_block(ontology: OntologySchema) -> str:
     return "\n".join(lines)
 
 
+def _focus_entity_block(special_entity_types: list[dict] | None) -> str:
+    lines: list[str] = []
+    for item in special_entity_types or []:
+        name = str(item.get("name", "")).strip()
+        if not name:
+            continue
+        description = str(item.get("description", "")).strip()
+        line = f"- {name}"
+        if description:
+            line += f": {description}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
 _NOISE_RULES = """\
 - Do NOT extract generic concepts, abstract ideas, or common nouns
 - Do NOT extract the document itself as an entity
@@ -77,9 +92,13 @@ def build_entity_extraction_prompt(
     chunk_text: str,
     file_name: str,
     case_context: str,
+    mandatory_instructions: list[str] | None = None,
+    special_entity_types: list[dict] | None = None,
     ontology: OntologySchema | None = None,
     is_table: bool = False,
     sheet_name: str = "",
+    page_start: int | None = None,
+    page_end: int | None = None,
 ) -> str:
     if ontology is None:
         ontology = load_ontology()
@@ -87,10 +106,35 @@ def build_entity_extraction_prompt(
     parts: list[str] = [
         "You are an expert investigative analyst extracting structured entities from documents.",
         "",
-        f"CASE CONTEXT:\n{case_context or 'General investigation'}",
-        "",
         f"DOCUMENT: {file_name}",
     ]
+
+    instruction_section = format_mandatory_rules_section(
+        mandatory_instructions,
+        title="MANDATORY EXTRACTION INSTRUCTIONS",
+    )
+    if instruction_section:
+        parts.extend(
+            [
+                "",
+                instruction_section,
+                "Before responding, verify that every extracted entity complies with these rules.",
+                "Do not leave an entity in the output if it still reflects the default behavior instead of the mandatory rules.",
+            ]
+        )
+
+    parts.extend(
+        [
+            "",
+            f"BACKGROUND CONTEXT:\n{case_context or 'General investigation'}",
+        ]
+    )
+
+    if page_start is not None:
+        if page_end is not None and page_end != page_start:
+            parts.append(f"PAGES: {page_start}-{page_end}")
+        else:
+            parts.append(f"PAGE: {page_start}")
 
     if is_table:
         sheet_label = f" (Sheet: {sheet_name})" if sheet_name else ""
@@ -114,12 +158,23 @@ def build_entity_extraction_prompt(
     parts.append("\nDISAMBIGUATION:")
     parts.append(_disambiguation_block(ontology))
 
+    focus_block = _focus_entity_block(special_entity_types)
+    if focus_block:
+        parts.append(
+            "\nFOCUS ENTITY TYPES:\n"
+            "In addition to the ontology categories, pay special attention to these investigation-specific entity types.\n"
+            "Use them when they are a more precise fit for the evidence, typically as the specific_type value:\n"
+            f"{focus_block}"
+        )
+
     parts.append(
         "\nFor each entity also provide:\n"
         "- specific_type: a more precise label than the category "
         '(e.g., "Suspect", "Burner Phone", "Wire Transfer", "Arrest Warrant")\n'
         "- source_quote: the exact text span that supports this entity\n"
-        "- confidence: 0.0 to 1.0"
+        "- confidence: 0.0 to 1.0\n"
+        "- verified_facts: direct facts only, each with text, exact quote, page number, and importance 1-5\n"
+        "- ai_insights: optional inferences only, each with text, confidence, and reasoning"
     )
 
     parts.append(
@@ -138,6 +193,15 @@ def build_entity_extraction_prompt(
 
     parts.append(f"\nNOISE RULES:\n{_NOISE_RULES}")
 
+    parts.append(
+        "\nVERIFIED FACTS VS AI INSIGHTS:\n"
+        "- verified_facts must be directly supported by the text in this chunk\n"
+        "- Every verified fact must include an exact supporting quote\n"
+        "- Use the page number shown above when available; otherwise use null\n"
+        "- ai_insights are optional and must contain only analysis or inference, never direct facts\n"
+        "- If a statement is not explicitly supported by the document text, it must NOT appear in verified_facts"
+    )
+
     parts.append(f"\nTEXT:\n{chunk_text}")
 
     parts.append("\nRespond with JSON matching the required schema.")
@@ -154,6 +218,7 @@ def build_relationship_extraction_prompt(
     file_name: str,
     case_context: str,
     entities_json: str,
+    mandatory_instructions: list[str] | None = None,
     ontology: OntologySchema | None = None,
 ) -> str:
     if ontology is None:
@@ -161,8 +226,6 @@ def build_relationship_extraction_prompt(
 
     parts: list[str] = [
         "You are an expert investigative analyst extracting relationships between known entities.",
-        "",
-        f"CASE CONTEXT:\n{case_context or 'General investigation'}",
         "",
         f"DOCUMENT: {file_name}",
         "",
@@ -175,6 +238,32 @@ def build_relationship_extraction_prompt(
         "CORE RELATIONSHIP TYPES (prefer these, but create custom types if none fit):",
         _relationship_block(ontology),
         "",
+    ]
+
+    instruction_section = format_mandatory_rules_section(
+        mandatory_instructions,
+        title="MANDATORY EXTRACTION INSTRUCTIONS",
+    )
+    if instruction_section:
+        parts.extend(
+            [
+                "",
+                instruction_section,
+                "Before responding, verify that every extracted relationship complies with these rules.",
+                "Do not emit a relationship that still reflects the default behavior instead of the mandatory rules.",
+                "",
+            ]
+        )
+
+    parts.extend(
+        [
+            f"BACKGROUND CONTEXT:\n{case_context or 'General investigation'}",
+            "",
+        ]
+    )
+
+    parts.extend(
+        [
         "For each relationship provide:",
         "- source_entity_id and target_entity_id (from the entity list above)",
         "- type: one of the core types above, or a custom UPPER_SNAKE_CASE type",
@@ -192,6 +281,7 @@ def build_relationship_extraction_prompt(
         f"TEXT:\n{chunk_text}",
         "",
         "Respond with JSON matching the required schema.",
-    ]
+        ]
+    )
 
     return "\n".join(parts)

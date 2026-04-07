@@ -42,6 +42,7 @@ import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 import { evidenceAPI } from "../api"
 import { useProcessBackground } from "../hooks/use-evidence-detail"
 import { useFileEntities, useFileRelationships } from "../hooks/use-file-entities"
+import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
 
@@ -314,11 +315,13 @@ function DetailsPanelContent({
   const [viewerOpen, setViewerOpen] = useState(false)
   const fileUrl = evidenceAPI.getFileUrl(file.id)
   const ext = getExt(file.original_filename)
+  const displayStatus = getDisplayStatus(file)
 
   const isProcessed = file.status === "processed"
   const isProcessing = file.status === "processing"
   const isFailed = file.status === "failed"
   const isUnprocessed = file.status === "unprocessed"
+  const isStale = displayStatus === "stale"
 
   const processMutation = useProcessBackground(caseId)
 
@@ -355,7 +358,7 @@ function DetailsPanelContent({
 
           {/* Status row */}
           <div className="flex items-center gap-2">
-            <StatusIndicator status={file.status as ProcessingStatus} />
+            <StatusIndicator status={displayStatus as ProcessingStatus} />
             {file.is_duplicate && (
               <Badge variant="warning" className="text-[10px]">
                 Duplicate
@@ -407,6 +410,36 @@ function DetailsPanelContent({
                   )}
                   Process this file
                 </Button>
+              </div>
+            </div>
+          )}
+
+          {isStale && (
+            <div className="overflow-hidden rounded-lg border border-orange-500/20 bg-orange-500/5">
+              <div className="flex items-start gap-3 p-4">
+                <AlertCircle className="mt-0.5 size-4 shrink-0 text-orange-500" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-orange-600 dark:text-orange-400">
+                    Processing context changed
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    This file was already processed, but its case or folder profile changed after that run. Reprocess it to refresh the extracted data.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    onClick={handleProcess}
+                    disabled={processMutation.isPending}
+                  >
+                    {processMutation.isPending ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-3.5" />
+                    )}
+                    Reprocess with current profile
+                  </Button>
+                </div>
               </div>
             </div>
           )}

@@ -32,6 +32,8 @@ export function useDeleteEvidence(caseId: string) {
     }) => evidenceAPI.delete(evidenceId, caseId, deleteExclusiveEntities),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
     },
   })
 }
@@ -42,6 +44,8 @@ export function useSyncFilesystem(caseId: string) {
     mutationFn: () => evidenceAPI.syncFilesystem(caseId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
     },
   })
 }
@@ -63,6 +67,9 @@ export function useProcessBackground(caseId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["background-tasks"] })
       queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
     },
   })
 }

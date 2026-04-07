@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/cn"
-import { ChevronRight, Layers, FolderOpen } from "lucide-react"
+import { ChevronRight, Layers, FolderOpen, BriefcaseBusiness } from "lucide-react"
 import type { ProfileChainLink } from "@/types/evidence.types"
 
 interface ProfileChainPreviewProps {
@@ -24,15 +24,21 @@ export function ProfileChainPreview({ chain }: ProfileChainPreviewProps) {
         <Layers className="size-3.5" />
         Profile Inheritance Chain
       </div>
+      <p className="text-[10px] text-muted-foreground">
+        Cards further to the right are more specific. Their rules are applied later and take priority.
+      </p>
       <div className="flex items-stretch gap-0 overflow-x-auto pb-1">
         {chain.map((link, index) => {
           const hasContext = !!link.context_instructions
+          const hasMandatoryInstructions = (link.mandatory_instructions?.length ?? 0) > 0
           const hasOverrides = !!link.profile_overrides && Object.keys(link.profile_overrides).length > 0
-          const isActive = hasContext || hasOverrides
+          const isActive = hasContext || hasMandatoryInstructions || hasOverrides
           const isLast = index === chain.length - 1
+          const isCaseLayer = link.scope === "case"
+          const LinkIcon = isCaseLayer ? BriefcaseBusiness : FolderOpen
 
           return (
-            <div key={link.folder_id} className="flex shrink-0 items-center">
+            <div key={`${link.scope ?? "folder"}-${link.folder_id ?? "case-root"}-${index}`} className="flex shrink-0 items-center">
               <div
                 className={cn(
                   "relative flex min-w-[140px] max-w-[200px] flex-col gap-1.5 rounded-md border p-2.5",
@@ -42,7 +48,7 @@ export function ProfileChainPreview({ chain }: ProfileChainPreviewProps) {
                 )}
               >
                 <div className="flex items-center gap-1.5">
-                  <FolderOpen
+                  <LinkIcon
                     className={cn(
                       "size-3 shrink-0",
                       isActive
@@ -65,20 +71,25 @@ export function ProfileChainPreview({ chain }: ProfileChainPreviewProps) {
                   </p>
                 )}
 
-                {hasOverrides && (
+                {isActive ? (
                   <div className="flex flex-wrap gap-1">
-                    {link.profile_overrides?.special_entity_types?.length ? (
-                      <Badge variant="amber" className="text-[9px] px-1.5 py-0">
-                        {link.profile_overrides.special_entity_types.length} entity type{link.profile_overrides.special_entity_types.length !== 1 ? "s" : ""}
-                      </Badge>
-                    ) : null}
-                    {link.profile_overrides?.temperature !== undefined && (
-                      <Badge variant="slate" className="text-[9px] px-1.5 py-0">
-                        temp {link.profile_overrides.temperature}
-                      </Badge>
-                    )}
+                  {hasMandatoryInstructions ? (
+                    <Badge variant="warning" className="text-[9px] px-1.5 py-0">
+                      {link.mandatory_instructions?.length} rule{link.mandatory_instructions?.length !== 1 ? "s" : ""}
+                    </Badge>
+                  ) : null}
+                  {isCaseLayer && link.source_profile_name ? (
+                    <Badge variant="info" className="text-[9px] px-1.5 py-0">
+                      {link.source_profile_name}
+                    </Badge>
+                  ) : null}
+                  {link.profile_overrides?.special_entity_types?.length ? (
+                    <Badge variant="amber" className="text-[9px] px-1.5 py-0">
+                      {link.profile_overrides.special_entity_types.length} entity type{link.profile_overrides.special_entity_types.length !== 1 ? "s" : ""}
+                    </Badge>
+                  ) : null}
                   </div>
-                )}
+                ) : null}
               </div>
 
               {!isLast && (

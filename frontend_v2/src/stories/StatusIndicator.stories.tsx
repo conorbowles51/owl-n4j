@@ -12,6 +12,7 @@ export default meta
 
 const allStatuses: ProcessingStatus[] = [
   "processed",
+  "stale",
   "processing",
   "queued",
   "failed",

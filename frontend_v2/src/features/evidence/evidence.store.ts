@@ -1,7 +1,7 @@
 import { create } from "zustand"
 import { useUIStore } from "@/stores/ui.store"
 
-type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed"
+type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed" | "stale"
 
 interface EvidenceState {
   // Navigation
