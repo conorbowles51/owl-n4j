@@ -1,12 +1,17 @@
 import { useMemo } from "react"
-import { AlertCircle, CheckCircle2, Clock, Loader2, Hash, Link2 } from "lucide-react"
+import { AlertCircle, CheckCircle2, Clock, Loader2, Hash, Link2, RotateCcw, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { cn } from "@/lib/cn"
 import type { EvidenceJob, PipelineStage } from "@/types/evidence.types"
 
 interface JobCardProps {
   job: EvidenceJob
+  onRetry?: (job: EvidenceJob) => void
+  onClear?: (job: EvidenceJob) => void
+  retrying?: boolean
+  clearing?: boolean
 }
 
 const STAGE_LABELS: Record<PipelineStage, string> = {
@@ -54,11 +59,13 @@ function formatDuration(startStr: string, endStr?: string): string {
   return `${hours}h ${remainingMinutes}m`
 }
 
-export function JobCard({ job }: JobCardProps) {
+export function JobCard({ job, onRetry, onClear, retrying = false, clearing = false }: JobCardProps) {
   const isActive =
     job.status !== "completed" && job.status !== "failed"
   const isFailed = job.status === "failed"
   const isCompleted = job.status === "completed"
+  const canRetry = isFailed && !!job.evidence_file_id
+  const canClear = isFailed || isCompleted
 
   const duration = useMemo(
     () =>
@@ -145,6 +152,43 @@ export function JobCard({ job }: JobCardProps) {
           {job.error_message}
         </div>
       )}
+
+      {canRetry || canClear ? (
+        <div className="mt-3 flex items-center gap-2">
+          {canRetry ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[10px]"
+              onClick={() => onRetry?.(job)}
+              disabled={retrying}
+            >
+              {retrying ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <RotateCcw className="size-3" />
+              )}
+              Retry
+            </Button>
+          ) : null}
+          {canClear ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-[10px] text-muted-foreground"
+              onClick={() => onClear?.(job)}
+              disabled={clearing}
+            >
+              {clearing ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Trash2 className="size-3" />
+              )}
+              Clear
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   )
 }

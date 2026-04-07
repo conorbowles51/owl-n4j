@@ -185,12 +185,12 @@ export const graphAPI = {
     similarityThreshold = 0.7,
     maxResults = 1000
   ) =>
-    fetchAPI<{ pairs: SimilarPair[] }>("/api/graph/find-similar-entities", {
+    fetchAPI<{ similar_pairs: SimilarPair[] }>("/api/graph/find-similar-entities", {
       method: "POST",
       body: {
         case_id: caseId,
         entity_types: entityTypes,
-        similarity_threshold: similarityThreshold,
+        name_similarity_threshold: similarityThreshold,
         max_results: maxResults,
       },
     }),
@@ -376,7 +376,7 @@ export function findSimilarEntitiesStream(
   const token = localStorage.getItem("authToken")
   const params = new URLSearchParams({ case_id: caseId })
   if (options.similarityThreshold != null)
-    params.set("similarity_threshold", String(options.similarityThreshold))
+    params.set("name_similarity_threshold", String(options.similarityThreshold))
   if (options.maxResults != null)
     params.set("max_results", String(options.maxResults))
   if (options.entityTypes?.length)

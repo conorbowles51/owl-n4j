@@ -12,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { DocumentViewer } from "@/components/ui/document-viewer"
+import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { ConnectionsList } from "./ConnectionsList"
 import { MultiNodePanel } from "./MultiNodePanel"
 import {
@@ -198,9 +199,9 @@ export function NodeDetailSheet({
               <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Summary
               </h4>
-              <p className="text-xs leading-relaxed text-foreground" style={{ overflowWrap: "anywhere" }}>
-                {detail.summary}
-              </p>
+              <div className="min-w-0 overflow-hidden" style={{ overflowWrap: "anywhere" }}>
+                <MarkdownSummary content={detail.summary} onOpenFile={openDocument} />
+              </div>
             </div>
             <Separator />
           </>

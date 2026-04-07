@@ -247,7 +247,7 @@ async def _llm_consolidate(
                     },
                     {"role": "user", "content": prompt},
                 ],
-                model=settings.openai_quality_model,
+                model=settings.openai_resolution_model,
                 response_format=schema,
             )
 

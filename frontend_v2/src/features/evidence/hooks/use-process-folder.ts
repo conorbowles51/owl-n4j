@@ -15,11 +15,12 @@ export function useProcessFolder(caseId: string) {
         data.recursive ?? true,
         data.reprocessCompleted ?? false
       ),
-    onSuccess: () => {
+    onSuccess: async () => {
       qc.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       qc.invalidateQueries({ queryKey: ["evidence", caseId] })
+      await qc.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
     },
   })
 }

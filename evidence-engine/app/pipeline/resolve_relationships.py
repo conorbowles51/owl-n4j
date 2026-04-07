@@ -7,6 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from app.config import settings
 from app.ontology.schema_builder import get_relationship_resolution_schema
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.pipeline.resolve_entities import ResolvedRelationship
@@ -149,6 +150,7 @@ async def _normalize_near_duplicate_types(
                 },
                 {"role": "user", "content": prompt},
             ],
+            model=settings.openai_resolution_model,
             response_format=get_relationship_resolution_schema(),
         )
         data = json.loads(response)

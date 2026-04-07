@@ -18,6 +18,9 @@ export function useJobs(caseId: string | undefined, hasActiveJobs = false) {
     queryKey: ["evidence-jobs", caseId],
     queryFn: () => fetchJobs(caseId!),
     enabled: !!caseId,
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    refetchOnWindowFocus: true,
     // Poll every 5s when there are active jobs
     refetchInterval: hasActiveJobs ? 5000 : false,
   })

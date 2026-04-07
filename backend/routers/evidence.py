@@ -33,6 +33,7 @@ from routers.users import get_current_db_user
 from fastapi import Query, status
 from postgres.session import get_db
 from postgres.models.user import User
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from config import BASE_DIR, USE_EVIDENCE_ENGINE
 from datetime import datetime
@@ -677,7 +678,26 @@ async def list_engine_jobs(
         if not USE_EVIDENCE_ENGINE:
             return []
 
+        from postgres.models.evidence import EvidenceFile
+        from services.evidence_job_sync import reconcile_jobs_payload
+        from uuid import UUID
+
         jobs = await evidence_engine_client.list_jobs(case_id)
+        reconcile_jobs_payload(db, jobs)
+        db.commit()
+
+        db_records = list(
+            db.scalars(
+                select(EvidenceFile).where(EvidenceFile.case_id == UUID(case_id))
+            ).all()
+        )
+        file_ids_by_job_id = {
+            str(rec.engine_job_id): str(rec.id)
+            for rec in db_records
+            if rec.engine_job_id
+        }
+        for job in jobs:
+            job["evidence_file_id"] = file_ids_by_job_id.get(str(job.get("id")))
         return jobs
     except HTTPException:
         raise
@@ -690,14 +710,70 @@ async def list_engine_jobs(
 async def get_engine_job(
     job_id: str,
     current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """Proxy: get status of a single processing job from the evidence engine."""
     try:
         if not USE_EVIDENCE_ENGINE:
             raise HTTPException(status_code=404, detail="Evidence engine not enabled")
 
-        job = await evidence_engine_client.get_job(job_id)
+        from services.evidence_job_sync import reconcile_job_by_id
+        from services.evidence_db_storage import EvidenceDBStorage
+
+        job = await reconcile_job_by_id(db, job_id)
+        db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
+        if db_rec:
+            job["evidence_file_id"] = str(db_rec.id)
         return job
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/engine/jobs/{job_id}")
+async def delete_engine_job(
+    job_id: str,
+    case_id: str = Query(..., description="Case ID"),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Proxy: delete a single terminal processing job from the evidence engine."""
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "edit"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        await evidence_engine_client.delete_job(job_id)
+        return {"deleted": 1, "job_id": job_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/engine/jobs")
+async def clear_engine_jobs(
+    case_id: str = Query(..., description="Case ID"),
+    terminal_only: bool = Query(True),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Proxy: clear terminal processing jobs for a case from the evidence engine."""
+    try:
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+
+        try:
+            check_case_access(db, UUID(case_id), current_user, required_permission=("case", "edit"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+        return await evidence_engine_client.clear_case_jobs(case_id, terminal_only=terminal_only)
     except HTTPException:
         raise
     except Exception as e:

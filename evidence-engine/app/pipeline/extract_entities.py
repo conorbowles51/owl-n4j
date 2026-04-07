@@ -6,6 +6,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.config import settings
 from app.ontology import ENTITY_CATEGORIES
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ async def _extract_entities_from_chunk(
             },
             {"role": "user", "content": prompt},
         ],
+        model=settings.openai_extraction_model,
         response_format=get_entity_schema(),
     )
 
@@ -188,6 +190,7 @@ async def _extract_relationships_from_chunk(
             },
             {"role": "user", "content": prompt},
         ],
+        model=settings.openai_extraction_model,
         response_format=get_relationship_schema(),
     )
 

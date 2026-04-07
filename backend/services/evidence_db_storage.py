@@ -374,6 +374,7 @@ class EvidenceDBStorage:
             ef.status = "processing"
             ef.last_error = None
             ef.processed_at = None
+            ef.engine_job_id = None
         db.flush()
 
     @staticmethod
@@ -388,11 +389,12 @@ class EvidenceDBStorage:
             if error:
                 ef.status = "failed"
                 ef.last_error = error
+                ef.processed_at = None
             else:
                 ef.status = "processed"
                 ef.last_error = None
                 ef.processing_stale = False
-            ef.processed_at = now
+                ef.processed_at = now
         db.flush()
 
     @staticmethod

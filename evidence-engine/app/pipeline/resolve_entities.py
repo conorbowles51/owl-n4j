@@ -413,7 +413,7 @@ async def _llm_confirm(
                 },
                 {"role": "user", "content": prompt},
             ],
-            model=settings.openai_quality_model,
+            model=settings.openai_resolution_model,
             response_format=get_resolution_schema(),
         )
 
@@ -712,7 +712,7 @@ async def _cross_job_dedup(
                 },
                 {"role": "user", "content": prompt},
             ],
-            model=settings.openai_quality_model,
+            model=settings.openai_resolution_model,
             response_format=get_resolution_schema(),
         )
         data = json.loads(response)

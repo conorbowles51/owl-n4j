@@ -26,19 +26,22 @@ async def _update_job(
     progress: float,
     db: AsyncSession,
     message: str = "",
+    error_message: str | None = None,
 ) -> None:
     job.status = status
     job.progress = progress
+    if error_message is not None:
+        job.error_message = error_message
     await db.commit()
-    await publish_progress(
-        str(job.id),
-        {
-            "job_id": str(job.id),
-            "status": status.value,
-            "progress": progress,
-            "message": message,
-        },
-    )
+    payload = {
+        "job_id": str(job.id),
+        "status": status.value,
+        "progress": progress,
+        "message": message,
+    }
+    if error_message is not None:
+        payload["error_message"] = error_message
+    await publish_progress(str(job.id), payload)
 
 
 async def run_pipeline(job_id: str, db: AsyncSession) -> None:
@@ -142,8 +145,12 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
 
     except Exception as e:
         logger.exception("Pipeline failed for job %s", job_id)
-        job.error_message = str(e)
         await _update_job(
-            job, JobStatus.FAILED, job.progress, db, f"Failed: {e}"
+            job,
+            JobStatus.FAILED,
+            job.progress,
+            db,
+            f"Failed: {e}",
+            error_message=str(e),
         )
         raise

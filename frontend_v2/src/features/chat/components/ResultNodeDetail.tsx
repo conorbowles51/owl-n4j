@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { NodeBadge } from "@/components/ui/node-badge"
+import { markdownToPlainText } from "@/lib/markdown-text"
 import { getNodeColor, type EntityType } from "@/lib/theme"
 import type { ResultGraphNode } from "../types"
 
@@ -21,6 +22,7 @@ export function ResultNodeDetail({ node, onClose }: ResultNodeDetailProps) {
 
   const color = getNodeColor(node.type)
   const confidencePercent = Math.round(node.confidence * 100)
+  const summaryText = node.summary ? markdownToPlainText(node.summary) : null
 
   return (
     <div className="border-t border-border bg-background p-3">
@@ -56,9 +58,9 @@ export function ResultNodeDetail({ node, onClose }: ResultNodeDetailProps) {
       </div>
 
       {/* Summary */}
-      {node.summary && (
+      {summaryText && (
         <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-          {node.summary}
+          {summaryText}
         </p>
       )}
 

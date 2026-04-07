@@ -1,4 +1,5 @@
 import { useMemo } from "react"
+import { markdownToPlainText } from "@/lib/markdown-text"
 import type { TimelineEvent } from "../api"
 import type { DateGroup } from "../lib/timeline-utils"
 import { groupEventsByDate } from "../lib/timeline-utils"
@@ -90,7 +91,7 @@ export function useFilteredEvents({
         (e) =>
           e.name.toLowerCase().includes(term) ||
           e.type.toLowerCase().includes(term) ||
-          (e.summary && e.summary.toLowerCase().includes(term)) ||
+          (e.summary && markdownToPlainText(e.summary).toLowerCase().includes(term)) ||
           (e.notes && e.notes.toLowerCase().includes(term)) ||
           (e.amount && e.amount.toLowerCase().includes(term)) ||
           e.connections.some((c) => c.name.toLowerCase().includes(term))

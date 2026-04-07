@@ -76,6 +76,20 @@ def _focus_entity_block(special_entity_types: list[dict] | None) -> str:
     return "\n".join(lines)
 
 
+def _geo_field_guidance(ontology: OntologySchema) -> str:
+    categories = ", ".join(ontology.geocodable_categories)
+    return (
+        "GEO FIELD RULES:\n"
+        f"- The following categories may include geo properties when directly supported by the source text: {categories}\n"
+        "- Geo properties are: location_raw, address, city, region, country\n"
+        "- Only populate geo properties when the document explicitly supports them\n"
+        "- Prefer structured fields (address/city/region/country) when the text provides them\n"
+        "- Otherwise preserve the original place reference in location_raw\n"
+        "- Do not invent or infer a place just to make an entity mapable\n"
+        "- A city is the minimum specificity for a mappable place"
+    )
+
+
 _NOISE_RULES = """\
 - Do NOT extract generic concepts, abstract ideas, or common nouns
 - Do NOT extract the document itself as an entity
@@ -157,6 +171,8 @@ def build_entity_extraction_prompt(
 
     parts.append("\nDISAMBIGUATION:")
     parts.append(_disambiguation_block(ontology))
+
+    parts.append("\n" + _geo_field_guidance(ontology))
 
     focus_block = _focus_entity_block(special_entity_types)
     if focus_block:

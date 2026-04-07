@@ -2,6 +2,7 @@ import { memo, useCallback } from "react"
 import { cn } from "@/lib/cn"
 import { Badge } from "@/components/ui/badge"
 import { NodeBadge } from "@/components/ui/node-badge"
+import { markdownToPlainText } from "@/lib/markdown-text"
 import { getEventTypeColor } from "../api"
 import type { TimelineEvent } from "../api"
 import { isValidDate } from "../lib/timeline-utils"
@@ -42,6 +43,7 @@ export const EventCard = memo(function EventCard({
 }: EventCardProps) {
   const color = getEventTypeColor(event.type)
   const active = isSelected || isMultiSelected
+  const summaryText = event.summary ? markdownToPlainText(event.summary) : null
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -97,9 +99,9 @@ export const EventCard = memo(function EventCard({
       </div>
 
       {/* Row 2: summary */}
-      {event.summary && (
+      {summaryText && (
         <p className="mt-1 text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-          {highlightText(event.summary, searchTerm)}
+          {highlightText(summaryText, searchTerm)}
         </p>
       )}
 

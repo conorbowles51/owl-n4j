@@ -243,6 +243,7 @@ export interface EvidenceJob {
   id: string
   case_id: string
   batch_id: string | null
+  evidence_file_id?: string | null
   file_name: string
   status: PipelineStage
   progress: number

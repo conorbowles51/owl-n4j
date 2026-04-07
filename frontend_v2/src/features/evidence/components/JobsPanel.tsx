@@ -4,10 +4,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { fetchAPI } from "@/lib/api-client"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { useJobs } from "../hooks/use-jobs"
 import { useJobProgress } from "../hooks/use-job-progress"
+import { evidenceAPI } from "../api"
 import { JobCard } from "./JobCard"
-import type { PipelineStage } from "@/types/evidence.types"
+import type { EvidenceJob, PipelineStage } from "@/types/evidence.types"
 
 interface JobsPanelProps {
   caseId: string
@@ -25,11 +29,62 @@ const ACTIVE_STATUSES: Set<PipelineStage> = new Set([
 ])
 
 export function JobsPanel({ caseId }: JobsPanelProps) {
+  const queryClient = useQueryClient()
   const hasActiveJobs = useMemo(() => {
     return true // Always poll to detect new jobs
   }, [])
 
   const { data: jobs, isLoading } = useJobs(caseId, hasActiveJobs)
+
+  const retryMutation = useMutation({
+    mutationFn: async (fileId: string) => {
+      return evidenceAPI.processBackground(caseId, [fileId])
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
+      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
+      toast.success("Retry started")
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to retry job")
+    },
+  })
+
+  const clearJobMutation = useMutation({
+    mutationFn: async (jobId: string) => {
+      return fetchAPI<{ deleted: number }>(`/api/evidence/engine/jobs/${jobId}?case_id=${caseId}`, {
+        method: "DELETE",
+      })
+    },
+    onSuccess: async () => {
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to clear job")
+    },
+  })
+
+  const clearCompletedMutation = useMutation({
+    mutationFn: async () => {
+      return fetchAPI<{ deleted: number }>(`/api/evidence/engine/jobs?case_id=${caseId}`, {
+        method: "DELETE",
+      })
+    },
+    onSuccess: async (result) => {
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
+      toast.success(
+        result.deleted > 0 ? `Cleared ${result.deleted} terminal job${result.deleted !== 1 ? "s" : ""}` : "No terminal jobs to clear"
+      )
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to clear completed jobs")
+    },
+  })
 
   // Extract active job IDs for WebSocket real-time updates
   const activeJobIds = useMemo(
@@ -86,11 +141,10 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
             variant="ghost"
             size="sm"
             className="h-6 text-[10px] text-muted-foreground"
-            onClick={() => {
-              // TODO: implement clear completed jobs
-            }}
+            onClick={() => clearCompletedMutation.mutate()}
+            disabled={clearCompletedMutation.isPending}
           >
-            Clear Completed
+            Clear Terminal
           </Button>
         )}
       </div>
@@ -114,7 +168,22 @@ export function JobsPanel({ caseId }: JobsPanelProps) {
         ) : (
           <div className="space-y-1 p-2">
             {sortedJobs.map((job) => (
-              <JobCard key={job.id} job={job} />
+              <JobCard
+                key={job.id}
+                job={job}
+                onRetry={(selectedJob: EvidenceJob) => {
+                  if (!selectedJob.evidence_file_id) {
+                    toast.error("This failed job is not linked to a retryable evidence file")
+                    return
+                  }
+                  retryMutation.mutate(selectedJob.evidence_file_id)
+                }}
+                onClear={(selectedJob: EvidenceJob) => {
+                  clearJobMutation.mutate(selectedJob.id)
+                }}
+                retrying={retryMutation.isPending && retryMutation.variables === job.evidence_file_id}
+                clearing={clearJobMutation.isPending && clearJobMutation.variables === job.id}
+              />
             ))}
           </div>
         )}

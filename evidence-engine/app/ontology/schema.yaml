@@ -22,6 +22,11 @@ entity_categories:
       role:           { type: string, description: "Role, occupation, or title" }
       nationality:    { type: string, description: "Nationality or citizenship" }
       date_of_birth:  { type: string, description: "Date of birth (ISO format if known)" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Brief description of the person and their relevance" }
     extraction_notes: >
       Only named individuals or those with a clear identifier.
@@ -33,6 +38,11 @@ entity_categories:
       aliases:        { type: list,   description: "Alternative names, abbreviations, trade names" }
       org_type:       { type: string, description: "Type of organization (company, government_agency, bank, ngo, law_firm, etc.)" }
       jurisdiction:   { type: string, description: "Country or jurisdiction of registration" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Brief description and relevance" }
     extraction_notes: >
       Formal, legally constituted entities only.
@@ -44,6 +54,11 @@ entity_categories:
       aliases:        { type: list,   description: "Alternative names for the group" }
       group_type:     { type: string, enum: [gang, cell, network, syndicate, crew, clan, militia, cartel, other], description: "Type of group" }
       estimated_size: { type: string, description: "Estimated number of members if known" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Brief description and relevance" }
     extraction_notes: >
       Informal associations without formal legal standing.
@@ -56,6 +71,7 @@ entity_categories:
   Location:
     description: "A specific geographic location that can be placed on a map"
     properties:
+      location_raw:     { type: string, description: "Free-text place reference directly supported by the source text" }
       address:          { type: string, description: "Street address" }
       city:             { type: string, description: "City or town" }
       region:           { type: string, description: "State, province, or region" }
@@ -75,6 +91,11 @@ entity_categories:
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       event_type:     { type: string, description: "Type of event (meeting, incident, shipment, raid, etc.)" }
       significance:   { type: string, description: "Why this event matters to the investigation" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "What happened" }
     extraction_notes: >
       Only meaningful discrete occurrences with investigative relevance.
@@ -96,6 +117,11 @@ entity_categories:
       receiver:       { type: string, description: "Receiving party name" }
       method:         { type: string, description: "Payment method (wire, cash, check, crypto, etc.)" }
       reference:      { type: string, description: "Transaction reference or ID" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Description and context" }
     extraction_notes: >
       ONLY actual financial transactions with identifiable parties and amounts.
@@ -110,6 +136,11 @@ entity_categories:
       holder:         { type: string, description: "Account holder name" }
       account_type:   { type: string, description: "Type of account (checking, savings, brokerage, trust, etc.)" }
       currency:       { type: string, description: "Account currency" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Description and relevance" }
     extraction_notes: >
       Accounts held at an institution.
@@ -122,6 +153,11 @@ entity_categories:
       number:          { type: string, description: "Card number, check number, wallet address, etc." }
       issuer:          { type: string, description: "Issuing institution" }
       expiry:          { type: string, description: "Expiry date if applicable" }
+      location_raw:    { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:         { type: string, description: "Street address directly supported by the source text" }
+      city:            { type: string, description: "City or town directly supported by the source text" }
+      region:          { type: string, description: "State, province, or region directly supported by the source text" }
+      country:         { type: string, description: "Country directly supported by the source text" }
       description:     { type: string, description: "Description and relevance" }
     extraction_notes: >
       Specific bearer instruments or financial tools, not accounts.
@@ -140,6 +176,11 @@ entity_categories:
       participants:   { type: list,   description: "Names of participants" }
       duration:       { type: string, description: "Duration if known" }
       summary:        { type: string, description: "Summary of communication content" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
     extraction_notes: >
       Specific communications between identifiable parties.
       Not general references to 'they communicated' without specifics.
@@ -166,6 +207,11 @@ entity_categories:
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       duration:       { type: string, description: "Duration for audio/video" }
       source_device:  { type: string, description: "Device that captured the media" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Description of media content and relevance" }
     extraction_notes: >
       Audio/visual evidentiary media.
@@ -185,6 +231,11 @@ entity_categories:
       color:             { type: string, description: "Color" }
       registration_plate: { type: string, description: "License plate or registration number" }
       vin:               { type: string, description: "Vehicle Identification Number" }
+      location_raw:      { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:           { type: string, description: "Street address directly supported by the source text" }
+      city:              { type: string, description: "City or town directly supported by the source text" }
+      region:            { type: string, description: "State, province, or region directly supported by the source text" }
+      country:           { type: string, description: "Country directly supported by the source text" }
       description:       { type: string, description: "Description and relevance" }
     extraction_notes: >
       Only specific, identifiable vehicles — not generic mentions like 'a car' or 'by vehicle'.
@@ -224,6 +275,11 @@ entity_categories:
       serial_number: { type: string, description: "Serial number" }
       imei:          { type: string, description: "IMEI number (for phones)" }
       mac_address:   { type: string, description: "MAC address" }
+      location_raw:  { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:       { type: string, description: "Street address directly supported by the source text" }
+      city:          { type: string, description: "City or town directly supported by the source text" }
+      region:        { type: string, description: "State, province, or region directly supported by the source text" }
+      country:       { type: string, description: "Country directly supported by the source text" }
       description:   { type: string, description: "Description and relevance" }
     extraction_notes: >
       The physical electronic device itself.
@@ -234,6 +290,11 @@ entity_categories:
     description: "Physical evidence that does not fit Vehicle, Weapon, Drug, or Device categories"
     properties:
       evidence_type: { type: string, description: "Type of evidence (clothing, packaging, container, tool, biological_sample, fingerprint, etc.)" }
+      location_raw:  { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:       { type: string, description: "Street address directly supported by the source text" }
+      city:          { type: string, description: "City or town directly supported by the source text" }
+      region:        { type: string, description: "State, province, or region directly supported by the source text" }
+      country:       { type: string, description: "Country directly supported by the source text" }
       description:   { type: string, description: "Description and relevance" }
     extraction_notes: >
       FALLBACK category for physical items that do not fit Vehicle, Weapon, Drug, or Device.
@@ -270,6 +331,11 @@ entity_categories:
       date:           { type: string, description: "Date of the legal action" }
       date_precision: { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
       outcome:        { type: string, description: "Outcome or result if known" }
+      location_raw:   { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:        { type: string, description: "Street address directly supported by the source text" }
+      city:           { type: string, description: "City or town directly supported by the source text" }
+      region:         { type: string, description: "State, province, or region directly supported by the source text" }
+      country:        { type: string, description: "Country directly supported by the source text" }
       description:    { type: string, description: "Description and significance" }
     extraction_notes: >
       Formal legal proceedings and actions only.
@@ -278,6 +344,11 @@ entity_categories:
   Intelligence:
     description: "An intelligence product — tip, informant report, surveillance observation, intercept, open-source intelligence"
     properties:
+      location_raw:             { type: string, description: "Free-text place reference directly supported by the source text" }
+      address:                  { type: string, description: "Street address directly supported by the source text" }
+      city:                     { type: string, description: "City or town directly supported by the source text" }
+      region:                   { type: string, description: "State, province, or region directly supported by the source text" }
+      country:                  { type: string, description: "Country directly supported by the source text" }
       intel_type:               { type: string, enum: [tip, informant_report, surveillance_observation, intercept, open_source_intel, forensic_analysis, other], description: "Type of intelligence" }
       date:                     { type: string, description: "Date of the intelligence" }
       date_precision:           { type: string, enum: [day, month, year, approximate], description: "How precise the date is" }
@@ -624,7 +695,7 @@ views:
 
   map:
     description: "Entities with geographic coordinates on a map"
-    categories: [Location]
+    categories: [Location, Event, Communication, LegalAction, Intelligence, Transaction, Person, Organization, Group, Account, FinancialInstrument, Vehicle, Device, PhysicalEvidence, Media]
     requires: [latitude, longitude]
 
   financial:

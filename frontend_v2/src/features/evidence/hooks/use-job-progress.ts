@@ -38,6 +38,10 @@ export function useJobProgress(options: UseJobProgressOptions) {
                   status: data.status as EvidenceJob["status"],
                   progress: data.progress <= 1 ? data.progress * 100 : data.progress,
                   message: data.message,
+                  error_message:
+                    data.status === "failed"
+                      ? data.message || job.error_message
+                      : job.error_message,
                 }
               : job
           )
@@ -50,12 +54,27 @@ export function useJobProgress(options: UseJobProgressOptions) {
           queryKey: ["evidence-folder-contents", caseId],
         })
         queryClient.invalidateQueries({
+          queryKey: ["evidence", caseId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["evidence-jobs", caseId],
+        })
+        queryClient.invalidateQueries({
           queryKey: ["evidence-folder-tree", caseId],
         })
         onComplete?.(jobId)
       } else if (data.status === "failed") {
         queryClient.invalidateQueries({
           queryKey: ["evidence-folder-contents", caseId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["evidence", caseId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["evidence-jobs", caseId],
+        })
+        queryClient.invalidateQueries({
+          queryKey: ["evidence-folder-tree", caseId],
         })
         onError?.(jobId, data.message || "Processing failed")
       }

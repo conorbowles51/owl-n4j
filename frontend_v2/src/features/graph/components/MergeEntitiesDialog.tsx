@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
+import { markdownToPlainText } from "@/lib/markdown-text"
 import type { GraphNode, VerifiedFact, AIInsight } from "@/types/graph.types"
 import { graphAPI } from "../api"
 import { GitMerge, AlertTriangle, Plus, Trash2, ArrowRightLeft } from "lucide-react"
@@ -86,6 +87,8 @@ function EntityPreviewCard({
   tag: string
   borderClass: string
 }) {
+  const summaryText = entity.summary ? markdownToPlainText(entity.summary) : null
+
   return (
     <div className={`rounded-lg border-2 p-3 ${borderClass}`}>
       <div className="mb-1.5 flex items-center gap-1.5">
@@ -95,9 +98,9 @@ function EntityPreviewCard({
         </Badge>
       </div>
       <p className="text-sm font-medium leading-tight">{entity.label}</p>
-      {entity.summary && (
+      {summaryText && (
         <p className="mt-1 line-clamp-3 text-xs text-muted-foreground">
-          {entity.summary}
+          {summaryText}
         </p>
       )}
       <div className="mt-2 flex gap-3 text-[10px] text-muted-foreground">

@@ -33,6 +33,7 @@ async def _publish_job_status(
     progress: float,
     message: str = "",
     document_summary: str | None = None,
+    error_message: str | None = None,
 ) -> None:
     """Publish progress without touching the DB session."""
     data = {
@@ -43,6 +44,8 @@ async def _publish_job_status(
     }
     if document_summary is not None:
         data["document_summary"] = document_summary
+    if error_message is not None:
+        data["error_message"] = error_message
     await publish_progress(str(job_id), data)
 
 
@@ -71,7 +74,14 @@ async def _update_job_status(
         if document_summary is not None:
             job.document_summary = document_summary
         await db.commit()
-    await _publish_job_status(job_id, status, progress, message, document_summary=document_summary)
+    await _publish_job_status(
+        job_id,
+        status,
+        progress,
+        message,
+        document_summary=document_summary,
+        error_message=error_message,
+    )
 
 
 async def _extract_file(

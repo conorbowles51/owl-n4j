@@ -64,12 +64,13 @@ export function useProcessBackground(caseId: string) {
       maxWorkers?: number
       imageProvider?: string
     }) => evidenceAPI.processBackground(caseId, fileIds, profile, maxWorkers, imageProvider),
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["background-tasks"] })
       queryClient.invalidateQueries({ queryKey: ["evidence", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-folder-contents", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-folder-tree", caseId] })
       queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
+      await queryClient.refetchQueries({ queryKey: ["evidence-jobs", caseId], type: "active" })
     },
   })
 }

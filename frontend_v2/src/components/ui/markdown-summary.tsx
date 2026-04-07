@@ -1,5 +1,6 @@
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
+import remarkGfm from "remark-gfm"
 
 interface MarkdownSummaryProps {
   content: string
@@ -11,16 +12,28 @@ interface MarkdownSummaryProps {
  * evidence:// links resolve to file lookups and open the document viewer.
  */
 export function MarkdownSummary({ content, onOpenFile }: MarkdownSummaryProps) {
+  const markdownUrlTransform = (url: string) => {
+    if (url.startsWith("evidence://")) return url
+    return defaultUrlTransform(url)
+  }
+
   const components: Components = {
-    a: ({ href, children, ...props }) => {
+    a: ({ href, children }) => {
       if (href?.startsWith("evidence://")) {
-        const filename = href.replace("evidence://", "")
+        const rawFilename = href.replace("evidence://", "")
+        let filename = rawFilename
+
+        try {
+          filename = decodeURIComponent(rawFilename)
+        } catch {
+          filename = rawFilename
+        }
+
         return (
           <button
             type="button"
             className="text-amber-500 hover:text-amber-400 underline underline-offset-2 cursor-pointer"
             onClick={() => onOpenFile?.(filename)}
-            {...props}
           >
             {children}
           </button>
@@ -32,7 +45,6 @@ export function MarkdownSummary({ content, onOpenFile }: MarkdownSummaryProps) {
           target="_blank"
           rel="noopener noreferrer"
           className="text-amber-500 hover:text-amber-400 underline underline-offset-2"
-          {...props}
         >
           {children}
         </a>
@@ -42,6 +54,11 @@ export function MarkdownSummary({ content, onOpenFile }: MarkdownSummaryProps) {
       <h2 className="text-sm font-semibold text-foreground mt-4 mb-1.5" {...props}>
         {children}
       </h2>
+    ),
+    h1: ({ children, ...props }) => (
+      <h1 className="text-base font-semibold text-foreground mt-4 mb-2" {...props}>
+        {children}
+      </h1>
     ),
     h3: ({ children, ...props }) => (
       <h3 className="text-xs font-semibold text-foreground mt-3 mb-1" {...props}>
@@ -78,11 +95,33 @@ export function MarkdownSummary({ content, onOpenFile }: MarkdownSummaryProps) {
         {children}
       </blockquote>
     ),
+    code: ({ className, children, ...props }) => {
+      const isBlock = className?.includes("language-")
+      if (isBlock) {
+        return (
+          <pre className="my-2 overflow-x-auto rounded-md bg-muted p-3 text-xs">
+            <code {...props}>{children}</code>
+          </pre>
+        )
+      }
+      return (
+        <code className="rounded bg-muted px-1 py-0.5 text-[11px]" {...props}>
+          {children}
+        </code>
+      )
+    },
+    pre: ({ children }) => <>{children}</>,
   }
 
   return (
     <div className="prose-evidence">
-      <ReactMarkdown components={components}>{content}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={components}
+        urlTransform={markdownUrlTransform}
+      >
+        {content}
+      </ReactMarkdown>
     </div>
   )
 }

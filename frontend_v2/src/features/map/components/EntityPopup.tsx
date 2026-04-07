@@ -3,6 +3,7 @@ import { Crosshair, ExternalLink, MapPin } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { NodeBadge } from "@/components/ui/node-badge"
 import { Badge } from "@/components/ui/badge"
+import { markdownToPlainText } from "@/lib/markdown-text"
 import type { MapLocation } from "../hooks/use-map-data"
 import type { EntityType } from "@/lib/theme"
 
@@ -21,6 +22,8 @@ export function EntityPopup({
   onMouseEnter,
   onMouseLeave,
 }: EntityPopupProps) {
+  const summaryText = location.summary ? markdownToPlainText(location.summary) : null
+
   return (
     <Popup
       longitude={location.longitude}
@@ -59,9 +62,9 @@ export function EntityPopup({
         )}
 
         {/* Summary */}
-        {location.summary && (
+        {summaryText && (
           <p className="text-[10px] leading-relaxed text-muted-foreground line-clamp-2">
-            {location.summary}
+            {summaryText}
           </p>
         )}
 

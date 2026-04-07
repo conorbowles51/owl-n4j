@@ -1,16 +1,15 @@
 import json
 from typing import Any
 
-import httpx
-
-from app.config import settings
 from app.ontology import load_ontology
 from app.pipeline.resolve_entities import ResolvedEntity, ResolvedRelationship
 from app.services import chroma_client, neo4j_client
+from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
 
 _ontology = load_ontology()
 ENTITY_CATEGORIES = _ontology.categories
+GEOCODABLE_CATEGORIES = set(_ontology.geocodable_categories)
 
 
 async def _ensure_indexes() -> None:
@@ -23,10 +22,11 @@ async def _ensure_indexes() -> None:
             f"CREATE INDEX IF NOT EXISTS FOR (n:{label}) ON (n.key)"
         )
 
-    # Location spatial index
-    await neo4j_client.execute_write(
-        "CREATE INDEX IF NOT EXISTS FOR (n:Location) ON (n.latitude, n.longitude)"
-    )
+    # Spatial indexes for mapable categories
+    for label in GEOCODABLE_CATEGORIES:
+        await neo4j_client.execute_write(
+            f"CREATE INDEX IF NOT EXISTS FOR (n:{label}) ON (n.latitude, n.longitude)"
+        )
 
     # Temporal indexes for all timeline categories
     for cat in _ontology.temporal_categories:
@@ -57,32 +57,33 @@ async def _ensure_indexes() -> None:
 # Geocoding
 # ---------------------------------------------------------------------------
 
-_geocode_cache: dict[str, tuple[float, float] | None] = {}
+
+def _has_coordinates(properties: dict[str, Any]) -> bool:
+    return properties.get("latitude") is not None and properties.get("longitude") is not None
 
 
-async def _geocode(address: str) -> tuple[float, float] | None:
-    if not settings.google_maps_api_key:
-        return None
-    if address in _geocode_cache:
-        return _geocode_cache[address]
+async def _apply_geocoding(entities: list[ResolvedEntity]) -> None:
+    for entity in entities:
+        if entity.category not in GEOCODABLE_CATEGORIES:
+            continue
+        if _has_coordinates(entity.properties):
+            continue
 
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                "https://maps.googleapis.com/maps/api/geocode/json",
-                params={"address": address, "key": settings.google_maps_api_key},
-            )
-            data = resp.json()
-            if data.get("results"):
-                loc = data["results"][0]["geometry"]["location"]
-                result = (loc["lat"], loc["lng"])
-                _geocode_cache[address] = result
-                return result
-    except Exception:
-        pass
+        request = build_geocode_request(entity.category, entity.name, entity.properties)
+        if request is None:
+            continue
 
-    _geocode_cache[address] = None
-    return None
+        result = await geocoding_service.geocode(request.query)
+        entity.properties["location_raw"] = request.location_raw
+        entity.properties["geocoding_status"] = result.status
+
+        if result.status != "success":
+            continue
+
+        entity.properties["latitude"] = result.latitude
+        entity.properties["longitude"] = result.longitude
+        entity.properties["location_formatted"] = result.formatted_address
+        entity.properties["geocoding_confidence"] = result.confidence
 
 
 # ---------------------------------------------------------------------------
@@ -94,19 +95,7 @@ async def _write_entities(
     case_id: str,
     job_id: str,
 ) -> None:
-    # Geocode locations
-    for entity in entities:
-        if entity.category == "Location" and not entity.is_existing:
-            parts = [
-                entity.properties.get("address", ""),
-                entity.properties.get("city", ""),
-                entity.properties.get("country", ""),
-            ]
-            address = ", ".join(p for p in parts if p) or entity.name
-            coords = await _geocode(address)
-            if coords:
-                entity.properties["latitude"] = coords[0]
-                entity.properties["longitude"] = coords[1]
+    await _apply_geocoding(entities)
 
     # Group by category and batch-write
     by_cat: dict[str, list[dict[str, Any]]] = {}

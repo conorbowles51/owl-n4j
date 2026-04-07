@@ -1,5 +1,6 @@
 import logging
 
+from app.config import settings
 from app.pipeline.extract_text import ExtractedDocument
 from app.services.openai_client import chat_completion
 
@@ -43,7 +44,7 @@ async def generate_document_summary(
         )
         summary = await chat_completion(
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
+            model=settings.openai_document_summary_model,
         )
         return summary.strip() if summary else None
     except Exception:

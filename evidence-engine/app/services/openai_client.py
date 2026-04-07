@@ -20,15 +20,16 @@ async def chat_completion(
     messages: list[dict[str, str]],
     model: str | None = None,
     response_format: Any = None,
-    temperature: float = 0.0,
+    temperature: float | None = None,
 ) -> str:
     client = get_openai_client()
     async with _semaphore:
         kwargs: dict[str, Any] = {
             "model": model or settings.openai_model,
             "messages": messages,
-            "temperature": temperature,
         }
+        if temperature is not None:
+            kwargs["temperature"] = temperature
         if response_format is not None:
             kwargs["response_format"] = response_format
         resp = await client.chat.completions.create(**kwargs)
@@ -57,7 +58,7 @@ async def transcribe_audio(file_path: str) -> str:
     with open(file_path, "rb") as f:
         async with _semaphore:
             resp = await client.audio.transcriptions.create(
-                model="whisper-1",
+                model=settings.openai_transcription_model,
                 file=f,
             )
     return resp.text

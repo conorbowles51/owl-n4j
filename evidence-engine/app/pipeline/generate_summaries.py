@@ -124,7 +124,7 @@ async def _summarize_batch(
             },
             {"role": "user", "content": prompt},
         ],
-        model=settings.openai_quality_model,
+        model=settings.openai_summary_model,
         response_format=get_summary_schema(),
     )
 
@@ -173,7 +173,7 @@ async def generate_summaries(
     logger.info(
         "Generating summaries: %d new, %d merge in %d batches (model: %s)",
         len(new_indexed), len(merge_indexed),
-        len(new_batches) + len(merge_batches), settings.openai_quality_model,
+        len(new_batches) + len(merge_batches), settings.openai_summary_model,
     )
 
     # Run all batches with concurrency bounded by the openai_client semaphore

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from postgres.models.evidence import EvidenceFile
 from services import evidence_engine_client
 from services.evidence_db_storage import EvidenceDBStorage
+from services.evidence_job_sync import reconcile_case_jobs
 from services.folder_context_service import build_processing_snapshot
 from services.job_status_subscriber import get_subscriber
 
@@ -30,6 +31,8 @@ async def process_db_files(
     file_ids: list[uuid.UUID],
     force_reprocess: bool = False,
 ) -> dict[str, Any]:
+    await reconcile_case_jobs(db, str(case_id))
+
     files = EvidenceDBStorage.get_files_by_ids(db, file_ids)
     files_by_id = {f.id: f for f in files}
 

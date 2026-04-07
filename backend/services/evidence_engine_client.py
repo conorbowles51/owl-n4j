@@ -117,6 +117,24 @@ async def list_jobs(case_id: str) -> List[Dict[str, Any]]:
     return response.json()
 
 
+async def delete_job(job_id: str) -> None:
+    """Delete a single terminal job from the evidence engine."""
+    client = _get_client()
+    response = await client.delete(f"/jobs/{job_id}")
+    response.raise_for_status()
+
+
+async def clear_case_jobs(case_id: str, terminal_only: bool = True) -> Dict[str, Any]:
+    """Delete terminal jobs for a case from the evidence engine."""
+    client = _get_client()
+    response = await client.delete(
+        f"/cases/{case_id}/jobs",
+        params={"terminal_only": str(terminal_only).lower()},
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 async def list_files(case_id: str) -> List[Dict[str, Any]]:
     """List all files for a case from evidence engine."""
     client = _get_client()

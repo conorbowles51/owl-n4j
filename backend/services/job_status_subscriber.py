@@ -21,6 +21,16 @@ _ENGINE_STATUS_MAP = {
 }
 
 
+def _extract_failure_message(payload: dict) -> str | None:
+    for key in ("error_message", "message"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if cleaned:
+                return cleaned.removeprefix("Failed: ").strip()
+    return None
+
+
 class JobStatusSubscriber:
     """
     Async background task that subscribes to Redis channels for active
@@ -101,7 +111,7 @@ class JobStatusSubscriber:
 
                         if engine_status in ("completed", "failed"):
                             # Already terminal — sync immediately
-                            err = job.get("error_message") if engine_status == "failed" else None
+                            err = _extract_failure_message(job) if engine_status == "failed" else None
                             EvidenceDBStorage.mark_processed(db, [ef.id], error=err)
                             if engine_status == "completed":
                                 doc_summary = job.get("document_summary")
@@ -178,7 +188,7 @@ class JobStatusSubscriber:
             with get_background_session() as db:
                 db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
                 if db_rec:
-                    err = data.get("error_message") if status == "failed" else None
+                    err = _extract_failure_message(data) if status == "failed" else None
                     EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
 
                     if status == "completed":

@@ -643,7 +643,7 @@ export function EvidenceContextSidebar({
   // Resolve detail file internally
   const { data: folderContents } = useFolderContents(caseId, currentFolderId)
   const detailFile = folderContents?.files.find((f) => f.id === detailFileId) ?? null
-  const { data: jobs } = useJobs(caseId)
+  const { data: jobs } = useJobs(caseId, true)
   const hasActiveJobs = useMemo(
     () =>
       jobs?.some((j) => !["completed", "failed"].includes(j.status)) ?? false,
