@@ -1,6 +1,10 @@
 import { useMemo } from "react"
 import type { Transaction } from "../api"
 import type { SortColumn } from "../stores/financial.store"
+import {
+  getFinancialDateTimestamp,
+  isValidFinancialDate,
+} from "../lib/date-utils"
 
 interface FilterParams {
   searchQuery: string
@@ -39,11 +43,20 @@ function matchesEntityFilter(
   )
 }
 
+function compareDateValues(a: string | null | undefined, b: string | null | undefined) {
+  const aTime = getFinancialDateTimestamp(a)
+  const bTime = getFinancialDateTimestamp(b)
+  if (aTime == null && bTime == null) return 0
+  if (aTime == null) return 1
+  if (bTime == null) return -1
+  return aTime - bTime
+}
+
 function compareTx(a: Transaction, b: Transaction, col: SortColumn): number {
   let cmp = 0
   switch (col.key) {
     case "date":
-      cmp = new Date(a.date).getTime() - new Date(b.date).getTime()
+      cmp = compareDateValues(a.date, b.date)
       break
     case "amount":
       cmp = a.amount - b.amount
@@ -133,10 +146,14 @@ export function useFilteredTransactions(
 
     // Date range
     if (startDate) {
-      result = result.filter((tx) => tx.date >= startDate)
+      result = result.filter(
+        (tx) => isValidFinancialDate(tx.date) && tx.date! >= startDate
+      )
     }
     if (endDate) {
-      result = result.filter((tx) => tx.date <= endDate)
+      result = result.filter(
+        (tx) => isValidFinancialDate(tx.date) && tx.date! <= endDate
+      )
     }
 
     // Category filter

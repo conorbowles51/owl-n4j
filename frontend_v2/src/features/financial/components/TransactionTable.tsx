@@ -44,6 +44,7 @@ import { useFinancialStore } from "../stores/financial.store"
 import { TransactionDetailPanel } from "./TransactionDetailPanel"
 import type { Transaction, FinancialCategory } from "../api"
 import type { SortColumn } from "../stores/financial.store"
+import { formatFinancialDate } from "../lib/date-utils"
 
 interface TransactionTableProps {
   transactions: Transaction[]
@@ -96,12 +97,14 @@ export function TransactionTable({
           const start = Math.min(lastIdx, curIdx)
           const end = Math.max(lastIdx, curIdx)
           checkRange(allKeys.slice(start, end + 1))
+          setLastClickedKey(key)
           return
         }
       }
       toggleChecked(key)
+      setLastClickedKey(key)
     },
-    [lastClickedKey, transactions, toggleChecked, checkRange]
+    [lastClickedKey, transactions, toggleChecked, checkRange, setLastClickedKey]
   )
 
   const allChecked =
@@ -344,7 +347,7 @@ function TransactionRow({
         <TableCell className="py-1.5">
           <span className="font-mono text-[11px]">
             {indent && <span className="mr-1 text-muted-foreground">└</span>}
-            {new Date(tx.date).toLocaleDateString()}
+            {formatFinancialDate(tx.date)}
           </span>
           {tx.time && (
             <span className="ml-1 text-[10px] text-muted-foreground">

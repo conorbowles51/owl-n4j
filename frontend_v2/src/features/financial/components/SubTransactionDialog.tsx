@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import type { Transaction } from "../api"
+import { formatFinancialDate } from "../lib/date-utils"
 
 interface SubTransactionDialogProps {
   open: boolean
@@ -127,7 +128,7 @@ export function SubTransactionDialog({
                     className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-muted"
                   >
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {new Date(tx.date).toLocaleDateString()}
+                      {formatFinancialDate(tx.date)}
                     </span>
                     <span className="flex-1 truncate">
                       {tx.from_entity?.name || "—"} → {tx.to_entity?.name || "—"}

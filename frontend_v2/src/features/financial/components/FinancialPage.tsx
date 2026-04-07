@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom"
 import { DollarSign } from "lucide-react"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
+import { ErrorBoundary } from "@/components/ui/error-boundary"
 import { useFinancialStore } from "../stores/financial.store"
 import {
   useTransactions,
@@ -278,27 +279,31 @@ export function FinancialPage() {
 
       {/* Charts */}
       {store.chartsPanelOpen && (
-        <FinancialCharts
-          transactions={filteredTransactions}
-          categories={categories}
-        />
+        <ErrorBoundary level="section">
+          <FinancialCharts
+            transactions={filteredTransactions}
+            categories={categories}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Table + Pagination */}
       <div className="flex flex-1 flex-col min-h-0">
         <div className="flex-1 overflow-auto">
-          <TransactionTable
-            transactions={pageTransactions}
-            allTransactions={transactions}
-            categories={categories}
-            sortColumns={store.sortColumns}
-            onCategorize={handleCategorize}
-            onAmountClick={handleAmountClick}
-            onEntityEdit={handleEntityEdit}
-            onGroupSubTransactions={handleGroupSubTransactions}
-            onRemoveFromGroup={handleRemoveFromGroup}
-            onSaveDetails={handleSaveDetails}
-          />
+          <ErrorBoundary level="section">
+            <TransactionTable
+              transactions={pageTransactions}
+              allTransactions={transactions}
+              categories={categories}
+              sortColumns={store.sortColumns}
+              onCategorize={handleCategorize}
+              onAmountClick={handleAmountClick}
+              onEntityEdit={handleEntityEdit}
+              onGroupSubTransactions={handleGroupSubTransactions}
+              onRemoveFromGroup={handleRemoveFromGroup}
+              onSaveDetails={handleSaveDetails}
+            />
+          </ErrorBoundary>
         </div>
 
         {/* Pagination */}

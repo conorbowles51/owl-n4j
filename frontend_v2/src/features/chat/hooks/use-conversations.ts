@@ -4,10 +4,10 @@ import type { CreateChatHistory } from "../types"
 
 export const CONVERSATIONS_KEY = ["chat-history"]
 
-export function useConversations() {
+export function useConversations(caseId?: string) {
   return useQuery({
-    queryKey: CONVERSATIONS_KEY,
-    queryFn: chatHistoryAPI.list,
+    queryKey: [...CONVERSATIONS_KEY, caseId ?? "all"],
+    queryFn: () => chatHistoryAPI.list(caseId),
   })
 }
 

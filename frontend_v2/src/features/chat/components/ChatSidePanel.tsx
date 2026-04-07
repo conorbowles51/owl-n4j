@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState, useMemo, type KeyboardEvent } from "react"
 import { Send, Bot } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { DocumentViewer } from "@/components/ui/document-viewer"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -14,7 +16,7 @@ import { ChatMessage } from "./ChatMessage"
 import { cn } from "@/lib/cn"
 import { useQuickChat } from "../hooks/use-quick-chat"
 import { useGraphStore } from "@/stores/graph.store"
-import { llmConfigAPI } from "@/features/evidence/api"
+import { evidenceAPI, llmConfigAPI } from "@/features/evidence/api"
 import type { LLMModel } from "@/types/evidence.types"
 
 const DEFAULT_MODEL = "gpt-4o"
@@ -32,6 +34,11 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
   const [contextMode, setContextMode] = useState<ContextMode>("full")
   const [input, setInput] = useState("")
+  const [viewerDoc, setViewerDoc] = useState<{
+    url: string
+    name: string
+    page?: number
+  } | null>(null)
   const modelsLoaded = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -61,12 +68,13 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
     model: selectedModelId,
     provider: selectedProvider,
     selectedKeys: selectedKeysArray,
+    scope: contextMode === "selection" ? "selection" : "case_overview",
   })
 
-  // Clear messages on mount (fresh session each time)
+  // Clear messages on case changes.
   useEffect(() => {
     clearMessages()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [caseId, clearMessages])
 
   // Auto-focus textarea on mount
   useEffect(() => {
@@ -105,6 +113,24 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
     }
   }
 
+  const openDocument = async (filename: string, page?: number) => {
+    try {
+      const result = await evidenceAPI.findByFilename(filename, caseId)
+      if (!result.found || !result.evidence_id) {
+        toast.error("Source file not found")
+        return
+      }
+
+      setViewerDoc({
+        url: evidenceAPI.getFileUrl(result.evidence_id),
+        name: filename,
+        page,
+      })
+    } catch {
+      toast.error("Failed to load source file")
+    }
+  }
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Model selector */}
@@ -138,7 +164,7 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
             )}
             onClick={() => setContextMode("full")}
           >
-            Full Graph
+            Case Overview
           </button>
           <button
             type="button"
@@ -181,7 +207,11 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
           ) : (
             <div className="space-y-1">
               {messages.map((msg, i) => (
-                <ChatMessage key={i} message={msg} />
+                <ChatMessage
+                  key={i}
+                  message={msg}
+                  onDocumentClick={openDocument}
+                />
               ))}
               {isLoading && (
                 <div className="flex items-start gap-3 rounded-lg px-4 py-3">
@@ -222,6 +252,16 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
           </Button>
         </div>
       </div>
+
+      <DocumentViewer
+        open={!!viewerDoc}
+        onOpenChange={(open) => {
+          if (!open) setViewerDoc(null)
+        }}
+        documentUrl={viewerDoc?.url}
+        documentName={viewerDoc?.name}
+        initialPage={viewerDoc?.page}
+      />
     </div>
   )
 }

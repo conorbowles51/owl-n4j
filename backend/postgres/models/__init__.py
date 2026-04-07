@@ -7,6 +7,7 @@ from postgres.models.cost_record import CostRecord, CostJobType
 from postgres.models.case_deadline import CaseDeadline
 from postgres.models.processing_profile import ProcessingProfile, CaseProcessingConfig
 from postgres.models.geocoding_cache import GeocodingCacheEntry
+from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -22,6 +23,7 @@ __all__ = [
     "CostRecord", "CostJobType", "CaseDeadline",
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
+    "CaseRevision", "ChatConversation", "ChatMessage",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
     "WorkspaceTask", "WorkspaceNote", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",

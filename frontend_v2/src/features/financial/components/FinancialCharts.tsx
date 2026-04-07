@@ -14,6 +14,11 @@ import {
 } from "recharts"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import type { Transaction, FinancialCategory } from "../api"
+import {
+  getFinancialDateTimestamp,
+  isValidFinancialDate,
+  parseFinancialDate,
+} from "../lib/date-utils"
 
 const CHART_COLORS = [
   "#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#8b5cf6",
@@ -34,8 +39,11 @@ function formatCurrency(value: number): string {
 type Grouping = "daily" | "weekly" | "monthly"
 
 function detectGrouping(transactions: Transaction[]): Grouping {
-  if (transactions.length < 2) return "daily"
-  const dates = transactions.map((t) => new Date(t.date).getTime()).sort((a, b) => a - b)
+  const dates = transactions
+    .map((t) => getFinancialDateTimestamp(t.date))
+    .filter((value): value is number => value !== null)
+    .sort((a, b) => a - b)
+  if (dates.length < 2) return "daily"
   const span = (dates[dates.length - 1] - dates[0]) / (1000 * 60 * 60 * 24)
   if (span > 60) return "monthly"
   if (span > 14) return "weekly"
@@ -58,20 +66,30 @@ export function FinancialCharts({
   transactions,
   categories,
 }: FinancialChartsProps) {
+  const datedTransactions = useMemo(
+    () => transactions.filter((tx) => isValidFinancialDate(tx.date)),
+    [transactions]
+  )
+
   const categoryColorMap = useMemo(
     () => new Map(categories.map((c) => [c.name, c.color])),
     [categories]
   )
 
-  const grouping = useMemo(() => detectGrouping(transactions), [transactions])
+  const grouping = useMemo(
+    () => detectGrouping(datedTransactions),
+    [datedTransactions]
+  )
 
   // Stacked bar chart data: volume by period by category
   const volumeData = useMemo(() => {
     const groups = new Map<string, Record<string, number>>()
     const allCats = new Set<string>()
 
-    for (const tx of transactions) {
-      const key = getGroupKey(new Date(tx.date), grouping)
+    for (const tx of datedTransactions) {
+      const parsedDate = parseFinancialDate(tx.date)
+      if (!parsedDate) continue
+      const key = getGroupKey(parsedDate, grouping)
       if (!groups.has(key)) groups.set(key, {})
       const group = groups.get(key)!
       const cat = tx.category || "Uncategorized"
@@ -87,7 +105,7 @@ export function FinancialCharts({
       data: sorted.map(([period, vals]) => ({ period, ...vals })),
       categories: Array.from(allCats),
     }
-  }, [transactions, grouping])
+  }, [datedTransactions, grouping])
 
   // Donut chart data: count by category
   const categoryData = useMemo(() => {
@@ -114,40 +132,50 @@ export function FinancialCharts({
         </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={volumeData.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis
-                dataKey="period"
-                tick={{ fontSize: 9 }}
-                stroke="hsl(var(--muted-foreground))"
-              />
-              <YAxis
-                tick={{ fontSize: 9 }}
-                stroke="hsl(var(--muted-foreground))"
-                tickFormatter={formatCurrency}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "8px",
-                  fontSize: 11,
-                }}
-                formatter={(value: number) => formatCurrency(value)}
-              />
-              <Legend wrapperStyle={{ fontSize: 9 }} />
-              {volumeData.categories.map((cat, i) => (
-                <Bar
-                  key={cat}
-                  dataKey={cat}
-                  stackId="volume"
-                  fill={
-                    categoryColorMap.get(cat) ||
-                    CHART_COLORS[i % CHART_COLORS.length]
+            {volumeData.data.length > 0 ? (
+              <BarChart data={volumeData.data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="period"
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                />
+                <YAxis
+                  tick={{ fontSize: 9 }}
+                  stroke="hsl(var(--muted-foreground))"
+                  tickFormatter={formatCurrency}
+                />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                    fontSize: 11,
+                  }}
+                  formatter={(value) =>
+                    formatCurrency(
+                      typeof value === "number" ? value : Number(value) || 0
+                    )
                   }
                 />
-              ))}
-            </BarChart>
+                <Legend wrapperStyle={{ fontSize: 9 }} />
+                {volumeData.categories.map((cat, i) => (
+                  <Bar
+                    key={cat}
+                    dataKey={cat}
+                    stackId="volume"
+                    fill={
+                      categoryColorMap.get(cat) ||
+                      CHART_COLORS[i % CHART_COLORS.length]
+                    }
+                  />
+                ))}
+              </BarChart>
+            ) : (
+              <div className="flex h-full items-center justify-center text-center text-xs text-muted-foreground">
+                No valid dated transactions available for the time chart.
+              </div>
+            )}
           </ResponsiveContainer>
         </CardContent>
       </Card>

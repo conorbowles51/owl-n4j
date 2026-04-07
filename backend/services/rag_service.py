@@ -12,6 +12,7 @@ Handles:
 import json
 import sys
 import time
+from contextvars import ContextVar
 from typing import Dict, List, Optional, Any
 
 from services.neo4j_service import neo4j_service
@@ -44,6 +45,10 @@ class RAGService:
     def __init__(self):
         self.neo4j = neo4j_service
         self.llm = llm_service
+        self._active_llm: ContextVar[Any] = ContextVar("rag_active_llm", default=None)
+
+    def _get_llm(self):
+        return self._active_llm.get() or self.llm.create_context()
 
     # =====================
     # Schema & Context Builders (preserved from original)
@@ -333,7 +338,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return [], []
 
         try:
-            with self.neo4j._driver.session() as session:
+            with self.neo4j.session() as session:
                 case_filter = "AND n.case_id = $case_id" if case_id else ""
                 query = f"""
                 MATCH (n)
@@ -378,7 +383,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return []
 
         try:
-            with self.neo4j._driver.session() as session:
+            with self.neo4j.session() as session:
                 query = """
                 MATCH (entity)-[:MENTIONED_IN]->(doc:Document)
                 WHERE doc.key IN $doc_keys
@@ -407,7 +412,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
     def _get_document_node_by_key(self, doc_key: str, case_id: str) -> Optional[Dict]:
         """Get a Document node from Neo4j by its key."""
         try:
-            with self.neo4j._driver.session() as session:
+            with self.neo4j.session() as session:
                 result = session.run(
                     """
                     MATCH (d:Document {key: $doc_key, case_id: $case_id})
@@ -452,7 +457,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             BATCH_SIZE = 10
             for i in range(0, len(entity_keys), BATCH_SIZE):
                 batch = entity_keys[i:i + BATCH_SIZE]
-                with self.neo4j._driver.session() as session:
+                with self.neo4j.session() as session:
                     params = {"keys": batch}
                     if case_id:
                         params["case_id"] = case_id
@@ -483,7 +488,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             return []
 
         try:
-            with self.neo4j._driver.session() as session:
+            with self.neo4j.session() as session:
                 query = """
                 MATCH (a)-[r]->(b)
                 WHERE a.key IN $keys AND b.key IN $keys
@@ -525,7 +530,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         Returns query results as formatted string, or None if not applicable.
         """
         schema_info = self._build_schema_info(graph_summary)
-        cypher = self.llm.generate_cypher(question, schema_info)
+        cypher = self._get_llm().generate_cypher(question, schema_info)
         print("Cypher: ", cypher)
         if not cypher:
             return None
@@ -1148,7 +1153,7 @@ Return JSON array of objects: [{{"id": "CHUNK-0", "score": 8}}, ...]
 Only include candidates with score >= 5."""
 
         try:
-            response = self.llm.call(prompt, temperature=0.1, json_mode=True)
+            response = self._get_llm().call(prompt, temperature=0.1, json_mode=True)
             scores = json.loads(response)
             if not isinstance(scores, list):
                 scores = scores.get("results", scores.get("candidates", []))
@@ -1570,6 +1575,8 @@ Only include candidates with score >= 5."""
         selected_keys: Optional[List[str]] = None,
         confidence_threshold: Optional[float] = None,
         case_id: Optional[str] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        llm_context: Any = None,
     ) -> Dict[str, Any]:
         """
         Answer a question using hybrid retrieval:
@@ -1594,6 +1601,8 @@ Only include candidates with score >= 5."""
         from datetime import datetime
 
         pipeline_start = time.time()
+        llm = llm_context or self.llm.create_context()
+        llm_token = self._active_llm.set(llm)
 
         debug_log = {
             "timestamp": datetime.now().isoformat(),
@@ -1635,9 +1644,9 @@ Only include candidates with score >= 5."""
         stage0_details = {}
         if QUESTION_CLASSIFICATION_ENABLED and case_id:
             try:
-                question_type = self.llm.classify_question(question)
-                stage0_details["llm_prompt"] = self.llm._last_prompt
-                stage0_details["llm_response"] = self.llm._last_raw_response
+                question_type = llm.classify_question(question)
+                stage0_details["llm_prompt"] = llm.last_prompt
+                stage0_details["llm_response"] = llm.last_raw_response
                 print(f"[RAG] Question classified as: {question_type}")
             except Exception as e:
                 print(f"[RAG] Question classification failed: {e}")
@@ -1669,8 +1678,8 @@ Only include candidates with score >= 5."""
                     schema_info = self._build_schema_info(graph_summary)
                     stage0b_details["schema_info"] = schema_info
                     cypher_context = self._try_cypher_query(question, graph_summary, debug_log)
-                    stage0b_details["llm_prompt"] = self.llm._last_prompt
-                    stage0b_details["llm_response"] = self.llm._last_raw_response
+                    stage0b_details["llm_prompt"] = llm.last_prompt
+                    stage0b_details["llm_response"] = llm.last_raw_response
                     if cypher_context:
                         print(f"[RAG] Cypher query returned results")
                 else:
@@ -1886,7 +1895,7 @@ Only include candidates with score >= 5."""
         if rerank_info.get("scores"):
             stage5_details["scores"] = rerank_info["scores"]
         if rerank_info.get("method") == "llm":
-            stage5_details["llm_prompt"] = self.llm._last_prompt
+            stage5_details["llm_prompt"] = llm.last_prompt
         _add_stage(
             "Re-ranking", 5, t5,
             input={
@@ -1906,7 +1915,7 @@ Only include candidates with score >= 5."""
         t6 = time.time()
         # Look up the model's context window so the budget scales appropriately
         from models.llm_models import get_model_by_id
-        current_model = get_model_by_id(self.llm.model_id)
+        current_model = get_model_by_id(llm.model_id)
         model_ctx_window = current_model.context_window if current_model else None
         context = self._build_hybrid_context(
             chunk_results, entity_results, graph_context, cypher_context,
@@ -1996,9 +2005,10 @@ Only include candidates with score >= 5."""
                     f'(e.g. "subjects in the other case documents") to keep focus on the selected document.'
                 )
 
-        answer, final_prompt = self.llm.answer_question_with_prompt(
+        answer, final_prompt = llm.answer_question_with_prompt(
             question=effective_question,
             context=context,
+            conversation_history=conversation_history,
         )
 
         # Post-process: convert plain [docname, p.N] citations to doc:// links
@@ -2018,7 +2028,7 @@ Only include candidates with score >= 5."""
             output={"answer_length": len(answer)},
             details={
                 "full_prompt": final_prompt,
-                "model": {"provider": self.llm.provider, "model_id": self.llm.model_id},
+                "model": {"provider": llm.provider, "model_id": llm.model_id},
                 "temperature": 0.3,
             },
         )
@@ -2093,6 +2103,8 @@ Only include candidates with score >= 5."""
 
         used_node_keys = [e.get("key") for e in entity_results if e.get("key")]
 
+        sources = self._build_sources(chunk_results)
+
         return {
             "answer": answer,
             "context_mode": context_mode,
@@ -2102,7 +2114,41 @@ Only include candidates with score >= 5."""
             "used_node_keys": used_node_keys,
             "result_graph": result_graph,
             "document_summary": doc_summary_text or None,
+            "sources": sources,
         }
+        
+        
+        
+        
+        
+        
+        
+        
+    # =====================
+    # Source helpers
+    # =====================
+
+    def _build_sources(self, chunk_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        sources: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for chunk in chunk_results:
+            metadata = chunk.get("metadata", {}) or {}
+            filename = metadata.get("filename") or metadata.get("doc_name") or chunk.get("id")
+            if not filename or filename in seen:
+                continue
+            seen.add(str(filename))
+            excerpt = (chunk.get("text") or "").strip()
+            if len(excerpt) > 240:
+                excerpt = excerpt[:237] + "..."
+            source_payload: Dict[str, Any] = {"filename": str(filename)}
+            if excerpt:
+                source_payload["excerpt"] = excerpt
+            if metadata.get("page_start") not in (None, "", -1, "-1"):
+                source_payload["page"] = metadata.get("page_start")
+            sources.append(source_payload)
+            if len(sources) >= 5:
+                break
+        return sources
 
     # =====================
     # Extract Nodes from Answer (preserved from original)
@@ -2158,7 +2204,7 @@ Return ONLY the Cypher query, nothing else. Do not include markdown code blocks.
         )
 
         try:
-            cypher = self.llm.call(
+            cypher = self._get_llm().call(
                 prompt=prompt,
                 temperature=0.2,
                 json_mode=False,

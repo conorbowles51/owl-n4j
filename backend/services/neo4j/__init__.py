@@ -29,11 +29,17 @@ class Neo4jServiceFacade:
 
     # ── Driver-level ───────────────────────────────────────────────────
     close = staticmethod(driver.close)
+    session = staticmethod(driver.session)
     run_cypher = staticmethod(driver.run_cypher)
     validate_cypher_batch = staticmethod(driver.validate_cypher_batch)
     execute_cypher_batch = staticmethod(driver.execute_cypher_batch)
     clear_graph = staticmethod(driver.clear_graph)
     delete_case_data = staticmethod(driver.delete_case_data)
+
+    @property
+    def _driver(self):
+        """Backward-compatible access for older call sites."""
+        return driver._driver
 
     # ── Graph visualization & search ───────────────────────────────────
     get_full_graph = staticmethod(graph_service.get_full_graph)

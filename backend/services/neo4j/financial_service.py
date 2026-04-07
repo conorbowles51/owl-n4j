@@ -13,9 +13,38 @@ from services.neo4j.driver import driver, safe_float
 
 logger = logging.getLogger(__name__)
 
+FINANCIAL_EVENT_TYPES = [
+    "Transaction",
+    "transaction",
+    "Transfer",
+    "Payment",
+    "Check",
+    "Invoice",
+    "RealEstatePurchase",
+    "Event",
+]
+
 
 class FinancialService:
     """Neo4j-backed service for financial transaction analysis."""
+
+    @staticmethod
+    def _transaction_like_clause(alias: str = "n") -> str:
+        return f"""
+            (
+                labels({alias})[0] IN $financial_types
+                OR {alias}.date IS NOT NULL
+                OR {alias}.time IS NOT NULL
+                OR {alias}.from_entity_key IS NOT NULL
+                OR {alias}.from_entity_name IS NOT NULL
+                OR {alias}.to_entity_key IS NOT NULL
+                OR {alias}.to_entity_name IS NOT NULL
+                OR {alias}.sender IS NOT NULL
+                OR {alias}.receiver IS NOT NULL
+                OR {alias}.parent_transaction_key IS NOT NULL
+                OR coalesce({alias}.is_parent, false) = true
+            )
+        """
 
     # ── Queries ───────────────────────────────────────────────────────────
 
@@ -41,7 +70,7 @@ class FinancialService:
             List of transaction dicts with from/to entity resolution
         """
         with driver.session() as session:
-            params = {"case_id": case_id}
+            params = {"case_id": case_id, "financial_types": FINANCIAL_EVENT_TYPES}
             conditions = []
 
             if types:
@@ -63,6 +92,7 @@ class FinancialService:
                 MATCH (n)
                 WHERE n.amount IS NOT NULL
                 AND n.case_id = $case_id
+                AND {self._transaction_like_clause("n")}
                 {extra_filter}
                 OPTIONAL MATCH (n)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(to_entity)
                 WHERE to_entity.case_id = $case_id AND NOT to_entity:Document AND NOT to_entity:Case
@@ -191,9 +221,10 @@ class FinancialService:
         with driver.session() as session:
             if entity_key:
                 # Entity-relative mode: classify by relationship direction
-                query = """
+                query = f"""
                     MATCH (n)
                     WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                      AND {self._transaction_like_clause("n")}
                     WITH n, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
                     OPTIONAL MATCH (n)-[:FROM_ENTITY]->(fe) WHERE fe.case_id = $case_id
                     OPTIONAL MATCH (n)-[:TO_ENTITY]->(te) WHERE te.case_id = $case_id
@@ -208,7 +239,12 @@ class FinancialService:
                         sum(CASE WHEN to_key = $entity_key THEN abs(amt) ELSE 0 END) AS total_inflows,
                         sum(CASE WHEN from_key = $entity_key THEN abs(amt) ELSE 0 END) AS total_outflows
                 """
-                record = session.run(query, case_id=case_id, entity_key=entity_key).single()
+                record = session.run(
+                    query,
+                    case_id=case_id,
+                    entity_key=entity_key,
+                    financial_types=FINANCIAL_EVENT_TYPES,
+                ).single()
                 if not record or record["transaction_count"] == 0:
                     return {"transaction_count": 0, "total_inflows": 0, "total_outflows": 0, "net_flow": 0}
                 inflows = safe_float(record["total_inflows"])
@@ -221,9 +257,10 @@ class FinancialService:
                 }
             else:
                 # Overview mode: total volume without directional classification
-                query = """
+                query = f"""
                     MATCH (n)
                     WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                      AND {self._transaction_like_clause("n")}
                     WITH n, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
                     RETURN
                         count(n) AS transaction_count,
@@ -231,7 +268,11 @@ class FinancialService:
                         avg(abs(amt)) AS avg_amount,
                         max(abs(amt)) AS max_amount
                 """
-                record = session.run(query, case_id=case_id).single()
+                record = session.run(
+                    query,
+                    case_id=case_id,
+                    financial_types=FINANCIAL_EVENT_TYPES,
+                ).single()
                 if not record or record["transaction_count"] == 0:
                     return {"transaction_count": 0, "total_volume": 0, "avg_amount": 0, "max_amount": 0}
                 return {
@@ -252,9 +293,10 @@ class FinancialService:
             List of {date, category, total_amount, count}
         """
         with driver.session() as session:
-            query = """
+            query = f"""
                 MATCH (n)
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id AND n.date IS NOT NULL
+                  AND {self._transaction_like_clause("n")}
                 WITH n.date AS date, coalesce(n.financial_category, 'Uncategorized') AS category, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
                 RETURN
                     date,
@@ -263,7 +305,11 @@ class FinancialService:
                     count(*) AS count
                 ORDER BY date ASC, category ASC
             """
-            result = session.run(query, case_id=case_id)
+            result = session.run(
+                query,
+                case_id=case_id,
+                financial_types=FINANCIAL_EVENT_TYPES,
+            )
             return [
                 {
                     "date": record["date"],
@@ -396,9 +442,26 @@ class FinancialService:
             orphan_query = """
                 MATCH (n)
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id AND n.financial_category IS NOT NULL
+                  AND (
+                    labels(n)[0] IN $financial_types
+                    OR n.date IS NOT NULL
+                    OR n.time IS NOT NULL
+                    OR n.from_entity_key IS NOT NULL
+                    OR n.from_entity_name IS NOT NULL
+                    OR n.to_entity_key IS NOT NULL
+                    OR n.to_entity_name IS NOT NULL
+                    OR n.sender IS NOT NULL
+                    OR n.receiver IS NOT NULL
+                    OR n.parent_transaction_key IS NOT NULL
+                    OR coalesce(n.is_parent, false) = true
+                  )
                 RETURN DISTINCT n.financial_category AS category
             """
-            orphan_result = session.run(orphan_query, case_id=case_id)
+            orphan_result = session.run(
+                orphan_query,
+                case_id=case_id,
+                financial_types=FINANCIAL_EVENT_TYPES,
+            )
             for record in orphan_result:
                 name = record["category"]
                 if name not in seen_names:

@@ -26,8 +26,11 @@ import {
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/cn"
 import { useChatStore } from "../stores/chat.store"
-import { useConversations, useDeleteConversation } from "../hooks/use-conversations"
-import { chatHistoryAPI } from "../api"
+import {
+  useConversations,
+  useDeleteConversation,
+  useUpdateConversation,
+} from "../hooks/use-conversations"
 import type { ConversationSummary } from "../types"
 
 interface ConversationSidebarProps {
@@ -52,26 +55,20 @@ export function ConversationSidebar({
   const setOpen = useChatStore((s) => s.setConversationPanelOpen)
   const activeId = useChatStore((s) => s.activeConversationId)
 
-  const { data: allConversations = [] } = useConversations()
+  const { data: conversations = [] } = useConversations(caseId)
   const deleteMutation = useDeleteConversation()
+  const updateMutation = useUpdateConversation()
 
-  // Filter conversations for current case
-  const conversations = allConversations
-    .filter((c) => !c.case_id || c.case_id === caseId)
-    .filter(
-      (c) =>
-        !search || c.name.toLowerCase().includes(search.toLowerCase())
-    )
-    .sort(
-      (a, b) =>
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    )
+  const filteredConversations = conversations.filter(
+    (c) => !search || c.name.toLowerCase().includes(search.toLowerCase())
+  )
 
   const handleRename = async () => {
     if (!renameDialog || !renameValue.trim()) return
     try {
-      await chatHistoryAPI.update(renameDialog.id, {
-        name: renameValue.trim(),
+      await updateMutation.mutateAsync({
+        chatId: renameDialog.id,
+        data: { name: renameValue.trim() },
       })
       setRenameDialog(null)
     } catch {
@@ -170,7 +167,7 @@ export function ConversationSidebar({
 
       {/* Conversation list */}
       <ScrollArea className="flex-1">
-        {conversations.length === 0 ? (
+        {filteredConversations.length === 0 ? (
           <div className="px-4 py-8 text-center">
             <MessageSquare className="mx-auto size-6 text-muted-foreground/40" />
             <p className="mt-2 text-xs text-muted-foreground">
@@ -179,7 +176,7 @@ export function ConversationSidebar({
           </div>
         ) : (
           <div className="p-1">
-            {conversations.map((conv) => (
+            {filteredConversations.map((conv) => (
               <ContextMenu key={conv.id}>
                 <ContextMenuTrigger asChild>
                   <button
@@ -206,7 +203,7 @@ export function ConversationSidebar({
                       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
                         <span>{conv.message_count} msgs</span>
                         <span>&middot;</span>
-                        <span>{formatTime(conv.created_at)}</span>
+                        <span>{formatTime(conv.last_message_at)}</span>
                       </div>
                     </div>
                   </button>

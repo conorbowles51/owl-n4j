@@ -1,28 +1,52 @@
 import { useState } from "react"
 import { useParams } from "react-router-dom"
 import { MessageSquare } from "lucide-react"
+import { toast } from "sonner"
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
 } from "@/components/ui/resizable"
 import { EmptyState } from "@/components/ui/empty-state"
+import { DocumentViewer } from "@/components/ui/document-viewer"
 import { ChatMessageList } from "./ChatMessageList"
 import { ChatInput } from "./ChatInput"
 import { ChatHeader } from "./ChatHeader"
 import { ConversationSidebar } from "./ConversationSidebar"
 import { ResultGraphPanel } from "./ResultGraphPanel"
-import { CitationPanel } from "./CitationPanel"
+import { evidenceAPI } from "@/features/evidence/api"
 import { useChat } from "../hooks/use-chat"
 import { useChatContext } from "../hooks/use-chat-context"
 import { useChatStore } from "../stores/chat.store"
 
 export function ChatPage() {
   const { id: caseId } = useParams()
-  const [citationFile, setCitationFile] = useState<string | null>(null)
+  const [viewerDoc, setViewerDoc] = useState<{
+    url: string
+    name: string
+    page?: number
+  } | null>(null)
   const chat = useChat(caseId!)
   const context = useChatContext(caseId!)
   const resultGraphPanelOpen = useChatStore((s) => s.resultGraphPanelOpen)
+
+  const openDocument = async (filename: string, page?: number) => {
+    try {
+      const result = await evidenceAPI.findByFilename(filename, caseId!)
+      if (!result.found || !result.evidence_id) {
+        toast.error("Source file not found")
+        return
+      }
+
+      setViewerDoc({
+        url: evidenceAPI.getFileUrl(result.evidence_id),
+        name: filename,
+        page,
+      })
+    } catch {
+      toast.error("Failed to load source file")
+    }
+  }
 
   return (
     <div className="flex h-full">
@@ -38,7 +62,6 @@ export function ChatPage() {
         {/* Chat messages + input */}
         <ResizablePanel
           id="chat-messages"
-          order={1}
           defaultSize={resultGraphPanelOpen ? "55" : "100"}
           minSize="30"
         >
@@ -58,7 +81,7 @@ export function ChatPage() {
                 <ChatMessageList
                   messages={chat.messages}
                   isStreaming={chat.isLoading}
-                  onCitationClick={(filename) => setCitationFile(filename)}
+                  onDocumentClick={openDocument}
                 />
               )}
             </div>
@@ -72,14 +95,6 @@ export function ChatPage() {
               suggestions={chat.suggestions}
             />
           </div>
-
-          {/* Citation panel (overlays on right of chat area) */}
-          {citationFile && (
-            <CitationPanel
-              filename={citationFile}
-              onClose={() => setCitationFile(null)}
-            />
-          )}
         </ResizablePanel>
 
         {/* Result graph — resizable right panel */}
@@ -88,7 +103,6 @@ export function ChatPage() {
             <ResizableHandle withHandle />
             <ResizablePanel
               id="chat-result-graph"
-              order={2}
               defaultSize="45"
               minSize="20"
               maxSize="60"
@@ -101,6 +115,16 @@ export function ChatPage() {
 
       {/* Collapsed rail when result graph is hidden */}
       {!resultGraphPanelOpen && <ResultGraphPanel />}
+
+      <DocumentViewer
+        open={!!viewerDoc}
+        onOpenChange={(open) => {
+          if (!open) setViewerDoc(null)
+        }}
+        documentUrl={viewerDoc?.url}
+        documentName={viewerDoc?.name}
+        initialPage={viewerDoc?.page}
+      />
     </div>
   )
 }

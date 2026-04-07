@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Send, Sparkles, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -12,9 +12,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { cn } from "@/lib/cn"
 import type { EntityType } from "@/lib/theme"
 import { llmConfigAPI } from "@/features/evidence/api"
 import type { LLMModel } from "@/types/evidence.types"
+import type { ChatScope } from "../types"
 
 interface ContextNode {
   key: string
@@ -23,7 +25,12 @@ interface ContextNode {
 }
 
 interface ChatInputProps {
-  onSend: (message: string, model?: string, provider?: string) => void
+  onSend: (
+    message: string,
+    model?: string,
+    provider?: string,
+    scope?: ChatScope
+  ) => void
   isLoading: boolean
   contextNodes: ContextNode[]
   contextDocument?: string | null
@@ -44,10 +51,10 @@ export function ChatInput({
   const [models, setModels] = useState<LLMModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL)
   const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
+  const [scope, setScope] = useState<ChatScope>("case_overview")
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const modelsLoaded = useRef(false)
 
-  // Load models once
   useEffect(() => {
     if (modelsLoaded.current) return
     modelsLoaded.current = true
@@ -75,9 +82,9 @@ export function ChatInput({
   const handleSend = useCallback(() => {
     const trimmed = input.trim()
     if (!trimmed || isLoading) return
-    onSend(trimmed, selectedModelId, selectedProvider)
+    onSend(trimmed, selectedModelId, selectedProvider, scope)
     setInput("")
-  }, [input, isLoading, onSend, selectedModelId, selectedProvider])
+  }, [input, isLoading, onSend, scope, selectedModelId, selectedProvider])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -88,7 +95,40 @@ export function ChatInput({
 
   return (
     <div className="border-t border-border">
-      {/* Context badges */}
+      <div className="flex items-center gap-1.5 border-b border-border px-4 py-2">
+        <div className="flex rounded-md border border-border bg-muted/50 p-0.5">
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              scope === "case_overview"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setScope("case_overview")}
+          >
+            Case Overview
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              scope === "selection"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setScope("selection")}
+          >
+            Selected Entities
+          </button>
+        </div>
+        {scope === "selection" && contextNodes.length === 0 && (
+          <span className="text-xs text-amber-600 dark:text-amber-400">
+            No entities selected. The chat will fall back to case overview.
+          </span>
+        )}
+      </div>
+
       {(contextNodes.length > 0 || contextDocument) && (
         <div className="flex flex-wrap items-center gap-1 px-4 pt-2">
           {contextNodes.length > 0 && (
@@ -112,37 +152,34 @@ export function ChatInput({
           ))}
           {contextDocument && (
             <Badge variant="amber" className="text-[10px]">
-              Scoped: {contextDocument}
+              Evidence: {contextDocument}
             </Badge>
           )}
         </div>
       )}
 
-      {/* Suggestions */}
       {suggestions.length > 0 && input === "" && (
         <div className="flex flex-wrap gap-1 px-4 pt-2">
-          {suggestions.slice(0, 3).map((s, i) => (
+          {suggestions.slice(0, 3).map((suggestion) => (
             <button
-              key={i}
+              key={suggestion}
               onClick={() => {
-                setInput(s)
+                setInput(suggestion)
                 textareaRef.current?.focus()
               }}
               className="rounded-full border border-border px-2.5 py-1 text-[10px] text-muted-foreground transition hover:border-amber-500/50 hover:text-foreground"
             >
               <Sparkles className="mr-1 inline size-2.5 text-amber-500" />
-              {s}
+              {suggestion}
             </button>
           ))}
         </div>
       )}
 
-      {/* Input area */}
       <div className="flex items-end gap-2 p-4">
-        {/* Model selector */}
         {models.length > 0 && (
           <Select value={selectedModelId} onValueChange={handleModelSelect}>
-            <SelectTrigger className="h-[40px] w-[130px] shrink-0 text-xs">
+            <SelectTrigger className="h-[40px] w-[150px] shrink-0 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

@@ -1,215 +1,213 @@
 """
 Chat History Router
 
-Handles saving and retrieving chat histories.
+Postgres-backed saved conversations.
 """
 
-from datetime import datetime
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel
+from __future__ import annotations
 
-from services.chat_history_storage import chat_history_storage
-from .auth import get_current_user
+from typing import Any, List, Optional
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session, joinedload
+
+from postgres.models.chat import ChatConversation, ChatMessage
+from postgres.models.user import User
+from postgres.session import get_db
+from routers.users import get_current_db_user
+from services.chat_db_service import (
+    build_conversation_payload,
+    build_conversation_summary_payload,
+    create_case_revision,
+    create_conversation,
+    delete_conversation,
+    get_conversation_for_user,
+    list_conversations_for_user,
+    rename_conversation,
+    replace_conversation_messages,
+    require_case_access,
+)
+from services.case_service import CaseAccessDenied, CaseNotFound
 
 router = APIRouter(prefix="/api/chat-history", tags=["chat-history"])
 
 
 class ChatHistoryCreate(BaseModel):
-    """Request model for creating a chat history."""
     name: Optional[str] = None
-    messages: List[dict]
+    messages: List[dict[str, Any]] = Field(default_factory=list)
     snapshot_id: Optional[str] = None
-    case_id: Optional[str] = None
-    case_version: Optional[int] = None
-
-
-class ChatHistoryResponse(BaseModel):
-    """Response model for a chat history."""
-    id: str
-    name: str
-    messages: List[dict]
-    timestamp: str
-    created_at: str
-    owner: str
-    snapshot_id: Optional[str] = None
-    case_id: Optional[str] = None
-    case_version: Optional[int] = None
-    message_count: int
-
-
-@router.post("", response_model=ChatHistoryResponse)
-async def create_chat_history(chat: ChatHistoryCreate, user: dict = Depends(get_current_user)):
-    """Create a new chat history."""
-    chat_id = f"chat_{datetime.now().isoformat().replace(':', '-').replace('.', '-')}"
-    timestamp = datetime.now().isoformat()
-    
-    # Generate a name if not provided
-    name = chat.name or f"Chat {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    
-    # Store the chat history data
-    chat_data = {
-        "id": chat_id,
-        "name": name,
-        "messages": chat.messages,
-        "timestamp": timestamp,
-        "created_at": timestamp,
-        "owner": user["username"],
-        "snapshot_id": chat.snapshot_id,
-        "case_id": chat.case_id,
-        "case_version": chat.case_version,
-    }
-    
-    # Save to persistent storage
-    chat_history_storage.save(chat_id, chat_data)
-    
-    return ChatHistoryResponse(
-        id=chat_id,
-        name=name,
-        messages=chat.messages,
-        timestamp=timestamp,
-        created_at=timestamp,
-        owner=user["username"],
-        snapshot_id=chat.snapshot_id,
-        case_id=chat.case_id,
-        case_version=chat.case_version,
-        message_count=len(chat.messages),
-    )
-
-
-class ChatHistorySummary(BaseModel):
-    """Lightweight response for listing chat histories (without full messages)."""
-    id: str
-    name: str
-    timestamp: str
-    created_at: str
-    owner: str
-    snapshot_id: Optional[str] = None
-    case_id: Optional[str] = None
-    case_version: Optional[int] = None
-    message_count: int
-
-
-@router.get("", response_model=List[ChatHistorySummary])
-async def list_chat_histories(user: dict = Depends(get_current_user)):
-    """List all chat histories for the current user (summaries only, no messages)."""
-    chats = chat_history_storage.list_by_user(user["username"])
-
-    result = []
-    for chat in chats:
-        result.append(ChatHistorySummary(
-            id=chat["id"],
-            name=chat["name"],
-            timestamp=chat["timestamp"],
-            created_at=chat["created_at"],
-            owner=chat["owner"],
-            snapshot_id=chat.get("snapshot_id"),
-            case_id=chat.get("case_id"),
-            case_version=chat.get("case_version"),
-            message_count=len(chat.get("messages", [])),
-        ))
-
-    result.sort(key=lambda x: x.created_at, reverse=True)
-    return result
-
-
-@router.get("/{chat_id}", response_model=ChatHistoryResponse)
-async def get_chat_history(chat_id: str, user: dict = Depends(get_current_user)):
-    """Get a specific chat history by ID."""
-    chat = chat_history_storage.get(chat_id)
-    
-    if chat is None:
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    if chat.get("owner") != user["username"]:
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    
-    return ChatHistoryResponse(
-        id=chat["id"],
-        name=chat["name"],
-        messages=chat["messages"],
-        timestamp=chat["timestamp"],
-        created_at=chat["created_at"],
-        owner=chat["owner"],
-        snapshot_id=chat.get("snapshot_id"),
-        case_id=chat.get("case_id"),
-        case_version=chat.get("case_version"),
-        message_count=len(chat.get("messages", [])),
-    )
+    case_id: UUID
 
 
 class ChatHistoryUpdate(BaseModel):
-    """Request model for updating a chat history."""
     name: Optional[str] = None
-    messages: Optional[List[dict]] = None
+    messages: Optional[List[dict[str, Any]]] = None
 
 
-@router.put("/{chat_id}", response_model=ChatHistoryResponse)
-async def update_chat_history(chat_id: str, update: ChatHistoryUpdate, user: dict = Depends(get_current_user)):
-    """Update an existing chat history."""
-    chat = chat_history_storage.get(chat_id)
-    if chat is None or chat.get("owner") != user["username"]:
-        raise HTTPException(status_code=404, detail="Chat history not found")
+class ChatHistoryResponse(BaseModel):
+    id: str
+    name: str
+    messages: List[dict[str, Any]]
+    timestamp: str
+    created_at: str
+    updated_at: str
+    last_message_at: str
+    owner: Optional[str] = None
+    owner_user_id: str
+    snapshot_id: Optional[str] = None
+    case_id: str
+    case_revision_id: Optional[str] = None
+    message_count: int
 
-    if update.name is not None:
-        chat["name"] = update.name
-    if update.messages is not None:
-        chat["messages"] = update.messages
-    chat["timestamp"] = datetime.now().isoformat()
 
-    chat_history_storage.save(chat_id, chat)
+class ChatHistorySummary(BaseModel):
+    id: str
+    name: str
+    timestamp: str
+    created_at: str
+    updated_at: str
+    last_message_at: str
+    owner_user_id: str
+    case_id: str
+    message_count: int
 
-    return ChatHistoryResponse(
-        id=chat["id"],
-        name=chat["name"],
-        messages=chat["messages"],
-        timestamp=chat["timestamp"],
-        created_at=chat["created_at"],
-        owner=chat["owner"],
-        snapshot_id=chat.get("snapshot_id"),
-        case_id=chat.get("case_id"),
-        case_version=chat.get("case_version"),
-        message_count=len(chat.get("messages", [])),
+
+def _to_response(conversation: ChatConversation) -> ChatHistoryResponse:
+    return ChatHistoryResponse(**build_conversation_payload(conversation))
+
+
+def _to_summary(conversation: ChatConversation) -> ChatHistorySummary:
+    return ChatHistorySummary(**build_conversation_summary_payload(conversation))
+
+
+@router.post("", response_model=ChatHistoryResponse)
+async def create_chat_history(
+    chat: ChatHistoryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    require_case_access(db, current_user, chat.case_id)
+
+    conversation = create_conversation(
+        db=db,
+        user=current_user,
+        case_id=chat.case_id,
+        title=chat.name or "New conversation",
     )
+    if chat.messages:
+        revision = create_case_revision(
+            db=db,
+            case_id=chat.case_id,
+            user_id=current_user.id,
+            extra_metadata={"source": "chat_history_import"},
+            source="chat_history_import",
+        )
+        replace_conversation_messages(db, conversation, chat.messages, revision=revision)
+
+    db.commit()
+    db.refresh(conversation)
+    conversation = get_conversation_for_user(db, conversation.id, current_user, case_id=chat.case_id)
+    return _to_response(conversation)
 
 
-@router.delete("/{chat_id}")
-async def delete_chat_history(chat_id: str, user: dict = Depends(get_current_user)):
-    """Delete a chat history."""
-    chat = chat_history_storage.get(chat_id)
-    if chat is None or chat.get("owner") != user["username"]:
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    
-    if not chat_history_storage.delete(chat_id):
-        raise HTTPException(status_code=404, detail="Chat history not found")
-    
-    return {"status": "deleted", "id": chat_id}
+@router.get("", response_model=List[ChatHistorySummary])
+async def list_chat_histories(
+    case_id: Optional[UUID] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    conversations = list_conversations_for_user(db, current_user, case_id=case_id)
+    return [_to_summary(conversation) for conversation in conversations]
 
 
 @router.get("/by-snapshot/{snapshot_id}", response_model=List[ChatHistoryResponse])
-async def get_chat_histories_by_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
-    """Get all chat histories associated with a snapshot."""
-    chats = chat_history_storage.list_by_snapshot(snapshot_id)
-    
-    # Filter by owner
-    user_chats = [chat for chat in chats if chat.get("owner") == user["username"]]
-    
-    result = []
-    for chat in user_chats:
-        result.append(ChatHistoryResponse(
-            id=chat["id"],
-            name=chat["name"],
-            messages=chat["messages"],
-            timestamp=chat["timestamp"],
-            created_at=chat["created_at"],
-            owner=chat["owner"],
-            snapshot_id=chat.get("snapshot_id"),
-            case_id=chat.get("case_id"),
-            case_version=chat.get("case_version"),
-            message_count=len(chat.get("messages", [])),
-        ))
-    
-    # Sort by created_at descending (newest first)
-    result.sort(key=lambda x: x.created_at, reverse=True)
-    return result
+async def get_chat_histories_by_snapshot(
+    snapshot_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    conversations = (
+        db.query(ChatConversation)
+        .join(ChatMessage, ChatMessage.conversation_id == ChatConversation.id)
+        .options(
+            joinedload(ChatConversation.messages).joinedload(ChatMessage.cost_record),
+            joinedload(ChatConversation.messages).joinedload(ChatMessage.case_revision),
+        )
+        .filter(
+            ChatConversation.owner_user_id == current_user.id,
+            ChatMessage.snapshot_id == snapshot_id,
+        )
+        .order_by(ChatConversation.last_message_at.desc())
+        .all()
+    )
+
+    visible: list[ChatConversation] = []
+    for conversation in conversations:
+        try:
+            require_case_access(db, current_user, conversation.case_id)
+        except (CaseAccessDenied, CaseNotFound):
+            continue
+        visible.append(conversation)
+
+    return [_to_response(conversation) for conversation in visible]
 
 
+@router.get("/{chat_id}", response_model=ChatHistoryResponse)
+async def get_chat_history(
+    chat_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        conversation = get_conversation_for_user(db, chat_id, current_user)
+    except (CaseNotFound, CaseAccessDenied) as exc:
+        raise HTTPException(status_code=404, detail="Chat history not found") from exc
+    return _to_response(conversation)
+
+
+@router.put("/{chat_id}", response_model=ChatHistoryResponse)
+async def update_chat_history(
+    chat_id: UUID,
+    update: ChatHistoryUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        conversation = get_conversation_for_user(db, chat_id, current_user)
+    except (CaseNotFound, CaseAccessDenied) as exc:
+        raise HTTPException(status_code=404, detail="Chat history not found") from exc
+
+    if update.name is not None:
+        rename_conversation(db, conversation, update.name)
+
+    if update.messages is not None:
+        revision = create_case_revision(
+            db=db,
+            case_id=conversation.case_id,
+            user_id=current_user.id,
+            extra_metadata={"source": "chat_history_replace"},
+            source="chat_history_replace",
+        )
+        replace_conversation_messages(db, conversation, update.messages, revision=revision)
+
+    db.commit()
+    conversation = get_conversation_for_user(db, chat_id, current_user)
+    return _to_response(conversation)
+
+
+@router.delete("/{chat_id}")
+async def delete_chat_history(
+    chat_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    try:
+        conversation = get_conversation_for_user(db, chat_id, current_user)
+    except (CaseNotFound, CaseAccessDenied) as exc:
+        raise HTTPException(status_code=404, detail="Chat history not found") from exc
+
+    delete_conversation(db, conversation)
+    db.commit()
+    return {"status": "deleted", "id": str(chat_id)}

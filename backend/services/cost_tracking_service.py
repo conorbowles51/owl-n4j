@@ -149,7 +149,10 @@ def record_cost(
         )
         
         db.add(cost_record)
-        db.commit()
+        if should_close:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(cost_record)
         
         return cost_record

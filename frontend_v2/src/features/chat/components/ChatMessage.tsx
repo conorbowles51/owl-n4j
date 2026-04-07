@@ -18,10 +18,10 @@ import type { ChatMessageData } from "../types"
 
 interface ChatMessageProps {
   message: ChatMessageData
-  onCitationClick?: (filename: string) => void
+  onDocumentClick?: (filename: string, page?: number) => void
 }
 
-export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
+export function ChatMessage({ message, onDocumentClick }: ChatMessageProps) {
   const [copied, setCopied] = useState(false)
   const [showSources, setShowSources] = useState(false)
   const isUser = message.role === "user"
@@ -65,12 +65,12 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
                 {new Date(message.timestamp).toLocaleTimeString()}
               </span>
             )}
-            {message.cost != null && message.cost > 0 && (
-              <CostBadge amount={message.cost} />
+            {message.cost && message.cost.usd > 0 && (
+              <CostBadge amount={message.cost.usd} />
             )}
             {message.model_info && (
               <Badge variant="outline" className="text-[10px] py-0">
-                {message.model_info.model}
+                {message.model_info.model_name}
               </Badge>
             )}
           </div>
@@ -83,6 +83,7 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
             <Markdown
               content={message.content}
               className="mt-1 text-sm leading-relaxed"
+              onOpenDocument={onDocumentClick}
             />
           )}
 
@@ -114,11 +115,14 @@ export function ChatMessage({ message, onCitationClick }: ChatMessageProps) {
                   {message.sources.map((src, i) => (
                     <button
                       key={i}
-                      onClick={() => onCitationClick?.(src.filename)}
+                      onClick={() => onDocumentClick?.(src.filename, src.page)}
                       className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-muted"
                     >
                       <FileText className="size-3 text-amber-500" />
-                      <span className="truncate">{src.filename}</span>
+                      <span className="truncate">
+                        {src.filename}
+                        {src.page ? ` p.${src.page}` : ""}
+                      </span>
                     </button>
                   ))}
                 </div>

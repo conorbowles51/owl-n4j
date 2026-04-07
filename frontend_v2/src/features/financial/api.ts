@@ -7,7 +7,7 @@ export interface TransactionEntity {
 
 export interface Transaction {
   key: string
-  date: string
+  date?: string | null
   time?: string
   name?: string
   type?: string

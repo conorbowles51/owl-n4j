@@ -8,11 +8,9 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ caseId }: ChatHeaderProps) {
   const activeId = useChatStore((s) => s.activeConversationId)
-  const { data: conversations = [] } = useConversations()
+  const { data: conversations = [] } = useConversations(caseId)
 
-  const activeConversation = conversations.find(
-    (c) => c.id === activeId && (!c.case_id || c.case_id === caseId)
-  )
+  const activeConversation = conversations.find((c) => c.id === activeId)
 
   const title = activeConversation?.name || "New Conversation"
 

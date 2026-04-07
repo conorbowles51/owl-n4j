@@ -7,13 +7,13 @@ import type { ChatMessageData } from "../types"
 interface ChatMessageListProps {
   messages: ChatMessageData[]
   isStreaming: boolean
-  onCitationClick?: (filename: string) => void
+  onDocumentClick?: (filename: string, page?: number) => void
 }
 
 export function ChatMessageList({
   messages,
   isStreaming,
-  onCitationClick,
+  onDocumentClick,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -28,7 +28,7 @@ export function ChatMessageList({
           <ChatMessage
             key={i}
             message={msg}
-            onCitationClick={onCitationClick}
+            onDocumentClick={onDocumentClick}
           />
         ))}
         {isStreaming && (

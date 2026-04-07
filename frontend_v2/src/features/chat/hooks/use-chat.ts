@@ -1,10 +1,10 @@
-import { useState, useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { chatAPI, chatHistoryAPI } from "../api"
 import { useChatStore } from "../stores/chat.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { CONVERSATIONS_KEY } from "./use-conversations"
-import type { ChatMessageData } from "../types"
+import type { ChatMessageData, ChatScope } from "../types"
 
 export function useChat(caseId: string) {
   const queryClient = useQueryClient()
@@ -21,43 +21,48 @@ export function useChat(caseId: string) {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const setActiveConversation = useChatStore((s) => s.setActiveConversation)
 
-  const autoSave = useCallback(
-    async (allMessages: ChatMessageData[], title?: string) => {
+  const refreshSuggestions = useCallback(
+    async (scope: ChatScope = "case_overview") => {
       try {
-        const convId = savedConversationId.current || activeConversationId
-        if (convId) {
-          // Update existing conversation
-          await chatHistoryAPI.update(convId, {
-            messages: allMessages,
-            ...(title ? { name: title } : {}),
-          })
-        } else {
-          // Create new conversation
-          const autoTitle =
-            title ||
-            allMessages[0]?.content.slice(0, 50) ||
-            "New conversation"
-          const conv = await chatHistoryAPI.create({
-            name: autoTitle,
-            messages: allMessages,
-            case_id: caseId,
-          })
-          savedConversationId.current = conv.id
-          setActiveConversation(conv.id)
-          queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY })
-        }
+        const next = await chatAPI.getSuggestions(
+          caseId,
+          scope === "selection" ? Array.from(selectedNodeKeys) : undefined
+        )
+        setSuggestions(next.map((item) => item.question))
       } catch {
-        // Silent fail — don't block chat for save errors
+        setSuggestions([])
       }
     },
-    [caseId, activeConversationId, setActiveConversation]
+    [caseId, selectedNodeKeys]
   )
 
+  useEffect(() => {
+    clearMessages()
+    savedConversationId.current = null
+    setActiveConversation(null)
+    setSuggestions([])
+    void refreshSuggestions("case_overview")
+  }, [caseId, clearMessages, refreshSuggestions, setActiveConversation])
+
   const sendMessage = useCallback(
-    async (content: string, model?: string, provider?: string) => {
+    async (
+      content: string,
+      model?: string,
+      provider?: string,
+      scope: ChatScope = "case_overview"
+    ) => {
+      const effectiveScope =
+        scope === "selection" && selectedNodeKeys.size > 0
+          ? "selection"
+          : "case_overview"
+      const selectedKeys =
+        effectiveScope === "selection" ? Array.from(selectedNodeKeys) : undefined
+
       const userMsg: ChatMessageData = {
         role: "user",
         content,
+        scope: effectiveScope,
+        selected_entity_keys: selectedKeys,
         timestamp: new Date().toISOString(),
       }
       addMessage(userMsg)
@@ -66,13 +71,17 @@ export function useChat(caseId: string) {
       try {
         const response = await chatAPI.ask({
           question: content,
-          selected_keys: Array.from(selectedNodeKeys),
           case_id: caseId,
+          conversation_id: savedConversationId.current || activeConversationId || undefined,
+          scope: effectiveScope,
+          selected_entity_keys: selectedKeys,
+          persist: true,
           ...(model ? { model } : {}),
           ...(provider ? { provider } : {}),
         })
 
         const assistantMsg: ChatMessageData = {
+          id: response.message_id,
           role: "assistant",
           content: response.answer,
           sources: response.sources,
@@ -80,26 +89,21 @@ export function useChat(caseId: string) {
           timestamp: new Date().toISOString(),
           model_info: response.model_info,
           resultGraph: response.result_graph ?? undefined,
+          provenance: response.provenance,
         }
         addMessage(assistantMsg)
 
-        // Merge result graph into cumulative
         if (response.result_graph) {
           appendResultGraph(response.result_graph)
         }
 
-        // Auto-save after AI response
-        const allMessages = [
-          ...useChatStore.getState().messages,
-        ]
-        await autoSave(allMessages)
+        if (response.conversation_id) {
+          savedConversationId.current = response.conversation_id
+          setActiveConversation(response.conversation_id)
+        }
 
-        // Refresh suggestions
-        const sug = await chatAPI.getSuggestions(
-          caseId,
-          Array.from(selectedNodeKeys)
-        )
-        setSuggestions(sug.map((s) => s.question))
+        setSuggestions(response.suggestions.map((item) => item.question))
+        queryClient.invalidateQueries({ queryKey: CONVERSATIONS_KEY })
       } catch (err) {
         const errorMsg: ChatMessageData = {
           role: "assistant",
@@ -114,7 +118,15 @@ export function useChat(caseId: string) {
         setIsLoading(false)
       }
     },
-    [caseId, selectedNodeKeys, addMessage, appendResultGraph, autoSave]
+    [
+      activeConversationId,
+      addMessage,
+      appendResultGraph,
+      caseId,
+      queryClient,
+      selectedNodeKeys,
+      setActiveConversation,
+    ]
   )
 
   const loadConversation = useCallback(
@@ -125,7 +137,6 @@ export function useChat(caseId: string) {
         setActiveConversation(id)
         savedConversationId.current = id
 
-        // Rebuild cumulative graph from loaded messages
         const store = useChatStore.getState()
         store.clearResultGraphs()
         for (const msg of conv.messages) {
@@ -134,25 +145,20 @@ export function useChat(caseId: string) {
           }
         }
 
-        // Refresh suggestions
-        const sug = await chatAPI.getSuggestions(
-          caseId,
-          Array.from(selectedNodeKeys)
-        )
-        setSuggestions(sug.map((s) => s.question))
+        void refreshSuggestions("case_overview")
       } catch {
-        // Failed to load conversation
+        // Ignore load failures.
       }
     },
-    [caseId, selectedNodeKeys, setMessages, setActiveConversation]
+    [refreshSuggestions, setMessages, setActiveConversation]
   )
 
   const startNewConversation = useCallback(() => {
     clearMessages()
     savedConversationId.current = null
     setActiveConversation(null)
-    setSuggestions([])
-  }, [clearMessages, setActiveConversation])
+    void refreshSuggestions("case_overview")
+  }, [clearMessages, refreshSuggestions, setActiveConversation])
 
   return {
     messages,

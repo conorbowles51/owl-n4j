@@ -8,15 +8,11 @@ import {
 } from "lucide-react"
 import ForceGraph2D, {
   type ForceGraphMethods,
+  type LinkObject,
+  type NodeObject,
 } from "react-force-graph-2d"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/ui/empty-state"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
 import { cn } from "@/lib/cn"
 import { getNodeColor, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
@@ -25,6 +21,7 @@ import { useChatStore } from "../stores/chat.store"
 import { useResultGraph } from "../hooks/use-result-graph"
 import { ResultNodeDetail } from "./ResultNodeDetail"
 import type { ResultGraphNode, ResultGraphLink } from "../types"
+import type { GraphEdge, GraphNode } from "@/types/graph.types"
 
 interface FGNode extends ResultGraphNode {
   x?: number
@@ -40,7 +37,9 @@ interface FGLink {
 
 export function ResultGraphPanel() {
   const { id: caseId } = useParams()
-  const graphRef = useRef<ForceGraphMethods<FGNode, FGLink>>()
+  const graphRef = useRef<
+    ForceGraphMethods<NodeObject<FGNode>, LinkObject<FGNode, FGLink>> | undefined
+  >(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
   const [contextMenu, setContextMenu] = useState<{
@@ -114,19 +113,19 @@ export function ResultGraphPanel() {
       try {
         const data = await graphAPI.getNodeNeighbours(nodeKey, 1, caseId)
         // Convert graph data to result graph format and merge
-        const newNodes = data.nodes.map((n: Record<string, unknown>) => ({
-          key: n.key as string,
-          name: (n.label as string) || (n.key as string),
-          type: (n.type as string) || "unknown",
+        const newNodes = data.nodes.map((node: GraphNode) => ({
+          key: node.key,
+          name: node.label || node.key,
+          type: node.type || "unknown",
           confidence: 0.5,
           mentioned: false,
           relevance_reason: "Expanded from neighbor",
           relevance_source: "graph",
         }))
-        const newLinks = data.edges.map((e: Record<string, unknown>) => ({
-          source: e.source as string,
-          target: e.target as string,
-          type: (e.type as string) || "RELATED",
+        const newLinks = data.edges.map((edge: GraphEdge) => ({
+          source: edge.source,
+          target: edge.target,
+          type: edge.type || "RELATED",
         }))
         appendResultGraph({ nodes: newNodes, links: newLinks })
       } catch {
@@ -343,38 +342,28 @@ export function ResultGraphPanel() {
 
             {/* Context menu overlay */}
             {contextMenu && (
-              <ContextMenu open onOpenChange={() => setContextMenu(null)}>
-                <ContextMenuTrigger asChild>
-                  <div
-                    style={{
-                      position: "fixed",
-                      left: contextMenu.x,
-                      top: contextMenu.y,
-                      width: 1,
-                      height: 1,
-                    }}
-                  />
-                </ContextMenuTrigger>
-                <ContextMenuContent>
-                  <ContextMenuItem
-                    onClick={() =>
-                      handleExpandNeighbors(contextMenu.node.key)
-                    }
-                  >
-                    <Network className="mr-2 size-3.5" />
-                    Expand Neighbors
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={() => {
-                      window.location.href = `/cases/${caseId}/graph?select=${contextMenu.node.key}`
-                      setContextMenu(null)
-                    }}
-                  >
-                    <Maximize2 className="mr-2 size-3.5" />
-                    View in Main Graph
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
+              <div
+                className="fixed z-50 min-w-40 rounded-md border border-border bg-background p-1 shadow-lg"
+                style={{ left: contextMenu.x, top: contextMenu.y }}
+              >
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  onClick={() => handleExpandNeighbors(contextMenu.node.key)}
+                >
+                  <Network className="size-3.5" />
+                  Expand Neighbors
+                </button>
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                  onClick={() => {
+                    window.location.href = `/cases/${caseId}/graph?select=${contextMenu.node.key}`
+                    setContextMenu(null)
+                  }}
+                >
+                  <Maximize2 className="size-3.5" />
+                  View in Main Graph
+                </button>
+              </div>
             )}
           </>
         )}
