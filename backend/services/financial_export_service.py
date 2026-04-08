@@ -1041,10 +1041,18 @@ def generate_financial_pdf(
         /* ── PAGE BREAKS ── */
         .page-break {{ page-break-before: always; }}
 
-        /* Avoid orphaning section headers */
-        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .summary-grid, .mf-entity-block {{
+        /* Avoid orphaning section headers (but NOT the summary-grid —
+           keeping it out of this list lets the renderer keep the cards
+           on page 1 with the report header instead of floating them
+           to page 2 to avoid a break after). */
+        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .mf-entity-block {{
             page-break-after: avoid;
         }}
+
+        /* Keep the report header + summary cards glued together at the
+           top of page 1 so the report never opens on a blank page. */
+        .report-header {{ page-break-after: avoid; }}
+        .summary-grid {{ page-break-before: avoid; page-break-inside: avoid; }}
     </style>
 </head>
 <body>

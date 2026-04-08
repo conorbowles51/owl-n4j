@@ -52,9 +52,10 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [selectedMoneyFlowEntities, setSelectedMoneyFlowEntities] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
   const [filterExpanded, setFilterExpanded] = useState(false);
-  // Charts, Entity Flow, and Money Flow are independently collapsible
-  const [chartsExpanded, setChartsExpanded] = useState(true);
-  const [entityFlowExpanded, setEntityFlowExpanded] = useState(true);
+  // Charts, Entity Flow, and Money Flow are independently collapsible.
+  // All default to collapsed so the page opens with a compact, focused layout.
+  const [chartsExpanded, setChartsExpanded] = useState(false);
+  const [entityFlowExpanded, setEntityFlowExpanded] = useState(false);
   const [moneyFlowExpanded, setMoneyFlowExpanded] = useState(false);
 
   // Resizable visualisation section — user drags the divider to control combined height
