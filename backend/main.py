@@ -44,6 +44,7 @@ from services import evidence_engine_client
 from routers.snapshots import _cleanup_stale_chunks
 from routers.evidence_ws import router as evidence_ws_router, close_redis
 from services.job_status_subscriber import get_subscriber
+from services.neo4j.driver import driver
 
 
 @asynccontextmanager
@@ -155,10 +156,16 @@ async def root():
 async def health():
     """Detailed health check."""
     try:
-        # Test Neo4j connection
-        summary = neo4j_service.get_graph_summary()
+        # Keep health checks case-agnostic so deploys do not depend on a case-scoped API.
+        with driver.session() as session:
+            summary = session.run(
+                """
+                MATCH (n)
+                RETURN count(n) AS total_nodes
+                """
+            ).single()
         neo4j_status = "connected"
-        node_count = summary.get("total_nodes", 0)
+        node_count = summary["total_nodes"] if summary else 0
     except Exception as e:
         neo4j_status = f"error: {str(e)}"
         node_count = 0
