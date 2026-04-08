@@ -110,6 +110,7 @@ def chunk_document(
                     metadata={
                         "file_name": file_name,
                         "job_id": job_id,
+                        "file_type": doc.metadata.get("file_type"),
                         "page_start": page_start,
                         "page_end": page_end,
                     },
@@ -127,6 +128,7 @@ def chunk_document(
         meta = {
             "file_name": file_name,
             "job_id": job_id,
+            "file_type": doc.metadata.get("file_type"),
             "sheet_name": sheet_name,
             "page_start": inferred_page,
             "page_end": inferred_page,

@@ -211,7 +211,7 @@ export function BulkImportDialog({
           {parsed.length > 0 && (
             <>
               <div className="flex items-center gap-2">
-                <Badge variant="emerald">{matchedCount} matched</Badge>
+                <Badge variant="success">{matchedCount} matched</Badge>
                 {unmatchedCount > 0 && (
                   <Badge variant="destructive">{unmatchedCount} unmatched</Badge>
                 )}

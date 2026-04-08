@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import type { FinancialDatasetMode } from "../api"
 
 export interface SortColumn {
   key: string
@@ -8,6 +9,7 @@ export interface SortColumn {
 
 interface FinancialStoreState {
   // Filters
+  mode: FinancialDatasetMode
   searchQuery: string
   selectedTypes: Set<string>
   selectedCategories: Set<string>
@@ -36,6 +38,7 @@ interface FinancialStoreState {
 
 interface FinancialStoreActions {
   setSearchQuery: (query: string) => void
+  setMode: (mode: FinancialDatasetMode) => void
 
   setSelectedTypes: (types: Set<string>) => void
   toggleType: (type: string) => void
@@ -76,6 +79,7 @@ interface FinancialStoreActions {
 type FinancialStore = FinancialStoreState & FinancialStoreActions
 
 const initialState: FinancialStoreState = {
+  mode: "transactions",
   searchQuery: "",
   selectedTypes: new Set<string>(),
   selectedCategories: new Set<string>(),
@@ -99,6 +103,14 @@ export const useFinancialStore = create<FinancialStore>()(
     (set) => ({
       ...initialState,
 
+      setMode: (mode) =>
+        set({
+          mode,
+          currentPage: 0,
+          checkedKeys: new Set<string>(),
+          lastClickedKey: null,
+          expandedRowKeys: new Set<string>(),
+        }),
       setSearchQuery: (query) => set({ searchQuery: query, currentPage: 0 }),
 
       setSelectedTypes: (types) => set({ selectedTypes: types, currentPage: 0 }),
@@ -202,6 +214,7 @@ export const useFinancialStore = create<FinancialStore>()(
     {
       name: "owl-financial-store",
       partialize: (state) => ({
+        mode: state.mode,
         sortColumns: state.sortColumns,
         pageSize: state.pageSize,
         chartsPanelOpen: state.chartsPanelOpen,

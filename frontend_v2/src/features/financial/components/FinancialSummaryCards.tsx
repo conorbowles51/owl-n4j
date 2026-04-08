@@ -2,16 +2,18 @@ import { useMemo } from "react"
 import { TrendingUp, TrendingDown, ArrowLeftRight, Hash, User } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { CostBadge } from "@/components/ui/cost-badge"
-import type { Transaction } from "../api"
+import type { Transaction, FinancialDatasetMode } from "../api"
 
 interface FinancialSummaryCardsProps {
   transactions: Transaction[]
   entityFilter: { key: string; name: string } | null
+  mode: FinancialDatasetMode
 }
 
 export function FinancialSummaryCards({
   transactions,
   entityFilter,
+  mode,
 }: FinancialSummaryCardsProps) {
   const summary = useMemo(() => {
     if (entityFilter) {
@@ -77,7 +79,7 @@ export function FinancialSummaryCards({
         color: summary.netFlow >= 0 ? "text-emerald-500" : "text-red-500",
       },
       {
-        label: "Transactions",
+        label: mode === "transactions" ? "Transactions" : "Records",
         value: summary.count,
         icon: Hash,
         isCount: true,
@@ -95,7 +97,7 @@ export function FinancialSummaryCards({
       color: "text-amber-500",
     },
     {
-      label: "Transactions",
+      label: mode === "transactions" ? "Transactions" : "Records",
       value: summary.count,
       icon: Hash,
       isCount: true,
@@ -107,7 +109,7 @@ export function FinancialSummaryCards({
       isCount: true,
     },
     {
-      label: "Avg Transaction",
+      label: mode === "transactions" ? "Avg Transaction" : "Avg Record",
       value: summary.avgTransaction,
       icon: TrendingUp,
       color: "text-blue-500",

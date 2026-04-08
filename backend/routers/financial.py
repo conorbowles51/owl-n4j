@@ -59,6 +59,7 @@ class CreateCategoryRequest(BaseModel):
 @router.get("")
 async def get_financial_transactions(
     case_id: str = Query(..., description="REQUIRED: Filter to transactions in this case"),
+    mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     types: Optional[str] = Query(None, description="Comma-separated transaction types to include"),
     start_date: Optional[str] = Query(None, description="Filter on or after this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter on or before this date (YYYY-MM-DD)"),
@@ -73,12 +74,13 @@ async def get_financial_transactions(
 
         transactions = neo4j_service.get_financial_transactions(
             case_id=case_id,
+            mode=mode,
             types=parsed_types,
             start_date=start_date,
             end_date=end_date,
             categories=parsed_categories,
         )
-        return {"transactions": transactions, "total": len(transactions)}
+        return transactions
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -98,6 +100,7 @@ async def get_financial_entities(
 @router.get("/summary")
 async def get_financial_summary(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
+    mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     entity_key: Optional[str] = Query(None, description="Optional entity key for entity-relative inflow/outflow"),
 ):
     """
@@ -106,7 +109,7 @@ async def get_financial_summary(
     With entity_key: returns entity-relative inflows/outflows.
     """
     try:
-        return neo4j_service.get_financial_summary(case_id=case_id, entity_key=entity_key)
+        return neo4j_service.get_financial_summary(case_id=case_id, entity_key=entity_key, mode=mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -114,13 +117,13 @@ async def get_financial_summary(
 @router.get("/volume")
 async def get_financial_volume(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
+    mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
 ):
     """
     Get transaction volume over time grouped by date and type for chart data.
     """
     try:
-        data = neo4j_service.get_financial_volume_over_time(case_id=case_id)
-        return {"data": data}
+        return neo4j_service.get_financial_volume_over_time(case_id=case_id, mode=mode)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -232,12 +235,13 @@ async def batch_update_from_to(body: BatchFromToRequest):
 @router.get("/categories")
 async def get_categories(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
+    mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
 ):
     """
     Get predefined + custom financial categories found in a case.
     """
     try:
-        categories = neo4j_service.get_financial_categories(case_id=case_id)
+        categories = neo4j_service.get_financial_categories(case_id=case_id, mode=mode)
         return {"categories": categories}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -431,6 +435,7 @@ async def get_transaction_children(
 @router.get("/export/pdf")
 async def export_financial_pdf(
     case_id: str = Query(..., description="REQUIRED: Case ID"),
+    mode: str = Query("transactions", description="Dataset mode: transactions or intelligence"),
     case_name: str = Query("Case", description="Case name for the header"),
     categories: Optional[str] = Query(None, description="Comma-separated categories to filter"),
     start_date: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
@@ -448,13 +453,13 @@ async def export_financial_pdf(
     Includes transaction names, AI summaries, and entity notes appendix.
     """
     try:
-        result = neo4j_service.get_financial_transactions(case_id=case_id)
+        result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
 
         filters = []
         if categories:
             cat_list = [c.strip() for c in categories.split(",")]
-            transactions = [t for t in transactions if t.get("financial_category") in cat_list]
+            transactions = [t for t in transactions if t.get("category") in cat_list]
             filters.append(f"Categories: {', '.join(cat_list)}")
         if start_date:
             transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
@@ -486,7 +491,7 @@ async def export_financial_pdf(
                 fields = [
                     t.get("name"), t.get("purpose"), t.get("notes"),
                     t.get("counterparty_details"), t.get("summary"),
-                    t.get("financial_category"),
+                    t.get("category"),
                 ]
                 if isinstance(t.get("from_entity"), dict):
                     fields.append(t["from_entity"].get("name"))
@@ -541,7 +546,8 @@ async def export_financial_pdf(
         )
 
         safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
-        filename = f"Financial_Report_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
+        filename = f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
 
         return Response(
             content=pdf_bytes,

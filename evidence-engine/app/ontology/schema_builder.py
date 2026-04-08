@@ -10,6 +10,69 @@ from app.ontology.loader import OntologySchema, load_ontology
 
 def _entity_item_schema(categories: list[str]) -> dict[str, Any]:
     """Schema for a single extracted entity."""
+    financial_provenance_schema = {
+        "type": "object",
+        "properties": {
+            "financial_record_kind": {
+                "type": "string",
+                "enum": [
+                    "transaction",
+                    "invoice",
+                    "payment_instruction",
+                    "balance",
+                    "asset_value",
+                    "fraud_total",
+                    "allegation",
+                    "summary_metric",
+                    "other",
+                ],
+            },
+            "financial_view_mode": {
+                "type": "string",
+                "enum": ["transaction", "intelligence"],
+            },
+            "is_financial_event": {"type": "boolean"},
+            "is_evidence_backed_transaction": {"type": "boolean"},
+            "evidence_strength": {
+                "type": "string",
+                "enum": ["documentary", "derived", "narrative", "unknown"],
+            },
+            "evidence_source_type": {
+                "type": "string",
+                "enum": [
+                    "bank_statement",
+                    "invoice",
+                    "receipt",
+                    "wire",
+                    "card_statement",
+                    "ledger",
+                    "official_report",
+                    "email",
+                    "interview",
+                    "other",
+                ],
+            },
+            "source_page": {
+                "anyOf": [
+                    {"type": "integer"},
+                    {"type": "null"},
+                ]
+            },
+            "source_excerpt": {"type": "string"},
+        },
+        "required": [
+            "financial_record_kind",
+            "financial_view_mode",
+            "is_financial_event",
+            "is_evidence_backed_transaction",
+            "evidence_strength",
+            "evidence_source_type",
+            "source_page",
+            "source_excerpt",
+        ],
+        "additionalProperties": False,
+    }
+
     return {
         "type": "object",
         "properties": {
@@ -57,6 +120,12 @@ def _entity_item_schema(categories: list[str]) -> dict[str, Any]:
                     "additionalProperties": False,
                 },
             },
+            "financial_provenance": {
+                "anyOf": [
+                    financial_provenance_schema,
+                    {"type": "null"},
+                ]
+            },
         },
         "required": [
             "category",
@@ -67,6 +136,7 @@ def _entity_item_schema(categories: list[str]) -> dict[str, Any]:
             "confidence",
             "verified_facts",
             "ai_insights",
+            "financial_provenance",
         ],
         "additionalProperties": False,
     }

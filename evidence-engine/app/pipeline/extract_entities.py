@@ -57,6 +57,326 @@ class RawRelationship:
     mandatory_instructions: list[str] = field(default_factory=list)
 
 
+FINANCIAL_RECORD_KINDS = {
+    "transaction",
+    "invoice",
+    "payment_instruction",
+    "balance",
+    "asset_value",
+    "fraud_total",
+    "allegation",
+    "summary_metric",
+    "other",
+}
+FINANCIAL_VIEW_MODES = {"transaction", "intelligence"}
+EVIDENCE_STRENGTHS = {"documentary", "derived", "narrative", "unknown"}
+EVIDENCE_SOURCE_TYPES = {
+    "bank_statement",
+    "invoice",
+    "receipt",
+    "wire",
+    "card_statement",
+    "ledger",
+    "official_report",
+    "email",
+    "interview",
+    "other",
+}
+DOCUMENTARY_SOURCE_TYPES = {
+    "bank_statement",
+    "invoice",
+    "receipt",
+    "wire",
+    "card_statement",
+    "ledger",
+    "official_report",
+}
+NARRATIVE_SOURCE_TYPES = {"email", "interview"}
+FINANCIAL_CANDIDATE_KEYS = {
+    "amount",
+    "currency",
+    "balance",
+    "value",
+    "price",
+    "cost",
+    "total",
+}
+
+
+def _normalized_text(*parts: Any) -> str:
+    return " ".join(str(part or "").strip().lower() for part in parts if part).strip()
+
+
+def _parse_int_or_none(value: Any) -> int | None:
+    if value in ("", None):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_financial_candidate(
+    category: str,
+    specific_type: str,
+    name: str,
+    source_quote: str,
+    properties: dict[str, Any],
+) -> bool:
+    if any(properties.get(key) not in ("", None) for key in FINANCIAL_CANDIDATE_KEYS):
+        return True
+    probe = _normalized_text(category, specific_type, name, source_quote)
+    return any(
+        keyword in probe
+        for keyword in (
+            "transaction",
+            "payment",
+            "invoice",
+            "transfer",
+            "wire",
+            "balance",
+            "proceeds",
+            "fraud",
+            "asset value",
+            "valuation",
+            "bank statement",
+            "ledger",
+            "receipt",
+            "amount",
+            "eur",
+            "usd",
+            "gbp",
+            "€",
+            "$",
+            "£",
+        )
+    )
+
+
+def _infer_evidence_source_type(
+    financial_provenance: dict[str, Any] | None,
+    *,
+    file_name: str,
+    file_type: str | None,
+    specific_type: str,
+    name: str,
+    source_quote: str,
+    is_table: bool,
+) -> str:
+    candidate = str((financial_provenance or {}).get("evidence_source_type", "")).strip().lower()
+    if candidate in EVIDENCE_SOURCE_TYPES:
+        return candidate
+
+    probe = _normalized_text(file_name, file_type, specific_type, name, source_quote)
+    keyword_map = (
+        ("bank_statement", ("bank statement", "account statement", "bank account statement")),
+        ("card_statement", ("card statement", "credit card", "debit card")),
+        ("wire", ("wire", "swift", "iban", "bic", "transfer confirmation")),
+        ("invoice", ("invoice", "inv-", "bill to", "purchase order")),
+        ("receipt", ("receipt", "paid receipt", "proof of payment")),
+        ("ledger", ("ledger", "general ledger", "journal entry", "trial balance")),
+        ("official_report", ("report", "warrant", "official report", "filing")),
+        ("email", ("email", "e-mail", "@")),
+        ("interview", ("interview", "statement", "witness", "transcript")),
+    )
+    for source_type, keywords in keyword_map:
+        if any(keyword in probe for keyword in keywords):
+            return source_type
+
+    if file_type in {"xlsx", "xls", "csv"}:
+        return "ledger" if is_table else "other"
+    if file_type == "pdf" and is_table:
+        return "official_report"
+    return "other"
+
+
+def _infer_evidence_strength(
+    financial_provenance: dict[str, Any] | None,
+    *,
+    evidence_source_type: str,
+    file_type: str | None,
+    is_table: bool,
+) -> str:
+    candidate = str((financial_provenance or {}).get("evidence_strength", "")).strip().lower()
+    if candidate in EVIDENCE_STRENGTHS:
+        return candidate
+
+    if evidence_source_type in DOCUMENTARY_SOURCE_TYPES:
+        return "documentary"
+    if evidence_source_type in NARRATIVE_SOURCE_TYPES:
+        return "narrative"
+    if is_table or file_type in {"xlsx", "xls", "csv"}:
+        return "derived"
+    return "unknown"
+
+
+def _infer_financial_record_kind(
+    financial_provenance: dict[str, Any] | None,
+    *,
+    category: str,
+    specific_type: str,
+    name: str,
+    source_quote: str,
+    properties: dict[str, Any],
+) -> str:
+    candidate = str((financial_provenance or {}).get("financial_record_kind", "")).strip().lower()
+    if candidate in FINANCIAL_RECORD_KINDS:
+        return candidate
+
+    probe = _normalized_text(category, specific_type, name, source_quote)
+    if "balance" in probe:
+        return "balance"
+    if any(keyword in probe for keyword in ("asset value", "valuation", "property value", "worth")):
+        return "asset_value"
+    if any(keyword in probe for keyword in ("fraud total", "alleged proceeds", "proceeds", "aggregate", "total alleged")):
+        return "fraud_total"
+    if any(keyword in probe for keyword in ("alleged", "suspected", "claimed", "claim")):
+        return "allegation"
+    if any(keyword in probe for keyword in ("summary", "total", "aggregate")) and properties.get("amount") not in ("", None):
+        return "summary_metric"
+    if "invoice" in probe:
+        return "invoice"
+    if any(keyword in probe for keyword in ("payment instruction", "remittance", "payment order")):
+        return "payment_instruction"
+    if any(keyword in probe for keyword in ("transaction", "transfer", "payment", "wire", "swift", "deposit", "withdrawal", "purchase")):
+        return "transaction"
+    if properties.get("amount") not in ("", None):
+        return "transaction" if category in {"Transaction", "Event"} else "other"
+    return "other"
+
+
+def _looks_like_transaction_event(
+    category: str,
+    specific_type: str,
+    name: str,
+    source_quote: str,
+    properties: dict[str, Any],
+) -> bool:
+    if properties.get("amount") in ("", None):
+        return False
+    if any(
+        properties.get(key) not in ("", None)
+        for key in (
+            "date",
+            "time",
+            "from_entity_key",
+            "from_entity_name",
+            "to_entity_key",
+            "to_entity_name",
+            "sender",
+            "receiver",
+            "counterparty",
+            "account_number",
+            "reference",
+            "payment_reference",
+        )
+    ):
+        return True
+    probe = _normalized_text(category, specific_type, name, source_quote)
+    return any(
+        keyword in probe
+        for keyword in (
+            "transaction",
+            "payment",
+            "transfer",
+            "wire",
+            "swift",
+            "debit",
+            "credit",
+            "purchase",
+            "deposit",
+            "withdrawal",
+            "sent to",
+            "received from",
+        )
+    )
+
+
+def _build_financial_provenance(
+    financial_provenance: dict[str, Any] | None,
+    *,
+    category: str,
+    specific_type: str,
+    name: str,
+    source_quote: str,
+    properties: dict[str, Any],
+    file_name: str,
+    file_type: str | None,
+    source_document_id: str | None,
+    source_page: int | None,
+    confidence: float,
+    is_table: bool,
+) -> dict[str, Any] | None:
+    if not _is_financial_candidate(category, specific_type, name, source_quote, properties):
+        return None
+
+    evidence_source_type = _infer_evidence_source_type(
+        financial_provenance,
+        file_name=file_name,
+        file_type=file_type,
+        specific_type=specific_type,
+        name=name,
+        source_quote=source_quote,
+        is_table=is_table,
+    )
+    evidence_strength = _infer_evidence_strength(
+        financial_provenance,
+        evidence_source_type=evidence_source_type,
+        file_type=file_type,
+        is_table=is_table,
+    )
+    record_kind = _infer_financial_record_kind(
+        financial_provenance,
+        category=category,
+        specific_type=specific_type,
+        name=name,
+        source_quote=source_quote,
+        properties=properties,
+    )
+    transaction_like = _looks_like_transaction_event(
+        category,
+        specific_type,
+        name,
+        source_quote,
+        properties,
+    )
+    is_evidence_backed_transaction = (
+        record_kind in {"transaction", "payment_instruction"}
+        and transaction_like
+        and evidence_strength == "documentary"
+    )
+    financial_view_mode = "transaction" if is_evidence_backed_transaction else "intelligence"
+    source_excerpt = str((financial_provenance or {}).get("source_excerpt", "")).strip() or source_quote.strip()
+    source_page_value = _parse_int_or_none((financial_provenance or {}).get("source_page"))
+    if source_page_value is None:
+        source_page_value = source_page
+
+    if transaction_like and not is_evidence_backed_transaction:
+        logger.info(
+            "Financial candidate downgraded to intelligence: name=%r file=%r source_type=%s strength=%s record_kind=%s",
+            name,
+            file_name,
+            evidence_source_type,
+            evidence_strength,
+            record_kind,
+        )
+
+    return {
+        "financial_record_kind": record_kind,
+        "financial_view_mode": financial_view_mode,
+        "is_financial_event": True,
+        "is_evidence_backed_transaction": is_evidence_backed_transaction,
+        "evidence_strength": evidence_strength,
+        "evidence_source_type": evidence_source_type,
+        "source_document_id": source_document_id or file_name,
+        "source_filename": file_name,
+        "source_page": source_page_value,
+        "source_excerpt": source_excerpt,
+        "extraction_confidence": round(confidence, 4),
+        "financial_model_version": 2,
+    }
+
+
 async def _extract_entities_from_chunk(
     chunk_text: str,
     chunk_index: int,
@@ -68,6 +388,8 @@ async def _extract_entities_from_chunk(
     sheet_name: str = "",
     page_start: int | None = None,
     page_end: int | None = None,
+    file_type: str | None = None,
+    source_document_id: str | None = None,
 ) -> list[RawEntity]:
     normalized_instructions = normalize_mandatory_instructions(mandatory_instructions)
     prompt = build_entity_extraction_prompt(
@@ -80,6 +402,7 @@ async def _extract_entities_from_chunk(
         sheet_name=sheet_name,
         page_start=page_start,
         page_end=page_end,
+        file_type=file_type,
     )
 
     response = await chat_completion(
@@ -123,15 +446,35 @@ async def _extract_entities_from_chunk(
             file_name=file_name,
         )
 
+        properties = dict(e.get("properties", {}) or {})
+        source_quote = str(e.get("source_quote", ""))
+        confidence = float(e.get("confidence", 0.5))
+        financial_provenance = _build_financial_provenance(
+            e.get("financial_provenance"),
+            category=category,
+            specific_type=e.get("specific_type", category),
+            name=name,
+            source_quote=source_quote,
+            properties=properties,
+            file_name=file_name,
+            file_type=file_type,
+            source_document_id=source_document_id,
+            source_page=page_start,
+            confidence=confidence,
+            is_table=is_table,
+        )
+        if financial_provenance:
+            properties.update(financial_provenance)
+
         entities.append(
             RawEntity(
                 temp_id=f"chunk{chunk_index}_E{i}",
                 category=category,
                 specific_type=e.get("specific_type", category),
                 name=name,
-                properties=e.get("properties", {}),
-                source_quote=e.get("source_quote", ""),
-                confidence=float(e.get("confidence", 0.5)),
+                properties=properties,
+                source_quote=source_quote,
+                confidence=confidence,
                 source_chunk_index=chunk_index,
                 source_file=file_name,
                 verified_facts=verified_facts,
@@ -466,6 +809,8 @@ async def extract_entities_and_relationships(
             sheet_name=chunk.metadata.get("sheet_name", ""),
             page_start=chunk.metadata.get("page_start"),
             page_end=chunk.metadata.get("page_end"),
+            file_type=chunk.metadata.get("file_type"),
+            source_document_id=chunk.metadata.get("job_id"),
         )
         for chunk in chunks
     ]

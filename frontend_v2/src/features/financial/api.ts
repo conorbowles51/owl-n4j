@@ -5,7 +5,32 @@ export interface TransactionEntity {
   name: string | null
 }
 
-export interface Transaction {
+export type FinancialDatasetMode = "transactions" | "intelligence"
+export type FinancialViewMode = "transaction" | "intelligence"
+export type FinancialRecordKind =
+  | "transaction"
+  | "invoice"
+  | "payment_instruction"
+  | "balance"
+  | "asset_value"
+  | "fraud_total"
+  | "allegation"
+  | "summary_metric"
+  | "other"
+export type EvidenceStrength = "documentary" | "derived" | "narrative" | "unknown"
+export type EvidenceSourceType =
+  | "bank_statement"
+  | "invoice"
+  | "receipt"
+  | "wire"
+  | "card_statement"
+  | "ledger"
+  | "official_report"
+  | "email"
+  | "interview"
+  | "other"
+
+interface BaseFinancialRecord {
   key: string
   date?: string | null
   time?: string
@@ -27,20 +52,47 @@ export interface Transaction {
   purpose?: string
   counterparty_details?: string
   notes?: string
-  case_id: string
+  financial_record_kind: FinancialRecordKind
+  financial_view_mode: FinancialViewMode
+  is_financial_event: boolean
+  evidence_strength?: EvidenceStrength | null
+  evidence_source_type?: EvidenceSourceType | null
+  source_document_id?: string | null
+  source_filename?: string | null
+  source_page?: number | null
+  source_excerpt?: string | null
+  extraction_confidence?: number | null
 }
+
+export interface TransactionRecord extends BaseFinancialRecord {
+  financial_view_mode: "transaction"
+  is_evidence_backed_transaction: boolean
+}
+
+export interface FinancialIntelligenceRecord extends BaseFinancialRecord {
+  financial_view_mode: "intelligence"
+  is_evidence_backed_transaction: false
+}
+
+export type Transaction = TransactionRecord | FinancialIntelligenceRecord
 
 export interface TransactionsResponse {
   transactions: Transaction[]
   total: number
+  dataset_mode: FinancialDatasetMode
+  uses_legacy_financial_model: boolean
 }
 
 export interface FinancialSummary {
-  total_inflow: number
-  total_outflow: number
+  total_inflows?: number
+  total_outflows?: number
   net_flow: number
   transaction_count: number
-  category_breakdown: Record<string, number>
+  total_volume?: number
+  avg_amount?: number
+  max_amount?: number
+  dataset_mode: FinancialDatasetMode
+  uses_legacy_financial_model: boolean
 }
 
 export interface FinancialCategory {
@@ -61,28 +113,35 @@ export interface VolumeDataPoint {
   count: number
 }
 
+export interface VolumeResponse {
+  data: VolumeDataPoint[]
+  dataset_mode: FinancialDatasetMode
+  uses_legacy_financial_model: boolean
+}
+
 export const financialAPI = {
   getTransactions: (params: {
     caseId: string
+    mode?: FinancialDatasetMode
     types?: string[]
     startDate?: string
     endDate?: string
     categories?: string[]
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
+    qs.set("mode", params.mode || "transactions")
     if (params.types?.length) qs.set("types", params.types.join(","))
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
     if (params.categories?.length) qs.set("categories", params.categories.join(","))
-    return fetchAPI<{ transactions: Transaction[]; total: number }>(`/api/financial?${qs}`)
-      .then((res) => res.transactions)
+    return fetchAPI<TransactionsResponse>(`/api/financial?${qs}`)
   },
 
-  getSummary: (caseId: string) =>
-    fetchAPI<FinancialSummary>(`/api/financial/summary?case_id=${caseId}`),
+  getSummary: (caseId: string, mode: FinancialDatasetMode = "transactions") =>
+    fetchAPI<FinancialSummary>(`/api/financial/summary?case_id=${caseId}&mode=${mode}`),
 
-  getVolume: (caseId: string) =>
-    fetchAPI<{ data: VolumeDataPoint[] }>(`/api/financial/volume?case_id=${caseId}`),
+  getVolume: (caseId: string, mode: FinancialDatasetMode = "transactions") =>
+    fetchAPI<VolumeResponse>(`/api/financial/volume?case_id=${caseId}&mode=${mode}`),
 
   categorize: (nodeKey: string, category: string, caseId: string) =>
     fetchAPI<void>(`/api/financial/categorize/${encodeURIComponent(nodeKey)}`, {
@@ -158,8 +217,8 @@ export const financialAPI = {
       },
     }),
 
-  getCategories: (caseId: string) =>
-    fetchAPI<{ categories: FinancialCategory[] }>(`/api/financial/categories?case_id=${caseId}`)
+  getCategories: (caseId: string, mode: FinancialDatasetMode = "transactions") =>
+    fetchAPI<{ categories: FinancialCategory[] }>(`/api/financial/categories?case_id=${caseId}&mode=${mode}`)
       .then((res) => res.categories),
 
   createCategory: (name: string, color: string, caseId: string) =>

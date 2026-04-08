@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { financialAPI } from "../api"
+import { financialAPI, type FinancialDatasetMode } from "../api"
 
 export function useTransactions(caseId: string | undefined, params?: {
+  mode?: FinancialDatasetMode
   startDate?: string
   endDate?: string
   categories?: string[]
@@ -11,6 +12,7 @@ export function useTransactions(caseId: string | undefined, params?: {
     queryFn: () =>
       financialAPI.getTransactions({
         caseId: caseId!,
+        mode: params?.mode,
         startDate: params?.startDate,
         endDate: params?.endDate,
         categories: params?.categories,
@@ -19,18 +21,18 @@ export function useTransactions(caseId: string | undefined, params?: {
   })
 }
 
-export function useFinancialSummary(caseId: string | undefined) {
+export function useFinancialSummary(caseId: string | undefined, mode: FinancialDatasetMode = "transactions") {
   return useQuery({
-    queryKey: ["financial", "summary", caseId],
-    queryFn: () => financialAPI.getSummary(caseId!),
+    queryKey: ["financial", "summary", caseId, mode],
+    queryFn: () => financialAPI.getSummary(caseId!, mode),
     enabled: !!caseId,
   })
 }
 
-export function useFinancialVolume(caseId: string | undefined) {
+export function useFinancialVolume(caseId: string | undefined, mode: FinancialDatasetMode = "transactions") {
   return useQuery({
-    queryKey: ["financial", "volume", caseId],
-    queryFn: () => financialAPI.getVolume(caseId!),
+    queryKey: ["financial", "volume", caseId, mode],
+    queryFn: () => financialAPI.getVolume(caseId!, mode),
     enabled: !!caseId,
   })
 }
@@ -43,10 +45,10 @@ export function useFinancialEntities(caseId: string | undefined) {
   })
 }
 
-export function useFinancialCategories(caseId: string | undefined) {
+export function useFinancialCategories(caseId: string | undefined, mode: FinancialDatasetMode = "transactions") {
   return useQuery({
-    queryKey: ["financial", "categories", caseId],
-    queryFn: () => financialAPI.getCategories(caseId!),
+    queryKey: ["financial", "categories", caseId, mode],
+    queryFn: () => financialAPI.getCategories(caseId!, mode),
     enabled: !!caseId,
   })
 }

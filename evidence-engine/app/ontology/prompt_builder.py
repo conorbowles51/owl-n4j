@@ -90,6 +90,22 @@ def _geo_field_guidance(ontology: OntologySchema) -> str:
     )
 
 
+def _financial_provenance_guidance() -> str:
+    return (
+        "FINANCIAL PROVENANCE RULES:\n"
+        "- If an entity involves a monetary amount, total, balance, payment, invoice, transfer, valuation, or alleged proceeds, populate financial_provenance\n"
+        "- financial_provenance must be null for non-financial entities\n"
+        "- financial_record_kind must be one of: transaction, invoice, payment_instruction, balance, asset_value, fraud_total, allegation, summary_metric, other\n"
+        "- financial_view_mode must be transaction only for real documentary transaction events; otherwise use intelligence\n"
+        "- is_evidence_backed_transaction must be true only when the document provides documentary proof of a transaction, such as a bank statement row, receipt, wire confirmation, ledger entry, card statement, invoice record, or official report\n"
+        "- Narrative claims, allegations, interview statements, email prose, and aggregate totals must never be marked as evidence-backed transactions\n"
+        "- evidence_strength must be one of documentary, derived, narrative, unknown\n"
+        "- evidence_source_type must be one of bank_statement, invoice, receipt, wire, card_statement, ledger, official_report, email, interview, other\n"
+        "- source_page should be the page number shown above when available; otherwise null\n"
+        "- source_excerpt should be a short exact snippet supporting the classification"
+    )
+
+
 _NOISE_RULES = """\
 - Do NOT extract generic concepts, abstract ideas, or common nouns
 - Do NOT extract the document itself as an entity
@@ -113,6 +129,7 @@ def build_entity_extraction_prompt(
     sheet_name: str = "",
     page_start: int | None = None,
     page_end: int | None = None,
+    file_type: str | None = None,
 ) -> str:
     if ontology is None:
         ontology = load_ontology()
@@ -122,6 +139,8 @@ def build_entity_extraction_prompt(
         "",
         f"DOCUMENT: {file_name}",
     ]
+    if file_type:
+        parts.append(f"FILE TYPE: {file_type}")
 
     instruction_section = format_mandatory_rules_section(
         mandatory_instructions,
@@ -173,6 +192,7 @@ def build_entity_extraction_prompt(
     parts.append(_disambiguation_block(ontology))
 
     parts.append("\n" + _geo_field_guidance(ontology))
+    parts.append("\n" + _financial_provenance_guidance())
 
     focus_block = _focus_entity_block(special_entity_types)
     if focus_block:
@@ -190,7 +210,8 @@ def build_entity_extraction_prompt(
         "- source_quote: the exact text span that supports this entity\n"
         "- confidence: 0.0 to 1.0\n"
         "- verified_facts: direct facts only, each with text, exact quote, page number, and importance 1-5\n"
-        "- ai_insights: optional inferences only, each with text, confidence, and reasoning"
+        "- ai_insights: optional inferences only, each with text, confidence, and reasoning\n"
+        "- financial_provenance: null for non-financial entities, otherwise an object containing the required financial provenance fields"
     )
 
     parts.append(

@@ -38,12 +38,13 @@ import type { Transaction } from "../api"
 
 export function FinancialPage() {
   const { id: caseId } = useParams()
-  const { data: transactions, isLoading } = useTransactions(caseId)
-  const { data: categories = [] } = useFinancialCategories(caseId)
-  const { data: caseEntities = [] } = useFinancialEntities(caseId)
-
-  // Store state
   const store = useFinancialStore()
+  const { data: transactionsResponse, isLoading } = useTransactions(caseId, { mode: store.mode })
+  const { data: categories = [] } = useFinancialCategories(caseId, store.mode)
+  const { data: caseEntities = [] } = useFinancialEntities(caseId)
+  const transactions = transactionsResponse?.transactions ?? []
+  const usesLegacyFinancialModel = transactionsResponse?.uses_legacy_financial_model ?? false
+  const isTransactionsMode = store.mode === "transactions"
 
   // Mutations
   const categorize = useCategorize(caseId!)
@@ -229,12 +230,16 @@ export function FinancialPage() {
   }
 
   // Empty state
-  if (!transactions?.length) {
+  if (!transactions.length) {
     return (
       <EmptyState
         icon={DollarSign}
-        title="No financial data"
-        description="Process evidence with financial information to populate this view"
+        title={isTransactionsMode ? "No documentary transactions" : "No financial intelligence"}
+        description={
+          isTransactionsMode
+            ? "Process evidence with documentary financial records to populate this view"
+            : "Process evidence with financial signals, valuations, or alleged totals to populate this view"
+        }
       />
     )
   }
@@ -250,12 +255,19 @@ export function FinancialPage() {
     <div className="flex h-full flex-col">
       {/* Toolbar */}
       <FinancialToolbar
+        mode={store.mode}
         filteredCount={filteredCount}
         totalCount={transactions.length}
         caseId={caseId!}
         onOpenBulkImport={() => setBulkImportOpen(true)}
         onOpenCategoryManagement={() => setCategoryMgmtOpen(true)}
       />
+
+      {usesLegacyFinancialModel && (
+        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-2 text-xs text-amber-100">
+          This case is using the legacy financial dataset. Reprocess the case to get strict evidence-backed transactions and provenance-aware financial intelligence.
+        </div>
+      )}
 
       {/* Filter Panel */}
       <FinancialFilterPanel
@@ -268,14 +280,17 @@ export function FinancialPage() {
       <FinancialSummaryCards
         transactions={filteredTransactions}
         entityFilter={store.entityFilter}
+        mode={store.mode}
       />
 
       {/* Bulk Actions */}
-      <BulkActionsBar
-        onBulkCategorize={() => setBulkCategorizeOpen(true)}
-        onBulkSetFrom={handleBulkSetFrom}
-        onBulkSetTo={handleBulkSetTo}
-      />
+      {isTransactionsMode && (
+        <BulkActionsBar
+          onBulkCategorize={() => setBulkCategorizeOpen(true)}
+          onBulkSetFrom={handleBulkSetFrom}
+          onBulkSetTo={handleBulkSetTo}
+        />
+      )}
 
       {/* Charts */}
       {store.chartsPanelOpen && (
@@ -292,6 +307,7 @@ export function FinancialPage() {
         <div className="flex-1 overflow-auto">
           <ErrorBoundary level="section">
             <TransactionTable
+              mode={store.mode}
               transactions={pageTransactions}
               allTransactions={transactions}
               categories={categories}

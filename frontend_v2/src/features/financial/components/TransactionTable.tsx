@@ -42,11 +42,12 @@ import {
 } from "@/components/ui/tooltip"
 import { useFinancialStore } from "../stores/financial.store"
 import { TransactionDetailPanel } from "./TransactionDetailPanel"
-import type { Transaction, FinancialCategory } from "../api"
+import type { Transaction, FinancialCategory, FinancialDatasetMode } from "../api"
 import type { SortColumn } from "../stores/financial.store"
 import { formatFinancialDate } from "../lib/date-utils"
 
 interface TransactionTableProps {
+  mode: FinancialDatasetMode
   transactions: Transaction[]
   allTransactions: Transaction[]
   categories: FinancialCategory[]
@@ -63,6 +64,7 @@ interface TransactionTableProps {
 }
 
 export function TransactionTable({
+  mode,
   transactions,
   allTransactions,
   categories,
@@ -86,6 +88,7 @@ export function TransactionTable({
     toggleExpandedRow,
     toggleSort,
   } = useFinancialStore()
+  const editable = mode === "transactions"
 
   const handleRowCheckbox = useCallback(
     (key: string, e: React.MouseEvent) => {
@@ -230,6 +233,7 @@ export function TransactionTable({
                 Category {renderSortIcon("category")}
               </button>
             </TableHead>
+            <TableHead className="w-32 text-xs">Provenance</TableHead>
             <TableHead className="w-8" />
           </TableRow>
         </TableHeader>
@@ -237,10 +241,10 @@ export function TransactionTable({
           {displayRows.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={11}
+                colSpan={12}
                 className="h-24 text-center text-sm text-muted-foreground"
               >
-                No transactions found
+                No {mode === "transactions" ? "transactions" : "financial intelligence records"} found
               </TableCell>
             </TableRow>
           ) : (
@@ -255,6 +259,7 @@ export function TransactionTable({
                 <TransactionRow
                   key={tx.key}
                   tx={tx}
+                  editable={editable}
                   indent={indent}
                   isChecked={isChecked}
                   isExpanded={isExpanded}
@@ -280,6 +285,7 @@ export function TransactionTable({
 
 interface TransactionRowProps {
   tx: Transaction
+  editable: boolean
   indent: boolean
   isChecked: boolean
   isExpanded: boolean
@@ -300,6 +306,7 @@ interface TransactionRowProps {
 
 function TransactionRow({
   tx,
+  editable,
   indent,
   isChecked,
   isExpanded,
@@ -314,6 +321,9 @@ function TransactionRow({
   onRemoveFromGroup,
   onSaveDetails,
 }: TransactionRowProps) {
+  const provenanceLabel = tx.evidence_source_type
+    ? `${tx.evidence_source_type.replaceAll("_", " ")}${tx.source_page ? ` p.${tx.source_page}` : ""}`
+    : tx.source_filename || "Legacy"
   return (
     <>
       <TableRow
@@ -390,6 +400,7 @@ function TransactionRow({
               variant="ghost"
               size="icon-sm"
               className="size-5 opacity-0 group-hover/from:opacity-100"
+              disabled={!editable}
               onClick={() => onEntityEdit(tx, "from")}
             >
               <Edit2 className="size-2.5" />
@@ -424,6 +435,7 @@ function TransactionRow({
               variant="ghost"
               size="icon-sm"
               className="size-5 opacity-0 group-hover/to:opacity-100"
+              disabled={!editable}
               onClick={() => onEntityEdit(tx, "to")}
             >
               <Edit2 className="size-2.5" />
@@ -435,6 +447,7 @@ function TransactionRow({
         <TableCell className="py-1.5 text-right">
           <button
             className="inline-flex items-center gap-1 hover:underline"
+            disabled={!editable}
             onClick={() => onAmountClick(tx)}
           >
             <CostBadge amount={tx.amount} />
@@ -504,6 +517,19 @@ function TransactionRow({
           </Select>
         </TableCell>
 
+        <TableCell className="py-1.5">
+          <div className="flex flex-col gap-1">
+            <Badge variant="outline" className="w-fit text-[10px] capitalize">
+              {provenanceLabel}
+            </Badge>
+            {tx.evidence_strength && (
+              <span className="text-[10px] text-muted-foreground capitalize">
+                {tx.evidence_strength}
+              </span>
+            )}
+          </div>
+        </TableCell>
+
         {/* Actions */}
         <TableCell className="py-1.5">
           <DropdownMenu>
@@ -512,6 +538,7 @@ function TransactionRow({
                 variant="ghost"
                 size="icon-sm"
                 className="size-6 opacity-0 group-hover:opacity-100"
+                disabled={!editable}
               >
                 <MoreHorizontal className="size-3.5" />
               </Button>
@@ -535,9 +562,10 @@ function TransactionRow({
       {/* Expanded detail panel */}
       {isExpanded && (
         <TableRow>
-          <TableCell colSpan={11} className="p-0">
+          <TableCell colSpan={12} className="p-0">
             <TransactionDetailPanel
               transaction={tx}
+              editable={editable}
               onSave={(fields) => onSaveDetails(tx.key, fields)}
             />
           </TableCell>

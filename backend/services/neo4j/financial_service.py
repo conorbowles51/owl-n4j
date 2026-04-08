@@ -1,7 +1,7 @@
 """
 Financial Analysis Service — transaction queries, categories, and sub-transaction management.
 
-Extracted from the monolithic neo4j_service.py.  Every method that was on
+Extracted from the monolithic neo4j_service.py. Every method that was on
 Neo4jService and dealt with financial transactions now lives here.
 """
 
@@ -13,7 +13,7 @@ from services.neo4j.driver import driver, safe_float
 
 logger = logging.getLogger(__name__)
 
-FINANCIAL_EVENT_TYPES = [
+LEGACY_FINANCIAL_EVENT_TYPES = [
     "Transaction",
     "transaction",
     "Transfer",
@@ -27,6 +27,10 @@ FINANCIAL_EVENT_TYPES = [
 
 class FinancialService:
     """Neo4j-backed service for financial transaction analysis."""
+
+    @staticmethod
+    def _normalize_mode(mode: str | None) -> str:
+        return "intelligence" if mode == "intelligence" else "transactions"
 
     @staticmethod
     def _transaction_like_clause(alias: str = "n") -> str:
@@ -46,7 +50,113 @@ class FinancialService:
             )
         """
 
-    # ── Queries ───────────────────────────────────────────────────────────
+    def _get_dataset_metadata(self, session, case_id: str, mode: str) -> Dict[str, bool | str]:
+        record = session.run(
+            """
+            MATCH (n {case_id: $case_id})
+            WHERE n.amount IS NOT NULL
+            RETURN
+                count(n) AS total_amount_nodes,
+                sum(
+                    CASE
+                        WHEN n.financial_model_version = 2
+                          OR n.financial_view_mode IS NOT NULL
+                          OR n.is_evidence_backed_transaction IS NOT NULL
+                        THEN 1
+                        ELSE 0
+                    END
+                ) AS tagged_amount_nodes
+            """,
+            case_id=case_id,
+        ).single()
+
+        total_amount_nodes = int(record["total_amount_nodes"] or 0) if record else 0
+        tagged_amount_nodes = int(record["tagged_amount_nodes"] or 0) if record else 0
+        uses_legacy = total_amount_nodes > 0 and tagged_amount_nodes < total_amount_nodes
+        return {
+            "dataset_mode": mode,
+            "uses_legacy_financial_model": uses_legacy,
+        }
+
+    def _mode_filter_clause(self, alias: str, *, uses_legacy: bool, mode: str) -> str:
+        normalized_mode = self._normalize_mode(mode)
+        if uses_legacy:
+            tx_clause = self._transaction_like_clause(alias)
+            return tx_clause if normalized_mode == "transactions" else f"NOT {tx_clause}"
+        if normalized_mode == "transactions":
+            return f"coalesce({alias}.is_evidence_backed_transaction, false) = true"
+        return (
+            f"coalesce({alias}.financial_view_mode, "
+            f"CASE WHEN coalesce({alias}.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END"
+            f") = 'intelligence'"
+        )
+
+    def _record_to_transaction(self, record, *, uses_legacy: bool, mode: str) -> Dict:
+        from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
+        from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"] or record["prop_sender"]
+        to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
+        to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"] or record["prop_receiver"]
+
+        amount_val = safe_float(record["amount"])
+        if amount_val == 0:
+            raw = record.get("raw_amount")
+            if raw is not None:
+                cleaned = re.sub(r"[^\d.\-]", "", str(raw))
+                amount_val = safe_float(cleaned)
+                if amount_val != 0:
+                    logger.warning(
+                        "Amount fallback used for tx %s: raw=%r -> %s",
+                        record["key"], raw, amount_val
+                    )
+                else:
+                    logger.warning(
+                        "Amount resolved to 0 for tx %s: raw=%r",
+                        record["key"], raw
+                    )
+
+        requested_mode = self._normalize_mode(mode)
+        record_mode = record.get("financial_view_mode") or ("intelligence" if requested_mode == "intelligence" else "transaction")
+        if uses_legacy:
+            record_mode = "intelligence" if requested_mode == "intelligence" else "transaction"
+
+        return {
+            "key": record["key"],
+            "name": record["name"],
+            "type": record["type"],
+            "date": record["date"],
+            "time": record["time"],
+            "amount": amount_val,
+            "currency": record["currency"],
+            "summary": record["summary"],
+            "category": record["financial_category"] or "Uncategorized",
+            "purpose": record["purpose"],
+            "counterparty_details": record["counterparty_details"],
+            "notes": record["notes"],
+            "from_entity": {"key": from_key, "name": from_name} if (from_key or from_name) else None,
+            "to_entity": {"key": to_key, "name": to_name} if (to_key or to_name) else None,
+            "has_manual_from": record["from_entity_key"] is not None,
+            "has_manual_to": record["to_entity_key"] is not None,
+            "is_parent": record["is_parent"] or False,
+            "parent_transaction_key": record["parent_transaction_key"],
+            "amount_corrected": record["amount_corrected"] or False,
+            "original_amount": record["original_amount"],
+            "correction_reason": record["correction_reason"],
+            "financial_record_kind": record.get("financial_record_kind") or ("transaction" if record_mode == "transaction" else "other"),
+            "financial_view_mode": record_mode,
+            "is_financial_event": bool(record.get("is_financial_event")) or True,
+            "is_evidence_backed_transaction": bool(record.get("is_evidence_backed_transaction")) and not uses_legacy,
+            "evidence_strength": None if uses_legacy else record.get("evidence_strength"),
+            "evidence_source_type": None if uses_legacy else record.get("evidence_source_type"),
+            "source_document_id": record.get("source_document_id"),
+            "source_filename": record.get("source_filename"),
+            "source_page": record.get("source_page"),
+            "source_excerpt": record.get("source_excerpt"),
+            "extraction_confidence": (
+                safe_float(record["extraction_confidence"])
+                if record.get("extraction_confidence") is not None
+                else None
+            ),
+        }
 
     def get_financial_transactions(
         self,
@@ -55,22 +165,14 @@ class FinancialService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         categories: Optional[List[str]] = None,
-    ) -> List[Dict]:
-        """
-        Get all nodes that have amount properties, with from/to entity resolution.
-
-        Args:
-            case_id: REQUIRED - Filter to only include nodes belonging to this case
-            types: Filter by specific node types (e.g., ['Transaction', 'Payment'])
-            start_date: Filter on or after this date (YYYY-MM-DD)
-            end_date: Filter on or before this date (YYYY-MM-DD)
-            categories: Filter by financial_category values
-
-        Returns:
-            List of transaction dicts with from/to entity resolution
-        """
+        mode: str = "transactions",
+    ) -> Dict:
+        """Get financial records with strict provenance mode and legacy fallback."""
         with driver.session() as session:
-            params = {"case_id": case_id, "financial_types": FINANCIAL_EVENT_TYPES}
+            normalized_mode = self._normalize_mode(mode)
+            metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
+            uses_legacy = bool(metadata["uses_legacy_financial_model"])
+            params = {"case_id": case_id, "financial_types": LEGACY_FINANCIAL_EVENT_TYPES}
             conditions = []
 
             if types:
@@ -92,7 +194,7 @@ class FinancialService:
                 MATCH (n)
                 WHERE n.amount IS NOT NULL
                 AND n.case_id = $case_id
-                AND {self._transaction_like_clause("n")}
+                AND {self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)}
                 {extra_filter}
                 OPTIONAL MATCH (n)-[:TRANSFERRED_TO|SENT_TO|PAID_TO|ISSUED_TO]->(to_entity)
                 WHERE to_entity.case_id = $case_id AND NOT to_entity:Document AND NOT to_entity:Case
@@ -135,61 +237,30 @@ class FinancialService:
                     n.parent_transaction_key AS parent_transaction_key,
                     n.amount_corrected AS amount_corrected,
                     n.original_amount AS original_amount,
-                    n.correction_reason AS correction_reason
+                    n.correction_reason AS correction_reason,
+                    n.financial_record_kind AS financial_record_kind,
+                    coalesce(
+                        n.financial_view_mode,
+                        CASE WHEN coalesce(n.is_evidence_backed_transaction, false) THEN 'transaction' ELSE 'intelligence' END
+                    ) AS financial_view_mode,
+                    coalesce(n.is_financial_event, false) AS is_financial_event,
+                    coalesce(n.is_evidence_backed_transaction, false) AS is_evidence_backed_transaction,
+                    n.evidence_strength AS evidence_strength,
+                    n.evidence_source_type AS evidence_source_type,
+                    n.source_document_id AS source_document_id,
+                    n.source_filename AS source_filename,
+                    n.source_page AS source_page,
+                    n.source_excerpt AS source_excerpt,
+                    n.extraction_confidence AS extraction_confidence
                 ORDER BY n.date ASC, n.time ASC
             """
 
             result = session.run(query, **params)
-            transactions = []
-            for record in result:
-                # Resolve from entity: manual override > relationship-derived > property fallback
-                from_key = record["from_entity_key"] or record["rel_from_key"] or record["initiator_key"]
-                from_name = record["from_entity_name"] or record["rel_from_name"] or record["initiator_name"] or record["prop_sender"]
-                # Resolve to entity: manual override > relationship-derived > property fallback
-                to_key = record["to_entity_key"] or record["rel_to_key"] or record["rf_key"]
-                to_name = record["to_entity_name"] or record["rel_to_name"] or record["rf_name"] or record["prop_receiver"]
-
-                amount_val = safe_float(record["amount"])
-                if amount_val == 0:
-                    raw = record.get("raw_amount")
-                    if raw is not None:
-                        cleaned = re.sub(r'[^\d.\-]', '', str(raw))
-                        amount_val = safe_float(cleaned)
-                        if amount_val != 0:
-                            logger.warning(
-                                "Amount fallback used for tx %s: raw=%r → %s",
-                                record["key"], raw, amount_val
-                            )
-                        else:
-                            logger.warning(
-                                "Amount resolved to 0 for tx %s: raw=%r",
-                                record["key"], raw
-                            )
-
-                transactions.append({
-                    "key": record["key"],
-                    "name": record["name"],
-                    "type": record["type"],
-                    "date": record["date"],
-                    "time": record["time"],
-                    "amount": amount_val,
-                    "currency": record["currency"],
-                    "summary": record["summary"],
-                    "category": record["financial_category"] or "Uncategorized",
-                    "purpose": record["purpose"],
-                    "counterparty_details": record["counterparty_details"],
-                    "notes": record["notes"],
-                    "from_entity": {"key": from_key, "name": from_name} if (from_key or from_name) else None,
-                    "to_entity": {"key": to_key, "name": to_name} if (to_key or to_name) else None,
-                    "has_manual_from": record["from_entity_key"] is not None,
-                    "has_manual_to": record["to_entity_key"] is not None,
-                    "is_parent": record["is_parent"] or False,
-                    "parent_transaction_key": record["parent_transaction_key"],
-                    "amount_corrected": record["amount_corrected"] or False,
-                    "original_amount": record["original_amount"],
-                    "correction_reason": record["correction_reason"],
-                })
-            return transactions
+            transactions = [
+                self._record_to_transaction(record, uses_legacy=uses_legacy, mode=normalized_mode)
+                for record in result
+            ]
+            return {"transactions": transactions, "total": len(transactions), **metadata}
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:
         """Return all non-transaction entities in a case for from/to entity pickers."""
@@ -207,24 +278,18 @@ class FinancialService:
             )
             return [{"key": r["key"], "name": r["name"], "type": r["type"]} for r in result]
 
-    def get_financial_summary(self, case_id: str, entity_key: str = None) -> Dict:
-        """
-        Get aggregated financial summary stats for a case.
-
-        Args:
-            case_id: REQUIRED - Case ID
-            entity_key: Optional - If provided, compute inflows/outflows relative to this entity
-
-        Returns:
-            Dict with overview metrics (no entity) or entity-relative inflow/outflow metrics
-        """
+    def get_financial_summary(self, case_id: str, entity_key: str = None, mode: str = "transactions") -> Dict:
+        """Get aggregated financial summary stats for a case."""
         with driver.session() as session:
+            normalized_mode = self._normalize_mode(mode)
+            metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
+            uses_legacy = bool(metadata["uses_legacy_financial_model"])
+            filter_clause = self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)
             if entity_key:
-                # Entity-relative mode: classify by relationship direction
                 query = f"""
                     MATCH (n)
                     WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                      AND {self._transaction_like_clause("n")}
+                      AND {filter_clause}
                     WITH n, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
                     OPTIONAL MATCH (n)-[:FROM_ENTITY]->(fe) WHERE fe.case_id = $case_id
                     OPTIONAL MATCH (n)-[:TO_ENTITY]->(te) WHERE te.case_id = $case_id
@@ -243,10 +308,10 @@ class FinancialService:
                     query,
                     case_id=case_id,
                     entity_key=entity_key,
-                    financial_types=FINANCIAL_EVENT_TYPES,
+                    financial_types=LEGACY_FINANCIAL_EVENT_TYPES,
                 ).single()
                 if not record or record["transaction_count"] == 0:
-                    return {"transaction_count": 0, "total_inflows": 0, "total_outflows": 0, "net_flow": 0}
+                    return {"transaction_count": 0, "total_inflows": 0, "total_outflows": 0, "net_flow": 0, **metadata}
                 inflows = safe_float(record["total_inflows"])
                 outflows = safe_float(record["total_outflows"])
                 return {
@@ -254,49 +319,46 @@ class FinancialService:
                     "total_inflows": inflows,
                     "total_outflows": outflows,
                     "net_flow": round(inflows - outflows, 2),
-                }
-            else:
-                # Overview mode: total volume without directional classification
-                query = f"""
-                    MATCH (n)
-                    WHERE n.amount IS NOT NULL AND n.case_id = $case_id
-                      AND {self._transaction_like_clause("n")}
-                    WITH n, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
-                    RETURN
-                        count(n) AS transaction_count,
-                        sum(abs(amt)) AS total_volume,
-                        avg(abs(amt)) AS avg_amount,
-                        max(abs(amt)) AS max_amount
-                """
-                record = session.run(
-                    query,
-                    case_id=case_id,
-                    financial_types=FINANCIAL_EVENT_TYPES,
-                ).single()
-                if not record or record["transaction_count"] == 0:
-                    return {"transaction_count": 0, "total_volume": 0, "avg_amount": 0, "max_amount": 0}
-                return {
-                    "transaction_count": record["transaction_count"],
-                    "total_volume": safe_float(record["total_volume"]),
-                    "avg_amount": safe_float(record["avg_amount"]),
-                    "max_amount": safe_float(record["max_amount"]),
+                    **metadata,
                 }
 
-    def get_financial_volume_over_time(self, case_id: str) -> List[Dict]:
-        """
-        Get transaction volume grouped by date and category for chart data.
+            query = f"""
+                MATCH (n)
+                WHERE n.amount IS NOT NULL AND n.case_id = $case_id
+                  AND {filter_clause}
+                WITH n, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
+                RETURN
+                    count(n) AS transaction_count,
+                    sum(abs(amt)) AS total_volume,
+                    avg(abs(amt)) AS avg_amount,
+                    max(abs(amt)) AS max_amount
+            """
+            record = session.run(
+                query,
+                case_id=case_id,
+                financial_types=LEGACY_FINANCIAL_EVENT_TYPES,
+            ).single()
+            if not record or record["transaction_count"] == 0:
+                return {"transaction_count": 0, "total_volume": 0, "avg_amount": 0, "max_amount": 0, **metadata}
+            return {
+                "transaction_count": record["transaction_count"],
+                "total_volume": safe_float(record["total_volume"]),
+                "avg_amount": safe_float(record["avg_amount"]),
+                "max_amount": safe_float(record["max_amount"]),
+                **metadata,
+            }
 
-        Args:
-            case_id: REQUIRED - Case ID
-
-        Returns:
-            List of {date, category, total_amount, count}
-        """
+    def get_financial_volume_over_time(self, case_id: str, mode: str = "transactions") -> Dict:
+        """Get transaction volume grouped by date and category for chart data."""
         with driver.session() as session:
+            normalized_mode = self._normalize_mode(mode)
+            metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
+            uses_legacy = bool(metadata["uses_legacy_financial_model"])
+            filter_clause = self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)
             query = f"""
                 MATCH (n)
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id AND n.date IS NOT NULL
-                  AND {self._transaction_like_clause("n")}
+                  AND {filter_clause}
                 WITH n.date AS date, coalesce(n.financial_category, 'Uncategorized') AS category, toFloat(replace(replace(toString(n.amount), '$', ''), ',', '')) AS amt
                 RETURN
                     date,
@@ -308,30 +370,23 @@ class FinancialService:
             result = session.run(
                 query,
                 case_id=case_id,
-                financial_types=FINANCIAL_EVENT_TYPES,
+                financial_types=LEGACY_FINANCIAL_EVENT_TYPES,
             )
-            return [
-                {
-                    "date": record["date"],
-                    "category": record["category"],
-                    "total_amount": safe_float(record["total_amount"]),
-                    "count": record["count"],
-                }
-                for record in result
-            ]
+            return {
+                "data": [
+                    {
+                        "date": record["date"],
+                        "category": record["category"],
+                        "total_amount": safe_float(record["total_amount"]),
+                        "count": record["count"],
+                    }
+                    for record in result
+                ],
+                **metadata,
+            }
 
     def update_transaction_category(self, node_key: str, category: str, case_id: str) -> Dict:
-        """
-        Set the financial_category on a transaction node.
-
-        Args:
-            node_key: The node key
-            category: Category string to set
-            case_id: REQUIRED - Case ID
-
-        Returns:
-            Dict with success status
-        """
+        """Set the financial_category on a transaction node."""
         with driver.session() as session:
             query = """
                 MATCH (n {key: $key, case_id: $case_id})
@@ -352,20 +407,7 @@ class FinancialService:
         to_key: Optional[str] = None,
         to_name: Optional[str] = None,
     ) -> Dict:
-        """
-        Set manual from/to entity overrides on a transaction node.
-
-        Args:
-            node_key: The node key
-            case_id: REQUIRED - Case ID
-            from_key: Key of the from entity (or None to clear)
-            from_name: Display name of the from entity
-            to_key: Key of the to entity (or None to clear)
-            to_name: Display name of the to entity
-
-        Returns:
-            Dict with success status
-        """
+        """Set manual from/to entity overrides on a transaction node."""
         with driver.session() as session:
             set_clauses = []
             params = {"key": node_key, "case_id": case_id}
@@ -394,29 +436,21 @@ class FinancialService:
                 return {"success": False, "error": "Node not found"}
             return {"success": True, "key": record["key"]}
 
-    def get_financial_categories(self, case_id: str) -> List[Dict]:
-        """
-        Get all financial categories for a case: predefined + persisted custom + orphaned from transactions.
-
-        Args:
-            case_id: REQUIRED - Case ID
-
-        Returns:
-            List of dicts with name, color, builtin keys
-        """
+    def get_financial_categories(self, case_id: str, mode: str = "transactions") -> List[Dict]:
+        """Get all financial categories for a case: predefined + persisted custom + orphaned from transactions."""
         predefined = {
-            "Utility":            "#3b82f6",
-            "Payroll/Salary":     "#22c55e",
-            "Rent/Lease":         "#8b5cf6",
-            "Reimbursement":      "#06b6d4",
-            "Loan Payment":       "#ef4444",
-            "Insurance":          "#f59e0b",
-            "Subscription":       "#ec4899",
-            "Transfer":           "#14b8a6",
-            "Income":             "#10b981",
-            "Personal":           "#f97316",
+            "Utility": "#3b82f6",
+            "Payroll/Salary": "#22c55e",
+            "Rent/Lease": "#8b5cf6",
+            "Reimbursement": "#06b6d4",
+            "Loan Payment": "#ef4444",
+            "Insurance": "#f59e0b",
+            "Subscription": "#ec4899",
+            "Transfer": "#14b8a6",
+            "Income": "#10b981",
+            "Personal": "#f97316",
             "Legal/Professional": "#6366f1",
-            "Other":              "#6b7280",
+            "Other": "#6b7280",
         }
         result_categories = [
             {"name": name, "color": color, "builtin": True}
@@ -425,7 +459,10 @@ class FinancialService:
         seen_names = set(predefined.keys())
 
         with driver.session() as session:
-            # Persisted custom FinancialCategory nodes for this case
+            normalized_mode = self._normalize_mode(mode)
+            metadata = self._get_dataset_metadata(session, case_id, normalized_mode)
+            uses_legacy = bool(metadata["uses_legacy_financial_model"])
+            filter_clause = self._mode_filter_clause("n", uses_legacy=uses_legacy, mode=normalized_mode)
             custom_query = """
                 MATCH (c:FinancialCategory {case_id: $case_id})
                 RETURN c.name AS name, c.color AS color
@@ -438,29 +475,16 @@ class FinancialService:
                     result_categories.append({"name": name, "color": record["color"] or "#6b7280", "builtin": False})
                     seen_names.add(name)
 
-            # Orphaned categories on transaction nodes (no FinancialCategory node)
             orphan_query = """
                 MATCH (n)
                 WHERE n.amount IS NOT NULL AND n.case_id = $case_id AND n.financial_category IS NOT NULL
-                  AND (
-                    labels(n)[0] IN $financial_types
-                    OR n.date IS NOT NULL
-                    OR n.time IS NOT NULL
-                    OR n.from_entity_key IS NOT NULL
-                    OR n.from_entity_name IS NOT NULL
-                    OR n.to_entity_key IS NOT NULL
-                    OR n.to_entity_name IS NOT NULL
-                    OR n.sender IS NOT NULL
-                    OR n.receiver IS NOT NULL
-                    OR n.parent_transaction_key IS NOT NULL
-                    OR coalesce(n.is_parent, false) = true
-                  )
+                  AND __FILTER__
                 RETURN DISTINCT n.financial_category AS category
             """
             orphan_result = session.run(
-                orphan_query,
+                orphan_query.replace("__FILTER__", filter_clause),
                 case_id=case_id,
-                financial_types=FINANCIAL_EVENT_TYPES,
+                financial_types=LEGACY_FINANCIAL_EVENT_TYPES,
             )
             for record in orphan_result:
                 name = record["category"]
@@ -471,17 +495,7 @@ class FinancialService:
         return result_categories
 
     def create_financial_category(self, name: str, color: str, case_id: str) -> Dict:
-        """
-        Create or update a custom FinancialCategory node for a case.
-
-        Args:
-            name: Category name
-            color: Hex color string
-            case_id: REQUIRED - Case ID
-
-        Returns:
-            Dict with success, name, color
-        """
+        """Create or update a custom FinancialCategory node for a case."""
         with driver.session() as session:
             query = """
                 MERGE (c:FinancialCategory {name: $name, case_id: $case_id})
@@ -502,19 +516,7 @@ class FinancialService:
         counterparty_details: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> Dict:
-        """
-        Set purpose, counterparty_details, and/or notes on a transaction node.
-
-        Args:
-            node_key: The node key
-            case_id: REQUIRED - Case ID
-            purpose: Optional purpose text
-            counterparty_details: Optional counterparty details text
-            notes: Optional investigation notes
-
-        Returns:
-            Dict with success status
-        """
+        """Set purpose, counterparty_details, and/or notes on a transaction node."""
         with driver.session() as session:
             set_clauses = []
             params = {"key": node_key, "case_id": case_id}
@@ -551,20 +553,7 @@ class FinancialService:
         to_key: Optional[str] = None,
         to_name: Optional[str] = None,
     ) -> Dict:
-        """
-        Set from/to entity on multiple transaction nodes at once.
-
-        Args:
-            node_keys: List of node keys to update
-            case_id: REQUIRED - Case ID
-            from_key: Key of the from entity
-            from_name: Display name of the from entity
-            to_key: Key of the to entity
-            to_name: Display name of the to entity
-
-        Returns:
-            Dict with success count
-        """
+        """Set from/to entity on multiple transaction nodes at once."""
         results = []
         for key in node_keys:
             result = self.update_transaction_from_to(
@@ -582,7 +571,6 @@ class FinancialService:
     def update_transaction_amount(self, node_key: str, case_id: str, new_amount: float, correction_reason: str) -> Dict:
         """Update a transaction amount, preserving the original value for audit trail."""
         with driver.session() as session:
-            # Single query: conditionally preserve original_amount on first correction
             result = session.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
@@ -605,7 +593,6 @@ class FinancialService:
                 "amount": result["amount"],
                 "original_amount": result["original_amount"],
             }
-
 
     def link_sub_transaction(self, parent_key: str, child_key: str, case_id: str) -> Dict:
         """Link a child transaction to a parent transaction."""

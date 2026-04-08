@@ -10,8 +10,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { useFinancialStore } from "../stores/financial.store"
+import type { FinancialDatasetMode } from "../api"
 
 interface FinancialToolbarProps {
+  mode: FinancialDatasetMode
   filteredCount: number
   totalCount: number
   caseId: string
@@ -20,6 +22,7 @@ interface FinancialToolbarProps {
 }
 
 export function FinancialToolbar({
+  mode,
   filteredCount,
   totalCount,
   caseId,
@@ -39,6 +42,7 @@ export function FinancialToolbar({
     entityFilter,
     minAmount,
     maxAmount,
+    setMode,
   } = useFinancialStore()
 
   const activeFilterCount =
@@ -54,11 +58,30 @@ export function FinancialToolbar({
       <div className="relative">
         <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Search transactions..."
+          placeholder={mode === "transactions" ? "Search transactions..." : "Search financial intelligence..."}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="h-8 w-64 pl-8 text-xs"
         />
+      </div>
+
+      <div className="flex items-center rounded-md border border-border p-0.5">
+        <Button
+          variant={mode === "transactions" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => setMode("transactions")}
+        >
+          Transactions
+        </Button>
+        <Button
+          variant={mode === "intelligence" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={() => setMode("intelligence")}
+        >
+          Financial Intelligence
+        </Button>
       </div>
 
       <Button
@@ -77,7 +100,7 @@ export function FinancialToolbar({
 
       <Badge variant="slate" className="text-[10px]">
         {filteredCount === totalCount
-          ? `${totalCount.toLocaleString()} transactions`
+          ? `${totalCount.toLocaleString()} ${mode === "transactions" ? "transactions" : "records"}`
           : `${filteredCount.toLocaleString()} of ${totalCount.toLocaleString()}`}
       </Badge>
 
@@ -92,17 +115,19 @@ export function FinancialToolbar({
         Charts
       </Button>
 
-      <Button variant="ghost" size="sm" onClick={onOpenBulkImport}>
-        <Upload className="size-3.5" />
-        Import
-      </Button>
+      {mode === "transactions" && (
+        <Button variant="ghost" size="sm" onClick={onOpenBulkImport}>
+          <Upload className="size-3.5" />
+          Import
+        </Button>
+      )}
 
       <Button
         variant="ghost"
         size="sm"
         onClick={() =>
           window.open(
-            `/api/financial/export/pdf?case_id=${encodeURIComponent(caseId)}`,
+            `/api/financial/export/pdf?case_id=${encodeURIComponent(caseId)}&mode=${mode}`,
             "_blank"
           )
         }
