@@ -28,7 +28,7 @@ import { Badge } from "@/components/ui/badge"
 import { graphAPI } from "../api"
 import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
-import type { GraphNode, NodeDetail } from "@/types/graph.types"
+import type { NodeDetail } from "@/types/graph.types"
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -65,7 +65,7 @@ export function GraphPage() {
 
   /* ---- Dialog states ---- */
   const [addNodeOpen, setAddNodeOpen] = useState(false)
-  const [editNode, setEditNode] = useState<GraphNode | null>(null)
+  const [editNodeKey, setEditNodeKey] = useState<string | null>(null)
   const [createRelOpen, setCreateRelOpen] = useState(false)
   const [mergeOpen, setMergeOpen] = useState(false)
   const [expandOpen, setExpandOpen] = useState(false)
@@ -289,7 +289,7 @@ export function GraphPage() {
                 <GraphSidePanelContent
                   caseId={caseId!}
                   graphData={graphData}
-                  onEditNode={(node) => setEditNode(node)}
+                  onEditNode={(nodeKey) => setEditNodeKey(nodeKey)}
                   onExpandNode={handleExpandNode}
                   onMergeSelected={() => setMergeOpen(true)}
                   onCompareSelected={handleCompareSelected}
@@ -313,8 +313,7 @@ export function GraphPage() {
         }}
         onExpand={handleExpandNode}
         onEdit={(key) => {
-          const node = graphData.nodes.find((n) => n.key === key)
-          if (node) setEditNode(node)
+          setEditNodeKey(key)
         }}
         onDelete={handleDeleteNode}
         onAnalyzeRelationships={(key) => {
@@ -331,9 +330,9 @@ export function GraphPage() {
         onCreated={handleNodeCreated}
       />
       <EditNodeDialog
-        open={!!editNode}
-        onOpenChange={(open) => !open && setEditNode(null)}
-        node={editNode}
+        open={!!editNodeKey}
+        onOpenChange={(open) => !open && setEditNodeKey(null)}
+        nodeKey={editNodeKey}
         caseId={caseId!}
         onSaved={refreshGraph}
       />

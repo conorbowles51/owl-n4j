@@ -15,6 +15,7 @@ import { DocumentViewer } from "@/components/ui/document-viewer"
 import { MarkdownSummary } from "@/components/ui/markdown-summary"
 import { ConnectionsList } from "./ConnectionsList"
 import { MultiNodePanel } from "./MultiNodePanel"
+import { NodePropertiesTable } from "./NodePropertiesTable"
 import {
   Pencil,
   Expand,
@@ -27,12 +28,12 @@ import {
 } from "lucide-react"
 import { graphAPI } from "../api"
 import { evidenceAPI } from "@/features/evidence/api"
-import type { GraphData, GraphNode } from "@/types/graph.types"
+import type { GraphData } from "@/types/graph.types"
 
 interface NodeDetailSheetProps {
   caseId: string
   graphData?: GraphData
-  onEditNode?: (node: GraphNode) => void
+  onEditNode?: (nodeKey: string) => void
   onExpandNode?: (key: string) => void
   onMergeSelected?: () => void
   onCompareSelected?: () => void
@@ -174,10 +175,7 @@ export function NodeDetailSheet({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => {
-              const node = graphData?.nodes.find((n) => n.key === detail.key)
-              if (node) onEditNode?.(node)
-            }}
+            onClick={() => onEditNode?.(detail.key)}
           >
             <Pencil className="size-3.5" />
           </Button>
@@ -196,9 +194,19 @@ export function NodeDetailSheet({
         {detail.summary && (
           <>
             <div className="px-4 py-3">
-              <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Summary
-              </h4>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Summary
+                </h4>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="size-6"
+                  onClick={() => onEditNode?.(detail.key)}
+                >
+                  <Pencil className="size-3" />
+                </Button>
+              </div>
               <div className="min-w-0 overflow-hidden" style={{ overflowWrap: "anywhere" }}>
                 <MarkdownSummary content={detail.summary} onOpenFile={openDocument} />
               </div>
@@ -389,20 +397,20 @@ export function NodeDetailSheet({
 
         {/* Properties */}
         <div className="px-4 py-3">
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Properties
-          </h4>
-          <div className="space-y-1.5">
-            {Object.entries(properties).map(([key, value]) => (
-              <div key={key} className="flex gap-2 text-xs">
-                <span className="shrink-0 text-muted-foreground">{key}:</span>
-                <span className="truncate font-medium">{String(value)}</span>
-              </div>
-            ))}
-            {Object.keys(properties).length === 0 && (
-              <p className="text-xs text-muted-foreground">No properties</p>
-            )}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Properties
+            </h4>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="size-6"
+              onClick={() => onEditNode?.(detail.key)}
+            >
+              <Pencil className="size-3" />
+            </Button>
           </div>
+          <NodePropertiesTable properties={properties} />
         </div>
 
         <Separator />

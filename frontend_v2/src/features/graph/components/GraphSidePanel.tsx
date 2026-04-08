@@ -15,7 +15,7 @@ import { GraphAnalysisPanel } from "./GraphAnalysisPanel"
 import { RecycleBinPanel } from "./RecycleBinPanel"
 import { CypherPanel } from "./CypherPanel"
 import { SimilarEntitiesView } from "./SimilarEntitiesView"
-import type { GraphData, GraphNode } from "@/types/graph.types"
+import type { GraphData } from "@/types/graph.types"
 
 const TOOL_LABELS: Record<string, string> = {
   "force-controls": "Force Controls",
@@ -28,7 +28,7 @@ const TOOL_LABELS: Record<string, string> = {
 interface GraphSidePanelProps {
   caseId: string
   graphData?: GraphData
-  onEditNode: (node: GraphNode) => void
+  onEditNode: (nodeKey: string) => void
   onExpandNode: (key: string) => void
   onMergeSelected: () => void
   onCompareSelected: () => void
@@ -198,7 +198,7 @@ export function GraphSidePanelContent({
             <NodeDetailSheet
               caseId={caseId}
               graphData={graphData}
-              onEditNode={(node) => onEditNode(node)}
+              onEditNode={onEditNode}
               onExpandNode={onExpandNode}
               onMergeSelected={onMergeSelected}
               onCompareSelected={onCompareSelected}
