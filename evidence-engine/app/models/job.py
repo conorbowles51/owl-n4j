@@ -54,6 +54,8 @@ class Job(Base):
     source_folder_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # AI-generated document summary (first-N-chars → LLM)
     document_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
+    source_evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -29,6 +29,7 @@ from services.chat_db_service import (
     require_case_access,
     summarize_title,
 )
+from services.ai_costs_service import CostOperationKind, ai_cost_context
 from services.cost_tracking_service import CostJobType, record_cost
 from services.rag_service import rag_service
 from services.system_log_service import LogOrigin, LogType, system_log_service
@@ -49,7 +50,7 @@ class ChatRequest(BaseModel):
     scope: Literal["case_overview", "selection"] = "case_overview"
     selected_entity_keys: Optional[List[str]] = None
     provider: str = "openai"
-    model: str = "gpt-4o"
+    model: str = "gpt-5-mini"
     confidence_threshold: Optional[float] = None
     persist: bool = False
 
@@ -210,21 +211,35 @@ async def chat(
             success=True,
         )
 
-        result = rag_service.answer_question(
-            question=question,
-            selected_keys=selected_entity_keys or None,
-            confidence_threshold=request.confidence_threshold,
-            case_id=str(request.case_id),
-            conversation_history=conversation_history or None,
-            llm_context=llm,
-        )
+        with ai_cost_context(
+            job_type=CostJobType.AI_ASSISTANT,
+            case_id=request.case_id,
+            user_id=current_user.id,
+            description=f"AI Assistant Query: {question[:100]}",
+            extra_metadata={
+                "question": question,
+                "scope": request.scope,
+                "selected_entity_keys": selected_entity_keys,
+                "conversation_id": str(conversation.id) if conversation else None,
+            },
+        ):
+            result = rag_service.answer_question(
+                question=question,
+                selected_keys=selected_entity_keys or None,
+                confidence_threshold=request.confidence_threshold,
+                case_id=str(request.case_id),
+                conversation_history=conversation_history or None,
+                llm_context=llm,
+            )
 
         cost_record = None
         if llm.provider == "openai" and llm.last_usage:
             cost_record = record_cost(
+                db=db,
                 job_type=CostJobType.AI_ASSISTANT,
                 provider=llm.provider,
                 model_id=llm.model_id,
+                operation_kind=CostOperationKind.CHAT_COMPLETION,
                 prompt_tokens=llm.last_usage.get("prompt_tokens"),
                 completion_tokens=llm.last_usage.get("completion_tokens"),
                 total_tokens=llm.last_usage.get("total_tokens"),
@@ -237,7 +252,6 @@ async def chat(
                     "selected_entity_keys": selected_entity_keys,
                     "conversation_id": str(conversation.id) if conversation else None,
                 },
-                db=db,
             )
 
         if request.persist and conversation is not None:

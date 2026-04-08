@@ -44,7 +44,7 @@ interface ChatSuggestionsResponse {
 
 const CHAT_DEFAULTS = {
   provider: "openai",
-  model: "gpt-4o",
+  model: "gpt-5-mini",
 } as const
 
 export const chatAPI = {

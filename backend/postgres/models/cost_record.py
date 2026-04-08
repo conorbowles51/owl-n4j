@@ -59,7 +59,18 @@ class CostRecord(Base, TimestampMixin):
     
     # Cost calculation (in USD)
     cost_usd: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False, default=0.0)
-    
+
+    # Reporting dimensions
+    operation_kind: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    engine_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("evidence_files.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    pricing_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     # Additional metadata
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)  # Brief description of the job
     extra_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # Additional context (question, document name, etc.)

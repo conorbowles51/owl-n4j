@@ -37,7 +37,7 @@ interface ChatInputProps {
   suggestions: string[]
 }
 
-const DEFAULT_MODEL = "gpt-4o"
+const DEFAULT_MODEL = "gpt-5-mini"
 const DEFAULT_PROVIDER = "openai"
 
 export function ChatInput({

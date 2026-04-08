@@ -32,6 +32,7 @@ from routers import (
     users_router,
     setup_router,
     cost_ledger_router,
+    admin_ai_costs_router,
     financial_router,
     maintenance_router,
     case_deadlines_router,
@@ -132,6 +133,7 @@ app.include_router(workspace_router)
 app.include_router(users_router)
 app.include_router(setup_router)
 app.include_router(cost_ledger_router)
+app.include_router(admin_ai_costs_router)
 app.include_router(financial_router)
 app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)

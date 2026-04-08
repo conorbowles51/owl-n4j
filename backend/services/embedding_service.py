@@ -22,6 +22,8 @@ except ImportError:
     OLLAMA_AVAILABLE = False
 
 from config import EMBEDDING_PROVIDER, EMBEDDING_MODEL, OPENAI_API_KEY, LLM_PROVIDER
+from services.ai_costs_service import CostOperationKind, get_current_ai_cost_context
+from services.cost_tracking_service import record_cost
 
 
 class EmbeddingService:
@@ -109,6 +111,36 @@ class EmbeddingService:
                     model=self.model,
                     input=text
                 )
+                context = get_current_ai_cost_context()
+                if context:
+                    usage = getattr(response, "usage", None)
+                    prompt_tokens = None
+                    total_tokens = None
+                    if usage is not None:
+                        prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
+                        total_tokens = getattr(usage, "total_tokens", None)
+                    try:
+                        from postgres.session import get_background_session
+
+                        with get_background_session() as db:
+                            record_cost(
+                                db=db,
+                                job_type=context.job_type,
+                                provider="openai",
+                                model_id=self.model,
+                                operation_kind=CostOperationKind.EMBEDDING,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=0,
+                                total_tokens=total_tokens or prompt_tokens,
+                                case_id=context.case_id,
+                                user_id=context.user_id,
+                                engine_job_id=context.engine_job_id,
+                                evidence_file_id=context.evidence_file_id,
+                                description=context.description or "Embedding generation",
+                                extra_metadata=context.extra_metadata,
+                            )
+                    except Exception as tracking_error:
+                        print(f"[Embedding] Warning: failed to record cost: {tracking_error}")
                 return response.data[0].embedding
             
             elif self.provider == "ollama":
@@ -170,6 +202,39 @@ class EmbeddingService:
                         model=self.model,
                         input=batch
                     )
+                    context = get_current_ai_cost_context()
+                    if context:
+                        usage = getattr(response, "usage", None)
+                        prompt_tokens = None
+                        total_tokens = None
+                        if usage is not None:
+                            prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", None)
+                            total_tokens = getattr(usage, "total_tokens", None)
+                        try:
+                            from postgres.session import get_background_session
+
+                            with get_background_session() as db:
+                                record_cost(
+                                    db=db,
+                                    job_type=context.job_type,
+                                    provider="openai",
+                                    model_id=self.model,
+                                    operation_kind=CostOperationKind.EMBEDDING,
+                                    prompt_tokens=prompt_tokens,
+                                    completion_tokens=0,
+                                    total_tokens=total_tokens or prompt_tokens,
+                                    case_id=context.case_id,
+                                    user_id=context.user_id,
+                                    engine_job_id=context.engine_job_id,
+                                    evidence_file_id=context.evidence_file_id,
+                                    description=context.description or "Embedding generation",
+                                    extra_metadata={
+                                        **(context.extra_metadata or {}),
+                                        "batch_size": len(batch),
+                                    },
+                                )
+                        except Exception as tracking_error:
+                            print(f"[Embedding] Warning: failed to record batch cost: {tracking_error}")
                     batch_embeddings = [item.embedding for item in response.data]
                 else:
                     # Ollama: process one by one (no batch support)

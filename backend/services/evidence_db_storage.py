@@ -262,6 +262,7 @@ class EvidenceDBStorage:
         files_data: List[Dict[str, Any]],
         owner: Optional[str] = None,
         folder_id: Optional[uuid.UUID] = None,
+        created_by_id: Optional[uuid.UUID] = None,
     ) -> List[EvidenceFile]:
         """
         Add file records. Each item in files_data expects:
@@ -293,6 +294,7 @@ class EvidenceDBStorage:
                 is_duplicate=is_dup,
                 duplicate_of_id=dup_of_id,
                 owner=owner,
+                created_by_id=created_by_id,
                 legacy_id=fd.get("legacy_id"),
             )
             db.add(ef)

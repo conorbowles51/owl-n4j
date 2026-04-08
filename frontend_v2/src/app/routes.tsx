@@ -84,9 +84,9 @@ const BackgroundTasksPage = lazy(() =>
     default: m.BackgroundTasksPage,
   }))
 )
-const UsagePage = lazy(() =>
-  import("@/features/admin/components/UsagePage").then((m) => ({
-    default: m.UsagePage,
+const AICostsPage = lazy(() =>
+  import("@/features/admin/components/AICostsPage").then((m) => ({
+    default: m.AICostsPage,
   }))
 )
 
@@ -139,11 +139,12 @@ export function AppRoutes() {
           {/* Admin routes */}
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<LazyPage><AdminDashboardPage /></LazyPage>} />
+            <Route path="ai-costs" element={<LazyPage><AICostsPage /></LazyPage>} />
             <Route path="users" element={<LazyPage><UserManagementPage /></LazyPage>} />
             <Route path="profiles" element={<LazyPage><ProfileManagementPage /></LazyPage>} />
             <Route path="logs" element={<LazyPage><SystemLogsPage /></LazyPage>} />
             <Route path="tasks" element={<LazyPage><BackgroundTasksPage /></LazyPage>} />
-            <Route path="usage" element={<LazyPage><UsagePage /></LazyPage>} />
+            <Route path="usage" element={<Navigate to="/admin/ai-costs" replace />} />
           </Route>
 
           <Route path="/settings" element={<LazyPage><SettingsPage /></LazyPage>} />

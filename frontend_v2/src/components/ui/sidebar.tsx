@@ -52,6 +52,7 @@ function getCaseNav(caseId: string): NavItem[] {
 }
 
 const adminNav: NavItem[] = [
+  { label: "AI Costs", icon: DollarSign, to: "/admin/ai-costs" },
   { label: "Users", icon: Users, to: "/admin/users" },
   { label: "Profiles", icon: Sliders, to: "/admin/profiles" },
 ]

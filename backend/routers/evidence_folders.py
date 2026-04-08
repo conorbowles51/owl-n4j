@@ -432,6 +432,7 @@ async def process_folder(
             case_id=uuid.UUID(req.case_id),
             file_ids=file_ids,
             force_reprocess=req.reprocess_completed,
+            requested_by_user_id=current_user.id,
         )
         result["effective_profile"] = resolve_effective_profile(
             db, fid, uuid.UUID(req.case_id)

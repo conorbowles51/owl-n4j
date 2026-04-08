@@ -12,6 +12,7 @@ import subprocess
 import shutil
 from pathlib import Path
 from typing import List, Optional
+from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
@@ -245,7 +246,7 @@ async def sync_filesystem(
         if file_infos:
             new_records = EvidenceDBStorage.add_files(
                 db, case_id=UUID(case_id),
-                files_data=file_infos, owner=current_user.email,
+                files_data=file_infos, owner=current_user.email, created_by_id=current_user.id,
             )
             db.commit()
             created_count = len(new_records)
@@ -306,7 +307,7 @@ async def upload_evidence(
         if USE_EVIDENCE_ENGINE:
             return await _upload_via_engine(
                 case_id, files, current_user.email,
-                folder_id=folder_id, db=db,
+                folder_id=folder_id, db=db, created_by_id=current_user.id,
             )
 
         # --- Legacy path (deprecated): store locally, process separately ---
@@ -387,6 +388,7 @@ async def _upload_via_engine(
     owner: str,
     folder_id: Optional[str] = None,
     db: Optional[Session] = None,
+    created_by_id: Optional[UUID] = None,
 ) -> UploadResponse:
     """
     Store files locally (disk + Postgres) without triggering processing.
@@ -435,6 +437,7 @@ async def _upload_via_engine(
             files_data=db_files_data,
             owner=owner,
             folder_id=fid_uuid,
+            created_by_id=created_by_id,
         )
         db.commit()
 
@@ -504,6 +507,7 @@ async def process_evidence_background(
                 case_id=UUID(request.case_id),
                 file_ids=db_backed_ids,
                 force_reprocess=False,
+                requested_by_user_id=current_user.id,
             )
             job_ids = engine_result.get("job_ids", [])
             if engine_result.get("message"):
@@ -573,6 +577,7 @@ async def process_evidence(
                 case_id=UUID(request.case_id),
                 file_ids=db_backed_ids,
                 force_reprocess=False,
+                requested_by_user_id=current_user.id,
             )
             processed += engine_result.get("file_count", 0)
             skipped += engine_result.get("skipped_count", 0)

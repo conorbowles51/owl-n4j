@@ -204,7 +204,7 @@ class GraphService:
                     ORDER BY deg DESC
                     LIMIT $limit
                     RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
-                           n.confidence AS confidence, n.mentioned AS mentioned
+                           n.confidence AS confidence, properties(n) AS node_props
                     """,
                     **params,
                 )
@@ -219,7 +219,7 @@ class GraphService:
                             "name": record["name"] or nk,
                             "type": record["type"],
                             "confidence": record["confidence"],
-                            "mentioned": record["mentioned"],
+                            "mentioned": (record.get("node_props") or {}).get("mentioned"),
                         })
 
                 links = []
@@ -230,7 +230,7 @@ class GraphService:
                         WHERE a.key IN $node_keys AND b.key IN $node_keys
                           AND r.case_id = $case_id
                         RETURN a.key AS source, b.key AS target,
-                               type(r) AS type, r.weight AS weight
+                               type(r) AS type, properties(r) AS rel_props
                         """,
                         node_keys=list(node_keys), case_id=case_id,
                     )
@@ -239,7 +239,7 @@ class GraphService:
                             "source": record["source"],
                             "target": record["target"],
                             "type": record["type"],
-                            "weight": record["weight"],
+                            "weight": (record.get("rel_props") or {}).get("weight"),
                         })
 
                 return {"nodes": nodes, "links": links, "total_node_count": total_node_count}
@@ -271,7 +271,7 @@ class GraphService:
                         node.name AS name,
                         labels(node)[0] AS type,
                         node.confidence AS confidence,
-                        node.mentioned AS mentioned
+                        properties(node) AS node_props
                 """
             else:
                 query = """
@@ -282,7 +282,7 @@ class GraphService:
                         n.name AS name,
                         labels(n)[0] AS type,
                         n.confidence AS confidence,
-                        n.mentioned AS mentioned
+                        properties(n) AS node_props
                 """
 
             nodes_result = session.run(query, **params)
@@ -298,7 +298,7 @@ class GraphService:
                         "name": record["name"] or node_key,
                         "type": record["type"],
                         "confidence": record["confidence"],
-                        "mentioned": record["mentioned"],
+                        "mentioned": (record.get("node_props") or {}).get("mentioned"),
                     })
 
             if node_keys and len(node_keys) > 0:
@@ -311,7 +311,7 @@ class GraphService:
                         a.key AS source,
                         b.key AS target,
                         type(r) AS type,
-                        r.weight AS weight
+                        properties(r) AS rel_props
                 """
                 rels_result = session.run(rels_query, node_keys=keys_list, case_id=case_id)
             else:
@@ -323,7 +323,7 @@ class GraphService:
                     "source": record["source"],
                     "target": record["target"],
                     "type": record["type"],
-                    "weight": record["weight"],
+                    "weight": (record.get("rel_props") or {}).get("weight"),
                 })
 
         return {"nodes": nodes, "links": links}

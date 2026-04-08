@@ -91,6 +91,8 @@ async def upload_files(
             effective_mandatory_instructions=(metadata or {}).get("effective_mandatory_instructions"),
             effective_special_entity_types=(metadata or {}).get("effective_special_entity_types"),
             source_folder_id=(metadata or {}).get("source_folder_id"),
+            requested_by_user_id=(metadata or {}).get("requested_by_user_id"),
+            source_evidence_file_id=(metadata or {}).get("source_evidence_file_id"),
             file_size=file_size,
             mime_type=mime_type,
             sha256=sha256,

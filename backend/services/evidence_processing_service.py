@@ -30,6 +30,7 @@ async def process_db_files(
     case_id: uuid.UUID,
     file_ids: list[uuid.UUID],
     force_reprocess: bool = False,
+    requested_by_user_id: uuid.UUID | None = None,
 ) -> dict[str, Any]:
     await reconcile_case_jobs(db, str(case_id))
 
@@ -76,6 +77,11 @@ async def process_db_files(
             folder_id=ef.folder_id,
             file_id=ef.id,
         )
+        snapshot = {
+            **snapshot,
+            "requested_by_user_id": str(requested_by_user_id) if requested_by_user_id else None,
+            "source_evidence_file_id": str(ef.id),
+        }
 
         file_tuples.append(
             (

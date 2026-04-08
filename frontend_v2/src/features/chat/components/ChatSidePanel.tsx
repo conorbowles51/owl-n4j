@@ -19,7 +19,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { evidenceAPI, llmConfigAPI } from "@/features/evidence/api"
 import type { LLMModel } from "@/types/evidence.types"
 
-const DEFAULT_MODEL = "gpt-4o"
+const DEFAULT_MODEL = "gpt-5-mini"
 const DEFAULT_PROVIDER = "openai"
 
 type ContextMode = "full" | "selection"

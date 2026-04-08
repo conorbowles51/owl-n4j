@@ -314,6 +314,26 @@ AVAILABLE_MODELS = [
         parameters="N/A",
     ),
     LLMModel(
+        id="gpt-5-mini",
+        name="GPT-5 Mini",
+        provider=LLMProvider.OPENAI,
+        description="Fast, lower-cost GPT-5 variant that matches the current evidence-engine default.",
+        pros=[
+            "Lower cost than flagship GPT-5 models",
+            "Fast responses for interactive chat",
+            "Good reasoning and instruction following",
+            "Aligned with the evidence-engine text pipeline default",
+        ],
+        cons=[
+            "Less capable than the largest GPT-5 variants",
+            "Requires OpenAI API key",
+            "Requires internet connection",
+            "Data sent to external service",
+        ],
+        context_window=256000,
+        parameters="N/A",
+    ),
+    LLMModel(
         id="gpt-4o",
         name="GPT-4o",
         provider=LLMProvider.OPENAI,
