@@ -1,15 +1,36 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare, ChevronDown, ChevronRight, BarChart3, ArrowLeftRight } from 'lucide-react';
+import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare, ChevronDown, ChevronRight, BarChart3, ArrowLeftRight, TrendingUp } from 'lucide-react';
 import { financialAPI } from '../../services/api';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
 import FinancialTable from './FinancialTable';
 import FinancialFilterPanel from './FinancialFilterPanel';
 import EntityFlowTables from './EntityFlowTables';
+import MoneyFlowSection from './MoneyFlowSection';
 import AddCategoryModal from './AddCategoryModal';
 import BulkCorrectionModal from './BulkCorrectionModal';
 import AutoExtractPreviewModal from './AutoExtractPreviewModal';
 import NotesUploadModal from './NotesUploadModal';
+
+/**
+ * Graft parent/child sub-transactions so that if a parent matches filters
+ * but a child doesn't (or vice-versa), they still travel together in the
+ * downstream view. Returns a new array.
+ */
+function graftParentChild(filtered, allTransactions) {
+  if (filtered.length === 0) return filtered;
+  const filteredKeys = new Set(filtered.map(t => t.key));
+  const parentKeys = new Set(filtered.filter(t => t.is_parent).map(t => t.key));
+  if (parentKeys.size === 0) return filtered;
+  const result = [...filtered];
+  for (const t of allTransactions) {
+    if (t.parent_transaction_key && parentKeys.has(t.parent_transaction_key) && !filteredKeys.has(t.key)) {
+      result.push(t);
+      filteredKeys.add(t.key);
+    }
+  }
+  return result;
+}
 
 export default function FinancialView({ caseId, onNodeSelect }) {
   const [transactions, setTransactions] = useState([]);
@@ -25,11 +46,15 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [endDate, setEndDate] = useState(null);
   const [selectedFromEntities, setSelectedFromEntities] = useState(new Set()); // Set of entity keys
   const [selectedToEntities, setSelectedToEntities] = useState(new Set());     // Set of entity keys
+  // Money Flow perspective selection — independent of the From/To cross-filter.
+  // A txn is in-scope if ANY selected entity appears in from_entity OR to_entity.
+  const [selectedMoneyFlowEntities, setSelectedMoneyFlowEntities] = useState(new Set());
   const [searchQuery, setSearchQuery] = useState(''); // Free-text search across names
   const [filterExpanded, setFilterExpanded] = useState(false);
-  // Charts and Entity Flow are independently collapsible (per user feedback)
+  // Charts, Entity Flow, and Money Flow are independently collapsible
   const [chartsExpanded, setChartsExpanded] = useState(true);
   const [entityFlowExpanded, setEntityFlowExpanded] = useState(true);
+  const [moneyFlowExpanded, setMoneyFlowExpanded] = useState(false);
 
   // Resizable visualisation section — user drags the divider to control combined height
   const [visSectionHeight, setVisSectionHeight] = useState(null); // null = auto (use default)
@@ -153,8 +178,9 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   }, [transactions]);
 
   // Stage 1: Filter transactions by type/category/date/search (before entity selection)
-  // This feeds the entity flow tables so they reflect non-entity filters.
-  // Uses debounced search values so filtering only runs after typing pauses.
+  // This feeds the entity flow tables AND the Money Flow entity picker so
+  // they reflect non-entity filters. Uses debounced search values so
+  // filtering only runs after typing pauses.
   const baseFilteredTransactions = useMemo(() => {
     const q = debouncedSearchQuery.toLowerCase().trim();
     const st = debouncedSearchTerm.toLowerCase().trim();
@@ -182,21 +208,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       }
       return true;
     });
-    // Include children of any matching parent (sub-transactions may not match
-    // filters on their own but should always appear alongside their parent)
-    const filteredKeys = new Set(filtered.map(t => t.key));
-    const parentKeysInResults = new Set(
-      filtered.filter(t => t.is_parent).map(t => t.key)
-    );
-    if (parentKeysInResults.size > 0) {
-      for (const t of transactions) {
-        if (t.parent_transaction_key && parentKeysInResults.has(t.parent_transaction_key) && !filteredKeys.has(t.key)) {
-          filtered.push(t);
-          filteredKeys.add(t.key);
-        }
-      }
-    }
-    return filtered;
+    // Graft sub-transactions so children travel with parents that survived
+    return graftParentChild(filtered, transactions);
   }, [transactions, selectedTypes, selectedCategories, startDate, endDate, debouncedSearchQuery, debouncedSearchTerm]);
 
   // Compute From entities (senders), constrained by To selection for cross-filtering
@@ -237,9 +250,11 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
   }, [baseFilteredTransactions, selectedFromEntities]);
 
-  // Stage 2: Apply entity selection filtering on top of base
+  // Stage 2: Apply (a) From/To cross-filter (AND) and (b) Money Flow (OR)
+  // on top of the base filters, then re-graft parent/child so families stay
+  // together regardless of which filter drops which member.
   const filteredTransactions = useMemo(() => {
-    return baseFilteredTransactions.filter(t => {
+    let result = baseFilteredTransactions.filter(t => {
       if (selectedFromEntities.size > 0) {
         const fromKey = t.from_entity?.key || t.from_entity?.name;
         if (!fromKey || !selectedFromEntities.has(fromKey)) return false;
@@ -250,17 +265,30 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       }
       return true;
     });
-  }, [baseFilteredTransactions, selectedFromEntities, selectedToEntities]);
+    if (selectedMoneyFlowEntities.size > 0) {
+      result = result.filter(t => {
+        const fk = t.from_entity?.key || t.from_entity?.name;
+        const tk = t.to_entity?.key || t.to_entity?.name;
+        return (fk && selectedMoneyFlowEntities.has(fk))
+            || (tk && selectedMoneyFlowEntities.has(tk));
+      });
+    }
+    return graftParentChild(result, transactions);
+  }, [baseFilteredTransactions, selectedFromEntities, selectedToEntities, selectedMoneyFlowEntities, transactions]);
 
   // Compute summary from filtered transactions.
   //
-  // Convention (kept SIMPLE per user feedback):
-  //   total_outflows = sum of abs(amount) for positive-amount transactions  → "Money Out"
-  //   total_inflows  = sum of abs(amount) for negative-amount transactions  → "Money In"
+  // Sign-based totals (NOT perspective-based cash flow):
+  //   total_outflows = sum of abs(amount) for positive-amount transactions  → "Payments"
+  //   total_inflows  = sum of abs(amount) for negative-amount transactions  → "Receipts"
   //
-  // The same labels apply whether or not entities are selected — entity selection
-  // simply changes which transactions are included in the count.
+  // The same labels apply whether or not filters are active — filters just
+  // change which transactions are included in the count. True cash-flow
+  // numbers live in `moneyFlowSummary` and are only meaningful when a
+  // perspective set of entities is selected.
   const hasEntitySelection = selectedFromEntities.size > 0 || selectedToEntities.size > 0;
+  const hasMoneyFlowSelection = selectedMoneyFlowEntities.size > 0;
+  const anyFilterActive = hasEntitySelection || hasMoneyFlowSelection;
   const filteredSummary = useMemo(() => {
     const count = filteredTransactions.length;
     if (count === 0) {
@@ -269,19 +297,19 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         total_inflows: 0,
         total_outflows: 0,
         net_flow: 0,
-        unique_entities: hasEntitySelection ? undefined : 0,
+        unique_entities: anyFilterActive ? undefined : 0,
       };
     }
 
-    let inflows = 0;   // sum of negative-amount txns (Money In)
-    let outflows = 0;  // sum of positive-amount txns (Money Out)
+    let inflows = 0;   // sum of negative-amount txns (Receipts)
+    let outflows = 0;  // sum of positive-amount txns (Payments)
     const entityKeys = new Set();
     filteredTransactions.forEach(t => {
       const raw = parseFloat(t.amount) || 0;
       const amt = Math.abs(raw);
       if (raw >= 0) outflows += amt;
       else inflows += amt;
-      if (!hasEntitySelection) {
+      if (!anyFilterActive) {
         if (t.from_entity?.key) entityKeys.add(t.from_entity.key);
         else if (t.from_entity?.name) entityKeys.add(t.from_entity.name);
         if (t.to_entity?.key) entityKeys.add(t.to_entity.key);
@@ -294,9 +322,106 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       total_inflows: Math.round(inflows * 100) / 100,
       total_outflows: Math.round(outflows * 100) / 100,
       net_flow: Math.round((inflows - outflows) * 100) / 100,
-      unique_entities: hasEntitySelection ? undefined : entityKeys.size,
+      unique_entities: anyFilterActive ? undefined : entityKeys.size,
     };
-  }, [filteredTransactions, hasEntitySelection]);
+  }, [filteredTransactions, anyFilterActive]);
+
+  // Entity options available for Money Flow picker. Fed from
+  // baseFilteredTransactions (pre cross-filter / pre money-flow) so the user
+  // can always pick any entity in the current type/category/date/search scope.
+  const moneyFlowEntityOptions = useMemo(() => {
+    const map = new Map();
+    baseFilteredTransactions.forEach(t => {
+      const amt = Math.abs(parseFloat(t.amount) || 0);
+      const fk = t.from_entity?.key || t.from_entity?.name;
+      const fn = t.from_entity?.name;
+      const tk = t.to_entity?.key || t.to_entity?.name;
+      const tn = t.to_entity?.name;
+      if (fk && fn) {
+        const e = map.get(fk) || { key: fk, name: fn, asFromCount: 0, asToCount: 0, totalVolume: 0 };
+        e.asFromCount += 1;
+        e.totalVolume += amt;
+        map.set(fk, e);
+      }
+      if (tk && tn) {
+        const e = map.get(tk) || { key: tk, name: tn, asFromCount: 0, asToCount: 0, totalVolume: 0 };
+        e.asToCount += 1;
+        e.totalVolume += amt;
+        map.set(tk, e);
+      }
+    });
+    return [...map.values()].sort((a, b) => b.totalVolume - a.totalVolume);
+  }, [baseFilteredTransactions]);
+
+  // Money Flow perspective summary: categorizes each in-scope transaction
+  // as Inflow (external → selected), Outflow (selected → external), or
+  // Internal (selected → selected, counted once). Computes counterparty
+  // aggregation for the divergent bar chart.
+  const moneyFlowSummary = useMemo(() => {
+    if (!hasMoneyFlowSelection) return null;
+    let inflow = 0, outflow = 0, internal = 0;
+    let inflowCount = 0, outflowCount = 0, internalCount = 0;
+    const inflowBy = new Map();   // external sender → { amount, count }
+    const outflowBy = new Map();  // external recipient → { amount, count }
+
+    filteredTransactions.forEach(t => {
+      const amt = Math.abs(parseFloat(t.amount) || 0);
+      const fk = t.from_entity?.key || t.from_entity?.name;
+      const tk = t.to_entity?.key || t.to_entity?.name;
+      const fromInSet = fk && selectedMoneyFlowEntities.has(fk);
+      const toInSet = tk && selectedMoneyFlowEntities.has(tk);
+      if (fromInSet && toInSet) {
+        internal += amt; internalCount += 1;
+      } else if (fromInSet) {
+        outflow += amt; outflowCount += 1;
+        if (tk) {
+          const c = outflowBy.get(tk) || { key: tk, name: t.to_entity?.name || tk, amount: 0, count: 0 };
+          c.amount += amt; c.count += 1; outflowBy.set(tk, c);
+        }
+      } else if (toInSet) {
+        inflow += amt; inflowCount += 1;
+        if (fk) {
+          const c = inflowBy.get(fk) || { key: fk, name: t.from_entity?.name || fk, amount: 0, count: 0 };
+          c.amount += amt; c.count += 1; inflowBy.set(fk, c);
+        }
+      }
+    });
+
+    // Merge bidirectional counterparties (same external entity that sends AND receives)
+    const allKeys = new Set([...inflowBy.keys(), ...outflowBy.keys()]);
+    const counterparties = [...allKeys].map(k => {
+      const i = inflowBy.get(k);
+      const o = outflowBy.get(k);
+      return {
+        key: k,
+        name: (i && i.name) || (o && o.name) || k,
+        inflow: i ? i.amount : 0,
+        outflow: o ? o.amount : 0,
+        total: (i ? i.amount : 0) + (o ? o.amount : 0),
+        count: (i ? i.count : 0) + (o ? o.count : 0),
+      };
+    }).sort((a, b) => b.total - a.total);
+
+    return {
+      inflow: Math.round(inflow * 100) / 100,
+      outflow: Math.round(outflow * 100) / 100,
+      internal: Math.round(internal * 100) / 100,
+      net: Math.round((inflow - outflow) * 100) / 100,
+      inflowCount, outflowCount, internalCount,
+      counterparties,
+    };
+  }, [filteredTransactions, selectedMoneyFlowEntities, hasMoneyFlowSelection]);
+
+  // Count of money-flow entities that also appear in the cross-filter
+  // (used to warn the user the intersection applies)
+  const moneyFlowCrossFilterOverlap = useMemo(() => {
+    if (!hasMoneyFlowSelection || !hasEntitySelection) return 0;
+    let overlap = 0;
+    selectedMoneyFlowEntities.forEach(k => {
+      if (selectedFromEntities.has(k) || selectedToEntities.has(k)) overlap += 1;
+    });
+    return overlap;
+  }, [selectedMoneyFlowEntities, selectedFromEntities, selectedToEntities, hasMoneyFlowSelection, hasEntitySelection]);
 
   // Compute volume data from filtered transactions so charts update with filters
   const filteredVolumeData = useMemo(() => {
@@ -500,6 +625,9 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     }
     if (selectedToEntities.size > 0) {
       params.append('to_entities', [...selectedToEntities].join(','));
+    }
+    if (selectedMoneyFlowEntities.size > 0) {
+      params.append('money_flow_entities', [...selectedMoneyFlowEntities].join(','));
     }
     // Send both search fields so backend can apply them the same way frontend does
     if (searchQuery && searchQuery.trim()) {
@@ -705,15 +833,29 @@ export default function FinancialView({ caseId, onNodeSelect }) {
               selectedToEntities.size > 0 ? `${selectedToEntities.size} recipient(s)` : '',
             ].filter(Boolean).join(' and ')
           }
+          moneyFlowSummary={moneyFlowSummary}
+          hasMoneyFlowSelection={hasMoneyFlowSelection}
+          moneyFlowLabel={
+            hasMoneyFlowSelection ? `${selectedMoneyFlowEntities.size} entity${selectedMoneyFlowEntities.size === 1 ? '' : 'ies'}` : ''
+          }
         />
       </div>
 
-      {/* Visualisation area — Charts and Entity Flow are now INDEPENDENTLY collapsible */}
-      {(chartsExpanded || entityFlowExpanded) ? (
+      {/* Visualisation area — Charts, Entity Flow, and Money Flow are INDEPENDENTLY collapsible */}
+      {(chartsExpanded || entityFlowExpanded || moneyFlowExpanded) ? (
         <div
           ref={visSectionRef}
           className="border-t border-light-200 flex flex-col min-h-0"
-          style={visSectionHeight != null ? { height: visSectionHeight, flexShrink: 0 } : { maxHeight: '40vh', flexShrink: 0 }}
+          style={
+            visSectionHeight != null
+              ? { height: visSectionHeight, flexShrink: 0 }
+              : {
+                  maxHeight: ([chartsExpanded, entityFlowExpanded, moneyFlowExpanded].filter(Boolean).length >= 3)
+                    ? '50vh'
+                    : '40vh',
+                  flexShrink: 0,
+                }
+          }
         >
           <div className="flex-1 min-h-0 overflow-y-auto">
             {/* Charts section */}
@@ -738,7 +880,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             </div>
 
             {/* Entity Flow section */}
-            <div>
+            <div className="border-b border-light-100">
               <div
                 className="flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-light-50 select-none"
                 onClick={() => setEntityFlowExpanded(!entityFlowExpanded)}
@@ -768,10 +910,41 @@ export default function FinancialView({ caseId, onNodeSelect }) {
                 </div>
               )}
             </div>
+
+            {/* Money Flow section — OR-based perspective selection */}
+            <div>
+              <div
+                className="flex items-center gap-2 px-4 py-2 cursor-pointer hover:bg-light-50 select-none"
+                onClick={() => setMoneyFlowExpanded(!moneyFlowExpanded)}
+              >
+                {moneyFlowExpanded ? <ChevronDown className="w-4 h-4 text-light-500" /> : <ChevronRight className="w-4 h-4 text-light-500" />}
+                <TrendingUp className="w-4 h-4 text-light-600" />
+                <span className="text-sm font-medium text-light-700">Money Flow</span>
+                {hasMoneyFlowSelection && (
+                  <span className="text-xs text-owl-blue-600">
+                    ({selectedMoneyFlowEntities.size} {selectedMoneyFlowEntities.size === 1 ? 'entity' : 'entities'} selected)
+                  </span>
+                )}
+                {!hasMoneyFlowSelection && (
+                  <span className="text-xs text-light-400">— pick entities to see true cash-flow perspective</span>
+                )}
+              </div>
+              {moneyFlowExpanded && (
+                <div className="px-4 pb-3">
+                  <MoneyFlowSection
+                    entityOptions={moneyFlowEntityOptions}
+                    selectedEntities={selectedMoneyFlowEntities}
+                    onSelectionChange={setSelectedMoneyFlowEntities}
+                    summary={moneyFlowSummary}
+                    crossFilterOverlapCount={moneyFlowCrossFilterOverlap}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       ) : (
-        /* Both collapsed — show a compact strip with both toggles */
+        /* All three collapsed — show a compact strip with three toggles */
         <div className="border-t border-light-200 flex items-center px-4 py-1.5 gap-4 bg-light-50/50">
           <button
             onClick={() => setChartsExpanded(true)}
@@ -789,11 +962,19 @@ export default function FinancialView({ caseId, onNodeSelect }) {
             <ArrowLeftRight className="w-3.5 h-3.5" />
             <span>From &amp; To Entities</span>
           </button>
+          <button
+            onClick={() => setMoneyFlowExpanded(true)}
+            className="flex items-center gap-1.5 text-xs text-light-600 hover:text-owl-blue-600"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+            <TrendingUp className="w-3.5 h-3.5" />
+            <span>Money Flow</span>
+          </button>
         </div>
       )}
 
       {/* Drag handle to resize visualisation area vs table */}
-      {(chartsExpanded || entityFlowExpanded) && (
+      {(chartsExpanded || entityFlowExpanded || moneyFlowExpanded) && (
         <div
           onMouseDown={handleDragStart}
           className="flex-shrink-0 h-1.5 border-t border-b border-light-200 cursor-row-resize hover:bg-owl-blue-100 active:bg-owl-blue-200 transition-colors group relative"

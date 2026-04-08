@@ -466,6 +466,7 @@ async def export_financial_pdf(
     end_date: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
     to_entities: Optional[str] = Query(None, description="Comma-separated recipient entity keys"),
+    money_flow_entities: Optional[str] = Query(None, description="Comma-separated entity keys for Money Flow perspective (OR filter on from_entity OR to_entity)"),
     entity_key: Optional[str] = Query(None, description="Filter by entity key (from/to) — legacy single"),
     entity_name: Optional[str] = Query(None, description="Entity name for filter display"),
     entity: Optional[str] = Query(None, description="Entity name to filter by from/to (legacy)"),
@@ -587,6 +588,24 @@ async def export_financial_pdf(
                 ]
                 filters.append(f"Entity: {entity}")
 
+        # --- Stage 3: Money Flow perspective (OR filter) ---
+        # A transaction is in-scope for the Money Flow view if ANY selected
+        # entity appears in from_entity OR to_entity. This is distinct from
+        # the From/To cross-filter above, which uses AND semantics.
+        money_flow_keys_set = None
+        if money_flow_entities:
+            money_flow_keys_set = set(k.strip() for k in money_flow_entities.split(",") if k.strip())
+            def _mf_match(t):
+                fk = None
+                tk = None
+                if isinstance(t.get("from_entity"), dict):
+                    fk = t["from_entity"].get("key") or t["from_entity"].get("name")
+                if isinstance(t.get("to_entity"), dict):
+                    tk = t["to_entity"].get("key") or t["to_entity"].get("name")
+                return (fk and fk in money_flow_keys_set) or (tk and tk in money_flow_keys_set)
+            transactions = [t for t in transactions if _mf_match(t)]
+            filters.append(f"Money Flow: {len(money_flow_keys_set)} entities")
+
         # --- Include children of any parent that passed filters ---
         # Sub-transactions may not match search/filter criteria on their own
         # but should always appear alongside their parent.
@@ -690,10 +709,10 @@ async def export_financial_pdf(
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
 
-        # --- Compute Money In / Money Out (sign-based, mirrors frontend) ---
-        # User-requested simplification:
-        #   total_outflows = sum of abs(amount) for positive transactions  → "Money Out"
-        #   total_inflows  = sum of abs(amount) for negative transactions  → "Money In"
+        # --- Compute Payments / Receipts (sign-based, mirrors frontend) ---
+        # Wire-format names preserved for backwards compatibility:
+        #   total_outflows = sum of abs(amount) for positive transactions  → "Payments"
+        #   total_inflows  = sum of abs(amount) for negative transactions  → "Receipts"
         has_entity_selection = bool(from_keys_set or to_keys_set)
         total_inflows = 0.0
         total_outflows = 0.0
@@ -708,6 +727,77 @@ async def export_financial_pdf(
         # No directional per-entity breakdowns needed for the simplified PDF
         inflow_entities_list = None
         outflow_entities_list = None
+
+        # --- Compute Money Flow perspective summary (only when entities selected) ---
+        # Classifies each transaction into Inflow (external → selected),
+        # Outflow (selected → external), or Internal (both in set, counted once).
+        # Aggregates counterparties bidirectionally for the PDF table.
+        money_flow_summary = None
+        if money_flow_keys_set:
+            mf_inflow = 0.0
+            mf_outflow = 0.0
+            mf_internal = 0.0
+            mf_inflow_count = 0
+            mf_outflow_count = 0
+            mf_internal_count = 0
+            inflow_by = {}
+            outflow_by = {}
+            for t in transactions:
+                raw = float(t.get("amount") or 0)
+                amt = fabs(raw)
+                fe = t.get("from_entity") if isinstance(t.get("from_entity"), dict) else None
+                te = t.get("to_entity") if isinstance(t.get("to_entity"), dict) else None
+                fk = (fe.get("key") or fe.get("name")) if fe else None
+                tk = (te.get("key") or te.get("name")) if te else None
+                from_in = bool(fk and fk in money_flow_keys_set)
+                to_in = bool(tk and tk in money_flow_keys_set)
+                if from_in and to_in:
+                    mf_internal += amt
+                    mf_internal_count += 1
+                elif from_in:
+                    mf_outflow += amt
+                    mf_outflow_count += 1
+                    if tk:
+                        c = outflow_by.setdefault(
+                            tk, {"key": tk, "name": (te.get("name") if te else None) or tk, "amount": 0.0, "count": 0}
+                        )
+                        c["amount"] += amt
+                        c["count"] += 1
+                elif to_in:
+                    mf_inflow += amt
+                    mf_inflow_count += 1
+                    if fk:
+                        c = inflow_by.setdefault(
+                            fk, {"key": fk, "name": (fe.get("name") if fe else None) or fk, "amount": 0.0, "count": 0}
+                        )
+                        c["amount"] += amt
+                        c["count"] += 1
+            # Merge bidirectional counterparties
+            all_cp_keys = set(inflow_by.keys()) | set(outflow_by.keys())
+            counterparties = []
+            for k in all_cp_keys:
+                i = inflow_by.get(k, {})
+                o = outflow_by.get(k, {})
+                counterparties.append({
+                    "key": k,
+                    "name": i.get("name") or o.get("name") or k,
+                    "inflow": i.get("amount", 0.0),
+                    "outflow": o.get("amount", 0.0),
+                    "total": i.get("amount", 0.0) + o.get("amount", 0.0),
+                    "count": i.get("count", 0) + o.get("count", 0),
+                })
+            counterparties.sort(key=lambda x: x["total"], reverse=True)
+            money_flow_summary = {
+                "inflow": mf_inflow,
+                "outflow": mf_outflow,
+                "internal": mf_internal,
+                "net": mf_inflow - mf_outflow,
+                "inflow_count": mf_inflow_count,
+                "outflow_count": mf_outflow_count,
+                "internal_count": mf_internal_count,
+                "counterparties": counterparties,
+                "entity_count": len(money_flow_keys_set),
+            }
 
         # Group sub-transactions under their parents so they appear adjacent in the PDF
         parent_children = {}  # parent_key -> [child_txns]
@@ -741,6 +831,7 @@ async def export_financial_pdf(
             has_entity_selection=has_entity_selection,
             total_inflows=total_inflows,
             total_outflows=total_outflows,
+            money_flow_summary=money_flow_summary,
         )
 
         # Render to a real PDF server-side via WeasyPrint.

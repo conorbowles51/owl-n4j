@@ -9,10 +9,14 @@ table headers, and a compact layout. Falls back to printable HTML if
 WeasyPrint isn't available.
 
 Per user feedback (Apr 2026):
-  - Show two clear numbers: Money Out (positive amounts) and Money In (negative).
-  - Drop confusing directional inflow/outflow visualisations.
+  - Show two clear sign-based numbers: Payments (positive) and Receipts (negative).
+  - Drop confusing directional inflow/outflow visualisations at the top level.
   - From/To tables only show entities present in the filtered view.
   - Generate native PDF (server-side) instead of browser-print HTML.
+  - Optional Money Flow Perspective section (added later): when the user
+    selects a set of entities for OR-based perspective analysis, a section
+    with Inflow / Outflow / Net / Internal cards + a counterparty breakdown
+    table is rendered between the summary cards and the transaction table.
 """
 from datetime import datetime
 from html import escape
@@ -65,14 +69,21 @@ def generate_financial_pdf(
     has_entity_selection: bool = False,
     total_inflows: float = 0.0,
     total_outflows: float = 0.0,
+    money_flow_summary: dict = None,
     inflow_entities: list = None,   # kept for back-compat, ignored
     outflow_entities: list = None,  # kept for back-compat, ignored
 ) -> str:
     """Generate a financial transactions report as print-friendly HTML.
 
     Sign convention (matches frontend):
-      total_outflows = sum of abs(amount) for positive amounts → "Money Out"
-      total_inflows  = sum of abs(amount) for negative amounts → "Money In"
+      total_outflows = sum of abs(amount) for positive amounts → "Payments"
+      total_inflows  = sum of abs(amount) for negative amounts → "Receipts"
+
+    money_flow_summary (optional): when present, renders a perspective-based
+    section with Inflow/Outflow/Net/Internal cards and a counterparty table.
+    Expected keys: inflow, outflow, internal, net, inflow_count, outflow_count,
+    internal_count, counterparties ([{key, name, inflow, outflow, total, count}]),
+    entity_count.
     """
     now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
 
@@ -189,27 +200,156 @@ def generate_financial_pdf(
         </div>
         """
 
-    # ── Summary Cards — Money Out / Money In / Transactions / Net ──
+    # ── Money Flow Perspective Section ──
+    # Only rendered when the user supplied a `money_flow_entities` selection.
+    # This is TRUE cash-flow relative to the selected entities, distinct from
+    # the sign-based Payments/Receipts above.
+    money_flow_html = ""
+    if money_flow_summary:
+        mf_inflow = float(money_flow_summary.get("inflow") or 0)
+        mf_outflow = float(money_flow_summary.get("outflow") or 0)
+        mf_internal = float(money_flow_summary.get("internal") or 0)
+        mf_net = float(money_flow_summary.get("net") or (mf_inflow - mf_outflow))
+        mf_inflow_count = int(money_flow_summary.get("inflow_count") or 0)
+        mf_outflow_count = int(money_flow_summary.get("outflow_count") or 0)
+        mf_internal_count = int(money_flow_summary.get("internal_count") or 0)
+        mf_entity_count = int(money_flow_summary.get("entity_count") or 0)
+        mf_net_color = "#0ea5e9" if mf_net >= 0 else "#ea580c"
+
+        # Build the mini card band — always Inflow/Outflow/Net, optionally Internal
+        mf_cards_parts = [
+            f"""
+            <div class="mf-card mf-card-in">
+                <div class="mf-card-label">Inflow</div>
+                <div class="mf-card-sub">Into perspective · {mf_inflow_count:,} txns</div>
+                <div class="mf-card-value">{_fmt_amount(mf_inflow)}</div>
+            </div>
+            """,
+            f"""
+            <div class="mf-card mf-card-out">
+                <div class="mf-card-label">Outflow</div>
+                <div class="mf-card-sub">Out of perspective · {mf_outflow_count:,} txns</div>
+                <div class="mf-card-value">{_fmt_amount(mf_outflow)}</div>
+            </div>
+            """,
+            f"""
+            <div class="mf-card mf-card-net" style="border-color: {mf_net_color}44;">
+                <div class="mf-card-label" style="color: {mf_net_color};">Net</div>
+                <div class="mf-card-sub">Inflow − Outflow</div>
+                <div class="mf-card-value" style="color: {mf_net_color};">{_fmt_amount(mf_net)}</div>
+            </div>
+            """,
+        ]
+        if mf_internal > 0:
+            mf_cards_parts.append(f"""
+            <div class="mf-card mf-card-internal">
+                <div class="mf-card-label">Internal</div>
+                <div class="mf-card-sub">Intra-set · {mf_internal_count:,} txns</div>
+                <div class="mf-card-value">{_fmt_amount(mf_internal)}</div>
+            </div>
+            """)
+        mf_cards_html = "".join(mf_cards_parts)
+
+        # Counterparty table — top 15 by combined volume, +N more footer
+        counterparties = money_flow_summary.get("counterparties") or []
+        max_cp_total = max((c.get("total", 0) for c in counterparties), default=0.0) or 1.0
+        top_cps = counterparties[:15]
+        remaining = counterparties[15:]
+        cp_rows = ""
+        for c in top_cps:
+            cp_name = _esc(c.get("name"))
+            cp_in = float(c.get("inflow") or 0)
+            cp_out = float(c.get("outflow") or 0)
+            cp_net = cp_in - cp_out
+            cp_count = int(c.get("count") or 0)
+            cp_total = float(c.get("total") or 0)
+            cp_bar_pct = _bar_width(cp_total, max_cp_total)
+            cp_net_color = "#0ea5e9" if cp_net >= 0 else "#ea580c"
+            cp_rows += f"""
+            <tr>
+                <td class="ent-name" title="{cp_name}">{cp_name}</td>
+                <td class="ent-count">{cp_count}</td>
+                <td class="mf-in-cell">{_fmt_amount(cp_in)}</td>
+                <td class="mf-out-cell">{_fmt_amount(cp_out)}</td>
+                <td class="mf-net-cell" style="color: {cp_net_color};">{_fmt_amount(cp_net)}</td>
+                <td class="ent-bar">
+                    <div class="ent-bar-track"><div class="ent-bar-fill" style="width: {cp_bar_pct:.1f}%; background: linear-gradient(90deg, #0ea5e9, #ea580c);"></div></div>
+                </td>
+            </tr>
+            """
+        cp_footer = ""
+        if remaining:
+            rem_total = sum(float(c.get("total") or 0) for c in remaining)
+            cp_footer = f"""
+            <tr class="mf-footer-row">
+                <td colspan="6">+{len(remaining)} more counterparties — {_fmt_amount(rem_total)} combined</td>
+            </tr>
+            """
+
+        cp_table_html = ""
+        if top_cps:
+            cp_table_html = f"""
+            <div class="mf-cp-title">Counterparties (Top {len(top_cps)} of {len(counterparties)})</div>
+            <table class="entity-table mf-cp-table">
+                <thead>
+                    <tr>
+                        <th style="width: 30%;">Entity</th>
+                        <th style="width: 8%;">Txns</th>
+                        <th style="width: 14%; text-align: right;">Inflow</th>
+                        <th style="width: 14%; text-align: right;">Outflow</th>
+                        <th style="width: 14%; text-align: right;">Net</th>
+                        <th style="width: 20%;">Volume</th>
+                    </tr>
+                </thead>
+                <tbody>{cp_rows}{cp_footer}</tbody>
+            </table>
+            """
+        elif mf_internal > 0:
+            cp_table_html = """
+            <div class="mf-empty">All in-scope transactions were internal (between selected entities). No external counterparties to display.</div>
+            """
+        else:
+            cp_table_html = """
+            <div class="mf-empty">No counterparties found in the current selection.</div>
+            """
+
+        money_flow_html = f"""
+        <div class="section-money-flow">
+            <div class="mf-header">
+                <div class="mf-header-title">Money Flow Perspective</div>
+                <div class="mf-header-sub">{mf_entity_count} {'entity' if mf_entity_count == 1 else 'entities'} selected · True cash-flow relative to perspective set</div>
+            </div>
+            <div class="mf-cards">{mf_cards_html}</div>
+            {cp_table_html}
+        </div>
+        """
+
+    # ── Summary Cards — Payments / Receipts / Net / Transactions ──
+    # Labels are display-only; wire-format names (total_outflows/total_inflows)
+    # and the math behind them are unchanged. Payments = sum of positive amounts,
+    # Receipts = sum of abs(negative amounts). These are ledger sums by sign —
+    # they are NOT perspective-based cash flow.
+    any_filter_active = has_entity_selection or bool(money_flow_summary)
     summary_cards_html = f"""
     <div class="summary-grid">
         <div class="summary-card card-out">
-            <div class="summary-label">Money Out</div>
-            <div class="summary-sub">Positive transactions</div>
+            <div class="summary-label">Payments</div>
+            <div class="summary-sub">Sent (positive)</div>
             <div class="summary-value">{_fmt_amount(total_outflows)}</div>
         </div>
         <div class="summary-card card-in">
-            <div class="summary-label">Money In</div>
-            <div class="summary-sub">Negative transactions</div>
+            <div class="summary-label">Receipts</div>
+            <div class="summary-sub">Received (negative)</div>
             <div class="summary-value">{_fmt_amount(total_inflows)}</div>
         </div>
         <div class="summary-card card-net" style="border-color: {net_color}33;">
             <div class="summary-label" style="color: {net_color};">Net</div>
-            <div class="summary-sub">In − Out</div>
+            <div class="summary-sub">Receipts − Payments</div>
             <div class="summary-value" style="color: {net_color};">{_fmt_amount(net_flow)}</div>
         </div>
         <div class="summary-card card-count">
             <div class="summary-label">Transactions</div>
-            <div class="summary-sub">{'Filtered' if has_entity_selection else 'Total'}</div>
+            <div class="summary-sub">{'Filtered' if any_filter_active else 'Total'}</div>
             <div class="summary-value">{total_count:,}</div>
         </div>
     </div>
@@ -544,6 +684,79 @@ def generate_financial_pdf(
         .ent-bar-fill {{ height: 8px; border-radius: 2px; }}
         .ent-amt {{ width: 70px; text-align: right; font-weight: 600; color: #334155; }}
 
+        /* ── MONEY FLOW PERSPECTIVE ── */
+        .section-money-flow {{
+            margin-bottom: 14px;
+            padding: 10px 12px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            page-break-inside: avoid;
+        }}
+        .mf-header {{ margin-bottom: 8px; }}
+        .mf-header-title {{
+            font-size: 10pt;
+            font-weight: 700;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }}
+        .mf-header-sub {{
+            font-size: 7.5pt;
+            color: #64748b;
+            margin-top: 2px;
+        }}
+        .mf-cards {{
+            display: table;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 6px 0;
+            margin: 6px -6px 10px -6px;
+        }}
+        .mf-card {{
+            display: table-cell;
+            padding: 8px 10px;
+            border-radius: 4px;
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            vertical-align: top;
+        }}
+        .mf-card-label {{
+            font-size: 8pt;
+            font-weight: 600;
+            color: #334155;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }}
+        .mf-card-sub {{ font-size: 7pt; color: #94a3b8; margin-top: 1px; }}
+        .mf-card-value {{ font-size: 12pt; font-weight: 700; color: #0f172a; margin-top: 3px; }}
+        .mf-card-in {{ background: #e0f2fe; border-color: #bae6fd; }}
+        .mf-card-in .mf-card-label, .mf-card-in .mf-card-value {{ color: #0369a1; }}
+        .mf-card-out {{ background: #fff7ed; border-color: #fed7aa; }}
+        .mf-card-out .mf-card-label, .mf-card-out .mf-card-value {{ color: #c2410c; }}
+        .mf-card-net {{ background: #f8fafc; }}
+        .mf-card-internal {{ background: #f1f5f9; border-color: #cbd5e1; }}
+        .mf-card-internal .mf-card-label, .mf-card-internal .mf-card-value {{ color: #475569; }}
+        .mf-cp-title {{
+            font-size: 8pt;
+            font-weight: 700;
+            color: #334155;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin: 6px 0 4px 0;
+        }}
+        .mf-cp-table td.mf-in-cell {{ text-align: right; color: #0369a1; font-weight: 600; font-family: "SF Mono", "Menlo", monospace; }}
+        .mf-cp-table td.mf-out-cell {{ text-align: right; color: #c2410c; font-weight: 600; font-family: "SF Mono", "Menlo", monospace; }}
+        .mf-cp-table td.mf-net-cell {{ text-align: right; font-weight: 700; font-family: "SF Mono", "Menlo", monospace; }}
+        .mf-footer-row td {{ font-size: 7pt; color: #64748b; font-style: italic; text-align: center; padding: 4px 6px; background: #f8fafc; }}
+        .mf-empty {{
+            font-size: 8pt;
+            color: #64748b;
+            font-style: italic;
+            padding: 8px;
+            text-align: center;
+        }}
+
         /* ── DATA TABLE (transactions / notes appendix) ── */
         .data-table {{
             width: 100%;
@@ -611,7 +824,7 @@ def generate_financial_pdf(
         .page-break {{ page-break-before: always; }}
 
         /* Avoid orphaning section headers */
-        h1, h2, h3, .section-header, .section-charts, .section-entities, .summary-grid {{
+        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .summary-grid {{
             page-break-after: avoid;
         }}
     </style>
@@ -626,6 +839,8 @@ def generate_financial_pdf(
     {summary_cards_html}
 
     {f'<div class="filter-banner">Active filters: {_esc(filters_description)}</div>' if filters_description else ''}
+
+    {money_flow_html}
 
     {charts_section_html}
 
