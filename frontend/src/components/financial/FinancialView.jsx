@@ -35,7 +35,6 @@ function graftParentChild(filtered, allTransactions) {
 
 export default function FinancialView({ caseId, onNodeSelect }) {
   const [transactions, setTransactions] = useState([]);
-  const [volumeData, setVolumeData] = useState([]);
   const [categories, setCategories] = useState([]); // {name, color, builtin}[]
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -144,13 +143,11 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     setIsLoading(true);
     setError(null);
     try {
-      const [txnRes, volumeRes, catRes] = await Promise.all([
+      const [txnRes, catRes] = await Promise.all([
         financialAPI.getTransactions({ caseId }),
-        financialAPI.getVolume(caseId),
         financialAPI.getCategories(caseId),
       ]);
       setTransactions(txnRes.transactions || []);
-      setVolumeData(volumeRes.data || []);
       const cats = catRes.categories || [];
       setCategories(cats);
 
@@ -217,7 +214,10 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     return graftParentChild(filtered, transactions);
   }, [transactions, selectedTypes, selectedCategories, startDate, endDate, debouncedSearchQuery, debouncedSearchTerm]);
 
-  // Compute From entities (senders), constrained by To selection for cross-filtering
+  // Compute From entities (senders), cross-filtered by To selection AND Money
+  // Flow selection so all three panels stay mutually consistent. Currently-
+  // selected From entities are always retained so the user can still
+  // deselect them even if they fell out of the cross-filtered set.
   const fromEntities = useMemo(() => {
     const map = new Map();
     baseFilteredTransactions.forEach(t => {
@@ -227,16 +227,41 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         const toKey = t.to_entity?.key || t.to_entity?.name;
         if (!toKey || !selectedToEntities.has(toKey)) return;
       }
+      // If Money Flow entities are selected, only include senders whose
+      // transaction touches the Money Flow set on either side.
+      if (selectedMoneyFlowEntities.size > 0) {
+        const fk = t.from_entity?.key || t.from_entity?.name;
+        const tk = t.to_entity?.key || t.to_entity?.name;
+        const touches = (fk && selectedMoneyFlowEntities.has(fk))
+                     || (tk && selectedMoneyFlowEntities.has(tk));
+        if (!touches) return;
+      }
       const key = t.from_entity.key || t.from_entity.name;
       const existing = map.get(key) || { key, name: t.from_entity.name, count: 0, totalAmount: 0 };
       existing.count += 1;
       existing.totalAmount += Math.abs(parseFloat(t.amount) || 0);
       map.set(key, existing);
     });
+    // Retain any currently-selected senders that got filtered out so the
+    // user can still deselect them.
+    if (selectedFromEntities.size > 0) {
+      selectedFromEntities.forEach(selKey => {
+        if (map.has(selKey)) return;
+        let name = selKey;
+        for (const t of baseFilteredTransactions) {
+          const fk = t.from_entity?.key || t.from_entity?.name;
+          if (fk === selKey && t.from_entity?.name) { name = t.from_entity.name; break; }
+        }
+        map.set(selKey, { key: selKey, name, count: 0, totalAmount: 0 });
+      });
+    }
     return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
-  }, [baseFilteredTransactions, selectedToEntities]);
+  }, [baseFilteredTransactions, selectedToEntities, selectedMoneyFlowEntities, selectedFromEntities]);
 
-  // Compute To entities (recipients), constrained by From selection for cross-filtering
+  // Compute To entities (recipients), cross-filtered by From selection AND
+  // Money Flow selection so all three panels stay mutually consistent.
+  // Currently-selected To entities are always retained so the user can still
+  // deselect them even if they fell out of the cross-filtered set.
   const toEntities = useMemo(() => {
     const map = new Map();
     baseFilteredTransactions.forEach(t => {
@@ -246,14 +271,36 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         const fromKey = t.from_entity?.key || t.from_entity?.name;
         if (!fromKey || !selectedFromEntities.has(fromKey)) return;
       }
+      // If Money Flow entities are selected, only include recipients whose
+      // transaction touches the Money Flow set on either side.
+      if (selectedMoneyFlowEntities.size > 0) {
+        const fk = t.from_entity?.key || t.from_entity?.name;
+        const tk = t.to_entity?.key || t.to_entity?.name;
+        const touches = (fk && selectedMoneyFlowEntities.has(fk))
+                     || (tk && selectedMoneyFlowEntities.has(tk));
+        if (!touches) return;
+      }
       const key = t.to_entity.key || t.to_entity.name;
       const existing = map.get(key) || { key, name: t.to_entity.name, count: 0, totalAmount: 0 };
       existing.count += 1;
       existing.totalAmount += Math.abs(parseFloat(t.amount) || 0);
       map.set(key, existing);
     });
+    // Retain any currently-selected recipients that got filtered out so the
+    // user can still deselect them.
+    if (selectedToEntities.size > 0) {
+      selectedToEntities.forEach(selKey => {
+        if (map.has(selKey)) return;
+        let name = selKey;
+        for (const t of baseFilteredTransactions) {
+          const tk = t.to_entity?.key || t.to_entity?.name;
+          if (tk === selKey && t.to_entity?.name) { name = t.to_entity.name; break; }
+        }
+        map.set(selKey, { key: selKey, name, count: 0, totalAmount: 0 });
+      });
+    }
     return [...map.values()].sort((a, b) => b.totalAmount - a.totalAmount);
-  }, [baseFilteredTransactions, selectedFromEntities]);
+  }, [baseFilteredTransactions, selectedFromEntities, selectedMoneyFlowEntities, selectedToEntities]);
 
   // Stage 2: Apply (a) From/To cross-filter (AND) and (b) Money Flow (OR)
   // on top of the base filters, then re-graft parent/child so families stay
@@ -332,11 +379,25 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   }, [filteredTransactions, anyFilterActive]);
 
   // Entity options available for Money Flow picker. Fed from
-  // baseFilteredTransactions (pre cross-filter / pre money-flow) so the user
-  // can always pick any entity in the current type/category/date/search scope.
+  // baseFilteredTransactions (pre money-flow), then narrowed by any active
+  // From/To selection so all three panels stay mutually consistent.
+  // Currently-selected Money Flow entities are ALWAYS retained in the list
+  // so the user can still deselect them even if they fall outside the
+  // active From/To set.
   const moneyFlowEntityOptions = useMemo(() => {
     const map = new Map();
+    const fromActive = selectedFromEntities.size > 0;
+    const toActive = selectedToEntities.size > 0;
     baseFilteredTransactions.forEach(t => {
+      // Apply From/To cross-filter to the transaction
+      if (fromActive) {
+        const fromKey = t.from_entity?.key || t.from_entity?.name;
+        if (!fromKey || !selectedFromEntities.has(fromKey)) return;
+      }
+      if (toActive) {
+        const toKey = t.to_entity?.key || t.to_entity?.name;
+        if (!toKey || !selectedToEntities.has(toKey)) return;
+      }
       const amt = Math.abs(parseFloat(t.amount) || 0);
       const fk = t.from_entity?.key || t.from_entity?.name;
       const fn = t.from_entity?.name;
@@ -355,8 +416,24 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         map.set(tk, e);
       }
     });
+    // Retain currently-selected Money Flow entities even if they fell out
+    // of the cross-filtered set — otherwise the user can't deselect them.
+    if (selectedMoneyFlowEntities.size > 0) {
+      selectedMoneyFlowEntities.forEach(selKey => {
+        if (map.has(selKey)) return;
+        // Look up a display name from any transaction in the full base set
+        let name = selKey;
+        for (const t of baseFilteredTransactions) {
+          const fk = t.from_entity?.key || t.from_entity?.name;
+          if (fk === selKey && t.from_entity?.name) { name = t.from_entity.name; break; }
+          const tk = t.to_entity?.key || t.to_entity?.name;
+          if (tk === selKey && t.to_entity?.name) { name = t.to_entity.name; break; }
+        }
+        map.set(selKey, { key: selKey, name, asFromCount: 0, asToCount: 0, totalVolume: 0 });
+      });
+    }
     return [...map.values()].sort((a, b) => b.totalVolume - a.totalVolume);
-  }, [baseFilteredTransactions]);
+  }, [baseFilteredTransactions, selectedFromEntities, selectedToEntities, selectedMoneyFlowEntities]);
 
   // Money Flow perspective summary: categorizes each in-scope transaction
   // as Inflow (external → selected), Outflow (selected → external), or
