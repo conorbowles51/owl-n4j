@@ -5,6 +5,8 @@ import path from "path"
 import { generateBuildName } from "./build-name.js"
 
 const buildInfo = generateBuildName()
+const frontendPort = Number(process.env.FRONTEND_PORT || "5174")
+const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://0.0.0.0:8002"
 console.log(`\n  🦉 Build: ${buildInfo.full}\n`)
 
 export default defineConfig({
@@ -20,10 +22,10 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5174,
+    port: frontendPort,
     proxy: {
       "/api": {
-        target: "http://0.0.0.0:8000",
+        target: apiProxyTarget,
         changeOrigin: true,
       },
     },

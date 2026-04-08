@@ -19,7 +19,7 @@ else:
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Neo4j Configuration
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7688")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
 
@@ -57,7 +57,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Required if using OpenAI
 # Vector DB Configuration
 CHROMADB_PATH = os.getenv("CHROMADB_PATH", "data/chromadb")  # Relative to project root (legacy, file-based)
 CHROMADB_HOST = os.getenv("CHROMADB_HOST", "localhost")
-CHROMADB_PORT = int(os.getenv("CHROMADB_PORT", "8100"))  # 8100 = host-mapped port from docker-compose
+CHROMADB_PORT = int(os.getenv("CHROMADB_PORT", "8101"))  # 8101 = host-mapped port from docker-compose
 
 # RAG Configuration
 VECTOR_SEARCH_ENABLED = os.getenv("VECTOR_SEARCH_ENABLED", "true").lower() == "true"
@@ -116,14 +116,14 @@ AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 AUTH_TOKEN_EXPIRE_MINUTES = int(os.getenv("AUTH_TOKEN_EXPIRE_MINUTES", "1440"))  # 24 hours default
 
 # Evidence Engine Configuration
-EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8001")
+EVIDENCE_ENGINE_URL = os.getenv("EVIDENCE_ENGINE_URL", "http://localhost:8003")
 EVIDENCE_ENGINE_TIMEOUT = int(os.getenv("EVIDENCE_ENGINE_TIMEOUT", "300"))  # seconds
 USE_EVIDENCE_ENGINE = os.getenv("USE_EVIDENCE_ENGINE", "true").lower() == "true"
 
 # Redis Configuration (shared with evidence-engine for job progress pub/sub)
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6380")
 
 # API Configuration
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+API_PORT = int(os.getenv("API_PORT", "8002"))
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5174,http://localhost:3000").split(",")

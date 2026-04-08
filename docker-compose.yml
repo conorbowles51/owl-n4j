@@ -1,38 +1,33 @@
+name: owl-v2
+
 services:
-  # NEO4J
   neo4j:
     image: neo4j:5
-    container_name: owl-n4j
+    container_name: owl-v2-n4j
     restart: unless-stopped
     ports:
-      - "7474:7474"   # HTTP (browser)
-      - "7687:7687"   # Bolt (drivers)
+      - "7475:7474"
+      - "7688:7687"
     environment:
       - NEO4J_AUTH=neo4j/testpassword
       - NEO4J_server_memory_pagecache_size=1G
       - NEO4J_server_memory_heap_initial__size=1G
       - NEO4J_server_memory_heap_max__size=1G
-
-      # Enable APOC plugin (Neo4j official Docker way)
       - NEO4J_PLUGINS=["apoc"]
-
-      # Allow APOC procedures (incl. refactor.mergeNodes)
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
       - NEO4J_dbms_security_procedures_allowlist=apoc.*
-
     volumes:
       - ./neo4j/data:/data
       - ./neo4j/logs:/logs
       - ./neo4j/plugins:/plugins
       - ./neo4j/import:/import
 
-  # POSTGRES (shared by backend + evidence engine)
   postgres:
     image: postgres:16
-    container_name: owl-pg
+    container_name: owl-v2-pg
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5434:5432"
     environment:
       POSTGRES_DB: owl_db
       POSTGRES_USER: owl_us
@@ -40,31 +35,28 @@ services:
     volumes:
       - ./postgres/data:/var/lib/postgresql/data
 
-  # CHROMADB (shared: vector search for RAG + entity dedup)
   chromadb:
     image: chromadb/chroma:latest
-    container_name: owl-chromadb
+    container_name: owl-v2-chromadb
     restart: unless-stopped
     ports:
-      - "8100:8000"
+      - "8101:8000"
     volumes:
       - chromadb-data:/chroma/chroma
 
-  # REDIS (shared: evidence-engine job queue + progress pub/sub)
   redis:
     image: redis:7-alpine
-    container_name: owl-redis
+    container_name: owl-v2-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
-  # Evidence Engine API
   evidence-engine-api:
     build: ./evidence-engine
-    container_name: owl-evidence-api
+    container_name: owl-v2-evidence-api
     restart: unless-stopped
     ports:
-      - "8001:8000"
+      - "8003:8000"
     environment:
       DATABASE_URL: postgresql+asyncpg://owl_us:owl_pw@postgres:5432/owl_db
       NEO4J_URI: bolt://neo4j:7687
@@ -83,10 +75,9 @@ services:
       - redis
       - chromadb
 
-  # Evidence Engine Worker (arq background job processor)
   evidence-engine-worker:
     build: ./evidence-engine
-    container_name: owl-evidence-worker
+    container_name: owl-v2-evidence-worker
     restart: unless-stopped
     command: arq app.worker.WorkerSettings
     environment:
