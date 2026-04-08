@@ -93,8 +93,15 @@ step "Recording current state"
 cd "${PROJECT_DIR}"
 PREV_COMMIT="$(git rev-parse HEAD)"
 PREV_COMMIT_SHORT="$(git rev-parse --short HEAD)"
+CURRENT_BRANCH="${DEPLOY_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+
+if [ -z "${CURRENT_BRANCH}" ] || [ "${CURRENT_BRANCH}" = "HEAD" ]; then
+    fail "Unable to determine deploy branch. Check out a branch or set DEPLOY_BRANCH in ${ENV_FILE}."
+    exit 1
+fi
+
 echo "${PREV_COMMIT}" > "${LOG_DIR}/.last-good-commit"
-success "Saved rollback commit ${PREV_COMMIT_SHORT}"
+success "Saved rollback commit ${PREV_COMMIT_SHORT} on branch ${CURRENT_BRANCH}"
 
 step "Checking for local changes"
 
@@ -106,9 +113,9 @@ else
     success "Working directory clean"
 fi
 
-step "Pulling latest from main"
+step "Pulling latest from ${CURRENT_BRANCH}"
 
-if ! git pull origin main --ff-only; then
+if ! git pull origin "${CURRENT_BRANCH}" --ff-only; then
     fail "git pull failed"
     exit 1
 fi
