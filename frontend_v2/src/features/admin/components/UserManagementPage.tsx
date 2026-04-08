@@ -1,8 +1,15 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Users, Plus, Trash2, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Dialog,
   DialogContent,
@@ -14,13 +21,52 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { authAPI } from "@/features/auth/api"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { fetchAPI } from "@/lib/api-client"
+
+type UserRole = "super_admin" | "admin" | "user" | "guest"
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  user: "User",
+  guest: "Guest",
+}
+
+function getRoleOptions(currentRole?: string): UserRole[] {
+  if (currentRole === "super_admin") {
+    return ["super_admin", "admin", "user", "guest"]
+  }
+
+  return ["user", "guest"]
+}
 
 export function UserManagementPage() {
   const queryClient = useQueryClient()
+  const currentUser = useAuthStore((state) => state.user)
   const [createOpen, setCreateOpen] = useState(false)
   const [search, setSearch] = useState("")
-  const [newUser, setNewUser] = useState({ email: "", name: "", password: "", role: "" })
+  const availableRoles = useMemo(
+    () => getRoleOptions(currentUser?.global_role ?? currentUser?.role ?? undefined),
+    [currentUser]
+  )
+  const defaultRole = availableRoles[0] ?? "user"
+  const [newUser, setNewUser] = useState<{
+    email: string
+    name: string
+    password: string
+    role: UserRole
+  }>({
+    email: "",
+    name: "",
+    password: "",
+    role: defaultRole,
+  })
+
+  const resetCreateForm = () => {
+    setNewUser({ email: "", name: "", password: "", role: defaultRole })
+    createMutation.reset()
+  }
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["users"],
@@ -28,12 +74,20 @@ export function UserManagementPage() {
   })
 
   const createMutation = useMutation({
-    mutationFn: (data: { email: string; name: string; password: string; role?: string }) =>
-      fetchAPI<void>("/api/users", { method: "POST", body: data }),
+    mutationFn: (data: { email: string; name: string; password: string; role: UserRole }) =>
+      fetchAPI<void>("/api/users", {
+        method: "POST",
+        body: {
+          email: data.email.trim(),
+          name: data.name.trim(),
+          password: data.password,
+          role: data.role,
+        },
+      }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["users"] })
       setCreateOpen(false)
-      setNewUser({ email: "", name: "", password: "", role: "" })
+      resetCreateForm()
     },
   })
 
@@ -120,7 +174,15 @@ export function UserManagementPage() {
       </div>
 
       {/* Create user dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open)
+          if (!open) {
+            resetCreateForm()
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-sm">Create User</DialogTitle>
@@ -142,14 +204,38 @@ export function UserManagementPage() {
               value={newUser.password}
               onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
             />
-            <Input
-              placeholder="Role (optional)"
+            <Select
               value={newUser.role}
-              onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-            />
+              onValueChange={(value) =>
+                setNewUser({ ...newUser, role: value as UserRole })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select role" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableRoles.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {ROLE_LABELS[role]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {createMutation.error instanceof Error && (
+              <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {createMutation.error.message}
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setCreateOpen(false)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setCreateOpen(false)
+                resetCreateForm()
+              }}
+            >
               Cancel
             </Button>
             <Button
