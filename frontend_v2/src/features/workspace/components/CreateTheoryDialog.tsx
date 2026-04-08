@@ -42,6 +42,7 @@ export function CreateTheoryDialog({
   >("PUBLIC")
 
   const createTheory = useCreateTheory(caseId)
+  const isDirty = !!title.trim() || !!hypothesis.trim() || confidenceScore !== 50 || type !== "PRIMARY" || privilegeLevel !== "PUBLIC"
 
   function resetForm() {
     setTitle("")
@@ -70,8 +71,22 @@ export function CreateTheoryDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isDirty) return
+        onOpenChange(nextOpen)
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        onInteractOutside={(event) => {
+          if (isDirty) event.preventDefault()
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isDirty) event.preventDefault()
+        }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lightbulb className="h-5 w-5" />

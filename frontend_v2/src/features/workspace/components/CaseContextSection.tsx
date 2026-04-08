@@ -3,11 +3,30 @@ import { FileText, Edit2, Save, X, Calendar, Scale } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { useCaseContext, useUpdateCaseContext } from "../hooks/use-workspace"
+import { formatWorkspaceDate } from "../lib/format-date"
 
 interface CaseContextSectionProps {
   caseId: string
+}
+
+function stringifyRecord(value: unknown) {
+  if (!value || typeof value !== "object") return ""
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return ""
+  }
+}
+
+function parseRecord(value: string) {
+  if (!value.trim()) return {}
+  try {
+    const parsed = JSON.parse(value)
+    return typeof parsed === "object" && parsed !== null ? parsed : {}
+  } catch {
+    return { notes: value.trim() }
+  }
 }
 
 function ListField({
@@ -84,6 +103,9 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
   const [denials, setDenials] = useState<string[]>([])
   const [defenseStrategy, setDefenseStrategy] = useState<string[]>([])
   const [trialDate, setTrialDate] = useState("")
+  const [clientProfile, setClientProfile] = useState("")
+  const [legalExposure, setLegalExposure] = useState("")
+  const [courtInfo, setCourtInfo] = useState("")
 
   const handleEdit = () => {
     setSummary(context?.summary ?? "")
@@ -92,6 +114,9 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
     setDenials(context?.denials ?? [])
     setDefenseStrategy(context?.defense_strategy ?? [])
     setTrialDate(context?.trial_date ?? "")
+    setClientProfile(stringifyRecord(context?.client_profile))
+    setLegalExposure(stringifyRecord(context?.legal_exposure))
+    setCourtInfo(stringifyRecord(context?.court_info))
     setEditing(true)
   }
 
@@ -105,6 +130,9 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
         denials: denials.filter(Boolean),
         defense_strategy: defenseStrategy.filter(Boolean),
         trial_date: trialDate || null,
+        client_profile: parseRecord(clientProfile),
+        legal_exposure: parseRecord(legalExposure),
+        court_info: parseRecord(courtInfo),
       },
       { onSuccess: () => setEditing(false) },
     )
@@ -115,7 +143,19 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
   const hasAllegations = (context?.allegations?.length ?? 0) > 0
   const hasDenials = (context?.denials?.length ?? 0) > 0
   const hasStrategy = (context?.defense_strategy?.length ?? 0) > 0
-  const hasAnyContent = hasSummary || hasCharges || hasAllegations || hasDenials || hasStrategy || !!context?.trial_date
+  const hasProfile = !!context?.client_profile && Object.keys(context.client_profile).length > 0
+  const hasExposure = !!context?.legal_exposure && Object.keys(context.legal_exposure).length > 0
+  const hasCourtInfo = !!context?.court_info && Object.keys(context.court_info).length > 0
+  const hasAnyContent =
+    hasSummary ||
+    hasCharges ||
+    hasAllegations ||
+    hasDenials ||
+    hasStrategy ||
+    hasProfile ||
+    hasExposure ||
+    hasCourtInfo ||
+    !!context?.trial_date
 
   return (
     <div className="space-y-3">
@@ -183,6 +223,45 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
           <ListField label="Allegations" items={allegations} editing onChange={setAllegations} />
           <ListField label="Denials" items={denials} editing onChange={setDenials} />
           <ListField label="Defense Strategy" items={defenseStrategy} editing onChange={setDefenseStrategy} />
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Client Profile
+              </p>
+              <Textarea
+                value={clientProfile}
+                onChange={(e) => setClientProfile(e.target.value)}
+                placeholder='JSON or free text, e.g. {"name":"Client"}'
+                rows={6}
+                className="text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Legal Exposure
+              </p>
+              <Textarea
+                value={legalExposure}
+                onChange={(e) => setLegalExposure(e.target.value)}
+                placeholder='JSON or free text, e.g. {"max_sentence":"..."}'
+                rows={6}
+                className="text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Court Info
+              </p>
+              <Textarea
+                value={courtInfo}
+                onChange={(e) => setCourtInfo(e.target.value)}
+                placeholder='JSON or free text, e.g. {"court":"..."}'
+                rows={6}
+                className="text-xs"
+              />
+            </div>
+          </div>
         </div>
       ) : hasAnyContent ? (
         <div className="space-y-3 rounded-lg border border-border p-3">
@@ -194,7 +273,7 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
             <div className="flex items-center gap-1.5">
               <Calendar className="size-3 text-muted-foreground" />
               <span className="text-[10px] font-medium">
-                Trial: {new Date(context.trial_date).toLocaleDateString()}
+                Trial: {formatWorkspaceDate(context.trial_date)}
               </span>
             </div>
           )}
@@ -207,6 +286,39 @@ export function CaseContextSection({ caseId }: CaseContextSectionProps) {
           {context?.objectives && context.objectives.length > 0 && (
             <ListField label="Objectives" items={context.objectives} editing={false} onChange={() => {}} />
           )}
+
+          <div className="grid gap-3 md:grid-cols-3">
+            {hasProfile && (
+              <div className="space-y-1 rounded-md bg-muted/20 p-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Client Profile
+                </p>
+                <pre className="whitespace-pre-wrap text-[11px] text-foreground/80">
+                  {stringifyRecord(context?.client_profile)}
+                </pre>
+              </div>
+            )}
+            {hasExposure && (
+              <div className="space-y-1 rounded-md bg-muted/20 p-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Legal Exposure
+                </p>
+                <pre className="whitespace-pre-wrap text-[11px] text-foreground/80">
+                  {stringifyRecord(context?.legal_exposure)}
+                </pre>
+              </div>
+            )}
+            {hasCourtInfo && (
+              <div className="space-y-1 rounded-md bg-muted/20 p-2">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Court Info
+                </p>
+                <pre className="whitespace-pre-wrap text-[11px] text-foreground/80">
+                  {stringifyRecord(context?.court_info)}
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-border py-6 text-center">

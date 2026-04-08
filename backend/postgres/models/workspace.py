@@ -102,6 +102,24 @@ class WorkspaceNote(Base, TimestampMixin):
     data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
 
 
+class WorkspaceFinding(Base, TimestampMixin):
+    """Workspace finding / investigative conclusion."""
+
+    __tablename__ = "workspace_findings"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    case_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("cases.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    finding_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+
+
 class WorkspacePinnedItem(Base, TimestampMixin):
     """Pinned evidence / entity reference."""
 

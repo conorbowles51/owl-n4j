@@ -8,7 +8,6 @@ import {
   Users,
   StickyNote,
   CheckSquare,
-  Camera,
   File,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -18,6 +17,7 @@ import { useTheories } from "../hooks/use-workspace"
 import type { Theory } from "../api"
 import { CreateTheoryDialog } from "./CreateTheoryDialog"
 import { TheoryDetailSheet } from "./TheoryDetailSheet"
+import { formatWorkspaceDate } from "../lib/format-date"
 
 interface TheoriesSectionProps {
   caseId: string
@@ -97,8 +97,7 @@ export function TheoriesSection({ caseId }: TheoriesSectionProps) {
             const noteCount = theory.attached_note_ids?.length ?? 0
             const taskCount = theory.attached_task_ids?.length ?? 0
             const docCount = theory.attached_document_ids?.length ?? 0
-            const snapCount = theory.attached_snapshot_ids?.length ?? 0
-            const hasAttachments = evidenceCount + witnessCount + noteCount + taskCount + docCount + snapCount > 0
+            const hasAttachments = evidenceCount + witnessCount + noteCount + taskCount + docCount > 0
 
             return (
               <button
@@ -147,7 +146,6 @@ export function TheoriesSection({ caseId }: TheoriesSectionProps) {
                     <AttachedCount icon={StickyNote} count={noteCount} />
                     <AttachedCount icon={CheckSquare} count={taskCount} />
                     <AttachedCount icon={File} count={docCount} />
-                    <AttachedCount icon={Camera} count={snapCount} />
                   </div>
                 )}
 
@@ -156,7 +154,7 @@ export function TheoriesSection({ caseId }: TheoriesSectionProps) {
                   <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground/60">
                     {theory.author_id && <span>{theory.author_id}</span>}
                     {theory.created_at && (
-                      <span>{new Date(theory.created_at).toLocaleDateString()}</span>
+                      <span>{formatWorkspaceDate(theory.created_at)}</span>
                     )}
                   </div>
                 )}

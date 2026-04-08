@@ -2,11 +2,20 @@ import { useParams } from "react-router-dom"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { LayoutDashboard, Lightbulb, CheckSquare, Users } from "lucide-react"
+import {
+  LayoutDashboard,
+  Lightbulb,
+  CheckSquare,
+  Users,
+  AlertCircle,
+  History,
+} from "lucide-react"
 import { WorkspaceOverview } from "./WorkspaceOverview"
 import { TheoriesSection } from "./TheoriesSection"
 import { TasksSection } from "./TasksSection"
 import { WitnessMatrixSection } from "./WitnessMatrixSection"
+import { FindingsSection } from "./FindingsSection"
+import { TimelineSection } from "./TimelineSection"
 
 export function WorkspacePage() {
   const { id: caseId } = useParams()
@@ -31,13 +40,21 @@ export function WorkspacePage() {
             <Lightbulb className="size-3.5" />
             Theories
           </TabsTrigger>
+          <TabsTrigger value="findings">
+            <AlertCircle className="size-3.5" />
+            Findings
+          </TabsTrigger>
           <TabsTrigger value="tasks">
             <CheckSquare className="size-3.5" />
             Tasks
           </TabsTrigger>
-          <TabsTrigger value="people">
+          <TabsTrigger value="witnesses">
             <Users className="size-3.5" />
-            People
+            Witnesses
+          </TabsTrigger>
+          <TabsTrigger value="timeline">
+            <History className="size-3.5" />
+            Timeline
           </TabsTrigger>
         </TabsList>
       </div>
@@ -56,6 +73,14 @@ export function WorkspacePage() {
         </ScrollArea>
       </TabsContent>
 
+      <TabsContent value="findings" className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-4xl p-4">
+            <FindingsSection caseId={caseId} />
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
       <TabsContent value="tasks" className="flex-1 overflow-hidden">
         <ScrollArea className="h-full">
           <div className="mx-auto max-w-4xl p-4">
@@ -64,10 +89,18 @@ export function WorkspacePage() {
         </ScrollArea>
       </TabsContent>
 
-      <TabsContent value="people" className="flex-1 overflow-hidden">
+      <TabsContent value="witnesses" className="flex-1 overflow-hidden">
         <ScrollArea className="h-full">
           <div className="mx-auto max-w-4xl p-4">
             <WitnessMatrixSection caseId={caseId} />
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="timeline" className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-4xl p-4">
+            <TimelineSection caseId={caseId} />
           </div>
         </ScrollArea>
       </TabsContent>

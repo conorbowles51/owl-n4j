@@ -1,7 +1,10 @@
 import {
+  useEffect,
+  useState,
+} from "react"
+import {
   Search,
   Filter,
-  BarChart3,
   Upload,
   Download,
   Palette,
@@ -16,26 +19,24 @@ interface FinancialToolbarProps {
   mode: FinancialDatasetMode
   filteredCount: number
   totalCount: number
-  caseId: string
   onOpenBulkImport: () => void
   onOpenCategoryManagement: () => void
+  onExportPdf: () => void
 }
 
 export function FinancialToolbar({
   mode,
   filteredCount,
   totalCount,
-  caseId,
   onOpenBulkImport,
   onOpenCategoryManagement,
+  onExportPdf,
 }: FinancialToolbarProps) {
   const {
     searchQuery,
     setSearchQuery,
     filterPanelOpen,
     setFilterPanelOpen,
-    chartsPanelOpen,
-    setChartsPanelOpen,
     selectedCategories,
     startDate,
     endDate,
@@ -44,6 +45,21 @@ export function FinancialToolbar({
     maxAmount,
     setMode,
   } = useFinancialStore()
+  const [searchInput, setSearchInput] = useState(searchQuery)
+
+  useEffect(() => {
+    setSearchInput(searchQuery)
+  }, [searchQuery])
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      if (searchInput !== searchQuery) {
+        setSearchQuery(searchInput)
+      }
+    }, 300)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [searchInput, searchQuery, setSearchQuery])
 
   const activeFilterCount =
     (selectedCategories.size > 0 ? 1 : 0) +
@@ -59,8 +75,8 @@ export function FinancialToolbar({
         <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder={mode === "transactions" ? "Search transactions..." : "Search financial intelligence..."}
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           className="h-8 w-64 pl-8 text-xs"
         />
       </div>
@@ -106,15 +122,6 @@ export function FinancialToolbar({
 
       <div className="flex-1" />
 
-      <Button
-        variant={chartsPanelOpen ? "secondary" : "ghost"}
-        size="sm"
-        onClick={() => setChartsPanelOpen(!chartsPanelOpen)}
-      >
-        <BarChart3 className="size-3.5" />
-        Charts
-      </Button>
-
       {mode === "transactions" && (
         <Button variant="ghost" size="sm" onClick={onOpenBulkImport}>
           <Upload className="size-3.5" />
@@ -125,12 +132,7 @@ export function FinancialToolbar({
       <Button
         variant="ghost"
         size="sm"
-        onClick={() =>
-          window.open(
-            `/api/financial/export/pdf?case_id=${encodeURIComponent(caseId)}&mode=${mode}`,
-            "_blank"
-          )
-        }
+        onClick={onExportPdf}
       >
         <Download className="size-3.5" />
         PDF

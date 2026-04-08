@@ -61,6 +61,20 @@ export interface InvestigativeNote {
   [key: string]: unknown
 }
 
+export interface Finding {
+  id: string
+  finding_id?: string
+  title: string
+  content?: string
+  priority?: "HIGH" | "MEDIUM" | "LOW" | string
+  linked_evidence_ids?: string[]
+  linked_document_ids?: string[]
+  linked_entity_keys?: string[]
+  created_at?: string
+  updated_at?: string
+  [key: string]: unknown
+}
+
 export interface Theory {
   id: string
   theory_id?: string
@@ -152,6 +166,7 @@ export interface TheoryGraphResult {
     summary?: string
     distance: number
   }>
+  text_length?: number
 }
 
 export interface TimelineEvent {
@@ -248,6 +263,33 @@ export const workspaceAPI = {
       method: "DELETE",
     }),
 
+  // -- Findings (wrapped: {"findings": [...]}) -----------------------------
+  getFindings: (caseId: string) =>
+    fetchAPI<{ findings: Finding[] }>(
+      `/api/workspace/${caseId}/findings`,
+    ).then((r) => (r.findings ?? []).map((f) => withId(f, "finding_id"))),
+
+  createFinding: (caseId: string, finding: Omit<Finding, "id">) =>
+    fetchAPI<Finding>(`/api/workspace/${caseId}/findings`, {
+      method: "POST",
+      body: finding,
+    }).then((f) => withId(f, "finding_id")),
+
+  updateFinding: (
+    caseId: string,
+    findingId: string,
+    finding: Partial<Finding>,
+  ) =>
+    fetchAPI<Finding>(`/api/workspace/${caseId}/findings/${findingId}`, {
+      method: "PUT",
+      body: finding,
+    }).then((f) => withId(f, "finding_id")),
+
+  deleteFinding: (caseId: string, findingId: string) =>
+    fetchAPI<void>(`/api/workspace/${caseId}/findings/${findingId}`, {
+      method: "DELETE",
+    }),
+
   // -- Theories (wrapped: {"theories": [...]}) ------------------------------
   getTheories: (caseId: string) =>
     fetchAPI<{ theories: Theory[] }>(
@@ -284,6 +326,20 @@ export const workspaceAPI = {
       `/api/workspace/${caseId}/theories/${theoryId}/build-graph`,
       { method: "POST", body: options },
     ),
+
+  buildWorkspaceGraph: (
+    caseId: string,
+    request: {
+      source_type: "theory" | "witness" | "note"
+      source_id: string
+      include_attached_items?: boolean
+      top_k?: number
+    },
+  ) =>
+    fetchAPI<TheoryGraphResult>(`/api/workspace/${caseId}/build-graph`, {
+      method: "POST",
+      body: request,
+    }),
 
   // -- Tasks (wrapped: {"tasks": [...]}) ------------------------------------
   getTasks: (caseId: string) =>

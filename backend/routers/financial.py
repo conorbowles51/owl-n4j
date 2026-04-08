@@ -10,9 +10,139 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from services import neo4j_service
-from services.financial_export_service import generate_financial_pdf
+from services.financial_export_service import render_financial_export
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
+
+
+def _parse_csv_param(value: Optional[str]) -> list[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _entity_value(entity) -> Optional[str]:
+    if isinstance(entity, dict):
+        return entity.get("key") or entity.get("name")
+    if isinstance(entity, str):
+        return entity
+    return None
+
+
+def _entity_name(entity) -> Optional[str]:
+    if isinstance(entity, dict):
+        return entity.get("name") or entity.get("key")
+    if isinstance(entity, str):
+        return entity
+    return None
+
+
+def _matches_text_search(transaction: dict, query: str) -> bool:
+    q = query.lower()
+    fields = [
+        transaction.get("name"),
+        transaction.get("purpose"),
+        transaction.get("notes"),
+        transaction.get("counterparty_details"),
+        transaction.get("summary"),
+        transaction.get("category"),
+        _entity_name(transaction.get("from_entity")),
+        _entity_name(transaction.get("to_entity")),
+    ]
+    return any(q in (field or "").lower() for field in fields)
+
+
+def _apply_directional_filters(
+    transactions: list[dict],
+    from_entities: set[str],
+    to_entities: set[str],
+) -> list[dict]:
+    if not from_entities and not to_entities:
+        return transactions
+
+    filtered = []
+    for transaction in transactions:
+        from_value = _entity_value(transaction.get("from_entity"))
+        to_value = _entity_value(transaction.get("to_entity"))
+        if from_entities and (not from_value or from_value not in from_entities):
+            continue
+        if to_entities and (not to_value or to_value not in to_entities):
+            continue
+        filtered.append(transaction)
+    return filtered
+
+
+def _build_entity_flow_rows(
+    transactions: list[dict],
+    side: str,
+    counterpart_selections: set[str],
+) -> list[dict]:
+    grouped: dict[str, dict] = {}
+    counter_side = "to_entity" if side == "from_entity" else "from_entity"
+
+    for transaction in transactions:
+        counterpart = _entity_value(transaction.get(counter_side))
+        if counterpart_selections and (not counterpart or counterpart not in counterpart_selections):
+            continue
+
+        entity = transaction.get(side)
+        entity_value = _entity_value(entity)
+        entity_name = _entity_name(entity)
+        if not entity_value or not entity_name:
+            continue
+
+        current = grouped.get(entity_value)
+        if current:
+            current["count"] += 1
+            current["totalAmount"] += abs(float(transaction.get("amount") or 0))
+            continue
+
+        grouped[entity_value] = {
+            "key": entity_value,
+            "name": entity_name,
+            "count": 1,
+            "totalAmount": abs(float(transaction.get("amount") or 0)),
+        }
+
+    return sorted(
+        grouped.values(),
+        key=lambda row: (-row["totalAmount"], row["name"].lower()),
+    )
+
+
+def _collect_entity_notes(case_id: str, transactions: list[dict]) -> list[dict]:
+    entity_keys = set()
+    for transaction in transactions:
+        from_entity = transaction.get("from_entity")
+        to_entity = transaction.get("to_entity")
+        if isinstance(from_entity, dict) and from_entity.get("key"):
+            entity_keys.add(from_entity["key"])
+        if isinstance(to_entity, dict) and to_entity.get("key"):
+            entity_keys.add(to_entity["key"])
+
+    if not entity_keys:
+        return []
+
+    notes = []
+    with neo4j_service._driver.session() as session:
+        result = session.run(
+            """
+            MATCH (n {case_id: $case_id})
+            WHERE n.key IN $keys AND NOT n:Document
+            RETURN n.key AS key, n.name AS name,
+                   labels(n)[0] AS type,
+                   n.notes AS notes, n.summary AS summary
+            """,
+            case_id=case_id,
+            keys=list(entity_keys),
+        )
+        for record in result:
+            value = dict(record)
+            if value.get("notes") or value.get("summary"):
+                notes.append(value)
+
+    notes.sort(key=lambda entry: (entry.get("name") or "").lower())
+    return notes
 
 
 class CategorizeRequest(BaseModel):
@@ -322,7 +452,12 @@ async def bulk_correct_transactions(body: BulkCorrectRequest):
         raise HTTPException(status_code=400, detail="No corrections provided")
     try:
         # Fetch all transactions for this case to match by name
-        all_txns = neo4j_service.get_financial_transactions(case_id=body.case_id)
+        all_txns_result = neo4j_service.get_financial_transactions(case_id=body.case_id)
+        all_txns = (
+            all_txns_result.get("transactions", [])
+            if isinstance(all_txns_result, dict)
+            else all_txns_result
+        )
 
         # Build a lookup: lowercase name -> list of transaction dicts
         name_lookup: dict = {}
@@ -444,6 +579,9 @@ async def export_financial_pdf(
     entity_name: Optional[str] = Query(None, description="Entity name for filter display"),
     entity: Optional[str] = Query(None, description="Entity name to filter by from/to (legacy)"),
     search: Optional[str] = Query(None, description="Free-text search term"),
+    search_header: Optional[str] = Query(None, description="Optional header search term"),
+    from_entities: Optional[str] = Query(None, description="Comma-separated sender entity keys"),
+    to_entities: Optional[str] = Query(None, description="Comma-separated beneficiary entity keys"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
 ):
     """Export filtered financial transactions as a PDF report.
@@ -455,12 +593,18 @@ async def export_financial_pdf(
     try:
         result = neo4j_service.get_financial_transactions(case_id=case_id, mode=mode)
         transactions = result.get("transactions", []) if isinstance(result, dict) else result
-
         filters = []
-        if categories:
-            cat_list = [c.strip() for c in categories.split(",")]
-            transactions = [t for t in transactions if t.get("category") in cat_list]
-            filters.append(f"Categories: {', '.join(cat_list)}")
+        category_list = _parse_csv_param(categories)
+        from_entity_values = set(_parse_csv_param(from_entities))
+        to_entity_values = set(_parse_csv_param(to_entities))
+
+        if category_list:
+            transactions = [
+                t
+                for t in transactions
+                if (t.get("category") or "Uncategorized") in category_list
+            ]
+            filters.append(f"Categories: {', '.join(category_list)}")
         if start_date:
             transactions = [t for t in transactions if t.get("date") and t["date"] >= start_date]
             filters.append(f"From: {start_date}")
@@ -485,73 +629,63 @@ async def export_financial_pdf(
                 or (isinstance(t.get("to_entity"), dict) and t["to_entity"].get("name") == entity)
             ]
             filters.append(f"Entity: {entity}")
-        if search:
-            q = search.lower()
-            def text_match(t):
-                fields = [
-                    t.get("name"), t.get("purpose"), t.get("notes"),
-                    t.get("counterparty_details"), t.get("summary"),
-                    t.get("category"),
-                ]
-                if isinstance(t.get("from_entity"), dict):
-                    fields.append(t["from_entity"].get("name"))
-                if isinstance(t.get("to_entity"), dict):
-                    fields.append(t["to_entity"].get("name"))
-                return any(q in (f or "").lower() for f in fields)
-            transactions = [t for t in transactions if text_match(t)]
-            filters.append(f"Search: \"{search}\"")
+        if search_header:
+            transactions = [t for t in transactions if _matches_text_search(t, search_header)]
+            filters.append(f'Search: "{search_header}"')
+        elif search:
+            transactions = [t for t in transactions if _matches_text_search(t, search)]
+            filters.append(f'Search: "{search}"')
+
+        base_filtered_transactions = transactions
+
+        entity_flow = None
+        if mode == "transactions":
+            entity_flow = {
+                "senders": _build_entity_flow_rows(
+                    base_filtered_transactions, "from_entity", to_entity_values
+                ),
+                "beneficiaries": _build_entity_flow_rows(
+                    base_filtered_transactions, "to_entity", from_entity_values
+                ),
+            }
+
+        transactions = _apply_directional_filters(
+            base_filtered_transactions, from_entity_values, to_entity_values
+        )
+        if from_entity_values:
+            filters.append(f"Senders: {len(from_entity_values)} selected")
+        if to_entity_values:
+            filters.append(f"Beneficiaries: {len(to_entity_values)} selected")
 
         filters_description = " | ".join(filters) if filters else ""
 
         # Collect entity notes for appendix
-        entity_notes = None
+        entity_notes = []
         if include_entity_notes:
             try:
-                # Get unique entity keys from filtered transactions
-                entity_keys = set()
-                for t in transactions:
-                    if isinstance(t.get("from_entity"), dict) and t["from_entity"].get("key"):
-                        entity_keys.add(t["from_entity"]["key"])
-                    if isinstance(t.get("to_entity"), dict) and t["to_entity"].get("key"):
-                        entity_keys.add(t["to_entity"]["key"])
-
-                if entity_keys:
-                    # Fetch entity details from Neo4j
-                    entity_notes = []
-                    with neo4j_service._driver.session() as session:
-                        result = session.run(
-                            """
-                            MATCH (n {case_id: $case_id})
-                            WHERE n.key IN $keys AND NOT n:Document
-                            RETURN n.key AS key, n.name AS name,
-                                   labels(n)[0] AS type,
-                                   n.notes AS notes, n.summary AS summary
-                            """,
-                            case_id=case_id,
-                            keys=list(entity_keys),
-                        )
-                        for record in result:
-                            r = dict(record)
-                            if r.get("notes") or r.get("summary"):
-                                entity_notes.append(r)
-                    # Sort by name
-                    entity_notes.sort(key=lambda e: (e.get("name") or "").lower())
+                entity_notes = _collect_entity_notes(case_id, transactions)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to fetch entity notes: {e}")
 
-        pdf_bytes = generate_financial_pdf(
-            transactions, case_name, filters_description,
+        rendered = render_financial_export(
+            transactions,
+            case_name,
+            filters_description,
             entity_notes=entity_notes,
+            entity_flow=entity_flow,
         )
 
         safe_name = case_name.replace(" ", "_").replace("/", "-")[:50]
         mode_label = "Transactions" if mode != "intelligence" else "Financial_Intelligence"
-        filename = f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        filename = (
+            f"Financial_Report_{mode_label}_{safe_name}_{datetime.now().strftime('%Y%m%d')}."
+            f"{rendered['extension']}"
+        )
 
         return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
+            content=rendered["content"],
+            media_type=rendered["media_type"],
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except Exception as e:

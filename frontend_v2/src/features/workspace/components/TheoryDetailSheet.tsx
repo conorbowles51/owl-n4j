@@ -1,4 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
 import {
   Sheet,
   SheetContent,
@@ -35,11 +37,11 @@ import {
   Users,
   StickyNote,
   CheckSquare,
-  Camera,
   File,
 } from "lucide-react"
-import { useUpdateTheory, useDeleteTheory, useBuildTheoryGraph } from "../hooks/use-workspace"
-import type { Theory } from "../api"
+import { useUpdateTheory, useDeleteTheory, useBuildWorkspaceGraph } from "../hooks/use-workspace"
+import { workspaceAPI, type Theory } from "../api"
+import { formatWorkspaceDateTime } from "../lib/format-date"
 
 interface TheoryDetailSheetProps {
   theory: Theory | null
@@ -55,6 +57,7 @@ const PRIVILEGE_ICONS = {
 } as const
 
 export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: TheoryDetailSheetProps) {
+  const navigate = useNavigate()
   const [title, setTitle] = useState("")
   const [type, setType] = useState<"PRIMARY" | "SECONDARY" | "NOTE">("PRIMARY")
   const [privilegeLevel, setPrivilegeLevel] = useState<"PUBLIC" | "ATTORNEY_ONLY" | "PRIVATE">("PUBLIC")
@@ -66,7 +69,7 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
 
   const updateTheory = useUpdateTheory(caseId)
   const deleteTheory = useDeleteTheory(caseId)
-  const buildGraph = useBuildTheoryGraph(caseId)
+  const buildGraph = useBuildWorkspaceGraph(caseId)
 
   useEffect(() => {
     if (theory) {
@@ -80,6 +83,26 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
       setNextSteps(theory.next_steps ?? [])
     }
   }, [theory])
+
+  const isDirty = useMemo(
+    () =>
+      !!theory &&
+      (title !== (theory.title ?? "") ||
+        type !== (theory.type ?? "PRIMARY") ||
+        privilegeLevel !== (theory.privilege_level ?? "PUBLIC") ||
+        confidence !== (theory.confidence_score ?? 50) ||
+        hypothesis !== (theory.hypothesis ?? "") ||
+        JSON.stringify(supportingEvidence) !== JSON.stringify(theory.supporting_evidence ?? []) ||
+        JSON.stringify(counterArguments) !== JSON.stringify(theory.counter_arguments ?? []) ||
+        JSON.stringify(nextSteps) !== JSON.stringify(theory.next_steps ?? [])),
+    [confidence, counterArguments, hypothesis, nextSteps, privilegeLevel, supportingEvidence, theory, title, type],
+  )
+
+  const { data: theoryTimeline = [] } = useQuery({
+    queryKey: ["workspace", caseId, "theory-timeline", theory?.id],
+    queryFn: () => workspaceAPI.getTheoryTimeline(caseId, theory!.id),
+    enabled: open && !!theory?.id,
+  })
 
   const handleSave = () => {
     if (!theory) return
@@ -111,7 +134,23 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
 
   const handleBuildGraph = () => {
     if (!theory) return
-    buildGraph.mutate({ theoryId: theory.id })
+    buildGraph.mutate(
+      { source_type: "theory", source_id: theory.id },
+      {
+        onSuccess: (result) => {
+          navigate(`/cases/${caseId}/graph`, {
+            state: {
+              workspaceGraphSource: {
+                sourceType: "theory",
+                sourceId: theory.id,
+                sourceLabel: theory.title,
+                entityKeys: result.entity_keys,
+              },
+            },
+          })
+        },
+      },
+    )
   }
 
   // --- Editable list helpers ---
@@ -178,7 +217,6 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
         { label: "Notes", icon: StickyNote, count: theory.attached_note_ids?.length ?? 0 },
         { label: "Tasks", icon: CheckSquare, count: theory.attached_task_ids?.length ?? 0 },
         { label: "Documents", icon: File, count: theory.attached_document_ids?.length ?? 0 },
-        { label: "Snapshots", icon: Camera, count: theory.attached_snapshot_ids?.length ?? 0 },
       ]
     : []
 
@@ -186,8 +224,23 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
   const graphEntities = theory?.attached_graph_data?.entities
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex w-full flex-col sm:max-w-lg">
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isDirty) return
+        onOpenChange(nextOpen)
+      }}
+    >
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col sm:max-w-lg"
+        onInteractOutside={(event) => {
+          if (isDirty) event.preventDefault()
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isDirty) event.preventDefault()
+        }}
+      >
         <SheetHeader className="px-4 pt-4">
           <SheetTitle className="sr-only">Theory Details</SheetTitle>
           <SheetDescription className="sr-only">
@@ -366,6 +419,26 @@ export function TheoryDetailSheet({ theory, open, onOpenChange, caseId }: Theory
                   )}
                   Build Graph
                 </Button>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Timeline
+              </h4>
+              {theoryTimeline.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No timeline events yet</p>
+              ) : (
+                <div className="space-y-2">
+                  {theoryTimeline.slice().reverse().slice(0, 6).map((event) => (
+                    <div key={event.id} className="rounded-md border border-border px-2.5 py-2">
+                      <p className="text-xs font-medium">{event.title}</p>
+                      <p className="mt-1 text-[10px] text-muted-foreground">
+                        {formatWorkspaceDateTime(event.date)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

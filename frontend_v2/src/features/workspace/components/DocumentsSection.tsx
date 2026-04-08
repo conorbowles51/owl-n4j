@@ -1,41 +1,86 @@
-import { FileText } from "lucide-react"
+import { useMemo } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { FileText, Pin, PinOff } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { usePinnedItems } from "../hooks/use-workspace"
+import { Button } from "@/components/ui/button"
+import { evidenceAPI } from "@/features/evidence/api"
+import { usePinItem, usePinnedItems, useUnpinItem } from "../hooks/use-workspace"
+import { formatWorkspaceDateTime } from "../lib/format-date"
 
 interface DocumentsSectionProps {
   caseId: string
 }
 
+function isDocumentFile(filename: string) {
+  const lower = filename.toLowerCase()
+  if (lower.startsWith("note_") && lower.endsWith(".txt")) return true
+  if (lower.startsWith("link_") || lower.endsWith("_link.txt")) return true
+  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"]
+  if (imageExtensions.some((ext) => lower.endsWith(ext))) return true
+  const docExtensions = [".pdf", ".doc", ".docx", ".txt", ".rtf"]
+  if (docExtensions.some((ext) => lower.endsWith(ext))) {
+    const isSimpleName = lower.split(".").length === 2
+    const hasQuickActionPattern = lower.startsWith("note_") || lower.startsWith("link_")
+    return isSimpleName || hasQuickActionPattern
+  }
+  return false
+}
+
 export function DocumentsSection({ caseId }: DocumentsSectionProps) {
+  const { data: evidenceFiles = [] } = useQuery({
+    queryKey: ["workspace", caseId, "documents"],
+    queryFn: () => evidenceAPI.list(caseId),
+  })
   const { data: pinned = [] } = usePinnedItems(caseId)
-  const documents = pinned.filter((p) => p.item_type === "document")
+  const pinItem = usePinItem(caseId)
+  const unpinItem = useUnpinItem(caseId)
+
+  const documents = useMemo(
+    () => evidenceFiles.filter((file) => isDocumentFile(file.original_filename || "")),
+    [evidenceFiles],
+  )
 
   if (documents.length === 0) return null
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <FileText className="size-3.5 text-muted-foreground" />
-        <h3 className="text-xs font-semibold">Linked Documents</h3>
+    <div className="rounded-lg border border-border p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <FileText className="size-4 text-emerald-500" />
+        <h3 className="text-xs font-semibold">Documents</h3>
         <Badge variant="slate" className="h-4 px-1.5 text-[10px]">
           {documents.length}
         </Badge>
       </div>
-      <div className="space-y-1">
-        {documents.map((doc) => (
-          <div
-            key={doc.id}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/30"
-          >
-            <FileText className="size-3 text-muted-foreground" />
-            <span className="flex-1 truncate text-xs">{doc.item_id}</span>
-            {doc.annotations_count != null && doc.annotations_count > 0 && (
-              <Badge variant="outline" className="text-[10px]">
-                {doc.annotations_count} annotations
-              </Badge>
-            )}
-          </div>
-        ))}
+
+      <div className="space-y-2">
+        {documents.map((doc) => {
+          const pinnedEntry = pinned.find((item) => item.item_id === doc.id)
+          return (
+            <div
+              key={doc.id}
+              className="flex items-center gap-3 rounded-md border border-border/60 px-3 py-2"
+            >
+              <FileText className="size-3.5 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium">{doc.original_filename}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {formatWorkspaceDateTime(doc.created_at)}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() =>
+                  pinnedEntry
+                    ? unpinItem.mutate(pinnedEntry.id)
+                    : pinItem.mutate({ itemType: "document", itemId: doc.id })
+                }
+              >
+                {pinnedEntry ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
+              </Button>
+            </div>
+          )
+        })}
       </div>
     </div>
   )

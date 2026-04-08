@@ -1,10 +1,12 @@
 import { useState } from "react"
-import { StickyNote, Plus, Trash2, Tag } from "lucide-react"
+import { StickyNote, Plus, Tag } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { useNotes, useCreateNote, useDeleteNote } from "../hooks/use-workspace"
+import { useNotes, useCreateNote } from "../hooks/use-workspace"
+import { formatWorkspaceDate } from "../lib/format-date"
+import { NoteDetailSheet } from "./NoteDetailSheet"
 
 interface InvestigativeNotesSectionProps {
   caseId: string
@@ -13,15 +15,18 @@ interface InvestigativeNotesSectionProps {
 export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionProps) {
   const { data: notes = [], isLoading } = useNotes(caseId)
   const createMutation = useCreateNote(caseId)
-  const deleteMutation = useDeleteNote(caseId)
 
   const [showAdd, setShowAdd] = useState(false)
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
   const [tagsInput, setTagsInput] = useState("")
 
+  const selectedNote = selectedNoteId
+    ? notes.find((note) => note.id === selectedNoteId) ?? null
+    : null
+
   const handleAdd = () => {
-    if (!title.trim()) return
     const tags = tagsInput
       .split(",")
       .map((t) => t.trim())
@@ -30,11 +35,11 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
       { title, content, tags },
       {
         onSuccess: () => {
-          setShowAdd(false)
-          setTitle("")
-          setContent("")
-          setTagsInput("")
-        },
+            setShowAdd(false)
+            setTitle("")
+            setContent("")
+            setTagsInput("")
+          },
       },
     )
   }
@@ -85,7 +90,7 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
               variant="primary"
               size="sm"
               onClick={handleAdd}
-              disabled={!title.trim() || createMutation.isPending}
+              disabled={!content.trim() || createMutation.isPending}
             >
               Save
             </Button>
@@ -103,25 +108,19 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
       ) : (
         <div className="space-y-2">
           {notes.map((note) => (
-            <div
+            <button
               key={note.id}
-              className="group rounded-md border border-border p-2.5"
+              type="button"
+              onClick={() => setSelectedNoteId(note.id)}
+              className="group w-full rounded-md border border-border p-2.5 text-left transition-colors hover:bg-muted/30"
             >
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   {note.title && <p className="text-xs font-medium">{note.title}</p>}
                   <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">
                     {note.content}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="opacity-0 group-hover:opacity-100"
-                  onClick={() => deleteMutation.mutate(note.id)}
-                >
-                  <Trash2 className="size-3" />
-                </Button>
               </div>
               {note.tags && note.tags.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
@@ -135,18 +134,27 @@ export function InvestigativeNotesSection({ caseId }: InvestigativeNotesSectionP
               )}
               {note.updated_at && (
                 <p className="mt-1 text-[10px] text-muted-foreground/60">
-                  {new Date(note.updated_at).toLocaleDateString()}
+                  {formatWorkspaceDate(note.updated_at)}
                 </p>
               )}
-            </div>
+            </button>
           ))}
           {notes.length === 0 && (
-            <p className="py-3 text-center text-xs text-muted-foreground">
-              No notes yet
-            </p>
-          )}
+              <p className="py-3 text-center text-xs text-muted-foreground">
+                No notes yet
+              </p>
+            )}
         </div>
       )}
+
+      <NoteDetailSheet
+        caseId={caseId}
+        note={selectedNote}
+        open={!!selectedNote}
+        onOpenChange={(open) => {
+          if (!open) setSelectedNoteId(null)
+        }}
+      />
     </div>
   )
 }

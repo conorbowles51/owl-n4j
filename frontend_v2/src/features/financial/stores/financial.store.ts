@@ -7,6 +7,9 @@ export interface SortColumn {
   asc: boolean
 }
 
+export type FinancialMainView = "transactions" | "counterparties" | "trends"
+export type ChartGroupingOption = "auto" | "daily" | "weekly" | "monthly"
+
 interface FinancialStoreState {
   // Filters
   mode: FinancialDatasetMode
@@ -32,7 +35,8 @@ interface FinancialStoreState {
 
   // UI
   filterPanelOpen: boolean
-  chartsPanelOpen: boolean
+  mainView: FinancialMainView
+  chartGrouping: ChartGroupingOption
   expandedRowKeys: Set<string>
 }
 
@@ -70,7 +74,8 @@ interface FinancialStoreActions {
   setLastClickedKey: (key: string | null) => void
 
   setFilterPanelOpen: (open: boolean) => void
-  setChartsPanelOpen: (open: boolean) => void
+  setMainView: (view: FinancialMainView) => void
+  setChartGrouping: (grouping: ChartGroupingOption) => void
   toggleExpandedRow: (key: string) => void
 
   reset: () => void
@@ -94,7 +99,8 @@ const initialState: FinancialStoreState = {
   checkedKeys: new Set<string>(),
   lastClickedKey: null,
   filterPanelOpen: true,
-  chartsPanelOpen: true,
+  mainView: "transactions",
+  chartGrouping: "auto",
   expandedRowKeys: new Set<string>(),
 }
 
@@ -200,7 +206,8 @@ export const useFinancialStore = create<FinancialStore>()(
       setLastClickedKey: (key) => set({ lastClickedKey: key }),
 
       setFilterPanelOpen: (open) => set({ filterPanelOpen: open }),
-      setChartsPanelOpen: (open) => set({ chartsPanelOpen: open }),
+      setMainView: (mainView) => set({ mainView }),
+      setChartGrouping: (chartGrouping) => set({ chartGrouping }),
       toggleExpandedRow: (key) =>
         set((s) => {
           const next = new Set(s.expandedRowKeys)
@@ -217,8 +224,9 @@ export const useFinancialStore = create<FinancialStore>()(
         mode: state.mode,
         sortColumns: state.sortColumns,
         pageSize: state.pageSize,
-        chartsPanelOpen: state.chartsPanelOpen,
         filterPanelOpen: state.filterPanelOpen,
+        mainView: state.mainView,
+        chartGrouping: state.chartGrouping,
       }),
       storage: {
         getItem: (name) => {

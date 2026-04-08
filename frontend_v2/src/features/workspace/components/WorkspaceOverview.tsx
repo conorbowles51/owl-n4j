@@ -3,8 +3,7 @@ import {
   CheckSquare,
   Users,
   StickyNote,
-  FileText,
-  Paperclip,
+  AlertTriangle,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { ConfidenceBar } from "@/components/ui/confidence-bar"
@@ -13,7 +12,7 @@ import {
   useTasks,
   useWitnesses,
   useNotes,
-  usePinnedItems,
+  useFindings,
 } from "../hooks/use-workspace"
 import { CalendarClock } from "lucide-react"
 import { DeadlinesSection } from "@/features/cases/components/DeadlinesSection"
@@ -21,6 +20,8 @@ import { CaseContextSection } from "./CaseContextSection"
 import { InvestigativeNotesSection } from "./InvestigativeNotesSection"
 import { DocumentsSection } from "./DocumentsSection"
 import { CaseFilesSection } from "./CaseFilesSection"
+import { FindingsSection } from "./FindingsSection"
+import { PinnedEvidenceSection } from "./PinnedEvidenceSection"
 
 interface WorkspaceOverviewProps {
   caseId: string
@@ -66,6 +67,7 @@ export function WorkspaceOverview({ caseId }: WorkspaceOverviewProps) {
   const { data: tasks = [] } = useTasks(caseId)
   const { data: witnesses = [] } = useWitnesses(caseId)
   const { data: notes = [] } = useNotes(caseId)
+  const { data: findings = [] } = useFindings(caseId)
 
   const completedTasks = tasks.filter(
     (t) => t.status?.toUpperCase() === "COMPLETED",
@@ -85,6 +87,8 @@ export function WorkspaceOverview({ caseId }: WorkspaceOverviewProps) {
         </div>
         <DeadlinesSection caseId={caseId} />
       </div>
+
+      <FindingsSection caseId={caseId} previewLimit={3} />
 
       {/* Summary cards grid */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -240,10 +244,35 @@ export function WorkspaceOverview({ caseId }: WorkspaceOverviewProps) {
             </div>
           )}
         </SummaryCard>
+
+        <SummaryCard
+          icon={AlertTriangle}
+          iconColor="text-rose-500"
+          title="Findings"
+          count={findings.length}
+        >
+          {findings.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No findings yet</p>
+          ) : (
+            <div className="space-y-1.5">
+              {findings.slice(0, 3).map((finding) => (
+                <div key={finding.id} className="space-y-0.5">
+                  <p className="truncate text-xs font-medium">{finding.title}</p>
+                  {finding.priority && (
+                    <Badge variant="outline" className="text-[9px]">
+                      {finding.priority}
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </SummaryCard>
       </div>
 
       {/* Secondary sections */}
       <div className="space-y-4 border-t border-border pt-4">
+        <PinnedEvidenceSection caseId={caseId} />
         <InvestigativeNotesSection caseId={caseId} />
         <DocumentsSection caseId={caseId} />
         <CaseFilesSection caseId={caseId} />

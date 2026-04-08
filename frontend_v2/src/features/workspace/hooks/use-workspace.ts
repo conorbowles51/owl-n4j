@@ -5,8 +5,8 @@ import {
   type InvestigationTask,
   type Witness,
   type InvestigativeNote,
+  type Finding,
   type CaseContext,
-  type PinnedItem,
 } from "../api"
 
 // ---------------------------------------------------------------------------
@@ -19,6 +19,7 @@ const keys = {
   tasks: (caseId: string) => ["workspace", caseId, "tasks"] as const,
   witnesses: (caseId: string) => ["workspace", caseId, "witnesses"] as const,
   notes: (caseId: string) => ["workspace", caseId, "notes"] as const,
+  findings: (caseId: string) => ["workspace", caseId, "findings"] as const,
   context: (caseId: string) => ["workspace", caseId, "context"] as const,
   pinned: (caseId: string) => ["workspace", caseId, "pinned"] as const,
   presence: (caseId: string) => ["workspace", caseId, "presence"] as const,
@@ -215,6 +216,49 @@ export function useDeleteNote(caseId: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Findings
+// ---------------------------------------------------------------------------
+
+export function useFindings(caseId: string) {
+  return useQuery({
+    queryKey: keys.findings(caseId),
+    queryFn: () => workspaceAPI.getFindings(caseId),
+  })
+}
+
+export function useCreateFinding(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (finding: Omit<Finding, "id">) =>
+      workspaceAPI.createFinding(caseId, finding),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
+  })
+}
+
+export function useUpdateFinding(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      findingId,
+      updates,
+    }: {
+      findingId: string
+      updates: Partial<Finding>
+    }) => workspaceAPI.updateFinding(caseId, findingId, updates),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
+  })
+}
+
+export function useDeleteFinding(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (findingId: string) =>
+      workspaceAPI.deleteFinding(caseId, findingId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.findings(caseId) }),
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Case Context
 // ---------------------------------------------------------------------------
 
@@ -231,6 +275,19 @@ export function useUpdateCaseContext(caseId: string) {
     mutationFn: (context: Partial<CaseContext>) =>
       workspaceAPI.updateCaseContext(caseId, context),
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.context(caseId) }),
+  })
+}
+
+export function useBuildWorkspaceGraph(caseId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (request: {
+      source_type: "theory" | "witness" | "note"
+      source_id: string
+      include_attached_items?: boolean
+      top_k?: number
+    }) => workspaceAPI.buildWorkspaceGraph(caseId, request),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all(caseId) }),
   })
 }
 

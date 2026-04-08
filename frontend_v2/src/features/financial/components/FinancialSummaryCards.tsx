@@ -1,118 +1,70 @@
 import { useMemo } from "react"
-import { TrendingUp, TrendingDown, ArrowLeftRight, Hash, User } from "lucide-react"
+import { ArrowDownLeft, ArrowUpRight, Hash, User } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { CostBadge } from "@/components/ui/cost-badge"
 import type { Transaction, FinancialDatasetMode } from "../api"
 
 interface FinancialSummaryCardsProps {
   transactions: Transaction[]
-  entityFilter: { key: string; name: string } | null
   mode: FinancialDatasetMode
 }
 
 export function FinancialSummaryCards({
   transactions,
-  entityFilter,
   mode,
 }: FinancialSummaryCardsProps) {
   const summary = useMemo(() => {
-    if (entityFilter) {
-      let inflow = 0
-      let outflow = 0
-      for (const tx of transactions) {
-        const isTo =
-          tx.to_entity?.key === entityFilter.key ||
-          tx.to_entity?.name === entityFilter.name
-        const isFrom =
-          tx.from_entity?.key === entityFilter.key ||
-          tx.from_entity?.name === entityFilter.name
-        if (isTo) inflow += Math.abs(tx.amount)
-        if (isFrom) outflow += Math.abs(tx.amount)
-      }
-      return {
-        mode: "entity" as const,
-        entityName: entityFilter.name,
-        inflow,
-        outflow,
-        netFlow: inflow - outflow,
-        count: transactions.length,
-      }
-    }
-
-    let totalVolume = 0
+    let moneyOut = 0
+    let moneyIn = 0
     const entityKeys = new Set<string>()
+
     for (const tx of transactions) {
-      totalVolume += Math.abs(tx.amount)
+      if (tx.amount >= 0) moneyOut += Math.abs(tx.amount)
+      else moneyIn += Math.abs(tx.amount)
+
       if (tx.from_entity?.key) entityKeys.add(tx.from_entity.key)
       else if (tx.from_entity?.name) entityKeys.add(`n:${tx.from_entity.name}`)
+
       if (tx.to_entity?.key) entityKeys.add(tx.to_entity.key)
       else if (tx.to_entity?.name) entityKeys.add(`n:${tx.to_entity.name}`)
     }
 
     return {
-      mode: "overview" as const,
-      totalVolume,
+      moneyOut,
+      moneyIn,
       count: transactions.length,
       uniqueEntities: entityKeys.size,
-      avgTransaction: transactions.length > 0 ? totalVolume / transactions.length : 0,
     }
-  }, [transactions, entityFilter])
-
-  if (summary.mode === "entity") {
-    const cards = [
-      {
-        label: `Inflows — ${summary.entityName}`,
-        value: summary.inflow,
-        icon: TrendingUp,
-        color: "text-emerald-500",
-      },
-      {
-        label: `Outflows — ${summary.entityName}`,
-        value: summary.outflow,
-        icon: TrendingDown,
-        color: "text-red-500",
-      },
-      {
-        label: "Net Flow",
-        value: summary.netFlow,
-        icon: ArrowLeftRight,
-        color: summary.netFlow >= 0 ? "text-emerald-500" : "text-red-500",
-      },
-      {
-        label: mode === "transactions" ? "Transactions" : "Records",
-        value: summary.count,
-        icon: Hash,
-        isCount: true,
-      },
-    ]
-
-    return <SummaryGrid cards={cards} />
-  }
+  }, [transactions])
 
   const cards = [
     {
-      label: "Total Volume",
-      value: summary.totalVolume,
-      icon: ArrowLeftRight,
-      color: "text-amber-500",
+      label: "Money Out",
+      description: "Positive amounts",
+      value: summary.moneyOut,
+      icon: ArrowUpRight,
+      color: "text-red-500",
+    },
+    {
+      label: "Money In",
+      description: "Negative amounts",
+      value: summary.moneyIn,
+      icon: ArrowDownLeft,
+      color: "text-emerald-500",
     },
     {
       label: mode === "transactions" ? "Transactions" : "Records",
+      description: "Filtered total",
       value: summary.count,
       icon: Hash,
       isCount: true,
     },
     {
       label: "Unique Entities",
+      description: "Visible counterparties",
       value: summary.uniqueEntities,
       icon: User,
       isCount: true,
-    },
-    {
-      label: mode === "transactions" ? "Avg Transaction" : "Avg Record",
-      value: summary.avgTransaction,
-      icon: TrendingUp,
-      color: "text-blue-500",
     },
   ]
 
@@ -121,6 +73,7 @@ export function FinancialSummaryCards({
 
 interface CardData {
   label: string
+  description: string
   value: number
   icon: React.ComponentType<{ className?: string }>
   color?: string
@@ -138,6 +91,9 @@ function SummaryGrid({ cards }: { cards: CardData[] }) {
             </div>
             <div>
               <p className="text-[10px] text-muted-foreground">{card.label}</p>
+              <p className="text-[10px] text-muted-foreground">
+                {card.description}
+              </p>
               {card.isCount ? (
                 <span className="font-mono text-sm font-semibold">
                   {card.value.toLocaleString()}

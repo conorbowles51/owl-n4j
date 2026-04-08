@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback, useMemo, useEffect } from "react"
-import { useParams } from "react-router-dom"
+import { useLocation, useParams } from "react-router-dom"
 import type { ForceGraphMethods } from "react-force-graph-2d"
 import {
   ResizablePanelGroup,
@@ -24,6 +24,7 @@ import { EntityComparisonDialog } from "./EntityComparisonDialog"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { Network } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { graphAPI } from "../api"
 import { useUIStore } from "@/stores/ui.store"
 import { SubgraphView } from "./SubgraphView"
@@ -35,6 +36,7 @@ import type { GraphNode, NodeDetail } from "@/types/graph.types"
 
 export function GraphPage() {
   const { id: caseId } = useParams()
+  const location = useLocation()
   const queryClient = useQueryClient()
   const graphRef = useRef<ForceGraphMethods>()
 
@@ -49,7 +51,17 @@ export function GraphPage() {
   /* ---- Spotlight state ---- */
   const spotlightVisible = useGraphStore((s) => s.spotlightVisible)
   const subgraphNodeKeys = useGraphStore((s) => s.subgraphNodeKeys)
+  const clearSubgraph = useGraphStore((s) => s.clearSubgraph)
+  const addToSubgraph = useGraphStore((s) => s.addToSubgraph)
+  const setSpotlightVisible = useGraphStore((s) => s.setSpotlightVisible)
   const spotlightActive = spotlightVisible && subgraphNodeKeys.size > 0
+
+  const workspaceGraphSource = (location.state as { workspaceGraphSource?: {
+    sourceType: string
+    sourceId: string
+    sourceLabel: string
+    entityKeys: string[]
+  } } | null)?.workspaceGraphSource
 
   /* ---- Dialog states ---- */
   const [addNodeOpen, setAddNodeOpen] = useState(false)
@@ -75,6 +87,20 @@ export function GraphPage() {
       expandGraphPanelTo("detail")
     }
   }, [selectedNodeKeys, expandGraphPanelTo])
+
+  useEffect(() => {
+    if (!workspaceGraphSource?.entityKeys?.length) return
+    clearSubgraph()
+    addToSubgraph(workspaceGraphSource.entityKeys)
+    setSpotlightVisible(true)
+    selectNodes(workspaceGraphSource.entityKeys)
+  }, [
+    addToSubgraph,
+    clearSubgraph,
+    selectNodes,
+    setSpotlightVisible,
+    workspaceGraphSource,
+  ])
 
   /* ---- Comparison entity details ---- */
   const [compareEntity1, setCompareEntity1] = useState<NodeDetail | null>(null)
@@ -203,6 +229,17 @@ export function GraphPage() {
 
   return (
     <div className="flex h-full flex-col">
+      {workspaceGraphSource?.sourceLabel && (
+        <div className="border-b border-border bg-muted/20 px-4 py-2">
+          <div className="flex items-center gap-2 text-xs">
+            <Badge variant="outline" className="uppercase">
+              {workspaceGraphSource.sourceType}
+            </Badge>
+            <span className="text-muted-foreground">Workspace source</span>
+            <span className="font-medium">{workspaceGraphSource.sourceLabel}</span>
+          </div>
+        </div>
+      )}
       <GraphToolbar
         caseId={caseId!}
         graphRef={graphRef}

@@ -91,8 +91,18 @@ class TheoryCreate(BaseModel):
 
 
 class NoteCreate(BaseModel):
+    title: Optional[str] = None
     content: str
     tags: Optional[List[str]] = None
+
+
+class FindingCreate(BaseModel):
+    title: str
+    content: Optional[str] = None
+    priority: str = "MEDIUM"
+    linked_evidence_ids: Optional[List[str]] = None
+    linked_document_ids: Optional[List[str]] = None
+    linked_entity_keys: Optional[List[str]] = None
 
 
 class TaskCreate(BaseModel):
@@ -122,6 +132,133 @@ class DeadlineCreate(BaseModel):
     judge: Optional[str] = None  # e.g., "Hon. Patricia M. Richardson"
     court_division: Optional[str] = None  # e.g., "Alexandria Division"
     deadlines: Optional[List[DeadlineItem]] = None  # List of deadline items
+
+
+class BuildWorkspaceGraphRequest(BaseModel):
+    source_type: str
+    source_id: str
+    include_attached_items: bool = True
+    top_k: int = 20
+
+
+def _build_workspace_graph_result(
+    *,
+    case_id: str,
+    source: Dict[str, Any],
+    source_type: str,
+    include_attached_items: bool,
+    top_k: int,
+    db: Session,
+) -> Dict[str, Any]:
+    text_parts: List[str] = []
+
+    if source_type == "theory":
+        if source.get("hypothesis"):
+            text_parts.append(f"Theory: {source['hypothesis']}")
+        if source.get("title"):
+            text_parts.append(f"Title: {source['title']}")
+        if source.get("supporting_evidence"):
+            text_parts.append(f"Supporting Evidence: {' '.join(source['supporting_evidence'])}")
+        if source.get("counter_arguments"):
+            text_parts.append(f"Counter Arguments: {' '.join(source['counter_arguments'])}")
+    elif source_type == "witness":
+        if source.get("name"):
+            text_parts.append(f"Witness: {source['name']}")
+        if source.get("role"):
+            text_parts.append(f"Role: {source['role']}")
+        if source.get("statement_summary"):
+            text_parts.append(f"Statement Summary: {source['statement_summary']}")
+        if source.get("strategy_notes"):
+            text_parts.append(f"Strategy Notes: {source['strategy_notes']}")
+        if source.get("risk_assessment"):
+            text_parts.append(f"Risk Assessment: {source['risk_assessment']}")
+        for interview in source.get("interviews") or []:
+            interview_text = interview.get("statement") or interview.get("summary")
+            if interview_text:
+                text_parts.append(f"Interview: {interview_text}")
+    elif source_type == "note":
+        if source.get("title"):
+            text_parts.append(f"Note Title: {source['title']}")
+        if source.get("content"):
+            text_parts.append(f"Note: {source['content']}")
+        if source.get("tags"):
+            text_parts.append(f"Tags: {' '.join(source['tags'])}")
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported source_type")
+
+    if include_attached_items:
+        for field_name, label in [("attached_evidence_ids", "Evidence"), ("attached_document_ids", "Document")]:
+            for evidence_id in source.get(field_name) or []:
+                try:
+                    record = None
+                    try:
+                        record = EvidenceDBStorage.get(db, UUID(evidence_id))
+                    except (ValueError, AttributeError):
+                        record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
+                    if record and record.stored_path:
+                        text = extract_text_from_file(Path(record.stored_path))
+                        if text:
+                            text_parts.append(f"{label} {record.original_filename or evidence_id}: {text[:5000]}")
+                except Exception as exc:
+                    print(f"[Workspace Graph] Failed to extract text from {label.lower()} {evidence_id}: {exc}")
+        attached_note_ids = source.get("attached_note_ids") or []
+        if attached_note_ids:
+            all_notes = workspace_service.get_notes(case_id)
+            for note_id in attached_note_ids:
+                note = next((item for item in all_notes if (item.get("note_id") or item.get("id")) == note_id), None)
+                if note and note.get("content"):
+                    text_parts.append(f"Attached Note: {note['content']}")
+
+    combined_text = "\n\n".join(part for part in text_parts if part)
+    if not combined_text.strip():
+        raise HTTPException(status_code=400, detail="No text available to create embedding")
+
+    try:
+        embedding_service = EmbeddingService()
+        query_embedding = embedding_service.generate_embedding(combined_text)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create embedding: {str(exc)}")
+
+    try:
+        similar_entities = vector_db_service.search_entities(
+            query_embedding=query_embedding,
+            top_k=top_k * 2,
+            filter_metadata=None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to search entities: {str(exc)}")
+
+    entity_keys: List[str] = []
+    entities_data: List[Dict[str, Any]] = []
+    for entity in similar_entities:
+        entity_key = entity.get("id")
+        if not entity_key:
+            continue
+        try:
+            entity_details = neo4j_service.get_node_details(entity_key, case_id=case_id)
+            if not entity_details:
+                continue
+            entity_keys.append(entity_key)
+            entities_data.append(
+                {
+                    "key": entity_key,
+                    "name": entity_details.get("name"),
+                    "type": entity_details.get("type"),
+                    "summary": entity_details.get("summary"),
+                    "distance": entity.get("distance"),
+                }
+            )
+            if len(entity_keys) >= top_k:
+                break
+        except Exception:
+            continue
+
+    return {
+        "entity_keys": entity_keys,
+        "entities": entities_data,
+        "similarity_results": similar_entities,
+        "text_length": len(combined_text),
+    }
 
 
 # Case Context Endpoints
@@ -429,6 +566,59 @@ class BuildTheoryGraphRequest(BaseModel):
     top_k: int = 20  # Number of similar entities to return
 
 
+@router.post("/{case_id}/build-graph")
+async def build_workspace_graph(
+    case_id: str,
+    request: BuildWorkspaceGraphRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Build a graph for a workspace item and return relevant case entity keys."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        source_type = request.source_type.lower()
+        if source_type == "theory":
+            source = workspace_service.get_theory(case_id, request.source_id)
+        elif source_type == "witness":
+            source = workspace_service.get_witness(case_id, request.source_id)
+        elif source_type == "note":
+            source = workspace_service.get_note(case_id, request.source_id)
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported source_type")
+
+        if not source:
+            raise HTTPException(status_code=404, detail=f"{source_type.title()} not found")
+
+        result = _build_workspace_graph_result(
+            case_id=case_id,
+            source=source,
+            source_type=source_type,
+            include_attached_items=request.include_attached_items,
+            top_k=request.top_k,
+            db=db,
+        )
+
+        if source_type == "theory":
+            source["attached_graph_data"] = {
+                "entity_keys": result["entity_keys"],
+                "entities": result["entities"],
+                "created_at": datetime.now().isoformat(),
+                "include_attached_items": request.include_attached_items,
+                "top_k": request.top_k,
+            }
+            workspace_service.save_theory(case_id, source)
+
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/{case_id}/theories/{theory_id}/build-graph")
 async def build_theory_graph(
     case_id: str,
@@ -437,146 +627,17 @@ async def build_theory_graph(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    """
-    Build a graph for a theory by:
-    1. Combining theory text with attached document text (if requested)
-    2. Creating a vector embedding
-    3. Searching for similar entities in the vector DB
-    4. Returning relevant entity keys to display in graph
-    """
-    try:
-        try:
-            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
-        except (CaseNotFound, CaseAccessDenied):
-            raise HTTPException(status_code=404, detail="Case not found")
-        
-        # Get the theory
-        theory = workspace_service.get_theory(case_id, theory_id)
-        if not theory:
-            raise HTTPException(status_code=404, detail="Theory not found")
-        
-        # Build combined text
-        text_parts = []
-        
-        # Add theory text
-        if theory.get("hypothesis"):
-            text_parts.append(f"Theory: {theory['hypothesis']}")
-        if theory.get("title"):
-            text_parts.append(f"Title: {theory['title']}")
-        if theory.get("supporting_evidence"):
-            text_parts.append(f"Supporting Evidence: {' '.join(theory['supporting_evidence'])}")
-        if theory.get("counter_arguments"):
-            text_parts.append(f"Counter Arguments: {' '.join(theory['counter_arguments'])}")
-        
-        # Add text from attached items if requested
-        if request.include_attached_items:
-            # Extract text from attached evidence
-            from uuid import UUID
-            for field_name, label in [("attached_evidence_ids", "Evidence"), ("attached_document_ids", "Document")]:
-                for eid in (theory.get(field_name) or []):
-                    try:
-                        rec = None
-                        try:
-                            rec = EvidenceDBStorage.get(db, UUID(eid))
-                        except (ValueError, AttributeError):
-                            rec = EvidenceDBStorage.get_by_legacy_id(db, eid)
-                        if rec and rec.stored_path:
-                            file_path = Path(rec.stored_path)
-                            text = extract_text_from_file(file_path)
-                            if text:
-                                text_parts.append(f"{label} {rec.original_filename or eid}: {text[:5000]}")
-                    except Exception as e:
-                        print(f"[Build Theory Graph] Failed to extract text from {label.lower()} {eid}: {e}")
-                        continue
-            
-            # Add notes text
-            if theory.get("attached_note_ids"):
-                try:
-                    notes_data = workspace_service.get_notes(case_id)
-                    all_notes = notes_data.get("notes", [])
-                    for note_id in theory["attached_note_ids"]:
-                        note = next((n for n in all_notes if (n.get("note_id") or n.get("id")) == note_id), None)
-                        if note and note.get("content"):
-                            text_parts.append(f"Note: {note['content']}")
-                except Exception as e:
-                    print(f"[Build Theory Graph] Failed to load notes: {e}")
-        
-        # Combine all text
-        combined_text = "\n\n".join(text_parts)
-        
-        if not combined_text.strip():
-            raise HTTPException(status_code=400, detail="No text available to create embedding")
-        
-        # Create embedding
-        try:
-            embedding_service = EmbeddingService()
-            query_embedding = embedding_service.generate_embedding(combined_text)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to create embedding: {str(e)}")
-        
-        # Search for similar entities
-        try:
-            # Search entities (case_id filter may not be in metadata, so we'll filter after)
-            similar_entities = vector_db_service.search_entities(
-                query_embedding=query_embedding,
-                top_k=request.top_k * 2,  # Get more results, then filter by case_id
-                filter_metadata=None  # Don't filter by case_id in vector DB (may not be in metadata)
-            )
-            
-            # Extract entity keys from results and verify they belong to this case
-            entity_keys = []
-            entities_data = []
-            for entity in similar_entities:
-                entity_key = entity.get("id")
-                if not entity_key:
-                    continue
-                
-                try:
-                    # Verify entity belongs to this case by checking Neo4j
-                    entity_details = neo4j_service.get_node_details(entity_key, case_id=case_id)
-                    if entity_details:
-                        # Entity exists and belongs to this case
-                        entity_keys.append(entity_key)
-                        entities_data.append({
-                            "key": entity_key,
-                            "name": entity_details.get("name"),
-                            "type": entity_details.get("type"),
-                            "summary": entity_details.get("summary"),
-                            "distance": entity.get("distance"),
-                        })
-                        
-                        # Stop when we have enough results
-                        if len(entity_keys) >= request.top_k:
-                            break
-                except Exception as e:
-                    # Entity doesn't exist or doesn't belong to this case, skip it
-                    continue
-            
-            result = {
-                "entity_keys": entity_keys,
-                "entities": entities_data,
-                "similarity_results": similar_entities,
-                "text_length": len(combined_text),
-            }
-            
-            # Store the graph data in the theory
-            theory["attached_graph_data"] = {
-                "entity_keys": entity_keys,
-                "entities": entities_data,
-                "created_at": datetime.now().isoformat(),
-                "include_attached_items": request.include_attached_items,
-                "top_k": request.top_k,
-            }
-            workspace_service.save_theory(case_id, theory)
-            
-            return result
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to search entities: {str(e)}")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return await build_workspace_graph(
+        case_id=case_id,
+        request=BuildWorkspaceGraphRequest(
+            source_type="theory",
+            source_id=theory_id,
+            include_attached_items=request.include_attached_items,
+            top_k=request.top_k,
+        ),
+        db=db,
+        current_user=current_user,
+    )
 
 
 @router.get("/{case_id}/investigation-timeline")
@@ -954,6 +1015,113 @@ async def delete_note(
 
         if not workspace_service.delete_note(case_id, note_id):
             raise HTTPException(status_code=404, detail="Note not found")
+
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Findings Endpoints
+@router.get("/{case_id}/findings")
+async def get_findings(
+    case_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Get all findings for a case."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        findings = workspace_service.get_findings(case_id)
+        return {"findings": findings}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{case_id}/findings")
+async def create_finding(
+    case_id: str,
+    finding: FindingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Create a finding."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        finding_data = finding.dict()
+        finding_id = workspace_service.save_finding(case_id, finding_data)
+
+        system_log_service.log(
+            log_type=LogType.CASE_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Create Finding",
+            details={"case_id": case_id, "finding_id": finding_id, "title": finding.title},
+            user=current_user.email,
+            success=True,
+        )
+
+        return {"finding_id": finding_id, **finding_data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/{case_id}/findings/{finding_id}")
+async def update_finding(
+    case_id: str,
+    finding_id: str,
+    finding: FindingCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Update a finding."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        existing = workspace_service.get_finding(case_id, finding_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Finding not found")
+
+        finding_data = {**existing, **finding.dict(exclude_unset=True)}
+        workspace_service.save_finding(case_id, finding_data)
+        return finding_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{case_id}/findings/{finding_id}")
+async def delete_finding(
+    case_id: str,
+    finding_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Delete a finding."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+
+        if not workspace_service.delete_finding(case_id, finding_id):
+            raise HTTPException(status_code=404, detail="Finding not found")
 
         return {"success": True}
     except HTTPException:

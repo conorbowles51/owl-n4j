@@ -14,6 +14,7 @@ from postgres.models.workspace import (
     WorkspaceTheory,
     WorkspaceTask,
     WorkspaceNote,
+    WorkspaceFinding,
     WorkspacePinnedItem,
     WorkspaceDeadlineConfig,
 )
@@ -25,6 +26,6 @@ __all__ = [
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
-    "WorkspaceTask", "WorkspaceNote", "WorkspacePinnedItem",
+    "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
 ]

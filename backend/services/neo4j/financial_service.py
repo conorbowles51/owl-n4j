@@ -29,6 +29,24 @@ class FinancialService:
     """Neo4j-backed service for financial transaction analysis."""
 
     @staticmethod
+    def _sanitize_scalar(value):
+        if isinstance(value, float):
+            return safe_float(value, default=0)
+        return value
+
+    def _sanitize_transaction(self, transaction: Dict) -> Dict:
+        sanitized = {}
+        for key, value in transaction.items():
+            if isinstance(value, dict):
+                sanitized[key] = {
+                    nested_key: self._sanitize_scalar(nested_value)
+                    for nested_key, nested_value in value.items()
+                }
+            else:
+                sanitized[key] = self._sanitize_scalar(value)
+        return sanitized
+
+    @staticmethod
     def _normalize_mode(mode: str | None) -> str:
         return "intelligence" if mode == "intelligence" else "transactions"
 
@@ -139,7 +157,11 @@ class FinancialService:
             "is_parent": record["is_parent"] or False,
             "parent_transaction_key": record["parent_transaction_key"],
             "amount_corrected": record["amount_corrected"] or False,
-            "original_amount": record["original_amount"],
+            "original_amount": (
+                safe_float(record["original_amount"])
+                if record.get("original_amount") is not None
+                else None
+            ),
             "correction_reason": record["correction_reason"],
             "financial_record_kind": record.get("financial_record_kind") or ("transaction" if record_mode == "transaction" else "other"),
             "financial_view_mode": record_mode,
@@ -185,7 +207,7 @@ class FinancialService:
                 conditions.append("n.date <= $end_date")
                 params["end_date"] = end_date
             if categories:
-                conditions.append("coalesce(n.financial_category, 'Unknown') IN $categories")
+                conditions.append("coalesce(n.financial_category, 'Uncategorized') IN $categories")
                 params["categories"] = categories
 
             extra_filter = (" AND " + " AND ".join(conditions)) if conditions else ""
@@ -256,10 +278,16 @@ class FinancialService:
             """
 
             result = session.run(query, **params)
-            transactions = [
-                self._record_to_transaction(record, uses_legacy=uses_legacy, mode=normalized_mode)
-                for record in result
-            ]
+            deduped_transactions = {}
+            for record in result:
+                transaction = self._record_to_transaction(
+                    record, uses_legacy=uses_legacy, mode=normalized_mode
+                )
+                transaction_key = transaction["key"]
+                if transaction_key in deduped_transactions:
+                    continue
+                deduped_transactions[transaction_key] = self._sanitize_transaction(transaction)
+            transactions = list(deduped_transactions.values())
             return {"transactions": transactions, "total": len(transactions), **metadata}
 
     def get_financial_entities(self, case_id: str) -> List[Dict]:

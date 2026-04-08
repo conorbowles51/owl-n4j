@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
+import { useNavigate } from "react-router-dom"
 import {
   Sheet,
   SheetContent,
@@ -19,9 +20,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Save, Trash2, Star } from "lucide-react"
-import { useUpdateWitness, useDeleteWitness } from "../hooks/use-workspace"
+import { Save, Trash2, Star, Network, Loader2 } from "lucide-react"
+import { useUpdateWitness, useDeleteWitness, useBuildWorkspaceGraph } from "../hooks/use-workspace"
 import type { Witness } from "../api"
+import { formatWorkspaceDate } from "../lib/format-date"
 
 interface WitnessDetailSheetProps {
   witness: Witness | null
@@ -55,6 +57,7 @@ export function WitnessDetailSheet({
   onOpenChange,
   caseId,
 }: WitnessDetailSheetProps) {
+  const navigate = useNavigate()
   const [name, setName] = useState("")
   const [role, setRole] = useState("")
   const [organization, setOrganization] = useState("")
@@ -68,6 +71,7 @@ export function WitnessDetailSheet({
 
   const updateWitness = useUpdateWitness(caseId)
   const deleteWitness = useDeleteWitness(caseId)
+  const buildGraph = useBuildWorkspaceGraph(caseId)
 
   useEffect(() => {
     if (witness) {
@@ -81,6 +85,20 @@ export function WitnessDetailSheet({
       setStrategyNotes(witness.strategy_notes ?? "")
     }
   }, [witness])
+
+  const isDirty = useMemo(
+    () =>
+      !!witness &&
+      (name !== (witness.name ?? "") ||
+        role !== (witness.role ?? "") ||
+        organization !== (witness.organization ?? "") ||
+        category !== (witness.category ?? "NEUTRAL") ||
+        credibilityRating !== (witness.credibility_rating ?? 0) ||
+        statementSummary !== (witness.statement_summary ?? "") ||
+        riskAssessment !== (witness.risk_assessment ?? "") ||
+        strategyNotes !== (witness.strategy_notes ?? "")),
+    [category, credibilityRating, name, organization, riskAssessment, role, statementSummary, strategyNotes, witness],
+  )
 
   const handleSave = () => {
     if (!witness) return
@@ -110,9 +128,48 @@ export function WitnessDetailSheet({
     })
   }
 
+  const handleBuildGraph = () => {
+    if (!witness) return
+    buildGraph.mutate(
+      {
+        source_type: "witness",
+        source_id: witness.id,
+      },
+      {
+        onSuccess: (result) => {
+          navigate(`/cases/${caseId}/graph`, {
+            state: {
+              workspaceGraphSource: {
+                sourceType: "witness",
+                sourceId: witness.id,
+                sourceLabel: witness.name,
+                entityKeys: result.entity_keys,
+              },
+            },
+          })
+        },
+      },
+    )
+  }
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-lg flex flex-col">
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && isDirty) return
+        onOpenChange(nextOpen)
+      }}
+    >
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-lg flex flex-col"
+        onInteractOutside={(event) => {
+          if (isDirty) event.preventDefault()
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isDirty) event.preventDefault()
+        }}
+      >
         <SheetHeader>
           <SheetTitle>Witness Details</SheetTitle>
           <SheetDescription>
@@ -261,7 +318,7 @@ export function WitnessDetailSheet({
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-medium">
-                          {new Date(interview.date).toLocaleDateString()}
+                          {formatWorkspaceDate(interview.date)}
                         </span>
                         {interview.status && (
                           <Badge variant="outline">{interview.status}</Badge>
@@ -295,6 +352,19 @@ export function WitnessDetailSheet({
             Delete
           </Button>
           <div className="flex-1" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBuildGraph}
+            disabled={buildGraph.isPending}
+          >
+            {buildGraph.isPending ? (
+              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+            ) : (
+              <Network className="h-4 w-4 mr-1" />
+            )}
+            Build Graph
+          </Button>
           <Button
             size="sm"
             onClick={handleSave}

@@ -25,9 +25,12 @@ const CHART_COLORS = [
   "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
 ]
 
+export type FinancialChartGrouping = "daily" | "weekly" | "monthly"
+
 interface FinancialChartsProps {
   transactions: Transaction[]
   categories: FinancialCategory[]
+  groupingOverride?: "auto" | FinancialChartGrouping
 }
 
 function formatCurrency(value: number): string {
@@ -36,9 +39,7 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(0)}`
 }
 
-type Grouping = "daily" | "weekly" | "monthly"
-
-function detectGrouping(transactions: Transaction[]): Grouping {
+function detectGrouping(transactions: Transaction[]): FinancialChartGrouping {
   const dates = transactions
     .map((t) => getFinancialDateTimestamp(t.date))
     .filter((value): value is number => value !== null)
@@ -50,7 +51,7 @@ function detectGrouping(transactions: Transaction[]): Grouping {
   return "daily"
 }
 
-function getGroupKey(date: Date, grouping: Grouping): string {
+function getGroupKey(date: Date, grouping: FinancialChartGrouping): string {
   if (grouping === "monthly") {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
   }
@@ -65,6 +66,7 @@ function getGroupKey(date: Date, grouping: Grouping): string {
 export function FinancialCharts({
   transactions,
   categories,
+  groupingOverride = "auto",
 }: FinancialChartsProps) {
   const datedTransactions = useMemo(
     () => transactions.filter((tx) => isValidFinancialDate(tx.date)),
@@ -76,10 +78,12 @@ export function FinancialCharts({
     [categories]
   )
 
-  const grouping = useMemo(
-    () => detectGrouping(datedTransactions),
-    [datedTransactions]
-  )
+  const grouping = useMemo(() => {
+    if (groupingOverride !== "auto") {
+      return groupingOverride
+    }
+    return detectGrouping(datedTransactions)
+  }, [datedTransactions, groupingOverride])
 
   // Stacked bar chart data: volume by period by category
   const volumeData = useMemo(() => {
@@ -119,11 +123,15 @@ export function FinancialCharts({
       .sort((a, b) => b.value - a.value)
   }, [transactions])
 
+  const chartWidth = useMemo(
+    () => Math.max(900, volumeData.data.length * 72),
+    [volumeData.data.length]
+  )
+
   if (transactions.length === 0) return null
 
   return (
-    <div className="grid grid-cols-2 gap-4 border-b border-border px-4 py-3">
-      {/* Volume Over Time */}
+    <div className="space-y-4">
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-xs">
@@ -131,17 +139,17 @@ export function FinancialCharts({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
-            {volumeData.data.length > 0 ? (
-              <BarChart data={volumeData.data}>
+          {volumeData.data.length > 0 ? (
+            <div className="overflow-x-auto pb-2">
+              <BarChart width={chartWidth} height={340} data={volumeData.data}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                 <XAxis
                   dataKey="period"
-                  tick={{ fontSize: 9 }}
+                  tick={{ fontSize: 10 }}
                   stroke="hsl(var(--muted-foreground))"
                 />
                 <YAxis
-                  tick={{ fontSize: 9 }}
+                  tick={{ fontSize: 10 }}
                   stroke="hsl(var(--muted-foreground))"
                   tickFormatter={formatCurrency}
                 />
@@ -158,7 +166,7 @@ export function FinancialCharts({
                     )
                   }
                 />
-                <Legend wrapperStyle={{ fontSize: 9 }} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
                 {volumeData.categories.map((cat, i) => (
                   <Bar
                     key={cat}
@@ -171,22 +179,21 @@ export function FinancialCharts({
                   />
                 ))}
               </BarChart>
-            ) : (
-              <div className="flex h-full items-center justify-center text-center text-xs text-muted-foreground">
-                No valid dated transactions available for the time chart.
-              </div>
-            )}
-          </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex h-[340px] items-center justify-center text-center text-xs text-muted-foreground">
+              No valid dated transactions available for the time chart.
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Category Distribution */}
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-xs">Category Distribution</CardTitle>
         </CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={200}>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
               <Pie
                 data={categoryData}
