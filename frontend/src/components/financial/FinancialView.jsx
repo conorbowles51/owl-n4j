@@ -11,6 +11,7 @@ import AddCategoryModal from './AddCategoryModal';
 import BulkCorrectionModal from './BulkCorrectionModal';
 import AutoExtractPreviewModal from './AutoExtractPreviewModal';
 import NotesUploadModal from './NotesUploadModal';
+import ExportOptionsModal from './ExportOptionsModal';
 
 /**
  * Graft parent/child sub-transactions so that if a parent matches filters
@@ -117,6 +118,9 @@ export default function FinancialView({ caseId, onNodeSelect }) {
 
   // Notes upload modal
   const [showNotesUploadModal, setShowNotesUploadModal] = useState(false);
+
+  // Export options modal (section picker)
+  const [showExportOptionsModal, setShowExportOptionsModal] = useState(false);
 
   // Auto-extract from/to modal
   const [showAutoExtractModal, setShowAutoExtractModal] = useState(false);
@@ -607,7 +611,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     });
   }, [caseId]);
 
-  const handleExportPDF = () => {
+  const runExport = (sections) => {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
     params.append('case_name', caseId); // Case ID used as name if no name prop
@@ -626,6 +630,8 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (selectedToEntities.size > 0) {
       params.append('to_entities', [...selectedToEntities].join(','));
     }
+    // Money Flow filter is ALWAYS applied when entities are selected,
+    // even if the money_flow section is unchecked in the export modal.
     if (selectedMoneyFlowEntities.size > 0) {
       params.append('money_flow_entities', [...selectedMoneyFlowEntities].join(','));
     }
@@ -637,8 +643,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       params.append('search_header', searchTerm.trim());
     }
     params.append('include_entity_notes', 'true');
+    if (sections && sections.size > 0) {
+      params.append('sections', [...sections].join(','));
+    }
     window.open(`/api/financial/export/pdf?${params.toString()}`, '_blank');
   };
+
+  const handleExportPDF = () => setShowExportOptionsModal(true);
 
   // Auto-extract from/to: preview (dry run)
   const handleAutoExtractPreview = useCallback(async () => {
@@ -1031,6 +1042,14 @@ export default function FinancialView({ caseId, onNodeSelect }) {
         caseId={caseId}
         transactions={transactions}
         onComplete={loadData}
+      />
+
+      {/* Export Options Modal (section picker) */}
+      <ExportOptionsModal
+        isOpen={showExportOptionsModal}
+        onClose={() => setShowExportOptionsModal(false)}
+        onConfirm={(sections) => runExport(sections)}
+        hasMoneyFlowSelection={hasMoneyFlowSelection}
       />
 
       {/* Auto-Extract From/To Modal */}

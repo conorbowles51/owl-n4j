@@ -72,6 +72,7 @@ def generate_financial_pdf(
     money_flow_summary: dict = None,
     inflow_entities: list = None,   # kept for back-compat, ignored
     outflow_entities: list = None,  # kept for back-compat, ignored
+    sections: set = None,
 ) -> str:
     """Generate a financial transactions report as print-friendly HTML.
 
@@ -83,9 +84,17 @@ def generate_financial_pdf(
     section with Inflow/Outflow/Net/Internal cards and a counterparty table.
     Expected keys: inflow, outflow, internal, net, inflow_count, outflow_count,
     internal_count, counterparties ([{key, name, inflow, outflow, total, count}]),
-    entity_count.
+    entity_count, per_entity ([{key, name, inflow, outflow, internal, net,
+    inflow_count, outflow_count, internal_count, counterparties}]).
+
+    sections (optional): a set of section keys to include. When None, all
+    sections render (back-compat). Known keys: summary, money_flow, charts,
+    entity_flow, transactions, filters, entity_notes.
     """
     now = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+
+    def should_include(key: str) -> bool:
+        return True if sections is None else (key in sections)
 
     total_count = len(transactions)
     total_value = total_outflows + total_inflows  # all money flowing, in either direction
@@ -313,14 +322,122 @@ def generate_financial_pdf(
             <div class="mf-empty">No counterparties found in the current selection.</div>
             """
 
+        # ── Selected-entity chip row (header of Money Flow section) ──
+        selected_entities_list = money_flow_summary.get("per_entity") or []
+        chips = " ".join(
+            f'<span class="mf-ent-chip">{_esc(e.get("name"))}</span>'
+            for e in selected_entities_list
+        )
+        selected_entities_html = (
+            f'<div class="mf-selected-entities"><span class="mf-selected-label">Perspective entities:</span> {chips}</div>'
+            if chips else ""
+        )
+
+        # ── Per-entity breakdown blocks ──
+        per_entity_html = ""
+        for pe in selected_entities_list:
+            pe_name = _esc(pe.get("name"))
+            pe_in = float(pe.get("inflow") or 0)
+            pe_out = float(pe.get("outflow") or 0)
+            pe_net = float(pe.get("net") or (pe_in - pe_out))
+            pe_in_count = int(pe.get("inflow_count") or 0)
+            pe_out_count = int(pe.get("outflow_count") or 0)
+            pe_net_color = "#0ea5e9" if pe_net >= 0 else "#ea580c"
+
+            pe_cards_html = f"""
+            <div class="mf-card mf-card-in">
+                <div class="mf-card-label">Inflow</div>
+                <div class="mf-card-sub">{pe_in_count:,} txns</div>
+                <div class="mf-card-value">{_fmt_amount(pe_in)}</div>
+            </div>
+            <div class="mf-card mf-card-out">
+                <div class="mf-card-label">Outflow</div>
+                <div class="mf-card-sub">{pe_out_count:,} txns</div>
+                <div class="mf-card-value">{_fmt_amount(pe_out)}</div>
+            </div>
+            <div class="mf-card mf-card-net" style="border-color: {pe_net_color}44;">
+                <div class="mf-card-label" style="color: {pe_net_color};">Net</div>
+                <div class="mf-card-sub">Inflow − Outflow</div>
+                <div class="mf-card-value" style="color: {pe_net_color};">{_fmt_amount(pe_net)}</div>
+            </div>
+            """
+
+            pe_cps = pe.get("counterparties") or []
+            pe_top = pe_cps[:10]
+            pe_remaining = pe_cps[10:]
+            pe_max_total = max((c.get("total", 0) for c in pe_top), default=0.0) or 1.0
+            pe_rows = ""
+            for c in pe_top:
+                cp_name = _esc(c.get("name"))
+                cp_in = float(c.get("inflow") or 0)
+                cp_out = float(c.get("outflow") or 0)
+                cp_net_cp = cp_in - cp_out
+                cp_count = int(c.get("count") or 0)
+                cp_total = float(c.get("total") or 0)
+                cp_bar = _bar_width(cp_total, pe_max_total)
+                cp_net_color_row = "#0ea5e9" if cp_net_cp >= 0 else "#ea580c"
+                pe_rows += f"""
+                <tr>
+                    <td class="ent-name" title="{cp_name}">{cp_name}</td>
+                    <td class="ent-count">{cp_count}</td>
+                    <td class="mf-in-cell">{_fmt_amount(cp_in)}</td>
+                    <td class="mf-out-cell">{_fmt_amount(cp_out)}</td>
+                    <td class="mf-net-cell" style="color: {cp_net_color_row};">{_fmt_amount(cp_net_cp)}</td>
+                    <td class="ent-bar">
+                        <div class="ent-bar-track"><div class="ent-bar-fill" style="width: {cp_bar:.1f}%; background: linear-gradient(90deg, #0ea5e9, #ea580c);"></div></div>
+                    </td>
+                </tr>
+                """
+            pe_footer = ""
+            if pe_remaining:
+                rem_total = sum(float(c.get("total") or 0) for c in pe_remaining)
+                pe_footer = f"""
+                <tr class="mf-footer-row">
+                    <td colspan="6">+{len(pe_remaining)} more counterparties — {_fmt_amount(rem_total)} combined</td>
+                </tr>
+                """
+            if pe_top:
+                pe_table_html = f"""
+                <table class="entity-table mf-cp-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 30%;">Counterparty</th>
+                            <th style="width: 8%;">Txns</th>
+                            <th style="width: 14%; text-align: right;">Inflow</th>
+                            <th style="width: 14%; text-align: right;">Outflow</th>
+                            <th style="width: 14%; text-align: right;">Net</th>
+                            <th style="width: 20%;">Volume</th>
+                        </tr>
+                    </thead>
+                    <tbody>{pe_rows}{pe_footer}</tbody>
+                </table>
+                """
+            else:
+                pe_table_html = '<div class="mf-empty">No external counterparties for this entity.</div>'
+
+            per_entity_html += f"""
+            <div class="mf-entity-block">
+                <div class="mf-entity-name">{pe_name}</div>
+                <div class="mf-cards mf-cards-compact">{pe_cards_html}</div>
+                {pe_table_html}
+            </div>
+            """
+
+        per_entity_section_html = (
+            f'<div class="mf-per-entity-header">Per-Entity Breakdown</div>{per_entity_html}'
+            if per_entity_html else ""
+        )
+
         money_flow_html = f"""
         <div class="section-money-flow">
             <div class="mf-header">
                 <div class="mf-header-title">Money Flow Perspective</div>
                 <div class="mf-header-sub">{mf_entity_count} {'entity' if mf_entity_count == 1 else 'entities'} selected · True cash-flow relative to perspective set</div>
             </div>
+            {selected_entities_html}
             <div class="mf-cards">{mf_cards_html}</div>
             {cp_table_html}
+            {per_entity_section_html}
         </div>
         """
 
@@ -473,6 +590,51 @@ def generate_financial_pdf(
                 </tbody>
             </table>
             """
+
+    # ── Section gating ──
+    # When `sections` is None, all sections render (back-compat). When a set
+    # is provided, each section variable is blanked unless its key is in the
+    # set. The transactions table is wrapped in its own variable built only
+    # when the "transactions" key is enabled, so the footnote travels with it.
+    filter_banner_html = ""
+    if filters_description and should_include("filters"):
+        filter_banner_html = f'<div class="filter-banner">Active filters: {_esc(filters_description)}</div>'
+
+    if not should_include("summary"):
+        summary_cards_html = ""
+    if not should_include("money_flow"):
+        money_flow_html = ""
+    if not should_include("charts"):
+        charts_section_html = ""
+    if not should_include("entity_flow"):
+        entity_flow_html = ""
+    if not should_include("entity_notes"):
+        entity_notes_html = ""
+
+    transactions_table_html = ""
+    if should_include("transactions"):
+        transactions_table_html = f"""
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th style="width: 6%;">Ref</th>
+                    <th style="width: 7%;">Date</th>
+                    <th style="width: 13%;">Name</th>
+                    <th style="width: 11%;">From</th>
+                    <th style="width: 11%;">To</th>
+                    <th style="width: 8%; text-align: right;">Amount</th>
+                    <th style="width: 9%;">Category</th>
+                    <th style="width: 8%;">Source</th>
+                    <th style="width: 27%;">Details / AI Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+        </table>
+
+        {footnote_html}
+        """
 
     html = f"""<!DOCTYPE html>
 <html>
@@ -756,6 +918,62 @@ def generate_financial_pdf(
             padding: 8px;
             text-align: center;
         }}
+        .mf-selected-entities {{
+            font-size: 8pt;
+            color: #475569;
+            margin: 0 0 8px 0;
+            padding: 6px 8px;
+            background: #ffffff;
+            border: 1px dashed #cbd5e1;
+            border-radius: 4px;
+            line-height: 1.8;
+        }}
+        .mf-selected-label {{
+            font-weight: 600;
+            color: #334155;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+            margin-right: 4px;
+            font-size: 7pt;
+        }}
+        .mf-ent-chip {{
+            display: inline-block;
+            padding: 1px 8px;
+            margin: 0 3px 2px 0;
+            background: #e0f2fe;
+            color: #0369a1;
+            border: 1px solid #bae6fd;
+            border-radius: 10px;
+            font-size: 7.5pt;
+            font-weight: 600;
+        }}
+        .mf-per-entity-header {{
+            font-size: 9pt;
+            font-weight: 700;
+            color: #0f172a;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            margin: 14px 0 6px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #cbd5e1;
+        }}
+        .mf-entity-block {{
+            margin-bottom: 10px;
+            padding: 8px 10px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 4px;
+            page-break-inside: avoid;
+        }}
+        .mf-entity-name {{
+            font-size: 9pt;
+            font-weight: 700;
+            color: #1e293b;
+            margin-bottom: 4px;
+        }}
+        .mf-cards-compact {{ margin: 2px -4px 6px -4px; border-spacing: 4px 0; }}
+        .mf-cards-compact .mf-card {{ padding: 5px 7px; }}
+        .mf-cards-compact .mf-card-value {{ font-size: 10pt; }}
 
         /* ── DATA TABLE (transactions / notes appendix) ── */
         .data-table {{
@@ -824,7 +1042,7 @@ def generate_financial_pdf(
         .page-break {{ page-break-before: always; }}
 
         /* Avoid orphaning section headers */
-        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .summary-grid {{
+        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .summary-grid, .mf-entity-block {{
             page-break-after: avoid;
         }}
     </style>
@@ -838,34 +1056,15 @@ def generate_financial_pdf(
 
     {summary_cards_html}
 
-    {f'<div class="filter-banner">Active filters: {_esc(filters_description)}</div>' if filters_description else ''}
-
     {money_flow_html}
 
     {charts_section_html}
 
     {entity_flow_html}
 
-    <table class="data-table">
-        <thead>
-            <tr>
-                <th style="width: 6%;">Ref</th>
-                <th style="width: 7%;">Date</th>
-                <th style="width: 13%;">Name</th>
-                <th style="width: 11%;">From</th>
-                <th style="width: 11%;">To</th>
-                <th style="width: 8%; text-align: right;">Amount</th>
-                <th style="width: 9%;">Category</th>
-                <th style="width: 8%;">Source</th>
-                <th style="width: 27%;">Details / AI Summary</th>
-            </tr>
-        </thead>
-        <tbody>
-            {rows_html}
-        </tbody>
-    </table>
+    {transactions_table_html}
 
-    {footnote_html}
+    {filter_banner_html}
 
     {entity_notes_html}
 </body>

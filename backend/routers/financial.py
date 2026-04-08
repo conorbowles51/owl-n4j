@@ -473,6 +473,7 @@ async def export_financial_pdf(
     search: Optional[str] = Query(None, description="Filter panel search — matches name, purpose, notes, counterparty_details, from/to entity names, category"),
     search_header: Optional[str] = Query(None, description="Header bar search — matches name, from/to entity names, purpose, notes"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
+    sections: Optional[str] = Query(None, description="Comma-separated section keys to include in PDF (summary, money_flow, charts, entity_flow, transactions, filters, entity_notes)"),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -787,6 +788,100 @@ async def export_financial_pdf(
                     "count": i.get("count", 0) + o.get("count", 0),
                 })
             counterparties.sort(key=lambda x: x["total"], reverse=True)
+
+            # Best-effort display-name lookup for each selected key
+            mf_name_by_key = {}
+            for t in transactions:
+                fe = t.get("from_entity") if isinstance(t.get("from_entity"), dict) else None
+                te = t.get("to_entity") if isinstance(t.get("to_entity"), dict) else None
+                if fe:
+                    fk_ = fe.get("key") or fe.get("name")
+                    if fk_ in money_flow_keys_set and fk_ not in mf_name_by_key:
+                        mf_name_by_key[fk_] = fe.get("name") or fk_
+                if te:
+                    tk_ = te.get("key") or te.get("name")
+                    if tk_ in money_flow_keys_set and tk_ not in mf_name_by_key:
+                        mf_name_by_key[tk_] = te.get("name") or tk_
+
+            # Per-entity breakdown: for each selected entity E, classify each
+            # txn as inflow/outflow/internal relative to E alone, and
+            # aggregate E's external counterparties.
+            per_entity = []
+            for sel_key in money_flow_keys_set:
+                pe_inflow = 0.0
+                pe_outflow = 0.0
+                pe_internal = 0.0
+                pe_in_count = 0
+                pe_out_count = 0
+                pe_int_count = 0
+                pe_inflow_by = {}
+                pe_outflow_by = {}
+                for t in transactions:
+                    amt = fabs(float(t.get("amount") or 0))
+                    fe = t.get("from_entity") if isinstance(t.get("from_entity"), dict) else None
+                    te = t.get("to_entity") if isinstance(t.get("to_entity"), dict) else None
+                    fk_ = (fe.get("key") or fe.get("name")) if fe else None
+                    tk_ = (te.get("key") or te.get("name")) if te else None
+                    sel_is_from = (fk_ == sel_key)
+                    sel_is_to = (tk_ == sel_key)
+                    if not (sel_is_from or sel_is_to):
+                        continue
+                    other_in_set = False
+                    if sel_is_from and tk_ and tk_ in money_flow_keys_set:
+                        other_in_set = True
+                    if sel_is_to and fk_ and fk_ in money_flow_keys_set:
+                        other_in_set = True
+                    if other_in_set:
+                        pe_internal += amt
+                        pe_int_count += 1
+                    elif sel_is_from:
+                        pe_outflow += amt
+                        pe_out_count += 1
+                        if tk_:
+                            c = pe_outflow_by.setdefault(
+                                tk_, {"key": tk_, "name": (te.get("name") if te else None) or tk_,
+                                      "amount": 0.0, "count": 0}
+                            )
+                            c["amount"] += amt
+                            c["count"] += 1
+                    else:  # sel_is_to
+                        pe_inflow += amt
+                        pe_in_count += 1
+                        if fk_:
+                            c = pe_inflow_by.setdefault(
+                                fk_, {"key": fk_, "name": (fe.get("name") if fe else None) or fk_,
+                                      "amount": 0.0, "count": 0}
+                            )
+                            c["amount"] += amt
+                            c["count"] += 1
+                pe_cp_keys = set(pe_inflow_by.keys()) | set(pe_outflow_by.keys())
+                pe_counterparties = []
+                for k in pe_cp_keys:
+                    i = pe_inflow_by.get(k, {})
+                    o = pe_outflow_by.get(k, {})
+                    pe_counterparties.append({
+                        "key": k,
+                        "name": i.get("name") or o.get("name") or k,
+                        "inflow": i.get("amount", 0.0),
+                        "outflow": o.get("amount", 0.0),
+                        "total": i.get("amount", 0.0) + o.get("amount", 0.0),
+                        "count": i.get("count", 0) + o.get("count", 0),
+                    })
+                pe_counterparties.sort(key=lambda x: x["total"], reverse=True)
+                per_entity.append({
+                    "key": sel_key,
+                    "name": mf_name_by_key.get(sel_key, sel_key),
+                    "inflow": pe_inflow,
+                    "outflow": pe_outflow,
+                    "internal": pe_internal,
+                    "net": pe_inflow - pe_outflow,
+                    "inflow_count": pe_in_count,
+                    "outflow_count": pe_out_count,
+                    "internal_count": pe_int_count,
+                    "counterparties": pe_counterparties,
+                })
+            per_entity.sort(key=lambda e: (e.get("name") or "").lower())
+
             money_flow_summary = {
                 "inflow": mf_inflow,
                 "outflow": mf_outflow,
@@ -797,6 +892,7 @@ async def export_financial_pdf(
                 "internal_count": mf_internal_count,
                 "counterparties": counterparties,
                 "entity_count": len(money_flow_keys_set),
+                "per_entity": per_entity,
             }
 
         # Group sub-transactions under their parents so they appear adjacent in the PDF
@@ -816,6 +912,11 @@ async def export_financial_pdf(
                 grouped_transactions.append(child)
         transactions = grouped_transactions
 
+        # Parse the optional `sections` query param into a set (None = all)
+        sections_set = None
+        if sections:
+            sections_set = {s.strip() for s in sections.split(",") if s.strip()}
+
         html = generate_financial_pdf(
             transactions,
             case_name,
@@ -832,6 +933,7 @@ async def export_financial_pdf(
             total_inflows=total_inflows,
             total_outflows=total_outflows,
             money_flow_summary=money_flow_summary,
+            sections=sections_set,
         )
 
         # Render to a real PDF server-side via WeasyPrint.
