@@ -956,6 +956,7 @@ def generate_financial_pdf(
             margin: 14px 0 6px 0;
             padding-bottom: 4px;
             border-bottom: 1px solid #cbd5e1;
+            page-break-before: always;
         }}
         .mf-entity-block {{
             margin-bottom: 10px;
@@ -1045,7 +1046,7 @@ def generate_financial_pdf(
            keeping it out of this list lets the renderer keep the cards
            on page 1 with the report header instead of floating them
            to page 2 to avoid a break after). */
-        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .mf-entity-block {{
+        h1, h2, h3, .section-header, .section-charts, .section-entities, .section-money-flow, .mf-entity-block, .mf-per-entity-header {{
             page-break-after: avoid;
         }}
 
