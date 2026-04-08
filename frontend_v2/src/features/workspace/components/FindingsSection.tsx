@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { AlertCircle, Plus, Trash2, Link2 } from "lucide-react"
+import { AlertCircle, Plus, Trash2, Link2, FileText, Database, Orbit } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
@@ -29,6 +29,41 @@ function countLinkedItems(finding: Finding) {
     (finding.linked_evidence_ids?.length ?? 0) +
     (finding.linked_document_ids?.length ?? 0) +
     (finding.linked_entity_keys?.length ?? 0)
+  )
+}
+
+function LinkedSummary({ finding }: { finding: Finding }) {
+  const evidenceCount = finding.linked_evidence_ids?.length ?? 0
+  const documentCount = finding.linked_document_ids?.length ?? 0
+  const entityCount = finding.linked_entity_keys?.length ?? 0
+
+  if (evidenceCount + documentCount + entityCount === 0) return null
+
+  return (
+    <>
+      <span className="inline-flex items-center gap-1">
+        <Link2 className="size-3" />
+        {countLinkedItems(finding)} linked items
+      </span>
+      {evidenceCount > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <Database className="size-3" />
+          {evidenceCount} evidence
+        </span>
+      )}
+      {documentCount > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <FileText className="size-3" />
+          {documentCount} documents
+        </span>
+      )}
+      {entityCount > 0 && (
+        <span className="inline-flex items-center gap-1">
+          <Orbit className="size-3" />
+          {entityCount} entities
+        </span>
+      )}
+    </>
   )
 }
 
@@ -210,12 +245,7 @@ export function FindingsSection({ caseId, previewLimit }: FindingsSectionProps) 
                       </p>
                     )}
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                      {countLinkedItems(finding) > 0 && (
-                        <span className="inline-flex items-center gap-1">
-                          <Link2 className="size-3" />
-                          {countLinkedItems(finding)} linked items
-                        </span>
-                      )}
+                      <LinkedSummary finding={finding} />
                       {finding.updated_at && <span>{formatWorkspaceDate(finding.updated_at)}</span>}
                     </div>
                   </div>

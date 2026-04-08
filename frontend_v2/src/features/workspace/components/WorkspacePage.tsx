@@ -36,13 +36,13 @@ export function WorkspacePage() {
             <LayoutDashboard className="size-3.5" />
             Overview
           </TabsTrigger>
-          <TabsTrigger value="theories">
-            <Lightbulb className="size-3.5" />
-            Theories
-          </TabsTrigger>
           <TabsTrigger value="findings">
             <AlertCircle className="size-3.5" />
             Findings
+          </TabsTrigger>
+          <TabsTrigger value="theories">
+            <Lightbulb className="size-3.5" />
+            Theories
           </TabsTrigger>
           <TabsTrigger value="tasks">
             <CheckSquare className="size-3.5" />
@@ -65,18 +65,18 @@ export function WorkspacePage() {
         </ScrollArea>
       </TabsContent>
 
-      <TabsContent value="theories" className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full">
-          <div className="mx-auto max-w-4xl p-4">
-            <TheoriesSection caseId={caseId} />
-          </div>
-        </ScrollArea>
-      </TabsContent>
-
       <TabsContent value="findings" className="flex-1 overflow-hidden">
         <ScrollArea className="h-full">
           <div className="mx-auto max-w-4xl p-4">
             <FindingsSection caseId={caseId} />
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="theories" className="flex-1 overflow-hidden">
+        <ScrollArea className="h-full">
+          <div className="mx-auto max-w-4xl p-4">
+            <TheoriesSection caseId={caseId} />
           </div>
         </ScrollArea>
       </TabsContent>

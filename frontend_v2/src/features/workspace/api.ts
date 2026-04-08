@@ -87,7 +87,6 @@ export interface Theory {
   next_steps?: string[]
   privilege_level?: "PUBLIC" | "ATTORNEY_ONLY" | "PRIVATE"
   author_id?: string
-  attached_snapshot_ids?: string[]
   attached_evidence_ids?: string[]
   attached_witness_ids?: string[]
   attached_note_ids?: string[]
