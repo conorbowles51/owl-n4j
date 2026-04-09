@@ -34,7 +34,7 @@ export interface CaseMember {
   user_name: string
   user_email: string
   preset: "owner" | "editor" | "viewer"
-  permissions: Record<string, boolean>
+  permissions: Record<string, unknown>
   joined_at?: string
 }
 
