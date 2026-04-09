@@ -61,6 +61,7 @@ class Neo4jServiceFacade:
     soft_delete_entity = staticmethod(entity_service.soft_delete_entity)
     list_recycled_entities = staticmethod(entity_service.list_recycled_entities)
     restore_recycled_entity = staticmethod(entity_service.restore_recycled_entity)
+    undo_merge = staticmethod(entity_service.undo_merge)
     permanently_delete_recycled = staticmethod(entity_service.permanently_delete_recycled)
     get_case_entity_summary = staticmethod(entity_service.get_case_entity_summary)
     batch_update_entities = staticmethod(entity_service.batch_update_entities)

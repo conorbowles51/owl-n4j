@@ -61,6 +61,133 @@ class EntityService:
         return f"recycled_{original_key}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
 
     @staticmethod
+    def _merge_recycle_key() -> str:
+        return f"merge_{uuid.uuid4()}"
+
+    @staticmethod
+    def _kept_merged_key() -> str:
+        return f"merged_{uuid.uuid4()}"
+
+    def _snapshot_entity(self, session, node_key: str, case_id: str) -> Dict[str, Any]:
+        """Capture a complete restorable Neo4j entity snapshot for this case."""
+        entity_result = session.run(
+            """
+            MATCH (n {key: $key, case_id: $case_id})
+            WHERE NONE(label IN labels(n) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
+              AND coalesce(properties(n)['system_node'], false) <> true
+            RETURN n.key AS key, n.name AS name, labels(n) AS labels,
+                   properties(n) AS props
+            """,
+            key=node_key,
+            case_id=case_id,
+        )
+        entity_record = entity_result.single()
+        if not entity_record:
+            raise ValueError(f"Entity not found: {node_key} in case {case_id}")
+
+        labels = [label for label in list(entity_record["labels"] or []) if label not in self.INTERNAL_LABELS]
+        if not labels:
+            raise ValueError(f"Entity {node_key} has no restorable labels")
+
+        rels_result = session.run(
+            """
+            MATCH (n {key: $key, case_id: $case_id})-[r]-(other {case_id: $case_id})
+            WHERE coalesce(properties(other)['system_node'], false) <> true
+              AND NONE(label IN labels(other) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+              AND r.case_id = $case_id
+            RETURN type(r) AS rel_type, properties(r) AS rel_props,
+                   other.key AS other_key, other.name AS other_name,
+                   labels(other)[0] AS other_type,
+                   CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END AS direction
+            """,
+            key=node_key,
+            case_id=case_id,
+        )
+
+        return {
+            "original_key": entity_record["key"],
+            "name": entity_record["name"],
+            "labels": labels,
+            "properties": self._json_safe(dict(entity_record["props"] or {})),
+            "relationships": [self._json_safe(dict(r)) for r in rels_result],
+        }
+
+    def _props_for_snapshot(self, snapshot: Dict[str, Any], case_id: str, key_override: str = None) -> Dict[str, Any]:
+        props = {}
+        for key, value in (snapshot.get("properties") or {}).items():
+            prop_value = self._neo4j_property_value(value)
+            if prop_value is not None:
+                props[key] = prop_value
+        props["key"] = key_override or snapshot.get("original_key")
+        props["case_id"] = case_id
+        return props
+
+    def _label_clause_for_snapshot(self, snapshot: Dict[str, Any]) -> str:
+        labels = [self._escape_cypher_identifier(label) for label in (snapshot.get("labels") or ["Entity"])]
+        labels = [label for label in labels if label not in self.INTERNAL_LABELS] or ["Entity"]
+        return "".join(f":`{label}`" for label in labels)
+
+    def _restore_snapshot_node(self, tx, snapshot: Dict[str, Any], case_id: str, key_override: str = None) -> Dict[str, Any]:
+        props = self._props_for_snapshot(snapshot, case_id, key_override=key_override)
+        labels = [self._escape_cypher_identifier(label) for label in (snapshot.get("labels") or ["Entity"])]
+        labels = [label for label in labels if label not in self.INTERNAL_LABELS] or ["Entity"]
+        tx.run(
+            f"""
+            CREATE (n{''.join(f':`{label}`' for label in labels)})
+            SET n = $props
+            """,
+            props=props,
+        )
+        return {
+            "key": props.get("key"),
+            "name": props.get("name") or snapshot.get("name") or "",
+            "type": labels[0],
+            "properties": props,
+        }
+
+    def _restore_snapshot_relationships(self, tx, snapshot: Dict[str, Any], case_id: str, key_override: str = None) -> int:
+        node_key = key_override or snapshot.get("original_key")
+        restored = 0
+        for rel in snapshot.get("relationships") or []:
+            other_key = rel.get("other_key")
+            raw_rel_type = rel.get("rel_type")
+            direction = rel.get("direction")
+            if not node_key or not other_key or not raw_rel_type or node_key == other_key:
+                continue
+
+            rel_props = {}
+            for prop_key, prop_value in (rel.get("rel_props") or {}).items():
+                restored_value = self._neo4j_property_value(prop_value)
+                if restored_value is not None:
+                    rel_props[prop_key] = restored_value
+            rel_props["case_id"] = case_id
+
+            if direction == "outgoing":
+                a_key, b_key = node_key, other_key
+            else:
+                a_key, b_key = other_key, node_key
+
+            result = tx.run(
+                f"""
+                MATCH (a {{key: $a_key, case_id: $case_id}})
+                MATCH (b {{key: $b_key, case_id: $case_id}})
+                WHERE NONE(label IN labels(a) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND NONE(label IN labels(b) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(a)['system_node'], false) <> true
+                  AND coalesce(properties(b)['system_node'], false) <> true
+                MERGE (a)-[r:`{self._escape_cypher_identifier(raw_rel_type)}`]->(b)
+                SET r += $props
+                RETURN count(r) AS cnt
+                """,
+                a_key=a_key,
+                b_key=b_key,
+                case_id=case_id,
+                props=rel_props,
+            )
+            restored += result.single()["cnt"]
+        return restored
+
+    @staticmethod
     def _delete_entity_embedding(entity_key: str) -> None:
         try:
             from services.vector_db_service import get_vector_db_service
@@ -642,6 +769,7 @@ class EntityService:
         case_id: str = None,
         db: Session = None,
         deleted_by: str = "system",
+        source_keys: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Merge two entities into one.
@@ -668,233 +796,201 @@ class EntityService:
         if db is None:
             raise ValueError("db session is required for merge recycling")
 
+        source_keys = list(dict.fromkeys(source_keys or [source_key]))
+        if not source_keys:
+            raise ValueError("At least one source entity is required")
+        if target_key in source_keys:
+            raise ValueError("Target entity cannot also be a merge source")
+
+        deleted_at = datetime.now(timezone.utc)
+        recycle_key = self._merge_recycle_key()
+        case_uuid = self._case_uuid(case_id)
+
         with driver.session() as session:
-            # Get both entities - verify they belong to the case
-            source_result = session.run(
-                """
-                MATCH (s {key: $key, case_id: $case_id})
-                RETURN
-                    id(s) AS neo4j_id,
-                    s.id AS id,
-                    s.key AS key,
-                    s.name AS name,
-                    labels(s)[0] AS type,
-                    s.summary AS summary,
-                    s.notes AS notes,
-                    properties(s) AS properties
-                """,
-                key=source_key,
-                case_id=case_id,
-            )
-            source_record = source_result.single()
-            if not source_record:
-                raise ValueError(f"Source entity not found: {source_key} in case {case_id}")
+            target_snapshot = self._snapshot_entity(session, target_key, case_id)
+            source_snapshots = [self._snapshot_entity(session, key, case_id) for key in source_keys]
 
-            target_result = session.run(
-                """
-                MATCH (t {key: $key, case_id: $case_id})
-                RETURN
-                    id(t) AS neo4j_id,
-                    t.id AS id,
-                    t.key AS key,
-                    t.name AS name,
-                    labels(t)[0] AS type,
-                    t.summary AS summary,
-                    t.notes AS notes,
-                    properties(t) AS properties
-                """,
-                key=target_key,
-                case_id=case_id,
-            )
-            target_record = target_result.single()
-            if not target_record:
-                raise ValueError(f"Target entity not found: {target_key} in case {case_id}")
+        all_originals = [target_snapshot] + source_snapshots
+        source_names = [snapshot.get("name") or snapshot.get("original_key") for snapshot in source_snapshots]
+        title = " / ".join([target_snapshot.get("name") or target_key] + source_names)
+        relationship_count = sum(len(snapshot.get("relationships") or []) for snapshot in all_originals)
+        snapshot = {
+            "schema_version": 2,
+            "case_id": case_id,
+            "target_before": target_snapshot,
+            "sources_before": source_snapshots,
+            "target_key": target_key,
+            "target_name_before": target_snapshot.get("name"),
+            "merged_name_at_merge": merged_data.get("name") or target_snapshot.get("name"),
+            "source_names": source_names,
+            "source_keys": source_keys,
+            "merged_at": deleted_at.isoformat(),
+            "merged_by": deleted_by,
+        }
 
-            # Get all relationships from source
-            source_rels_result = session.run(
-                """
-                MATCH (s {key: $key, case_id: $case_id})-[r]->(target {case_id: $case_id})
-                WHERE r.case_id = $case_id
-                RETURN
-                    type(r) AS rel_type,
-                    target.key AS other_key,
-                    properties(r) AS rel_properties,
-                    'outgoing' AS direction
-                UNION
-                MATCH (source {case_id: $case_id})-[r]->(s {key: $key, case_id: $case_id})
-                WHERE r.case_id = $case_id
-                RETURN
-                    type(r) AS rel_type,
-                    source.key AS other_key,
-                    properties(r) AS rel_properties,
-                    'incoming' AS direction
-                """,
-                key=source_key,
-                case_id=case_id,
-            )
-            source_rels = [dict(record) for record in source_rels_result]
+        item = GraphRecycleBinItem(
+            case_id=case_uuid,
+            recycle_key=recycle_key,
+            item_type="merge_undo",
+            original_key=target_key,
+            original_name=title,
+            original_type="Merge",
+            reason="merge",
+            deleted_by=deleted_by,
+            deleted_at=deleted_at,
+            relationship_count=relationship_count,
+            status="pending_delete",
+            snapshot=snapshot,
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
 
-            # Update target entity with merged data
-            # Build SET clause for properties
-            set_clauses = []
-            params = {"target_key": target_key, "case_id": case_id}
+        try:
+            with driver.session() as session:
+                def merge_work(tx):
+                    merged_props = {}
+                    if "name" in merged_data:
+                        merged_props["name"] = merged_data["name"]
+                    if "summary" in merged_data and merged_data["summary"] is not None:
+                        merged_props["summary"] = merged_data["summary"]
+                    if "verified_facts" in merged_data and merged_data["verified_facts"] is not None:
+                        merged_props["verified_facts"] = json.dumps(merged_data["verified_facts"])
+                    if "ai_insights" in merged_data and merged_data["ai_insights"] is not None:
+                        merged_props["ai_insights"] = json.dumps(merged_data["ai_insights"])
+                    if isinstance(merged_data.get("properties"), dict):
+                        for prop_key, prop_val in merged_data["properties"].items():
+                            prop_value = self._neo4j_property_value(prop_val)
+                            if prop_value is not None:
+                                merged_props[prop_key] = prop_value
+                    merged_props["last_merge_recycle_key"] = recycle_key
+                    merged_props["last_merge_source_keys"] = source_keys
 
-            if "name" in merged_data:
-                set_clauses.append("t.name = $merged_name")
-                params["merged_name"] = merged_data["name"]
+                    if merged_props:
+                        tx.run(
+                            """
+                            MATCH (t {key: $target_key, case_id: $case_id})
+                            SET t += $merged_props
+                            """,
+                            target_key=target_key,
+                            case_id=case_id,
+                            merged_props=merged_props,
+                        )
 
-            if "summary" in merged_data and merged_data["summary"] is not None:
-                set_clauses.append("t.summary = $merged_summary")
-                params["merged_summary"] = merged_data["summary"]
+                    new_type = merged_data.get("type")
+                    if new_type and isinstance(new_type, str) and new_type.strip():
+                        old_labels = [
+                            self._escape_cypher_identifier(label)
+                            for label in (target_snapshot.get("labels") or [])
+                            if label not in self.INTERNAL_LABELS
+                        ]
+                        new_label = self._escape_cypher_identifier(new_type)
+                        for old_label in old_labels:
+                            if old_label != new_label:
+                                tx.run(
+                                    f"""
+                                    MATCH (t {{key: $target_key, case_id: $case_id}})
+                                    REMOVE t:`{old_label}`
+                                    """,
+                                    target_key=target_key,
+                                    case_id=case_id,
+                                )
+                        tx.run(
+                            f"""
+                            MATCH (t {{key: $target_key, case_id: $case_id}})
+                            SET t:`{new_label}`
+                            """,
+                            target_key=target_key,
+                            case_id=case_id,
+                        )
 
-            if "verified_facts" in merged_data and merged_data["verified_facts"] is not None:
-                set_clauses.append("t.verified_facts = $merged_verified_facts")
-                params["merged_verified_facts"] = json.dumps(merged_data["verified_facts"])
+                    relationships_updated = 0
+                    source_key_set = set(source_keys)
+                    for source_snapshot in source_snapshots:
+                        for rel in source_snapshot.get("relationships") or []:
+                            other_key = rel.get("other_key")
+                            raw_rel_type = rel.get("rel_type")
+                            direction = rel.get("direction")
+                            if not other_key or not raw_rel_type:
+                                continue
+                            if other_key == target_key or other_key in source_key_set:
+                                continue
 
-            if "ai_insights" in merged_data and merged_data["ai_insights"] is not None:
-                set_clauses.append("t.ai_insights = $merged_ai_insights")
-                params["merged_ai_insights"] = json.dumps(merged_data["ai_insights"])
+                            rel_props = {}
+                            for prop_key, prop_value in (rel.get("rel_props") or {}).items():
+                                restored_value = self._neo4j_property_value(prop_value)
+                                if restored_value is not None:
+                                    rel_props[prop_key] = restored_value
+                            rel_props["case_id"] = case_id
 
-            # Handle type (label) change if needed
-            new_type = merged_data.get("type")
-            if new_type and isinstance(new_type, str) and new_type.strip():
-                # Remove old label and add new one
-                old_type = target_record["type"]
-                if old_type != new_type:
-                    # Sanitize type for Cypher label
-                    sanitized_new_type = re.sub(r'[^a-zA-Z0-9_]', '_', new_type.strip())
-                    sanitized_new_type = re.sub(r'_+', '_', sanitized_new_type).strip('_')
-                    if not sanitized_new_type:
-                        sanitized_new_type = "Other"
+                            rel_type = self._escape_cypher_identifier(raw_rel_type)
+                            if direction == "outgoing":
+                                a_key, b_key = target_key, other_key
+                            else:
+                                a_key, b_key = other_key, target_key
 
-                    session.run(
-                        f"""
-                        MATCH (t {{key: $target_key, case_id: $case_id}})
-                        REMOVE t:`{old_type}`
-                        SET t:`{sanitized_new_type}`
+                            result = tx.run(
+                                f"""
+                                MATCH (a {{key: $a_key, case_id: $case_id}})
+                                MATCH (b {{key: $b_key, case_id: $case_id}})
+                                MERGE (a)-[r:`{rel_type}`]->(b)
+                                SET r += $rel_props
+                                RETURN count(r) AS cnt
+                                """,
+                                a_key=a_key,
+                                b_key=b_key,
+                                case_id=case_id,
+                                rel_props=rel_props,
+                            )
+                            relationships_updated += result.single()["cnt"]
+
+                    deleted_count = tx.run(
+                        """
+                        MATCH (s)
+                        WHERE s.key IN $source_keys AND s.case_id = $case_id
+                          AND NONE(label IN labels(s) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(s)['system_node'], false) <> true
+                        WITH collect(s) AS nodes, count(s) AS deleted_count
+                        FOREACH (node IN nodes | DETACH DELETE node)
+                        RETURN deleted_count
                         """,
-                        target_key=target_key,
+                        source_keys=source_keys,
                         case_id=case_id,
-                    )
+                    ).single()["deleted_count"]
+                    if deleted_count != len(source_keys):
+                        raise ValueError("One or more source entities could not be deleted during merge")
 
-            # Add additional properties
-            if "properties" in merged_data and merged_data["properties"] is not None:
-                properties = merged_data["properties"]
-                if isinstance(properties, dict):
-                    for prop_key, prop_val in properties.items():
-                        param_name = f"prop_{prop_key}"
-                        set_clauses.append(f"t.{prop_key} = ${param_name}")
-                        params[param_name] = prop_val
+                    merged_node_record = tx.run(
+                        """
+                        MATCH (t {key: $key, case_id: $case_id})
+                        RETURN t.id AS id, t.key AS key, t.name AS name, labels(t)[0] AS type
+                        """,
+                        key=target_key,
+                        case_id=case_id,
+                    ).single()
+                    return {
+                        "relationships_updated": relationships_updated,
+                        "merged_node": dict(merged_node_record) if merged_node_record else None,
+                    }
 
-            # Update target entity
-            if set_clauses:
-                set_clause = ", ".join(set_clauses)
-                session.run(
-                    f"""
-                    MATCH (t {{key: $target_key, case_id: $case_id}})
-                    SET {set_clause}
-                    """,
-                    **params,
-                )
+                result = session.execute_write(merge_work)
+        except Exception:
+            db.refresh(item)
+            item.status = "pending_delete"
+            db.commit()
+            raise
 
-            # Migrate relationships from source to target
-            relationships_updated = 0
-            for rel in source_rels:
-                rel_type = rel["rel_type"]
-                rel_props = rel["rel_properties"] or {}
-                direction = rel["direction"]
-                other_key = rel["other_key"]  # Use the unified column name from UNION
+        item.status = "active"
+        db.commit()
+        for key in source_keys:
+            self._delete_entity_embedding(key)
 
-                # Don't create self-loops
-                if other_key == target_key:
-                    continue
-
-                if direction == "outgoing":
-                    # Create relationship from target to other
-                    if rel_props:
-                        session.run(
-                            f"""
-                            MATCH (t {{key: $target_key, case_id: $case_id}}), (o {{key: $other_key, case_id: $case_id}})
-                            MERGE (t)-[r:`{rel_type}`]->(o)
-                            SET r += $rel_props
-                            SET r.case_id = $case_id
-                            """,
-                            target_key=target_key,
-                            other_key=other_key,
-                            case_id=case_id,
-                            rel_props=rel_props,
-                        )
-                    else:
-                        session.run(
-                            f"""
-                            MATCH (t {{key: $target_key, case_id: $case_id}}), (o {{key: $other_key, case_id: $case_id}})
-                            MERGE (t)-[r:`{rel_type}`]->(o)
-                            SET r.case_id = $case_id
-                            """,
-                            target_key=target_key,
-                            other_key=other_key,
-                            case_id=case_id,
-                        )
-                    relationships_updated += 1
-                else:  # incoming
-                    # Create relationship from other to target
-                    if rel_props:
-                        session.run(
-                            f"""
-                            MATCH (o {{key: $other_key, case_id: $case_id}}), (t {{key: $target_key, case_id: $case_id}})
-                            MERGE (o)-[r:`{rel_type}`]->(t)
-                            SET r += $rel_props
-                            SET r.case_id = $case_id
-                            """,
-                            target_key=target_key,
-                            other_key=other_key,
-                            case_id=case_id,
-                            rel_props=rel_props,
-                        )
-                    else:
-                        session.run(
-                            f"""
-                            MATCH (o {{key: $other_key, case_id: $case_id}}), (t {{key: $target_key, case_id: $case_id}})
-                            MERGE (o)-[r:`{rel_type}`]->(t)
-                            SET r.case_id = $case_id
-                            """,
-                            target_key=target_key,
-                            other_key=other_key,
-                            case_id=case_id,
-                        )
-                    relationships_updated += 1
-
-            # Soft-delete source entity to recycling bin (so it can be recovered).
-            # Do not hard-delete as a fallback: a failed archive must fail the merge.
-            self.soft_delete_entity(
-                node_key=source_key,
-                case_id=case_id,
-                deleted_by=deleted_by,
-                reason=f"merge_into:{target_key}",
-                db=db,
-            )
-
-            # Get the merged node (target node after merge) for return value
-            merged_node_result = session.run(
-                """
-                MATCH (t {key: $key, case_id: $case_id})
-                RETURN
-                    t.id AS id,
-                    t.key AS key,
-                    t.name AS name,
-                    labels(t)[0] AS type
-                """,
-                key=target_key,
-                case_id=case_id,
-            )
-            merged_node_record = merged_node_result.single()
-            merged_node = dict(merged_node_record) if merged_node_record else None
-
-            # Return result
-            return {
-                "merged_node": merged_node,
-                "relationships_updated": relationships_updated,
-            }
+        return {
+            "merged_node": result.get("merged_node"),
+            "relationships_updated": result.get("relationships_updated", 0),
+            "recycle_key": recycle_key,
+            "recycle_item_type": "merge_undo",
+        }
 
     def delete_node(self, node_key: str, case_id: str = None) -> Dict[str, Any]:
         """
@@ -1227,6 +1323,7 @@ class EntityService:
         item = GraphRecycleBinItem(
             case_id=case_uuid,
             recycle_key=recycle_key,
+            item_type="entity_delete",
             original_key=node_key,
             original_name=entity_record["name"],
             original_type=labels[0],
@@ -1300,6 +1397,7 @@ class EntityService:
         return [
             {
                 "key": row.recycle_key,
+                "item_type": row.item_type,
                 "original_key": row.original_key,
                 "original_name": row.original_name,
                 "type": row.original_type,
@@ -1307,6 +1405,12 @@ class EntityService:
                 "deleted_by": row.deleted_by,
                 "reason": row.reason,
                 "relationship_count": row.relationship_count,
+                "title": row.original_name,
+                "target_key": (row.snapshot or {}).get("target_key") if row.item_type == "merge_undo" else None,
+                "target_name": (row.snapshot or {}).get("target_name_before") if row.item_type == "merge_undo" else None,
+                "source_names": (row.snapshot or {}).get("source_names") if row.item_type == "merge_undo" else None,
+                "source_count": len((row.snapshot or {}).get("source_keys") or []) if row.item_type == "merge_undo" else None,
+                "merged_name": (row.snapshot or {}).get("merged_name_at_merge") if row.item_type == "merge_undo" else None,
             }
             for row in rows
         ]
@@ -1327,6 +1431,7 @@ class EntityService:
             .filter(
                 GraphRecycleBinItem.recycle_key == recycle_key,
                 GraphRecycleBinItem.case_id == self._case_uuid(case_id),
+                GraphRecycleBinItem.item_type == "entity_delete",
                 GraphRecycleBinItem.status == "active",
             )
             .with_for_update()
@@ -1456,6 +1561,159 @@ class EntityService:
                 "type": restored_entity["type"],
             },
             "relationships_restored": restored_rels,
+        }
+
+    def undo_merge(
+        self,
+        recycle_key: str,
+        case_id: str,
+        keep_merged_node: bool = True,
+        db: Session = None,
+        restored_by: str = None,
+    ) -> Dict[str, Any]:
+        """Undo a merge recycle-bin item by restoring all original nodes."""
+        if db is None:
+            raise ValueError("db session is required for recycle-bin operations")
+
+        item = (
+            db.query(GraphRecycleBinItem)
+            .filter(
+                GraphRecycleBinItem.recycle_key == recycle_key,
+                GraphRecycleBinItem.case_id == self._case_uuid(case_id),
+                GraphRecycleBinItem.item_type == "merge_undo",
+                GraphRecycleBinItem.status == "active",
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+        if not item:
+            raise ValueError(f"Merge recycle-bin item not found: {recycle_key}")
+
+        item.status = "restoring"
+        db.commit()
+
+        snapshot = item.snapshot or {}
+        target_snapshot = snapshot.get("target_before") or {}
+        source_snapshots = snapshot.get("sources_before") or []
+        original_snapshots = [target_snapshot] + source_snapshots
+        original_keys = [s.get("original_key") for s in original_snapshots if s.get("original_key")]
+        target_key = snapshot.get("target_key") or item.original_key
+        kept_merged_key = self._kept_merged_key() if keep_merged_node else None
+
+        restored_entities = []
+        relationships_restored = 0
+        kept_merged_node = None
+        try:
+            with driver.session() as session:
+                def undo_work(tx):
+                    kept_node = None
+                    if keep_merged_node:
+                        kept_result = tx.run(
+                            """
+                            MATCH (t {key: $target_key, case_id: $case_id})
+                            WHERE NONE(label IN labels(t) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                              AND coalesce(properties(t)['system_node'], false) <> true
+                              AND properties(t)['last_merge_recycle_key'] = $recycle_key
+                            SET t.key = $kept_key
+                            SET t.id = CASE WHEN t.id IS NULL OR t.id = $target_key THEN $kept_key ELSE t.id END
+                            RETURN t.key AS key, t.name AS name, labels(t)[0] AS type, properties(t) AS properties
+                            """,
+                            target_key=target_key,
+                            kept_key=kept_merged_key,
+                            recycle_key=recycle_key,
+                            case_id=case_id,
+                        ).single()
+                        if kept_result:
+                            kept_node = {
+                                "key": kept_result["key"],
+                                "name": kept_result["name"],
+                                "type": kept_result["type"],
+                                "properties": dict(kept_result["properties"] or {}),
+                            }
+                    else:
+                        tx.run(
+                            """
+                            MATCH (t {key: $target_key, case_id: $case_id})
+                            WHERE NONE(label IN labels(t) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                              AND coalesce(properties(t)['system_node'], false) <> true
+                              AND properties(t)['last_merge_recycle_key'] = $recycle_key
+                            DETACH DELETE t
+                            """,
+                            target_key=target_key,
+                            recycle_key=recycle_key,
+                            case_id=case_id,
+                        )
+
+                    conflict_records = tx.run(
+                        """
+                        MATCH (n)
+                        WHERE n.key IN $original_keys AND n.case_id = $case_id
+                          AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(n)['system_node'], false) <> true
+                        RETURN collect(n.key) AS keys
+                        """,
+                        original_keys=original_keys,
+                        case_id=case_id,
+                    ).single()
+                    conflicts = list(conflict_records["keys"] or [])
+                    if conflicts:
+                        raise ValueError(
+                            "Cannot undo merge because these original keys already exist: "
+                            + ", ".join(conflicts)
+                        )
+
+                    nodes = [
+                        self._restore_snapshot_node(tx, original_snapshot, case_id)
+                        for original_snapshot in original_snapshots
+                        if original_snapshot.get("original_key")
+                    ]
+
+                    rel_count = 0
+                    for original_snapshot in original_snapshots:
+                        if original_snapshot.get("original_key"):
+                            rel_count += self._restore_snapshot_relationships(tx, original_snapshot, case_id)
+
+                    return {
+                        "restored_entities": nodes,
+                        "relationships_restored": rel_count,
+                        "kept_merged_node": kept_node,
+                    }
+
+                result = session.execute_write(undo_work)
+                restored_entities = result["restored_entities"]
+                relationships_restored = result["relationships_restored"]
+                kept_merged_node = result["kept_merged_node"]
+        except Exception:
+            db.refresh(item)
+            item.status = "active"
+            db.commit()
+            raise
+
+        item.status = "restored"
+        db.commit()
+
+        for entity in restored_entities:
+            self._rebuild_entity_embedding(entity, case_id)
+        if kept_merged_node:
+            self._rebuild_entity_embedding(kept_merged_node, case_id)
+
+        return {
+            "success": True,
+            "restored_entities": [
+                {"key": e["key"], "name": e["name"], "type": e["type"]}
+                for e in restored_entities
+            ],
+            "relationships_restored": relationships_restored,
+            "kept_merged_node": (
+                {
+                    "key": kept_merged_node["key"],
+                    "name": kept_merged_node["name"],
+                    "type": kept_merged_node["type"],
+                }
+                if kept_merged_node
+                else None
+            ),
+            "restored_by": restored_by,
         }
 
     def permanently_delete_recycled(

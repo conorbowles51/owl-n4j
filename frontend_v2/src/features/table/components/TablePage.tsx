@@ -319,6 +319,9 @@ export function TablePage() {
       )
       clearChecked()
       queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "summary", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "entity-types", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "recycle-bin", caseId] })
     } finally {
       setDeleting(false)
       setDeleteConfirmOpen(false)
@@ -335,6 +338,9 @@ export function TablePage() {
     clearChecked()
     if (caseId) {
       queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "summary", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "entity-types", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["graph", "recycle-bin", caseId] })
     }
   }, [clearChecked, caseId, queryClient])
 

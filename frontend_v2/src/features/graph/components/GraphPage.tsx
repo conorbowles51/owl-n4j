@@ -107,10 +107,12 @@ export function GraphPage() {
   const [compareEntity2, setCompareEntity2] = useState<NodeDetail | null>(null)
 
   /* ---- Helpers ---- */
-  const refreshGraph = useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ["graph", caseId] }),
-    [queryClient, caseId]
-  )
+  const refreshGraph = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
+    queryClient.invalidateQueries({ queryKey: ["graph", "summary", caseId] })
+    queryClient.invalidateQueries({ queryKey: ["graph", "entity-types", caseId] })
+    queryClient.invalidateQueries({ queryKey: ["graph", "recycle-bin", caseId] })
+  }, [queryClient, caseId])
 
   const handleNodeCreated = useCallback(() => refreshGraph(), [refreshGraph])
 

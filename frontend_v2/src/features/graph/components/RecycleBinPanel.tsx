@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useCallback, useMemo, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { NodeBadge } from "@/components/ui/node-badge"
-import { Trash2, RotateCcw, AlertTriangle } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Trash2, RotateCcw, AlertTriangle, GitMerge } from "lucide-react"
 import { graphAPI } from "../api"
 import type { RecycledEntity } from "@/types/graph.types"
 
@@ -15,52 +22,69 @@ interface RecycleBinPanelProps {
 }
 
 function reasonLabel(reason: string) {
+  if (reason === "merge") return "Undo merge"
   if (reason?.startsWith("merge_into:")) return "Merged"
   if (reason?.startsWith("file_delete:")) return "Evidence removed"
   if (reason === "manual_delete") return "Deleted"
   return "Deleted"
 }
 
-function reasonDetail(reason: string) {
-  if (reason?.startsWith("merge_into:")) {
-    return `Merged into ${reason.slice("merge_into:".length)}`
+function reasonDetail(entity: RecycledEntity) {
+  if (entity.item_type === "merge_undo") {
+    const names = entity.source_names?.filter(Boolean).join(", ")
+    return names ? `Merged with ${names}` : null
   }
-  if (reason?.startsWith("file_delete:")) {
-    return `Evidence removed: ${reason.slice("file_delete:".length)}`
+  if (entity.reason?.startsWith("merge_into:")) {
+    return `Merged into ${entity.reason.slice("merge_into:".length)}`
+  }
+  if (entity.reason?.startsWith("file_delete:")) {
+    return `Evidence removed: ${entity.reason.slice("file_delete:".length)}`
   }
   return null
 }
 
 export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
   const queryClient = useQueryClient()
-  const [entities, setEntities] = useState<RecycledEntity[]>([])
-  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [actionKey, setActionKey] = useState<string | null>(null)
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null)
+  const [undoItem, setUndoItem] = useState<RecycledEntity | null>(null)
+
+  const recycleQueryKey = ["graph", "recycle-bin", caseId]
+  const { data, isLoading, error: loadError } = useQuery({
+    queryKey: recycleQueryKey,
+    queryFn: () => graphAPI.listRecycledEntities(caseId),
+  })
+  const entities = data?.items ?? []
 
   const refreshGraph = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
     queryClient.invalidateQueries({ queryKey: ["graph", "summary", caseId] })
     queryClient.invalidateQueries({ queryKey: ["graph", "entity-types", caseId] })
-  }, [caseId, queryClient])
+    queryClient.invalidateQueries({ queryKey: recycleQueryKey })
+  }, [caseId, queryClient, recycleQueryKey])
 
-  const load = useCallback(async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await graphAPI.listRecycledEntities(caseId)
-      setEntities(data.items ?? [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load recycle bin")
-    } finally {
-      setLoading(false)
-    }
-  }, [caseId])
+  const restoreMutation = useMutation({
+    mutationFn: (key: string) => graphAPI.restoreRecycledEntity(key, caseId),
+    onSuccess: refreshGraph,
+  })
 
-  useEffect(() => {
-    load()
-  }, [load])
+  const undoMutation = useMutation({
+    mutationFn: ({ key, keepMergedNode }: { key: string; keepMergedNode: boolean }) =>
+      graphAPI.undoMerge(key, caseId, keepMergedNode),
+    onSuccess: () => {
+      setUndoItem(null)
+      refreshGraph()
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (key: string) => graphAPI.permanentlyDeleteRecycled(key, caseId),
+    onSuccess: () => {
+      setConfirmDeleteKey(null)
+      refreshGraph()
+    },
+  })
 
   const grouped = useMemo(() => {
     return entities.reduce<Record<string, RecycledEntity[]>>((acc, entity) => {
@@ -71,46 +95,27 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
     }, {})
   }, [entities])
 
-  const restore = async (key: string) => {
+  const runAction = async (key: string, action: () => Promise<unknown>) => {
     setActionKey(key)
     setError(null)
     try {
-      await graphAPI.restoreRecycledEntity(key, caseId)
-      setEntities((prev) => prev.filter((e) => e.key !== key))
-      refreshGraph()
+      await action()
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Could not restore this entity. Check whether an entity with the same key already exists."
-      )
+      setError(err instanceof Error ? err.message : "Recycle bin action failed")
     } finally {
       setActionKey(null)
     }
   }
 
-  const permanentDelete = async (key: string) => {
-    setActionKey(key)
-    setError(null)
-    try {
-      await graphAPI.permanentlyDeleteRecycled(key, caseId)
-      setEntities((prev) => prev.filter((e) => e.key !== key))
-      setConfirmDeleteKey(null)
-      refreshGraph()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to permanently delete entity")
-    } finally {
-      setActionKey(null)
-    }
-  }
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center py-8">
         <LoadingSpinner />
       </div>
     )
   }
+
+  const visibleError = error ?? (loadError instanceof Error ? loadError.message : null)
 
   return (
     <div className="p-4">
@@ -119,10 +124,10 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
         <Badge variant="slate">{entities.length} items</Badge>
       </div>
 
-      {error && (
+      {visibleError && (
         <div className="mb-3 flex gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>{error}</span>
+          <span>{visibleError}</span>
         </div>
       )}
 
@@ -142,14 +147,28 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
                   {label} ({items.length})
                 </div>
                 {items.map((entity) => {
-                  const detail = reasonDetail(entity.reason)
+                  const isMergeUndo = entity.item_type === "merge_undo"
+                  const detail = reasonDetail(entity)
                   const isConfirming = confirmDeleteKey === entity.key
+                  const title = isMergeUndo
+                    ? entity.title ?? entity.merged_name ?? "Merged entities"
+                    : entity.original_name
+
                   return (
                     <div key={entity.key} className="rounded-lg border p-2">
                       <div className="flex items-start gap-2">
-                        <NodeBadge type={entity.type} />
+                        {isMergeUndo ? (
+                          <GitMerge className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                        ) : (
+                          <NodeBadge type={entity.type} />
+                        )}
                         <div className="min-w-0 flex-1">
-                          <p className="truncate text-xs font-medium">{entity.original_name}</p>
+                          <p className="truncate text-xs font-medium">{title}</p>
+                          {isMergeUndo && entity.merged_name && (
+                            <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                              Result: {entity.merged_name}
+                            </p>
+                          )}
                           <p className="text-[10px] text-muted-foreground">
                             {new Date(entity.deleted_at).toLocaleString()}
                             {entity.deleted_by ? ` by ${entity.deleted_by}` : ""}
@@ -160,20 +179,41 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
                             </p>
                           )}
                           <p className="mt-0.5 text-[10px] text-muted-foreground">
-                            {entity.relationship_count} relationship
-                            {entity.relationship_count === 1 ? "" : "s"} archived
+                            {isMergeUndo
+                              ? `${entity.source_count ?? entity.source_names?.length ?? 0} merged node${
+                                  (entity.source_count ?? entity.source_names?.length ?? 0) === 1 ? "" : "s"
+                                }, ${entity.relationship_count} relationship${
+                                  entity.relationship_count === 1 ? "" : "s"
+                                } archived`
+                              : `${entity.relationship_count} relationship${
+                                  entity.relationship_count === 1 ? "" : "s"
+                                } archived`}
                           </p>
                         </div>
                         <div className="flex shrink-0 gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => restore(entity.key)}
-                            disabled={actionKey === entity.key}
-                            title="Restore"
-                          >
-                            <RotateCcw className="size-3.5" />
-                          </Button>
+                          {isMergeUndo ? (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => setUndoItem(entity)}
+                              disabled={actionKey === entity.key}
+                              title="Undo merge"
+                            >
+                              <RotateCcw className="size-3.5" />
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() =>
+                                runAction(entity.key, () => restoreMutation.mutateAsync(entity.key))
+                              }
+                              disabled={actionKey === entity.key}
+                              title="Restore"
+                            >
+                              <RotateCcw className="size-3.5" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon-sm"
@@ -202,7 +242,9 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
                           <Button
                             variant="danger"
                             size="sm"
-                            onClick={() => permanentDelete(entity.key)}
+                            onClick={() =>
+                              runAction(entity.key, () => deleteMutation.mutateAsync(entity.key))
+                            }
                             disabled={actionKey === entity.key}
                           >
                             {actionKey === entity.key ? "Deleting..." : "Delete"}
@@ -217,6 +259,56 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
           </div>
         </ScrollArea>
       )}
+
+      <Dialog open={!!undoItem} onOpenChange={(open) => !open && setUndoItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Undo merge</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>
+              Restore the original nodes from this merge
+              {undoItem?.merged_name ? ` and keep ${undoItem.merged_name}?` : "?"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Keeping the merged node preserves anything added after the merge.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setUndoItem(null)}
+              disabled={!!actionKey}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() =>
+                undoItem &&
+                runAction(undoItem.key, () =>
+                  undoMutation.mutateAsync({ key: undoItem.key, keepMergedNode: false })
+                )
+              }
+              disabled={!!actionKey}
+            >
+              Restore and delete merged node
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() =>
+                undoItem &&
+                runAction(undoItem.key, () =>
+                  undoMutation.mutateAsync({ key: undoItem.key, keepMergedNode: true })
+                )
+              }
+              disabled={!!actionKey}
+            >
+              Restore and keep merged node
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -130,7 +130,7 @@ export const graphAPI = {
 
   deleteNode: (nodeKey: string, caseId: string, permanent = false) =>
     fetchAPI<void>(
-      `/api/graph/node/${encodeURIComponent(nodeKey)}?case_id=${caseId}&permanent=${permanent}`,
+      `/api/graph/node/${encodeURIComponent(nodeKey)}?case_id=${encodeURIComponent(caseId)}&permanent=${permanent}`,
       { method: "DELETE" }
     ),
 
@@ -167,13 +167,15 @@ export const graphAPI = {
     caseId: string,
     sourceKey: string,
     targetKey: string,
-    mergedData?: Record<string, unknown>
+    mergedData?: Record<string, unknown>,
+    sourceKeys?: string[]
   ) =>
     fetchAPI<void>("/api/graph/merge-entities", {
       method: "POST",
       body: {
         case_id: caseId,
         source_key: sourceKey,
+        source_keys: sourceKeys,
         target_key: targetKey,
         merged_data: mergedData,
       },
@@ -222,6 +224,12 @@ export const graphAPI = {
     fetchAPI<void>(
       `/api/graph/recycle-bin/${encodeURIComponent(recycleKey)}/restore?case_id=${encodeURIComponent(caseId)}`,
       { method: "POST" }
+    ),
+
+  undoMerge: (recycleKey: string, caseId: string, keepMergedNode: boolean) =>
+    fetchAPI<void>(
+      `/api/graph/recycle-bin/${encodeURIComponent(recycleKey)}/undo-merge?case_id=${encodeURIComponent(caseId)}`,
+      { method: "POST", body: { keep_merged_node: keepMergedNode } }
     ),
 
   permanentlyDeleteRecycled: (recycleKey: string, caseId: string) =>

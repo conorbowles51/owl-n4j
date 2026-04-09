@@ -72,6 +72,7 @@ export interface SourceReference {
 
 export interface RecycledEntity {
   key: string
+  item_type: "entity_delete" | "merge_undo"
   original_key: string
   original_name: string
   type: string
@@ -79,6 +80,12 @@ export interface RecycledEntity {
   reason: string
   relationship_count: number
   deleted_by?: string
+  title?: string
+  target_key?: string
+  target_name?: string
+  source_names?: string[]
+  source_count?: number
+  merged_name?: string
 }
 
 export interface SimilarPair {

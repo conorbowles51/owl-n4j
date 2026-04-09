@@ -20,8 +20,13 @@ class GraphRecycleBinItem(Base, TimestampMixin):
             "status IN ('pending_delete', 'active', 'restoring', 'restored', 'purged')",
             name="ck_graph_recycle_bin_items_status",
         ),
+        CheckConstraint(
+            "item_type IN ('entity_delete', 'merge_undo')",
+            name="ck_graph_recycle_bin_items_item_type",
+        ),
         UniqueConstraint("recycle_key", name="uq_graph_recycle_bin_items_recycle_key"),
         Index("ix_graph_recycle_bin_items_case_status_deleted", "case_id", "status", "deleted_at"),
+        Index("ix_graph_recycle_bin_items_case_type_status_deleted", "case_id", "item_type", "status", "deleted_at"),
         Index("ix_graph_recycle_bin_items_original_key", "case_id", "original_key"),
     )
 
@@ -34,6 +39,7 @@ class GraphRecycleBinItem(Base, TimestampMixin):
     )
 
     recycle_key: Mapped[str] = mapped_column(String(512), nullable=False)
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False, default="entity_delete")
     original_key: Mapped[str] = mapped_column(String(512), nullable=False)
     original_name: Mapped[str | None] = mapped_column(Text, nullable=True)
     original_type: Mapped[str | None] = mapped_column(String(255), nullable=True)

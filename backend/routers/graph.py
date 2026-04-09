@@ -80,8 +80,14 @@ class MergeEntitiesRequest(BaseModel):
     """Request model for merging entities."""
     case_id: str  # REQUIRED: Verify both entities belong to this case
     source_key: str
+    source_keys: Optional[List[str]] = None
     target_key: str
     merged_data: Dict[str, Any]  # name, summary, notes, type, properties
+
+
+class UndoMergeRequest(BaseModel):
+    """Request model for undoing a merge recycle-bin item."""
+    keep_merged_node: bool = True
 
 
 class CaseLoadRequest(BaseModel):
@@ -1474,6 +1480,7 @@ async def merge_entities(
             case_id=request.case_id,
             db=db,
             deleted_by=user.get("username", "unknown"),
+            source_keys=request.source_keys,
         )
         
         # Validate result is not None
@@ -2047,7 +2054,50 @@ async def restore_recycled_entity(
 
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        message = str(e)
+        status_code = 409 if "already exists" in message else 404
+        raise HTTPException(status_code=status_code, detail=message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/recycle-bin/{recycle_key}/undo-merge")
+async def undo_merge(
+    recycle_key: str,
+    request: UndoMergeRequest,
+    case_id: str = Query(..., description="Case ID"),
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Undo a merge operation from the recycling bin."""
+    try:
+        result = neo4j_service.undo_merge(
+            recycle_key,
+            case_id,
+            keep_merged_node=request.keep_merged_node,
+            db=db,
+            restored_by=user.get("username", "unknown"),
+        )
+
+        system_log_service.log(
+            log_type=LogType.GRAPH_OPERATION,
+            origin=LogOrigin.FRONTEND,
+            action="Merge Undone from Recycle Bin",
+            details={
+                "recycle_key": recycle_key,
+                "keep_merged_node": request.keep_merged_node,
+                "restored_entities": result.get("restored_entities"),
+                "relationships_restored": result.get("relationships_restored", 0),
+            },
+            user=user.get("username", "unknown"),
+            success=True,
+        )
+
+        return result
+    except ValueError as e:
+        message = str(e)
+        status_code = 409 if "already exist" in message else 404
+        raise HTTPException(status_code=status_code, detail=message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
