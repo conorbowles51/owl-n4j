@@ -5,6 +5,7 @@ from arq.connections import RedisSettings
 from app.config import settings
 from app.dependencies import async_session
 from app.pipeline.batch_orchestrator import run_batch_pipeline
+from app.pipeline.merge_orchestrator import run_merge_pipeline
 from app.pipeline.orchestrator import run_pipeline
 
 logging.basicConfig(level=logging.INFO)
@@ -27,8 +28,16 @@ async def process_batch(ctx: dict, batch_id: str, case_id: str) -> None:
     logger.info("Completed batch %s", batch_id)
 
 
+async def process_merge(ctx: dict, job_id: str, case_id: str) -> None:
+    """Process an entity merge job: AI property merging + graph write."""
+    logger.info("Processing merge job %s for case %s", job_id, case_id)
+    async with async_session() as db:
+        await run_merge_pipeline(job_id, db)
+    logger.info("Completed merge job %s", job_id)
+
+
 class WorkerSettings:
-    functions = [process_file, process_batch]
+    functions = [process_file, process_batch, process_merge]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = 4
     job_timeout = 14400  # 4 hours — batch may process many files

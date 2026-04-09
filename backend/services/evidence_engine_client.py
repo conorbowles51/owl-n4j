@@ -164,6 +164,22 @@ async def delete_file(case_id: str, job_id: str) -> None:
     response.raise_for_status()
 
 
+async def merge_entities(case_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Send entities to the evidence engine for AI-powered merging.
+
+    Returns:
+        Job response dict from evidence-engine (includes job id for tracking).
+    """
+    client = _get_client()
+    response = await client.post(
+        f"/cases/{case_id}/merge-entities",
+        json=payload,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 async def health_check() -> Dict[str, Any]:
     """Check evidence-engine health."""
     client = _get_client()

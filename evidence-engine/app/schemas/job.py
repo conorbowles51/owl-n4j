@@ -14,7 +14,8 @@ class JobResponse(BaseModel):
     id: uuid.UUID
     case_id: str
     batch_id: uuid.UUID | None = None
-    file_name: str
+    job_type: str = "ingestion"
+    file_name: str | None = None
     status: JobStatus
     progress: float
     error_message: str | None

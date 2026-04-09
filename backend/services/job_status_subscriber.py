@@ -180,7 +180,23 @@ class JobStatusSubscriber:
         except Exception:
             pass
 
-        # Update Postgres
+        # Check if this is a merge job first
+        try:
+            from postgres.session import get_background_session
+            from postgres.models.merge_job import MergeJob
+            from sqlalchemy import select
+
+            with get_background_session() as db:
+                merge_job = db.query(MergeJob).filter(
+                    MergeJob.engine_job_id == job_id
+                ).first()
+                if merge_job:
+                    self._handle_merge_completion(db, merge_job, data, status, case_id)
+                    return
+        except Exception as e:
+            logger.error("Error checking merge job %s: %s", job_id, e)
+
+        # Update Postgres for evidence file jobs
         try:
             from postgres.session import get_background_session
             from services.evidence_db_storage import EvidenceDBStorage
@@ -229,6 +245,56 @@ class JobStatusSubscriber:
                     logger.warning("No DB record found for engine job %s", job_id)
         except Exception as e:
             logger.error("Failed to sync job %s to DB: %s", job_id, e)
+
+    def _handle_merge_completion(self, db, merge_job, data: dict, status: str, case_id: str | None):
+        """Handle completion of an entity merge job."""
+        try:
+            if status == "completed":
+                merged_key = data.get("merged_entity_key")
+                merge_job.merged_entity_key = merged_key
+                merge_job.status = "completed"
+
+                # Soft-delete source entities to recycle bin
+                from services.neo4j import neo4j_service
+
+                merge_case_id = case_id or str(merge_job.case_id)
+                for entity_key in merge_job.source_entity_keys or []:
+                    try:
+                        neo4j_service.soft_delete_entity(
+                            node_key=entity_key,
+                            case_id=merge_case_id,
+                            deleted_by=merge_job.created_by or "system",
+                            reason="merged",
+                            db=db,
+                        )
+                        logger.info(
+                            "Soft-deleted merged source entity %s", entity_key,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Failed to soft-delete source entity %s: %s",
+                            entity_key, e,
+                        )
+
+                logger.info(
+                    "Merge job %s completed: merged %d entities → %s",
+                    merge_job.engine_job_id,
+                    len(merge_job.source_entity_keys or []),
+                    merged_key,
+                )
+            else:
+                err = _extract_failure_message(data)
+                merge_job.status = "failed"
+                merge_job.error_message = err
+                logger.error(
+                    "Merge job %s failed: %s",
+                    merge_job.engine_job_id, err,
+                )
+
+            db.commit()
+        except Exception as e:
+            logger.error("Failed to handle merge completion for %s: %s", merge_job.engine_job_id, e)
+            db.rollback()
 
 
 # Module-level singleton

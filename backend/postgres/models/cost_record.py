@@ -14,6 +14,7 @@ class CostJobType(str, Enum):
     """Type of job that incurred the cost."""
     INGESTION = "ingestion"
     AI_ASSISTANT = "ai_assistant"
+    ENTITY_MERGE = "entity_merge"
 
 
 class CostRecord(Base, TimestampMixin):
@@ -27,7 +28,7 @@ class CostRecord(Base, TimestampMixin):
     # Job information
     # Use PostgreSQL ENUM with explicit values to ensure lowercase strings are used
     job_type: Mapped[str] = mapped_column(
-        ENUM('ingestion', 'ai_assistant', name='cost_job_type', create_type=False),
+        ENUM('ingestion', 'ai_assistant', 'entity_merge', name='cost_job_type', create_type=False),
         nullable=False,
         index=True,
     )

@@ -36,6 +36,7 @@ class IngestionCostContext:
     source_evidence_file_id: str | None = None
     description: str | None = None
     extra_metadata: dict[str, Any] = field(default_factory=dict)
+    job_type: str = "ingestion"
 
 
 _current_context: ContextVar[IngestionCostContext | None] = ContextVar(
@@ -57,6 +58,7 @@ async def ingestion_cost_context(**kwargs: Any):
             **(previous.extra_metadata if previous else {}),
             **(kwargs.get("extra_metadata") or {}),
         },
+        job_type=kwargs.get("job_type") or (previous.job_type if previous else "ingestion"),
     )
     token = _current_context.set(merged)
     try:
@@ -187,7 +189,7 @@ async def record_openai_cost(
     async with async_session() as db:
         db.add(
             CostRecord(
-                job_type="ingestion",
+                job_type=context.job_type if context else "ingestion",
                 provider="openai",
                 model_id=model_id,
                 prompt_tokens=normalized_usage.get("prompt_tokens"),

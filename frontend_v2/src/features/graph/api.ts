@@ -165,19 +165,17 @@ export const graphAPI = {
 
   mergeEntities: (
     caseId: string,
-    sourceKey: string,
-    targetKey: string,
-    mergedData?: Record<string, unknown>,
-    sourceKeys?: string[]
+    entityKeys: string[],
+    preferredName?: string,
+    preferredType?: string
   ) =>
-    fetchAPI<void>("/api/graph/merge-entities", {
+    fetchAPI<{ job_id: string; merge_job_id: string }>("/api/graph/merge-entities", {
       method: "POST",
       body: {
         case_id: caseId,
-        source_key: sourceKey,
-        source_keys: sourceKeys,
-        target_key: targetKey,
-        merged_data: mergedData,
+        entity_keys: entityKeys,
+        preferred_name: preferredName || null,
+        preferred_type: preferredType || null,
       },
     }),
 
@@ -224,12 +222,6 @@ export const graphAPI = {
     fetchAPI<void>(
       `/api/graph/recycle-bin/${encodeURIComponent(recycleKey)}/restore?case_id=${encodeURIComponent(caseId)}`,
       { method: "POST" }
-    ),
-
-  undoMerge: (recycleKey: string, caseId: string, keepMergedNode: boolean) =>
-    fetchAPI<void>(
-      `/api/graph/recycle-bin/${encodeURIComponent(recycleKey)}/undo-merge?case_id=${encodeURIComponent(caseId)}`,
-      { method: "POST", body: { keep_merged_node: keepMergedNode } }
     ),
 
   permanentlyDeleteRecycled: (recycleKey: string, caseId: string) =>

@@ -77,17 +77,11 @@ class FindSimilarEntitiesRequest(BaseModel):
 
 
 class MergeEntitiesRequest(BaseModel):
-    """Request model for merging entities."""
-    case_id: str  # REQUIRED: Verify both entities belong to this case
-    source_key: str
-    source_keys: Optional[List[str]] = None
-    target_key: str
-    merged_data: Dict[str, Any]  # name, summary, notes, type, properties
-
-
-class UndoMergeRequest(BaseModel):
-    """Request model for undoing a merge recycle-bin item."""
-    keep_merged_node: bool = True
+    """Request model for AI-powered entity merging via evidence engine."""
+    case_id: str
+    entity_keys: List[str]  # 2 or more entity keys to merge
+    preferred_name: Optional[str] = None
+    preferred_type: Optional[str] = None
 
 
 class CaseLoadRequest(BaseModel):
@@ -1448,67 +1442,129 @@ async def merge_entities(
     db: Session = Depends(get_db),
 ):
     """
-    Merge two entities into one.
+    Merge entities via AI-powered evidence engine job.
+
+    Fetches full entity details, sends to evidence engine for AI property
+    merging, and returns a job ID for progress tracking. Old entities are
+    soft-deleted to the recycle bin on job completion.
     """
+    from postgres.models.merge_job import MergeJob
+    from services import evidence_engine_client
+    from services.job_status_subscriber import get_subscriber
+    import uuid as _uuid
+
+    if len(request.entity_keys) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 entity keys required")
+
     try:
-        # Validate merged_data is not None
-        if request.merged_data is None:
-            raise HTTPException(status_code=400, detail="merged_data cannot be None")
-        if not isinstance(request.merged_data, dict):
-            raise HTTPException(status_code=400, detail=f"merged_data must be a dict, got {type(request.merged_data)}")
-        
-        result = neo4j_service.merge_entities(
-            source_key=request.source_key,
-            target_key=request.target_key,
-            merged_data=request.merged_data,
-            case_id=request.case_id,
-            db=db,
-            deleted_by=user.get("username", "unknown"),
-            source_keys=request.source_keys,
+        # Fetch full entity details from Neo4j
+        entity_payloads = []
+        for entity_key in request.entity_keys:
+            details = neo4j_service.get_node_details(entity_key, case_id=request.case_id)
+            if not details:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Entity not found: {entity_key}",
+                )
+            props = details.get("properties") or {}
+            # Build entity payload for evidence engine
+            verified_facts = details.get("verified_facts") or []
+            ai_insights = details.get("ai_insights") or []
+            entity_payloads.append({
+                "key": details["key"],
+                "name": details.get("name", ""),
+                "category": details.get("type", "Entity"),
+                "specific_type": props.get("specific_type", ""),
+                "summary": details.get("summary", ""),
+                "description": props.get("description", ""),
+                "verified_facts": verified_facts,
+                "ai_insights": ai_insights,
+                "aliases": props.get("aliases") or [],
+                "source_files": props.get("source_files") or [],
+                "source_quotes": props.get("source_quotes") or [],
+                "confidence": props.get("confidence"),
+                "properties": {
+                    k: v for k, v in props.items()
+                    if k not in (
+                        "key", "id", "case_id", "name", "summary", "notes",
+                        "verified_facts", "ai_insights", "aliases",
+                        "source_files", "source_quotes", "confidence",
+                        "description", "specific_type", "job_id",
+                        "last_merge_recycle_key", "last_merge_source_keys",
+                    )
+                    and isinstance(v, (str, int, float, bool))
+                },
+                "relationships": [
+                    {
+                        "type": conn.get("relationship", "RELATED_TO"),
+                        "direction": conn.get("direction", "outgoing"),
+                        "target_key": conn.get("key", ""),
+                        "properties": {},
+                    }
+                    for conn in (details.get("connections") or [])
+                    if conn.get("key")
+                ],
+            })
+
+        # Build evidence engine payload
+        payload = {
+            "entities": entity_payloads,
+            "user_preferences": {
+                "name": request.preferred_name,
+                "type": request.preferred_type,
+            },
+            "requested_by_user_id": user.get("id"),
+        }
+
+        # Send to evidence engine
+        engine_response = await evidence_engine_client.merge_entities(
+            request.case_id, payload,
         )
-        
-        # Validate result is not None
-        if result is None:
-            raise HTTPException(status_code=500, detail="Merge operation returned None")
-        if not isinstance(result, dict):
-            raise HTTPException(status_code=500, detail=f"Merge operation returned invalid type: {type(result)}")
-        
+        engine_job_id = str(engine_response.get("id", ""))
+
+        # Create local MergeJob tracking record
+        merge_job = MergeJob(
+            case_id=request.case_id,
+            engine_job_id=engine_job_id,
+            source_entity_keys=request.entity_keys,
+            status="processing",
+            created_by=user.get("username", "unknown"),
+        )
+        db.add(merge_job)
+        db.commit()
+        db.refresh(merge_job)
+
+        # Subscribe to job progress
+        subscriber = get_subscriber()
+        await subscriber.track_jobs([engine_job_id], request.case_id)
+
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
-            action="Merge Entities",
+            action="Merge Entities (AI)",
             details={
-                "source_key": request.source_key,
-                "target_key": request.target_key,
-                "relationships_updated": result.get("relationships_updated", 0),
+                "entity_keys": request.entity_keys,
+                "engine_job_id": engine_job_id,
+                "entity_names": [e["name"] for e in entity_payloads],
             },
             user=user.get("username", "unknown"),
             success=True,
         )
-        
-        return result
-    except ValueError as e:
-        system_log_service.log(
-            log_type=LogType.GRAPH_OPERATION,
-            origin=LogOrigin.FRONTEND,
-            action="Merge Entities Failed",
-            details={
-                "source_key": request.source_key,
-                "target_key": request.target_key,
-                "error": str(e),
-            },
-            user=user.get("username", "unknown"),
-            success=False,
-        )
-        raise HTTPException(status_code=400, detail=str(e))
+
+        return {
+            "job_id": engine_job_id,
+            "merge_job_id": str(merge_job.id),
+            "status": "processing",
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
             origin=LogOrigin.FRONTEND,
             action="Merge Entities Failed",
             details={
-                "source_key": request.source_key,
-                "target_key": request.target_key,
+                "entity_keys": request.entity_keys,
                 "error": str(e),
             },
             user=user.get("username", "unknown"),
@@ -2040,47 +2096,6 @@ async def restore_recycled_entity(
     except ValueError as e:
         message = str(e)
         status_code = 409 if "already exists" in message else 404
-        raise HTTPException(status_code=status_code, detail=message)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/recycle-bin/{recycle_key}/undo-merge")
-async def undo_merge(
-    recycle_key: str,
-    request: UndoMergeRequest,
-    case_id: str = Query(..., description="Case ID"),
-    user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Undo a merge operation from the recycling bin."""
-    try:
-        result = neo4j_service.undo_merge(
-            recycle_key,
-            case_id,
-            keep_merged_node=request.keep_merged_node,
-            db=db,
-            restored_by=user.get("username", "unknown"),
-        )
-
-        system_log_service.log(
-            log_type=LogType.GRAPH_OPERATION,
-            origin=LogOrigin.FRONTEND,
-            action="Merge Undone from Recycle Bin",
-            details={
-                "recycle_key": recycle_key,
-                "keep_merged_node": request.keep_merged_node,
-                "restored_entities": result.get("restored_entities"),
-                "relationships_restored": result.get("relationships_restored", 0),
-            },
-            user=user.get("username", "unknown"),
-            success=True,
-        )
-
-        return result
-    except ValueError as e:
-        message = str(e)
-        status_code = 409 if "already exist" in message else 404
         raise HTTPException(status_code=status_code, detail=message)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

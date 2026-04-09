@@ -354,6 +354,65 @@ def build_summary_schema() -> dict[str, Any]:
     }
 
 
+def build_merge_schema() -> dict[str, Any]:
+    """Build the OpenAI Structured Output schema for entity merge.
+
+    Uses non-strict mode because merged_properties has dynamic keys
+    and fact/insight fields can be null.
+    """
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "merged_entity",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "specific_type": {"type": "string"},
+                    "category": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "description": {"type": "string"},
+                    "verified_facts": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "quote": {"type": "string"},
+                                "page": {"type": ["integer", "null"]},
+                                "importance": {"type": ["integer", "null"]},
+                                "source_doc": {"type": "string"},
+                            },
+                            "required": ["text"],
+                        },
+                    },
+                    "ai_insights": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string"},
+                                "confidence": {"type": "string"},
+                                "reasoning": {"type": "string"},
+                                "source_doc": {"type": "string"},
+                            },
+                            "required": ["text"],
+                        },
+                    },
+                    "merged_properties": {
+                        "type": "object",
+                    },
+                },
+                "required": [
+                    "name", "specific_type", "category", "summary",
+                    "description", "verified_facts", "ai_insights",
+                    "merged_properties",
+                ],
+            },
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Cached instances — built once per process
 # ---------------------------------------------------------------------------
@@ -381,6 +440,11 @@ def get_relationship_resolution_schema() -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def get_consolidation_schema() -> dict[str, Any]:
     return build_consolidation_schema()
+
+
+@lru_cache(maxsize=1)
+def get_merge_schema() -> dict[str, Any]:
+    return build_merge_schema()
 
 
 @lru_cache(maxsize=1)

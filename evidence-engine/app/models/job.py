@@ -19,6 +19,7 @@ class JobStatus(str, enum.Enum):
     RESOLVING_ENTITIES = "resolving_entities"
     RESOLVING_RELATIONSHIPS = "resolving_relationships"
     GENERATING_SUMMARIES = "generating_summaries"
+    MERGING_PROPERTIES = "merging_properties"
     WRITING_GRAPH = "writing_graph"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -30,8 +31,10 @@ class Job(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     case_id: Mapped[str] = mapped_column(String(255), index=True)
     batch_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
-    file_name: Mapped[str] = mapped_column(String(500))
-    file_path: Mapped[str] = mapped_column(String(1000))
+    job_type: Mapped[str] = mapped_column(String(32), default="ingestion", server_default="ingestion")
+    file_name: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    merge_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, values_callable=lambda e: [s.value for s in e], name="jobstatus", create_type=False),
         default=JobStatus.PENDING,
