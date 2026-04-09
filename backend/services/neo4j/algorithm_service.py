@@ -52,8 +52,8 @@ class AlgorithmService:
                         MATCH path = shortestPath((a {{key: $key1, case_id: $case_id}})-[*..{int(max_depth)}]-(b {{key: $key2, case_id: $case_id}}))
                         WHERE a.key = $key1 AND b.key = $key2
                           AND all(node IN nodes(path) WHERE node.case_id = $case_id
-                            AND NOT node:RecycleBin AND NOT node:RecycleBinItem
-                            AND coalesce(node.system_node, false) <> true)
+                            AND NONE(label IN labels(node) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                            AND coalesce(properties(node)['system_node'], false) <> true)
                           AND all(rel IN relationships(path) WHERE rel.case_id = $case_id)
                         RETURN path
                         """,
@@ -95,8 +95,8 @@ class AlgorithmService:
             nodes_query = """
                 MATCH (n)
                 WHERE n.key IN $keys AND n.case_id = $case_id
-                  AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                  AND coalesce(n.system_node, false) <> true
+                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                 RETURN
                     id(n) AS neo4j_id,
                     n.id AS id,
@@ -152,13 +152,13 @@ class AlgorithmService:
                 graph_query = """
                     MATCH (n)
                     WHERE n.key IN $node_keys AND n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     WITH collect(n) AS startNodes
                     MATCH path = (start)-[*..2]-(connected)
                     WHERE start IN startNodes AND connected.case_id = $case_id
-                      AND NOT connected:RecycleBin AND NOT connected:RecycleBinItem
-                      AND coalesce(connected.system_node, false) <> true
+                      AND NONE(label IN labels(connected) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(connected)['system_node'], false) <> true
                     WITH collect(DISTINCT start) + collect(DISTINCT connected) AS allNodes
                     UNWIND allNodes AS node
                     RETURN DISTINCT node.key AS key
@@ -173,8 +173,8 @@ class AlgorithmService:
                 nodes_query = """
                     MATCH (n)
                     WHERE n.key IN $keys AND n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -201,8 +201,8 @@ class AlgorithmService:
                 nodes_query = """
                     MATCH (n)
                     WHERE n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -216,10 +216,10 @@ class AlgorithmService:
                 links_query = """
                     MATCH (a)-[r]->(b)
                     WHERE r.case_id = $case_id
-                      AND NOT a:RecycleBin AND NOT a:RecycleBinItem
-                      AND NOT b:RecycleBin AND NOT b:RecycleBinItem
-                      AND coalesce(a.system_node, false) <> true
-                      AND coalesce(b.system_node, false) <> true
+                      AND NONE(label IN labels(a) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND NONE(label IN labels(b) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(a)['system_node'], false) <> true
+                      AND coalesce(properties(b)['system_node'], false) <> true
                     RETURN
                         a.key AS source,
                         b.key AS target,
@@ -422,13 +422,13 @@ class AlgorithmService:
                 graph_query = """
                     MATCH (n)
                     WHERE n.key IN $node_keys AND n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     WITH collect(n) AS startNodes
                     MATCH path = (start)-[*..2]-(connected)
                     WHERE start IN startNodes AND connected.case_id = $case_id
-                      AND NOT connected:RecycleBin AND NOT connected:RecycleBinItem
-                      AND coalesce(connected.system_node, false) <> true
+                      AND NONE(label IN labels(connected) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(connected)['system_node'], false) <> true
                     WITH collect(DISTINCT start) + collect(DISTINCT connected) AS allNodes
                     UNWIND allNodes AS node
                     RETURN DISTINCT node.key AS key
@@ -443,8 +443,8 @@ class AlgorithmService:
                 nodes_query = """
                     MATCH (n)
                     WHERE n.key IN $keys AND n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -471,8 +471,8 @@ class AlgorithmService:
                 nodes_query = """
                     MATCH (n)
                     WHERE n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -486,10 +486,10 @@ class AlgorithmService:
                 links_query = """
                     MATCH (a)-[r]->(b)
                     WHERE r.case_id = $case_id
-                      AND NOT a:RecycleBin AND NOT a:RecycleBinItem
-                      AND NOT b:RecycleBin AND NOT b:RecycleBinItem
-                      AND coalesce(a.system_node, false) <> true
-                      AND coalesce(b.system_node, false) <> true
+                      AND NONE(label IN labels(a) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND NONE(label IN labels(b) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(a)['system_node'], false) <> true
+                      AND coalesce(properties(b)['system_node'], false) <> true
                     RETURN
                         a.key AS source,
                         b.key AS target,
@@ -604,13 +604,13 @@ class AlgorithmService:
                 graph_query = """
                     MATCH (n)
                     WHERE n.key IN $node_keys AND n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     WITH collect(n) AS startNodes
                     MATCH path = (start)-[*..2]-(connected)
                     WHERE start IN startNodes AND connected.case_id = $case_id
-                      AND NOT connected:RecycleBin AND NOT connected:RecycleBinItem
-                      AND coalesce(connected.system_node, false) <> true
+                      AND NONE(label IN labels(connected) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(connected)['system_node'], false) <> true
                     With collect(DISTINCT start) + collect(DISTINCT connected) AS allNodes
                     UNWIND allNodes AS node
                     RETURN DISTINCT node.key AS key
@@ -625,8 +625,8 @@ class AlgorithmService:
                 nodes_query = """
                     MATCH (n)
                     WHERE n.key IN $keys AND n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -653,8 +653,8 @@ class AlgorithmService:
                 nodes_query = """
                     MATCH (n)
                     WHERE n.case_id = $case_id
-                      AND NOT n:RecycleBin AND NOT n:RecycleBinItem
-                      AND coalesce(n.system_node, false) <> true
+                      AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(n)['system_node'], false) <> true
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -668,10 +668,10 @@ class AlgorithmService:
                 links_query = """
                     MATCH (a)-[r]-(b)
                     WHERE r.case_id = $case_id
-                      AND NOT a:RecycleBin AND NOT a:RecycleBinItem
-                      AND NOT b:RecycleBin AND NOT b:RecycleBinItem
-                      AND coalesce(a.system_node, false) <> true
-                      AND coalesce(b.system_node, false) <> true
+                      AND NONE(label IN labels(a) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND NONE(label IN labels(b) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                      AND coalesce(properties(a)['system_node'], false) <> true
+                      AND coalesce(properties(b)['system_node'], false) <> true
                     RETURN
                         a.key AS source,
                         b.key AS target,

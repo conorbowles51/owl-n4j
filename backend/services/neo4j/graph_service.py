@@ -526,7 +526,7 @@ class GraphService:
                 MATCH (n {{key: $key, case_id: $case_id}})
                 WHERE {active_node_predicate("n")}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE {active_node_predicate("connected")}
+                WHERE connected IS NULL OR ({active_node_predicate("connected")})
                 RETURN
                     n.id AS id,
                     n.key AS key,
@@ -537,13 +537,13 @@ class GraphService:
                     n.verified_facts AS verified_facts,
                     n.ai_insights AS ai_insights,
                     properties(n) AS properties,
-                    collect(DISTINCT {
+                    collect(DISTINCT {{
                         key: connected.key,
                         name: connected.name,
                         type: labels(connected)[0],
                         relationship: type(r),
                         direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
-                    }) AS connections
+                    }}) AS connections
                 """,
                 **params,
             )
@@ -700,18 +700,18 @@ class GraphService:
                 WHERE n.key IN $keys
                   AND {active_node_predicate("n")}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE {active_node_predicate("connected")}
+                WHERE connected IS NULL OR ({active_node_predicate("connected")})
                 WITH n, r, connected
                 ORDER BY CASE WHEN connected IS NULL THEN 1 ELSE 0 END, connected.name
                 WITH n,
-                     collect(DISTINCT {
+                     collect(DISTINCT {{
                          key: connected.key,
                          name: connected.name,
                          type: labels(connected)[0],
                          summary: left(connected.summary, 500),
                          relationship: type(r),
                          direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
-                     })[0..25] AS connections
+                     }})[0..25] AS connections
                 RETURN
                     n.key AS key,
                     n.name AS name,

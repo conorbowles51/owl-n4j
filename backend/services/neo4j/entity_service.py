@@ -338,9 +338,8 @@ class EntityService:
                 WHERE n.key IS NOT NULL
                   AND n.name IS NOT NULL
                   AND NOT n:Document
-                  AND NOT n:RecycleBin
-                  AND NOT n:RecycleBinItem
-                  AND coalesce(n.system_node, false) <> true
+                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                   AND n.case_id = $case_id
                   {type_filter}
                 RETURN
@@ -454,9 +453,8 @@ class EntityService:
                 WHERE n.key IS NOT NULL
                   AND n.name IS NOT NULL
                   AND NOT n:Document
-                  AND NOT n:RecycleBin
-                  AND NOT n:RecycleBinItem
-                  AND coalesce(n.system_node, false) <> true
+                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                   AND n.case_id = $case_id
                   {type_filter}
                 RETURN
@@ -980,7 +978,8 @@ class EntityService:
             # 1. Get the recycle bin record
             rb_result = session.run(
                 """
-                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                MATCH (rb {key: $key, case_id: $case_id})
+                WHERE 'RecycleBin' IN labels(rb)
                 RETURN rb.entity_data AS entity_data, rb.original_key AS original_key,
                        rb.original_name AS original_name
                 """,
@@ -1098,7 +1097,8 @@ class EntityService:
             # 5. Delete recycle bin record
             session.run(
                 """
-                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                MATCH (rb {key: $key, case_id: $case_id})
+                WHERE 'RecycleBin' IN labels(rb)
                 DELETE rb
                 """,
                 key=recycle_key,
@@ -1129,7 +1129,8 @@ class EntityService:
         with driver.session() as session:
             result = session.run(
                 """
-                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                MATCH (rb {key: $key, case_id: $case_id})
+                WHERE 'RecycleBin' IN labels(rb)
                 RETURN rb.original_name AS name, rb.original_key AS original_key
                 """,
                 key=recycle_key,
@@ -1141,7 +1142,8 @@ class EntityService:
 
             session.run(
                 """
-                MATCH (rb:RecycleBin {key: $key, case_id: $case_id})
+                MATCH (rb {key: $key, case_id: $case_id})
+                WHERE 'RecycleBin' IN labels(rb)
                 DELETE rb
                 """,
                 key=recycle_key,
@@ -1176,8 +1178,8 @@ class EntityService:
             entity_result = session.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})
-                WHERE NOT n:Document AND NOT n:Case AND NOT n:RecycleBin
-                  AND coalesce(n.system_node, false) <> true
+                WHERE NONE(label IN labels(n) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                 RETURN n.key AS key, n.name AS name, labels(n) AS labels,
                        properties(n) AS props
                 """,
@@ -1195,8 +1197,8 @@ class EntityService:
             rels_result = session.run(
                 """
                 MATCH (n {key: $key, case_id: $case_id})-[r]-(other {case_id: $case_id})
-                WHERE coalesce(other.system_node, false) <> true
-                  AND NOT other:RecycleBin
+                WHERE coalesce(properties(other)['system_node'], false) <> true
+                  AND NONE(label IN labels(other) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
                   AND r.case_id = $case_id
                 RETURN type(r) AS rel_type, properties(r) AS rel_props,
                        other.key AS other_key, other.name AS other_name,
@@ -1245,8 +1247,8 @@ class EntityService:
                     result = tx.run(
                         """
                         MATCH (n {key: $key, case_id: $case_id})
-                        WHERE NOT n:Document AND NOT n:Case AND NOT n:RecycleBin
-                          AND coalesce(n.system_node, false) <> true
+                        WHERE NONE(label IN labels(n) WHERE label IN ['Document', 'Case', 'RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(n)['system_node'], false) <> true
                         WITH n
                         DETACH DELETE n
                         RETURN count(*) AS deleted_count
@@ -1356,7 +1358,8 @@ class EntityService:
                     existing = tx.run(
                         """
                         MATCH (n {key: $key, case_id: $case_id})
-                        WHERE NOT n:RecycleBin AND coalesce(n.system_node, false) <> true
+                        WHERE NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                          AND coalesce(properties(n)['system_node'], false) <> true
                         RETURN count(n) AS cnt
                         """,
                         key=original_key,
@@ -1397,7 +1400,8 @@ class EntityService:
                                 f"""
                                 MATCH (a {{key: $a_key, case_id: $case_id}})
                                 MATCH (b {{key: $b_key, case_id: $case_id}})
-                                WHERE NOT b:RecycleBin AND coalesce(b.system_node, false) <> true
+                                WHERE NONE(label IN labels(b) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                                  AND coalesce(properties(b)['system_node'], false) <> true
                                 MERGE (a)-[r:`{rel_type}`]->(b)
                                 SET r += $props
                                 RETURN count(r) AS cnt
@@ -1412,7 +1416,8 @@ class EntityService:
                                 f"""
                                 MATCH (a {{key: $a_key, case_id: $case_id}})
                                 MATCH (b {{key: $b_key, case_id: $case_id}})
-                                WHERE NOT a:RecycleBin AND coalesce(a.system_node, false) <> true
+                                WHERE NONE(label IN labels(a) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                                  AND coalesce(properties(a)['system_node'], false) <> true
                                 MERGE (a)-[r:`{rel_type}`]->(b)
                                 SET r += $props
                                 RETURN count(r) AS cnt
@@ -1498,9 +1503,8 @@ class EntityService:
                 MATCH (n {case_id: $case_id})
                 WHERE (n:Person OR n:Company OR n:Organisation OR n:Bank OR n:BankAccount)
                   AND n.name IS NOT NULL
-                  AND NOT n:RecycleBin
-                  AND NOT n:RecycleBinItem
-                  AND coalesce(n.system_node, false) <> true
+                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
                        n.summary AS summary,
                        n.verified_facts AS verified_facts,
@@ -1569,14 +1573,12 @@ class EntityService:
                 WHERE (n:Person OR n:Company OR n:Organisation OR n:Bank OR n:BankAccount)
                   AND n.name IS NOT NULL
                   AND n.verified_facts IS NOT NULL
-                  AND NOT n:RecycleBin
-                  AND NOT n:RecycleBinItem
-                  AND coalesce(n.system_node, false) <> true
+                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                 OPTIONAL MATCH (n)-[r]-(related)
                 WHERE NOT related:Document
-                  AND NOT related:RecycleBin
-                  AND NOT related:RecycleBinItem
-                  AND coalesce(related.system_node, false) <> true
+                  AND NONE(label IN labels(related) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(related)['system_node'], false) <> true
                   AND related.case_id = $case_id
                 WITH n, collect(DISTINCT {
                     name: related.name,
@@ -1649,9 +1651,8 @@ class EntityService:
                 """
                 MATCH (n {case_id: $case_id})
                 WHERE n.ai_insights IS NOT NULL AND n.name IS NOT NULL
-                  AND NOT n:RecycleBin
-                  AND NOT n:RecycleBinItem
-                  AND coalesce(n.system_node, false) <> true
+                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
+                  AND coalesce(properties(n)['system_node'], false) <> true
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
                        n.ai_insights AS ai_insights
                 ORDER BY n.name
