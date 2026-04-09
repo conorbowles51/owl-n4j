@@ -42,7 +42,6 @@ export function MergeEntitiesDialog({
   onMerged,
 }: MergeEntitiesDialogProps) {
   const [preferredName, setPreferredName] = useState("")
-  const [preferredType, setPreferredType] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,69 +51,114 @@ export function MergeEntitiesDialog({
   const [statusMessage, setStatusMessage] = useState("")
   const [jobStatus, setJobStatus] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  // Reset state when dialog opens
-  useEffect(() => {
-    if (!open) return
-    setPreferredName("")
-    setPreferredType("")
-    setSubmitting(false)
-    setError(null)
-    setJobId(null)
-    setProgress(0)
-    setStatusMessage("")
-    setJobStatus(null)
-  }, [open])
-
-  // Cleanup WebSocket on unmount or close
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close()
-      wsRef.current = null
+  // Stop all tracking (WebSocket + polling)
+  const stopTracking = useCallback(() => {
+    wsRef.current?.close()
+    wsRef.current = null
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
     }
   }, [])
 
-  const connectToJob = useCallback(
-    (jid: string) => {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-      const wsUrl = `${protocol}//${window.location.host}/api/evidence/ws/jobs/${jid}`
+  // Handle a progress update from either WebSocket or polling
+  const handleUpdate = useCallback(
+    (data: { status: string; progress?: number; message?: string; error_message?: string }) => {
+      const pct = Math.round((data.progress ?? 0) * 100)
+      setProgress(pct)
+      setStatusMessage(STATUS_LABELS[data.status] || data.message || "")
+      setJobStatus(data.status)
 
-      const ws = new WebSocket(wsUrl)
-      wsRef.current = ws
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data)
-          setProgress(Math.round((data.progress ?? 0) * 100))
-          setStatusMessage(STATUS_LABELS[data.status] || data.message || "")
-          setJobStatus(data.status)
-
-          if (data.status === "completed") {
-            ws.close()
-            wsRef.current = null
-            setTimeout(() => {
-              onMerged?.()
-              onOpenChange(false)
-            }, 1500)
-          } else if (data.status === "failed") {
-            ws.close()
-            wsRef.current = null
-            setError(data.error_message || data.message || "Merge failed")
-          }
-        } catch {
-          // ignore parse errors
-        }
-      }
-
-      ws.onerror = () => {
-        ws.close()
-        wsRef.current = null
-        setError("Connection lost. The merge may still be running — refresh to check.")
-        setJobStatus("failed")
+      if (data.status === "completed") {
+        stopTracking()
+        setTimeout(() => {
+          onMerged?.()
+          onOpenChange(false)
+        }, 1500)
+      } else if (data.status === "failed") {
+        stopTracking()
+        setError(data.error_message || data.message || "Merge failed")
       }
     },
-    [onMerged, onOpenChange]
+    [onMerged, onOpenChange, stopTracking]
   )
+
+  // Start polling fallback
+  const startPolling = useCallback(
+    (jid: string) => {
+      if (pollRef.current) return
+      pollRef.current = setInterval(async () => {
+        try {
+          const job = await graphAPI.getEngineJob(jid)
+          handleUpdate(job)
+        } catch {
+          // Polling error — keep trying
+        }
+      }, 3000)
+    },
+    [handleUpdate]
+  )
+
+  // Connect WebSocket + start polling fallback
+  const trackJob = useCallback(
+    (jid: string) => {
+      // Always start polling as a reliable fallback
+      startPolling(jid)
+
+      // Try WebSocket for real-time updates
+      try {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
+        const wsUrl = `${protocol}//${window.location.host}/api/evidence/ws/jobs/${jid}`
+        const ws = new WebSocket(wsUrl)
+        wsRef.current = ws
+
+        ws.onmessage = (event) => {
+          try {
+            handleUpdate(JSON.parse(event.data))
+          } catch {
+            // ignore parse errors
+          }
+        }
+
+        ws.onerror = () => {
+          // WebSocket failed — polling fallback will handle it
+          ws.close()
+          wsRef.current = null
+        }
+
+        ws.onclose = () => {
+          wsRef.current = null
+        }
+      } catch {
+        // WebSocket not available — polling handles it
+      }
+    },
+    [handleUpdate, startPolling]
+  )
+
+  // Reset state when dialog opens; refresh graph if closed during/after a merge
+  useEffect(() => {
+    if (open) {
+      setPreferredName("")
+      setSubmitting(false)
+      setError(null)
+      setJobId(null)
+      setProgress(0)
+      setStatusMessage("")
+      setJobStatus(null)
+    } else if (jobId) {
+      // Dialog closed while a merge job was running or just completed — refresh
+      stopTracking()
+      onMerged?.()
+    }
+  }, [open])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => stopTracking()
+  }, [stopTracking])
 
   const handleMerge = async () => {
     if (!entity1 || !entity2) return
@@ -125,13 +169,12 @@ export function MergeEntitiesDialog({
       const result = await graphAPI.mergeEntities(
         caseId,
         [entity1.key, entity2.key],
-        preferredName.trim() || undefined,
-        preferredType.trim() || undefined
+        preferredName.trim() || undefined
       )
       setJobId(result.job_id)
       setJobStatus("pending")
       setStatusMessage(STATUS_LABELS.pending)
-      connectToJob(result.job_id)
+      trackJob(result.job_id)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start merge")
       setSubmitting(false)
@@ -145,7 +188,7 @@ export function MergeEntitiesDialog({
   const isFailed = jobStatus === "failed"
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!isProcessing || isFailed) onOpenChange(v) }}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
@@ -157,7 +200,7 @@ export function MergeEntitiesDialog({
         <div className="space-y-4 py-2">
           {/* Entity cards */}
           <div className="grid grid-cols-2 gap-3">
-            {[entity1, entity2].map((entity, i) => (
+            {[entity1, entity2].map((entity) => (
               <div
                 key={entity.key}
                 className="rounded-lg border border-border p-3"
@@ -182,17 +225,6 @@ export function MergeEntitiesDialog({
                 <Input
                   value={preferredName}
                   onChange={(e) => setPreferredName(e.target.value)}
-                  placeholder="Leave blank for AI to choose"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">
-                  Preferred type (optional)
-                </label>
-                <Input
-                  value={preferredType}
-                  onChange={(e) => setPreferredType(e.target.value)}
                   placeholder="Leave blank for AI to choose"
                 />
               </div>
@@ -226,7 +258,7 @@ export function MergeEntitiesDialog({
               </div>
               <Progress value={progress} className="h-2" />
               <p className="text-xs text-muted-foreground text-center">
-                {progress}%
+                {progress}% — you can close this dialog, the merge will continue in the background
               </p>
             </div>
           )}

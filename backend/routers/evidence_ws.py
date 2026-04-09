@@ -38,6 +38,26 @@ async def close_redis():
         _redis = None
 
 
+async def _check_job_terminal(job_id: str) -> dict | None:
+    """Check if a job already reached a terminal state via the evidence engine."""
+    try:
+        from services import evidence_engine_client
+        job = await evidence_engine_client.get_job(job_id)
+        status = job.get("status", "")
+        if status in ("completed", "failed"):
+            return {
+                "job_id": job_id,
+                "status": status,
+                "progress": 1.0 if status == "completed" else job.get("progress", 0),
+                "message": job.get("error_message") or ("Complete" if status == "completed" else "Failed"),
+                "entity_count": job.get("entity_count", 0),
+                "relationship_count": job.get("relationship_count", 0),
+            }
+    except Exception as e:
+        logger.debug("Could not check job %s status: %s", job_id, e)
+    return None
+
+
 @router.websocket("/api/evidence/ws/jobs/{job_id}")
 async def job_progress_ws(websocket: WebSocket, job_id: str):
     """
@@ -50,11 +70,24 @@ async def job_progress_ws(websocket: WebSocket, job_id: str):
     """
     await websocket.accept()
 
+    # If the job already finished before we connected, send status immediately
+    existing = await _check_job_terminal(job_id)
+    if existing:
+        await websocket.send_json(existing)
+        await websocket.close()
+        return
+
     try:
         redis = await _get_redis()
         pubsub = redis.pubsub()
         channel = f"job:{job_id}:progress"
         await pubsub.subscribe(channel)
+
+        # Re-check after subscribing to close the race window
+        existing = await _check_job_terminal(job_id)
+        if existing:
+            await websocket.send_json(existing)
+            return
 
         while True:
             message = await pubsub.get_message(

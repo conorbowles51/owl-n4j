@@ -179,6 +179,11 @@ export const graphAPI = {
       },
     }),
 
+  getEngineJob: (jobId: string) =>
+    fetchAPI<{ status: string; progress: number; entity_count?: number; relationship_count?: number; error_message?: string }>(
+      `/api/evidence/engine/jobs/${encodeURIComponent(jobId)}`
+    ),
+
   findSimilarEntities: (
     caseId: string,
     entityTypes?: string[] | null,
