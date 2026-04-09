@@ -2,8 +2,10 @@ import { fetchAPI } from "@/lib/api-client"
 import type { Case } from "@/types/case.types"
 import type { CaseProcessingProfile } from "@/types/evidence.types"
 
+export type CaseListViewMode = "my_cases" | "all_cases"
+
 export const casesAPI = {
-  list: (viewMode?: string) =>
+  list: (viewMode?: CaseListViewMode) =>
     fetchAPI<{ cases: Case[]; total: number }>(
       `/api/cases${viewMode ? `?view_mode=${viewMode}` : ""}`
     ).then((r) => r.cases),

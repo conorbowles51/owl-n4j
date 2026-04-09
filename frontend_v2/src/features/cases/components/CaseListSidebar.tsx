@@ -32,7 +32,7 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
     user?.role === "super_admin" || user?.global_role === "super_admin"
 
   const { data: cases, isLoading } = useCases(
-    isSuperAdmin && viewMode === "all_cases" ? "all" : undefined
+    isSuperAdmin ? viewMode : undefined
   )
 
   const filtered = useMemo(() => {
