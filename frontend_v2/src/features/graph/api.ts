@@ -214,19 +214,19 @@ export const graphAPI = {
   /* --- Recycle bin --- */
 
   listRecycledEntities: (caseId: string) =>
-    fetchAPI<{ entities: RecycledEntity[] }>(
-      `/api/graph/recycled-entities?case_id=${caseId}`
+    fetchAPI<{ items: RecycledEntity[]; total: number }>(
+      `/api/graph/recycle-bin?case_id=${encodeURIComponent(caseId)}`
     ),
 
   restoreRecycledEntity: (recycleKey: string, caseId: string) =>
     fetchAPI<void>(
-      `/api/graph/recycled-entities/${encodeURIComponent(recycleKey)}/restore`,
-      { method: "POST", body: { case_id: caseId } }
+      `/api/graph/recycle-bin/${encodeURIComponent(recycleKey)}/restore?case_id=${encodeURIComponent(caseId)}`,
+      { method: "POST" }
     ),
 
   permanentlyDeleteRecycled: (recycleKey: string, caseId: string) =>
     fetchAPI<void>(
-      `/api/graph/recycled-entities/${encodeURIComponent(recycleKey)}?case_id=${caseId}`,
+      `/api/graph/recycle-bin/${encodeURIComponent(recycleKey)}?case_id=${encodeURIComponent(caseId)}`,
       { method: "DELETE" }
     ),
 

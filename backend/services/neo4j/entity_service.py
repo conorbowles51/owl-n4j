@@ -5,14 +5,106 @@ similarity detection, merge, soft-delete / recycle-bin, and batch helpers.
 
 import json
 import logging
+import re
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from sqlalchemy.orm import Session
+
 from services.neo4j.driver import driver, parse_json_field
+from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 
 logger = logging.getLogger(__name__)
 
 
 class EntityService:
+    INTERNAL_LABELS = {"Document", "Case", "RecycleBin", "RecycleBinItem"}
+
+    @staticmethod
+    def _case_uuid(case_id: str) -> uuid.UUID:
+        return uuid.UUID(str(case_id))
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (list, tuple)):
+            return [EntityService._json_safe(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): EntityService._json_safe(v) for k, v in value.items()}
+        if hasattr(value, "iso_format"):
+            return value.iso_format()
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        return str(value)
+
+    @staticmethod
+    def _neo4j_property_value(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, list):
+            cleaned = [EntityService._neo4j_property_value(v) for v in value]
+            return [v for v in cleaned if v is not None]
+        return json.dumps(value, default=str)
+
+    @staticmethod
+    def _escape_cypher_identifier(value: str) -> str:
+        cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", (value or "").strip())
+        cleaned = re.sub(r"_+", "_", cleaned).strip("_")
+        return cleaned or "Entity"
+
+    @staticmethod
+    def _recycle_key(original_key: str) -> str:
+        return f"recycled_{original_key}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+
+    @staticmethod
+    def _delete_entity_embedding(entity_key: str) -> None:
+        try:
+            from services.vector_db_service import get_vector_db_service
+
+            vector_db = get_vector_db_service()
+            if vector_db:
+                vector_db.delete_entity(entity_key)
+        except Exception as e:
+            logger.warning("Failed to delete entity embedding for %s: %s", entity_key, e)
+
+    @staticmethod
+    def _rebuild_entity_embedding(entity: Dict[str, Any], case_id: str) -> None:
+        try:
+            from services.embedding_service import EmbeddingService
+            from services.vector_db_service import get_vector_db_service
+
+            vector_db = get_vector_db_service()
+            if not vector_db:
+                return
+
+            props = entity.get("properties") or {}
+            text_parts = [
+                str(props.get("name") or entity.get("name") or entity.get("key") or ""),
+                str(props.get("summary") or ""),
+                str(props.get("notes") or ""),
+                str(props.get("verified_facts") or ""),
+            ]
+            text = "\n".join(part for part in text_parts if part.strip()).strip()
+            if not text:
+                return
+
+            embedding = EmbeddingService().generate_embedding(text)
+            vector_db.add_entity(
+                entity_key=entity["key"],
+                text=text,
+                embedding=embedding,
+                metadata={
+                    "case_id": case_id,
+                    "entity_type": entity.get("type"),
+                    "name": entity.get("name"),
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to rebuild entity embedding for %s: %s", entity.get("key"), e)
 
     def get_node_details(self, key: str, case_id: str = None) -> Optional[Dict]:
         """
@@ -246,6 +338,9 @@ class EntityService:
                 WHERE n.key IS NOT NULL
                   AND n.name IS NOT NULL
                   AND NOT n:Document
+                  AND NOT n:RecycleBin
+                  AND NOT n:RecycleBinItem
+                  AND coalesce(n.system_node, false) <> true
                   AND n.case_id = $case_id
                   {type_filter}
                 RETURN
@@ -359,6 +454,9 @@ class EntityService:
                 WHERE n.key IS NOT NULL
                   AND n.name IS NOT NULL
                   AND NOT n:Document
+                  AND NOT n:RecycleBin
+                  AND NOT n:RecycleBinItem
+                  AND coalesce(n.system_node, false) <> true
                   AND n.case_id = $case_id
                   {type_filter}
                 RETURN
@@ -544,6 +642,8 @@ class EntityService:
         target_key: str,
         merged_data: Dict[str, Any],
         case_id: str = None,
+        db: Session = None,
+        deleted_by: str = "system",
     ) -> Dict[str, Any]:
         """
         Merge two entities into one.
@@ -562,13 +662,13 @@ class EntityService:
         Returns:
             Dict with result info including merged_node and relationships_updated count
         """
-        import re
-
         # Validate merged_data
         if merged_data is None:
             raise ValueError("merged_data cannot be None")
         if not isinstance(merged_data, dict):
             raise ValueError(f"merged_data must be a dict, got {type(merged_data)}")
+        if db is None:
+            raise ValueError("db session is required for merge recycling")
 
         with driver.session() as session:
             # Get both entities - verify they belong to the case
@@ -615,14 +715,16 @@ class EntityService:
             # Get all relationships from source
             source_rels_result = session.run(
                 """
-                MATCH (s {key: $key})-[r]->(target)
+                MATCH (s {key: $key, case_id: $case_id})-[r]->(target {case_id: $case_id})
+                WHERE r.case_id = $case_id
                 RETURN
                     type(r) AS rel_type,
                     target.key AS other_key,
                     properties(r) AS rel_properties,
                     'outgoing' AS direction
                 UNION
-                MATCH (source)-[r]->(s {key: $key})
+                MATCH (source {case_id: $case_id})-[r]->(s {key: $key, case_id: $case_id})
+                WHERE r.case_id = $case_id
                 RETURN
                     type(r) AS rel_type,
                     source.key AS other_key,
@@ -630,13 +732,14 @@ class EntityService:
                     'incoming' AS direction
                 """,
                 key=source_key,
+                case_id=case_id,
             )
             source_rels = [dict(record) for record in source_rels_result]
 
             # Update target entity with merged data
             # Build SET clause for properties
             set_clauses = []
-            params = {"target_key": target_key}
+            params = {"target_key": target_key, "case_id": case_id}
 
             if "name" in merged_data:
                 set_clauses.append("t.name = $merged_name")
@@ -668,11 +771,12 @@ class EntityService:
 
                     session.run(
                         f"""
-                        MATCH (t {{key: $target_key}})
+                        MATCH (t {{key: $target_key, case_id: $case_id}})
                         REMOVE t:`{old_type}`
                         SET t:`{sanitized_new_type}`
                         """,
                         target_key=target_key,
+                        case_id=case_id,
                     )
 
             # Add additional properties
@@ -689,7 +793,7 @@ class EntityService:
                 set_clause = ", ".join(set_clauses)
                 session.run(
                     f"""
-                    MATCH (t {{key: $target_key}})
+                    MATCH (t {{key: $target_key, case_id: $case_id}})
                     SET {set_clause}
                     """,
                     **params,
@@ -712,22 +816,26 @@ class EntityService:
                     if rel_props:
                         session.run(
                             f"""
-                            MATCH (t {{key: $target_key}}), (o {{key: $other_key}})
+                            MATCH (t {{key: $target_key, case_id: $case_id}}), (o {{key: $other_key, case_id: $case_id}})
                             MERGE (t)-[r:`{rel_type}`]->(o)
                             SET r += $rel_props
+                            SET r.case_id = $case_id
                             """,
                             target_key=target_key,
                             other_key=other_key,
+                            case_id=case_id,
                             rel_props=rel_props,
                         )
                     else:
                         session.run(
                             f"""
-                            MATCH (t {{key: $target_key}}), (o {{key: $other_key}})
+                            MATCH (t {{key: $target_key, case_id: $case_id}}), (o {{key: $other_key, case_id: $case_id}})
                             MERGE (t)-[r:`{rel_type}`]->(o)
+                            SET r.case_id = $case_id
                             """,
                             target_key=target_key,
                             other_key=other_key,
+                            case_id=case_id,
                         )
                     relationships_updated += 1
                 else:  # incoming
@@ -735,47 +843,43 @@ class EntityService:
                     if rel_props:
                         session.run(
                             f"""
-                            MATCH (o {{key: $other_key}}), (t {{key: $target_key}})
+                            MATCH (o {{key: $other_key, case_id: $case_id}}), (t {{key: $target_key, case_id: $case_id}})
                             MERGE (o)-[r:`{rel_type}`]->(t)
                             SET r += $rel_props
+                            SET r.case_id = $case_id
                             """,
                             target_key=target_key,
                             other_key=other_key,
+                            case_id=case_id,
                             rel_props=rel_props,
                         )
                     else:
                         session.run(
                             f"""
-                            MATCH (o {{key: $other_key}}), (t {{key: $target_key}})
+                            MATCH (o {{key: $other_key, case_id: $case_id}}), (t {{key: $target_key, case_id: $case_id}})
                             MERGE (o)-[r:`{rel_type}`]->(t)
+                            SET r.case_id = $case_id
                             """,
                             target_key=target_key,
                             other_key=other_key,
+                            case_id=case_id,
                         )
                     relationships_updated += 1
 
-            # Soft-delete source entity to recycling bin (so it can be recovered)
-            try:
-                self.soft_delete_entity(
-                    node_key=source_key,
-                    case_id=case_id,
-                    deleted_by="system",
-                    reason=f"merge_into:{target_key}",
-                )
-            except Exception:
-                # Fallback: hard-delete if soft-delete fails (e.g., entity already gone)
-                session.run(
-                    """
-                    MATCH (s {key: $key})
-                    DETACH DELETE s
-                    """,
-                    key=source_key,
-                )
+            # Soft-delete source entity to recycling bin (so it can be recovered).
+            # Do not hard-delete as a fallback: a failed archive must fail the merge.
+            self.soft_delete_entity(
+                node_key=source_key,
+                case_id=case_id,
+                deleted_by=deleted_by,
+                reason=f"merge_into:{target_key}",
+                db=db,
+            )
 
             # Get the merged node (target node after merge) for return value
             merged_node_result = session.run(
                 """
-                MATCH (t {key: $key})
+                MATCH (t {key: $key, case_id: $case_id})
                 RETURN
                     t.id AS id,
                     t.key AS key,
@@ -783,6 +887,7 @@ class EntityService:
                     labels(t)[0] AS type
                 """,
                 key=target_key,
+                case_id=case_id,
             )
             merged_node_record = merged_node_result.single()
             merged_node = dict(merged_node_record) if merged_node_record else None
@@ -857,137 +962,6 @@ class EntityService:
     # -------------------------------------------------------------------------
     # Recycling Bin (Soft Delete)
     # -------------------------------------------------------------------------
-
-    def soft_delete_entity(
-        self, node_key: str, case_id: str, deleted_by: str, reason: str = "manual_delete"
-    ) -> Dict[str, Any]:
-        """
-        Soft-delete an entity by moving it to the recycling bin.
-        Stores full entity state (properties + relationships) as JSON on the node,
-        then removes it from the active graph.
-
-        Args:
-            node_key: Key of the entity to soft-delete
-            case_id: Case ID for scoping
-            deleted_by: Username of who performed the deletion
-            reason: Reason for deletion (e.g., 'manual_delete', 'merge_discard', 'file_delete')
-
-        Returns:
-            Dict with recycled entity info
-        """
-        import json as json_mod
-        from datetime import datetime as dt
-
-        with driver.session() as session:
-            # 1. Fetch full entity properties
-            entity_result = session.run(
-                """
-                MATCH (n {key: $key, case_id: $case_id})
-                WHERE NOT n:Document
-                RETURN n.key AS key, n.name AS name, labels(n) AS labels,
-                       properties(n) AS props, id(n) AS neo4j_id
-                """,
-                key=node_key,
-                case_id=case_id,
-            )
-            entity_record = entity_result.single()
-            if not entity_record:
-                raise ValueError(f"Entity not found: {node_key} in case {case_id}")
-
-            # 2. Fetch all relationships
-            rels_result = session.run(
-                """
-                MATCH (n {key: $key, case_id: $case_id})-[r]-(other)
-                RETURN type(r) AS rel_type, properties(r) AS rel_props,
-                       other.key AS other_key, other.name AS other_name,
-                       labels(other)[0] AS other_type,
-                       CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END AS direction
-                """,
-                key=node_key,
-                case_id=case_id,
-            )
-            relationships = [dict(r) for r in rels_result]
-
-            # 3. Build the recycling bin record
-            entity_props = dict(entity_record["props"])
-            recycle_record = {
-                "key": entity_record["key"],
-                "name": entity_record["name"],
-                "labels": list(entity_record["labels"]),
-                "properties": entity_props,
-                "relationships": relationships,
-                "deleted_at": dt.now().isoformat(),
-                "deleted_by": deleted_by,
-                "reason": reason,
-                "case_id": case_id,
-            }
-
-            # 4. Store in RecycleBin node
-            session.run(
-                """
-                CREATE (rb:RecycleBin {
-                    key: $key,
-                    original_key: $original_key,
-                    original_name: $original_name,
-                    case_id: $case_id,
-                    deleted_at: $deleted_at,
-                    deleted_by: $deleted_by,
-                    reason: $reason,
-                    entity_data: $entity_data
-                })
-                """,
-                key=f"recycled_{node_key}_{dt.now().strftime('%Y%m%d%H%M%S')}",
-                original_key=node_key,
-                original_name=entity_record["name"],
-                case_id=case_id,
-                deleted_at=recycle_record["deleted_at"],
-                deleted_by=deleted_by,
-                reason=reason,
-                entity_data=json_mod.dumps(recycle_record, default=str),
-            )
-
-            # 5. Delete the original entity from graph
-            session.run(
-                """
-                MATCH (n {key: $key, case_id: $case_id})
-                DETACH DELETE n
-                """,
-                key=node_key,
-                case_id=case_id,
-            )
-
-            return {
-                "success": True,
-                "recycled_entity": {
-                    "key": entity_record["key"],
-                    "name": entity_record["name"],
-                    "type": entity_record["labels"][0] if entity_record["labels"] else "Unknown",
-                },
-                "relationships_stored": len(relationships),
-                "reason": reason,
-            }
-
-    def list_recycled_entities(self, case_id: str) -> List[Dict[str, Any]]:
-        """
-        List all entities in the recycling bin for a case.
-
-        Returns:
-            List of recycled entity summaries.
-        """
-        with driver.session() as session:
-            result = session.run(
-                """
-                MATCH (rb:RecycleBin {case_id: $case_id})
-                RETURN rb.key AS key, rb.original_key AS original_key,
-                       rb.original_name AS original_name,
-                       rb.deleted_at AS deleted_at,
-                       rb.deleted_by AS deleted_by,
-                       rb.reason AS reason
-                ORDER BY rb.deleted_at DESC
-                """,
-                case_id=case_id,
-            )
-            return [dict(r) for r in result]
 
     def restore_recycled_entity(self, recycle_key: str, case_id: str) -> Dict[str, Any]:
         """
@@ -1183,6 +1157,340 @@ class EntityService:
                 },
             }
 
+    def soft_delete_entity(
+        self,
+        node_key: str,
+        case_id: str,
+        deleted_by: str,
+        reason: str = "manual_delete",
+        db: Session = None,
+    ) -> Dict[str, Any]:
+        """Archive an entity in Postgres, then remove it from the active Neo4j graph."""
+        if db is None:
+            raise ValueError("db session is required for recycle-bin operations")
+
+        deleted_at = datetime.now(timezone.utc)
+        case_uuid = self._case_uuid(case_id)
+
+        with driver.session() as session:
+            entity_result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})
+                WHERE NOT n:Document AND NOT n:Case AND NOT n:RecycleBin
+                  AND coalesce(n.system_node, false) <> true
+                RETURN n.key AS key, n.name AS name, labels(n) AS labels,
+                       properties(n) AS props
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+            entity_record = entity_result.single()
+            if not entity_record:
+                raise ValueError(f"Entity not found: {node_key} in case {case_id}")
+
+            labels = [label for label in list(entity_record["labels"] or []) if label not in self.INTERNAL_LABELS]
+            if not labels:
+                raise ValueError(f"Entity {node_key} has no restorable labels")
+
+            rels_result = session.run(
+                """
+                MATCH (n {key: $key, case_id: $case_id})-[r]-(other {case_id: $case_id})
+                WHERE coalesce(other.system_node, false) <> true
+                  AND NOT other:RecycleBin
+                  AND r.case_id = $case_id
+                RETURN type(r) AS rel_type, properties(r) AS rel_props,
+                       other.key AS other_key, other.name AS other_name,
+                       labels(other)[0] AS other_type,
+                       CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END AS direction
+                """,
+                key=node_key,
+                case_id=case_id,
+            )
+            relationships = [self._json_safe(dict(r)) for r in rels_result]
+
+        entity_props = self._json_safe(dict(entity_record["props"] or {}))
+        recycle_key = self._recycle_key(node_key)
+        snapshot = {
+            "schema_version": 1,
+            "case_id": case_id,
+            "original_key": entity_record["key"],
+            "labels": labels,
+            "properties": entity_props,
+            "relationships": relationships,
+            "deleted_at": deleted_at.isoformat(),
+            "deleted_by": deleted_by,
+            "reason": reason,
+        }
+
+        item = GraphRecycleBinItem(
+            case_id=case_uuid,
+            recycle_key=recycle_key,
+            original_key=node_key,
+            original_name=entity_record["name"],
+            original_type=labels[0],
+            reason=reason,
+            deleted_by=deleted_by,
+            deleted_at=deleted_at,
+            relationship_count=len(relationships),
+            status="pending_delete",
+            snapshot=snapshot,
+        )
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+
+        try:
+            with driver.session() as session:
+                def delete_work(tx):
+                    result = tx.run(
+                        """
+                        MATCH (n {key: $key, case_id: $case_id})
+                        WHERE NOT n:Document AND NOT n:Case AND NOT n:RecycleBin
+                          AND coalesce(n.system_node, false) <> true
+                        WITH n
+                        DETACH DELETE n
+                        RETURN count(*) AS deleted_count
+                        """,
+                        key=node_key,
+                        case_id=case_id,
+                    )
+                    return result.single()["deleted_count"]
+
+                deleted_count = session.execute_write(delete_work)
+                if deleted_count == 0:
+                    raise ValueError(f"Entity not found during delete: {node_key} in case {case_id}")
+        except Exception:
+            db.refresh(item)
+            item.status = "pending_delete"
+            db.commit()
+            raise
+
+        item.status = "active"
+        db.commit()
+        self._delete_entity_embedding(node_key)
+
+        return {
+            "success": True,
+            "recycled_entity": {
+                "key": item.original_key,
+                "name": item.original_name,
+                "type": item.original_type,
+            },
+            "recycle_key": item.recycle_key,
+            "relationships_stored": item.relationship_count,
+            "reason": item.reason,
+        }
+
+    def list_recycled_entities(self, case_id: str, db: Session = None) -> List[Dict[str, Any]]:
+        """List active recycled entities for a case."""
+        if db is None:
+            raise ValueError("db session is required for recycle-bin operations")
+
+        rows = (
+            db.query(GraphRecycleBinItem)
+            .filter(
+                GraphRecycleBinItem.case_id == self._case_uuid(case_id),
+                GraphRecycleBinItem.status == "active",
+            )
+            .order_by(GraphRecycleBinItem.deleted_at.desc())
+            .all()
+        )
+        return [
+            {
+                "key": row.recycle_key,
+                "original_key": row.original_key,
+                "original_name": row.original_name,
+                "type": row.original_type,
+                "deleted_at": row.deleted_at.isoformat() if row.deleted_at else None,
+                "deleted_by": row.deleted_by,
+                "reason": row.reason,
+                "relationship_count": row.relationship_count,
+            }
+            for row in rows
+        ]
+
+    def restore_recycled_entity(
+        self,
+        recycle_key: str,
+        case_id: str,
+        db: Session = None,
+        restored_by: str = None,
+    ) -> Dict[str, Any]:
+        """Restore an entity from the Postgres recycle bin into Neo4j."""
+        if db is None:
+            raise ValueError("db session is required for recycle-bin operations")
+
+        item = (
+            db.query(GraphRecycleBinItem)
+            .filter(
+                GraphRecycleBinItem.recycle_key == recycle_key,
+                GraphRecycleBinItem.case_id == self._case_uuid(case_id),
+                GraphRecycleBinItem.status == "active",
+            )
+            .with_for_update()
+            .one_or_none()
+        )
+        if not item:
+            raise ValueError(f"Recycled entity not found: {recycle_key}")
+
+        item.status = "restoring"
+        db.commit()
+        snapshot = item.snapshot or {}
+        original_key = snapshot.get("original_key") or item.original_key
+        labels = [self._escape_cypher_identifier(label) for label in (snapshot.get("labels") or [item.original_type or "Entity"])]
+        labels = [label for label in labels if label not in self.INTERNAL_LABELS] or ["Entity"]
+        label_clause = "".join(f":`{label}`" for label in labels)
+
+        props = {}
+        for key, value in (snapshot.get("properties") or {}).items():
+            prop_value = self._neo4j_property_value(value)
+            if prop_value is not None:
+                props[key] = prop_value
+        props["key"] = original_key
+        props["case_id"] = case_id
+
+        restored_rels = 0
+        try:
+            with driver.session() as session:
+                def restore_work(tx):
+                    existing = tx.run(
+                        """
+                        MATCH (n {key: $key, case_id: $case_id})
+                        WHERE NOT n:RecycleBin AND coalesce(n.system_node, false) <> true
+                        RETURN count(n) AS cnt
+                        """,
+                        key=original_key,
+                        case_id=case_id,
+                    ).single()["cnt"]
+                    if existing > 0:
+                        raise ValueError(
+                            f"Entity with key '{original_key}' already exists in the graph. "
+                            "Cannot restore - resolve the conflict first."
+                        )
+
+                    tx.run(
+                        f"""
+                        CREATE (n{label_clause})
+                        SET n = $props
+                        """,
+                        props=props,
+                    )
+
+                    count = 0
+                    for rel in snapshot.get("relationships") or []:
+                        other_key = rel.get("other_key")
+                        raw_rel_type = rel.get("rel_type")
+                        direction = rel.get("direction")
+                        if not other_key or not raw_rel_type:
+                            continue
+                        rel_type = self._escape_cypher_identifier(raw_rel_type)
+
+                        rel_props = {}
+                        for prop_key, prop_value in (rel.get("rel_props") or {}).items():
+                            restored_value = self._neo4j_property_value(prop_value)
+                            if restored_value is not None:
+                                rel_props[prop_key] = restored_value
+                        rel_props["case_id"] = case_id
+
+                        if direction == "outgoing":
+                            result = tx.run(
+                                f"""
+                                MATCH (a {{key: $a_key, case_id: $case_id}})
+                                MATCH (b {{key: $b_key, case_id: $case_id}})
+                                WHERE NOT b:RecycleBin AND coalesce(b.system_node, false) <> true
+                                MERGE (a)-[r:`{rel_type}`]->(b)
+                                SET r += $props
+                                RETURN count(r) AS cnt
+                                """,
+                                a_key=original_key,
+                                b_key=other_key,
+                                case_id=case_id,
+                                props=rel_props,
+                            )
+                        else:
+                            result = tx.run(
+                                f"""
+                                MATCH (a {{key: $a_key, case_id: $case_id}})
+                                MATCH (b {{key: $b_key, case_id: $case_id}})
+                                WHERE NOT a:RecycleBin AND coalesce(a.system_node, false) <> true
+                                MERGE (a)-[r:`{rel_type}`]->(b)
+                                SET r += $props
+                                RETURN count(r) AS cnt
+                                """,
+                                a_key=other_key,
+                                b_key=original_key,
+                                case_id=case_id,
+                                props=rel_props,
+                            )
+                        count += result.single()["cnt"]
+                    return count
+
+                restored_rels = session.execute_write(restore_work)
+        except Exception:
+            db.refresh(item)
+            item.status = "active"
+            db.commit()
+            raise
+
+        item.status = "restored"
+        db.commit()
+
+        restored_entity = {
+            "key": original_key,
+            "name": props.get("name") or item.original_name or "",
+            "type": labels[0],
+            "properties": props,
+        }
+        self._rebuild_entity_embedding(restored_entity, case_id)
+
+        return {
+            "success": True,
+            "restored_entity": {
+                "key": restored_entity["key"],
+                "name": restored_entity["name"],
+                "type": restored_entity["type"],
+            },
+            "relationships_restored": restored_rels,
+        }
+
+    def permanently_delete_recycled(
+        self,
+        recycle_key: str,
+        case_id: str,
+        db: Session = None,
+        purged_by: str = None,
+    ) -> Dict[str, Any]:
+        """Permanently purge an active recycle-bin item."""
+        if db is None:
+            raise ValueError("db session is required for recycle-bin operations")
+
+        item = (
+            db.query(GraphRecycleBinItem)
+            .filter(
+                GraphRecycleBinItem.recycle_key == recycle_key,
+                GraphRecycleBinItem.case_id == self._case_uuid(case_id),
+                GraphRecycleBinItem.status == "active",
+            )
+            .one_or_none()
+        )
+        if not item:
+            raise ValueError(f"Recycled entity not found: {recycle_key}")
+
+        original_key = item.original_key
+        original_name = item.original_name
+        item.status = "purged"
+        item.snapshot = None
+        db.commit()
+
+        return {
+            "success": True,
+            "permanently_deleted": {
+                "recycle_key": recycle_key,
+                "original_key": original_key,
+                "name": original_name,
+            },
+        }
+
     def get_case_entity_summary(self, case_id: str) -> list:
         """Get a structured summary of all key entities in a case."""
         with driver.session() as session:
@@ -1190,6 +1498,9 @@ class EntityService:
                 MATCH (n {case_id: $case_id})
                 WHERE (n:Person OR n:Company OR n:Organisation OR n:Bank OR n:BankAccount)
                   AND n.name IS NOT NULL
+                  AND NOT n:RecycleBin
+                  AND NOT n:RecycleBinItem
+                  AND coalesce(n.system_node, false) <> true
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
                        n.summary AS summary,
                        n.verified_facts AS verified_facts,
@@ -1258,8 +1569,15 @@ class EntityService:
                 WHERE (n:Person OR n:Company OR n:Organisation OR n:Bank OR n:BankAccount)
                   AND n.name IS NOT NULL
                   AND n.verified_facts IS NOT NULL
+                  AND NOT n:RecycleBin
+                  AND NOT n:RecycleBinItem
+                  AND coalesce(n.system_node, false) <> true
                 OPTIONAL MATCH (n)-[r]-(related)
-                WHERE NOT related:Document AND related.case_id = $case_id
+                WHERE NOT related:Document
+                  AND NOT related:RecycleBin
+                  AND NOT related:RecycleBinItem
+                  AND coalesce(related.system_node, false) <> true
+                  AND related.case_id = $case_id
                 WITH n, collect(DISTINCT {
                     name: related.name,
                     type: labels(related)[0],
@@ -1331,6 +1649,9 @@ class EntityService:
                 """
                 MATCH (n {case_id: $case_id})
                 WHERE n.ai_insights IS NOT NULL AND n.name IS NOT NULL
+                  AND NOT n:RecycleBin
+                  AND NOT n:RecycleBinItem
+                  AND coalesce(n.system_node, false) <> true
                 RETURN n.key AS key, n.name AS name, labels(n)[0] AS type,
                        n.ai_insights AS ai_insights
                 ORDER BY n.name

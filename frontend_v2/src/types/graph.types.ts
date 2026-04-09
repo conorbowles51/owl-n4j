@@ -72,9 +72,12 @@ export interface SourceReference {
 
 export interface RecycledEntity {
   key: string
-  name: string
+  original_key: string
+  original_name: string
   type: string
   deleted_at: string
+  reason: string
+  relationship_count: number
   deleted_by?: string
 }
 
@@ -118,4 +121,3 @@ export interface BetweennessResult {
 export interface ShortestPathResult {
   paths: { nodes: string[]; edges: string[]; length: number }[]
 }
-

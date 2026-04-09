@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import json
 import logging
 
-from services.neo4j.driver import driver, parse_json_field, safe_float
+from services.neo4j.driver import active_node_predicate, driver, parse_json_field, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ class GraphService:
                 query = f"""
                     // Find nodes with dates in range
                     MATCH (n)
-                    WHERE n.case_id = $case_id AND n.date IS NOT NULL
+                    WHERE {active_node_predicate("n")} AND n.date IS NOT NULL
                     {date_filter}
 
                     // Collect all nodes in range and their connections (up to 2 hops)
@@ -70,7 +70,7 @@ class GraphService:
 
                     // Find all nodes connected to nodes in range (up to 2 hops)
                     MATCH path = (start_node)-[*0..2]-(connected)
-                    WHERE connected.case_id = $case_id
+                    WHERE {active_node_predicate("connected")}
                     WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
                     UNWIND all_nodes AS node
 
@@ -87,9 +87,9 @@ class GraphService:
                 """
             else:
                 # No date filter - get all nodes filtered by case_id
-                query = """
+                query = f"""
                     MATCH (n)
-                    WHERE n.case_id = $case_id
+                    WHERE {active_node_predicate("n")}
                     RETURN
                         id(n) AS neo4j_id,
                         n.id AS id,
@@ -189,15 +189,15 @@ class GraphService:
 
                 # Get total node count first (fast count query)
                 total_result = session.run(
-                    "MATCH (n) WHERE n.case_id = $case_id RETURN count(n) AS cnt",
+                    f"MATCH (n) WHERE {active_node_predicate('n')} RETURN count(n) AS cnt",
                     case_id=case_id,
                 )
                 total_node_count = total_result.single()["cnt"]
 
                 nodes_result = session.run(
-                    """
+                    f"""
                     MATCH (n)
-                    WHERE n.case_id = $case_id
+                    WHERE {active_node_predicate("n")}
                     OPTIONAL MATCH (n)-[r]-()
                     WHERE r.case_id = $case_id
                     WITH n, count(r) AS deg
@@ -257,12 +257,12 @@ class GraphService:
 
                 query = f"""
                     MATCH (n)
-                    WHERE n.case_id = $case_id AND n.date IS NOT NULL
+                    WHERE {active_node_predicate("n")} AND n.date IS NOT NULL
                     {date_filter}
                     WITH collect(DISTINCT n) AS nodes_in_range
                     UNWIND nodes_in_range AS start_node
                     MATCH path = (start_node)-[*0..2]-(connected)
-                    WHERE connected.case_id = $case_id
+                    WHERE {active_node_predicate("connected")}
                     WITH collect(DISTINCT start_node) + collect(DISTINCT connected) AS all_nodes
                     UNWIND all_nodes AS node
                     WITH DISTINCT node
@@ -274,9 +274,9 @@ class GraphService:
                         properties(node) AS node_props
                 """
             else:
-                query = """
+                query = f"""
                     MATCH (n)
-                    WHERE n.case_id = $case_id
+                    WHERE {active_node_predicate("n")}
                     RETURN
                         n.key AS key,
                         n.name AS name,
@@ -347,8 +347,8 @@ class GraphService:
             # Get the central node and neighbours - always filter by case_id
             result = session.run(
                 f"""
-                MATCH path = (center {{key: $key}})-[*1..{depth}]-(neighbour)
-                WHERE neighbour.case_id = $case_id
+                MATCH path = (center {{key: $key, case_id: $case_id}})-[*1..{depth}]-(neighbour)
+                WHERE {active_node_predicate("center")} AND {active_node_predicate("neighbour")}
                 WITH center, neighbour, relationships(path) AS rels
                 UNWIND rels AS r
                 WITH center, neighbour, collect(DISTINCT r) AS relationships
@@ -441,8 +441,8 @@ class GraphService:
                 params = {"start_key": start_key, "case_id": case_id}
                 result = session.run(
                     f"""
-                    MATCH path = (start {{key: $start_key}})-[*1..{depth}]-(neighbour)
-                    WHERE neighbour.case_id = $case_id
+                    MATCH path = (start {{key: $start_key, case_id: $case_id}})-[*1..{depth}]-(neighbour)
+                    WHERE {active_node_predicate("start")} AND {active_node_predicate("neighbour")}
                     RETURN DISTINCT neighbour.key AS key
                     """,
                     **params,
@@ -456,9 +456,9 @@ class GraphService:
                 return {"nodes": [], "links": []}
 
             # Always filter by case_id
-            nodes_query = """
+            nodes_query = f"""
                 MATCH (n)
-                WHERE n.key IN $keys AND n.case_id = $case_id
+                WHERE n.key IN $keys AND {active_node_predicate("n")}
                 RETURN
                     id(n) AS neo4j_id,
                     n.id AS id,
@@ -522,10 +522,11 @@ class GraphService:
             params = {"key": key, "case_id": case_id}
 
             result = session.run(
-                """
-                MATCH (n {key: $key})
+                f"""
+                MATCH (n {{key: $key, case_id: $case_id}})
+                WHERE {active_node_predicate("n")}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE connected.case_id = $case_id
+                WHERE {active_node_predicate("connected")}
                 RETURN
                     n.id AS id,
                     n.key AS key,
@@ -590,7 +591,7 @@ class GraphService:
             params = {"search_lower": search_lower, "limit": limit, "case_id": case_id}
 
             result = session.run(
-                """
+                f"""
                 MATCH (n)
                 WHERE (
                     (n.name IS NOT NULL AND toLower(n.name) CONTAINS $search_lower)
@@ -598,7 +599,7 @@ class GraphService:
                     OR (n.summary IS NOT NULL AND toLower(n.summary) CONTAINS $search_lower)
                     OR (n.notes IS NOT NULL AND size(n.notes) > 0 AND toLower(n.notes) CONTAINS $search_lower)
                 )
-                AND n.case_id = $case_id
+                AND {active_node_predicate("n")}
                 RETURN
                     n.key AS key,
                     n.name AS name,
@@ -630,9 +631,9 @@ class GraphService:
 
             # Count by type - always filter by case_id
             type_counts = session.run(
-                """
+                f"""
                 MATCH (n)
-                WHERE n.case_id = $case_id
+                WHERE {active_node_predicate("n")}
                 RETURN labels(n)[0] AS type, count(*) AS count
                 ORDER BY count DESC
                 """,
@@ -642,9 +643,9 @@ class GraphService:
 
             # Get all entities with summaries or notes (for AI context)
             entities_result = session.run(
-                """
+                f"""
                 MATCH (n)
-                WHERE n.case_id = $case_id AND (n.summary IS NOT NULL OR n.notes IS NOT NULL)
+                WHERE {active_node_predicate("n")} AND (n.summary IS NOT NULL OR n.notes IS NOT NULL)
                 RETURN
                     n.key AS key,
                     n.name AS name,
@@ -694,12 +695,12 @@ class GraphService:
             # Use a subquery to limit connections per node, preventing memory
             # explosion on hub nodes in large cases.
             result = session.run(
-                """
+                f"""
                 MATCH (n)
                 WHERE n.key IN $keys
-                  AND n.case_id = $case_id
+                  AND {active_node_predicate("n")}
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE connected.case_id = $case_id
+                WHERE {active_node_predicate("connected")}
                 WITH n, r, connected
                 ORDER BY CASE WHEN connected IS NULL THEN 1 ELSE 0 END, connected.name
                 WITH n,

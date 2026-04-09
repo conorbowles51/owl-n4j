@@ -1175,6 +1175,7 @@ async def delete_evidence_file(
                                 case_id=case_id,
                                 deleted_by=current_user.email,
                                 reason=f"file_delete:{filename}",
+                                db=db,
                             )
                             result_info["exclusive_entities_recycled"].append(entity)
                         except Exception as e:

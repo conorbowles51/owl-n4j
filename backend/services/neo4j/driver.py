@@ -17,6 +17,18 @@ from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
 logger = logging.getLogger(__name__)
 
 
+def active_node_predicate(alias: str, case_scoped: bool = True) -> str:
+    """Cypher predicate for nodes that belong to the active investigation graph."""
+    clauses = [
+        f"NOT {alias}:RecycleBin",
+        f"NOT {alias}:RecycleBinItem",
+        f"coalesce({alias}.system_node, false) <> true",
+    ]
+    if case_scoped:
+        clauses.insert(0, f"{alias}.case_id = $case_id")
+    return " AND ".join(clauses)
+
+
 # ── Utility helpers ────────────────────────────────────────────────────────
 
 

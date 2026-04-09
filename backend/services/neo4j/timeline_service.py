@@ -57,11 +57,17 @@ class TimelineService:
             query = f"""
                 MATCH (n)
                 WHERE n.date IS NOT NULL
+                AND NOT n:RecycleBin
+                AND NOT n:RecycleBinItem
+                AND coalesce(n.system_node, false) <> true
                 {type_filter}
                 {date_filter}
                 AND n.case_id = $case_id
                 OPTIONAL MATCH (n)-[r]-(connected)
-                WHERE NOT connected:Document AND NOT connected:Case AND connected.case_id = $case_id
+                WHERE NOT connected:Document AND NOT connected:Case
+                  AND NOT connected:RecycleBin AND NOT connected:RecycleBinItem
+                  AND coalesce(connected.system_node, false) <> true
+                  AND connected.case_id = $case_id
                 WITH n, collect(DISTINCT {{
                     key: connected.key,
                     name: connected.name,

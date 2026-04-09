@@ -1455,6 +1455,7 @@ async def find_similar_entities_stream(
 async def merge_entities(
     request: MergeEntitiesRequest,
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Merge two entities into one.
@@ -1471,6 +1472,8 @@ async def merge_entities(
             target_key=request.target_key,
             merged_data=request.merged_data,
             case_id=request.case_id,
+            db=db,
+            deleted_by=user.get("username", "unknown"),
         )
         
         # Validate result is not None
@@ -1715,7 +1718,8 @@ async def delete_node(
     node_key: str,
     case_id: str = Query(..., description="REQUIRED: Verify node belongs to this case"),
     permanent: bool = Query(False, description="If True, permanently delete. If False, move to recycling bin."),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """
     Delete a node and all its relationships from the graph.
@@ -1741,6 +1745,7 @@ async def delete_node(
                 case_id=case_id,
                 deleted_by=user.get("username", "unknown"),
                 reason="manual_delete",
+                db=db,
             )
             action = "Node Moved to Recycling Bin"
 
@@ -1999,10 +2004,11 @@ async def rescan_locations(
 async def list_recycled_entities(
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """List all entities in the recycling bin for a case."""
     try:
-        items = neo4j_service.list_recycled_entities(case_id)
+        items = neo4j_service.list_recycled_entities(case_id, db=db)
         return {"items": items, "total": len(items)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -2013,10 +2019,16 @@ async def restore_recycled_entity(
     recycle_key: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Restore an entity from the recycling bin back into the graph."""
     try:
-        result = neo4j_service.restore_recycled_entity(recycle_key, case_id)
+        result = neo4j_service.restore_recycled_entity(
+            recycle_key,
+            case_id,
+            db=db,
+            restored_by=user.get("username", "unknown"),
+        )
 
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,
@@ -2043,10 +2055,16 @@ async def permanently_delete_recycled(
     recycle_key: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Permanently delete an entity from the recycling bin (no recovery possible)."""
     try:
-        result = neo4j_service.permanently_delete_recycled(recycle_key, case_id)
+        result = neo4j_service.permanently_delete_recycled(
+            recycle_key,
+            case_id,
+            db=db,
+            purged_by=user.get("username", "unknown"),
+        )
 
         system_log_service.log(
             log_type=LogType.GRAPH_OPERATION,

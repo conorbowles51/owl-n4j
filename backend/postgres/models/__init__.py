@@ -10,6 +10,7 @@ from postgres.models.processing_profile import ProcessingProfile, CaseProcessing
 from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
 from postgres.models.evidence import EvidenceFolder, EvidenceFile, IngestionLog
+from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -27,7 +28,7 @@ __all__ = [
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
-    "EvidenceFolder", "EvidenceFile", "IngestionLog",
+    "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
     "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
