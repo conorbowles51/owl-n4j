@@ -1305,22 +1305,6 @@ async def verify_insight(node_key: str, request: VerifyInsightRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-class FindSimilarEntitiesRequest(BaseModel):
-    """Request model for finding similar entities."""
-    case_id: str
-    entity_types: Optional[List[str]] = None
-    name_similarity_threshold: float = 0.7
-    max_results: int = 50
-
-
-class MergeEntitiesRequest(BaseModel):
-    """Request model for merging entities."""
-    case_id: str  # REQUIRED: Verify both entities belong to this case
-    source_key: str
-    target_key: str
-    merged_data: Dict[str, Any]  # name, summary, notes, type, properties
-
-
 @router.post("/find-similar-entities")
 async def find_similar_entities(
     request: FindSimilarEntitiesRequest,
