@@ -40,6 +40,14 @@ def upgrade() -> None:
     # Add entity_merge to cost_job_type enum
     op.execute("ALTER TYPE cost_job_type ADD VALUE IF NOT EXISTS 'entity_merge'")
 
+    # Evidence engine jobs table — add merge support
+    # (Evidence engine's own Alembic is disabled; backend owns all migrations)
+    op.add_column("jobs", sa.Column("job_type", sa.String(32), server_default="ingestion", nullable=False))
+    op.add_column("jobs", sa.Column("merge_payload", JSONB, nullable=True))
+    op.alter_column("jobs", "file_name", existing_type=sa.String(500), nullable=True)
+    op.alter_column("jobs", "file_path", existing_type=sa.String(1000), nullable=True)
+    op.execute("ALTER TYPE jobstatus ADD VALUE IF NOT EXISTS 'merging_properties'")
+
 
 def downgrade() -> None:
     op.drop_table("merge_jobs")
