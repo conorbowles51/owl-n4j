@@ -303,7 +303,7 @@ export function TablePage() {
   )
 
   const handleMerge = useCallback(() => {
-    if (checkedArray.length === 2) setMergeOpen(true)
+    if (checkedArray.length >= 2) setMergeOpen(true)
   }, [checkedArray])
 
   const handleDelete = useCallback(() => {
@@ -473,8 +473,7 @@ export function TablePage() {
       <MergeEntitiesDialog
         open={mergeOpen}
         onOpenChange={setMergeOpen}
-        entity1={checkedNodes[0] ?? null}
-        entity2={checkedNodes[1] ?? null}
+        entities={checkedNodes}
         caseId={caseId ?? ""}
         onMerged={handleMerged}
       />

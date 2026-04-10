@@ -398,8 +398,7 @@ export function SimilarEntitiesView({
       <MergeEntitiesDialog
         open={mergeOpen}
         onOpenChange={setMergeOpen}
-        entity1={mergePair.e1}
-        entity2={mergePair.e2}
+        entities={[mergePair.e1, mergePair.e2].filter((e): e is GraphNode => e !== null)}
         caseId={caseId}
         similarity={mergePair.similarity}
         onMerged={() => {

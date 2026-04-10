@@ -1,5 +1,7 @@
 """API route for entity merge jobs."""
 
+import json
+import re
 import uuid
 from typing import Any
 
@@ -67,11 +69,18 @@ async def merge_entities(
             pass
 
     entity_names = ", ".join(e.name for e in body.entities[:5])
+
+    # Sanitize payload — PostgreSQL JSONB rejects \u0000 null bytes
+    payload = body.model_dump(mode="json")
+    payload_json = json.dumps(payload)
+    payload_json = payload_json.replace("\x00", "").replace("\\u0000", "")
+    payload = json.loads(payload_json)
+
     job = Job(
         id=job_id,
         case_id=case_id,
         job_type="entity_merge",
-        merge_payload=body.model_dump(mode="json"),
+        merge_payload=payload,
         file_name=f"Merge: {entity_names[:200]}",
         file_path=None,
         requested_by_user_id=requested_by,

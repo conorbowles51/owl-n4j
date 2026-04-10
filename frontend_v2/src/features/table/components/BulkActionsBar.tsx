@@ -30,9 +30,9 @@ export function BulkActionsBar({
           variant="ghost"
           size="sm"
           className="h-7 text-xs"
-          disabled={count !== 2}
+          disabled={count < 2}
           onClick={onMerge}
-          title={count !== 2 ? "Select exactly 2 entities to merge" : "Merge entities"}
+          title={count < 2 ? "Select 2 or more entities to merge" : `Merge ${count} entities`}
         >
           <GitMerge className="size-3.5" />
           Merge

@@ -125,7 +125,7 @@ export function NodeDetailSheet({
       <div className="flex h-full flex-col border-l border-border bg-card">
         <MultiNodePanel
           nodes={selectedNodes}
-          onMerge={selectedNodeKeys.size === 2 ? onMergeSelected : undefined}
+          onMerge={selectedNodeKeys.size >= 2 ? onMergeSelected : undefined}
           onCompare={selectedNodeKeys.size === 2 ? onCompareSelected : undefined}
           onHideSelected={() => {
             for (const k of selectedNodeKeys) hideNode(k)

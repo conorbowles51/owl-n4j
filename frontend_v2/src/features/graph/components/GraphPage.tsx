@@ -162,12 +162,8 @@ export function GraphPage() {
 
   /* ---- Merge setup ---- */
   const mergeEntities = useMemo(() => {
-    if (selectedNodeKeys.size !== 2 || !graphData) return { e1: null, e2: null }
-    const [k1, k2] = Array.from(selectedNodeKeys)
-    return {
-      e1: graphData.nodes.find((n) => n.key === k1) ?? null,
-      e2: graphData.nodes.find((n) => n.key === k2) ?? null,
-    }
+    if (selectedNodeKeys.size < 2 || !graphData) return []
+    return graphData.nodes.filter((n) => selectedNodeKeys.has(n.key))
   }, [selectedNodeKeys, graphData])
 
   /* ---- Selected nodes for relationship creation ---- */
@@ -353,8 +349,7 @@ export function GraphPage() {
       <MergeEntitiesDialog
         open={mergeOpen}
         onOpenChange={setMergeOpen}
-        entity1={mergeEntities.e1}
-        entity2={mergeEntities.e2}
+        entities={mergeEntities}
         caseId={caseId!}
         onMerged={refreshGraph}
       />

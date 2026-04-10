@@ -57,7 +57,7 @@ export function MultiNodePanel({
 
       {/* Bulk actions */}
       <div className="grid grid-cols-2 gap-2">
-        {onMerge && nodes.length === 2 && (
+        {onMerge && nodes.length >= 2 && (
           <Button variant="outline" size="sm" onClick={onMerge}>
             <GitMerge className="size-3.5" />
             Merge

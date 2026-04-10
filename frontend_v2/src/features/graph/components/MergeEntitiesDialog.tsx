@@ -13,8 +13,7 @@ import { GitMerge, AlertTriangle, Loader2, CheckCircle2, XCircle } from "lucide-
 interface MergeEntitiesDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  entity1: GraphNode | null
-  entity2: GraphNode | null
+  entities: GraphNode[]
   caseId: string
   similarity?: number
   onMerged?: () => void
@@ -35,8 +34,7 @@ const STATUS_LABELS: Record<string, string> = {
 export function MergeEntitiesDialog({
   open,
   onOpenChange,
-  entity1,
-  entity2,
+  entities,
   caseId,
   similarity,
   onMerged,
@@ -161,14 +159,14 @@ export function MergeEntitiesDialog({
   }, [stopTracking])
 
   const handleMerge = async () => {
-    if (!entity1 || !entity2) return
+    if (entities.length < 2) return
     setSubmitting(true)
     setError(null)
 
     try {
       const result = await graphAPI.mergeEntities(
         caseId,
-        [entity1.key, entity2.key],
+        entities.map((e) => e.key),
         preferredName.trim() || undefined
       )
       setJobId(result.job_id)
@@ -181,7 +179,7 @@ export function MergeEntitiesDialog({
     }
   }
 
-  if (!entity1 || !entity2) return null
+  if (entities.length < 2) return null
 
   const isProcessing = jobId !== null && jobStatus !== "failed"
   const isComplete = jobStatus === "completed"
@@ -199,18 +197,16 @@ export function MergeEntitiesDialog({
 
         <div className="space-y-4 py-2">
           {/* Entity cards */}
-          <div className="grid grid-cols-2 gap-3">
-            {[entity1, entity2].map((entity) => (
+          <div className="flex flex-wrap gap-2">
+            {entities.map((entity) => (
               <div
                 key={entity.key}
-                className="rounded-lg border border-border p-3"
+                className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5"
               >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <NodeBadge type={entity.type} />
-                </div>
-                <p className="text-sm font-medium leading-tight truncate">
+                <NodeBadge type={entity.type} />
+                <span className="text-xs font-medium truncate max-w-[140px]">
                   {entity.label}
-                </p>
+                </span>
               </div>
             ))}
           </div>
@@ -235,7 +231,7 @@ export function MergeEntitiesDialog({
                 <div className="text-xs text-amber-700 dark:text-amber-400">
                   <p className="font-medium">AI-powered merge</p>
                   <p className="mt-0.5 opacity-80">
-                    AI will intelligently merge all properties from both entities.
+                    AI will intelligently merge all properties from {entities.length} entities into one.
                     The originals will be moved to the recycle bin.
                   </p>
                 </div>
