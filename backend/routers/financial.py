@@ -2,6 +2,7 @@
 Financial Router - endpoints for financial analysis and transaction visualization.
 """
 
+import asyncio
 from datetime import datetime
 from typing import List, Optional
 
@@ -63,6 +64,7 @@ async def get_financial_transactions(
     start_date: Optional[str] = Query(None, description="Filter on or after this date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Filter on or before this date (YYYY-MM-DD)"),
     categories: Optional[str] = Query(None, description="Comma-separated financial categories to include"),
+    data_version: Optional[str] = Query(None, description="Filter by data version: 'legacy' (exclude audit-v2), 'v2' (only audit-v2), or omit for all"),
 ):
     """
     Get financial transactions with from/to entity resolution for a specific case.
@@ -71,12 +73,14 @@ async def get_financial_transactions(
         parsed_types = [t.strip() for t in types.split(",") if t.strip()] if types else None
         parsed_categories = [c.strip() for c in categories.split(",") if c.strip()] if categories else None
 
-        transactions = neo4j_service.get_financial_transactions(
+        transactions = await asyncio.to_thread(
+            neo4j_service.get_financial_transactions,
             case_id=case_id,
             types=parsed_types,
             start_date=start_date,
             end_date=end_date,
             categories=parsed_categories,
+            data_version=data_version,
         )
         return {"transactions": transactions, "total": len(transactions)}
     except Exception as e:
@@ -89,7 +93,7 @@ async def get_financial_entities(
 ):
     """Return all non-transaction entities in a case for from/to pickers."""
     try:
-        entities = neo4j_service.get_financial_entities(case_id)
+        entities = await asyncio.to_thread(neo4j_service.get_financial_entities, case_id)
         return {"entities": entities}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -106,7 +110,7 @@ async def get_financial_summary(
     With entity_key: returns entity-relative inflows/outflows.
     """
     try:
-        return neo4j_service.get_financial_summary(case_id=case_id, entity_key=entity_key)
+        return await asyncio.to_thread(neo4j_service.get_financial_summary, case_id=case_id, entity_key=entity_key)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -119,7 +123,7 @@ async def get_financial_volume(
     Get transaction volume over time grouped by date and type for chart data.
     """
     try:
-        data = neo4j_service.get_financial_volume_over_time(case_id=case_id)
+        data = await asyncio.to_thread(neo4j_service.get_financial_volume_over_time, case_id=case_id)
         return {"data": data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -237,7 +241,7 @@ async def get_categories(
     Get predefined + custom financial categories found in a case.
     """
     try:
-        categories = neo4j_service.get_financial_categories(case_id=case_id)
+        categories = await asyncio.to_thread(neo4j_service.get_financial_categories, case_id=case_id)
         return {"categories": categories}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -474,6 +478,7 @@ async def export_financial_pdf(
     search_header: Optional[str] = Query(None, description="Header bar search — matches name, from/to entity names, purpose, notes"),
     include_entity_notes: bool = Query(True, description="Include entity notes appendix"),
     sections: Optional[str] = Query(None, description="Comma-separated section keys to include in PDF (summary, money_flow, charts, entity_flow, transactions, filters, entity_notes)"),
+    data_version: Optional[str] = Query(None, description="Filter by data version: 'legacy' (exclude audit-v2), 'v2' (only audit-v2), or omit for all"),
 ):
     """Export filtered financial transactions as a PDF report.
 
@@ -485,7 +490,7 @@ async def export_financial_pdf(
     from math import fabs
 
     try:
-        result = neo4j_service.get_financial_transactions(case_id=case_id)
+        result = neo4j_service.get_financial_transactions(case_id=case_id, data_version=data_version)
         all_transactions = result.get("transactions", []) if isinstance(result, dict) else result
 
         # --- Stage 1: Base filters (type, category, date, search) ---
@@ -712,15 +717,18 @@ async def export_financial_pdf(
 
         # --- Compute Payments / Receipts (sign-based, mirrors frontend) ---
         # Wire-format names preserved for backwards compatibility:
-        #   total_outflows = sum of abs(amount) for positive transactions  → "Payments"
-        #   total_inflows  = sum of abs(amount) for negative transactions  → "Receipts"
+        #   total_outflows = sum of abs(amount) for negative transactions  → "Payments"
+        #   total_inflows  = sum of abs(amount) for positive transactions  → "Receipts"
+        # Under the sign-normalized convention (TRANSACTION_REPROCESS_PLAN.md
+        # §3.0.1) negatives are outgoing/Payments and positives are
+        # incoming/Receipts.
         has_entity_selection = bool(from_keys_set or to_keys_set)
         total_inflows = 0.0
         total_outflows = 0.0
         for t in transactions:
             raw = float(t.get("amount") or 0)
             amt = fabs(raw)
-            if raw >= 0:
+            if raw < 0:
                 total_outflows += amt
             else:
                 total_inflows += amt

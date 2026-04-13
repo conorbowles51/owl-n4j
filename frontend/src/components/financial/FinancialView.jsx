@@ -129,6 +129,9 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   const [autoExtractPreview, setAutoExtractPreview] = useState(null);
   const [autoExtractError, setAutoExtractError] = useState(null);
 
+  // Data version toggle (legacy vs v2 audit data)
+  const [dataVersion, setDataVersion] = useState('v2'); // 'v2' = default (audit data), 'legacy', null = all
+
   // Derived helpers from category objects
   const categoryNames = useMemo(() => categories.map(c => c.name), [categories]);
   const categoryColorMap = useMemo(() => {
@@ -144,7 +147,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     setError(null);
     try {
       const [txnRes, catRes] = await Promise.all([
-        financialAPI.getTransactions({ caseId }),
+        financialAPI.getTransactions({ caseId, dataVersion }),
         financialAPI.getCategories(caseId),
       ]);
       setTransactions(txnRes.transactions || []);
@@ -160,7 +163,7 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       setError(err.message || 'Failed to load financial data');
     }
     setIsLoading(false);
-  }, [caseId]);
+  }, [caseId, dataVersion]);
 
   useEffect(() => {
     loadData();
@@ -331,8 +334,14 @@ export default function FinancialView({ caseId, onNodeSelect }) {
   // Compute summary from filtered transactions.
   //
   // Sign-based totals (NOT perspective-based cash flow):
-  //   total_outflows = sum of abs(amount) for positive-amount transactions  → "Payments"
-  //   total_inflows  = sum of abs(amount) for negative-amount transactions  → "Receipts"
+  //   total_outflows = sum of abs(amount) for negative-amount transactions  → "Payments"
+  //   total_inflows  = sum of abs(amount) for positive-amount transactions  → "Receipts"
+  //
+  // Sign convention (see TRANSACTION_REPROCESS_PLAN.md §3.0.1): direction is
+  // encoded by sign — negative = outgoing / Payment, positive = incoming /
+  // Receipt. Cases that haven't been sign-normalized yet will show Payments
+  // = $0 and Receipts = full volume; that's expected until those cases get
+  // reprocessed.
   //
   // The same labels apply whether or not filters are active — filters just
   // change which transactions are included in the count. True cash-flow
@@ -353,13 +362,13 @@ export default function FinancialView({ caseId, onNodeSelect }) {
       };
     }
 
-    let inflows = 0;   // sum of negative-amount txns (Receipts)
-    let outflows = 0;  // sum of positive-amount txns (Payments)
+    let inflows = 0;   // sum of positive-amount txns (Receipts)
+    let outflows = 0;  // sum of negative-amount txns (Payments)
     const entityKeys = new Set();
     filteredTransactions.forEach(t => {
       const raw = parseFloat(t.amount) || 0;
       const amt = Math.abs(raw);
-      if (raw >= 0) outflows += amt;
+      if (raw < 0) outflows += amt;
       else inflows += amt;
       if (!anyFilterActive) {
         if (t.from_entity?.key) entityKeys.add(t.from_entity.key);
@@ -720,6 +729,9 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     if (searchTerm.trim()) {
       params.append('search_header', searchTerm.trim());
     }
+    if (dataVersion) {
+      params.append('data_version', dataVersion);
+    }
     params.append('include_entity_notes', 'true');
     if (sections && sections.size > 0) {
       params.append('sections', [...sections].join(','));
@@ -913,6 +925,32 @@ export default function FinancialView({ caseId, onNodeSelect }) {
           searchQuery={searchQuery}
           onSearchChange={(val) => { setSearchQuery(val); if (!val) setDebouncedSearchQuery(''); }}
         />
+        {/* Data version toggle for v1/v2 audit comparison */}
+        <div className="flex items-center gap-2 mb-2 text-xs">
+          <span className="text-gray-500 font-medium">Data:</span>
+          {[
+            { value: null, label: 'All' },
+            { value: 'legacy', label: 'Legacy (v1)' },
+            { value: 'v2', label: 'Audit (v2)' },
+          ].map(opt => (
+            <button
+              key={opt.label}
+              onClick={() => setDataVersion(opt.value)}
+              className={`px-2 py-0.5 rounded border ${
+                dataVersion === opt.value
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {dataVersion === 'v2' && (
+            <span className="text-amber-600 font-medium ml-2">
+              Showing proposed audit data (15,696 txns from reprocess)
+            </span>
+          )}
+        </div>
         <FinancialSummaryCards
           summary={filteredSummary}
           hasEntitySelection={hasEntitySelection}

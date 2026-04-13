@@ -76,9 +76,9 @@ def generate_financial_pdf(
 ) -> str:
     """Generate a financial transactions report as print-friendly HTML.
 
-    Sign convention (matches frontend):
-      total_outflows = sum of abs(amount) for positive amounts → "Payments"
-      total_inflows  = sum of abs(amount) for negative amounts → "Receipts"
+    Sign convention (matches frontend, see TRANSACTION_REPROCESS_PLAN.md §3.0.1):
+      total_outflows = sum of abs(amount) for NEGATIVE amounts → "Payments"
+      total_inflows  = sum of abs(amount) for POSITIVE amounts → "Receipts"
 
     money_flow_summary (optional): when present, renders a perspective-based
     section with Inflow/Outflow/Net/Internal cards and a counterparty table.
@@ -443,20 +443,20 @@ def generate_financial_pdf(
 
     # ── Summary Cards — Payments / Receipts / Net / Transactions ──
     # Labels are display-only; wire-format names (total_outflows/total_inflows)
-    # and the math behind them are unchanged. Payments = sum of positive amounts,
-    # Receipts = sum of abs(negative amounts). These are ledger sums by sign —
-    # they are NOT perspective-based cash flow.
+    # stay stable. Payments = sum of abs(negative amounts), Receipts = sum of
+    # positive amounts. These are ledger sums by sign — NOT perspective-based
+    # cash flow.
     any_filter_active = has_entity_selection or bool(money_flow_summary)
     summary_cards_html = f"""
     <div class="summary-grid">
         <div class="summary-card card-out">
             <div class="summary-label">Payments</div>
-            <div class="summary-sub">Sent (positive)</div>
+            <div class="summary-sub">Sent (negative)</div>
             <div class="summary-value">{_fmt_amount(total_outflows)}</div>
         </div>
         <div class="summary-card card-in">
             <div class="summary-label">Receipts</div>
-            <div class="summary-sub">Received (negative)</div>
+            <div class="summary-sub">Received (positive)</div>
             <div class="summary-value">{_fmt_amount(total_inflows)}</div>
         </div>
         <div class="summary-card card-net" style="border-color: {net_color}33;">
@@ -476,7 +476,7 @@ def generate_financial_pdf(
     rows_html = ""
     for i, t in enumerate(transactions):
         amount_val = float(t.get("amount") or 0)
-        amount_color = "#dc2626" if amount_val >= 0 else "#16a34a"
+        amount_color = "#16a34a" if amount_val >= 0 else "#dc2626"
         abs_amount = abs(amount_val)
         amount_str = f"${abs_amount:,.2f}" if amount_val >= 0 else f"-${abs_amount:,.2f}"
 

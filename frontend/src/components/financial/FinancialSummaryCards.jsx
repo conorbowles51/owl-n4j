@@ -12,11 +12,16 @@ function formatCurrency(amount) {
  * FinancialSummaryCards
  *
  * Always shows two sign-of-amount totals:
- *   - Payments: sum of positive-amount transactions (money sent / debits)
- *   - Receipts: sum of negative-amount transactions (money received / credits)
+ *   - Payments: sum of abs of NEGATIVE-amount transactions (money sent / debits)
+ *   - Receipts: sum of abs of POSITIVE-amount transactions (money received / credits)
  * These are raw ledger sums — NOT perspective-based cash flow. The labels
  * apply whether or not entities are selected; entity selection just filters
  * which transactions are included.
+ *
+ * Sign convention: direction is encoded by sign (see
+ * TRANSACTION_REPROCESS_PLAN.md §3.0.1). Cases that haven't been
+ * sign-normalized will show Payments = $0 and Receipts = full volume until
+ * reprocessed; this is expected, not a bug.
  *
  * When `moneyFlowSummary` is provided (perspective selection active) we
  * ADDITIONALLY render Inflow / Outflow / Internal cards that measure true
@@ -34,8 +39,8 @@ export default function FinancialSummaryCards({
   if (!summary) return null;
 
   // Sign-based totals (always present from filteredSummary):
-  //   total_outflows = sum of positive amounts → "Payments"
-  //   total_inflows  = sum of negative amounts (abs) → "Receipts"
+  //   total_outflows = sum of abs of negative amounts → "Payments"
+  //   total_inflows  = sum of positive amounts → "Receipts"
   const payments = summary.total_outflows || 0;
   const receipts = summary.total_inflows || 0;
   const txnCount = summary.transaction_count || 0;
@@ -44,7 +49,7 @@ export default function FinancialSummaryCards({
   const cards = [
     {
       label: 'Payments',
-      sublabel: 'Sent (positive)',
+      sublabel: 'Sent (negative)',
       value: formatCurrency(payments),
       icon: ArrowUpRight,
       color: '#dc2626',
@@ -52,7 +57,7 @@ export default function FinancialSummaryCards({
     },
     {
       label: 'Receipts',
-      sublabel: 'Received (negative)',
+      sublabel: 'Received (positive)',
       value: formatCurrency(receipts),
       icon: ArrowDownLeft,
       color: '#16a34a',
