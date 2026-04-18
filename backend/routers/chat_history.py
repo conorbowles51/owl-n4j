@@ -93,20 +93,20 @@ class ChatHistorySummary(BaseModel):
 @router.get("", response_model=List[ChatHistorySummary])
 async def list_chat_histories(user: dict = Depends(get_current_user)):
     """List all chat histories for the current user (summaries only, no messages)."""
-    chats = chat_history_storage.list_by_user(user["username"])
+    summaries = chat_history_storage.list_by_user(user["username"])
 
     result = []
-    for chat in chats:
+    for s in summaries:
         result.append(ChatHistorySummary(
-            id=chat["id"],
-            name=chat["name"],
-            timestamp=chat["timestamp"],
-            created_at=chat["created_at"],
-            owner=chat["owner"],
-            snapshot_id=chat.get("snapshot_id"),
-            case_id=chat.get("case_id"),
-            case_version=chat.get("case_version"),
-            message_count=len(chat.get("messages", [])),
+            id=s["id"],
+            name=s["name"],
+            timestamp=s["timestamp"],
+            created_at=s["created_at"],
+            owner=s["owner"],
+            snapshot_id=s.get("snapshot_id"),
+            case_id=s.get("case_id"),
+            case_version=s.get("case_version"),
+            message_count=s.get("message_count", 0),
         ))
 
     result.sort(key=lambda x: x.created_at, reverse=True)
@@ -188,13 +188,15 @@ async def delete_chat_history(chat_id: str, user: dict = Depends(get_current_use
 @router.get("/by-snapshot/{snapshot_id}", response_model=List[ChatHistoryResponse])
 async def get_chat_histories_by_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
     """Get all chat histories associated with a snapshot."""
-    chats = chat_history_storage.list_by_snapshot(snapshot_id)
-    
-    # Filter by owner
-    user_chats = [chat for chat in chats if chat.get("owner") == user["username"]]
-    
+    summaries = chat_history_storage.list_by_snapshot(snapshot_id)
+
     result = []
-    for chat in user_chats:
+    for s in summaries:
+        if s.get("owner") != user["username"]:
+            continue
+        chat = chat_history_storage.get(s["id"])
+        if chat is None:
+            continue
         result.append(ChatHistoryResponse(
             id=chat["id"],
             name=chat["name"],
@@ -207,8 +209,7 @@ async def get_chat_histories_by_snapshot(snapshot_id: str, user: dict = Depends(
             case_version=chat.get("case_version"),
             message_count=len(chat.get("messages", [])),
         ))
-    
-    # Sort by created_at descending (newest first)
+
     result.sort(key=lambda x: x.created_at, reverse=True)
     return result
 
