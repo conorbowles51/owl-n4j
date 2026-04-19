@@ -49,6 +49,7 @@ export default function CaseManagementView({
   authDisplayName,
   onGoToEvidenceView,
   onGoToWorkspaceView,
+  onGoToTriageView,
   initialCaseToSelect,
   onCaseSelected,
   onViewDocument,
@@ -762,6 +763,17 @@ export default function CaseManagementView({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Triage Workbench Button */}
+          {onGoToTriageView && (
+            <button
+              onClick={onGoToTriageView}
+              className="flex items-center gap-2 px-3 py-2 border border-light-200 text-light-700 rounded-lg bg-white hover:bg-light-50 transition-colors text-sm"
+              title="Evidence Triage Workbench"
+            >
+              <HardDrive className="w-4 h-4" />
+              Triage
+            </button>
+          )}
           {/* Background Tasks Button */}
           <button
             onClick={() => setShowBackgroundTasksPanel(!showBackgroundTasksPanel)}

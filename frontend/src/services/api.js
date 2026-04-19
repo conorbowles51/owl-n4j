@@ -2389,3 +2389,103 @@ export const cellebriteAPI = {
   getCommunicationNetwork: (caseId) =>
     fetchAPI(`/cellebrite/communication-network?case_id=${encodeURIComponent(caseId)}`),
 };
+
+/**
+ * Triage API
+ */
+export const triageAPI = {
+  // Filesystem browse
+  browseDirectory: (path = '/') =>
+    fetchAPI(`/triage/browse?path=${encodeURIComponent(path)}`),
+  // Case CRUD
+  createCase: (data) =>
+    fetchAPI('/triage/cases', { method: 'POST', body: data }),
+  listCases: () =>
+    fetchAPI('/triage/cases'),
+  getCase: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}`),
+  deleteCase: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}`, { method: 'DELETE' }),
+
+  // Scan
+  startScan: (caseId, resume = false) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/scan`, {
+      method: 'POST', body: { resume },
+    }),
+  getStats: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/stats`),
+  getFiles: (caseId, params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined && v !== '') qs.append(k, String(v));
+    });
+    return fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/files?${qs.toString()}`);
+  },
+
+  // Classification (Phase 2)
+  startClassification: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/classify`, { method: 'POST' }),
+  getClassification: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/classification`),
+  uploadHashSet: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/hash-sets`, { method: 'POST', body: data }),
+  uploadYaraRules: (caseId, formData) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/yara-rules`, {
+      method: 'POST', body: formData, headers: {},
+    }),
+
+  // Profile (Phase 3)
+  generateProfile: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/profile`, { method: 'POST' }),
+  getProfile: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/profile`),
+  getTimeline: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/timeline`),
+  getArtifacts: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/artifacts`),
+  getMismatches: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/mismatches`),
+
+  // Processors (Phase 4)
+  listProcessors: () =>
+    fetchAPI('/triage/processors'),
+  createStage: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/stages`, { method: 'POST', body: data }),
+  executeStage: (caseId, stageId, data = {}) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/stages/${encodeURIComponent(stageId)}/execute`, {
+      method: 'POST', body: data,
+    }),
+  getStageResults: (caseId, stageId, params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) qs.append(k, String(v));
+    });
+    return fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/stages/${encodeURIComponent(stageId)}/results?${qs.toString()}`);
+  },
+  getFileProvenance: (caseId, fileId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/files/${encodeURIComponent(fileId)}/provenance`),
+  getFileArtifacts: (caseId, fileId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/files/${encodeURIComponent(fileId)}/artifacts`),
+
+  // Advisor (Phase 5)
+  advisorChat: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/advisor/chat`, { method: 'POST', body: data }),
+  advisorSuggest: (caseId) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/advisor/suggest`),
+
+  // Templates (Phase 5)
+  listTemplates: () =>
+    fetchAPI('/triage/templates'),
+  createTemplate: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/templates`, { method: 'POST', body: data }),
+  applyTemplate: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/apply-template`, { method: 'POST', body: data }),
+  deleteTemplate: (templateId) =>
+    fetchAPI(`/triage/templates/${encodeURIComponent(templateId)}`, { method: 'DELETE' }),
+
+  // Ingest (Phase 6)
+  ingestPreview: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/ingest-preview`, { method: 'POST', body: data }),
+  ingest: (caseId, data) =>
+    fetchAPI(`/triage/cases/${encodeURIComponent(caseId)}/ingest`, { method: 'POST', body: data }),
+};

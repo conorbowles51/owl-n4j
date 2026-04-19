@@ -48,7 +48,16 @@
       "Bash(cat:*)",
       "Bash(source:*)",
       "Bash(python -m py_compile:*)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(/Users/neilbyrne/Documents/Owl/owl-n4j/venv/bin/python3:*)",
+      "Bash(/Users/neilbyrne/Documents/Owl/owl-n4j/venv/bin/pip list)",
+      "Bash(lsof:*)",
+      "Bash(ps:*)",
+      "Bash(pip install:*)",
+      "Bash(/Users/neilbyrne/Documents/Owl/owl-n4j/.venv/bin/pip install:*)",
+      "Bash(../.venv/bin/python:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(git fetch:*)"
     ]
   }
 }

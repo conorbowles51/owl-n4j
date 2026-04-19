@@ -64,6 +64,7 @@ import BackgroundTasksPanel from './components/BackgroundTasksPanel';
 import CaseManagementView from './components/CaseManagementView';
 import EvidenceProcessingView from './components/EvidenceProcessingView';
 import WorkspaceView from './components/WorkspaceView';
+import TriageView from './components/triage/TriageView';
 import { exportSnapshotToPDF } from './utils/pdfExport';
 import { parseSearchQuery, matchesQuery } from './utils/searchParser';  
 import LoginPanel from './components/LoginPanel';
@@ -3309,6 +3310,7 @@ export default function App() {
             setCurrentCaseName(caseData.title || caseData.name);
             setAppView('workspace');
           }}
+          onGoToTriageView={() => setAppView('triage')}
           initialCaseToSelect={caseToSelect}
           onViewDocument={handleViewDocument}
           onCaseSelected={() => setCaseToSelect(null)}
@@ -3354,6 +3356,19 @@ export default function App() {
           onMembersChanged={() => {
             // Optionally refresh the case list or permissions
           }}
+        />
+        <BuildFooter />
+      </CasePermissionProvider>
+    );
+  }
+
+  // Triage view
+  if (appView === 'triage') {
+    return (
+      <CasePermissionProvider userRole={authUserRole}>
+        <TriageView
+          onBack={() => setAppView('caseManagement')}
+          authUsername={authUsername}
         />
         <BuildFooter />
       </CasePermissionProvider>

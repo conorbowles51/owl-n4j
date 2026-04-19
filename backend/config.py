@@ -91,6 +91,13 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 # Parallel Processing Configuration
 MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
 
+# Triage Configuration
+TRIAGE_SCAN_BATCH_SIZE = int(os.getenv("TRIAGE_SCAN_BATCH_SIZE", "500"))
+TRIAGE_SCAN_WORKERS = int(os.getenv("TRIAGE_SCAN_WORKERS", "4"))
+NSRL_RATE_LIMIT = int(os.getenv("NSRL_RATE_LIMIT", "5"))  # CIRCL Hashlookup requests per second
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")  # Optional, enables malware hash lookups
+VIRUSTOTAL_RATE_LIMIT = int(os.getenv("VIRUSTOTAL_RATE_LIMIT", "4"))  # Requests per minute (free tier)
+
 # Image Processing Configuration
 IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "tesseract")
 TESSERACT_LANG = os.getenv("TESSERACT_LANG", "eng")
