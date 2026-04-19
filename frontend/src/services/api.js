@@ -848,13 +848,14 @@ export const financialAPI = {
    * @param {string} [options.endDate] - Filter end date (YYYY-MM-DD)
    * @param {string} [options.categories] - Comma-separated categories
    */
-  getTransactions: async ({ caseId, types, startDate, endDate, categories } = {}) => {
+  getTransactions: async ({ caseId, types, startDate, endDate, categories, dataVersion } = {}) => {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
     if (types) params.append('types', types);
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     if (categories) params.append('categories', categories);
+    if (dataVersion) params.append('data_version', dataVersion);
     return fetchAPI(`/financial?${params.toString()}`);
   },
 

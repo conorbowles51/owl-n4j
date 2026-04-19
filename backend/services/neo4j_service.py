@@ -62,6 +62,9 @@ class Neo4jService:
                 auth=(NEO4J_USER, NEO4J_PASSWORD),
             )
             self._ensure_case_id_index()
+            # Track which cases have already been backfilled this process
+            self._backfilled_keys: set = set()
+            self._backfilled_refs: set = set()
 
     def _ensure_case_id_index(self):
         """Create index on case_id for performance."""
@@ -3504,6 +3507,105 @@ class Neo4jService:
                 },
             }
 
+    def bulk_soft_delete_financial_for_document(
+        self,
+        doc_name: str,
+        case_id: str,
+        deleted_by: str,
+        reason: str = "audit_replacement",
+        *,
+        exclude_audit_proposed: bool = True,
+        dry_run: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Soft-delete all financial transaction nodes mentioned in a single document.
+
+        Walks (n)-[:MENTIONED_IN]->(:Document {name, case_id}) and recycles every
+        node with a non-null ``amount`` (i.e. financial transactions and balances)
+        via :meth:`soft_delete_entity`.  Document/Case/FinancialCategory nodes are
+        excluded.  When ``exclude_audit_proposed`` is True (the default), audited
+        v2 replacement nodes flagged ``audit_status='proposed'`` are also excluded
+        so they survive the cleanup.
+
+        Defaults to ``dry_run=True`` — pass ``dry_run=False`` to actually recycle.
+
+        Args:
+            doc_name:               Document name to scope the cleanup
+            case_id:                Case ID for scoping
+            deleted_by:             Username recorded against each recycled node
+            reason:                 Reason string stored on each RecycleBin entry
+            exclude_audit_proposed: Skip nodes with ``audit_status='proposed'``
+            dry_run:                If True, list candidates without recycling
+
+        Returns:
+            Dict with candidate count, deleted count, and any failures.
+        """
+        with self._driver.session() as session:
+            extra = (
+                " AND coalesce(n.audit_status, '') <> 'proposed'"
+                if exclude_audit_proposed
+                else ""
+            )
+            query = f"""
+                MATCH (n)-[:MENTIONED_IN]->(d:Document {{name: $doc_name, case_id: $case_id}})
+                WHERE n.amount IS NOT NULL
+                  AND n.case_id = $case_id
+                  AND NOT n:Document
+                  AND NOT n:Case
+                  AND NOT n:FinancialCategory
+                  AND NOT n:RecycleBin
+                  {extra}
+                RETURN n.key AS key, labels(n)[0] AS type, n.name AS name, n.amount AS amount,
+                       n.audit_status AS audit_status
+            """
+            result = session.run(query, doc_name=doc_name, case_id=case_id)
+            candidates = [
+                {
+                    "key": r["key"],
+                    "type": r["type"],
+                    "name": r["name"],
+                    "amount": r["amount"],
+                    "audit_status": r["audit_status"],
+                }
+                for r in result
+            ]
+
+        if dry_run:
+            return {
+                "doc_name": doc_name,
+                "case_id": case_id,
+                "candidate_count": len(candidates),
+                "candidates": candidates,
+                "deleted_count": 0,
+                "failed_count": 0,
+                "failures": [],
+                "dry_run": True,
+            }
+
+        deleted: List[Dict] = []
+        failures: List[Dict] = []
+        for cand in candidates:
+            try:
+                self.soft_delete_entity(
+                    node_key=cand["key"],
+                    case_id=case_id,
+                    deleted_by=deleted_by,
+                    reason=reason,
+                )
+                deleted.append(cand)
+            except Exception as exc:
+                failures.append({"key": cand["key"], "error": str(exc)})
+
+        return {
+            "doc_name": doc_name,
+            "case_id": case_id,
+            "candidate_count": len(candidates),
+            "deleted_count": len(deleted),
+            "failed_count": len(failures),
+            "failures": failures,
+            "dry_run": False,
+        }
+
     # -------------------------------------------------------------------------
     # Case Management
     # -------------------------------------------------------------------------
@@ -3728,6 +3830,7 @@ class Neo4jService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         categories: Optional[List[str]] = None,
+        data_version: Optional[str] = None,
     ) -> List[Dict]:
         """
         Get all nodes that have amount properties, with from/to entity resolution.
@@ -3742,9 +3845,14 @@ class Neo4jService:
         Returns:
             List of transaction dicts with from/to entity resolution
         """
-        # Lazy backfill: deduplicate keys, then ensure every transaction has a ref_id
-        self.ensure_unique_transaction_keys(case_id)
-        self.ensure_transaction_ref_ids(case_id)
+        # Lazy backfill: deduplicate keys, then ensure every transaction has a ref_id.
+        # Only run once per case per process lifetime to avoid repeated full-scans.
+        if case_id not in self._backfilled_keys:
+            self.ensure_unique_transaction_keys(case_id)
+            self._backfilled_keys.add(case_id)
+        if case_id not in self._backfilled_refs:
+            self.ensure_transaction_ref_ids(case_id)
+            self._backfilled_refs.add(case_id)
 
         with self._driver.session() as session:
             params = {"case_id": case_id}
@@ -3762,6 +3870,10 @@ class Neo4jService:
             if categories:
                 conditions.append("coalesce(n.financial_category, 'Unknown') IN $categories")
                 params["categories"] = categories
+            if data_version == "legacy":
+                conditions.append("coalesce(n.audit_status, '') <> 'proposed'")
+            elif data_version == "v2":
+                conditions.append("n.audit_status = 'proposed'")
 
             extra_filter = (" AND " + " AND ".join(conditions)) if conditions else ""
 
@@ -4060,6 +4172,15 @@ class Neo4jService:
                 params_a = {"case_id": case_id}
                 where_a = self._build_financial_where(params_a, **filter_kw)
 
+                # total_outflows = Payments  (money leaving the account holder)
+                # total_inflows  = Receipts  (money arriving at the account holder)
+                #
+                # Under the sign-normalized convention (see
+                # TRANSACTION_REPROCESS_PLAN.md §3.0.1), direction is encoded by
+                # sign: negative = outgoing/Payment, positive = incoming/Receipt.
+                # Legacy all-positive cases will therefore show Payments=$0 and
+                # Receipts=full volume until they are reprocessed — accepted
+                # trade-off per §5 Q5 option (b).
                 summary_query = f"""
                     MATCH (n)
                     WHERE n.amount IS NOT NULL AND n.case_id = $case_id
@@ -4074,8 +4195,8 @@ class Neo4jService:
                         avg(abs(amt)) AS avg_amount,
                         count(DISTINCT coalesce(n.from_entity_key, n.from_entity_name)) +
                         count(DISTINCT coalesce(n.to_entity_key, n.to_entity_name)) AS unique_entity_refs,
-                        sum(CASE WHEN amt >= 0 THEN abs(amt) ELSE 0 END) AS total_outflows,
-                        sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_inflows
+                        sum(CASE WHEN amt < 0 THEN abs(amt) ELSE 0 END) AS total_outflows,
+                        sum(CASE WHEN amt >= 0 THEN abs(amt) ELSE 0 END) AS total_inflows
                 """
                 sr = session.run(summary_query, **params_a).single()
                 summary = {

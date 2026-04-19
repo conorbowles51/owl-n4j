@@ -249,12 +249,16 @@ async def get_graph(
     """
     try:
         if lightweight:
-            result = neo4j_service.get_graph_structure(
+            result = await asyncio.to_thread(
+                neo4j_service.get_graph_structure,
                 case_id=case_id, start_date=start_date, end_date=end_date,
                 limit=limit, sort_by=sort_by,
             )
         else:
-            result = neo4j_service.get_full_graph(case_id=case_id, start_date=start_date, end_date=end_date)
+            result = await asyncio.to_thread(
+                neo4j_service.get_full_graph,
+                case_id=case_id, start_date=start_date, end_date=end_date,
+            )
         
         # Log the filter operation if dates are provided
         if start_date or end_date:

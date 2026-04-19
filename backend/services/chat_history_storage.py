@@ -1,105 +1,116 @@
 """
 Chat History Storage Service
 
-Handles persistent storage of chat histories.
+Per-chat JSON files under data/chat_histories/ plus a lightweight _index.json of
+summaries. Startup only loads the index, not the chat bodies, so memory stays
+bounded regardless of total chat volume.
 """
 
 import json
-import os
 from pathlib import Path
 from typing import Dict, List, Optional
-from datetime import datetime
 
-# Storage file location
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STORAGE_DIR = BASE_DIR / "data"
-STORAGE_FILE = STORAGE_DIR / "chat_histories.json"
+STORAGE_DIR = BASE_DIR / "data" / "chat_histories"
+INDEX_FILE = STORAGE_DIR / "_index.json"
+
+SUMMARY_FIELDS = ("id", "name", "timestamp", "created_at", "owner",
+                  "snapshot_id", "case_id", "case_version")
 
 
-def ensure_storage_dir():
-    """Ensure the storage directory exists."""
+def _ensure_dir() -> None:
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def load_chat_histories() -> Dict:
-    """Load chat histories from the JSON file."""
-    ensure_storage_dir()
-    
-    if not STORAGE_FILE.exists():
+def _safe_chat_id(chat_id: str) -> bool:
+    return isinstance(chat_id, str) and chat_id and "/" not in chat_id and not chat_id.startswith(".") and chat_id != "_index"
+
+
+def _chat_path(chat_id: str) -> Path:
+    return STORAGE_DIR / f"{chat_id}.json"
+
+
+def _atomic_write(path: Path, obj) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False)
+    tmp.replace(path)
+
+
+def _summarize(chat_id: str, chat: Dict) -> Dict:
+    msgs = chat.get("messages") or []
+    summary = {k: chat.get(k) for k in SUMMARY_FIELDS}
+    summary["id"] = chat.get("id") or chat_id
+    summary["message_count"] = len(msgs) if isinstance(msgs, list) else 0
+    return summary
+
+
+def _load_index() -> Dict[str, Dict]:
+    _ensure_dir()
+    if not INDEX_FILE.exists():
         return {}
-    
     try:
-        with open(STORAGE_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(INDEX_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
     except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading chat histories: {e}")
+        print(f"Error loading chat history index: {e}")
         return {}
-
-
-def save_chat_histories(chat_histories: Dict):
-    """Save chat histories to the JSON file."""
-    ensure_storage_dir()
-    
-    try:
-        # Create a temporary file first, then rename for atomic writes
-        temp_file = STORAGE_FILE.with_suffix('.tmp')
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(chat_histories, f, indent=2, ensure_ascii=False)
-        
-        # Atomic rename
-        temp_file.replace(STORAGE_FILE)
-    except IOError as e:
-        print(f"Error saving chat histories: {e}")
-        raise
 
 
 class ChatHistoryStorage:
-    """Service for managing chat history storage."""
-    
+    """Per-file chat history storage with an in-memory summary index."""
+
     def __init__(self):
-        self._chat_histories = load_chat_histories()
-    
-    def get_all(self) -> Dict:
-        """Get all chat histories."""
-        return self._chat_histories.copy()
-    
+        self._index: Dict[str, Dict] = _load_index()
+
     def get(self, chat_id: str) -> Optional[Dict]:
-        """Get a specific chat history by ID."""
-        return self._chat_histories.get(chat_id)
-    
-    def save(self, chat_id: str, chat_data: Dict):
-        """Save a chat history."""
-        self._chat_histories[chat_id] = chat_data
-        save_chat_histories(self._chat_histories)
-    
+        if not _safe_chat_id(chat_id):
+            return None
+        path = _chat_path(chat_id)
+        if not path.exists():
+            return None
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error loading chat {chat_id}: {e}")
+            return None
+
+    def save(self, chat_id: str, chat_data: Dict) -> None:
+        if not _safe_chat_id(chat_id):
+            raise ValueError(f"unsafe chat_id: {chat_id!r}")
+        _ensure_dir()
+        _atomic_write(_chat_path(chat_id), chat_data)
+        self._index[chat_id] = _summarize(chat_id, chat_data)
+        _atomic_write(INDEX_FILE, self._index)
+
     def delete(self, chat_id: str) -> bool:
-        """Delete a chat history. Returns True if deleted, False if not found."""
-        if chat_id in self._chat_histories:
-            del self._chat_histories[chat_id]
-            save_chat_histories(self._chat_histories)
-            return True
-        return False
-    
+        if not _safe_chat_id(chat_id):
+            return False
+        path = _chat_path(chat_id)
+        existed = path.exists() or chat_id in self._index
+        if not existed:
+            return False
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as e:
+            print(f"Error deleting chat {chat_id}: {e}")
+            return False
+        self._index.pop(chat_id, None)
+        _atomic_write(INDEX_FILE, self._index)
+        return True
+
     def list_by_user(self, username: str) -> List[Dict]:
-        """List all chat histories for a specific user."""
-        return [
-            chat for chat in self._chat_histories.values()
-            if chat.get("owner") == username
-        ]
-    
+        """Return summary dicts (no messages) for a user's chats."""
+        return [s for s in self._index.values() if s.get("owner") == username]
+
     def list_by_snapshot(self, snapshot_id: str) -> List[Dict]:
-        """List all chat histories associated with a snapshot."""
-        return [
-            chat for chat in self._chat_histories.values()
-            if chat.get("snapshot_id") == snapshot_id
-        ]
-    
-    def reload(self):
-        """Reload chat histories from disk."""
-        self._chat_histories = load_chat_histories()
+        """Return summary dicts (no messages) for a snapshot's chats."""
+        return [s for s in self._index.values() if s.get("snapshot_id") == snapshot_id]
+
+    def reload(self) -> None:
+        self._index = _load_index()
 
 
-# Singleton instance
 chat_history_storage = ChatHistoryStorage()
-
-
