@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Users, Plus, Trash2, Shield } from "lucide-react"
+import { Users, Plus, Shield } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { authAPI } from "@/features/auth/api"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { fetchAPI } from "@/lib/api-client"
+import { toast } from "sonner"
 
 type UserRole = "super_admin" | "admin" | "user" | "guest"
 
@@ -91,10 +92,20 @@ export function UserManagementPage() {
     },
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (userId: string) =>
-      fetchAPI<void>(`/api/users/${encodeURIComponent(userId)}`, { method: "DELETE" }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: UserRole }) =>
+      fetchAPI<void>(`/api/users/${encodeURIComponent(userId)}`, {
+        method: "PATCH",
+        body: { role },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] })
+      toast.success("Role updated")
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : "Failed to update role"
+      toast.error(message)
+    },
   })
 
   const filtered = users.filter(
@@ -150,23 +161,45 @@ export function UserManagementPage() {
                   <p className="text-sm font-medium">{user.name}</p>
                   <p className="text-xs text-muted-foreground">{user.email ?? user.username}</p>
                 </div>
-                {(user.global_role ?? user.role) && (
-                  <Badge variant={(user.global_role ?? user.role) === "super_admin" ? "amber" : "outline"}>
-                    {(user.global_role ?? user.role) === "super_admin" ? (
-                      <><Shield className="mr-1 size-3" />Admin</>
-                    ) : (
-                      (user.global_role ?? user.role)
-                    )}
-                  </Badge>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="opacity-0 group-hover:opacity-100"
-                  onClick={() => deleteMutation.mutate(user.id ?? user.username)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+                {(() => {
+                  const role = (user.global_role ?? user.role) as UserRole | undefined
+                  const userId = user.id ?? user.username
+                  const canEdit = !!role && availableRoles.includes(role)
+                  if (!canEdit) {
+                    return role ? (
+                      <Badge variant={role === "super_admin" ? "amber" : "outline"}>
+                        {role === "super_admin" ? (
+                          <><Shield className="mr-1 size-3" />Super Admin</>
+                        ) : (
+                          ROLE_LABELS[role] ?? role
+                        )}
+                      </Badge>
+                    ) : null
+                  }
+                  return (
+                    <Select
+                      value={role}
+                      onValueChange={(value) =>
+                        updateRoleMutation.mutate({
+                          userId,
+                          role: value as UserRole,
+                        })
+                      }
+                      disabled={updateRoleMutation.isPending}
+                    >
+                      <SelectTrigger className="h-7 w-[130px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableRoles.map((r) => (
+                          <SelectItem key={r} value={r}>
+                            {ROLE_LABELS[r]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )
+                })()}
               </div>
             ))}
           </div>
