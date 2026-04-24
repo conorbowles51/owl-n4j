@@ -2391,6 +2391,335 @@ export const cellebriteAPI = {
     fetchAPI(`/cellebrite/communication-network?case_id=${encodeURIComponent(caseId)}`),
 };
 
+
+/**
+ * Cellebrite Communication Center API
+ *
+ * All endpoints accept an optional `reportKeys` array for multi-device filtering.
+ * Passing null / undefined means "all devices on the case".
+ */
+export const cellebriteCommsAPI = {
+  /**
+   * List all comms participants (Person entities) with aggregate counts and device membership.
+   */
+  getEntities: (caseId, reportKeys = null) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    return fetchAPI(`/cellebrite/comms/entities?${params.toString()}`);
+  },
+
+  /**
+   * List distinct source apps (WhatsApp, Facebook Messenger, SMS, Gmail, ...) for the
+   * current device filter, with counts and thread_type.
+   */
+  getSourceApps: (caseId, reportKeys = null) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    return fetchAPI(`/cellebrite/comms/source-apps?${params.toString()}`);
+  },
+
+  /**
+   * List threads (chats + synthetic call/email threads per participant pair).
+   */
+  getThreads: (caseId, {
+    reportKeys = null,
+    fromKeys = null,
+    toKeys = null,
+    threadTypes = null,
+    sourceApps = null,
+    startDate = null,
+    endDate = null,
+    search = null,
+    limit = 200,
+    offset = 0,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
+    if (toKeys?.length) params.append('to_keys', toKeys.join(','));
+    if (threadTypes?.length) params.append('thread_types', threadTypes.join(','));
+    if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (search) params.append('search', search);
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return fetchAPI(`/cellebrite/comms/threads?${params.toString()}`);
+  },
+
+  /**
+   * Get chronological detail for a single thread (messages + calls + emails items).
+   */
+  getThreadDetail: (caseId, threadId, threadType, { limit = 500, offset = 0 } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId, thread_type: threadType });
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return fetchAPI(
+      `/cellebrite/comms/threads/${encodeURIComponent(threadId)}?${params.toString()}`
+    );
+  },
+
+  /**
+   * Cross-type chronological feed between selected participant sets (AND semantics).
+   */
+  getBetween: (caseId, {
+    fromKeys = null,
+    toKeys = null,
+    types = null,
+    reportKeys = null,
+    sourceApps = null,
+    startDate = null,
+    endDate = null,
+    limit = 500,
+    offset = 0,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
+    if (toKeys?.length) params.append('to_keys', toKeys.join(','));
+    if (types?.length) params.append('types', types.join(','));
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return fetchAPI(`/cellebrite/comms/between?${params.toString()}`);
+  },
+
+  /**
+   * Resolve a Cellebrite file UUID to its evidence record.
+   */
+  resolveAttachment: (caseId, fileId) =>
+    fetchAPI(
+      `/cellebrite/comms/attachment/${encodeURIComponent(fileId)}?case_id=${encodeURIComponent(caseId)}`
+    ),
+};
+
+
+/**
+ * Cellebrite Location & Event Center API (Phase 4)
+ */
+export const cellebriteEventsAPI = {
+  /**
+   * Fetch per-event-type counts for the filter UI.
+   */
+  getEventTypes: (caseId, reportKeys = null) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    return fetchAPI(`/cellebrite/events/types?${params.toString()}`);
+  },
+
+  /**
+   * Fetch unified event feed for the map + timeline.
+   */
+  getEvents: (caseId, {
+    reportKeys = null,
+    eventTypes = null,
+    sourceApps = null,
+    startDate = null,
+    endDate = null,
+    onlyGeolocated = false,
+    limit = 5000,
+    offset = 0,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (eventTypes?.length) params.append('event_types', eventTypes.join(','));
+    if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (onlyGeolocated) params.append('only_geolocated', 'true');
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return fetchAPI(`/cellebrite/events?${params.toString()}`);
+  },
+
+  /**
+   * Per-device polyline tracks.
+   */
+  getTracks: (caseId, {
+    reportKeys = null,
+    startDate = null,
+    endDate = null,
+    simplify = true,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    params.append('simplify', simplify ? 'true' : 'false');
+    return fetchAPI(`/cellebrite/events/tracks?${params.toString()}`);
+  },
+
+  /**
+   * Fetch full event detail (for the drawer).
+   */
+  getEventDetail: (caseId, nodeKey) =>
+    fetchAPI(
+      `/cellebrite/events/detail/${encodeURIComponent(nodeKey)}?case_id=${encodeURIComponent(caseId)}`
+    ),
+
+  /**
+   * Run one or more intersection detection methods on demand.
+   * methods: array of "spatial"|"cell_tower"|"wifi"|"comm_hub"|"convoy"
+   * params: optional per-method param object
+   */
+  runIntersections: (caseId, {
+    methods,
+    reportKeys = null,
+    startDate = null,
+    endDate = null,
+    params = null,
+  }) =>
+    fetchAPI(`/cellebrite/intersections/run?case_id=${encodeURIComponent(caseId)}`, {
+      method: 'POST',
+      body: {
+        methods,
+        report_keys: reportKeys,
+        start_date: startDate,
+        end_date: endDate,
+        params,
+      },
+    }),
+};
+
+
+/**
+ * Cellebrite Files Explorer API (Phase 5)
+ */
+export const cellebriteFilesAPI = {
+  list: (caseId, {
+    reportKeys = null,
+    category = null,
+    parentLabel = null,
+    sourceApp = null,
+    devicePath = null,
+    tag = null,
+    entityId = null,
+    search = null,
+    onlyRelevant = false,
+    limit = 500,
+    offset = 0,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (category) params.append('category', category);
+    if (parentLabel) params.append('parent_label', parentLabel);
+    if (sourceApp) params.append('source_app', sourceApp);
+    if (devicePath) params.append('device_path', devicePath);
+    if (tag) params.append('tag', tag);
+    if (entityId) params.append('entity_id', entityId);
+    if (search) params.append('search', search);
+    if (onlyRelevant) params.append('only_relevant', 'true');
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return fetchAPI(`/cellebrite/files?${params.toString()}`);
+  },
+
+  tree: (caseId, {
+    reportKeys = null,
+    groupBy = 'category',
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId, group_by: groupBy });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    return fetchAPI(`/cellebrite/files/tree?${params.toString()}`);
+  },
+};
+
+
+/**
+ * Evidence tag + entity-link extensions (Phase 5)
+ */
+export const evidenceTagsAPI = {
+  addTags: (caseId, evidenceIds, tags) =>
+    fetchAPI('/evidence/tags/add', {
+      method: 'POST',
+      body: { case_id: caseId, evidence_ids: evidenceIds, tags },
+    }),
+  removeTags: (caseId, evidenceIds, tags) =>
+    fetchAPI('/evidence/tags/remove', {
+      method: 'POST',
+      body: { case_id: caseId, evidence_ids: evidenceIds, tags },
+    }),
+  setTags: (caseId, evidenceId, tags) =>
+    fetchAPI('/evidence/tags/set', {
+      method: 'POST',
+      body: { case_id: caseId, evidence_id: evidenceId, tags },
+    }),
+  getCaseTags: (caseId) =>
+    fetchAPI(`/evidence/tags?case_id=${encodeURIComponent(caseId)}`),
+  linkEntities: (caseId, evidenceIds, entityIds) =>
+    fetchAPI('/evidence/entity-links/add', {
+      method: 'POST',
+      body: { case_id: caseId, evidence_ids: evidenceIds, entity_ids: entityIds },
+    }),
+  unlinkEntities: (caseId, evidenceIds, entityIds) =>
+    fetchAPI('/evidence/entity-links/remove', {
+      method: 'POST',
+      body: { case_id: caseId, evidence_ids: evidenceIds, entity_ids: entityIds },
+    }),
+  listByEntity: (caseId, entityId) =>
+    fetchAPI(`/evidence/by-entity?case_id=${encodeURIComponent(caseId)}&entity_id=${encodeURIComponent(entityId)}`),
+};
+
+
+/**
+ * Case Entity Profiles API (Phase 5)
+ */
+export const entitiesAPI = {
+  list: (caseId, { entityType = null, search = null, status = 'active', limit = 500 } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId, status, limit: String(limit) });
+    if (entityType) params.append('entity_type', entityType);
+    if (search) params.append('search', search);
+    return fetchAPI(`/entities?${params.toString()}`);
+  },
+  get: (caseId, entityId) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}?case_id=${encodeURIComponent(caseId)}`),
+  create: (caseId, data) =>
+    fetchAPI('/entities', {
+      method: 'POST',
+      body: { case_id: caseId, ...data },
+    }),
+  update: (caseId, entityId, data) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}`, {
+      method: 'PATCH',
+      body: { case_id: caseId, ...data },
+    }),
+  archive: (caseId, entityId) =>
+    fetchAPI(
+      `/entities/${encodeURIComponent(entityId)}/archive?case_id=${encodeURIComponent(caseId)}`,
+      { method: 'POST' }
+    ),
+  delete: (caseId, entityId) =>
+    fetchAPI(
+      `/entities/${encodeURIComponent(entityId)}?case_id=${encodeURIComponent(caseId)}`,
+      { method: 'DELETE' }
+    ),
+  linkNode: (caseId, entityId, nodeKey) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}/link/node`, {
+      method: 'POST',
+      body: { case_id: caseId, node_key: nodeKey },
+    }),
+  unlinkNode: (caseId, entityId, nodeKey) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}/unlink/node`, {
+      method: 'POST',
+      body: { case_id: caseId, node_key: nodeKey },
+    }),
+  linkEvidence: (caseId, entityId, evidenceIds) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}/link/evidence`, {
+      method: 'POST',
+      body: { case_id: caseId, evidence_ids: evidenceIds },
+    }),
+  unlinkEvidence: (caseId, entityId, evidenceIds) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}/unlink/evidence`, {
+      method: 'POST',
+      body: { case_id: caseId, evidence_ids: evidenceIds },
+    }),
+  getContext: (caseId, entityId) =>
+    fetchAPI(`/entities/${encodeURIComponent(entityId)}/context?case_id=${encodeURIComponent(caseId)}`),
+};
+
+
 /**
  * Triage API
  */

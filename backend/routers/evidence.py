@@ -1809,3 +1809,128 @@ async def test_folder_profile(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Tag + Entity-link endpoints
+# ---------------------------------------------------------------------------
+
+
+class TagsAddRequest(BaseModel):
+    case_id: str
+    evidence_ids: List[str]
+    tags: List[str]
+
+
+class TagsRemoveRequest(BaseModel):
+    case_id: str
+    evidence_ids: List[str]
+    tags: List[str]
+
+
+class TagsSetRequest(BaseModel):
+    case_id: str
+    evidence_id: str
+    tags: List[str]
+
+
+class EntityLinkRequest(BaseModel):
+    case_id: str
+    evidence_ids: List[str]
+    entity_ids: List[str]
+
+
+def _verify_case_for(case_id: str, current_user, db) -> None:
+    """Local helper: share the existing case access check logic."""
+    from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+    from uuid import UUID
+    try:
+        check_case_access(db, UUID(case_id), current_user, required_permission=("evidence", "upload"))
+    except (CaseNotFound, CaseAccessDenied) as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+
+@router.post("/tags/add")
+async def add_evidence_tags(
+    body: TagsAddRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Add tags to one or more evidence records."""
+    _verify_case_for(body.case_id, current_user, db)
+    updated = evidence_storage.add_tags(body.evidence_ids, body.tags)
+    return {"updated": updated, "tags": body.tags}
+
+
+@router.post("/tags/remove")
+async def remove_evidence_tags(
+    body: TagsRemoveRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Remove tags from one or more evidence records."""
+    _verify_case_for(body.case_id, current_user, db)
+    updated = evidence_storage.remove_tags(body.evidence_ids, body.tags)
+    return {"updated": updated, "tags": body.tags}
+
+
+@router.post("/tags/set")
+async def set_evidence_tags(
+    body: TagsSetRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Replace the tag list on a single evidence record."""
+    _verify_case_for(body.case_id, current_user, db)
+    ok = evidence_storage.set_tags(body.evidence_id, body.tags)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    return {"ok": True, "tags": sorted(set((body.tags or [])))}
+
+
+@router.get("/tags")
+async def get_case_tags(
+    case_id: str = Query(...),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Return the case's tag cloud: [{tag, count}]."""
+    _verify_case_for(case_id, current_user, db)
+    return {"tags": evidence_storage.get_tag_counts(case_id)}
+
+
+@router.post("/entity-links/add")
+async def add_entity_links(
+    body: EntityLinkRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Link evidence records to entity IDs."""
+    _verify_case_for(body.case_id, current_user, db)
+    updated = evidence_storage.link_entities(body.evidence_ids, body.entity_ids)
+    return {"updated": updated, "entity_ids": body.entity_ids}
+
+
+@router.post("/entity-links/remove")
+async def remove_entity_links(
+    body: EntityLinkRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Unlink evidence records from entity IDs."""
+    _verify_case_for(body.case_id, current_user, db)
+    updated = evidence_storage.unlink_entities(body.evidence_ids, body.entity_ids)
+    return {"updated": updated, "entity_ids": body.entity_ids}
+
+
+@router.get("/by-entity")
+async def list_evidence_by_entity(
+    case_id: str = Query(...),
+    entity_id: str = Query(...),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Return all evidence records in a case linked to a given entity."""
+    _verify_case_for(case_id, current_user, db)
+    records = evidence_storage.list_by_entity(case_id, entity_id)
+    return {"files": records, "total": len(records)}

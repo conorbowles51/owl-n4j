@@ -237,6 +237,30 @@ class EvidenceStorage:
                 self._persist()
             return rec
 
+    def get_by_cellebrite_file_ids(
+        self, case_id: str, file_ids: List[str]
+    ) -> Dict[str, dict]:
+        """
+        Bulk resolve Cellebrite UFED file UUIDs to evidence records.
+        Returns a dict: file_id -> evidence record. Missing file_ids are omitted.
+        """
+        if not file_ids:
+            return {}
+        wanted = set(file_ids)
+        out: Dict[str, dict] = {}
+        with self._lock:
+            for rec in self._records.values():
+                if rec.get("case_id") != case_id:
+                    continue
+                fid = rec.get("cellebrite_file_id")
+                if not fid or fid not in wanted:
+                    continue
+                # Prefer non-duplicate originals over duplicates
+                existing = out.get(fid)
+                if existing is None or (existing.get("is_duplicate") and not rec.get("is_duplicate")):
+                    out[fid] = rec
+        return out
+
     def mark_processing(self, evidence_ids: List[str]) -> None:
         """Mark selected evidence as 'processing'."""
         with self._lock:
@@ -281,6 +305,151 @@ class EvidenceStorage:
                 rec = self._records.get(evid)
                 if rec:
                     rec["is_relevant"] = is_relevant
+                    updated += 1
+            if updated:
+                self._persist()
+        return updated
+
+    # ------------------------------------------------------------------
+    # Phase 5: Tag and Entity-link helpers
+    # ------------------------------------------------------------------
+
+    def add_tags(self, evidence_ids: List[str], tags: List[str]) -> int:
+        """Add tags to one or more evidence records. Bulk-safe (one persist)."""
+        if not tags:
+            return 0
+        clean = [t.strip() for t in tags if t and t.strip()]
+        if not clean:
+            return 0
+        updated = 0
+        with self._lock:
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if rec is None:
+                    continue
+                existing = set(rec.get("tags") or [])
+                before = len(existing)
+                existing.update(clean)
+                if len(existing) != before:
+                    rec["tags"] = sorted(existing)
+                    updated += 1
+                elif "tags" not in rec:
+                    rec["tags"] = sorted(existing)
+            if updated:
+                self._persist()
+        return updated
+
+    def remove_tags(self, evidence_ids: List[str], tags: List[str]) -> int:
+        """Remove tags from one or more evidence records."""
+        if not tags:
+            return 0
+        remove = set(t.strip() for t in tags if t and t.strip())
+        updated = 0
+        with self._lock:
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if rec is None:
+                    continue
+                existing = set(rec.get("tags") or [])
+                if existing & remove:
+                    rec["tags"] = sorted(existing - remove)
+                    updated += 1
+            if updated:
+                self._persist()
+        return updated
+
+    def set_tags(self, evidence_id: str, tags: List[str]) -> bool:
+        """Replace the tag list on a single evidence record."""
+        clean = sorted({t.strip() for t in (tags or []) if t and t.strip()})
+        with self._lock:
+            rec = self._records.get(evidence_id)
+            if rec is None:
+                return False
+            rec["tags"] = clean
+            self._persist()
+            return True
+
+    def get_tag_counts(self, case_id: str) -> List[Dict]:
+        """Return a case-wide tag cloud sorted by usage."""
+        counts: Dict[str, int] = {}
+        with self._lock:
+            for rec in self._records.values():
+                if rec.get("case_id") != case_id:
+                    continue
+                for t in rec.get("tags") or []:
+                    counts[t] = counts.get(t, 0) + 1
+        return [
+            {"tag": t, "count": c}
+            for t, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+
+    def link_entities(self, evidence_ids: List[str], entity_ids: List[str]) -> int:
+        """Link one or more evidence records to one or more entity IDs."""
+        if not entity_ids:
+            return 0
+        to_add = [e for e in entity_ids if e]
+        if not to_add:
+            return 0
+        updated = 0
+        with self._lock:
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if rec is None:
+                    continue
+                existing = set(rec.get("linked_entity_ids") or [])
+                before = len(existing)
+                existing.update(to_add)
+                if len(existing) != before:
+                    rec["linked_entity_ids"] = sorted(existing)
+                    updated += 1
+                elif "linked_entity_ids" not in rec:
+                    rec["linked_entity_ids"] = sorted(existing)
+            if updated:
+                self._persist()
+        return updated
+
+    def unlink_entities(self, evidence_ids: List[str], entity_ids: List[str]) -> int:
+        """Remove entity links from evidence records."""
+        remove = set(entity_ids or [])
+        if not remove:
+            return 0
+        updated = 0
+        with self._lock:
+            for evid in evidence_ids:
+                rec = self._records.get(evid)
+                if rec is None:
+                    continue
+                existing = set(rec.get("linked_entity_ids") or [])
+                if existing & remove:
+                    rec["linked_entity_ids"] = sorted(existing - remove)
+                    updated += 1
+            if updated:
+                self._persist()
+        return updated
+
+    def list_by_entity(self, case_id: str, entity_id: str) -> List[Dict]:
+        """All evidence records in a case that are linked to a given entity."""
+        out: List[Dict] = []
+        with self._lock:
+            for rec in self._records.values():
+                if rec.get("case_id") != case_id:
+                    continue
+                linked = rec.get("linked_entity_ids") or []
+                if entity_id in linked:
+                    out.append(rec)
+        return out
+
+    def unlink_entities_from_all(self, case_id: str, entity_id: str) -> int:
+        """Used when a CaseEntity is deleted — remove its link from every record in the case."""
+        updated = 0
+        with self._lock:
+            for rec in self._records.values():
+                if rec.get("case_id") != case_id:
+                    continue
+                linked = set(rec.get("linked_entity_ids") or [])
+                if entity_id in linked:
+                    linked.discard(entity_id)
+                    rec["linked_entity_ids"] = sorted(linked)
                     updated += 1
             if updated:
                 self._persist()
