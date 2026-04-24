@@ -43,17 +43,8 @@ export default function EventTimelinePanel({
       }));
   }, [reports, selectedReportKeys, deviceColorOf]);
 
-  if (!range.min || !range.max || lanes.length === 0) {
-    return (
-      <div className="flex items-center justify-center h-full bg-light-50 text-light-500 text-sm">
-        No timestamped events to plot.
-      </div>
-    );
-  }
-
-  const totalMs = range.max.getTime() - range.min.getTime() || 1;
-
-  // Group events by device
+  // Group events by device — must run on every render (React Rules of Hooks),
+  // so keep this *above* any conditional early-return.
   const eventsByDevice = useMemo(() => {
     const m = new Map();
     for (const e of events) {
@@ -65,6 +56,16 @@ export default function EventTimelinePanel({
     }
     return m;
   }, [events]);
+
+  if (!range.min || !range.max || lanes.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full bg-light-50 text-light-500 text-sm">
+        No timestamped events to plot.
+      </div>
+    );
+  }
+
+  const totalMs = range.max.getTime() - range.min.getTime() || 1;
 
   const LANE_HEIGHT = 36;
   const LABEL_WIDTH = 150;
