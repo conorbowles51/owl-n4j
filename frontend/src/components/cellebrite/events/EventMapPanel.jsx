@@ -74,36 +74,67 @@ export default function EventMapPanel({
     return eventsWithinTrail(events, playheadTime, trailWindowMs);
   }, [events, playheadTime, isPlaying, trailWindowMs]);
 
-  // Split tracks into "before" and "after" playhead for styling
+  // Pre-parse each track point's timestamp ONCE when tracks change. This
+  // lets the playhead-driven split below avoid re-parsing thousands of ISO
+  // strings on every animation frame.
+  const tracksWithMs = useMemo(() => {
+    return tracks.map((t) => ({
+      ...t,
+      pointsMs: (t.points || []).map((p) => {
+        const pt = parseTs(p.timestamp);
+        return pt ? { lat: p.lat, lon: p.lon, t_ms: pt.getTime() } : null;
+      }).filter(Boolean),
+    }));
+  }, [tracks]);
+
+  // Split tracks into "before" and "after" playhead for styling.
+  // Uses the pre-parsed pointsMs so this stays a pure numeric sweep.
   const splitTracks = useMemo(() => {
-    if (!playheadTime) return tracks.map((t) => ({ ...t, past: t.points, future: [] }));
+    if (!playheadTime) {
+      return tracksWithMs.map((t) => ({
+        ...t,
+        past: t.pointsMs.map((p) => [p.lat, p.lon]),
+        future: [],
+      }));
+    }
     const t_ms = playheadTime.getTime();
-    return tracks.map((t) => {
+    return tracksWithMs.map((t) => {
       const past = [];
       const future = [];
-      for (const p of t.points || []) {
-        const pt = parseTs(p.timestamp);
-        if (!pt) continue;
-        if (pt.getTime() <= t_ms) past.push([p.lat, p.lon]);
+      for (const p of t.pointsMs) {
+        if (p.t_ms <= t_ms) past.push([p.lat, p.lon]);
         else future.push([p.lat, p.lon]);
       }
       return { ...t, past, future };
     });
-  }, [tracks, playheadTime]);
+  }, [tracksWithMs, playheadTime]);
 
-  const hasPoints = useMemo(() => {
-    if (events.some((e) => e.latitude != null)) return true;
-    for (const t of tracks) if ((t.points || []).length) return true;
-    return false;
+  const { hasPoints, geolocatedCount } = useMemo(() => {
+    let n = 0;
+    for (const e of events) {
+      if (e.latitude != null && e.longitude != null) n += 1;
+    }
+    let hp = n > 0;
+    if (!hp) {
+      for (const t of tracks) if ((t.points || []).length) { hp = true; break; }
+    }
+    return { hasPoints: hp, geolocatedCount: n };
   }, [events, tracks]);
 
   if (!hasPoints) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-light-50 text-light-500 text-sm">
-        No geolocated events in the current selection.
+      <div className="flex-1 flex flex-col items-center justify-center bg-light-50 text-light-500 text-sm p-6 text-center">
+        <div className="mb-2 font-medium">No geolocated events in the current selection.</div>
+        <div className="text-xs text-light-400">
+          Switch to <span className="font-medium text-owl-blue-700">Table</span> view to browse all filtered events, including ones without location data.
+        </div>
       </div>
     );
   }
+
+  // If only a small fraction of the events are geolocated, nudge the user
+  // toward the table view.
+  const showLowGeoHint = events.length > 20 && geolocatedCount < events.length * 0.3;
 
   return (
     <div className="flex-1 relative min-h-0">
@@ -115,6 +146,11 @@ export default function EventMapPanel({
         }
         .cellebrite-event-marker { background: transparent !important; border: none !important; }
       `}</style>
+      {showLowGeoHint && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[400] bg-amber-50 border border-amber-300 text-amber-900 text-[11px] px-3 py-1 rounded-full shadow-sm">
+          Only {geolocatedCount.toLocaleString()} of {events.length.toLocaleString()} events are geolocated — switch to <span className="font-semibold">Table</span> or <span className="font-semibold">Split</span> to see the full feed.
+        </div>
+      )}
       <MapContainer
         center={[0, 0]}
         zoom={2}

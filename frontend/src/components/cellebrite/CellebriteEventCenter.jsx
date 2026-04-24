@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Calendar, Loader2 } from 'lucide-react';
+import { Calendar, Loader2, Map as MapIcon, Rows3, Columns2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import CommsDeviceSelector from './comms/CommsDeviceSelector';
 import EventTypeFilter from './events/EventTypeFilter';
 import EventPlaybackBar from './events/EventPlaybackBar';
 import EventMapPanel from './events/EventMapPanel';
+import EventsTable from './events/EventsTable';
 import EventTimelinePanel from './events/EventTimelinePanel';
 import EventDetailDrawer from './events/EventDetailDrawer';
 import IntersectionPanel from './events/IntersectionPanel';
@@ -42,6 +43,18 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [intersectionResults, setIntersectionResults] = useState({});
   const [intersectionCollapsed, setIntersectionCollapsed] = useState(false);
+
+  // --- Phase 7: view mode (map | split | table) ---
+  const [viewMode, setViewMode] = useState('map');
+
+  // Derived: how many events have direct or nearest geolocation
+  const geolocatedCount = useMemo(() => {
+    let n = 0;
+    for (const e of events) {
+      if (e.latitude != null && e.longitude != null) n += 1;
+    }
+    return n;
+  }, [events]);
 
   // View-aware AI context
   const rootRef = useRef(null);
@@ -263,22 +276,75 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
         {loading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
         <span className="text-xs text-light-500 flex-shrink-0">
           {events.length.toLocaleString()} events
+          {geolocatedCount < events.length && (
+            <>
+              {' '}
+              · <span className="text-light-400">{geolocatedCount.toLocaleString()} geolocated</span>
+            </>
+          )}
         </span>
+        {/* View mode toggle */}
+        <div className="flex items-center rounded border border-light-300 overflow-hidden flex-shrink-0">
+          <ViewModeButton mode="map" current={viewMode} onClick={setViewMode} icon={MapIcon} label="Map" />
+          <ViewModeButton mode="split" current={viewMode} onClick={setViewMode} icon={Columns2} label="Split" />
+          <ViewModeButton mode="table" current={viewMode} onClick={setViewMode} icon={Rows3} label="Table" />
+        </div>
       </div>
 
-      {/* Main: map + intersection panel */}
+      {/* Main: map / split / table + intersection panel */}
       <div className="flex flex-1 min-h-0">
-        <EventMapPanel
-          events={events}
-          tracks={tracks}
-          playheadTime={playheadTime}
-          trailWindowMs={trailWindowMs}
-          isPlaying={isPlaying}
-          selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
-          onEventClick={setSelectedEvent}
-          intersectionMatches={activeIntersectionMatches}
-          deviceColorOf={deviceColorOf}
-        />
+        <div className="flex-1 flex flex-col min-h-0">
+          {viewMode === 'map' && (
+            <EventMapPanel
+              events={events}
+              tracks={tracks}
+              playheadTime={playheadTime}
+              trailWindowMs={trailWindowMs}
+              isPlaying={isPlaying}
+              selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
+              onEventClick={setSelectedEvent}
+              intersectionMatches={activeIntersectionMatches}
+              deviceColorOf={deviceColorOf}
+            />
+          )}
+          {viewMode === 'split' && (
+            <>
+              <div className="flex-1 min-h-0 border-b border-light-200">
+                <EventMapPanel
+                  events={events}
+                  tracks={tracks}
+                  playheadTime={playheadTime}
+                  trailWindowMs={trailWindowMs}
+                  isPlaying={isPlaying}
+                  selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
+                  onEventClick={setSelectedEvent}
+                  intersectionMatches={activeIntersectionMatches}
+                  deviceColorOf={deviceColorOf}
+                />
+              </div>
+              <div className="flex-1 min-h-0">
+                <EventsTable
+                  events={events}
+                  reports={reports}
+                  playheadTime={playheadTime}
+                  isPlaying={isPlaying}
+                  selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
+                  onEventClick={setSelectedEvent}
+                />
+              </div>
+            </>
+          )}
+          {viewMode === 'table' && (
+            <EventsTable
+              events={events}
+              reports={reports}
+              playheadTime={playheadTime}
+              isPlaying={isPlaying}
+              selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
+              onEventClick={setSelectedEvent}
+            />
+          )}
+        </div>
         <IntersectionPanel
           caseId={caseId}
           reportKeys={selectedReportKeys.size > 0 ? [...selectedReportKeys] : null}
@@ -327,5 +393,23 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
         />
       )}
     </div>
+  );
+}
+
+function ViewModeButton({ mode, current, onClick, icon: Icon, label }) {
+  const active = current === mode;
+  return (
+    <button
+      onClick={() => onClick(mode)}
+      className={`flex items-center gap-1 px-2 py-1 text-[11px] transition-colors ${
+        active
+          ? 'bg-owl-blue-100 text-owl-blue-800'
+          : 'bg-white text-light-600 hover:bg-light-50'
+      }`}
+      title={label}
+    >
+      <Icon className="w-3 h-3" />
+      <span>{label}</span>
+    </button>
   );
 }

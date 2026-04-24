@@ -48,6 +48,9 @@ export default function EventPlaybackBar({
 
   const rafRef = useRef(null);
   const lastTickRef = useRef(null);
+  // Accumulate simulated real-world-ms between commits so we can throttle
+  // the React setState to ~10fps without losing precision.
+  const pendingSimMsRef = useRef(0);
 
   // Initialise playhead when range appears
   useEffect(() => {
@@ -56,26 +59,40 @@ export default function EventPlaybackBar({
     }
   }, [range.min, range.max]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Animation loop
+  // Throttled animation loop.
+  // The internal math runs every RAF (60fps) so sub-frame precision is
+  // preserved, but we only call setPlayheadTime every ~100ms so React / the
+  // map / the table re-renders at a manageable 10fps even at 1800× speed.
   useEffect(() => {
     if (!isPlaying || !range.min || !range.max) {
       lastTickRef.current = null;
+      pendingSimMsRef.current = 0;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
+    const COMMIT_MS = 100; // 10fps
+    let sinceCommit = 0;
     const tick = (now) => {
       if (lastTickRef.current == null) lastTickRef.current = now;
       const dtMs = now - lastTickRef.current;
       lastTickRef.current = now;
-      setPlayheadTime((prev) => {
-        const cur = prev || range.min;
-        const nextMs = cur.getTime() + dtMs * playbackSpeed;
-        if (nextMs >= range.max.getTime()) {
-          setIsPlaying(false);
-          return range.max;
-        }
-        return new Date(nextMs);
-      });
+      sinceCommit += dtMs;
+      // Accumulate simulated time
+      pendingSimMsRef.current += dtMs * playbackSpeed;
+      if (sinceCommit >= COMMIT_MS) {
+        const advanceMs = pendingSimMsRef.current;
+        pendingSimMsRef.current = 0;
+        sinceCommit = 0;
+        setPlayheadTime((prev) => {
+          const cur = prev || range.min;
+          const nextMs = cur.getTime() + advanceMs;
+          if (nextMs >= range.max.getTime()) {
+            setIsPlaying(false);
+            return range.max;
+          }
+          return new Date(nextMs);
+        });
+      }
       rafRef.current = requestAnimationFrame(tick);
     };
     rafRef.current = requestAnimationFrame(tick);
