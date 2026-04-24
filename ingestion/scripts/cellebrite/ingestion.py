@@ -301,12 +301,24 @@ def _backfill_nearest_location(
             log_callback(msg)
 
     def _parse_ts(raw: str):
+        """Parse an ISO timestamp to a naive UTC datetime.
+
+        Timestamps in Cellebrite reports may or may not include a timezone
+        offset. Normalising to naive-UTC lets us compare them with bisect
+        without TypeErrors from mixing aware and naive datetimes.
+        """
         if not raw:
             return None
         try:
-            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            from datetime import timezone as _tz
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except (ValueError, TypeError):
             return None
+        if dt.tzinfo is not None:
+            # Convert to UTC, then drop tzinfo so everything is comparable
+            from datetime import timezone as _tz
+            dt = dt.astimezone(_tz.utc).replace(tzinfo=None)
+        return dt
 
     # Build timeline of geolocated anchor points (Locations + CellTowers)
     anchors: List[tuple] = []  # (datetime, node_key, lat, lon, source)

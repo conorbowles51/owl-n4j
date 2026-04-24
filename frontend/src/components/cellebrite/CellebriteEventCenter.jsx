@@ -52,7 +52,14 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
     setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
   }, [reports]);
 
-  // Publish view context for the assistant
+  // Publish view context for the assistant.
+  // NOTE: `playheadTime` is deliberately excluded from the effect deps so
+  // animation frames do not trigger a ChatContext publish on every tick
+  // (which was starving the playback loop). The AI still sees the latest
+  // playhead because it is read on send via a ref below.
+  const playheadRef = useRef(playheadTime);
+  useEffect(() => { playheadRef.current = playheadTime; }, [playheadTime]);
+
   useEffect(() => {
     publish({
       ...buildEventsContext({
@@ -62,7 +69,7 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
         onlyGeolocated,
         startDate,
         endDate,
-        playheadTime,
+        playheadTime: playheadRef.current,
         events,
         selectedEvent,
       }),
@@ -76,7 +83,6 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
     onlyGeolocated,
     startDate,
     endDate,
-    playheadTime,
     events,
     selectedEvent,
   ]);
