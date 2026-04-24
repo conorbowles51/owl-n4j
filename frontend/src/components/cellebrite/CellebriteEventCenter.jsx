@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Calendar, Loader2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import CommsDeviceSelector from './comms/CommsDeviceSelector';
@@ -9,6 +9,8 @@ import EventTimelinePanel from './events/EventTimelinePanel';
 import EventDetailDrawer from './events/EventDetailDrawer';
 import IntersectionPanel from './events/IntersectionPanel';
 import { deviceColor } from './events/eventUtils';
+import { useChatContext } from '../../contexts/ChatContext';
+import { buildEventsContext } from '../../utils/chatContextSummary';
 
 /**
  * Cellebrite Location & Event Center — orchestrates map + timeline + playback
@@ -41,10 +43,45 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
   const [intersectionResults, setIntersectionResults] = useState({});
   const [intersectionCollapsed, setIntersectionCollapsed] = useState(false);
 
+  // View-aware AI context
+  const rootRef = useRef(null);
+  const { publish, clear } = useChatContext();
+
   // Reset device selection when reports change
   useEffect(() => {
     setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
   }, [reports]);
+
+  // Publish view context for the assistant
+  useEffect(() => {
+    publish({
+      ...buildEventsContext({
+        reports,
+        selectedReportKeys,
+        activeEventTypes,
+        onlyGeolocated,
+        startDate,
+        endDate,
+        playheadTime,
+        events,
+        selectedEvent,
+      }),
+      anchorRef: rootRef,
+    });
+  }, [
+    publish,
+    reports,
+    selectedReportKeys,
+    activeEventTypes,
+    onlyGeolocated,
+    startDate,
+    endDate,
+    playheadTime,
+    events,
+    selectedEvent,
+  ]);
+
+  useEffect(() => () => clear(), [clear]);
 
   const deviceColorOf = useCallback(
     (key) => deviceColor(key, reports),
@@ -180,7 +217,7 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white">
+    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
       {/* Device selector */}
       <CommsDeviceSelector
         reports={reports}

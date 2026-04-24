@@ -26,6 +26,8 @@ import {
 import ReactMarkdown from 'react-markdown';
 import { chatAPI, llmConfigAPI, workspaceAPI } from '../services/api';
 import ChatHistoryList from './ChatHistoryList';
+import ChatContextChips from './chat/ChatContextChips';
+import { useChatContext } from '../contexts/ChatContext';
 
 /**
  * Format debug log as markdown — supports both new stages[] format and legacy format.
@@ -317,6 +319,9 @@ export default function ChatPanel({
   const [selectedModelId, setSelectedModelId] = useState('gpt-5');
   const [confidenceThreshold, setConfidenceThreshold] = useState(2.0);
   const [includeGraphNodes, setIncludeGraphNodes] = useState(true); // Toggle for including graph nodes
+
+  // View-aware AI context (published by Financial/Cellebrite/Graph table views)
+  const { ctx: viewCtx, includeInChat, setIncludeInChat, removeFilter } = useChatContext();
   const [loadingConfig, setLoadingConfig] = useState(false);
   const [expandedTraces, setExpandedTraces] = useState(new Set());
   const [expandedStages, setExpandedStages] = useState(new Set());
@@ -465,7 +470,30 @@ export default function ChatPanel({
     setIsLoading(true);
 
     try {
-      const response = await chatAPI.ask(question, selectedKeys.length > 0 ? selectedKeys : null, selectedModelId, selectedProvider, confidenceThreshold, currentCaseId);
+      // Build the view_context payload if the user has opted to include it
+      // and a view has published its state.
+      const viewContextPayload =
+        includeInChat && viewCtx?.viewType
+          ? {
+              view_type: viewCtx.viewType,
+              view_label: viewCtx.viewLabel,
+              filters: viewCtx.filters || {},
+              selection_ids: viewCtx.selectionIds || [],
+              result_ids: viewCtx.resultIds || [],
+              result_preview: viewCtx.resultPreview || [],
+              total_matching: viewCtx.totalMatching || 0,
+            }
+          : null;
+
+      const response = await chatAPI.ask(
+        question,
+        selectedKeys.length > 0 ? selectedKeys : null,
+        selectedModelId,
+        selectedProvider,
+        confidenceThreshold,
+        currentCaseId,
+        viewContextPayload,
+      );
 
       // Debug log is now stored in system logs, no need to download
 
@@ -830,6 +858,14 @@ export default function ChatPanel({
           </div>
         </div>
       )}
+
+      {/* View-aware context chips (Financial / Cellebrite / Graph table / Workspace) */}
+      <ChatContextChips
+        ctx={viewCtx}
+        includeInChat={includeInChat}
+        onToggleInclude={() => setIncludeInChat(!includeInChat)}
+        onRemoveFilter={removeFilter}
+      />
 
       {/* Context Indicator */}
       <div className="px-4 py-2 bg-light-50 border-b border-light-200 flex items-center gap-2">

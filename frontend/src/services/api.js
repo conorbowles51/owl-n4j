@@ -747,7 +747,7 @@ export const chatAPI = {
   /**
    * Send a question to the AI
    */
-  ask: (question, selectedKeys = null, model, provider, confidenceThreshold = null, caseId = null) =>
+  ask: (question, selectedKeys = null, model, provider, confidenceThreshold = null, caseId = null, viewContext = null) =>
     fetchAPI('/chat', {
       method: 'POST',
       body: JSON.stringify({
@@ -757,6 +757,7 @@ export const chatAPI = {
         provider,
         confidence_threshold: confidenceThreshold,
         case_id: caseId,
+        view_context: viewContext,
       }),
       timeout: 600000, // 10 minutes for AI queries (large models may take time)
     }),

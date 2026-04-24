@@ -2,7 +2,7 @@
 Chat Router - endpoints for AI question answering.
 """
 
-from typing import List, Optional, Dict
+from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
@@ -23,6 +23,22 @@ from utils.prompt_trace import start_trace, log_section
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
+class ViewContext(BaseModel):
+    """
+    Optional view-aware context: a compact snapshot of the filtered view the
+    investigator is currently looking at. Sent by the frontend when a view
+    (Financial / Cellebrite / Graph table / Workspace) has published state.
+    """
+
+    view_type: str  # e.g. "financial", "comms", "events", "files", "graph_table", "workspace_section"
+    view_label: Optional[str] = None
+    filters: Optional[Dict[str, Any]] = None
+    selection_ids: Optional[List[str]] = None
+    result_ids: Optional[List[str]] = None
+    result_preview: Optional[List[Dict[str, Any]]] = None
+    total_matching: Optional[int] = None
+
+
 class ChatRequest(BaseModel):
     """Request model for chat endpoint."""
 
@@ -32,6 +48,7 @@ class ChatRequest(BaseModel):
     model: str
     confidence_threshold: Optional[float] = None  # Optional confidence threshold for vector search (0.0-1.0)
     case_id: str  # Required case ID for case isolation and cost tracking
+    view_context: Optional[ViewContext] = None  # Phase 6: view-aware context
 
 
 class ChatResponse(BaseModel):
@@ -46,6 +63,8 @@ class ChatResponse(BaseModel):
     model_info: Optional[Dict] = None  # Current model and server information
     result_graph: Optional[Dict] = None  # Graph with documents and relevant entities
     document_summary: Optional[str] = None  # Document relevance summary (separate from answer)
+    view_context_used: Optional[bool] = None  # Phase 6: whether view_context was applied
+    view_context_summary: Optional[str] = None  # Phase 6: short description of what was used
 
 
 class SuggestionsRequest(BaseModel):
@@ -136,23 +155,31 @@ async def chat(request: ChatRequest, user: dict = Depends(get_current_user)):
             finally:
                 db.close()
             
-            # Set cost tracking context
+            # Set cost tracking context (Phase 6: include view context metadata)
+            vc = request.view_context
+            extra_meta = {"question": question, "selected_keys": request.selected_keys}
+            if vc is not None:
+                extra_meta["view_type"] = vc.view_type
+                extra_meta["view_filter_keys"] = list((vc.filters or {}).keys())
+                extra_meta["view_result_preview_count"] = len(vc.result_preview or [])
+                extra_meta["view_total_matching"] = vc.total_matching or 0
             rag_service.llm.set_cost_tracking_context(
                 case_id=request.case_id,
                 user_id=user_id,
                 job_type=CostJobType.AI_ASSISTANT.value,
                 description=f"AI Assistant Query: {question[:100]}",
-                extra_metadata={"question": question, "selected_keys": request.selected_keys},
+                extra_metadata=extra_meta,
             )
         except Exception as e:
             # Don't fail if cost tracking setup fails
             print(f"[Chat] WARNING: Failed to set cost tracking context: {e}")
-        
+
         result = rag_service.answer_question(
             question=question,
             selected_keys=request.selected_keys,
             confidence_threshold=request.confidence_threshold,
             case_id=request.case_id,
+            view_context=request.view_context.dict() if request.view_context else None,
         )
         
         # Clear cost tracking context after use

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronRight, Focus } from 'lucide-react';
 import { workspaceAPI } from '../../services/api';
+import { useChatContext } from '../../contexts/ChatContext';
+import { buildWorkspaceContext } from '../../utils/chatContextSummary';
 import QuickActionsButtons from './QuickActionsButtons';
 import PinnedEvidenceSection from './PinnedEvidenceSection';
 import ClientProfileSection from './ClientProfileSection';
@@ -55,6 +57,18 @@ export default function CaseContextPanel({
   const [witnesses, setWitnesses] = useState([]);
   const [pinnedItems, setPinnedItems] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Publish coarse workspace context (which sidebar section is focused) so
+  // questions asked from the workspace get the right anchor.
+  const rootRef = useRef(null);
+  const { publish, clear } = useChatContext();
+  useEffect(() => {
+    publish({
+      ...buildWorkspaceContext({ selectedSection, caseName }),
+      anchorRef: rootRef,
+    });
+  }, [publish, selectedSection, caseName]);
+  useEffect(() => () => clear(), [clear]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -125,7 +139,7 @@ export default function CaseContextPanel({
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div ref={rootRef} className="h-full overflow-y-auto">
       {/* Case Overview Toggle + Quick Actions */}
       <div className="p-4 border-b border-light-200">
         <button

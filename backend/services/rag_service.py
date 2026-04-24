@@ -188,6 +188,116 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
 
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    # Phase 6: view-aware context block
+    # ------------------------------------------------------------------
+
+    MAX_VIEW_PREVIEW_ROWS = 200
+    MAX_VIEW_RESULT_IDS = 5000
+
+    def _build_view_context_block(self, view_context: Dict[str, Any]) -> str:
+        """
+        Render the view_context payload into a bounded prompt block that the
+        LLM can reason over. Keeps tokens predictable by capping preview rows
+        and truncating over-long cells.
+        """
+        if not view_context:
+            return ""
+
+        view_type = view_context.get("view_type") or "unknown"
+        view_label = view_context.get("view_label") or view_type
+        filters = view_context.get("filters") or {}
+        selection_ids = view_context.get("selection_ids") or []
+        result_ids = view_context.get("result_ids") or []
+        result_preview = view_context.get("result_preview") or []
+        total = view_context.get("total_matching") or len(result_ids) or len(result_preview)
+
+        # Safety caps
+        result_preview = result_preview[: self.MAX_VIEW_PREVIEW_ROWS]
+        result_ids = result_ids[: self.MAX_VIEW_RESULT_IDS]
+
+        lines = []
+        lines.append("=== CURRENT VIEW CONTEXT ===")
+        lines.append(
+            f"The investigator is currently looking at **{view_label}** (view_type={view_type})."
+        )
+        lines.append(
+            "The following filters and results are what the user can see on screen. "
+            "When answering, prefer this data over case-wide context if the question is ambiguous "
+            "(e.g. questions like 'summarise these' or 'above' refer to this view)."
+        )
+
+        if filters:
+            lines.append("")
+            lines.append("Active filters:")
+            for k, v in filters.items():
+                v_str = self._format_filter_value(v)
+                lines.append(f"  - {k}: {v_str}")
+
+        if selection_ids:
+            lines.append("")
+            lines.append(
+                f"Selection: {len(selection_ids)} item(s) currently selected by the user."
+            )
+            shown = selection_ids[:20]
+            lines.append("  IDs: " + ", ".join(str(s) for s in shown))
+            if len(selection_ids) > 20:
+                lines.append(f"  (+{len(selection_ids) - 20} more)")
+
+        if result_preview:
+            shown = len(result_preview)
+            lines.append("")
+            lines.append(
+                f"Visible rows ({shown} of {total} matching):"
+            )
+            # Derive columns from the first row
+            cols = list(result_preview[0].keys())
+            header = "| # | " + " | ".join(cols) + " |"
+            sep = "|---|" + "|".join(["---"] * len(cols)) + "|"
+            lines.append(header)
+            lines.append(sep)
+            for i, row in enumerate(result_preview, start=1):
+                cells = []
+                for c in cols:
+                    val = row.get(c)
+                    if val is None:
+                        cells.append("")
+                    elif isinstance(val, (list, tuple)):
+                        cells.append(", ".join(str(x) for x in val)[:80])
+                    else:
+                        s = str(val)
+                        if len(s) > 80:
+                            s = s[:77] + "..."
+                        cells.append(s)
+                lines.append("| " + str(i) + " | " + " | ".join(cells) + " |")
+
+        if result_ids and not result_preview:
+            # No preview but ids → at least tell the model how many items there are
+            lines.append("")
+            lines.append(f"{len(result_ids)} matching items (no preview supplied).")
+
+        if result_ids:
+            lines.append("")
+            shown_ids = result_ids[:50]
+            lines.append("Row IDs (first 50): " + ", ".join(str(x) for x in shown_ids))
+            if len(result_ids) > 50:
+                lines.append(f"  (+{len(result_ids) - 50} more)")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_filter_value(v):
+        if v is None:
+            return "(none)"
+        if isinstance(v, bool):
+            return "yes" if v else "no"
+        if isinstance(v, (list, tuple, set)):
+            items = list(v)
+            if not items:
+                return "(none)"
+            return ", ".join(str(x) for x in items[:10]) + (f" (+{len(items)-10} more)" if len(items) > 10 else "")
+        return str(v)
+
     def _format_document_summary(self, doc_results: List[Dict]) -> str:
         """Format a summary of document search results for display in the answer.
 
@@ -1570,6 +1680,7 @@ Only include candidates with score >= 5."""
         selected_keys: Optional[List[str]] = None,
         confidence_threshold: Optional[float] = None,
         case_id: Optional[str] = None,
+        view_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Answer a question using hybrid retrieval:
@@ -1914,6 +2025,43 @@ Only include candidates with score >= 5."""
             model_context_window=model_ctx_window,
         )
 
+        # Phase 6: prepend the view-context block so the LLM sees what the user sees.
+        view_context_used = False
+        view_context_summary = None
+        if view_context:
+            try:
+                block = self._build_view_context_block(view_context)
+                if block:
+                    context = block + "\n\n" + context
+                    view_context_used = True
+                    vfilters = view_context.get("filters") or {}
+                    vrows = len(view_context.get("result_preview") or [])
+                    vtotal = view_context.get("total_matching") or 0
+                    view_context_summary = (
+                        f"{view_context.get('view_label') or view_context.get('view_type')}: "
+                        f"{len(vfilters)} filter(s), {vrows} preview row(s) of {vtotal} total"
+                    )
+                    debug_log["stages"].append({
+                        "step": len(debug_log["stages"]) + 1,
+                        "stage": "view_context_applied",
+                        "duration_ms": 0,
+                        "input": {
+                            "view_type": view_context.get("view_type"),
+                            "filter_keys": list(vfilters.keys()),
+                            "preview_rows": vrows,
+                            "total_matching": vtotal,
+                        },
+                        "output": {"summary": view_context_summary},
+                    })
+            except Exception as e:
+                debug_log["stages"].append({
+                    "step": len(debug_log["stages"]) + 1,
+                    "stage": "view_context_error",
+                    "duration_ms": 0,
+                    "input": {"view_type": view_context.get("view_type")},
+                    "output": {"error": str(e)},
+                })
+
         # Build context description
         parts = []
         if chunk_results:
@@ -2102,6 +2250,8 @@ Only include candidates with score >= 5."""
             "used_node_keys": used_node_keys,
             "result_graph": result_graph,
             "document_summary": doc_summary_text or None,
+            "view_context_used": view_context_used,
+            "view_context_summary": view_context_summary,
         }
 
     # =====================

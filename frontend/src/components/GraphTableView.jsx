@@ -11,6 +11,8 @@ import DeleteConfirmationModal from './DeleteConfirmationModal';
 import CreateRelationshipModal from './CreateRelationshipModal';
 import RecycleBinPanel from './RecycleBinPanel';
 import { graphAPI } from '../services/api';
+import { useChatContext } from '../contexts/ChatContext';
+import { buildGraphTableContext } from '../utils/chatContextSummary';
 
 const PREFERRED_COLUMN_ORDER = ['key', 'name', 'type', 'summary', 'notes'];
 const RELATIONS_COLUMN_WIDTH = '7rem';
@@ -249,7 +251,36 @@ export default function GraphTableView({
   const prevPanelsLengthRef = useRef(0);
   const lastClickWasFromRelationsRef = useRef(false);
   const lastCheckboxClickedKeyRef = useRef(null); // So we can re-apply scroll-right after Selected panel appears
-  
+  const rootContainerRef = useRef(null);
+
+  // Publish view context for the AI assistant — picks the active main panel
+  // (table) and either its checkbox-selected rows or the full filtered row set.
+  const { publish, clear } = useChatContext();
+  useEffect(() => {
+    // Pick the active/main panel's nodes as the visible rows
+    const mainPanel = panels.find((p) => p.type === 'main') || panels[0];
+    const visibleRows = mainPanel?.nodes || nodes || [];
+    const selectedKeySet = new Set([
+      ...(checkboxSelectedKeys || []),
+      ...(selectedRowKeys || []),
+    ]);
+    const selectedNodes = visibleRows.filter((n) => selectedKeySet.has(n.key));
+    // Determine an active "table" label from the breadcrumb or type distribution
+    const activeTable = mainPanel?.breadcrumb?.length
+      ? mainPanel.breadcrumb[mainPanel.breadcrumb.length - 1]?.label
+      : null;
+    publish({
+      ...buildGraphTableContext({
+        selectedNodes: selectedNodes.length > 0 ? selectedNodes : Array.from(selectedKeySet).map((k) => ({ key: k })),
+        activeTable,
+        totalRows: visibleRows.length,
+        visibleRows,
+      }),
+      anchorRef: rootContainerRef,
+    });
+  }, [publish, panels, nodes, checkboxSelectedKeys, selectedRowKeys]);
+  useEffect(() => () => clear(), [clear]);
+
   // Initialize default pagination for panels that don't have it
   useEffect(() => {
     setPaginationState((prev) => {
@@ -1294,7 +1325,7 @@ export default function GraphTableView({
   const resultsPanel = panels.find((p) => p.type === 'results');
 
   return (
-    <div className={`flex flex-col h-full bg-white ${isChatOpen ? 'overflow-x-auto overflow-y-auto min-w-0' : 'overflow-x-auto overflow-y-auto min-w-0'} ${className}`}>
+    <div ref={rootContainerRef} className={`flex flex-col h-full bg-white ${isChatOpen ? 'overflow-x-auto overflow-y-auto min-w-0' : 'overflow-x-auto overflow-y-auto min-w-0'} ${className}`}>
       {/* Multi-select query button */}
       {selectedPanels.size > 0 && (
         <div className="flex-shrink-0 px-4 py-2 bg-owl-blue-50 border-b border-light-200 flex items-center justify-between">

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Calendar, Search } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import CommsDeviceSelector from './comms/CommsDeviceSelector';
@@ -8,6 +8,8 @@ import CommsAppFilter from './comms/CommsAppFilter';
 import CommsThreadList from './comms/CommsThreadList';
 import CommsThreadView from './comms/CommsThreadView';
 import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
+import { useChatContext } from '../../contexts/ChatContext';
+import { buildCommsContext } from '../../utils/chatContextSummary';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -38,10 +40,54 @@ export default function CellebriteCommsCenter({ caseId, reports = [] }) {
 
   const [selectedThread, setSelectedThread] = useState(null);
 
+  // View-aware AI context
+  const rootRef = useRef(null);
+  const { publish, clear } = useChatContext();
+
   // If reports list changes (new ingestion), reset device selection to all
   useEffect(() => {
     setSelectedReportKeys(new Set(reports.map(r => r.report_key)));
   }, [reports]);
+
+  // Publish view context to ChatContext (debounced). Runs whenever the filters
+  // or the threads list change.
+  useEffect(() => {
+    publish({
+      ...buildCommsContext({
+        reports,
+        selectedReportKeys,
+        fromKeys,
+        toKeys,
+        activeTypes,
+        activeApps,
+        startDate,
+        endDate,
+        searchQuery: debouncedSearch,
+        threads,
+        selectedThread,
+      }),
+      anchorRef: rootRef,
+    });
+    return () => {
+      // Don't clear aggressively — other unmount paths handle the full clear.
+    };
+  }, [
+    publish,
+    reports,
+    selectedReportKeys,
+    fromKeys,
+    toKeys,
+    activeTypes,
+    activeApps,
+    startDate,
+    endDate,
+    debouncedSearch,
+    threads,
+    selectedThread,
+  ]);
+
+  // On unmount, clear the context so the chips disappear when the user leaves.
+  useEffect(() => () => clear(), [clear]);
 
   // Debounce search
   useEffect(() => {
@@ -140,7 +186,7 @@ export default function CellebriteCommsCenter({ caseId, reports = [] }) {
   const clearDevices = () => setSelectedReportKeys(new Set());
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white">
+    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
       {/* Device selector strip */}
       <CommsDeviceSelector
         reports={reports}

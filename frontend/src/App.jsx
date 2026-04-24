@@ -90,6 +90,23 @@ import EntityComparisonModal from './components/EntityComparisonModal';
 import EntityTypeSelectorModal from './components/EntityTypeSelectorModal';
 import BuildFooter from './components/BuildFooter';
 import { CasePermissionProvider, useCasePermissions } from './contexts/CasePermissionContext';
+import { ChatContextProvider, useChatContext } from './contexts/ChatContext';
+import ChatContextRing from './components/chat/ChatContextRing';
+
+/**
+ * Renders the global view-context ring at the top of the React tree so it can
+ * highlight whichever panel published a ctx.anchorRef. Only visible when the
+ * chat panel is open and includeInChat is on.
+ */
+function GlobalChatContextRing({ isChatOpen }) {
+  const { ctx, includeInChat } = useChatContext();
+  return (
+    <ChatContextRing
+      anchorRef={ctx?.anchorRef || null}
+      visible={isChatOpen && includeInChat && !!ctx?.viewType}
+    />
+  );
+}
 
 /**
  * Wrapper component that conditionally renders ContextMenu based on edit permissions.
@@ -108,7 +125,7 @@ function PermissionAwareContextMenu({ contextMenu, ...props }) {
 /**
  * Main App Component
  */
-export default function App() {
+function AppInner() {
   // Main app view state - 'caseManagement', 'graph', 'evidence', or 'workspace'
   const [appView, setAppView] = useState('caseManagement'); // Start with case management after login
   // View mode state (for graph view)
@@ -5552,7 +5569,20 @@ export default function App() {
       />
 
       <BuildFooter />
+      <GlobalChatContextRing isChatOpen={isChatOpen} />
     </div>
     </CasePermissionProvider>
+  );
+}
+
+/**
+ * Default export wraps AppInner with the ChatContext provider so every view
+ * can publish its filter/selection state to the AI assistant.
+ */
+export default function App() {
+  return (
+    <ChatContextProvider>
+      <AppInner />
+    </ChatContextProvider>
   );
 }

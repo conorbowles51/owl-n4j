@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { cellebriteFilesAPI, evidenceTagsAPI } from '../../services/api';
 import CommsDeviceSelector from './comms/CommsDeviceSelector';
@@ -6,6 +6,8 @@ import FilesTree from './files/FilesTree';
 import FilesList from './files/FilesList';
 import FileDetailPanel from './files/FileDetailPanel';
 import FileBulkActionsBar from './files/FileBulkActionsBar';
+import { useChatContext } from '../../contexts/ChatContext';
+import { buildFilesContext } from '../../utils/chatContextSummary';
 
 /**
  * Cellebrite Files Explorer — 7th tab in CellebriteView.
@@ -37,10 +39,45 @@ export default function CellebriteFilesExplorer({ caseId, reports = [] }) {
 
   const [caseTags, setCaseTags] = useState([]);
 
+  // View-aware AI context
+  const rootRef = useRef(null);
+  const { publish, clear } = useChatContext();
+
   // Reset device selection when reports change
   useEffect(() => {
     setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
   }, [reports]);
+
+  // Publish view context for the AI assistant
+  useEffect(() => {
+    publish({
+      ...buildFilesContext({
+        reports,
+        selectedReportKeys,
+        groupBy,
+        activeNode,
+        searchQuery: debouncedSearch,
+        onlyRelevant,
+        files,
+        totalMatching: filesTotal,
+        selectedIds,
+      }),
+      anchorRef: rootRef,
+    });
+  }, [
+    publish,
+    reports,
+    selectedReportKeys,
+    groupBy,
+    activeNode,
+    debouncedSearch,
+    onlyRelevant,
+    files,
+    filesTotal,
+    selectedIds,
+  ]);
+
+  useEffect(() => () => clear(), [clear]);
 
   // Debounce search
   useEffect(() => {
@@ -161,7 +198,7 @@ export default function CellebriteFilesExplorer({ caseId, reports = [] }) {
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white">
+    <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
       <CommsDeviceSelector
         reports={reports}
         selectedReportKeys={selectedReportKeys}

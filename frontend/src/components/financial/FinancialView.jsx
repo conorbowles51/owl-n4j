@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Loader2, DollarSign, RefreshCw, AlertCircle, Download, Search, X, Upload, Wand2, MessageSquare, ChevronDown, ChevronRight, BarChart3, ArrowLeftRight, TrendingUp } from 'lucide-react';
 import { financialAPI } from '../../services/api';
+import { useChatContext } from '../../contexts/ChatContext';
+import { buildFinancialContext } from '../../utils/chatContextSummary';
 import FinancialSummaryCards from './FinancialSummaryCards';
 import FinancialCharts from './FinancialCharts';
 import FinancialTable from './FinancialTable';
@@ -513,6 +515,42 @@ export default function FinancialView({ caseId, onNodeSelect }) {
     });
     return overlap;
   }, [selectedMoneyFlowEntities, selectedFromEntities, selectedToEntities, hasMoneyFlowSelection, hasEntitySelection]);
+
+  // Publish view context for the AI assistant. Captures the currently-applied
+  // filters + the full filtered result set (capped server-side to 200 rows).
+  const { publish, clear } = useChatContext();
+  useEffect(() => {
+    publish({
+      ...buildFinancialContext({
+        filters: {
+          types: selectedTypes,
+          categories: selectedCategories,
+          startDate,
+          endDate,
+          fromEntities: selectedFromEntities,
+          toEntities: selectedToEntities,
+          moneyFlowEntities: selectedMoneyFlowEntities,
+          searchQuery,
+        },
+        rows: filteredTransactions,
+        selectedKeys,
+      }),
+      anchorRef: containerRef,
+    });
+  }, [
+    publish,
+    selectedTypes,
+    selectedCategories,
+    startDate,
+    endDate,
+    selectedFromEntities,
+    selectedToEntities,
+    selectedMoneyFlowEntities,
+    searchQuery,
+    filteredTransactions,
+    selectedKeys,
+  ]);
+  useEffect(() => () => clear(), [clear]);
 
   // Compute volume data from filtered transactions so charts update with filters
   const filteredVolumeData = useMemo(() => {
