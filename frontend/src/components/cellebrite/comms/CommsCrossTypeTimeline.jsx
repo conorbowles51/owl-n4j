@@ -94,7 +94,7 @@ export default function CommsCrossTypeTimeline({
           ) : (
             items.map((item, idx) => (
               <TimelineRow
-                key={item.id || idx}
+                key={`${item.id || 'x'}-${idx}`}
                 item={item}
                 onClick={onJumpToThread ? () => onJumpToThread(item) : null}
               />

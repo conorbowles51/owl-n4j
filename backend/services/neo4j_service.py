@@ -6048,18 +6048,16 @@ class Neo4jService:
                            [cc IN calls | cc.timestamp] AS timestamps
                 """
                 result = session.run(query, params)
+                # Neo4j returns one row per (a,b) AND one per (b,a) when both
+                # directions exist. We normalise to the sorted pair and merge
+                # those two rows into a single thread.
+                call_pairs: Dict[str, dict] = {}
                 for record in result:
                     a = dict(record["a"])
                     b = dict(record["b"])
                     a_key, b_key = a.get("key"), b.get("key")
                     if not a_key or not b_key:
                         continue
-                    timestamps = [t for t in (record["timestamps"] or []) if t]
-                    last_ts = max(timestamps) if timestamps else None
-                    first_ts = min(timestamps) if timestamps else None
-                    # Normalize pair order so we merge bidirectional pairs
-                    pair_keys = tuple(sorted([a_key, b_key]))
-
                     # Participant filter
                     if from_keys or to_keys:
                         pkeys = {a_key, b_key}
@@ -6068,23 +6066,50 @@ class Neo4jService:
                         if to_keys and not any(k in pkeys for k in to_keys):
                             continue
 
-                    threads.append({
-                        "thread_id": f"calls-{record['rk']}-{pair_keys[0]}-{pair_keys[1]}",
-                        "thread_type": "calls",
-                        "source_app": "Calls",
-                        "name": f"Calls: {a.get('name') or a_key} ↔ {b.get('name') or b_key}",
-                        "participants": [
+                    pair_keys = tuple(sorted([a_key, b_key]))
+                    thread_id = f"calls-{record['rk']}-{pair_keys[0]}-{pair_keys[1]}"
+                    timestamps = [t for t in (record["timestamps"] or []) if t]
+                    call_count = int(record["call_count"] or 0)
+                    attach_count = int(record["attach_count"] or 0)
+
+                    existing = call_pairs.get(thread_id)
+                    if existing is None:
+                        # Determine participants preserving person metadata
+                        participants = [
                             {"key": a_key, "name": a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
                             {"key": b_key, "name": b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
-                        ],
-                        "message_count": int(record["call_count"] or 0),
-                        "attachment_count": int(record["attach_count"] or 0),
-                        "has_attachments": int(record["attach_count"] or 0) > 0,
-                        "last_activity": last_ts,
-                        "first_activity": first_ts,
-                        "report_key": record["rk"],
-                        "pair_keys": list(pair_keys),
-                    })
+                        ]
+                        # Order participants to match pair_keys ordering
+                        participants.sort(key=lambda p: p["key"])
+                        name_parts = [p["name"] for p in participants]
+                        call_pairs[thread_id] = {
+                            "thread_id": thread_id,
+                            "thread_type": "calls",
+                            "source_app": "Calls",
+                            "name": f"Calls: {name_parts[0]} ↔ {name_parts[1]}",
+                            "participants": participants,
+                            "message_count": call_count,
+                            "attachment_count": attach_count,
+                            "has_attachments": attach_count > 0,
+                            "last_activity": max(timestamps) if timestamps else None,
+                            "first_activity": min(timestamps) if timestamps else None,
+                            "report_key": record["rk"],
+                            "pair_keys": list(pair_keys),
+                        }
+                    else:
+                        # Merge the reverse-direction row into the existing one
+                        existing["message_count"] += call_count
+                        existing["attachment_count"] += attach_count
+                        existing["has_attachments"] = existing["attachment_count"] > 0
+                        if timestamps:
+                            ts_max = max(timestamps)
+                            ts_min = min(timestamps)
+                            if existing.get("last_activity") is None or ts_max > existing["last_activity"]:
+                                existing["last_activity"] = ts_max
+                            if existing.get("first_activity") is None or ts_min < existing["first_activity"]:
+                                existing["first_activity"] = ts_min
+
+                threads.extend(call_pairs.values())
 
             # ---- Synthetic email threads (per participant pair + report) ----
             if "emails" in active_types:
@@ -6099,17 +6124,14 @@ class Neo4jService:
                            [ee IN emails | ee.timestamp] AS timestamps
                 """
                 result = session.run(query, params)
+                # Same dedupe pattern as calls — merge bidirectional pairs
+                email_pairs: Dict[str, dict] = {}
                 for record in result:
                     a = dict(record["a"])
                     b = dict(record["b"])
                     a_key, b_key = a.get("key"), b.get("key")
                     if not a_key or not b_key:
                         continue
-                    timestamps = [t for t in (record["timestamps"] or []) if t]
-                    last_ts = max(timestamps) if timestamps else None
-                    first_ts = min(timestamps) if timestamps else None
-                    pair_keys = tuple(sorted([a_key, b_key]))
-
                     if from_keys or to_keys:
                         pkeys = {a_key, b_key}
                         if from_keys and not any(k in pkeys for k in from_keys):
@@ -6117,23 +6139,47 @@ class Neo4jService:
                         if to_keys and not any(k in pkeys for k in to_keys):
                             continue
 
-                    threads.append({
-                        "thread_id": f"emails-{record['rk']}-{pair_keys[0]}-{pair_keys[1]}",
-                        "thread_type": "emails",
-                        "source_app": "Email",
-                        "name": f"Emails: {a.get('name') or a_key} ↔ {b.get('name') or b_key}",
-                        "participants": [
+                    pair_keys = tuple(sorted([a_key, b_key]))
+                    thread_id = f"emails-{record['rk']}-{pair_keys[0]}-{pair_keys[1]}"
+                    timestamps = [t for t in (record["timestamps"] or []) if t]
+                    email_count = int(record["email_count"] or 0)
+                    attach_count = int(record["attach_count"] or 0)
+
+                    existing = email_pairs.get(thread_id)
+                    if existing is None:
+                        participants = [
                             {"key": a_key, "name": a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
                             {"key": b_key, "name": b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
-                        ],
-                        "message_count": int(record["email_count"] or 0),
-                        "attachment_count": int(record["attach_count"] or 0),
-                        "has_attachments": int(record["attach_count"] or 0) > 0,
-                        "last_activity": last_ts,
-                        "first_activity": first_ts,
-                        "report_key": record["rk"],
-                        "pair_keys": list(pair_keys),
-                    })
+                        ]
+                        participants.sort(key=lambda p: p["key"])
+                        name_parts = [p["name"] for p in participants]
+                        email_pairs[thread_id] = {
+                            "thread_id": thread_id,
+                            "thread_type": "emails",
+                            "source_app": "Email",
+                            "name": f"Emails: {name_parts[0]} ↔ {name_parts[1]}",
+                            "participants": participants,
+                            "message_count": email_count,
+                            "attachment_count": attach_count,
+                            "has_attachments": attach_count > 0,
+                            "last_activity": max(timestamps) if timestamps else None,
+                            "first_activity": min(timestamps) if timestamps else None,
+                            "report_key": record["rk"],
+                            "pair_keys": list(pair_keys),
+                        }
+                    else:
+                        existing["message_count"] += email_count
+                        existing["attachment_count"] += attach_count
+                        existing["has_attachments"] = existing["attachment_count"] > 0
+                        if timestamps:
+                            ts_max = max(timestamps)
+                            ts_min = min(timestamps)
+                            if existing.get("last_activity") is None or ts_max > existing["last_activity"]:
+                                existing["last_activity"] = ts_max
+                            if existing.get("first_activity") is None or ts_min < existing["first_activity"]:
+                                existing["first_activity"] = ts_min
+
+                threads.extend(email_pairs.values())
 
         # Merge duplicate synthetic threads (same pair, same report, both directions — already grouped by query)
         # Sort all threads by last_activity DESC
@@ -6588,6 +6634,22 @@ class Neo4jService:
                         ] if dst else [],
                         "report_key": e.get("cellebrite_report_key"),
                     })
+
+        # Dedupe — the same message can be returned multiple times when a
+        # chat has many participants and the from/to filters overlap. Keep the
+        # first occurrence (keys in the Python dict preserve insertion order).
+        seen_ids = set()
+        deduped = []
+        for it in items:
+            key = it.get("id") or it.get("node_key")
+            if key is None:
+                deduped.append(it)
+                continue
+            if key in seen_ids:
+                continue
+            seen_ids.add(key)
+            deduped.append(it)
+        items = deduped
 
         # Sort & paginate
         items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=True)
