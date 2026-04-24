@@ -16,6 +16,7 @@ import EntitySummarySection from './EntitySummarySection';
 import SnapshotsSection from './SnapshotsSection';
 import InvestigationTimelineSection from './InvestigationTimelineSection';
 import CellebritePhonesSection from '../cellebrite/CellebritePhonesSection';
+import EntitiesPanelSection from '../entities/EntitiesPanelSection';
 
 /**
  * Case Context Panel Component
@@ -48,6 +49,7 @@ export default function CaseContextPanel({
     'audit-log',
     'snapshots',
     'investigation-timeline',
+    'entities',
     'cellebrite',
   ]));
   const [witnesses, setWitnesses] = useState([]);
@@ -286,6 +288,19 @@ export default function CaseContextPanel({
           isCollapsed={isCollapsed('pinned-evidence')}
           onToggle={(e) => toggleSection('pinned-evidence', e)}
           onFocus={(e) => focusSection('pinned-evidence', e)}
+        />
+      </div>
+
+      {/* Entities (case-wide investigator profiles) */}
+      <div className={selectedSection === 'entities' ? 'bg-owl-blue-50' : ''}>
+        <EntitiesPanelSection
+          caseId={caseId}
+          collapsed={isCollapsed('entities')}
+          onToggle={(next) => {
+            // The section signature passes collapsed; pass a synthetic event to
+            // reuse the existing toggle handler.
+            toggleSection('entities', { preventDefault: () => {} });
+          }}
         />
       </div>
 

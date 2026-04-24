@@ -4,6 +4,7 @@ import { cellebriteEventsAPI } from '../../../services/api';
 import CommsMessageBubble from '../comms/CommsMessageBubble';
 import CommsCallRow from '../comms/CommsCallRow';
 import CommsEmailCard from '../comms/CommsEmailCard';
+import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 
 /**
@@ -70,6 +71,7 @@ export default function EventDetailDrawer({ caseId, event, onClose }) {
             <span className="tabular-nums">{formatTs(event.timestamp)}</span>
           </div>
         </div>
+        <LinkNodeToEntityButton caseId={caseId} nodeKey={event.node_key || event.id} />
         <button onClick={onClose} className="p-1 text-light-500 hover:text-light-800" title="Close (Esc)">
           <X className="w-4 h-4" />
         </button>

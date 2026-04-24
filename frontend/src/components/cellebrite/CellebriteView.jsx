@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Network, Clock, Users, MessageSquare, MapPin, Loader2 } from 'lucide-react';
+import {
+  Smartphone, Network, Clock, Users, MessageSquare, MapPin, FolderTree, Loader2,
+} from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import CellebriteOverview from './CellebriteOverview';
 import CellebriteCrossPhoneGraph from './CellebriteCrossPhoneGraph';
@@ -7,11 +9,13 @@ import CellebriteTimeline from './CellebriteTimeline';
 import CellebriteCommunicationView from './CellebriteCommunicationView';
 import CellebriteCommsCenter from './CellebriteCommsCenter';
 import CellebriteEventCenter from './CellebriteEventCenter';
+import CellebriteFilesExplorer from './CellebriteFilesExplorer';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
   { key: 'comms', label: 'Comms Center', icon: MessageSquare },
   { key: 'events', label: 'Location & Events', icon: MapPin },
+  { key: 'files', label: 'Files', icon: FolderTree },
   { key: 'graph', label: 'Cross-Phone Graph', icon: Network },
   { key: 'timeline', label: 'Timeline', icon: Clock },
   { key: 'communications', label: 'Communications', icon: Users },
@@ -99,6 +103,9 @@ export default function CellebriteView({ caseId }) {
         )}
         {activeTab === 'events' && (
           <CellebriteEventCenter caseId={caseId} reports={reports} />
+        )}
+        {activeTab === 'files' && (
+          <CellebriteFilesExplorer caseId={caseId} reports={reports} />
         )}
         {activeTab === 'graph' && (
           <CellebriteCrossPhoneGraph caseId={caseId} />

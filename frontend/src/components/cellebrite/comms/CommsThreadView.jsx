@@ -4,6 +4,7 @@ import { cellebriteCommsAPI } from '../../../services/api';
 import CommsMessageBubble from './CommsMessageBubble';
 import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
+import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { appIconEmoji } from './commsUtils';
 
 /**
@@ -113,6 +114,9 @@ export default function CommsThreadView({ caseId, selectedThread }) {
             {ownerName && ` · You = ${ownerName}`}
           </div>
         </div>
+        {caseId && detail.thread?.thread_id && (
+          <LinkNodeToEntityButton caseId={caseId} nodeKey={detail.thread.thread_id} />
+        )}
       </div>
 
       {/* Body */}
