@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, User, Smartphone, Loader2, Phone, MessageSquare, Mail } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import CommsTypeFilter from './CommsTypeFilter';
@@ -6,6 +6,7 @@ import CommsMessageBubble from './CommsMessageBubble';
 import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
+import { buildSenderPalette } from './commsUtils';
 
 /**
  * Slide-in drawer showing every comm event involving one contact, across all
@@ -75,16 +76,43 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
       )
     : {};
 
-  // Build day-grouped list (newest first)
+  // Collect every distinct sender across the contact's feed so we can
+  // build a stable palette — each unique sender always gets the same
+  // colour while this drawer is open, regardless of which device the
+  // message came from.
+  const palette = useMemo(() => {
+    const seen = new Map();
+    for (const it of data?.items || []) {
+      const s = it.sender;
+      if (s?.key && !seen.has(s.key)) {
+        seen.set(s.key, { key: s.key, name: s.name || s.key, is_owner: !!s.is_owner });
+      }
+    }
+    return buildSenderPalette([...seen.values()]);
+  }, [data]);
+
+  // Build day-grouped list (newest first), tracking speaker runs so the
+  // bubble component renders avatar + name only on each run leader.
   const grouped = [];
   let currentDay = null;
+  let lastSenderKey = null;
   for (const item of data?.items || []) {
     const day = (item.timestamp || '').slice(0, 10) || '—';
     if (currentDay !== day) {
       grouped.push({ type: 'date-sep', day });
       currentDay = day;
+      lastSenderKey = null; // new day breaks the run
     }
-    grouped.push({ type: 'item', item });
+    if (item.type === 'message') {
+      const senderKey = item.sender?.key || 'unknown';
+      const isFirstInRun = senderKey !== lastSenderKey;
+      grouped.push({ type: 'item', item, isFirstInRun });
+      lastSenderKey = senderKey;
+    } else {
+      // Calls / emails interrupt the run visually.
+      grouped.push({ type: 'item', item, isFirstInRun: true });
+      lastSenderKey = null;
+    }
   }
 
   const headerName = data?.contact?.name || contact.name || contact.person_key;
@@ -174,7 +202,9 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
             <CommsMessageBubble
               key={item.id || idx}
               item={item}
+              palette={palette}
               showSenderName
+              isFirstInRun={row.isFirstInRun}
             />
           );
         })}

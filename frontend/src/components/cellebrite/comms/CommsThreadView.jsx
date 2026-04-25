@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Loader2, MessageSquare } from 'lucide-react';
+import { Loader2, MessageSquare, Smartphone } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import CommsMessageBubble from './CommsMessageBubble';
 import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
-import { appIconEmoji } from './commsUtils';
+import { appIconEmoji, buildSenderPalette, senderInitials } from './commsUtils';
 
 /**
  * Right-pane thread viewer. Fetches thread detail for the selected thread and
@@ -88,34 +88,82 @@ export default function CommsThreadView({ caseId, selectedThread }) {
   const ownerName = participants.find(p => p.is_owner)?.name || 'You';
   const isGroupChat = participants.length > 2;
 
-  // Date separators
+  // Build a stable per-sender palette so colours stay consistent for
+  // each participant inside this thread (and a separate palette across
+  // threads is fine — only consistency *within* a thread matters).
+  const palette = buildSenderPalette(participants);
+
+  // Walk items in chronological order, inserting date separators and
+  // marking the first message of each speaker run so the bubble component
+  // can render the avatar + name only on the run leader (iMessage style).
   const itemsByDate = [];
   let currentDate = null;
+  let lastSenderKey = null;
   for (const item of detail.items) {
     const d = (item.timestamp || '').slice(0, 10);
     if (d !== currentDate) {
       itemsByDate.push({ type: 'date-sep', date: d });
       currentDate = d;
+      lastSenderKey = null; // new day breaks the run
     }
-    itemsByDate.push({ type: 'item', item });
+    if (item.type === 'message') {
+      const senderKey = item.sender?.key || 'unknown';
+      const isFirstInRun = senderKey !== lastSenderKey;
+      itemsByDate.push({ type: 'item', item, isFirstInRun });
+      lastSenderKey = senderKey;
+    } else {
+      // Calls/emails break the speaker run so the next message shows its
+      // avatar + name again — they're a clear visual interruption.
+      itemsByDate.push({ type: 'item', item, isFirstInRun: true });
+      lastSenderKey = null;
+    }
   }
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-light-50 to-light-100">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
-        <span className="text-xl">{appIconEmoji(detail.thread?.source_app || detail.thread?.thread_type)}</span>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-owl-blue-900 truncate">
-            {nonOwnerNames || detail.thread?.name}
+      <div className="flex flex-col gap-1.5 px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">{appIconEmoji(detail.thread?.source_app || detail.thread?.thread_type)}</span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-semibold text-owl-blue-900 truncate">
+              {nonOwnerNames || detail.thread?.name}
+            </div>
+            <div className="text-[10px] text-light-500 truncate">
+              {detail.thread?.source_app || '—'} · {detail.total.toLocaleString()} items
+            </div>
           </div>
-          <div className="text-[10px] text-light-500 truncate">
-            {detail.thread?.source_app || '—'} · {detail.total.toLocaleString()} items
-            {ownerName && ` · You = ${ownerName}`}
-          </div>
+          {caseId && detail.thread?.thread_id && (
+            <LinkNodeToEntityButton caseId={caseId} nodeKey={detail.thread.thread_id} />
+          )}
         </div>
-        {caseId && detail.thread?.thread_id && (
-          <LinkNodeToEntityButton caseId={caseId} nodeKey={detail.thread.thread_id} />
+        {/* Participant colour-key — investigators can see at a glance who
+            each bubble colour belongs to. */}
+        {participants.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {participants.map((p) => {
+              const pal = palette.get(p.key) || null;
+              return (
+                <span
+                  key={p.key}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] border ${
+                    pal ? `${pal.bubble} ${pal.text} border-black/5` : 'bg-light-100 text-light-700 border-light-200'
+                  }`}
+                  title={p.is_owner ? 'Phone owner' : p.name}
+                >
+                  <span
+                    className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[8px] font-semibold ${
+                      pal ? `${pal.avatar} ${pal.avatarText}` : 'bg-light-300 text-light-700'
+                    }`}
+                  >
+                    {senderInitials(p.name || p.key)}
+                  </span>
+                  <span className="truncate max-w-[140px]">{p.name || p.key}</span>
+                  {p.is_owner && <Smartphone className="w-2.5 h-2.5" />}
+                </span>
+              );
+            })}
+          </div>
         )}
       </div>
 
@@ -139,7 +187,9 @@ export default function CommsThreadView({ caseId, selectedThread }) {
             <CommsMessageBubble
               key={item.id || idx}
               item={item}
-              showSenderName={isGroupChat}
+              palette={palette}
+              showSenderName
+              isFirstInRun={row.isFirstInRun}
             />
           );
         })}

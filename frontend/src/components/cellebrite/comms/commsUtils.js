@@ -123,3 +123,90 @@ export function appIconEmoji(source) {
   if (s.includes('call')) return '📞';
   return '💬';
 }
+
+/**
+ * Deterministic per-sender colour palette so each participant in a thread
+ * gets a distinct visual identity (bubble background + avatar). The phone
+ * owner is always assigned the first slot (blue) so "you" is consistent.
+ */
+const SENDER_PALETTE = [
+  // [bubbleBg, bubbleText, avatarBg, avatarText, label]
+  { bubble: 'bg-owl-blue-100', text: 'text-owl-blue-950', avatar: 'bg-owl-blue-500', avatarText: 'text-white', name: 'blue' },
+  { bubble: 'bg-emerald-100', text: 'text-emerald-950', avatar: 'bg-emerald-500', avatarText: 'text-white', name: 'emerald' },
+  { bubble: 'bg-amber-100', text: 'text-amber-950', avatar: 'bg-amber-500', avatarText: 'text-white', name: 'amber' },
+  { bubble: 'bg-purple-100', text: 'text-purple-950', avatar: 'bg-purple-500', avatarText: 'text-white', name: 'purple' },
+  { bubble: 'bg-rose-100', text: 'text-rose-950', avatar: 'bg-rose-500', avatarText: 'text-white', name: 'rose' },
+  { bubble: 'bg-cyan-100', text: 'text-cyan-950', avatar: 'bg-cyan-500', avatarText: 'text-white', name: 'cyan' },
+  { bubble: 'bg-orange-100', text: 'text-orange-950', avatar: 'bg-orange-500', avatarText: 'text-white', name: 'orange' },
+  { bubble: 'bg-teal-100', text: 'text-teal-950', avatar: 'bg-teal-500', avatarText: 'text-white', name: 'teal' },
+];
+
+/**
+ * Hash a string to a stable non-negative integer for deterministic palette
+ * indexing.
+ */
+function _hashKey(key) {
+  let h = 0;
+  const s = String(key || '');
+  for (let i = 0; i < s.length; i += 1) {
+    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * Build a `senderKey -> palette` map for a thread. The phone owner (if
+ * present) gets palette slot 0 (blue), and remaining participants get
+ * deterministic-but-distinct slots based on their key hash.
+ *
+ * Pass an array of participant objects with at least { key, is_owner }.
+ */
+export function buildSenderPalette(participants) {
+  const map = new Map();
+  if (!Array.isArray(participants) || participants.length === 0) return map;
+  // Phone owner first
+  const owner = participants.find((p) => p?.is_owner);
+  const used = new Set();
+  if (owner?.key) {
+    map.set(owner.key, SENDER_PALETTE[0]);
+    used.add(0);
+  }
+  // Other participants — try their hash slot, fall back to next free slot
+  for (const p of participants) {
+    if (!p?.key || map.has(p.key)) continue;
+    let idx = _hashKey(p.key) % SENDER_PALETTE.length;
+    // If slot 0 (owner colour) collides for a non-owner, bump
+    if (idx === 0) idx = 1;
+    let attempts = 0;
+    while (used.has(idx) && attempts < SENDER_PALETTE.length) {
+      idx = (idx + 1) % SENDER_PALETTE.length;
+      if (idx === 0) idx = 1;
+      attempts += 1;
+    }
+    map.set(p.key, SENDER_PALETTE[idx]);
+    used.add(idx);
+  }
+  return map;
+}
+
+/**
+ * Standalone helper to get a palette for a single sender key when the
+ * caller doesn't have a participant list (e.g. cross-thread feeds).
+ */
+export function paletteForSenderKey(senderKey, isOwner = false) {
+  if (isOwner) return SENDER_PALETTE[0];
+  let idx = _hashKey(senderKey) % SENDER_PALETTE.length;
+  if (idx === 0) idx = 1;
+  return SENDER_PALETTE[idx];
+}
+
+/**
+ * Two-letter initials for the avatar circle (e.g. "Sender Lemus" → "SL").
+ */
+export function senderInitials(name) {
+  if (!name) return '?';
+  const parts = String(name).trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
