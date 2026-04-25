@@ -2586,6 +2586,39 @@ export const cellebriteEventsAPI = {
 
 
 /**
+ * Cellebrite Overview drill-down API (Phase 8)
+ *
+ * Six per-category endpoints scoped to a single (caseId, reportKey) pair so
+ * the Overview tab can drill into Contacts / Calls / Messages / Locations /
+ * Emails for one device at a time.
+ */
+function _buildOverviewParams(caseId, reportKey, { search = null, limit = 500, offset = 0 } = {}) {
+  const p = new URLSearchParams({ case_id: caseId, report_key: reportKey });
+  if (search) p.append('search', search);
+  p.append('limit', String(limit));
+  p.append('offset', String(offset));
+  return p;
+}
+
+export const cellebriteOverviewAPI = {
+  getContacts: (caseId, reportKey, opts = {}) =>
+    fetchAPI(`/cellebrite/overview/contacts?${_buildOverviewParams(caseId, reportKey, opts).toString()}`),
+  getCalls: (caseId, reportKey, opts = {}) =>
+    fetchAPI(`/cellebrite/overview/calls?${_buildOverviewParams(caseId, reportKey, opts).toString()}`),
+  getMessages: (caseId, reportKey, opts = {}) =>
+    fetchAPI(`/cellebrite/overview/messages?${_buildOverviewParams(caseId, reportKey, opts).toString()}`),
+  getLocations: (caseId, reportKey, opts = {}) =>
+    fetchAPI(`/cellebrite/overview/locations?${_buildOverviewParams(caseId, reportKey, opts).toString()}`),
+  getEmails: (caseId, reportKey, opts = {}) =>
+    fetchAPI(`/cellebrite/overview/emails?${_buildOverviewParams(caseId, reportKey, opts).toString()}`),
+  getContactDetail: (caseId, reportKey, contactKey) => {
+    const p = new URLSearchParams({ case_id: caseId, report_key: reportKey });
+    return fetchAPI(`/cellebrite/overview/contact/${encodeURIComponent(contactKey)}?${p.toString()}`);
+  },
+};
+
+
+/**
  * Cellebrite Files Explorer API (Phase 5)
  */
 export const cellebriteFilesAPI = {

@@ -1,10 +1,23 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Smartphone, Phone, MessageSquare, MapPin, Mail, User, Hash, Shield } from 'lucide-react';
+import OverviewContactsView from './overview/OverviewContactsView';
+import OverviewCallsView from './overview/OverviewCallsView';
+import OverviewMessagesView from './overview/OverviewMessagesView';
+import OverviewLocationsView from './overview/OverviewLocationsView';
+import OverviewEmailsView from './overview/OverviewEmailsView';
 
 /**
  * Device cards dashboard showing all ingested phone reports.
+ *
+ * Each stat tile (Contacts / Calls / Messages / Locations / Emails) drills
+ * into a category-specific detail view. The detail view replaces the cards
+ * grid and provides a Back button to return.
  */
 export default function CellebriteOverview({ caseId, reports }) {
+  // When set, we render the matching detail view instead of the cards grid.
+  // Shape: { category: "contacts" | "calls" | ..., report: <reportObj> }
+  const [drillDown, setDrillDown] = useState(null);
+
   if (!reports || reports.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-light-500 text-sm">
@@ -13,18 +26,42 @@ export default function CellebriteOverview({ caseId, reports }) {
     );
   }
 
+  // Drill-down view active → render the matching category view
+  if (drillDown) {
+    const onBack = () => setDrillDown(null);
+    const Common = { caseId, report: drillDown.report, onBack };
+    switch (drillDown.category) {
+      case 'contacts':
+        return <OverviewContactsView {...Common} />;
+      case 'calls':
+        return <OverviewCallsView {...Common} />;
+      case 'messages':
+        return <OverviewMessagesView {...Common} />;
+      case 'locations':
+        return <OverviewLocationsView {...Common} />;
+      case 'emails':
+        return <OverviewEmailsView {...Common} />;
+      default:
+        return null;
+    }
+  }
+
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {reports.map((report) => (
-          <DeviceCard key={report.report_key} report={report} />
+          <DeviceCard
+            key={report.report_key}
+            report={report}
+            onDrillDown={(category) => setDrillDown({ category, report })}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function DeviceCard({ report }) {
+function DeviceCard({ report, onDrillDown }) {
   const stats = report.stats || {};
   const totalComms = (stats.calls || 0) + (stats.messages || 0) + (stats.emails || 0);
 
@@ -71,7 +108,7 @@ function DeviceCard({ report }) {
         )}
       </div>
 
-      {/* Stats */}
+      {/* Stats — clickable */}
       <div className="px-4 pb-4">
         <div className="grid grid-cols-3 gap-2">
           <StatBadge
@@ -79,30 +116,35 @@ function DeviceCard({ report }) {
             count={stats.contacts || 0}
             label="Contacts"
             color="blue"
+            onClick={() => onDrillDown('contacts')}
           />
           <StatBadge
             icon={Phone}
             count={stats.calls || 0}
             label="Calls"
             color="green"
+            onClick={() => onDrillDown('calls')}
           />
           <StatBadge
             icon={MessageSquare}
             count={stats.messages || 0}
             label="Messages"
             color="purple"
+            onClick={() => onDrillDown('messages')}
           />
           <StatBadge
             icon={MapPin}
             count={stats.locations || 0}
             label="Locations"
             color="orange"
+            onClick={() => onDrillDown('locations')}
           />
           <StatBadge
             icon={Mail}
             count={stats.emails || 0}
             label="Emails"
             color="red"
+            onClick={() => onDrillDown('emails')}
           />
           <StatBadge
             icon={MessageSquare}
@@ -135,9 +177,22 @@ const colorMap = {
   emerald: 'bg-emerald-50 text-emerald-700',
 };
 
-function StatBadge({ icon: Icon, count, label, color }) {
+function StatBadge({ icon: Icon, count, label, color, onClick }) {
+  const base = `rounded p-2 text-center transition-all ${colorMap[color] || colorMap.blue}`;
+  if (onClick) {
+    return (
+      <button
+        onClick={onClick}
+        className={`${base} cursor-pointer hover:shadow-sm hover:ring-2 hover:ring-current/20 active:scale-[0.98]`}
+        title={`Browse all ${count.toLocaleString()} ${label.toLowerCase()}`}
+      >
+        <div className="text-sm font-semibold">{count.toLocaleString()}</div>
+        <div className="text-[10px] opacity-75">{label} ›</div>
+      </button>
+    );
+  }
   return (
-    <div className={`rounded p-2 text-center ${colorMap[color] || colorMap.blue}`}>
+    <div className={base}>
       <div className="text-sm font-semibold">{count.toLocaleString()}</div>
       <div className="text-[10px] opacity-75">{label}</div>
     </div>

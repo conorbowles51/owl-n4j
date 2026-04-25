@@ -642,3 +642,112 @@ async def get_cellebrite_files_tree(
         return {"group_by": "path", "root": _finalise(root)}
 
     raise HTTPException(status_code=400, detail=f"Unknown group_by: {group_by}")
+
+
+# -------------------------------------------------------------------
+# Phase 8: Overview drill-down detail endpoints
+# Each returns paginated rows for a single (case_id, report_key) pair.
+# -------------------------------------------------------------------
+
+
+@router.get("/overview/contacts")
+async def overview_contacts(
+    case_id: str = Query(...),
+    report_key: str = Query(...),
+    search: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Contacts on a single device with interaction counts."""
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_overview_contacts(
+        case_id=case_id, report_key=report_key, search=search, limit=limit, offset=offset,
+    )
+
+
+@router.get("/overview/calls")
+async def overview_calls(
+    case_id: str = Query(...),
+    report_key: str = Query(...),
+    search: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Calls on a single device."""
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_overview_calls(
+        case_id=case_id, report_key=report_key, search=search, limit=limit, offset=offset,
+    )
+
+
+@router.get("/overview/messages")
+async def overview_messages(
+    case_id: str = Query(...),
+    report_key: str = Query(...),
+    search: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Individual messages on a single device."""
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_overview_messages(
+        case_id=case_id, report_key=report_key, search=search, limit=limit, offset=offset,
+    )
+
+
+@router.get("/overview/locations")
+async def overview_locations(
+    case_id: str = Query(...),
+    report_key: str = Query(...),
+    search: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Locations on a single device."""
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_overview_locations(
+        case_id=case_id, report_key=report_key, search=search, limit=limit, offset=offset,
+    )
+
+
+@router.get("/overview/emails")
+async def overview_emails(
+    case_id: str = Query(...),
+    report_key: str = Query(...),
+    search: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Emails on a single device."""
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_overview_emails(
+        case_id=case_id, report_key=report_key, search=search, limit=limit, offset=offset,
+    )
+
+
+@router.get("/overview/contact/{contact_key}")
+async def overview_contact_detail(
+    contact_key: str,
+    case_id: str = Query(...),
+    report_key: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Single contact detail + recent comms with that contact on this device."""
+    _require_case_access(case_id, current_user, db)
+    res = neo4j_service.get_overview_contact_detail(
+        case_id=case_id, report_key=report_key, contact_key=contact_key,
+    )
+    if not res:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return res

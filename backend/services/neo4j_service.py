@@ -7041,6 +7041,456 @@ class Neo4jService:
                     return props
         return None
 
+    # ------------------------------------------------------------------
+    # Phase 8: Overview drill-down detail queries
+    # Each is scoped to a single (case_id, report_key) pair and paginates.
+    # ------------------------------------------------------------------
+
+    def get_overview_contacts(
+        self,
+        case_id: str,
+        report_key: str,
+        search: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict:
+        """All Person nodes from one device, with interaction counts."""
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "rk": report_key,
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+        search_clause = ""
+        if search:
+            search_clause = (
+                " AND (toLower(coalesce(p.name, '')) CONTAINS toLower($search) "
+                "OR any(num IN coalesce(p.phone_numbers, []) WHERE toLower(num) CONTAINS toLower($search)))"
+            )
+            params["search"] = search
+
+        with self._driver.session() as session:
+            total = session.run(
+                f"""
+                MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE p.key IS NOT NULL {search_clause}
+                RETURN count(p) AS n
+                """,
+                params,
+            ).single()
+            total_count = int(total["n"]) if total else 0
+
+            result = session.run(
+                f"""
+                MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE p.key IS NOT NULL {search_clause}
+                OPTIONAL MATCH (p)-[r1:CALLED|CALLED_TO]-(c:PhoneCall)
+                WITH p, count(DISTINCT c) AS calls
+                OPTIONAL MATCH (p)-[r2:SENT_MESSAGE]-(m:Communication)
+                WITH p, calls, count(DISTINCT m) AS msgs_out
+                OPTIONAL MATCH (p)-[:PARTICIPATED_IN]->(chat:Communication)
+                OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
+                WHERE msg.body IS NOT NULL
+                WITH p, calls, msgs_out, count(DISTINCT msg) AS msgs_chat
+                OPTIONAL MATCH (p)-[:EMAILED|SENT_TO]-(e:Email)
+                WITH p, calls, msgs_out, msgs_chat, count(DISTINCT e) AS emails
+                RETURN p.key AS key,
+                       p.name AS name,
+                       p.phone_numbers AS phone_numbers,
+                       p.is_phone_owner AS is_phone_owner,
+                       p.cellebrite_id AS cellebrite_id,
+                       p.all_identifiers AS all_identifiers,
+                       calls,
+                       msgs_out + msgs_chat AS messages,
+                       emails,
+                       calls + msgs_out + msgs_chat + emails AS interactions
+                ORDER BY interactions DESC, name
+                SKIP $offset LIMIT $limit
+                """,
+                params,
+            )
+            rows = []
+            for rec in result:
+                rows.append({
+                    "key": rec["key"],
+                    "name": rec["name"] or rec["key"],
+                    "phone_numbers": list(rec["phone_numbers"] or []),
+                    "is_phone_owner": bool(rec["is_phone_owner"]),
+                    "cellebrite_id": rec["cellebrite_id"],
+                    "all_identifiers": list(rec["all_identifiers"] or []),
+                    "calls": int(rec["calls"] or 0),
+                    "messages": int(rec["messages"] or 0),
+                    "emails": int(rec["emails"] or 0),
+                    "interactions": int(rec["interactions"] or 0),
+                })
+            return {"rows": rows, "total": total_count}
+
+    def get_overview_calls(
+        self,
+        case_id: str,
+        report_key: str,
+        search: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict:
+        """All PhoneCalls from one device with parties resolved."""
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "rk": report_key,
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+        search_clause = ""
+        if search:
+            search_clause = (
+                " AND (toLower(coalesce(c.source_app, '')) CONTAINS toLower($search) "
+                "OR toLower(coalesce(c.direction, '')) CONTAINS toLower($search))"
+            )
+            params["search"] = search
+
+        with self._driver.session() as session:
+            total = session.run(
+                f"""
+                MATCH (c:PhoneCall {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE 1=1 {search_clause}
+                RETURN count(c) AS n
+                """,
+                params,
+            ).single()
+            total_count = int(total["n"]) if total else 0
+
+            result = session.run(
+                f"""
+                MATCH (c:PhoneCall {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE 1=1 {search_clause}
+                OPTIONAL MATCH (src:Person)-[:CALLED]->(c)
+                OPTIONAL MATCH (c)-[:CALLED_TO]->(dst:Person)
+                RETURN c, src, dst
+                ORDER BY c.timestamp DESC
+                SKIP $offset LIMIT $limit
+                """,
+                params,
+            )
+            rows = []
+            for rec in result:
+                c = dict(rec["c"])
+                src = dict(rec["src"]) if rec["src"] else None
+                dst = dict(rec["dst"]) if rec["dst"] else None
+                rows.append({
+                    "key": c.get("key"),
+                    "id": c.get("id"),
+                    "node_key": c.get("key"),
+                    "timestamp": c.get("timestamp"),
+                    "date": c.get("date"),
+                    "time": c.get("time"),
+                    "direction": c.get("direction"),
+                    "call_type": c.get("call_type"),
+                    "duration": c.get("duration"),
+                    "video_call": bool(c.get("video_call")),
+                    "source_app": c.get("source_app"),
+                    "deleted_state": c.get("deleted_state"),
+                    "from_name": (src.get("name") if src else None),
+                    "from_key": (src.get("key") if src else None),
+                    "to_name": (dst.get("name") if dst else None),
+                    "to_key": (dst.get("key") if dst else None),
+                })
+            return {"rows": rows, "total": total_count}
+
+    def get_overview_messages(
+        self,
+        case_id: str,
+        report_key: str,
+        search: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict:
+        """All individual messages (Communication with body) from one device."""
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "rk": report_key,
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+        search_clause = ""
+        if search:
+            search_clause = " AND toLower(coalesce(m.body, '')) CONTAINS toLower($search)"
+            params["search"] = search
+
+        with self._driver.session() as session:
+            total = session.run(
+                f"""
+                MATCH (m:Communication {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE m.body IS NOT NULL {search_clause}
+                RETURN count(m) AS n
+                """,
+                params,
+            ).single()
+            total_count = int(total["n"]) if total else 0
+
+            result = session.run(
+                f"""
+                MATCH (m:Communication {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE m.body IS NOT NULL {search_clause}
+                OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
+                OPTIONAL MATCH (m)-[:PART_OF]->(chat:Communication)
+                RETURN m, sender, chat
+                ORDER BY m.timestamp DESC
+                SKIP $offset LIMIT $limit
+                """,
+                params,
+            )
+            rows = []
+            for rec in result:
+                m = dict(rec["m"])
+                sender = dict(rec["sender"]) if rec["sender"] else None
+                chat = dict(rec["chat"]) if rec["chat"] else None
+                body = m.get("body") or ""
+                rows.append({
+                    "key": m.get("key"),
+                    "id": m.get("id"),
+                    "node_key": m.get("key"),
+                    "timestamp": m.get("timestamp"),
+                    "date": m.get("date"),
+                    "time": m.get("time"),
+                    "source_app": m.get("source_app"),
+                    "message_type": m.get("message_type"),
+                    "body": body,
+                    "body_preview": body[:160],
+                    "deleted_state": m.get("deleted_state"),
+                    "attachment_count": int(m.get("attachment_count") or 0),
+                    "sender_name": (sender.get("name") if sender else None),
+                    "sender_key": (sender.get("key") if sender else None),
+                    "thread_id": (chat.get("key") if chat else None),
+                    "thread_name": (chat.get("name") if chat else None),
+                })
+            return {"rows": rows, "total": total_count}
+
+    def get_overview_locations(
+        self,
+        case_id: str,
+        report_key: str,
+        search: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict:
+        """All Locations from one device."""
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "rk": report_key,
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+        search_clause = ""
+        if search:
+            search_clause = (
+                " AND (toLower(coalesce(l.name, '')) CONTAINS toLower($search) "
+                "OR toLower(coalesce(l.location_type, '')) CONTAINS toLower($search) "
+                "OR toLower(coalesce(l.source_app, '')) CONTAINS toLower($search))"
+            )
+            params["search"] = search
+
+        with self._driver.session() as session:
+            total = session.run(
+                f"""
+                MATCH (l:Location {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE 1=1 {search_clause}
+                RETURN count(l) AS n
+                """,
+                params,
+            ).single()
+            total_count = int(total["n"]) if total else 0
+
+            result = session.run(
+                f"""
+                MATCH (l:Location {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE 1=1 {search_clause}
+                RETURN l
+                ORDER BY coalesce(l.timestamp, '') DESC
+                SKIP $offset LIMIT $limit
+                """,
+                params,
+            )
+            rows = []
+            for rec in result:
+                l = dict(rec["l"])
+                rows.append({
+                    "key": l.get("key"),
+                    "id": l.get("id"),
+                    "node_key": l.get("key"),
+                    "name": l.get("name"),
+                    "location_type": l.get("location_type"),
+                    "source_app": l.get("source_app"),
+                    "latitude": l.get("latitude"),
+                    "longitude": l.get("longitude"),
+                    "timestamp": l.get("timestamp"),
+                    "date": l.get("date"),
+                    "time": l.get("time"),
+                    "deleted_state": l.get("deleted_state"),
+                })
+            return {"rows": rows, "total": total_count}
+
+    def get_overview_emails(
+        self,
+        case_id: str,
+        report_key: str,
+        search: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict:
+        """All Emails from one device with sender + first recipient resolved."""
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "rk": report_key,
+            "limit": int(limit),
+            "offset": int(offset),
+        }
+        search_clause = ""
+        if search:
+            search_clause = (
+                " AND (toLower(coalesce(e.subject, '')) CONTAINS toLower($search) "
+                "OR toLower(coalesce(e.body, '')) CONTAINS toLower($search) "
+                "OR toLower(coalesce(e.folder, '')) CONTAINS toLower($search))"
+            )
+            params["search"] = search
+
+        with self._driver.session() as session:
+            total = session.run(
+                f"""
+                MATCH (e:Email {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE 1=1 {search_clause}
+                RETURN count(e) AS n
+                """,
+                params,
+            ).single()
+            total_count = int(total["n"]) if total else 0
+
+            result = session.run(
+                f"""
+                MATCH (e:Email {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                WHERE 1=1 {search_clause}
+                OPTIONAL MATCH (src:Person)-[:EMAILED]->(e)
+                OPTIONAL MATCH (e)-[:SENT_TO]->(dst:Person)
+                WITH e, src, collect(DISTINCT dst) AS dsts
+                RETURN e, src, dsts
+                ORDER BY e.timestamp DESC
+                SKIP $offset LIMIT $limit
+                """,
+                params,
+            )
+            rows = []
+            for rec in result:
+                e = dict(rec["e"])
+                src = dict(rec["src"]) if rec["src"] else None
+                dsts = [dict(d) for d in rec["dsts"] if d is not None]
+                first_dst = dsts[0] if dsts else None
+                rows.append({
+                    "key": e.get("key"),
+                    "id": e.get("id"),
+                    "node_key": e.get("key"),
+                    "timestamp": e.get("timestamp"),
+                    "date": e.get("date"),
+                    "time": e.get("time"),
+                    "subject": e.get("subject"),
+                    "source_app": e.get("source_app"),
+                    "folder": e.get("folder"),
+                    "email_status": e.get("email_status"),
+                    "from_name": (src.get("name") if src else None),
+                    "from_key": (src.get("key") if src else None),
+                    "to_name": (first_dst.get("name") if first_dst else None),
+                    "to_key": (first_dst.get("key") if first_dst else None),
+                    "to_count": len(dsts),
+                    "attachment_count": int(e.get("attachment_count") or 0),
+                    "deleted_state": e.get("deleted_state"),
+                })
+            return {"rows": rows, "total": total_count}
+
+    def get_overview_contact_detail(
+        self,
+        case_id: str,
+        report_key: str,
+        contact_key: str,
+        recent_limit: int = 50,
+    ) -> Optional[dict]:
+        """Fetch a single contact + their most recent comms with the phone owner."""
+        with self._driver.session() as session:
+            rec = session.run(
+                """
+                MATCH (p:Person {case_id: $case_id, key: $contact_key})
+                RETURN p
+                """,
+                case_id=case_id,
+                contact_key=contact_key,
+            ).single()
+            if not rec:
+                return None
+            p = dict(rec["p"])
+
+            # Recent calls and messages involving this contact, on this device
+            calls_rs = session.run(
+                """
+                MATCH (c:PhoneCall {case_id: $case_id, cellebrite_report_key: $rk})
+                MATCH (p:Person {case_id: $case_id, key: $contact_key})
+                WHERE (p)-[:CALLED]->(c) OR (c)-[:CALLED_TO]->(p)
+                RETURN c
+                ORDER BY c.timestamp DESC
+                LIMIT $lim
+                """,
+                case_id=case_id,
+                rk=report_key,
+                contact_key=contact_key,
+                lim=int(recent_limit),
+            )
+            recent_calls = [dict(r["c"]) for r in calls_rs]
+
+            msgs_rs = session.run(
+                """
+                MATCH (m:Communication {case_id: $case_id, cellebrite_report_key: $rk})
+                WHERE m.body IS NOT NULL
+                MATCH (p:Person {case_id: $case_id, key: $contact_key})
+                WHERE (p)-[:SENT_MESSAGE]->(m)
+                   OR EXISTS { MATCH (m)-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p) }
+                RETURN m
+                ORDER BY m.timestamp DESC
+                LIMIT $lim
+                """,
+                case_id=case_id,
+                rk=report_key,
+                contact_key=contact_key,
+                lim=int(recent_limit),
+            )
+            recent_messages = [dict(r["m"]) for r in msgs_rs]
+
+            return {
+                "contact": {
+                    "key": p.get("key"),
+                    "name": p.get("name"),
+                    "phone_numbers": list(p.get("phone_numbers") or []),
+                    "is_phone_owner": bool(p.get("is_phone_owner")),
+                    "cellebrite_id": p.get("cellebrite_id"),
+                    "all_identifiers": list(p.get("all_identifiers") or []),
+                },
+                "recent_calls": [
+                    {
+                        "key": c.get("key"),
+                        "timestamp": c.get("timestamp"),
+                        "direction": c.get("direction"),
+                        "call_type": c.get("call_type"),
+                        "duration": c.get("duration"),
+                        "source_app": c.get("source_app"),
+                    }
+                    for c in recent_calls
+                ],
+                "recent_messages": [
+                    {
+                        "key": m.get("key"),
+                        "timestamp": m.get("timestamp"),
+                        "source_app": m.get("source_app"),
+                        "body": (m.get("body") or "")[:300],
+                    }
+                    for m in recent_messages
+                ],
+            }
+
 
 # ---------------------------------------------------------------------------
 # Helpers for event projections (used by get_cellebrite_events)
