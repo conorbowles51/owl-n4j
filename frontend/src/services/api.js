@@ -2494,6 +2494,26 @@ export const cellebriteCommsAPI = {
     fetchAPI(
       `/cellebrite/comms/attachment/${encodeURIComponent(fileId)}?case_id=${encodeURIComponent(caseId)}`
     ),
+
+  /**
+   * Phase 9: All comms (calls + messages + emails) involving one contact,
+   * across all (or selected) devices, sorted chronologically.
+   */
+  getContactFeed: (caseId, contactKey, {
+    reportKeys = null,
+    types = null,
+    limit = 1000,
+    offset = 0,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (types?.length) params.append('types', types.join(','));
+    params.append('limit', String(limit));
+    params.append('offset', String(offset));
+    return fetchAPI(
+      `/cellebrite/comms/contact-feed/${encodeURIComponent(contactKey)}?${params.toString()}`
+    );
+  },
 };
 
 

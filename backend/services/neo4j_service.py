@@ -7491,6 +7491,205 @@ class Neo4jService:
                 ],
             }
 
+    # ------------------------------------------------------------------
+    # Phase 9: Communications drill-down per contact
+    # ------------------------------------------------------------------
+
+    def get_contact_comms_feed(
+        self,
+        case_id: str,
+        contact_key: str,
+        report_keys: Optional[List[str]] = None,
+        types: Optional[List[str]] = None,
+        limit: int = 1000,
+        offset: int = 0,
+    ) -> dict:
+        """
+        Chronological feed of every comm event involving a single Person,
+        across all (or selected) devices. Used by the Communications tab
+        drill-down drawer.
+
+        types: subset of ['call', 'message', 'email'] — defaults to all three.
+        """
+        active = set(types) if types else {"call", "message", "email"}
+
+        rk_filter = ""
+        params: Dict[str, Any] = {"case_id": case_id, "contact_key": contact_key}
+        if report_keys:
+            rk_filter = "AND n.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        items: list = []
+
+        # Look up the contact for the header
+        with self._driver.session() as session:
+            contact_rec = session.run(
+                """
+                MATCH (p:Person {case_id: $case_id, key: $contact_key})
+                RETURN p LIMIT 1
+                """,
+                case_id=case_id,
+                contact_key=contact_key,
+            ).single()
+            contact = dict(contact_rec["p"]) if contact_rec else {}
+
+            # Calls — either direction
+            if "call" in active:
+                rs = session.run(
+                    f"""
+                    MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
+                    MATCH (n:PhoneCall {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE ((p)-[:CALLED]->(n) OR (n)-[:CALLED_TO]->(p))
+                      {rk_filter}
+                    OPTIONAL MATCH (src:Person)-[:CALLED]->(n)
+                    OPTIONAL MATCH (n)-[:CALLED_TO]->(dst:Person)
+                    RETURN n, src, dst
+                    ORDER BY n.timestamp DESC
+                    LIMIT 2000
+                    """,
+                    params,
+                )
+                for rec in rs:
+                    n = dict(rec["n"])
+                    src = dict(rec["src"]) if rec["src"] else None
+                    dst = dict(rec["dst"]) if rec["dst"] else None
+                    items.append({
+                        "id": n.get("id"),
+                        "node_key": n.get("key"),
+                        "type": "call",
+                        "timestamp": n.get("timestamp"),
+                        "source_app": n.get("source_app"),
+                        "direction": n.get("direction"),
+                        "call_type": n.get("call_type"),
+                        "duration": n.get("duration"),
+                        "video_call": bool(n.get("video_call")),
+                        "deleted_state": n.get("deleted_state"),
+                        "report_key": n.get("cellebrite_report_key"),
+                        "attachment_file_ids": list(n.get("attachment_file_ids") or []),
+                        "sender": {
+                            "key": (src.get("key") if src else None),
+                            "name": (src.get("name") if src else None),
+                            "is_owner": bool(src.get("is_phone_owner")) if src else False,
+                        } if src else None,
+                        "recipient": {
+                            "key": (dst.get("key") if dst else None),
+                            "name": (dst.get("name") if dst else None),
+                            "is_owner": bool(dst.get("is_phone_owner")) if dst else False,
+                        } if dst else None,
+                    })
+
+            # Messages — either as sender, or as participant in a chat
+            if "message" in active:
+                rs = session.run(
+                    f"""
+                    MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
+                    MATCH (n:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE n.body IS NOT NULL
+                      AND (
+                        (p)-[:SENT_MESSAGE]->(n)
+                        OR EXISTS {{
+                          MATCH (n)-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p)
+                        }}
+                      )
+                      {rk_filter}
+                    OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(n)
+                    OPTIONAL MATCH (n)-[:PART_OF]->(chat:Communication)
+                    RETURN n, sender, chat
+                    ORDER BY n.timestamp DESC
+                    LIMIT 4000
+                    """,
+                    params,
+                )
+                for rec in rs:
+                    n = dict(rec["n"])
+                    sender = dict(rec["sender"]) if rec["sender"] else None
+                    chat = dict(rec["chat"]) if rec["chat"] else None
+                    body = n.get("body") or ""
+                    items.append({
+                        "id": n.get("id"),
+                        "node_key": n.get("key"),
+                        "type": "message",
+                        "timestamp": n.get("timestamp"),
+                        "source_app": n.get("source_app"),
+                        "message_type": n.get("message_type"),
+                        "body": body,
+                        "deleted_state": n.get("deleted_state"),
+                        "report_key": n.get("cellebrite_report_key"),
+                        "attachment_file_ids": list(n.get("attachment_file_ids") or []),
+                        "thread_id": (chat.get("key") if chat else None),
+                        "thread_name": (chat.get("name") if chat else None),
+                        "sender": {
+                            "key": (sender.get("key") if sender else None),
+                            "name": (sender.get("name") if sender else None),
+                            "is_owner": bool(sender.get("is_phone_owner")) if sender else False,
+                        } if sender else None,
+                    })
+
+            # Emails — sent or received
+            if "email" in active:
+                rs = session.run(
+                    f"""
+                    MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
+                    MATCH (n:Email {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE ((p)-[:EMAILED]->(n) OR (n)-[:SENT_TO]->(p))
+                      {rk_filter}
+                    OPTIONAL MATCH (src:Person)-[:EMAILED]->(n)
+                    OPTIONAL MATCH (n)-[:SENT_TO]->(dst:Person)
+                    WITH n, src, collect(DISTINCT dst) AS dsts
+                    RETURN n, src, dsts
+                    ORDER BY n.timestamp DESC
+                    LIMIT 1000
+                    """,
+                    params,
+                )
+                for rec in rs:
+                    n = dict(rec["n"])
+                    src = dict(rec["src"]) if rec["src"] else None
+                    dsts = [dict(d) for d in rec["dsts"] if d is not None]
+                    first_dst = dsts[0] if dsts else None
+                    items.append({
+                        "id": n.get("id"),
+                        "node_key": n.get("key"),
+                        "type": "email",
+                        "timestamp": n.get("timestamp"),
+                        "source_app": n.get("source_app"),
+                        "subject": n.get("subject"),
+                        "body": n.get("body") or "",
+                        "folder": n.get("folder"),
+                        "email_status": n.get("email_status"),
+                        "deleted_state": n.get("deleted_state"),
+                        "report_key": n.get("cellebrite_report_key"),
+                        "attachment_file_ids": list(n.get("attachment_file_ids") or []),
+                        "sender": {
+                            "key": (src.get("key") if src else None),
+                            "name": (src.get("name") if src else None),
+                            "is_owner": bool(src.get("is_phone_owner")) if src else False,
+                        } if src else None,
+                        "recipient": {
+                            "key": (first_dst.get("key") if first_dst else None),
+                            "name": (first_dst.get("name") if first_dst else None),
+                            "is_owner": bool(first_dst.get("is_phone_owner")) if first_dst else False,
+                        } if first_dst else None,
+                        "recipient_count": len(dsts),
+                    })
+
+        # Sort newest-first, paginate
+        items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=True)
+        total = len(items)
+        items = items[offset: offset + limit]
+
+        return {
+            "contact": {
+                "key": contact.get("key"),
+                "name": contact.get("name"),
+                "phone_numbers": list(contact.get("phone_numbers") or []),
+                "is_phone_owner": bool(contact.get("is_phone_owner")),
+                "all_identifiers": list(contact.get("all_identifiers") or []),
+            } if contact else None,
+            "items": items,
+            "total": total,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Helpers for event projections (used by get_cellebrite_events)

@@ -751,3 +751,31 @@ async def overview_contact_detail(
     if not res:
         raise HTTPException(status_code=404, detail="Contact not found")
     return res
+
+
+# -------------------------------------------------------------------
+# Phase 9: Communications drill-down — per-contact chronological feed
+# -------------------------------------------------------------------
+
+
+@router.get("/comms/contact-feed/{contact_key}")
+async def comms_contact_feed(
+    contact_key: str,
+    case_id: str = Query(...),
+    report_keys: Optional[str] = Query(None),
+    types: Optional[str] = Query(None, description="Comma-separated: call,message,email"),
+    limit: int = Query(1000, ge=1, le=5000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Chronological feed of every call / message / email involving a contact."""
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_contact_comms_feed(
+        case_id=case_id,
+        contact_key=contact_key,
+        report_keys=_csv_param(report_keys),
+        types=_csv_param(types),
+        limit=limit,
+        offset=offset,
+    )

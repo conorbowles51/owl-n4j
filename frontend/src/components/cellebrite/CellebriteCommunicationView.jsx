@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, ArrowUpDown, Smartphone, Users } from 'lucide-react';
+import { Loader2, Search, ArrowUpDown, Smartphone, Users, ChevronRight } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
+import CommsContactDrawer from './comms/CommsContactDrawer';
 
 /**
  * Communication analysis view with contact frequency table and shared contacts.
@@ -11,7 +12,11 @@ export default function CellebriteCommunicationView({ caseId }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('call_count');
   const [sortDir, setSortDir] = useState('desc');
-  const [selectedContact, setSelectedContact] = useState(null);
+  // Highlighted row in the table (purely UI state — not the drawer trigger)
+  const [highlightedKey, setHighlightedKey] = useState(null);
+  // Contact whose drill-down drawer is open (full row object so the drawer
+  // can show a name + phone before the API responds)
+  const [drillContact, setDrillContact] = useState(null);
 
   useEffect(() => {
     if (!caseId) return;
@@ -69,6 +74,7 @@ export default function CellebriteCommunicationView({ caseId }) {
   }
 
   return (
+    <>
     <div className="h-full flex min-h-0">
       {/* Left: Contact Frequency Table */}
       <div className="flex-1 flex flex-col min-w-0 border-r border-light-200">
@@ -105,14 +111,18 @@ export default function CellebriteCommunicationView({ caseId }) {
             <tbody>
               {filteredContacts.map((contact) => {
                 const total = (contact.call_count || 0) + (contact.message_count || 0) + (contact.email_count || 0);
-                const isSelected = selectedContact === contact.person_key;
+                const isHighlighted = highlightedKey === contact.person_key;
                 return (
                   <tr
                     key={contact.person_key}
-                    className={`border-b border-light-100 cursor-pointer transition-colors ${
-                      isSelected ? 'bg-emerald-50' : 'hover:bg-light-50'
+                    className={`border-b border-light-100 cursor-pointer transition-colors group ${
+                      isHighlighted ? 'bg-emerald-50' : 'hover:bg-light-50'
                     }`}
-                    onClick={() => setSelectedContact(isSelected ? null : contact.person_key)}
+                    onClick={() => {
+                      setHighlightedKey(contact.person_key);
+                      setDrillContact(contact);
+                    }}
+                    title="Click to see all calls, messages and emails"
                   >
                     <td className="px-3 py-2 font-medium text-owl-blue-900 truncate max-w-[150px]">
                       {contact.name}
@@ -142,7 +152,10 @@ export default function CellebriteCommunicationView({ caseId }) {
                       )}
                     </td>
                     <td className="px-3 py-2 text-center">
-                      <span className="text-light-500">{(contact.devices || []).length}</span>
+                      <span className="inline-flex items-center gap-1 text-light-500">
+                        <span>{(contact.devices || []).length}</span>
+                        <ChevronRight className="w-3 h-3 text-light-300 group-hover:text-owl-blue-500 transition-colors" />
+                      </span>
                     </td>
                   </tr>
                 );
@@ -186,12 +199,18 @@ export default function CellebriteCommunicationView({ caseId }) {
             (data.shared_contacts || []).map(sc => (
               <div
                 key={sc.person_key}
-                className={`p-2.5 bg-white rounded border transition-colors ${
-                  selectedContact === sc.person_key
+                className={`p-2.5 bg-white rounded border transition-colors cursor-pointer ${
+                  highlightedKey === sc.person_key
                     ? 'border-amber-300 shadow-sm'
                     : 'border-light-200 hover:border-light-300'
                 }`}
-                onClick={() => setSelectedContact(selectedContact === sc.person_key ? null : sc.person_key)}
+                onClick={() => {
+                  setHighlightedKey(sc.person_key);
+                  // Find the full contact row from the main list (has all counts)
+                  const full = (data.contacts || []).find((c) => c.person_key === sc.person_key) || sc;
+                  setDrillContact(full);
+                }}
+                title="Click to see all calls, messages and emails"
               >
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -223,6 +242,14 @@ export default function CellebriteCommunicationView({ caseId }) {
         </div>
       </div>
     </div>
+    {drillContact && (
+      <CommsContactDrawer
+        caseId={caseId}
+        contact={drillContact}
+        onClose={() => setDrillContact(null)}
+      />
+    )}
+    </>
   );
 }
 
