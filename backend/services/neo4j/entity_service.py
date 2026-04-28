@@ -1050,7 +1050,18 @@ class EntityService:
             )
             entity_record = entity_result.single()
             if not entity_record:
-                raise ValueError(f"Entity not found: {node_key} in case {case_id}")
+                logger.info(
+                    "Entity %s already deleted from case %s; treating as success",
+                    node_key, case_id,
+                )
+                return {
+                    "success": True,
+                    "already_deleted": True,
+                    "recycled_entity": {"key": node_key, "name": None, "type": None},
+                    "recycle_key": None,
+                    "relationships_stored": 0,
+                    "reason": reason,
+                }
 
             labels = [label for label in list(entity_record["labels"] or []) if label not in self.INTERNAL_LABELS]
             if not labels:

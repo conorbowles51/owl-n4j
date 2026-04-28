@@ -7,6 +7,7 @@ relationships, and embeds for RAG.
 
 import json
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -165,19 +166,13 @@ async def _write_merged_entity(
     entities: list[dict],
     case_id: str,
     job_id: str,
-    user_preferences: dict | None,
+    category: str,
 ) -> tuple[str, int]:
     """Create the merged entity in Neo4j and transfer relationships.
 
     Returns (new_entity_key, relationship_count).
     """
     new_key = str(uuid.uuid4())
-    category = merged.get("category") or entities[0].get("category", "Entity")
-
-    # Override with user preferences if provided
-    if user_preferences:
-        if user_preferences.get("type"):
-            category = user_preferences["type"]
 
     # Build additive properties (union, no AI needed)
     all_aliases = _union_lists(
@@ -220,76 +215,76 @@ async def _write_merged_entity(
             props[k] = v
 
     # Sanitize category label
-    safe_category = "".join(
-        c if c.isalnum() or c == "_" else "_" for c in category
-    )
+    safe_category = re.sub(r"[^A-Za-z0-9_]", "_", category)
 
     # Create entity in Neo4j
-    create_query = (
-        f"CREATE (n:{safe_category} $props) "
-        f"SET n:{safe_category}"
+    await neo4j_client.execute_write(
+        f"CREATE (n:{safe_category} $props)",
+        {"props": props},
     )
-    await neo4j_client.execute_write(create_query, {"props": props})
 
-    # Transfer relationships from all source entities
-    source_keys = [e.get("key") for e in entities if e.get("key")]
-    source_key_set = set(source_keys)
+    # Pre-aggregate relationships across source entities. Multiple sources
+    # contributing the same (type, direction, target) merge into a single
+    # MERGE with their scalar properties unioned (first non-empty wins per key).
+    source_key_set = {e.get("key") for e in entities if e.get("key")}
 
-    rel_count = 0
-    seen_rels: set[str] = set()
+    agg: dict[tuple[str, str, str], dict[str, Any]] = {}
+    source_names: dict[tuple[str, str, str], str] = {}
 
     for entity in entities:
         for rel in entity.get("relationships") or []:
             target_key = rel.get("target_key", "")
-            # Skip relationships between merging entities (would be self-referential)
-            if target_key in source_key_set:
+            if not target_key or target_key in source_key_set:
                 continue
-
             direction = rel.get("direction", "outgoing")
+            if direction not in ("outgoing", "incoming"):
+                direction = "outgoing"
             rel_type = rel.get("type", "RELATED_TO")
-            safe_type = "".join(
-                c if c.isalnum() or c == "_" else "_" for c in rel_type.upper()
-            )
-
-            # Deduplicate: same type + direction + target
-            dedup_key = f"{safe_type}:{direction}:{target_key}"
-            if dedup_key in seen_rels:
-                continue
-            seen_rels.add(dedup_key)
-
-            # Build relationship properties
-            rel_props: dict[str, Any] = {
-                "case_id": case_id,
-            }
+            safe_type = re.sub(r"[^A-Z0-9_]", "_", rel_type.upper()) or "RELATED_TO"
+            key = (safe_type, direction, target_key)
+            bucket = agg.setdefault(key, {"case_id": case_id})
             for k, v in (rel.get("properties") or {}).items():
-                if isinstance(v, (str, int, float, bool)):
-                    rel_props[k] = v
+                if isinstance(v, (str, int, float, bool)) and k not in bucket:
+                    bucket[k] = v
+            source_names.setdefault(key, entity.get("name", "?"))
 
-            if direction == "outgoing":
-                query = (
-                    f"MATCH (a {{id: $source_id}}) "
-                    f"MATCH (b {{key: $target_key, case_id: $case_id}}) "
-                    f"MERGE (a)-[r:{safe_type}]->(b) "
-                    f"SET r += $props"
-                )
-            else:
-                query = (
-                    f"MATCH (a {{key: $target_key, case_id: $case_id}}) "
-                    f"MATCH (b {{id: $source_id}}) "
-                    f"MERGE (a)-[r:{safe_type}]->(b) "
-                    f"SET r += $props"
-                )
-
-            await neo4j_client.execute_write(
-                query,
-                {
-                    "source_id": new_key,
-                    "target_key": target_key,
-                    "case_id": case_id,
-                    "props": rel_props,
-                },
+    rel_count = 0
+    for (safe_type, direction, target_key), rel_props in agg.items():
+        if direction == "outgoing":
+            query = (
+                f"MATCH (a {{id: $source_id}}) "
+                f"MATCH (b {{key: $target_key, case_id: $case_id}}) "
+                f"MERGE (a)-[r:{safe_type}]->(b) "
+                f"SET r += $props "
+                f"RETURN count(r) AS matched"
             )
-            rel_count += 1
+        else:
+            query = (
+                f"MATCH (a {{key: $target_key, case_id: $case_id}}) "
+                f"MATCH (b {{id: $source_id}}) "
+                f"MERGE (a)-[r:{safe_type}]->(b) "
+                f"SET r += $props "
+                f"RETURN count(r) AS matched"
+            )
+
+        result = await neo4j_client.execute_query(
+            query,
+            {
+                "source_id": new_key,
+                "target_key": target_key,
+                "case_id": case_id,
+                "props": rel_props,
+            },
+        )
+        matched = (result[0]["matched"] if result else 0) or 0
+        if matched == 0:
+            logger.warning(
+                "Merge job %s: relationship target gone — %s %s %s (from source %s)",
+                job_id, safe_type, direction, target_key,
+                source_names.get((safe_type, direction, target_key), "?"),
+            )
+            continue
+        rel_count += 1
 
     return new_key, rel_count
 
@@ -303,10 +298,9 @@ async def _embed_merged_entity(
     new_key: str,
     case_id: str,
     entities: list[dict],
+    category: str,
 ) -> None:
     """Embed the merged entity in ChromaDB for RAG and future dedup."""
-    category = merged.get("category") or entities[0].get("category", "Entity")
-
     desc = f"{category}: {merged.get('name', '')}"
     if merged.get("description"):
         desc += f" — {merged['description']}"
@@ -360,6 +354,23 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
         )
         return
 
+    # Verify source entities still exist in Neo4j (request-time snapshot
+    # may be stale by now). Fail fast rather than merging from a phantom.
+    source_keys = [e.get("key") for e in entities if e.get("key")]
+    if source_keys:
+        existing_rows = await neo4j_client.execute_query(
+            "MATCH (n {case_id: $case_id}) WHERE n.key IN $keys RETURN n.key AS k",
+            {"case_id": case_id, "keys": source_keys},
+        )
+        existing_keys = {r["k"] for r in existing_rows or []}
+        missing = [k for k in source_keys if k not in existing_keys]
+        if missing:
+            msg = f"Source entities no longer exist: {missing}"
+            await _update_job(
+                job, JobStatus.FAILED, 0.0, db, msg, error_message=msg,
+            )
+            return
+
     try:
         async with ingestion_cost_context(
             case_id=case_id,
@@ -380,25 +391,45 @@ async def run_merge_pipeline(job_id: str, db: AsyncSession) -> None:
                 "Properties merged",
             )
 
-            # Stage 2: Write to Neo4j (60–90%)
+            # Resolve category once so Neo4j label and ChromaDB metadata match.
+            category = merged.get("category") or entities[0].get("category", "Entity")
+            if user_preferences and user_preferences.get("type"):
+                category = user_preferences["type"]
+
+            # Stage 2: Write to Neo4j (60–85%)
             await _update_job(
                 job, JobStatus.WRITING_GRAPH, 0.60, db,
                 "Writing merged entity to graph...",
             )
             new_key, rel_count = await _write_merged_entity(
-                merged, entities, case_id, str(job.id), user_preferences,
+                merged, entities, case_id, str(job.id), category,
             )
             await _update_job(
                 job, JobStatus.WRITING_GRAPH, 0.85, db,
                 f"Entity created with {rel_count} relationships",
             )
 
-            # Stage 3: Embed for RAG (85–100%)
-            await _update_job(
-                job, JobStatus.WRITING_GRAPH, 0.85, db,
-                "Embedding merged entity...",
-            )
-            await _embed_merged_entity(merged, new_key, case_id, entities)
+            # Stage 3: Embed for RAG (85–100%). If embedding fails, the merged
+            # entity would be invisible to cross-job dedup → leaks duplicates.
+            # Roll back the Neo4j write rather than leave a half-indexed entity.
+            try:
+                await _embed_merged_entity(merged, new_key, case_id, entities, category)
+            except Exception:
+                logger.exception(
+                    "Embedding failed for merge job %s; rolling back Neo4j writes",
+                    job_id,
+                )
+                try:
+                    await neo4j_client.execute_write(
+                        "MATCH (n {id: $id, case_id: $case_id}) DETACH DELETE n",
+                        {"id": new_key, "case_id": case_id},
+                    )
+                except Exception:
+                    logger.exception(
+                        "Compensating delete failed for merged entity %s in case %s",
+                        new_key, case_id,
+                    )
+                raise
 
         # Complete
         job.entity_count = 1

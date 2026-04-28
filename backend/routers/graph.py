@@ -76,6 +76,9 @@ class FindSimilarEntitiesRequest(BaseModel):
     max_results: int = 50
 
 
+MAX_MERGE_ENTITIES = 25
+
+
 class MergeEntitiesRequest(BaseModel):
     """Request model for AI-powered entity merging via evidence engine."""
     case_id: str
@@ -1453,13 +1456,21 @@ async def merge_entities(
     from services.job_status_subscriber import get_subscriber
     import uuid as _uuid
 
-    if len(request.entity_keys) < 2:
-        raise HTTPException(status_code=400, detail="At least 2 entity keys required")
+    unique_keys = list(dict.fromkeys(request.entity_keys))  # preserves order, dedupes
+    if len(unique_keys) < 2:
+        raise HTTPException(
+            status_code=400, detail="At least 2 distinct entity keys required",
+        )
+    if len(unique_keys) > MAX_MERGE_ENTITIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot merge more than {MAX_MERGE_ENTITIES} entities at once",
+        )
 
     try:
         # Fetch full entity details from Neo4j
         entity_payloads = []
-        for entity_key in request.entity_keys:
+        for entity_key in unique_keys:
             details = neo4j_service.get_node_details(entity_key, case_id=request.case_id)
             if not details:
                 raise HTTPException(
@@ -1516,23 +1527,37 @@ async def merge_entities(
             "requested_by_user_id": user.get("id"),
         }
 
-        # Send to evidence engine
-        engine_response = await evidence_engine_client.merge_entities(
-            request.case_id, payload,
-        )
-        engine_job_id = str(engine_response.get("id", ""))
-
-        # Create local MergeJob tracking record
+        # Create MergeJob row FIRST so the subscriber can always find a row
+        # to dispatch on, even if the engine accepts the job before our DB
+        # commit succeeds.
         merge_job = MergeJob(
             case_id=request.case_id,
-            engine_job_id=engine_job_id,
-            source_entity_keys=request.entity_keys,
-            status="processing",
+            engine_job_id=None,
+            source_entity_keys=unique_keys,
+            status="pending",
             created_by=user.get("username", "unknown"),
         )
         db.add(merge_job)
         db.commit()
         db.refresh(merge_job)
+
+        try:
+            engine_response = await evidence_engine_client.merge_entities(
+                request.case_id, payload,
+            )
+            engine_job_id = str(engine_response.get("id") or "")
+            if not engine_job_id:
+                raise RuntimeError("Engine did not return a job id")
+            merge_job.engine_job_id = engine_job_id
+            merge_job.status = "processing"
+            db.commit()
+        except Exception as e:
+            merge_job.status = "failed"
+            merge_job.error_message = f"Failed to start engine job: {e}"
+            db.commit()
+            raise HTTPException(
+                status_code=502, detail=f"Failed to start merge job: {e}",
+            )
 
         # Subscribe to job progress
         subscriber = get_subscriber()
@@ -1543,7 +1568,7 @@ async def merge_entities(
             origin=LogOrigin.FRONTEND,
             action="Merge Entities (AI)",
             details={
-                "entity_keys": request.entity_keys,
+                "entity_keys": unique_keys,
                 "engine_job_id": engine_job_id,
                 "entity_names": [e["name"] for e in entity_payloads],
             },

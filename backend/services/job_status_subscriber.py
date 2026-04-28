@@ -77,7 +77,8 @@ class JobStatusSubscriber:
             logger.debug("Subscribed to %s", channel)
 
     async def _recover_in_flight(self):
-        """On startup, find EvidenceFiles stuck in 'processing' and re-subscribe."""
+        """On startup, find EvidenceFiles and MergeJobs stuck in 'processing'
+        and re-subscribe (or drain immediately if already terminal)."""
         try:
             from postgres.session import get_background_session
             from services.evidence_db_storage import EvidenceDBStorage
@@ -86,6 +87,7 @@ class JobStatusSubscriber:
             with get_background_session() as db:
                 from sqlalchemy import select
                 from postgres.models.evidence import EvidenceFile
+                from postgres.models.merge_job import MergeJob
 
                 stuck = list(db.scalars(
                     select(EvidenceFile).where(
@@ -94,10 +96,8 @@ class JobStatusSubscriber:
                     )
                 ).all())
 
-                if not stuck:
-                    return
-
-                logger.info("Recovering %d in-flight jobs from previous run", len(stuck))
+                if stuck:
+                    logger.info("Recovering %d in-flight evidence-file jobs", len(stuck))
 
                 for ef in stuck:
                     jid = ef.engine_job_id
@@ -105,7 +105,6 @@ class JobStatusSubscriber:
 
                     # Check current status from engine
                     try:
-                        loop = asyncio.get_event_loop()
                         job = await evidence_engine_client.get_job(jid)
                         engine_status = job.get("status", "")
 
@@ -134,6 +133,35 @@ class JobStatusSubscriber:
                         await self._pubsub.subscribe(f"job:{jid}:progress")
                         logger.warning("Could not check engine job %s: %s", jid, e)
 
+                # Recover MergeJobs the same way. Without this, a backend
+                # restart mid-merge leaves source entities un-recycled.
+                stuck_merges = list(db.scalars(
+                    select(MergeJob).where(
+                        MergeJob.status == "processing",
+                        MergeJob.engine_job_id.isnot(None),
+                    )
+                ).all())
+
+                if stuck_merges:
+                    logger.info("Recovering %d in-flight merge jobs", len(stuck_merges))
+
+                for mj in stuck_merges:
+                    jid = mj.engine_job_id
+                    case_id = str(mj.case_id)
+                    try:
+                        job = await evidence_engine_client.get_job(jid)
+                        engine_status = job.get("status", "")
+                        if engine_status in ("completed", "failed"):
+                            self._handle_merge_completion(db, mj, job, engine_status, case_id)
+                            logger.info("Recovered merge job %s: %s", jid, engine_status)
+                        else:
+                            self._tracked[jid] = case_id
+                            await self._pubsub.subscribe(f"job:{jid}:progress")
+                    except Exception as e:
+                        self._tracked[jid] = case_id
+                        await self._pubsub.subscribe(f"job:{jid}:progress")
+                        logger.warning("Could not check merge engine job %s: %s", jid, e)
+
                 db.commit()
         except Exception as e:
             logger.warning("Failed to recover in-flight jobs: %s", e)
@@ -159,7 +187,9 @@ class JobStatusSubscriber:
                 await asyncio.sleep(1)
 
     async def _handle_message(self, message):
-        """Process a single Redis pub/sub message."""
+        """Process a single Redis pub/sub message. Subscription is only
+        torn down after the handler returns success — a failure leaves the
+        subscription intact so the next message gets another chance."""
         try:
             data = json.loads(message["data"])
         except (json.JSONDecodeError, TypeError):
@@ -171,94 +201,99 @@ class JobStatusSubscriber:
         if status not in ("completed", "failed"):
             return  # Only sync terminal states
 
-        case_id = self._tracked.pop(job_id, None)
+        case_id = self._tracked.get(job_id)
 
-        # Unsubscribe from this channel
-        channel = f"job:{job_id}:progress"
         try:
-            await self._pubsub.unsubscribe(channel)
+            handled = self._dispatch_terminal(job_id, data, status, case_id)
         except Exception:
-            pass
+            logger.exception(
+                "Handler raised for %s; leaving subscription intact for retry",
+                job_id,
+            )
+            return
 
-        # Check if this is a merge job first
-        try:
-            from postgres.session import get_background_session
-            from postgres.models.merge_job import MergeJob
-            from sqlalchemy import select
+        if handled:
+            self._tracked.pop(job_id, None)
+            try:
+                await self._pubsub.unsubscribe(f"job:{job_id}:progress")
+            except Exception:
+                pass
 
-            with get_background_session() as db:
-                merge_job = db.query(MergeJob).filter(
-                    MergeJob.engine_job_id == job_id
-                ).first()
-                if merge_job:
-                    self._handle_merge_completion(db, merge_job, data, status, case_id)
-                    return
-        except Exception as e:
-            logger.error("Error checking merge job %s: %s", job_id, e)
+    def _dispatch_terminal(self, job_id: str, data: dict, status: str, case_id: str | None) -> bool:
+        """Route a terminal message to the right DB writer. Returns True only
+        when the work succeeded; False/raise leaves the subscription in place."""
+        from postgres.session import get_background_session
+        from postgres.models.merge_job import MergeJob
+        from services.evidence_db_storage import EvidenceDBStorage
 
-        # Update Postgres for evidence file jobs
-        try:
-            from postgres.session import get_background_session
-            from services.evidence_db_storage import EvidenceDBStorage
+        with get_background_session() as db:
+            merge_job = db.query(MergeJob).filter(
+                MergeJob.engine_job_id == job_id
+            ).first()
+            if merge_job:
+                self._handle_merge_completion(db, merge_job, data, status, case_id)
+                return True
 
-            with get_background_session() as db:
-                db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
-                if db_rec:
-                    err = _extract_failure_message(data) if status == "failed" else None
-                    EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
+            db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
+            if not db_rec:
+                logger.warning("No DB record found for engine job %s", job_id)
+                # No matching row will ever exist — drop the subscription.
+                return True
 
-                    if status == "completed":
-                        # Store document summary
-                        doc_summary = data.get("document_summary")
-                        if doc_summary:
-                            db_rec.summary = doc_summary
+            err = _extract_failure_message(data) if status == "failed" else None
+            EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
 
-                        # Store entity/relationship counts
-                        entity_count = data.get("entity_count")
-                        rel_count = data.get("relationship_count")
-                        if entity_count is not None:
-                            db_rec.entity_count = entity_count
-                        if rel_count is not None:
-                            db_rec.relationship_count = rel_count
+            if status == "completed":
+                doc_summary = data.get("document_summary")
+                if doc_summary:
+                    db_rec.summary = doc_summary
 
-                        # Write ingestion log
-                        EvidenceDBStorage.add_log(
-                            db,
-                            case_id=db_rec.case_id,
-                            evidence_file_id=db_rec.id,
-                            filename=db_rec.original_filename,
-                            level="info",
-                            message=f"Completed: {db_rec.original_filename} ({entity_count or 0} entities, {rel_count or 0} relationships)",
-                        )
-                    else:
-                        EvidenceDBStorage.add_log(
-                            db,
-                            case_id=db_rec.case_id,
-                            evidence_file_id=db_rec.id,
-                            filename=db_rec.original_filename,
-                            level="error",
-                            message=f"Failed: {db_rec.original_filename}: {err or 'Unknown error'}",
-                        )
+                entity_count = data.get("entity_count")
+                rel_count = data.get("relationship_count")
+                if entity_count is not None:
+                    db_rec.entity_count = entity_count
+                if rel_count is not None:
+                    db_rec.relationship_count = rel_count
 
-                    logger.info("Synced job %s → %s", job_id, status)
-                else:
-                    logger.warning("No DB record found for engine job %s", job_id)
-        except Exception as e:
-            logger.error("Failed to sync job %s to DB: %s", job_id, e)
+                EvidenceDBStorage.add_log(
+                    db,
+                    case_id=db_rec.case_id,
+                    evidence_file_id=db_rec.id,
+                    filename=db_rec.original_filename,
+                    level="info",
+                    message=f"Completed: {db_rec.original_filename} ({entity_count or 0} entities, {rel_count or 0} relationships)",
+                )
+            else:
+                EvidenceDBStorage.add_log(
+                    db,
+                    case_id=db_rec.case_id,
+                    evidence_file_id=db_rec.id,
+                    filename=db_rec.original_filename,
+                    level="error",
+                    message=f"Failed: {db_rec.original_filename}: {err or 'Unknown error'}",
+                )
+
+            db.commit()
+            logger.info("Synced job %s → %s", job_id, status)
+            return True
 
     def _handle_merge_completion(self, db, merge_job, data: dict, status: str, case_id: str | None):
-        """Handle completion of an entity merge job."""
+        """Handle completion of an entity merge job. On `completed`, soft-delete
+        every source entity and record which actually got recycled — partial
+        success is reflected as status='partial' rather than masked as 'completed'."""
         try:
             if status == "completed":
                 merged_key = data.get("merged_entity_key")
                 merge_job.merged_entity_key = merged_key
-                merge_job.status = "completed"
 
-                # Soft-delete source entities to recycle bin
                 from services.neo4j import neo4j_service
 
                 merge_case_id = case_id or str(merge_job.case_id)
-                for entity_key in merge_job.source_entity_keys or []:
+                source_keys = list(merge_job.source_entity_keys or [])
+                recycled: list[str] = []
+                failed: list[str] = []
+
+                for entity_key in source_keys:
                     try:
                         neo4j_service.soft_delete_entity(
                             node_key=entity_key,
@@ -267,20 +302,35 @@ class JobStatusSubscriber:
                             reason="merged",
                             db=db,
                         )
+                        recycled.append(entity_key)
                         logger.info(
                             "Soft-deleted merged source entity %s", entity_key,
                         )
                     except Exception as e:
+                        failed.append(entity_key)
                         logger.error(
                             "Failed to soft-delete source entity %s: %s",
                             entity_key, e,
                         )
 
+                merge_job.recycled_source_keys = recycled
+                if failed:
+                    merge_job.status = "partial"
+                    merge_job.error_message = (
+                        f"Failed to recycle {len(failed)} of {len(source_keys)} "
+                        f"sources: {failed}"
+                    )
+                else:
+                    merge_job.status = "completed"
+
                 logger.info(
-                    "Merge job %s completed: merged %d entities → %s",
+                    "Merge job %s %s: merged %d entities → %s (recycled %d, failed %d)",
                     merge_job.engine_job_id,
-                    len(merge_job.source_entity_keys or []),
+                    merge_job.status,
+                    len(source_keys),
                     merged_key,
+                    len(recycled),
+                    len(failed),
                 )
             else:
                 err = _extract_failure_message(data)
@@ -295,6 +345,7 @@ class JobStatusSubscriber:
         except Exception as e:
             logger.error("Failed to handle merge completion for %s: %s", merge_job.engine_job_id, e)
             db.rollback()
+            raise
 
 
 # Module-level singleton

@@ -26,11 +26,14 @@ class MergeJob(Base, TimestampMixin):
         nullable=False,
         index=True,
     )
-    engine_job_id: Mapped[str] = mapped_column(
-        String(36), nullable=False, unique=True, index=True,
+    engine_job_id: Mapped[str | None] = mapped_column(
+        String(36), nullable=True, unique=True, index=True,
     )
     source_entity_keys: Mapped[list] = mapped_column(
         JSONB, nullable=False,
+    )
+    recycled_source_keys: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True,
     )
     merged_entity_key: Mapped[str | None] = mapped_column(
         String(36), nullable=True,
