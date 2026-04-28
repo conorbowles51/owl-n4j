@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { NodeBadge } from "@/components/ui/node-badge"
@@ -101,7 +100,7 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
   const visibleError = error ?? (loadError instanceof Error ? loadError.message : null)
 
   return (
-    <div className="p-4">
+    <div className="flex h-full flex-col p-4">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Recycle Bin</h3>
         <Badge variant="slate">{entities.length} items</Badge>
@@ -122,7 +121,7 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
           className="py-8"
         />
       ) : (
-        <ScrollArea className="max-h-[440px]">
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
           <div className="space-y-4">
             {Object.entries(grouped).map(([label, items]) => (
               <div key={label} className="space-y-2">
@@ -214,7 +213,7 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
               </div>
             ))}
           </div>
-        </ScrollArea>
+        </div>
       )}
     </div>
   )
