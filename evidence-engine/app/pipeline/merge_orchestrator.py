@@ -315,7 +315,7 @@ async def _embed_merged_entity(
         [e.get("name", "") for e in entities if e.get("name")],
     )
     if all_aliases:
-        desc += f" (aliases: {', '.join(all_aliases[:10])})"
+        desc += f" (aliases: {', '.join(all_aliases)})"
     if merged.get("verified_facts"):
         facts = [f.get("text", "").strip() for f in merged["verified_facts"][:5] if f.get("text")]
         if facts:
@@ -334,7 +334,7 @@ async def _embed_merged_entity(
             "specific_type": merged.get("specific_type", ""),
             "name": merged.get("name", ""),
             "case_id": case_id,
-            "aliases": ",".join(all_aliases[:10]) if all_aliases else "",
+            "aliases": ",".join(all_aliases) if all_aliases else "",
         }],
     )
 
