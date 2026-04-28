@@ -41,6 +41,16 @@ import FolderProfileModal from './FolderProfileModal';
  *  - onBackToCases: () => void
  *  - onGoToGraph: () => void  // Opens this case in the main graph view
  */
+
+function formatBytes(bytes) {
+  if (!bytes || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.min(Math.floor(Math.log10(bytes) / 3), units.length - 1);
+  const value = bytes / Math.pow(1000, i);
+  // Show one decimal once we're past KB; whole numbers below that.
+  return `${i >= 2 ? value.toFixed(1) : Math.round(value)} ${units[i]}`;
+}
+
 export default function EvidenceProcessingView({
   caseId,
   caseName,
@@ -54,6 +64,11 @@ export default function EvidenceProcessingView({
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  // Byte-level progress for the active browser → server upload. null when
+  // no upload is in flight. `total` may be 0 if the browser couldn't compute
+  // a content length (rare for FormData), in which case we fall back to an
+  // indeterminate state.
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [fileNavKey, setFileNavKey] = useState(0); // Increment to force FileNavigator refresh
   const [error, setError] = useState(null);
@@ -372,9 +387,10 @@ export default function EvidenceProcessingView({
     }
 
     setUploading(true);
+    setUploadProgress({ loaded: 0, total: 0, lengthComputable: false });
     setError(null);
     try {
-      const result = await evidenceAPI.upload(caseId, fileList);
+      const result = await evidenceAPI.upload(caseId, fileList, setUploadProgress);
 
       if (result.task_id) {
         // Background task created (for large uploads >5 files)
@@ -396,6 +412,7 @@ export default function EvidenceProcessingView({
       setError(err.message || 'Failed to upload files');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -408,10 +425,11 @@ export default function EvidenceProcessingView({
     }
 
     setUploading(true);
+    setUploadProgress({ loaded: 0, total: 0, lengthComputable: false });
     setError(null);
     try {
       // Upload folder as background task
-      const result = await evidenceAPI.uploadFolder(caseId, fileList);
+      const result = await evidenceAPI.uploadFolder(caseId, fileList, setUploadProgress);
 
       if (result.task_id) {
         // Background task created - show message and open background tasks panel
@@ -433,6 +451,44 @@ export default function EvidenceProcessingView({
       setError(err.message || 'Failed to upload folder');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
+    }
+  };
+
+  const handleArchiveSelect = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!caseId) {
+      alert('Please select or create a case before uploading evidence.');
+      return;
+    }
+
+    setUploading(true);
+    // Single-file upload — total is known up front, so the progress bar
+    // can be a real percentage rather than the indeterminate animation.
+    setUploadProgress({ loaded: 0, total: file.size, lengthComputable: true });
+    setError(null);
+    try {
+      const result = await evidenceAPI.uploadArchive(caseId, file, setUploadProgress);
+
+      if (result.task_id) {
+        setShowBackgroundTasksPanel(true);
+        setTimeout(() => {
+          loadFiles();
+          setFileNavKey(k => k + 1);
+        }, 2000);
+      } else {
+        await loadFiles();
+        setFileNavKey(k => k + 1);
+      }
+
+      event.target.value = '';
+    } catch (err) {
+      console.error('Failed to upload archive:', err);
+      setError(err.message || 'Failed to upload archive');
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -1302,7 +1358,7 @@ export default function EvidenceProcessingView({
               Upload Evidence
             </h2>
             <p className="text-xs text-light-600 mb-3">
-              Upload individual files or entire folders (preserves folder structure).
+              Upload individual files, an entire folder, or a single .zip archive (recommended for large Cellebrite reports — server unpacks it).
             </p>
             <div className="flex flex-col gap-2">
               <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm transition-colors ${
@@ -1337,7 +1393,52 @@ export default function EvidenceProcessingView({
                   disabled={!canUploadEvidence || uploading || !caseId}
                 />
               </label>
+              <label className={`flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-light-300 rounded-lg text-sm transition-colors ${
+                !canUploadEvidence || uploading || !caseId
+                  ? 'text-light-400 bg-light-100 cursor-not-allowed'
+                  : 'text-light-700 bg-light-50 hover:bg-light-100 cursor-pointer'
+              }`}>
+                <HardDrive className="w-5 h-5 text-owl-blue-700" />
+                <span>{uploading ? 'Uploading…' : 'Click to choose .zip archive'}</span>
+                <input
+                  type="file"
+                  accept=".zip,application/zip,application/x-zip-compressed"
+                  className="hidden"
+                  onChange={handleArchiveSelect}
+                  disabled={!canUploadEvidence || uploading || !caseId}
+                />
+              </label>
             </div>
+            {uploading && uploadProgress && (() => {
+              const { loaded = 0, total = 0, lengthComputable } = uploadProgress;
+              const hasTotal = lengthComputable && total > 0;
+              const percent = hasTotal ? Math.min(100, Math.round((loaded / total) * 100)) : 0;
+              return (
+                <div className="mt-3">
+                  <div className="flex items-center justify-between text-xs text-light-600 mb-1">
+                    <span>
+                      {hasTotal
+                        ? `${formatBytes(loaded)} of ${formatBytes(total)}`
+                        : `${formatBytes(loaded)} uploaded`}
+                    </span>
+                    {hasTotal && <span>{percent}%</span>}
+                  </div>
+                  <div className="w-full h-2 bg-light-200 rounded-full overflow-hidden">
+                    {hasTotal ? (
+                      <div
+                        className="h-2 bg-owl-blue-500 transition-all"
+                        style={{ width: `${percent}%` }}
+                      />
+                    ) : (
+                      <div className="h-2 bg-owl-blue-500 animate-pulse" style={{ width: '40%' }} />
+                    )}
+                  </div>
+                  <p className="text-[11px] text-light-500 mt-1">
+                    Sending bytes to server. Processing will start once the upload finishes.
+                  </p>
+                </div>
+              );
+            })()}
             {!caseId && (
               <p className="text-xs text-red-500 mt-2">
                 You must create a case before uploading evidence.

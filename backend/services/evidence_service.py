@@ -21,6 +21,49 @@ from services.neo4j_service import neo4j_service
 from services.case_storage import case_storage
 
 
+def _cleanup_staging_dir(file_data_list):
+    """
+    Remove staging directories once all staged files have been moved into
+    place. Walks up from each file's parent directory, removing empty dirs
+    until rmdir fails (still-draining sibling tasks) or we hit the shared
+    staging root. Bounded by `_staging` so we never try to remove the case
+    data area itself.
+
+    Archive uploads extract into a nested tree (`_staging/<req>/_extracted/
+    Folder/Sub/file`); without the walk-up, only the deepest leaves would
+    rmdir and the empty intermediate dirs would linger forever.
+    """
+    staging_root = EVIDENCE_ROOT_DIR / "_staging"
+
+    parents = set()
+    for fd in file_data_list:
+        sp = fd.get("staged_path") if isinstance(fd, dict) else None
+        if sp is None:
+            continue
+        try:
+            parents.add(Path(sp).parent)
+        except (TypeError, ValueError):
+            continue
+
+    # Process deepest dirs first so an outer rmdir doesn't bail purely
+    # because a not-yet-walked inner sibling still exists. `seen` only
+    # records successful removals — a dir that failed (e.g. because a
+    # sibling start hasn't been processed yet) must be retried when we
+    # walk up to it again.
+    seen: set = set()
+    for start in sorted(parents, key=lambda p: -len(p.parts)):
+        current = start
+        while current not in seen and staging_root in current.parents:
+            try:
+                current.rmdir()
+            except OSError:
+                # Dir not empty (sibling tasks still draining) or already
+                # gone — nothing further up will be empty either.
+                break
+            seen.add(current)
+            current = current.parent
+
+
 def _import_ingest_file():
     """
     Dynamically import ingest_file from ingestion/scripts/ingest_data.py.
@@ -113,50 +156,70 @@ class EvidenceService:
 
         Args:
             case_id: Associated case ID
-            uploads: List of dicts:
+            uploads: List of dicts. Each upload is either bytes-backed:
                 {
                   "original_filename": str,
                   "content": bytes,
-                  "relative_path": Optional[str],  # For folder uploads
+                  "relative_path": Optional[str],
                 }
+              or already streamed to a staging path (preferred for large files):
+                {
+                  "original_filename": str,
+                  "staged_path": Path,   # file already on disk in a staging dir
+                  "sha256": str,
+                  "size": int,
+                  "relative_path": Optional[str],
+                }
+              When `staged_path` is provided the file is moved (os.replace) into
+              its final location instead of being re-written.
             preserve_structure: If True, preserve folder structure from relative_path
         """
+        import os
+
         case_dir = EVIDENCE_ROOT_DIR / case_id
         case_dir.mkdir(parents=True, exist_ok=True)
 
         file_infos = []
         for upload in uploads:
             original_filename = upload["original_filename"]
-            content: bytes = upload["content"]
             relative_path = upload.get("relative_path")
-            
+
             # Determine stored path
             if preserve_structure and relative_path:
-                # Preserve folder structure
-                # Normalize path separators
-                normalized_path = relative_path.replace('\\', '/')
-                # Remove leading slash if present
-                normalized_path = normalized_path.lstrip('/')
+                normalized_path = relative_path.replace('\\', '/').lstrip('/')
                 stored_path = case_dir / normalized_path
             else:
-                # Flat structure - just use filename
                 stored_path = case_dir / original_filename
-            
-            # Create parent directories if needed
+
             stored_path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # Write file
-            stored_path.write_bytes(content)
-            
-            file_infos.append(
-                {
-                    "original_filename": original_filename,
-                    "stored_path": stored_path,
-                    "content": content,
-                    "size": len(content),
-                    "relative_path": relative_path if preserve_structure else None,
-                }
-            )
+
+            staged_path = upload.get("staged_path")
+            if staged_path is not None:
+                # File is already on disk in staging area — move into place.
+                staged_path = Path(staged_path)
+                # os.replace is atomic on the same filesystem and overwrites.
+                os.replace(staged_path, stored_path)
+                file_infos.append(
+                    {
+                        "original_filename": original_filename,
+                        "stored_path": stored_path,
+                        "sha256": upload["sha256"],
+                        "size": upload["size"],
+                        "relative_path": relative_path if preserve_structure else None,
+                    }
+                )
+            else:
+                content: bytes = upload["content"]
+                stored_path.write_bytes(content)
+                file_infos.append(
+                    {
+                        "original_filename": original_filename,
+                        "stored_path": stored_path,
+                        "content": content,
+                        "size": len(content),
+                        "relative_path": relative_path if preserve_structure else None,
+                    }
+                )
 
         return evidence_storage.add_files(case_id=case_id, files=file_infos, owner=owner)
 
@@ -251,10 +314,7 @@ class EvidenceService:
                     uploaded_files = []
                     for index, file_data in enumerate(folder_files_param):
                         try:
-                            # Extract file info
                             original_filename = file_data.get("original_filename", "unknown")
-                            content = file_data.get("content")
-                            relative_path = file_data.get("relative_path")
 
                             # Update file status to processing
                             background_task_storage.update_task(
@@ -266,17 +326,12 @@ class EvidenceService:
                                 },
                             )
 
-                            # Upload single file using evidence_service instance
-                            uploads = [{
-                                "original_filename": original_filename,
-                                "content": content,
-                                "relative_path": relative_path,
-                            }]
-
-                            # Use add_uploaded_files on the service instance
+                            # Forward the whole file_data dict so staged_path/
+                            # sha256/size (or content for legacy callers) flow
+                            # through to add_uploaded_files unchanged.
                             records = service_self.add_uploaded_files(
                                 case_id=case_id,
-                                uploads=uploads,
+                                uploads=[file_data],
                                 owner=owner,
                                 preserve_structure=True,  # Always preserve structure for folder uploads
                             )
@@ -321,6 +376,12 @@ class EvidenceService:
                         error=str(e),
                         completed_at=datetime.now().isoformat(),
                     )
+                finally:
+                    # Best-effort: remove the shared staging dir if every task
+                    # in this request has finished moving its files. rmdir
+                    # only succeeds when the dir is empty, so concurrent tasks
+                    # that haven't drained yet just see OSError here.
+                    _cleanup_staging_dir(folder_files_param)
             
             # Start the background thread for this folder (non-daemon so it continues even if request ends)
             thread = threading.Thread(
@@ -396,10 +457,7 @@ class EvidenceService:
                 uploaded_files = []
                 for index, file_data in enumerate(files):
                     try:
-                        # Extract file info
                         original_filename = file_data.get("original_filename", "unknown")
-                        content = file_data.get("content")
-                        relative_path = file_data.get("relative_path")
 
                         # Update file status to processing
                         background_task_storage.update_task(
@@ -411,16 +469,12 @@ class EvidenceService:
                             },
                         )
 
-                        # Upload single file
-                        uploads = [{
-                            "original_filename": original_filename,
-                            "content": content,
-                            "relative_path": relative_path,
-                        }]
-
+                        # Forward the whole file_data dict so staged_path/
+                        # sha256/size (or content for legacy callers) flow
+                        # through to add_uploaded_files unchanged.
                         records = self.add_uploaded_files(
                             case_id=case_id,
-                            uploads=uploads,
+                            uploads=[file_data],
                             owner=owner,
                             preserve_structure=is_folder,
                         )
@@ -465,6 +519,8 @@ class EvidenceService:
                     error=str(e),
                     completed_at=datetime.now().isoformat(),
                 )
+            finally:
+                _cleanup_staging_dir(files)
 
         # Start background thread (non-daemon so it continues even if request ends)
         thread = threading.Thread(target=upload_task, daemon=False, name=f"file-upload-{task_id}")

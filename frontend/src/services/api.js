@@ -95,6 +95,99 @@ async function fetchAPI(endpoint, options = {}) {
 }
 
 /**
+ * XHR-based upload helper. Used instead of fetch() when we need byte-level
+ * upload progress events (fetch's standard API doesn't expose them).
+ *
+ * Mirrors fetchAPI for the bits that matter: bearer auth header, JSON body
+ * parsing, error shape ({detail} / 422 validation arrays), AbortController-
+ * style timeout. Always assumes a FormData body (lets the browser set the
+ * multipart Content-Type with the boundary).
+ *
+ * Returns a Promise<json>. `onProgress` is called with
+ * { loaded, total, lengthComputable } as bytes are sent.
+ */
+function xhrUpload(endpoint, formData, { onProgress, timeout } = {}) {
+  return new Promise((resolve, reject) => {
+    const url = `${API_BASE}${endpoint}`;
+    const token = localStorage.getItem('authToken');
+    const effectiveTimeout = timeout || 300000;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.withCredentials = true;
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.timeout = effectiveTimeout;
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (evt) => {
+        try {
+          onProgress({
+            loaded: evt.loaded,
+            total: evt.lengthComputable ? evt.total : 0,
+            lengthComputable: evt.lengthComputable,
+          });
+        } catch (_) {
+          // Don't let a UI bug abort the upload.
+        }
+      });
+    }
+
+    xhr.addEventListener('load', () => {
+      const status = xhr.status;
+      let parsed = null;
+      try {
+        parsed = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch (_) {
+        parsed = null;
+      }
+      if (status >= 200 && status < 300) {
+        if (status === 204) return resolve(null);
+        return resolve(parsed);
+      }
+      if (status === 422 && parsed && Array.isArray(parsed.detail)) {
+        const validationErrors = parsed.detail.map(err => {
+          const field = err.loc ? err.loc.join('.') : 'unknown';
+          const msg = err.msg || 'validation error';
+          return `${field}: ${msg}`;
+        }).join(', ');
+        return reject(new Error(`Validation error: ${validationErrors}`));
+      }
+      // Surface the HTTP status so non-JSON error pages (413 from a proxy,
+      // 502 from a dead backend, etc.) don't collapse to "Unknown error".
+      const detail = parsed && (parsed.detail || parsed.message || parsed.error);
+      const statusText = xhr.statusText || `HTTP ${status}`;
+      const snippet = !parsed && xhr.responseText
+        ? ` — ${xhr.responseText.slice(0, 200).replace(/\s+/g, ' ').trim()}`
+        : '';
+      reject(new Error(detail ? `${statusText}: ${detail}` : `${statusText}${snippet}`));
+    });
+
+    xhr.addEventListener('error', () => {
+      // Fires on network-level failure (connection reset, DNS, CORS).
+      // For uploads this most often means the server (or a proxy in front
+      // of it) closed the socket mid-stream — e.g. a body-size or request
+      // timeout cap was hit. Hint at that rather than blaming the backend
+      // being down.
+      reject(new Error(
+        'Upload connection dropped before the server could respond. ' +
+        'This usually means a proxy or dev-server timeout closed the socket ' +
+        'mid-upload. Check the dev server / nginx request limits.'
+      ));
+    });
+
+    xhr.addEventListener('timeout', () => {
+      reject(new Error(`Request timed out after ${effectiveTimeout}ms. Please check that the backend server is running on port 8000 and try again.`));
+    });
+
+    xhr.addEventListener('abort', () => {
+      reject(new Error('Upload aborted.'));
+    });
+
+    xhr.send(formData);
+  });
+}
+
+/**
  * Graph API
  */
 export const graphAPI = {
@@ -1565,15 +1658,20 @@ export const evidenceAPI = {
    * Upload one or more evidence files for a case
    * Returns either {files: [...]} for synchronous uploads or {task_id: "...", message: "..."} for background uploads
    */
-  upload: (caseId, files) => {
+  upload: (caseId, files, onProgress) => {
     const formData = new FormData();
     formData.append('case_id', caseId);
     Array.from(files).forEach((file) => {
       formData.append('files', file);
     });
-    return fetchAPI('/evidence/upload', {
-      method: 'POST',
-      body: formData,
+    // Network transfer for evidence files (e.g. multi-GB Cellebrite folders)
+    // can take much longer than the default 5 minute timeout. The backend
+    // streams bytes to disk and returns as soon as the request body lands,
+    // so this only needs to cover the upload itself. Routed through XHR
+    // so the caller can observe byte-level upload progress.
+    return xhrUpload('/evidence/upload', formData, {
+      onProgress,
+      timeout: 60 * 60 * 1000, // 60 minutes
     });
   },
 
@@ -1581,20 +1679,39 @@ export const evidenceAPI = {
    * Upload a folder of files (or folder of folders) for a case
    * Uses webkitdirectory to preserve folder structure
    */
-  uploadFolder: (caseId, files) => {
+  uploadFolder: (caseId, files, onProgress) => {
     const formData = new FormData();
     formData.append('case_id', caseId);
     formData.append('is_folder', 'true');
-    Array.from(files).forEach((file, index) => {
-      // Append file with relative path as third parameter to FormData
+    Array.from(files).forEach((file) => {
+      // Third arg becomes UploadFile.filename on the backend, which is
+      // where the route reads the relative path from. No separate
+      // file_path_<index> field — that doubled the form-field count and
+      // tripped Starlette's max_fields cap mid-stream on large folders.
       const relativePath = file.webkitRelativePath || file.name;
       formData.append('files', file, relativePath);
-      // Also send relative path as separate field for easier parsing
-      formData.append(`file_path_${index}`, relativePath);
     });
-    return fetchAPI('/evidence/upload', {
-      method: 'POST',
-      body: formData,
+    return xhrUpload('/evidence/upload', formData, {
+      onProgress,
+      timeout: 60 * 60 * 1000, // 60 minutes — see comment on upload() above
+    });
+  },
+
+  /**
+   * Upload a single .zip archive that the server unpacks into a folder
+   * upload. Preferred for large Cellebrite reports because the request is
+   * a single multipart part — webkitdirectory uploads of thousands of
+   * files crash the dev proxy mid-stream.
+   */
+  uploadArchive: (caseId, file, onProgress) => {
+    const formData = new FormData();
+    formData.append('case_id', caseId);
+    formData.append('is_folder', 'true');
+    formData.append('is_archive', 'true');
+    formData.append('files', file, file.name);
+    return xhrUpload('/evidence/upload', formData, {
+      onProgress,
+      timeout: 60 * 60 * 1000,
     });
   },
 

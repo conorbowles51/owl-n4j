@@ -158,11 +158,18 @@ class EvidenceStorage:
 
         Args:
             case_id: Associated case ID
-            files: List of dicts:
+            files: List of dicts. Either:
                 {
                   "original_filename": str,
                   "stored_path": Path,
                   "content": bytes,
+                  "size": int,
+                }
+              or (when the file is already on disk and already hashed):
+                {
+                  "original_filename": str,
+                  "stored_path": Path,
+                  "sha256": str,
                   "size": int,
                 }
 
@@ -177,10 +184,12 @@ class EvidenceStorage:
             for file_info in files:
                 original_filename = file_info["original_filename"]
                 stored_path: Path = file_info["stored_path"]
-                content: bytes = file_info["content"]
                 size: int = file_info["size"]
-
-                sha256 = _compute_sha256(content)
+                if "sha256" in file_info:
+                    sha256 = file_info["sha256"]
+                else:
+                    content: bytes = file_info["content"]
+                    sha256 = _compute_sha256(content)
                 # Find duplicate directly to avoid double-locking
                 duplicate_rec = None
                 for rec in self._records.values():

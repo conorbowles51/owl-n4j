@@ -6,12 +6,20 @@ Handles uploading evidence files and triggering ingestion processing.
 
 import subprocess
 import shutil
+import hashlib
+import uuid
+import zipfile
 from pathlib import Path
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+# Starlette's MultiPartParser emits its own UploadFile instances. fastapi.UploadFile
+# is a *subclass* of that, so isinstance(parsed, fastapi.UploadFile) is False —
+# we'd silently drop every file. Use the Starlette base class for type checks
+# against parser output and let the subclass relationship cover both.
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from services.evidence_service import evidence_service
 from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
@@ -279,24 +287,197 @@ async def find_duplicates(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Where uploaded bytes land while still being streamed off the wire. Lives on
+# the same filesystem as EVIDENCE_ROOT_DIR so a successful upload can be moved
+# into place atomically via os.replace.
+_UPLOAD_STAGING_ROOT = EVIDENCE_ROOT_DIR / "_staging"
+
+# 1 MiB read chunks — large enough to amortize syscall overhead, small enough
+# to stay out of RAM on multi-GB uploads.
+_STAGE_CHUNK_SIZE = 1024 * 1024
+
+# Mac/Windows metadata noise that frequently rides along inside Cellebrite
+# Reader exports. Skipping them keeps the case dir clean and saves the
+# ingestion pipeline from choking on Apple resource forks.
+_ARCHIVE_SKIP_NAMES = {".DS_Store", "Thumbs.db", "desktop.ini"}
+
+
+def _extract_archive_to_staging(zip_path: Path, extract_dir: Path) -> List[dict]:
+    """
+    Extract a zip into `extract_dir` with zip-slip protection and return
+    upload dicts shaped exactly like `_stage_upload_files` so the rest of
+    the pipeline can treat the result as a folder upload.
+
+    Streams each entry through SHA-256 + sized write at _STAGE_CHUNK_SIZE so
+    we never hold an entire entry in memory — Cellebrite archives can be
+    multi-GB once unpacked.
+    """
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    extract_root = extract_dir.resolve()
+    uploads: List[dict] = []
+
+    with zipfile.ZipFile(zip_path) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            entry_name = info.filename or ""
+            normalized = entry_name.replace("\\", "/").lstrip("/")
+            if not normalized:
+                continue
+            parts = normalized.split("/")
+            # __MACOSX/* and AppleDouble (._foo) sidecars carry no content.
+            if any(part == "__MACOSX" or part.startswith("._") for part in parts):
+                continue
+            leaf = parts[-1]
+            if leaf in _ARCHIVE_SKIP_NAMES:
+                continue
+            # Zip-slip: refuse anything that resolves outside the extract root.
+            target = (extract_dir / normalized).resolve()
+            try:
+                target.relative_to(extract_root)
+            except ValueError:
+                continue
+
+            target.parent.mkdir(parents=True, exist_ok=True)
+            hasher = hashlib.sha256()
+            size = 0
+            try:
+                with zf.open(info) as src, open(target, "wb") as dst:
+                    while True:
+                        chunk = src.read(_STAGE_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        hasher.update(chunk)
+                        dst.write(chunk)
+                        size += len(chunk)
+            except Exception:
+                try:
+                    target.unlink(missing_ok=True)
+                except OSError:
+                    pass
+                raise
+
+            uploads.append(
+                {
+                    "original_filename": leaf,
+                    "staged_path": target,
+                    "sha256": hasher.hexdigest(),
+                    "size": size,
+                    "relative_path": normalized,
+                }
+            )
+
+    return uploads
+
+
+def _stage_upload_files(files: List[UploadFile], staging_dir: Path) -> List[dict]:
+    """
+    Stream each UploadFile into a unique file under `staging_dir`, computing
+    SHA-256 + size on the fly. Returns a list of upload dicts shaped for
+    evidence_service (no in-memory bytes).
+
+    Runs synchronously — call it from a thread pool so the async event loop
+    is not blocked.
+    """
+    staging_dir.mkdir(parents=True, exist_ok=True)
+    staged: List[dict] = []
+
+    for uf in files:
+        filename = uf.filename or ""
+
+        # Frontend appends `formData.append('files', file, relativePath)` so
+        # uf.filename carries the path for folder uploads. Split it.
+        if "/" in filename or "\\" in filename:
+            relative_path = filename.replace("\\", "/")
+            original_filename = relative_path.rsplit("/", 1)[-1]
+        else:
+            relative_path = None
+            original_filename = filename
+
+        staged_path = staging_dir / f"{uuid.uuid4().hex}.upload"
+        hasher = hashlib.sha256()
+        size = 0
+
+        # uf.file is a SpooledTemporaryFile — synchronous read is fine here
+        # since we're already in a thread pool.
+        src = uf.file
+        try:
+            src.seek(0)
+        except (AttributeError, OSError):
+            pass
+
+        try:
+            with open(staged_path, "wb") as dst:
+                while True:
+                    chunk = src.read(_STAGE_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    hasher.update(chunk)
+                    dst.write(chunk)
+                    size += len(chunk)
+        except Exception:
+            # Best-effort cleanup of partial staged file before re-raising.
+            try:
+                staged_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
+        staged.append(
+            {
+                "original_filename": original_filename,
+                "staged_path": staged_path,
+                "sha256": hasher.hexdigest(),
+                "size": size,
+                "relative_path": relative_path,
+            }
+        )
+
+    return staged
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_evidence(
-    case_id: str = Form(..., description="Associated case ID"),
-    files: List[UploadFile] = File(..., description="Evidence files to upload"),
-    is_folder: Optional[str] = Form(None, description="Whether this is a folder upload"),
+    request: Request,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
     Upload one or more evidence files for a case.
 
-    Files are stored under the ingestion data directory so they can be
-    processed by the ingestion pipeline.
+    Files are streamed straight to a staging area on disk (no in-memory
+    buffering of the full payload), then either registered synchronously
+    or handed off to a background task that moves them into the case data
+    directory.
 
     If is_folder is 'true' or more than 5 files are uploaded, creates background tasks.
+
+    Parsed via request.form() with raised limits — Starlette's defaults
+    (1000 files / 1000 fields) cut off folder uploads with thousands of
+    files mid-stream, which the browser surfaces as ERR_FAILED.
+
+    When `is_archive=true` the client sends a single .zip; the route stages
+    that one part, unpacks it server-side, and feeds the extracted tree
+    through the existing folder-ingestion path. This avoids the multi-
+    thousand multipart parts that overwhelm dev-server proxies.
     """
+    form = await request.form(max_files=20000, max_fields=20000)
+    case_id = form.get("case_id")
+    is_folder = form.get("is_folder")
+    is_archive = form.get("is_archive")
+    files = [v for v in form.getlist("files") if isinstance(v, StarletteUploadFile)]
+
+    if not case_id:
+        raise HTTPException(status_code=400, detail="case_id is required")
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
+
+    is_archive_upload = bool(is_archive) and is_archive.lower() == "true"
+    if is_archive_upload and len(files) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail="Archive upload expects exactly one .zip file.",
+        )
 
     try:
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
@@ -306,83 +487,98 @@ async def upload_evidence(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        # Check if this is a folder upload or should be background task
-        is_folder_upload = is_folder and is_folder.lower() == 'true'
-        use_background = is_folder_upload or len(files) > 5
+        is_folder_upload = (is_folder and is_folder.lower() == 'true') or is_archive_upload
 
-        if use_background:
-            # Extract files with relative paths for folder uploads
-            uploads = []
-            
-            # Note: FastAPI doesn't easily allow access to arbitrary form fields when using Form()/File()
-            # For folder uploads, the frontend sends file_path_{index} fields, but we can't access them here.
-            # We'll rely on the filename potentially containing the path, or use the original filename.
-            # The relative_path might be None for some files, but upload_folders_background handles that.
-            for index, uf in enumerate(files):
-                content = await uf.read()
-                filename = uf.filename or ""
-                
-                # For folder uploads, try to extract relative path from filename
-                # The frontend may send the path as part of the filename
-                relative_path = None
-                if '/' in filename or '\\' in filename:
-                    # Path separators present - treat as relative path
-                    relative_path = filename.replace('\\', '/')
-                    # Extract just the filename (last component) for original_filename
-                    path_parts = relative_path.split('/')
-                    original_filename = path_parts[-1] if path_parts else filename
+        # Stage every upload to disk first. This is the slow, network-bound
+        # part of the request and runs in a worker thread so it doesn't block
+        # the event loop.
+        staging_dir = _UPLOAD_STAGING_ROOT / uuid.uuid4().hex
+        try:
+            uploads = await run_in_threadpool(_stage_upload_files, files, staging_dir)
+
+            if is_archive_upload:
+                # Replace the staged zip with its extracted file tree. The
+                # tree mirrors what a webkitdirectory folder upload would
+                # have produced, so the rest of the pipeline is unchanged.
+                zip_entry = uploads[0]
+                zip_path = Path(zip_entry["staged_path"])
+                if not zipfile.is_zipfile(zip_path):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Uploaded archive is not a valid .zip file.",
+                    )
+                extract_dir = staging_dir / "_extracted"
+                try:
+                    uploads = await run_in_threadpool(
+                        _extract_archive_to_staging, zip_path, extract_dir
+                    )
+                finally:
+                    # The original archive is no longer needed regardless
+                    # of extraction outcome — remove it to free disk.
+                    try:
+                        zip_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                if not uploads:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Archive contained no extractable files.",
+                    )
+        except Exception:
+            # Stage or extract failed — remove anything we managed to write.
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise
+
+        # Use len(uploads) so an archive that unpacks into thousands of
+        # files always lands on the background path (the synchronous path
+        # blocks the request and offers no progress).
+        use_background = is_folder_upload or len(uploads) > 5
+
+        try:
+            if use_background:
+                if is_folder_upload:
+                    task_ids = evidence_service.upload_folders_background(
+                        case_id=case_id,
+                        files=uploads,
+                        owner=current_user.email,
+                    )
+                    response = UploadResponse(
+                        task_id=task_ids[0] if task_ids else None,
+                        task_ids=task_ids,
+                        message=f"Uploading {len(task_ids)} folder(s) in background" if task_ids else "No folders to upload",
+                    )
                 else:
-                    original_filename = filename
-                
-                uploads.append(
-                    {
-                        "original_filename": original_filename,
-                        "content": content,
-                        "relative_path": relative_path,
-                    }
-                )
-            
-            if is_folder_upload:
-                # Use upload_folders_background for folder uploads (groups by top-level folder)
-                task_ids = evidence_service.upload_folders_background(
-                    case_id=case_id,
-                    files=uploads,
-                    owner=current_user.email,
-                )
-                return UploadResponse(
-                    task_id=task_ids[0] if task_ids else None,  # First task ID for backwards compatibility
-                    task_ids=task_ids,
-                    message=f"Uploading {len(task_ids)} folder(s) in background" if task_ids else "No folders to upload",
-                )
+                    task_id = evidence_service.upload_files_background(
+                        case_id=case_id,
+                        files=uploads,
+                        owner=current_user.email,
+                    )
+                    response = UploadResponse(
+                        task_id=task_id,
+                        message=f"Uploading {len(uploads)} file(s) in background",
+                    )
             else:
-                # Use upload_files_background for large file uploads
-                task_id = evidence_service.upload_files_background(
+                # Synchronous path for small file sets — same staged uploads.
+                records = evidence_service.add_uploaded_files(
                     case_id=case_id,
-                    files=uploads,
+                    uploads=uploads,
                     owner=current_user.email,
                 )
-                return UploadResponse(
-                    task_id=task_id,
-                    message=f"Uploading {len(files)} file(s) in background",
-                )
-        else:
-            # Synchronous upload for small file sets
-            uploads = []
-            for uf in files:
-                content = await uf.read()
-                uploads.append(
-                    {
-                        "original_filename": uf.filename,
-                        "content": content,
-                    }
-                )
+                response = UploadResponse(files=records)
+        finally:
+            # Either the files were moved into the case dir (success) or the
+            # background thread will move them shortly. The staging dir
+            # itself is now empty (or will be) — clean it up best-effort.
+            # ignore_errors=True so a still-pending bg task doesn't make us crash.
+            try:
+                if staging_dir.exists() and not any(staging_dir.iterdir()):
+                    staging_dir.rmdir()
+            except OSError:
+                pass
 
-            records = evidence_service.add_uploaded_files(
-                case_id=case_id,
-                uploads=uploads,
-                owner=current_user.email,
-            )
-            return UploadResponse(files=records)
+        return response
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
