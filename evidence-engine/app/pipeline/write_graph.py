@@ -2,7 +2,11 @@ import json
 from typing import Any
 
 from app.ontology import load_ontology
-from app.pipeline.resolve_entities import ResolvedEntity, ResolvedRelationship
+from app.pipeline.resolve_entities import (
+    ResolvedEntity,
+    ResolvedRelationship,
+    coalesce_resolved_entities_by_id,
+)
 from app.services import chroma_client, neo4j_client
 from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
@@ -300,6 +304,7 @@ async def write_graph(
     case_id: str,
     job_id: str,
 ) -> None:
+    entities = coalesce_resolved_entities_by_id(entities)
     await _ensure_indexes()
     await _write_entities(entities, case_id, job_id)
     await _write_relationships(relationships, case_id)

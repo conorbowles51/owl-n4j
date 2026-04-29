@@ -499,6 +499,70 @@ def _apply_merges(
     return resolved, id_map
 
 
+def coalesce_resolved_entities_by_id(
+    entities: list[ResolvedEntity],
+) -> list[ResolvedEntity]:
+    """Merge resolved entities that now point at the same canonical ID."""
+    by_id: dict[str, ResolvedEntity] = {}
+
+    for entity in entities:
+        existing = by_id.get(entity.id)
+        if existing is None:
+            by_id[entity.id] = entity
+            continue
+
+        if entity.name and entity.name != existing.name and entity.name not in existing.aliases:
+            existing.aliases.append(entity.name)
+        if not existing.name and entity.name:
+            existing.name = entity.name
+
+        existing.aliases = sorted(set(existing.aliases) | set(entity.aliases))
+        existing.source_files = sorted(set(existing.source_files) | set(entity.source_files))
+
+        seen_quotes = set(existing.source_quotes)
+        existing.source_quotes.extend(
+            quote for quote in entity.source_quotes if quote and quote not in seen_quotes
+        )
+
+        existing.verified_facts = _merge_verified_facts(
+            existing.verified_facts,
+            entity.verified_facts,
+        )
+        existing.ai_insights = _merge_ai_insights(
+            existing.ai_insights,
+            entity.ai_insights,
+        )
+        existing.mandatory_instructions = merge_mandatory_instructions(
+            existing.mandatory_instructions,
+            entity.mandatory_instructions,
+        )
+
+        existing.confidence = max(existing.confidence, entity.confidence)
+        existing.is_existing = existing.is_existing or entity.is_existing
+
+        if not existing.specific_type and entity.specific_type:
+            existing.specific_type = entity.specific_type
+
+        for key, value in entity.properties.items():
+            if not value:
+                continue
+            current = existing.properties.get(key)
+            if not current:
+                existing.properties[key] = value
+            elif key in {"description", "role"} and isinstance(current, str) and isinstance(value, str):
+                if len(value) > len(current):
+                    existing.properties[key] = value
+
+        if entity.summary and (
+            not existing.summary or len(entity.summary) > len(existing.summary)
+        ):
+            existing.summary = entity.summary
+        if entity.existing_summary and not existing.existing_summary:
+            existing.existing_summary = entity.existing_summary
+
+    return list(by_id.values())
+
+
 # ---------------------------------------------------------------------------
 # Cross-job deduplication
 # ---------------------------------------------------------------------------
@@ -854,6 +918,8 @@ async def resolve_entities(
     for temp_id in id_map:
         if id_map[temp_id] in cross_merges:
             id_map[temp_id] = cross_merges[id_map[temp_id]]
+
+    resolved_entities = coalesce_resolved_entities_by_id(resolved_entities)
 
     # Remap relationships
     resolved_relationships: list[ResolvedRelationship] = []
