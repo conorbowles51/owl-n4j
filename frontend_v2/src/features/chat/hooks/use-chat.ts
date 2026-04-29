@@ -18,7 +18,9 @@ export function useChat(caseId: string) {
   const setMessages = useChatStore((s) => s.setMessages)
   const clearMessages = useChatStore((s) => s.clearMessages)
   const appendResultGraph = useChatStore((s) => s.appendResultGraph)
+  const activeCaseId = useChatStore((s) => s.activeCaseId)
   const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const setActiveCaseId = useChatStore((s) => s.setActiveCaseId)
   const setActiveConversation = useChatStore((s) => s.setActiveConversation)
 
   const refreshSuggestions = useCallback(
@@ -37,12 +39,22 @@ export function useChat(caseId: string) {
   )
 
   useEffect(() => {
-    clearMessages()
-    savedConversationId.current = null
-    setActiveConversation(null)
+    if (activeCaseId !== caseId) {
+      clearMessages()
+      savedConversationId.current = null
+      setActiveConversation(null)
+      setActiveCaseId(caseId)
+    }
     setSuggestions([])
     void refreshSuggestions("case_overview")
-  }, [caseId, clearMessages, refreshSuggestions, setActiveConversation])
+  }, [
+    activeCaseId,
+    caseId,
+    clearMessages,
+    refreshSuggestions,
+    setActiveCaseId,
+    setActiveConversation,
+  ])
 
   const sendMessage = useCallback(
     async (

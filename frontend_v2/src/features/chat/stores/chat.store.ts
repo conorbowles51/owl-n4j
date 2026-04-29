@@ -11,6 +11,7 @@ type ResultGraphMode = "cumulative" | "last"
 
 interface ChatStore {
   // Conversations
+  activeCaseId: string | null
   conversations: ConversationSummary[]
   activeConversationId: string | null
   messages: ChatMessageData[]
@@ -26,6 +27,7 @@ interface ChatStore {
   resultGraphPanelOpen: boolean
 
   // Conversation actions
+  setActiveCaseId: (id: string | null) => void
   setConversations: (conversations: ConversationSummary[]) => void
   setActiveConversation: (id: string | null) => void
   setMessages: (messages: ChatMessageData[]) => void
@@ -82,6 +84,7 @@ function mergeGraphs(existing: ResultGraph, incoming: ResultGraph): ResultGraph 
 
 export const useChatStore = create<ChatStore>((set) => ({
   // Initial state
+  activeCaseId: null,
   conversations: [],
   activeConversationId: null,
   messages: [],
@@ -93,6 +96,7 @@ export const useChatStore = create<ChatStore>((set) => ({
   resultGraphPanelOpen: true,
 
   // Conversation actions
+  setActiveCaseId: (id) => set({ activeCaseId: id }),
   setConversations: (conversations) => set({ conversations }),
   setActiveConversation: (id) => set({ activeConversationId: id }),
   setMessages: (messages) => set({ messages }),

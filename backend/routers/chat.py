@@ -52,7 +52,7 @@ class ChatRequest(BaseModel):
     provider: str = "openai"
     model: str = "gpt-5-mini"
     confidence_threshold: Optional[float] = None
-    persist: bool = False
+    persist: bool = True
 
 
 class ChatSource(BaseModel):

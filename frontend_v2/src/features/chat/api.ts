@@ -54,7 +54,7 @@ export const chatAPI = {
       body: {
         provider: CHAT_DEFAULTS.provider,
         model: CHAT_DEFAULTS.model,
-        persist: false,
+        persist: true,
         ...params,
       },
       timeout: 120000,

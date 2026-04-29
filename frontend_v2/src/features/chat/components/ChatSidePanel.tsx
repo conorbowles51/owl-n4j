@@ -1,5 +1,5 @@
-import { useRef, useEffect, useState, useMemo, type KeyboardEvent } from "react"
-import { Send, Bot } from "lucide-react"
+import { useRef, useEffect, useState, type KeyboardEvent } from "react"
+import { Send, Bot, MessageSquare, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { DocumentViewer } from "@/components/ui/document-viewer"
@@ -14,7 +14,9 @@ import {
 } from "@/components/ui/select"
 import { ChatMessage } from "./ChatMessage"
 import { cn } from "@/lib/cn"
-import { useQuickChat } from "../hooks/use-quick-chat"
+import { useChat } from "../hooks/use-chat"
+import { useConversations } from "../hooks/use-conversations"
+import { useChatStore } from "../stores/chat.store"
 import { useGraphStore } from "@/stores/graph.store"
 import { evidenceAPI, llmConfigAPI } from "@/features/evidence/api"
 import type { LLMModel } from "@/types/evidence.types"
@@ -44,10 +46,16 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
-  const selectedKeysArray = useMemo(
-    () => (contextMode === "selection" ? Array.from(selectedNodeKeys) : undefined),
-    [contextMode, selectedNodeKeys]
+  const activeConversationId = useChatStore((s) => s.activeConversationId)
+  const { data: conversations = [] } = useConversations(caseId)
+  const { messages, isLoading, sendMessage, startNewConversation } = useChat(caseId)
+
+  const activeConversation = conversations.find(
+    (conversation) => conversation.id === activeConversationId
   )
+  const conversationTitle =
+    activeConversation?.name ??
+    (activeConversationId ? "Conversation" : "New Conversation")
 
   // Load available models once
   useEffect(() => {
@@ -62,19 +70,6 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
       }
     }).catch(() => {})
   }, [])
-
-  const { messages, isLoading, sendMessage, clearMessages } = useQuickChat({
-    caseId,
-    model: selectedModelId,
-    provider: selectedProvider,
-    selectedKeys: selectedKeysArray,
-    scope: contextMode === "selection" ? "selection" : "case_overview",
-  })
-
-  // Clear messages on case changes.
-  useEffect(() => {
-    clearMessages()
-  }, [caseId, clearMessages])
 
   // Auto-focus textarea on mount
   useEffect(() => {
@@ -94,7 +89,12 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const handleSend = () => {
     const trimmed = input.trim()
     if (!trimmed || isLoading) return
-    sendMessage(trimmed)
+    void sendMessage(
+      trimmed,
+      selectedModelId,
+      selectedProvider,
+      contextMode === "selection" ? "selection" : "case_overview"
+    )
     setInput("")
   }
 
@@ -133,6 +133,28 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
 
   return (
     <div className="h-full flex flex-col bg-background">
+      {/* Conversation header */}
+      <div className="flex items-center gap-2 border-b px-3 py-2">
+        <MessageSquare className="size-3.5 shrink-0 text-amber-500" />
+        <span
+          className="min-w-0 flex-1 truncate text-xs font-semibold"
+          title={conversationTitle}
+        >
+          {conversationTitle}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="New chat"
+          onClick={() => {
+            startNewConversation()
+            setInput("")
+          }}
+        >
+          <Plus className="size-3.5" />
+        </Button>
+      </div>
+
       {/* Model selector */}
       {models.length > 0 && (
         <div className="flex items-center border-b px-4 py-1.5">
