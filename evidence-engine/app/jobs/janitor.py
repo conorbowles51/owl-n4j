@@ -7,7 +7,7 @@ Runs as an arq cron (registered in app.worker.WorkerSettings).
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 
@@ -35,7 +35,9 @@ async def reap_stale_jobs(ctx: dict) -> int:
     threshold_seconds = int(
         os.getenv("JANITOR_STALE_THRESHOLD_SECONDS", str(DEFAULT_STALE_THRESHOLD_SECONDS))
     )
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=threshold_seconds)
+    # Job.updated_at is a naive TIMESTAMP WITHOUT TIME ZONE (no timezone=True on the
+    # column), so the cutoff must also be naive — asyncpg refuses to compare otherwise.
+    cutoff = datetime.utcnow() - timedelta(seconds=threshold_seconds)
 
     async with async_session() as db:
         result = await db.execute(
@@ -50,7 +52,7 @@ async def reap_stale_jobs(ctx: dict) -> int:
 
         snapshots: list[tuple[str, JobStatus, float, int]] = []
         for job in stale:
-            stale_minutes = int((datetime.now(timezone.utc) - job.updated_at).total_seconds() // 60)
+            stale_minutes = int((datetime.utcnow() - job.updated_at).total_seconds() // 60)
             prior_status = job.status.value
             reason = (
                 f"[janitor] No progress for {stale_minutes} minutes at '{prior_status}'; "
