@@ -20,6 +20,32 @@ from app.pipeline.chunk_embed import TextChunk
 from app.services.openai_client import chat_completion
 
 
+_NUMBER_RE = re.compile(r"[-+]?\d*\.?\d+")
+
+
+def _coerce_confidence(value: Any, default: float = 0.5) -> float:
+    """Parse confidence values that may arrive as numbers or malformed LLM strings.
+
+    Some LLM responses occasionally emit `confidence` as a string like ``": 0.85"`` or
+    ``"confidence: 0.85"`` instead of a number, which crashes ``float()``. Fall back
+    to the first numeric token in the string, otherwise the default.
+    """
+    if isinstance(value, (int, float)):
+        return max(0.0, min(1.0, float(value)))
+    if isinstance(value, str):
+        try:
+            return max(0.0, min(1.0, float(value.strip())))
+        except ValueError:
+            match = _NUMBER_RE.search(value)
+            if match:
+                try:
+                    return max(0.0, min(1.0, float(match.group(0))))
+                except ValueError:
+                    pass
+            logger.warning("could not parse confidence %r, using default %s", value, default)
+    return default
+
+
 def _clean_entity_name(name: str) -> str:
     """Light cleanup of entity names at extraction time."""
     name = name.strip()
@@ -448,7 +474,7 @@ async def _extract_entities_from_chunk(
 
         properties = dict(e.get("properties", {}) or {})
         source_quote = str(e.get("source_quote", ""))
-        confidence = float(e.get("confidence", 0.5))
+        confidence = _coerce_confidence(e.get("confidence"))
         financial_provenance = _build_financial_provenance(
             e.get("financial_provenance"),
             category=category,
@@ -555,7 +581,7 @@ async def _extract_relationships_from_chunk(
                 detail=r.get("detail", ""),
                 properties=r.get("properties", {}),
                 source_quote=r.get("source_quote", ""),
-                confidence=float(r.get("confidence", 0.5)),
+                confidence=_coerce_confidence(r.get("confidence")),
                 source_chunk_index=chunk_index,
                 source_file=file_name,
                 mandatory_instructions=normalized_instructions,

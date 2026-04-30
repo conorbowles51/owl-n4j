@@ -185,18 +185,25 @@ async def chunk_and_embed(
         embeddings=embeddings,
         documents=texts,
         metadatas=[
+            # ChromaDB rejects None metadata values (only int/float/bool/string allowed),
+            # so strip Nones — relevant for non-paginated formats (xlsx, csv) where
+            # page_start/page_end are unset.
             {
-                "case_id": case_id,
-                "doc_id": file_name,
-                "doc_name": file_name,
-                "job_id": job_id,
-                "file_name": file_name,
-                "chunk_index": c.index,
-                "start_char": c.start_char,
-                "end_char": c.end_char,
-                "is_table": c.is_table,
-                "page_start": c.metadata.get("page_start"),
-                "page_end": c.metadata.get("page_end"),
+                k: v
+                for k, v in {
+                    "case_id": case_id,
+                    "doc_id": file_name,
+                    "doc_name": file_name,
+                    "job_id": job_id,
+                    "file_name": file_name,
+                    "chunk_index": c.index,
+                    "start_char": c.start_char,
+                    "end_char": c.end_char,
+                    "is_table": c.is_table,
+                    "page_start": c.metadata.get("page_start"),
+                    "page_end": c.metadata.get("page_end"),
+                }.items()
+                if v is not None
             }
             for c in chunks
         ],
