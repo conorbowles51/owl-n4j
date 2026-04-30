@@ -4,6 +4,7 @@ import logging
 import subprocess
 from typing import Any
 
+import httpx
 from openai import AsyncOpenAI
 
 from app.config import settings
@@ -13,11 +14,20 @@ _client: AsyncOpenAI | None = None
 _semaphore = asyncio.Semaphore(10)
 logger = logging.getLogger(__name__)
 
+# Explicit per-request timeouts so a half-open TCP connection can't wedge a call
+# indefinitely. Without this, a dropped response read sits forever, only reaped
+# by arq's job_timeout (4h) and leaving DB rows in a stuck non-terminal state.
+_OPENAI_TIMEOUT = httpx.Timeout(connect=30.0, read=300.0, write=60.0, pool=60.0)
+
 
 def get_openai_client() -> AsyncOpenAI:
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=settings.openai_api_key)
+        _client = AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            timeout=_OPENAI_TIMEOUT,
+            max_retries=3,
+        )
     return _client
 
 

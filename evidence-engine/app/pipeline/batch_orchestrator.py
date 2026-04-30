@@ -143,6 +143,46 @@ async def _extract_file(
         return raw_entities, raw_rels, doc_summary
 
 
+async def _force_fail_unfinished_batch_rows(batch_id: str, reason: str) -> None:
+    """Mark every job in this batch still in non-terminal status as failed.
+
+    Called from the cancellation/crash handlers in run_batch_pipeline so users
+    aren't left looking at a "still ingesting" UI when the parent task died.
+    Idempotent — only touches non-terminal rows.
+    """
+    async with async_session() as db:
+        result = await db.execute(
+            select(Job).where(
+                Job.batch_id == batch_id,
+                Job.status.notin_([JobStatus.COMPLETED, JobStatus.FAILED]),
+            )
+        )
+        unfinished = list(result.scalars().all())
+        for job in unfinished:
+            job.status = JobStatus.FAILED
+            job.error_message = reason
+        await db.commit()
+        snapshots = [(job.id, job.progress or 0.0) for job in unfinished]
+    for job_id, progress in snapshots:
+        try:
+            await _publish_job_status(
+                job_id,
+                JobStatus.FAILED,
+                progress,
+                f"Failed: {reason}",
+                error_message=reason,
+            )
+        except Exception:
+            logger.exception("Failed to publish FAILED status for job %s", job_id)
+    if snapshots:
+        logger.warning(
+            "force-failed %d unfinished jobs in batch %s (%s)",
+            len(snapshots),
+            batch_id,
+            reason,
+        )
+
+
 async def run_batch_pipeline(
     batch_id: str,
     case_id: str,
@@ -174,80 +214,80 @@ async def run_batch_pipeline(
 
     logger.info("Starting batch pipeline for %d files in case %s", len(jobs), case_id)
 
-    results = await asyncio.gather(
-        *(
-            _extract_file(
-                ji["id"],
-                ji["file_path"],
-                ji["file_name"],
-                case_id,
-                ji["llm_profile"],
-                requested_by_user_id=ji.get("requested_by_user_id"),
-                source_evidence_file_id=ji.get("source_evidence_file_id"),
-                folder_context=ji.get("folder_context"),
-                sibling_files=ji.get("sibling_files"),
-                effective_context=ji.get("effective_context"),
-                effective_mandatory_instructions=ji.get("effective_mandatory_instructions"),
-                effective_special_entity_types=ji.get("effective_special_entity_types"),
-            )
-            for ji in job_info
-        ),
-        return_exceptions=True,
-    )
-
-    all_raw_entities: list[RawEntity] = []
-    all_raw_rels: list[RawRelationship] = []
-    active_job_ids: list[uuid.UUID] = []
-    active_file_names: list[str] = []
-    job_summaries: dict[uuid.UUID, str | None] = {}
-
-    for ji, extraction_result in zip(job_info, results):
-        if isinstance(extraction_result, Exception):
-            logger.exception("Extraction failed for job %s (%s)", ji["id"], ji["file_name"])
-            await _update_job_status(
-                ji["id"],
-                JobStatus.FAILED,
-                0.0,
-                f"Extraction failed: {extraction_result}",
-                error_message=str(extraction_result),
-            )
-            continue
-
-        raw_ents, raw_rels, doc_summary = extraction_result
-        job_summaries[ji["id"]] = doc_summary
-
-        prefix = f"{ji['id']}_"
-        for entity in raw_ents:
-            entity.temp_id = prefix + entity.temp_id
-        for rel in raw_rels:
-            rel.source_entity_id = prefix + rel.source_entity_id
-            rel.target_entity_id = prefix + rel.target_entity_id
-
-        all_raw_entities.extend(raw_ents)
-        all_raw_rels.extend(raw_rels)
-        active_job_ids.append(ji["id"])
-        active_file_names.append(ji["file_name"])
-
-    if not all_raw_entities:
-        logger.warning("No entities extracted from any file in batch %s", batch_id)
-        for jid in active_job_ids:
-            await _update_job_status(
-                jid,
-                JobStatus.COMPLETED,
-                1.0,
-                "No entities found",
-                document_summary=job_summaries.get(jid),
-            )
-        return
-
-    logger.info(
-        "Batch extraction complete: %d entities, %d relationships from %d files",
-        len(all_raw_entities),
-        len(all_raw_rels),
-        len(active_job_ids),
-    )
-
     try:
+        results = await asyncio.gather(
+            *(
+                _extract_file(
+                    ji["id"],
+                    ji["file_path"],
+                    ji["file_name"],
+                    case_id,
+                    ji["llm_profile"],
+                    requested_by_user_id=ji.get("requested_by_user_id"),
+                    source_evidence_file_id=ji.get("source_evidence_file_id"),
+                    folder_context=ji.get("folder_context"),
+                    sibling_files=ji.get("sibling_files"),
+                    effective_context=ji.get("effective_context"),
+                    effective_mandatory_instructions=ji.get("effective_mandatory_instructions"),
+                    effective_special_entity_types=ji.get("effective_special_entity_types"),
+                )
+                for ji in job_info
+            ),
+            return_exceptions=True,
+        )
+
+        all_raw_entities: list[RawEntity] = []
+        all_raw_rels: list[RawRelationship] = []
+        active_job_ids: list[uuid.UUID] = []
+        active_file_names: list[str] = []
+        job_summaries: dict[uuid.UUID, str | None] = {}
+
+        for ji, extraction_result in zip(job_info, results):
+            if isinstance(extraction_result, Exception):
+                logger.exception("Extraction failed for job %s (%s)", ji["id"], ji["file_name"])
+                await _update_job_status(
+                    ji["id"],
+                    JobStatus.FAILED,
+                    0.0,
+                    f"Extraction failed: {extraction_result}",
+                    error_message=str(extraction_result),
+                )
+                continue
+
+            raw_ents, raw_rels, doc_summary = extraction_result
+            job_summaries[ji["id"]] = doc_summary
+
+            prefix = f"{ji['id']}_"
+            for entity in raw_ents:
+                entity.temp_id = prefix + entity.temp_id
+            for rel in raw_rels:
+                rel.source_entity_id = prefix + rel.source_entity_id
+                rel.target_entity_id = prefix + rel.target_entity_id
+
+            all_raw_entities.extend(raw_ents)
+            all_raw_rels.extend(raw_rels)
+            active_job_ids.append(ji["id"])
+            active_file_names.append(ji["file_name"])
+
+        if not all_raw_entities:
+            logger.warning("No entities extracted from any file in batch %s", batch_id)
+            for jid in active_job_ids:
+                await _update_job_status(
+                    jid,
+                    JobStatus.COMPLETED,
+                    1.0,
+                    "No entities found",
+                    document_summary=job_summaries.get(jid),
+                )
+            return
+
+        logger.info(
+            "Batch extraction complete: %d entities, %d relationships from %d files",
+            len(all_raw_entities),
+            len(all_raw_rels),
+            len(active_job_ids),
+        )
+
         batch_requested_by = next(
             (ji.get("requested_by_user_id") for ji in job_info if ji.get("requested_by_user_id")),
             None,
@@ -321,14 +361,27 @@ async def run_batch_pipeline(
             )
 
         logger.info("Batch %s complete: %d entities, %d relationships", batch_id, len(resolved_ents), len(resolved_rels))
+    except asyncio.CancelledError:
+        # arq cancels on job_timeout / shutdown. CancelledError inherits from
+        # BaseException, so the broader Exception handler below misses it.
+        # Force-fail every non-terminal row in this batch so the UI doesn't
+        # keep showing "still ingesting" forever.
+        logger.warning("Batch %s cancelled (worker timeout or shutdown)", batch_id)
+        try:
+            await _force_fail_unfinished_batch_rows(
+                batch_id,
+                "Batch task cancelled (worker timeout or shutdown). Safe to retry.",
+            )
+        except Exception:
+            logger.exception("Failed to force-fail unfinished rows in batch %s on cancel", batch_id)
+        raise
     except Exception as e:
         logger.exception("Batch pipeline failed for batch %s", batch_id)
-        for jid in active_job_ids:
-            await _update_job_status(
-                jid,
-                JobStatus.FAILED,
-                0.0,
-                f"Failed: {e}",
-                error_message=str(e),
+        try:
+            await _force_fail_unfinished_batch_rows(
+                batch_id,
+                f"Batch pipeline failed: {e}",
             )
+        except Exception:
+            logger.exception("Failed to force-fail unfinished rows in batch %s on crash", batch_id)
         raise

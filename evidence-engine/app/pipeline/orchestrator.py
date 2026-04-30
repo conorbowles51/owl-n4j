@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from sqlalchemy import select
@@ -157,6 +158,25 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
                 "document_summary": doc_summary,
             },
         )
+    except asyncio.CancelledError:
+        # arq cancels the task on job_timeout / shutdown; CancelledError inherits
+        # from BaseException, not Exception, so the broader handler below misses
+        # it and the row would otherwise stay in its last intermediate status
+        # (the "zombie ingestion" failure mode). Mark failed, then re-raise to
+        # honor cooperative cancellation.
+        logger.warning("Pipeline cancelled for job %s at %s", job_id, job.status)
+        try:
+            await _update_job(
+                job,
+                JobStatus.FAILED,
+                job.progress,
+                db,
+                "Cancelled (worker timeout or shutdown)",
+                error_message=f"Job cancelled (worker timeout or shutdown) during '{job.status.value}'.",
+            )
+        except Exception:
+            logger.exception("Failed to mark job %s as failed during cancellation", job_id)
+        raise
     except Exception as e:
         logger.exception("Pipeline failed for job %s", job_id)
         await _update_job(

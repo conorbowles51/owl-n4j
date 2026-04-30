@@ -34,7 +34,9 @@
       "Bash(systemctl restart:*)",
       "Bash(chown:*)",
       "Bash(docker compose:*)",
-      "Bash(find /c/Users/35386/Documents/Projects/investigations/owl-n4j/frontend_v2 -type f -name *workspace* -o -name *theory*)"
+      "Bash(find /c/Users/35386/Documents/Projects/investigations/owl-n4j/frontend_v2 -type f -name *workspace* -o -name *theory*)",
+      "Bash(docker exec owl-v2-n4j *)",
+      "Bash(docker exec *)"
     ]
   }
 }

@@ -9,6 +9,7 @@ Pass 2 — LLM-assisted: present entities per category to GPT-4o to catch
           subtle variations invisible to mechanical matching.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -234,21 +235,27 @@ async def _llm_consolidate(
         )
 
         try:
-            response = await chat_completion(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You are an entity consolidation expert. "
-                            "Mandatory profile rules in the user prompt are binding. "
-                            "Preserve rule-compliant naming and typing instead of normalizing outputs back to defaults. "
-                            "Respond with valid JSON matching the provided schema."
-                        ),
-                    },
-                    {"role": "user", "content": prompt},
-                ],
-                model=settings.openai_resolution_model,
-                response_format=schema,
+            # Bound the per-category call so a single hung consolidation can't
+            # block the whole batch (httpx already has a 5min read timeout, this
+            # is belt-and-suspenders for SDK quirks or upstream stalls).
+            response = await asyncio.wait_for(
+                chat_completion(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "You are an entity consolidation expert. "
+                                "Mandatory profile rules in the user prompt are binding. "
+                                "Preserve rule-compliant naming and typing instead of normalizing outputs back to defaults. "
+                                "Respond with valid JSON matching the provided schema."
+                            ),
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    model=settings.openai_resolution_model,
+                    response_format=schema,
+                ),
+                timeout=600,
             )
 
             data = json.loads(response)
