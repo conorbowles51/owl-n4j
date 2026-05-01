@@ -42,7 +42,7 @@ services:
     ports:
       - "8101:8000"
     volumes:
-      - chromadb-data:/chroma/chroma
+      - chromadb-data:/data
 
   redis:
     image: redis:7-alpine
