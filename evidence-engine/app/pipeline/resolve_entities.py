@@ -8,12 +8,12 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from app.config import settings
 from app.pipeline.extract_entities import RawEntity, RawRelationship
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.services.chroma_client import (
-    add_embeddings,
-    delete_collection,
     get_or_create_collection,
     query_similar,
 )
@@ -312,34 +312,27 @@ async def _embedding_candidates(
 
         embeddings = await embed_texts(texts)
 
-        col_name = f"dedup-{uuid.uuid4().hex[:8]}"
-        col = get_or_create_collection(col_name)
-        try:
-            add_embeddings(
-                col,
-                ids=[str(idx) for idx in indices],
-                embeddings=embeddings,
-                documents=texts,
-                metadatas=[{"i": idx} for idx in indices],
-            )
-            for k, idx in enumerate(indices):
-                results = query_similar(
-                    col,
-                    query_embeddings=[embeddings[k]],
-                    n_results=min(6, len(indices)),
-                )
-                if not results or not results.get("ids"):
+        # text-embedding-3-small returns L2-normalised vectors, so the dot
+        # product equals cosine similarity and 1 - sim equals the cosine
+        # distance Chroma's "hnsw:space=cosine" used to return. Doing this in
+        # NumPy avoids the per-job ephemeral Chroma collection that leaked
+        # file descriptors and orphaned segment dirs on disk.
+        emb = np.asarray(embeddings, dtype=np.float32)
+        dists = 1.0 - emb @ emb.T
+
+        k = min(6, len(indices))
+        topk = np.argpartition(dists, kth=k - 1, axis=1)[:, :k]
+
+        for row, idx in enumerate(indices):
+            for col_idx in topk[row]:
+                neighbour = indices[int(col_idx)]
+                if neighbour == idx:
                     continue
-                for nid, dist in zip(
-                    results["ids"][0], results.get("distances", [[]])[0]
-                ):
-                    n = int(nid)
-                    if n != idx and dist < 0.35:
-                        pair = (min(idx, n), max(idx, n))
-                        if pair not in existing:
-                            new_pairs.add(pair)
-        finally:
-            delete_collection(col_name)
+                if float(dists[row, int(col_idx)]) >= 0.35:
+                    continue
+                pair = (min(idx, neighbour), max(idx, neighbour))
+                if pair not in existing:
+                    new_pairs.add(pair)
 
     return sorted(new_pairs)
 
