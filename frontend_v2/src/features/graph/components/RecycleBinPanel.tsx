@@ -2,10 +2,11 @@ import { useCallback, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
 import { NodeBadge } from "@/components/ui/node-badge"
-import { Trash2, RotateCcw, AlertTriangle } from "lucide-react"
+import { Trash2, RotateCcw, AlertTriangle, Search } from "lucide-react"
 import { graphAPI } from "../api"
 import type { RecycledEntity } from "@/types/graph.types"
 
@@ -40,6 +41,7 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
   const [error, setError] = useState<string | null>(null)
   const [actionKey, setActionKey] = useState<string | null>(null)
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
 
   const recycleQueryKey = ["graph", "recycle-bin", caseId]
   const { data, isLoading, error: loadError } = useQuery({
@@ -68,14 +70,24 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
     },
   })
 
+  const filteredEntities = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    if (!term) return entities
+    return entities.filter((entity) => {
+      const name = entity.original_name?.toLowerCase() ?? ""
+      const type = entity.type?.toLowerCase() ?? ""
+      return name.includes(term) || type.includes(term)
+    })
+  }, [entities, searchTerm])
+
   const grouped = useMemo(() => {
-    return entities.reduce<Record<string, RecycledEntity[]>>((acc, entity) => {
+    return filteredEntities.reduce<Record<string, RecycledEntity[]>>((acc, entity) => {
       const label = reasonLabel(entity.reason)
       acc[label] = acc[label] ?? []
       acc[label].push(entity)
       return acc
     }, {})
-  }, [entities])
+  }, [filteredEntities])
 
   const runAction = async (key: string, action: () => Promise<unknown>) => {
     setActionKey(key)
@@ -106,6 +118,18 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
         <Badge variant="slate">{entities.length} items</Badge>
       </div>
 
+      {entities.length > 0 && (
+        <div className="relative mb-3">
+          <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search recycle bin..."
+            className="pl-8"
+          />
+        </div>
+      )}
+
       {visibleError && (
         <div className="mb-3 flex gap-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">
           <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
@@ -118,6 +142,13 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
           icon={Trash2}
           title="Recycle bin is empty"
           description="Deleted entities will appear here"
+          className="py-8"
+        />
+      ) : filteredEntities.length === 0 ? (
+        <EmptyState
+          icon={Search}
+          title="No matches"
+          description="No recycled entities match your search"
           className="py-8"
         />
       ) : (
