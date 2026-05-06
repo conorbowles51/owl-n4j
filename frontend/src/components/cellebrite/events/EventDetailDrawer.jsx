@@ -124,6 +124,17 @@ function EventBody({ event, detail }) {
     );
   };
 
+  // The detail endpoint now resolves sender/recipient Person nodes
+  // for comms-typed events. Prefer those (authoritative) and fall
+  // back to whatever the caller passed in `event.sender` /
+  // `event.counterpart` when the API hasn't returned them yet.
+  const detailSender = detail.sender || event.sender || null;
+  const detailRecipient = detail.recipient || event.counterpart || null;
+  const detailRecipients =
+    Array.isArray(detail.recipients) && detail.recipients.length > 0
+      ? detail.recipients
+      : (detailRecipient ? [detailRecipient] : []);
+
   // Synthesize data for the comms-center components' expected shapes
   switch (event.event_type) {
     case 'call': {
@@ -137,8 +148,8 @@ function EventBody({ event, detail }) {
         video_call: !!detail.video_call,
         deleted_state: detail.deleted_state,
         attachments: detail.attachments || [],
-        sender: event.counterpart && !event.sender ? null : event.sender,
-        recipient: event.counterpart,
+        sender: detailSender,
+        recipient: detailRecipient,
       };
       return (
         <div className="p-3 space-y-3">
@@ -159,12 +170,14 @@ function EventBody({ event, detail }) {
         body: detail.body || '',
         deleted_state: detail.deleted_state,
         attachments: detail.attachments || [],
-        sender: event.counterpart ? null : null,
+        sender: detailSender,
+        recipient: detailRecipient,
+        recipients: detailRecipients,
       };
       return (
         <div className="p-3 space-y-3">
           <GeoBlock />
-          <CommsMessageBubble item={item} showSenderName={false} />
+          <CommsMessageBubble item={item} showSenderName />
           <RawProps detail={detail} />
         </div>
       );
@@ -179,8 +192,9 @@ function EventBody({ event, detail }) {
         folder: detail.folder,
         email_status: detail.email_status,
         attachments: detail.attachments || [],
-        sender: event.sender,
-        recipient: event.counterpart,
+        sender: detailSender,
+        recipient: detailRecipient,
+        recipients: detailRecipients,
       };
       return (
         <div className="p-3 space-y-3">

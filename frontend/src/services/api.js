@@ -2657,6 +2657,7 @@ export const cellebriteCommsAPI = {
     endDate = null,
     limit = 500,
     offset = 0,
+    sort = 'desc',
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
@@ -2668,6 +2669,7 @@ export const cellebriteCommsAPI = {
     if (endDate) params.append('end_date', endDate);
     params.append('limit', String(limit));
     params.append('offset', String(offset));
+    if (sort) params.append('sort', sort);
     return fetchAPI(`/cellebrite/comms/between?${params.toString()}`);
   },
 

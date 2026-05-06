@@ -98,6 +98,38 @@ export default function CommsMessageBubble({
                   You
                 </span>
               )}
+              {/* Explicit direction so the user can never confuse who
+                  sent and who received — alignment + colour alone aren't
+                  enough in cross-thread feeds where two non-owner
+                  contacts both render left-aligned. */}
+              {(() => {
+                const recipients = Array.isArray(item.recipients) && item.recipients.length > 0
+                  ? item.recipients
+                  : (item.recipient ? [item.recipient] : []);
+                if (recipients.length === 0) return null;
+                const fromLabel = isOwner ? 'You' : senderName;
+                const ownerRecipient = recipients.find((r) => r && r.is_owner);
+                let toLabel;
+                if (ownerRecipient && !isOwner) {
+                  toLabel = 'You';
+                } else {
+                  const names = recipients
+                    .filter((r) => r && !r.is_owner)
+                    .map((r) => r.name || r.key || 'Unknown')
+                    .filter(Boolean);
+                  if (names.length === 0) return null;
+                  if (names.length === 1) toLabel = names[0];
+                  else if (names.length === 2) toLabel = `${names[0]} & ${names[1]}`;
+                  else toLabel = `${names[0]} +${names.length - 1}`;
+                }
+                return (
+                  <span className="text-[10px] text-light-500 truncate max-w-[260px]">
+                    <span className="font-medium text-light-700">{fromLabel}</span>
+                    <span className="mx-1 text-light-400">→</span>
+                    <span className="font-medium text-light-700">{toLabel}</span>
+                  </span>
+                );
+              })()}
             </div>
           )}
           <div

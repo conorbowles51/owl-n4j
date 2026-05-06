@@ -359,6 +359,8 @@ async def get_comms_between(
     end_date: Optional[str] = Query(None),
     limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
+    sort: str = Query("desc", regex="^(asc|desc)$",
+                      description="Order: 'desc' (newest first) or 'asc' (oldest first)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -375,6 +377,7 @@ async def get_comms_between(
         end_date=end_date,
         limit=limit,
         offset=offset,
+        sort=sort,
     )
     _resolve_attachments(case_id, result.get("items", []))
     return result

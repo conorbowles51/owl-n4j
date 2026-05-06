@@ -6692,14 +6692,20 @@ class Neo4jService:
         end_date: Optional[str] = None,
         limit: int = 500,
         offset: int = 0,
+        sort: str = "desc",
     ) -> dict:
         """
         Get chronological cross-type comms where any from_keys participant
         communicated with any to_keys participant (AND semantics).
 
         types: subset of ['message', 'call', 'email'] — includes all if None.
+        sort:  'desc' (newest first) or 'asc' (oldest first). Drives both
+               the per-type ORDER BY and the post-merge sort so the row
+               cap interacts correctly with the user's chosen direction.
         """
         active_types = set(types) if types else {"message", "call", "email"}
+        sort_dir = "ASC" if (sort or "").lower() == "asc" else "DESC"
+        reverse_sort = sort_dir == "DESC"
 
         params: Dict[str, Any] = {"case_id": case_id}
         params["from_keys"] = list(from_keys) if from_keys else []
@@ -6752,7 +6758,7 @@ class Neo4jService:
                     WITH msg, sender, chat,
                          collect(DISTINCT recipient) AS recipients
                     RETURN msg, sender, recipients, chat
-                    ORDER BY msg.timestamp DESC
+                    ORDER BY msg.timestamp {sort_dir}
                     LIMIT $limit
                 """
                 result = session.run(query, {**params, "limit": limit + offset})
@@ -6793,7 +6799,7 @@ class Neo4jService:
                       )
                       {rk_filter_call} {app_filter_call} {date_filter_call}
                     RETURN c, src, dst
-                    ORDER BY c.timestamp DESC
+                    ORDER BY c.timestamp {sort_dir}
                     LIMIT $limit
                 """
                 result = session.run(query, {**params, "limit": limit + offset})
@@ -6834,7 +6840,7 @@ class Neo4jService:
                       )
                       {rk_filter_email} {app_filter_email} {date_filter_email}
                     RETURN e, src, dst
-                    ORDER BY e.timestamp DESC
+                    ORDER BY e.timestamp {sort_dir}
                     LIMIT $limit
                 """
                 result = session.run(query, {**params, "limit": limit + offset})
@@ -6881,7 +6887,7 @@ class Neo4jService:
         items = deduped
 
         # Sort & paginate
-        items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=True)
+        items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=reverse_sort)
         total = len(items)
         items = items[offset: offset + limit]
         return {"items": items, "total": total}
@@ -7354,12 +7360,85 @@ class Neo4jService:
         return {"tracks": tracks}
 
     def get_cellebrite_event_detail(self, case_id: str, node_key: str) -> Optional[dict]:
-        """Fetch one event's full properties (for the detail drawer)."""
+        """
+        Fetch one event's full properties for the detail drawer.
+
+        For comms-typed events (PhoneCall, Email, Communication aka
+        message), this also OPTIONAL MATCHes the sender + recipient
+        Person nodes so the drawer doesn't have to depend on the caller
+        passing pre-resolved party data. Without this the drawer
+        rendered "Unknown → Unknown" because the projection used to
+        return only `properties(n)`.
+        """
+        # Per-label query templates. Each returns the node properties
+        # plus structured `sender` / `recipient` / `recipients` dicts
+        # where the relationship pattern dictates.
+        comms_queries = {
+            "PhoneCall": """
+                MATCH (n:PhoneCall {case_id:$case_id, key:$key})
+                OPTIONAL MATCH (src:Person)-[:CALLED]->(n)
+                OPTIONAL MATCH (n)-[:CALLED_TO]->(dst:Person)
+                RETURN properties(n) AS p,
+                       properties(src) AS sender,
+                       properties(dst) AS recipient
+                LIMIT 1
+            """,
+            "Email": """
+                MATCH (n:Email {case_id:$case_id, key:$key})
+                OPTIONAL MATCH (src:Person)-[:EMAILED]->(n)
+                OPTIONAL MATCH (n)-[:SENT_TO]->(dst:Person)
+                WITH n, properties(n) AS p, properties(src) AS sender,
+                     collect(DISTINCT properties(dst)) AS rcpts
+                RETURN p, sender,
+                       (CASE WHEN size(rcpts) > 0 THEN rcpts[0] ELSE null END) AS recipient,
+                       rcpts AS recipients
+                LIMIT 1
+            """,
+            "Communication": """
+                MATCH (n:Communication {case_id:$case_id, key:$key})
+                OPTIONAL MATCH (src:Person)-[:SENT_MESSAGE]->(n)
+                OPTIONAL MATCH (n)-[:PART_OF]->(parent:Communication)
+                OPTIONAL MATCH (other:Person)-[:PARTICIPATED_IN]->(parent)
+                  WHERE other <> src OR src IS NULL
+                WITH n, properties(n) AS p, properties(src) AS sender,
+                     collect(DISTINCT properties(other)) AS rcpts
+                RETURN p, sender,
+                       (CASE WHEN size(rcpts) > 0 THEN rcpts[0] ELSE null END) AS recipient,
+                       rcpts AS recipients
+                LIMIT 1
+            """,
+        }
+        plain_labels = (
+            "Location", "CellTower", "WirelessNetwork", "DeviceEvent",
+            "AppSession", "SearchedItem", "VisitedPage", "Meeting",
+        )
         with self._driver.session() as session:
-            # Try each label that might own this key
-            for label in ("Location", "CellTower", "WirelessNetwork", "PhoneCall",
-                          "Communication", "Email", "DeviceEvent", "AppSession",
-                          "SearchedItem", "VisitedPage", "Meeting"):
+            # Comms-bearing labels first — these need party resolution.
+            for label, query in comms_queries.items():
+                r = session.run(query, case_id=case_id, key=node_key).single()
+                if not r:
+                    continue
+                props = dict(r["p"])
+                props["_label"] = label
+
+                def _person(p):
+                    if not p:
+                        return None
+                    party = dict(p)
+                    return {
+                        "key": party.get("key"),
+                        "name": party.get("name") or party.get("key"),
+                        "is_owner": bool(party.get("is_phone_owner")),
+                    }
+
+                props["sender"] = _person(r.get("sender"))
+                props["recipient"] = _person(r.get("recipient"))
+                if "recipients" in r.keys():
+                    props["recipients"] = [_person(p) for p in (r.get("recipients") or []) if p]
+                return props
+
+            # Plain (non-comms) labels — original behaviour.
+            for label in plain_labels:
                 r = session.run(
                     f"MATCH (n:{label} {{case_id:$case_id, key:$key}}) RETURN properties(n) AS p LIMIT 1",
                     case_id=case_id, key=node_key,

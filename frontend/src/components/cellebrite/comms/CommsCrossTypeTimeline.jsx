@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity, ArrowDownWideNarrow, ArrowUpWideNarrow, Layers } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
+
+const ROW_HEIGHT = 28; // px — keep in sync with TimelineRow padding+text
 
 /**
  * Bottom panel showing a chronological cross-type feed of all comms matching
@@ -29,6 +31,18 @@ export default function CommsCrossTypeTimeline({
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
 
+  // Sort: 'desc' (newest first), 'asc' (oldest first), or 'type' (group
+  // by message/call/email then by timestamp DESC within group).
+  const [sortMode, setSortMode] = useState('desc');
+  const [sortOpen, setSortOpen] = useState(false);
+
+  // Windowed rendering — track scroll position so only the visible
+  // rows + a small overscan are mounted. Lets us bump limit from 300
+  // to 2000 without DOM cost.
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(0);
+
   const hasEntitySelection = fromKeys.size > 0 || toKeys.size > 0;
 
   // Show per-row phone chip only when the case has more than one phone
@@ -42,6 +56,10 @@ export default function CommsCrossTypeTimeline({
     }
     let cancelled = false;
     setLoading(true);
+    // Server-side sort goes through for asc/desc; 'type' is sorted
+    // client-side after fetch (the backend has no per-type bucket
+    // ordering, and the row cap is the same in either case).
+    const apiSort = sortMode === 'asc' ? 'asc' : 'desc';
     cellebriteCommsAPI.getBetween(caseId, {
       fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
       toKeys: toKeys.size > 0 ? [...toKeys] : null,
@@ -50,7 +68,8 @@ export default function CommsCrossTypeTimeline({
       sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
       startDate,
       endDate,
-      limit: 300,
+      limit: 2000,
+      sort: apiSort,
     }).then((data) => {
       if (!cancelled) {
         setItems(data.items || []);
@@ -65,7 +84,48 @@ export default function CommsCrossTypeTimeline({
       }
     });
     return () => { cancelled = true; };
-  }, [caseId, fromKeys, toKeys, reportKeys, types, sourceApps, startDate, endDate, expanded]);
+  }, [caseId, fromKeys, toKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode]);
+
+  // Apply sort=type client-side (the backend doesn't bucket by type).
+  // For asc/desc the backend already returns the correct order.
+  const orderedItems = useMemo(() => {
+    if (sortMode !== 'type') return items;
+    const typeRank = { message: 0, call: 1, email: 2 };
+    const arr = [...items];
+    arr.sort((a, b) => {
+      const r = (typeRank[a.type] ?? 99) - (typeRank[b.type] ?? 99);
+      if (r !== 0) return r;
+      // Within a type, newest first.
+      const ta = a.timestamp || '';
+      const tb = b.timestamp || '';
+      return tb.localeCompare(ta);
+    });
+    return arr;
+  }, [items, sortMode]);
+
+  // Window calculation
+  const overscan = 8;
+  const totalHeight = orderedItems.length * ROW_HEIGHT;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - overscan);
+  const endIdx = Math.min(
+    orderedItems.length,
+    Math.ceil((scrollTop + viewportH) / ROW_HEIGHT) + overscan,
+  );
+  const visibleItems = orderedItems.slice(startIdx, endIdx);
+  const topPad = startIdx * ROW_HEIGHT;
+  const bottomPad = Math.max(0, totalHeight - endIdx * ROW_HEIGHT);
+
+  // Re-measure viewport on expand / data change
+  useEffect(() => {
+    if (!expanded) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setViewportH(el.clientHeight || 0);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [expanded]);
 
   const contextLabel = hasEntitySelection
     ? 'between selected entities'
@@ -76,37 +136,95 @@ export default function CommsCrossTypeTimeline({
       className="border-t-2 border-owl-blue-200 bg-white flex-shrink-0 flex flex-col"
       style={{ height: expanded ? '33vh' : 'auto', minHeight: expanded ? '200px' : '32px' }}
     >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-4 py-1.5 text-xs text-light-700 hover:bg-light-50 transition-colors border-b border-light-100 flex-shrink-0"
-      >
-        {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-        <Activity className="w-3.5 h-3.5 text-owl-blue-600" />
-        <span className="font-semibold">Conversation timeline</span>
-        <span className="text-light-500">{contextLabel}</span>
-        <span className="text-light-400">·</span>
-        <span className="text-light-500">{total.toLocaleString()} items</span>
-        {loading && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
-      </button>
+      <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-light-700 border-b border-light-100 flex-shrink-0">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 flex-1 text-left hover:bg-light-50 -mx-1 px-1 rounded"
+        >
+          {expanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          <Activity className="w-3.5 h-3.5 text-owl-blue-600" />
+          <span className="font-semibold">Conversation timeline</span>
+          <span className="text-light-500">{contextLabel}</span>
+          <span className="text-light-400">·</span>
+          <span className="text-light-500">{total.toLocaleString()} items</span>
+          {loading && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
+        </button>
+        {expanded && (
+          <div className="relative flex-shrink-0">
+            <button
+              onClick={() => setSortOpen((v) => !v)}
+              className="flex items-center gap-1 px-2 py-0.5 text-[11px] text-light-700 border border-light-300 rounded hover:bg-light-50"
+              title="Sort order"
+            >
+              {sortMode === 'asc' ? (
+                <><ArrowUpWideNarrow className="w-3 h-3" /> Oldest first</>
+              ) : sortMode === 'type' ? (
+                <><Layers className="w-3 h-3" /> By type</>
+              ) : (
+                <><ArrowDownWideNarrow className="w-3 h-3" /> Newest first</>
+              )}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {sortOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-10"
+                  onClick={() => setSortOpen(false)}
+                />
+                <div className="absolute right-0 mt-1 z-20 bg-white border border-light-200 rounded shadow-lg py-1 min-w-[160px] text-[11px]">
+                  {[
+                    { key: 'desc', label: 'Newest first', icon: ArrowDownWideNarrow },
+                    { key: 'asc', label: 'Oldest first', icon: ArrowUpWideNarrow },
+                    { key: 'type', label: 'By type', icon: Layers },
+                  ].map((opt) => {
+                    const OptIcon = opt.icon;
+                    const active = sortMode === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        onClick={() => { setSortMode(opt.key); setSortOpen(false); }}
+                        className={`w-full flex items-center gap-1.5 px-2.5 py-1 text-left ${
+                          active ? 'bg-owl-blue-50 text-owl-blue-800 font-medium' : 'hover:bg-light-50 text-light-700'
+                        }`}
+                      >
+                        <OptIcon className="w-3 h-3" />
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
       {expanded && (
-        <div className="flex-1 overflow-y-auto">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto"
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        >
           {loading && items.length === 0 ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-5 h-5 animate-spin text-light-400" />
             </div>
-          ) : items.length === 0 ? (
+          ) : orderedItems.length === 0 ? (
             <div className="text-xs text-light-500 italic text-center py-6">
               No comms match the current filters
             </div>
           ) : (
-            items.map((item, idx) => (
-              <TimelineRow
-                key={`${item.id || 'x'}-${idx}`}
-                item={item}
-                showPhoneChip={hasMultiplePhones}
-                onClick={onJumpToThread ? () => onJumpToThread(item) : null}
-              />
-            ))
+            <div style={{ height: totalHeight, position: 'relative' }}>
+              <div style={{ height: topPad }} />
+              {visibleItems.map((item, i) => (
+                <TimelineRow
+                  key={`${item.id || 'x'}-${startIdx + i}`}
+                  item={item}
+                  showPhoneChip={hasMultiplePhones}
+                  onClick={onJumpToThread ? () => onJumpToThread(item) : null}
+                />
+              ))}
+              <div style={{ height: bottomPad }} />
+            </div>
           )}
         </div>
       )}
@@ -131,7 +249,8 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left flex items-center gap-2 px-4 py-1.5 border-b border-light-100 hover:bg-light-50"
+      style={{ height: ROW_HEIGHT }}
+      className="w-full text-left flex items-center gap-2 px-4 border-b border-light-100 hover:bg-light-50"
     >
       <Icon className={`w-3 h-3 flex-shrink-0 ${color}`} />
       <span className="text-[10px] text-light-500 w-32 flex-shrink-0 tabular-nums">

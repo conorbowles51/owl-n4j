@@ -43,7 +43,8 @@ export function videoThumbUrl(att) {
 }
 
 /**
- * Format an ISO timestamp as "HH:MM" (today) or "Mmm D, HH:MM" (other day).
+ * Format an ISO timestamp as "HH:MM" (today), "Mmm D, HH:MM" (this year),
+ * or "Mmm D, YYYY, HH:MM" (other year).
  */
 export function formatShortTime(iso) {
   if (!iso) return '';
@@ -54,7 +55,12 @@ export function formatShortTime(iso) {
     const sameDay = d.toDateString() === now.toDateString();
     const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     if (sameDay) return time;
-    const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    // Investigators were mis-reading 3-year-old rows as recent because
+    // the year was omitted. Include it whenever the row isn't from the
+    // current year so the temporal context is unambiguous.
+    const dateOpts = { month: 'short', day: 'numeric' };
+    if (d.getFullYear() !== now.getFullYear()) dateOpts.year = 'numeric';
+    const date = d.toLocaleDateString([], dateOpts);
     return `${date}, ${time}`;
   } catch {
     return iso;
