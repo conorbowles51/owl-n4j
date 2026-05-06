@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
  * Bottom panel showing a chronological cross-type feed of all comms matching
@@ -28,6 +30,11 @@ export default function CommsCrossTypeTimeline({
   const [total, setTotal] = useState(0);
 
   const hasEntitySelection = fromKeys.size > 0 || toKeys.size > 0;
+
+  // Show per-row phone chip only when the case has more than one phone
+  // — chip would just add noise on a single-phone case.
+  const phoneCtx = usePhoneReports();
+  const hasMultiplePhones = !!phoneCtx?.hasMultiple;
 
   useEffect(() => {
     if (!caseId || !expanded) {
@@ -96,6 +103,7 @@ export default function CommsCrossTypeTimeline({
               <TimelineRow
                 key={`${item.id || 'x'}-${idx}`}
                 item={item}
+                showPhoneChip={hasMultiplePhones}
                 onClick={onJumpToThread ? () => onJumpToThread(item) : null}
               />
             ))
@@ -106,7 +114,7 @@ export default function CommsCrossTypeTimeline({
   );
 }
 
-function TimelineRow({ item, onClick }) {
+function TimelineRow({ item, onClick, showPhoneChip = false }) {
   const Icon = item.type === 'call' ? Phone : item.type === 'email' ? Mail : MessageSquare;
   const color =
     item.type === 'call'
@@ -129,6 +137,13 @@ function TimelineRow({ item, onClick }) {
       <span className="text-[10px] text-light-500 w-32 flex-shrink-0 tabular-nums">
         {formatShortTime(item.timestamp)}
       </span>
+      {showPhoneChip && item.report_key && (
+        <PhoneIdentityChip
+          reportKey={item.report_key}
+          variant="dense"
+          className="flex-shrink-0"
+        />
+      )}
       <span className="text-xs flex-shrink-0" title={item.source_app}>
         {appIconEmoji(item.source_app || item.type)}
       </span>

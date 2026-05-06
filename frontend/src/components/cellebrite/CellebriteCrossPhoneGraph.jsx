@@ -238,7 +238,12 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       {/* Hover tooltip */}
       {hoveredNode && (
         <div className="absolute bottom-4 left-4 bg-white border border-light-300 rounded-lg shadow-lg p-3 text-xs max-w-xs pointer-events-none z-10">
-          <div className="font-semibold text-owl-blue-900">{hoveredNode.name}</div>
+          <div className="font-semibold text-owl-blue-900 flex items-center gap-1.5 flex-wrap">
+            <span>{hoveredNode.name}</span>
+            {hoveredNode.type === 'PhoneReport' && hoveredNode.report_key && (
+              <PhoneIdentityChip reportKey={hoveredNode.report_key} variant="dense" />
+            )}
+          </div>
           {hoveredNode.type === 'PhoneReport' && hoveredNode.phone_owner && (
             <div className="text-light-600 mt-0.5">Owner: {hoveredNode.phone_owner}</div>
           )}
@@ -252,6 +257,24 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           )}
           {hoveredNode.comm_count > 0 && (
             <div className="text-light-500 mt-0.5">{hoveredNode.comm_count} communications</div>
+          )}
+          {/* Person nodes can be linked to one or several phones — show
+              every phone they appear on as a chip strip. */}
+          {hoveredNode.type !== 'PhoneReport' && (
+            (() => {
+              const keys = Array.isArray(hoveredNode.report_keys)
+                ? hoveredNode.report_keys
+                : (hoveredNode.report_key ? [hoveredNode.report_key] : []);
+              if (keys.length === 0) return null;
+              return (
+                <div className="mt-1 flex items-center gap-1 flex-wrap">
+                  <span className="text-light-500">On:</span>
+                  {keys.map((rk) => (
+                    <PhoneIdentityChip key={rk} reportKey={rk} variant="dense" />
+                  ))}
+                </div>
+              );
+            })()
           )}
         </div>
       )}

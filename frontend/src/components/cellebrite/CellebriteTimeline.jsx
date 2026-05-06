@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Loader2, Search, Calendar } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -7,6 +7,10 @@ import { usePhoneReports } from '../../context/PhoneReportsContext';
 import EventTypeFilter from './events/EventTypeFilter';
 import EventDetailDrawer from './events/EventDetailDrawer';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
+import CellebriteSearchInput from './shared/CellebriteSearchInput';
+import TimelineScrubber from './shared/TimelineScrubber';
+import HighlightedText from './shared/HighlightedText';
+import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import {
   EVENT_COLORS,
   EVENT_ICONS,
@@ -42,10 +46,12 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
 
   const [activeEventTypes, setActiveEventTypes] = useState(new Set());
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Scrubber window — Date objects, both null = show everything.
+  // Tracked alongside string forms passed to the API so we can keep the
+  // server-side coarse filter without re-deriving strings everywhere.
+  const [windowStart, setWindowStart] = useState(null);
+  const [windowEnd, setWindowEnd] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // --- Data state ---
   const [eventTypes, setEventTypes] = useState([]);
@@ -55,11 +61,10 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // --- Selection ---
   const [selectedEvent, setSelectedEvent] = useState(null);
 
-  // Debounce search
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearch(searchQuery), 300);
-    return () => clearTimeout(id);
-  }, [searchQuery]);
+  // ISO yyyy-mm-dd derived from the scrubber window, sent to the
+  // server-side filter so we don't pull data we'll never display.
+  const startDate = windowStart ? toISODate(windowStart) : '';
+  const endDate = windowEnd ? toISODate(windowEnd) : '';
 
   // Fetch event types when device set changes (powers the type filter chips)
   useEffect(() => {
@@ -85,7 +90,9 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     };
   }, [caseId, selectedReportKeys]);
 
-  // Fetch events whenever filters change (debounced)
+  // Fetch events whenever the *server-side* filters change. Search is
+  // applied in-memory in a useMemo below, so adding it here would
+  // pointlessly re-run the Cypher round-trip on every keystroke.
   useEffect(() => {
     if (!caseId) return;
     if (activeEventTypes.size === 0) {
@@ -107,20 +114,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         })
         .then((data) => {
           if (cancelled) return;
-          let evs = data.events || [];
-          if (debouncedSearch) {
-            const q = debouncedSearch.toLowerCase();
-            evs = evs.filter((e) => {
-              const haystack =
-                (e.label || '') + ' ' +
-                (e.summary || '') + ' ' +
-                (e.source_app || '') + ' ' +
-                (e.sender?.name || '') + ' ' +
-                (e.counterpart?.name || '');
-              return haystack.toLowerCase().includes(q);
-            });
-          }
-          setEvents(evs);
+          setEvents(data.events || []);
           setLoading(false);
         })
         .catch(() => {
@@ -133,11 +127,32 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate, debouncedSearch]);
+  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate]);
+
+  // Parsed query is shared by the matcher + the row highlighter.
+  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+
+  // Pure in-memory filter — runs synchronously on every keystroke
+  // because the events array is already loaded. No network calls.
+  const { filteredEvents, highlights } = useMemo(() => {
+    if (!searchQuery) {
+      return { filteredEvents: events, highlights: [] };
+    }
+    const out = [];
+    const allHighlights = new Set();
+    for (const ev of events) {
+      const m = matchItem(ev, parsedQuery, 'event', reports);
+      if (m.matches) {
+        out.push(ev);
+        m.highlights.forEach((h) => allHighlights.add(h));
+      }
+    }
+    return { filteredEvents: out, highlights: Array.from(allHighlights) };
+  }, [events, searchQuery, parsedQuery, reports]);
 
   // Sort newest-first by default; group by date for visual rhythm
   const groupedByDay = useMemo(() => {
-    const sorted = [...events].sort((a, b) => {
+    const sorted = [...filteredEvents].sort((a, b) => {
       const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
       const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
       return tb - ta;
@@ -153,7 +168,26 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       current.events.push(ev);
     }
     return groups;
-  }, [events]);
+  }, [filteredEvents]);
+
+  // Scroll-to-bucket from scrubber bar clicks. Each day header carries
+  // data-day so we can find it cheaply.
+  const bodyRef = useRef(null);
+  const scrollToDate = useCallback((bucketStart) => {
+    const day = toISODate(bucketStart);
+    const root = bodyRef.current;
+    if (!root) return;
+    // Find the first day header whose ISO is <= the bucket date (lists
+    // are newest-first so an exact match isn't always present).
+    const headers = root.querySelectorAll('[data-day]');
+    let target = null;
+    for (const h of headers) {
+      const d = h.getAttribute('data-day');
+      if (!d || d === '—') continue;
+      if (d <= day) { target = h; break; }
+    }
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, []);
 
   if (phoneCtx?.noneSelected) {
     return (
@@ -169,7 +203,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       {/* Device selector — global across Cellebrite tabs */}
       <PhoneSelector />
 
-      {/* Type filter + date + search */}
+      {/* Type filter row */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0 overflow-x-auto">
         <EventTypeFilter
           types={eventTypes}
@@ -178,50 +212,44 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
           onlyGeolocated={false}
           onOnlyGeolocatedChange={() => {}}
         />
-        <div className="h-4 w-px bg-light-300 flex-shrink-0" />
-        <div className="flex items-center gap-1 text-xs flex-shrink-0">
-          <Calendar className="w-3.5 h-3.5 text-light-500" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-1.5 py-0.5 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-          <span className="text-light-400">→</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="px-1.5 py-0.5 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-        </div>
-        <div className="relative flex-1 max-w-sm flex-shrink-0">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search events…"
-            className="w-full pl-7 pr-2 py-1 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-        </div>
         <div className="flex-1" />
         {loading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
-        <span className="text-xs text-light-500 flex-shrink-0">
-          {events.length.toLocaleString()} events
-        </span>
+      </div>
+
+      {/* Histogram scrubber — replaces the old date-picker pair */}
+      <TimelineScrubber
+        items={events}
+        windowStart={windowStart}
+        windowEnd={windowEnd}
+        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+        onBarClick={(bucketStart) => scrollToDate(bucketStart)}
+      />
+
+      {/* Wide search bar */}
+      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
+        <CellebriteSearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder='Search events — try type:call from:John app:WhatsApp before:2023-01-15'
+          matchCount={filteredEvents.length}
+          totalCount={events.length}
+          itemNoun="event"
+          focusOnSlash
+        />
       </div>
 
       {/* Body — grouped chronological list */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {events.length === 0 && !loading ? (
+      <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto">
+        {filteredEvents.length === 0 && !loading ? (
           <div className="flex items-center justify-center h-full text-sm text-light-500 italic">
-            No phone events match the current filters.
+            {events.length === 0
+              ? 'No phone events match the current filters.'
+              : `No events match "${searchQuery}".`}
           </div>
         ) : (
           <div className="px-4 py-3">
             {groupedByDay.map((group) => (
-              <div key={group.day} className="mb-4">
+              <div key={group.day} data-day={group.day} className="mb-4">
                 <div className="sticky top-0 z-10 bg-white border-b border-light-200 mb-2 pb-1 flex items-center gap-2">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
                     {formatDayHeader(group.day)}
@@ -237,6 +265,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
                       ev={ev}
                       reports={reports}
                       showPhoneChip={reports.length > 1}
+                      highlights={highlights}
                       onClick={() => setSelectedEvent(ev)}
                     />
                   ))}
@@ -259,7 +288,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   );
 }
 
-function TimelineRow({ ev, reports, onClick, showPhoneChip = false }) {
+function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights = [] }) {
   const Icon = EVENT_ICONS[ev.event_type] || EVENT_ICONS.location;
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const dColor = deviceColorOf(ev.device_report_key, reports);
@@ -273,6 +302,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false }) {
   if (sender && recipient) direction = `${sender} → ${recipient}`;
   else if (sender) direction = sender;
   else if (recipient) direction = `→ ${recipient}`;
+  const hasHighlights = highlights && highlights.length > 0;
 
   // Phone accent stripe — 4px coloured left border when there are
   // multiple phones in the case. Replaces the previous 2px ring around
@@ -303,7 +333,11 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false }) {
             {EVENT_LABELS[ev.event_type] || ev.event_type}
           </span>
           {ev.source_app && (
-            <span className="text-[10px] text-light-500">· {ev.source_app}</span>
+            <span className="text-[10px] text-light-500">
+              · {hasHighlights
+                ? <HighlightedText text={ev.source_app} highlights={highlights} />
+                : ev.source_app}
+            </span>
           )}
           {ev.direction && (
             <span className="text-[10px] text-light-500">· {ev.direction}</span>
@@ -320,14 +354,20 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false }) {
           )}
         </div>
         {direction && (
-          <div className="text-xs text-light-700 truncate">{direction}</div>
+          <div className="text-xs text-light-700 truncate">
+            {hasHighlights
+              ? <HighlightedText text={direction} highlights={highlights} />
+              : direction}
+          </div>
         )}
         {ev.summary && (
           <div
             className="text-xs text-light-600 truncate"
             title={ev.summary}
           >
-            {ev.summary}
+            {hasHighlights
+              ? <HighlightedText text={ev.summary} highlights={highlights} />
+              : ev.summary}
           </div>
         )}
       </div>
@@ -349,4 +389,15 @@ function formatDayHeader(day) {
   } catch {
     return day;
   }
+}
+
+/**
+ * yyyy-mm-dd in *local* time (so the bar-click → day-header lookup
+ * matches the way `groupedByDay` derives its key from
+ * `(ev.timestamp || '').slice(0, 10)`).
+ */
+function toISODate(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

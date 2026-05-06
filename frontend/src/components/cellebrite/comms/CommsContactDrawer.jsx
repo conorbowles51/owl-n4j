@@ -6,6 +6,8 @@ import CommsMessageBubble from './CommsMessageBubble';
 import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { buildSenderPalette } from './commsUtils';
 
 /**
@@ -76,6 +78,19 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
       )
     : {};
 
+  // Distinct phones the contact appears on (for the header chip strip).
+  // Items returned from /comms/between carry `report_key`; we surface
+  // every phone as a small chip so the user knows the contact spans
+  // multiple devices.
+  const phoneCtx = usePhoneReports();
+  const phoneReportKeys = useMemo(() => {
+    const seen = new Set();
+    for (const it of data?.items || []) {
+      if (it.report_key) seen.add(it.report_key);
+    }
+    return [...seen];
+  }, [data]);
+
   // Collect every distinct sender across the contact's feed so we can
   // build a stable palette — each unique sender always gets the same
   // colour while this drawer is open, regardless of which device the
@@ -142,6 +157,19 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
             {(data?.contact?.phone_numbers || []).length > 2 && (
               <span className="text-light-500">+{data.contact.phone_numbers.length - 2}</span>
             )}
+            {phoneReportKeys.length > 0 && (
+              <>
+                <span className="text-light-300">·</span>
+                <span className="text-light-500">Seen on:</span>
+                {phoneReportKeys.map((rk) => (
+                  <PhoneIdentityChip
+                    key={rk}
+                    reportKey={rk}
+                    variant={phoneReportKeys.length === 1 ? 'default' : 'dense'}
+                  />
+                ))}
+              </>
+            )}
           </div>
         </div>
         <LinkNodeToEntityButton caseId={caseId} nodeKey={headerKey} />
@@ -191,11 +219,30 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
             );
           }
           const item = row.item;
+          // The cross-phone contact drawer is the headline case for
+          // per-row phone chips: a contact's calls/messages/emails can
+          // come from multiple phones, so always show a chip when the
+          // case has > 1 phone.
+          const showChip = !!phoneCtx?.hasMultiple;
           if (item.type === 'call') {
-            return <CommsCallRow key={item.id || idx} item={item} />;
+            return (
+              <CommsCallRow
+                key={item.id || idx}
+                item={item}
+                reportKey={item.report_key}
+                showPhoneChip={showChip}
+              />
+            );
           }
           if (item.type === 'email') {
-            return <CommsEmailCard key={item.id || idx} item={item} />;
+            return (
+              <CommsEmailCard
+                key={item.id || idx}
+                item={item}
+                reportKey={item.report_key}
+                showPhoneChip={showChip}
+              />
+            );
           }
           // message
           return (
@@ -205,6 +252,8 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
               palette={palette}
               showSenderName
               isFirstInRun={row.isFirstInRun}
+              reportKey={item.report_key}
+              showPhoneChip={showChip}
             />
           );
         })}

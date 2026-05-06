@@ -3,6 +3,7 @@ import { X, User, Phone, Mail, MessageSquare, Loader2, Smartphone } from 'lucide
 import { cellebriteOverviewAPI } from '../../../services/api';
 import { formatTs, formatDuration } from '../events/eventUtils';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 
 /**
  * Drawer showing a single contact + recent calls / messages with that
@@ -67,6 +68,13 @@ export default function ContactDetailDrawer({ caseId, reportKey, contactKey, con
             <span className="font-mono text-light-500 truncate">{contact.key}</span>
           </div>
         </div>
+        {reportKey && (
+          <PhoneIdentityChip
+            reportKey={reportKey}
+            variant="default"
+            className="flex-shrink-0"
+          />
+        )}
         <LinkNodeToEntityButton caseId={caseId} nodeKey={contactKey} />
         <button onClick={onClose} className="p-1 text-light-500 hover:text-light-800" title="Close (Esc)">
           <X className="w-4 h-4" />

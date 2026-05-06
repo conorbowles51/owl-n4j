@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, Calendar, Search } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -9,9 +9,12 @@ import CommsAppFilter from './comms/CommsAppFilter';
 import CommsThreadList from './comms/CommsThreadList';
 import CommsThreadView from './comms/CommsThreadView';
 import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
+import CellebriteSearchInput from './shared/CellebriteSearchInput';
+import TimelineScrubber from './shared/TimelineScrubber';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildCommsContext } from '../../utils/chatContextSummary';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
+import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -34,10 +37,15 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   const [toKeys, setToKeys] = useState(new Set());
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
   const [activeApps, setActiveApps] = useState(new Set()); // empty = all apps
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Scrubber-driven coarse window (Date | null). Maps to startDate/endDate
+  // strings sent to the server-side filter.
+  const [windowStart, setWindowStart] = useState(null);
+  const [windowEnd, setWindowEnd] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+
+  // ISO yyyy-mm-dd derived from the scrubber window for the API.
+  const startDate = windowStart ? toISODate(windowStart) : '';
+  const endDate = windowEnd ? toISODate(windowEnd) : '';
 
   // --- Data state ---
   const [entities, setEntities] = useState([]);
@@ -68,7 +76,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         activeApps,
         startDate,
         endDate,
-        searchQuery: debouncedSearch,
+        searchQuery,
         threads,
         selectedThread,
       }),
@@ -87,19 +95,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     activeApps,
     startDate,
     endDate,
-    debouncedSearch,
+    searchQuery,
     threads,
     selectedThread,
   ]);
 
   // On unmount, clear the context so the chips disappear when the user leaves.
   useEffect(() => () => clear(), [clear]);
-
-  // Debounce search
-  useEffect(() => {
-    const id = setTimeout(() => setDebouncedSearch(searchQuery), 300);
-    return () => clearTimeout(id);
-  }, [searchQuery]);
 
   // Device map for thread row badges
   const deviceById = useMemo(() => {
@@ -155,7 +157,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
       endDate: endDate || null,
-      search: debouncedSearch || null,
+      // Search runs in-memory below (filteredThreads useMemo) so the
+      // server-side filter is no longer needed and re-fetching per
+      // keystroke would be pointless.
       limit: 300,
     }).then((data) => {
       if (!cancelled) {
@@ -170,14 +174,45 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       }
     });
     return () => { cancelled = true; };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate, debouncedSearch]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate]);
+
+  // Cellebrite sometimes ingests the same logical conversation twice
+  // — e.g. once as a Chat node and once as a Conversation node, or once
+  // with an extra participant captured ("+1") and once without. Both
+  // rows have the same name/source_app/report_key but distinct
+  // thread_ids and slightly different participant sets. Collapse them
+  // here so the user sees one row per real conversation.
+  //
+  // Rule: group by (report_key, source_app, thread_type, sorted
+  // participant keys). Within a group, prefer the row with the most
+  // messages (richest data); if tied, prefer the one with more
+  // participants. The other row's items end up under the chosen
+  // thread_id, so opening the survivor still shows the same content.
+  const dedupedThreads = useMemo(() => dedupeThreads(threads), [threads]);
+
+  // Pure in-memory thread search. Runs synchronously per keystroke
+  // because `threads` is already loaded — no network round-trip.
+  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+  const { filteredThreads, threadHighlights } = useMemo(() => {
+    if (!searchQuery) return { filteredThreads: dedupedThreads, threadHighlights: [] };
+    const out = [];
+    const allHighlights = new Set();
+    for (const t of dedupedThreads) {
+      const m = matchItem(t, parsedQuery, 'thread', reports);
+      if (m.matches) {
+        out.push(t);
+        m.highlights.forEach((h) => allHighlights.add(h));
+      }
+    }
+    return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
+  }, [dedupedThreads, searchQuery, parsedQuery, reports]);
 
   // Clear selected thread when it no longer matches filters
   useEffect(() => {
     if (!selectedThread) return;
-    const stillPresent = threads.some(t => t.thread_id === selectedThread.thread_id);
+    const stillPresent = filteredThreads.some(t => t.thread_id === selectedThread.thread_id);
     if (!stillPresent) setSelectedThread(null);
-  }, [threads, selectedThread]);
+  }, [filteredThreads, selectedThread]);
 
   if (phoneCtx?.noneSelected) {
     return (
@@ -208,51 +243,43 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         <CommsAppFilter apps={sourceApps} active={activeApps} onChange={setActiveApps} />
       </div>
 
-      {/* Secondary filters */}
+      {/* Type filter row */}
       <div className="flex items-center gap-3 px-4 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
         <CommsTypeFilter active={activeTypes} onChange={setActiveTypes} />
-        <div className="h-4 w-px bg-light-300" />
-        <div className="flex items-center gap-1.5 text-xs">
-          <Calendar className="w-3.5 h-3.5 text-light-500" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-1.5 py-0.5 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-          <span className="text-light-400">→</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="px-1.5 py-0.5 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-        </div>
-        <div className="h-4 w-px bg-light-300" />
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search thread name / app..."
-            className="w-full pl-7 pr-2 py-1 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-        </div>
-        <span className="text-xs text-light-500">
-          {threadsTotal.toLocaleString()} threads
-        </span>
+        <div className="flex-1" />
+      </div>
+
+      {/* Histogram scrubber over the loaded threads */}
+      <TimelineScrubber
+        items={threads}
+        windowStart={windowStart}
+        windowEnd={windowEnd}
+        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+      />
+
+      {/* Wide thread search */}
+      <div className="px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
+        <CellebriteSearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder='Search threads — try type:chat from:John app:WhatsApp'
+          matchCount={filteredThreads.length}
+          totalCount={threads.length}
+          itemNoun="thread"
+          focusOnSlash
+        />
       </div>
 
       {/* Main split: thread list | thread view */}
       <div className="flex flex-1 min-h-0">
         <div className="w-80 border-r border-light-200 flex flex-col min-h-0 flex-shrink-0">
           <CommsThreadList
-            threads={threads}
+            threads={filteredThreads}
             loading={threadsLoading || entitiesLoading}
             selectedThreadId={selectedThread?.thread_id}
             onSelect={setSelectedThread}
             deviceById={deviceById}
+            highlights={threadHighlights}
           />
         </div>
         <div className="flex-1 flex flex-col min-h-0">
@@ -273,4 +300,140 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       />
     </div>
   );
+}
+
+/**
+ * yyyy-mm-dd in local time. Used to sync the scrubber Date window with
+ * the server-side date filter strings.
+ */
+function toISODate(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Collapse threads that represent the same logical conversation.
+ *
+ * Cellebrite occasionally produces two PARENT chat nodes for one real
+ * Facebook Messenger / WhatsApp / SMS conversation — e.g. one captured
+ * with an extra participant ("+1") and one without, or a parser that
+ * emitted both a `Chat` and a `Conversation` model for the same chat.
+ * The list then shows two near-identical rows and clicking one selects
+ * the lesser duplicate.
+ *
+ * Strategy: bucket by (report_key, source_app, thread_type, sorted
+ * participant keys). Within each bucket pick the row with the most
+ * messages, breaking ties by participant count, then by latest
+ * `last_activity`. The other rows in the bucket are merged: their
+ * `thread_id` is added to a `merged_thread_ids` array on the survivor
+ * so the back-end can be queried for the union later if needed.
+ *
+ * Subset rule: if bucket A's participant set is a strict subset of
+ * bucket B's participants and they share (report_key, source_app,
+ * thread_type), the smaller bucket folds into the larger. This catches
+ * the "+1 vs no +1" case the user reported.
+ */
+function dedupeThreads(threads) {
+  if (!Array.isArray(threads) || threads.length < 2) return threads || [];
+
+  // Step 1: bucket by exact participant set
+  const exactBuckets = new Map();
+  for (const t of threads) {
+    const key = exactKey(t);
+    if (!exactBuckets.has(key)) exactBuckets.set(key, []);
+    exactBuckets.get(key).push(t);
+  }
+
+  // Step 2: pick a survivor per exact bucket
+  const survivors = [];
+  for (const bucket of exactBuckets.values()) {
+    survivors.push(pickSurvivor(bucket));
+  }
+
+  // Step 3: subset-merge — if survivor A's participants ⊂ survivor B's
+  // and they share (report_key, source_app, thread_type), drop A.
+  // O(n²) over survivors which is fine for typical thread counts.
+  const dropped = new Set();
+  for (let i = 0; i < survivors.length; i++) {
+    if (dropped.has(i)) continue;
+    const a = survivors[i];
+    const aSet = participantSet(a);
+    if (aSet.size === 0) continue;
+    for (let j = 0; j < survivors.length; j++) {
+      if (i === j || dropped.has(j)) continue;
+      const b = survivors[j];
+      if (!sameContext(a, b)) continue;
+      const bSet = participantSet(b);
+      if (bSet.size <= aSet.size) continue; // only collapse smaller into larger
+      let isSubset = true;
+      for (const k of aSet) {
+        if (!bSet.has(k)) { isSubset = false; break; }
+      }
+      if (isSubset) {
+        // Carry the smaller's thread_id onto the survivor for traceability.
+        const merged = b.merged_thread_ids || [];
+        if (a.thread_id) merged.push(a.thread_id);
+        if (Array.isArray(a.merged_thread_ids)) merged.push(...a.merged_thread_ids);
+        b.merged_thread_ids = merged;
+        dropped.add(i);
+        break;
+      }
+    }
+  }
+
+  return survivors.filter((_, idx) => !dropped.has(idx));
+}
+
+function exactKey(t) {
+  const ps = (t.participants || [])
+    .map(p => p && p.key)
+    .filter(Boolean)
+    .sort()
+    .join('|');
+  return [
+    t.report_key || '',
+    (t.source_app || '').toLowerCase(),
+    (t.thread_type || '').toLowerCase(),
+    ps,
+  ].join('::');
+}
+
+function sameContext(a, b) {
+  return (
+    (a.report_key || '') === (b.report_key || '')
+    && (a.source_app || '').toLowerCase() === (b.source_app || '').toLowerCase()
+    && (a.thread_type || '').toLowerCase() === (b.thread_type || '').toLowerCase()
+  );
+}
+
+function participantSet(t) {
+  const s = new Set();
+  for (const p of t.participants || []) {
+    if (p && p.key) s.add(p.key);
+  }
+  return s;
+}
+
+function pickSurvivor(bucket) {
+  if (bucket.length === 1) return bucket[0];
+  // Sort by messages desc, participants desc, last_activity desc
+  const sorted = [...bucket].sort((a, b) => {
+    const am = a.message_count || 0;
+    const bm = b.message_count || 0;
+    if (am !== bm) return bm - am;
+    const ap = (a.participants || []).length;
+    const bp = (b.participants || []).length;
+    if (ap !== bp) return bp - ap;
+    const at = a.last_activity ? new Date(a.last_activity).getTime() : 0;
+    const bt = b.last_activity ? new Date(b.last_activity).getTime() : 0;
+    return bt - at;
+  });
+  const winner = { ...sorted[0] };
+  const merged = [];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i].thread_id) merged.push(sorted[i].thread_id);
+  }
+  if (merged.length) winner.merged_thread_ids = merged;
+  return winner;
 }

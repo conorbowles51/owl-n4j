@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { EVENT_COLORS, parseTs } from './eventUtils';
+import { getPhoneIdentityByKey } from '../../../utils/phoneIdentity';
 
 /**
  * Horizontal swim-lane timeline: one lane per device, events plotted as dots.
@@ -192,6 +193,20 @@ export default function EventTimelinePanel({
           className="absolute pointer-events-none text-[10px] bg-slate-900 text-white px-2 py-1 rounded shadow"
           style={{ left: hover.x + 8, top: hover.y - 14 }}
         >
+          {hover.e.device_report_key && reports.length > 1 && (() => {
+            const id = getPhoneIdentityByKey(hover.e.device_report_key, reports);
+            return (
+              <div className="flex items-center gap-1 mb-0.5">
+                <span
+                  className="inline-block rounded-sm px-1 py-px font-mono font-bold text-[9px] leading-none text-white"
+                  style={{ backgroundColor: id.hex }}
+                >
+                  {id.short}
+                </span>
+                <span className="opacity-80">{id.model || id.long}</span>
+              </div>
+            );
+          })()}
           <div className="font-semibold">{hover.e.label}</div>
           <div>{hover.e.timestamp}</div>
           {hover.e.summary && <div className="max-w-[200px] truncate">{hover.e.summary}</div>}

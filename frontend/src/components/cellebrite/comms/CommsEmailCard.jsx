@@ -1,13 +1,19 @@
 import React, { useState } from 'react';
 import { Mail, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { formatShortTime, previewBody } from './commsUtils';
 
 /**
  * Email card: collapsed shows subject + first line + metadata.
  * Expanded shows the full body rendered as sanitized HTML.
  */
-export default function CommsEmailCard({ item, defaultExpanded = false }) {
+export default function CommsEmailCard({
+  item,
+  defaultExpanded = false,
+  reportKey,
+  showPhoneChip = false,
+}) {
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const fromName = item.sender?.name || 'Unknown';
@@ -17,6 +23,7 @@ export default function CommsEmailCard({ item, defaultExpanded = false }) {
   // Heuristic: treat as HTML if it contains tags, else wrap as <pre>
   const hasHtml = /<[a-z][\s\S]*>/i.test(bodyHtml);
   const attachments = item.attachments || [];
+  const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
 
   return (
     <div className="border-b border-light-100 bg-white">
@@ -29,6 +36,13 @@ export default function CommsEmailCard({ item, defaultExpanded = false }) {
           <div className="flex items-center gap-1.5 text-sm text-light-900">
             {expanded ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
             <span className="font-medium truncate">{subject}</span>
+            {showPhoneChip && effectiveReportKey && (
+              <PhoneIdentityChip
+                reportKey={effectiveReportKey}
+                variant="dense"
+                className="flex-shrink-0 ml-auto"
+              />
+            )}
           </div>
           <div className="text-[10px] text-light-500 mt-0.5 flex items-center gap-2">
             <span className="truncate">{fromName} → {toName}</span>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { Loader2, MessageSquare, Smartphone } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import CommsMessageBubble from './CommsMessageBubble';
@@ -7,6 +7,9 @@ import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { appIconEmoji, buildSenderPalette, senderInitials } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import CellebriteSearchInput from '../shared/CellebriteSearchInput';
+import TimelineScrubber from '../shared/TimelineScrubber';
+import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
@@ -24,6 +27,17 @@ export default function CommsThreadView({ caseId, selectedThread }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const scrollRef = useRef(null);
+
+  // Per-thread search + scrubber. Reset whenever the user opens a new
+  // thread so old query state doesn't leak across conversations.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [windowStart, setWindowStart] = useState(null);
+  const [windowEnd, setWindowEnd] = useState(null);
+  useEffect(() => {
+    setSearchQuery('');
+    setWindowStart(null);
+    setWindowEnd(null);
+  }, [selectedThread?.thread_id]);
 
   useEffect(() => {
     if (!caseId || !selectedThread) {
@@ -101,13 +115,37 @@ export default function CommsThreadView({ caseId, selectedThread }) {
   // threads is fine — only consistency *within* a thread matters).
   const palette = buildSenderPalette(participants);
 
+  // In-thread search + window filter. Pure client-side, instant per
+  // keystroke. Highlights are shown inside message bubbles.
+  const parsedQuery = parseQuery(searchQuery);
+  const windowStartMs = windowStart instanceof Date ? windowStart.getTime() : null;
+  const windowEndMs = windowEnd instanceof Date ? windowEnd.getTime() : null;
+  const reportsForSearch = phoneCtx?.reports || [];
+  const allItemHighlights = new Set();
+  const filteredItems = [];
+  for (const item of detail.items) {
+    if (windowStartMs != null || windowEndMs != null) {
+      const t = item.timestamp ? new Date(item.timestamp).getTime() : null;
+      if (t == null) continue;
+      if (windowStartMs != null && t < windowStartMs) continue;
+      if (windowEndMs != null && t > windowEndMs) continue;
+    }
+    if (searchQuery) {
+      const m = matchItem(item, parsedQuery, 'event', reportsForSearch);
+      if (!m.matches) continue;
+      m.highlights.forEach((h) => allItemHighlights.add(h));
+    }
+    filteredItems.push(item);
+  }
+  const messageHighlights = Array.from(allItemHighlights);
+
   // Walk items in chronological order, inserting date separators and
   // marking the first message of each speaker run so the bubble component
   // can render the avatar + name only on the run leader (iMessage style).
   const itemsByDate = [];
   let currentDate = null;
   let lastSenderKey = null;
-  for (const item of detail.items) {
+  for (const item of filteredItems) {
     const d = (item.timestamp || '').slice(0, 10);
     if (d !== currentDate) {
       itemsByDate.push({ type: 'date-sep', date: d });
@@ -196,6 +234,30 @@ export default function CommsThreadView({ caseId, selectedThread }) {
         )}
       </div>
 
+      {/* In-thread search + compact scrubber. Both filter the open
+          conversation client-side; useful for long threads with
+          thousands of messages. */}
+      <div className="px-3 py-1.5 border-b border-light-200 bg-white flex-shrink-0">
+        <CellebriteSearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder='Search this thread — try from:John before:2023-01-15'
+          matchCount={filteredItems.length}
+          totalCount={detail.items.length}
+          itemNoun="message"
+          compact
+        />
+      </div>
+      {detail.items.length > 1 && (
+        <TimelineScrubber
+          items={detail.items}
+          windowStart={windowStart}
+          windowEnd={windowEnd}
+          onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+          compact
+        />
+      )}
+
       {/* Body */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto py-2">
         {itemsByDate.map((row, idx) => {
@@ -219,6 +281,7 @@ export default function CommsThreadView({ caseId, selectedThread }) {
               palette={palette}
               showSenderName
               isFirstInRun={row.isFirstInRun}
+              highlights={messageHighlights}
             />
           );
         })}

@@ -2,6 +2,7 @@ import React from 'react';
 import { MessageSquare, Phone, Mail, Paperclip, Loader2 } from 'lucide-react';
 import { formatRelative, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import HighlightedText from '../shared/HighlightedText';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
@@ -20,6 +21,7 @@ export default function CommsThreadList({
   // deviceById left for backwards compatibility but no longer used —
   // the PhoneIdentityChip pulls everything it needs from context.
   deviceById = {},
+  highlights = [],
 }) {
   const phoneCtx = usePhoneReports();
   const hasMultiple = !!phoneCtx?.hasMultiple;
@@ -50,13 +52,15 @@ export default function CommsThreadList({
           onSelect={() => onSelect(t)}
           phoneCtx={phoneCtx}
           showPhoneChip={hasMultiple}
+          highlights={highlights}
         />
       ))}
     </div>
   );
 }
 
-function ThreadRow({ thread, isSelected, onSelect, phoneCtx, showPhoneChip }) {
+function ThreadRow({ thread, isSelected, onSelect, phoneCtx, showPhoneChip, highlights = [] }) {
+  const hasHighlights = highlights && highlights.length > 0;
   const Icon = thread.thread_type === 'chat'
     ? MessageSquare
     : thread.thread_type === 'calls'
@@ -104,7 +108,9 @@ function ThreadRow({ thread, isSelected, onSelect, phoneCtx, showPhoneChip }) {
           <div className="flex items-center gap-1.5 mb-0.5">
             <Icon className="w-3 h-3 text-light-500 flex-shrink-0" />
             <span className="text-xs font-semibold text-owl-blue-900 truncate">
-              {displayNames || thread.name}
+              {hasHighlights
+                ? <HighlightedText text={displayNames || thread.name || ''} highlights={highlights} />
+                : (displayNames || thread.name)}
               {extraCount > 0 && <span className="text-light-500"> +{extraCount}</span>}
             </span>
             {showPhoneChip && thread.report_key && (
@@ -116,7 +122,11 @@ function ThreadRow({ thread, isSelected, onSelect, phoneCtx, showPhoneChip }) {
             )}
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-light-500">
-            <span className="truncate">{thread.source_app || '—'}</span>
+            <span className="truncate">
+              {hasHighlights
+                ? <HighlightedText text={thread.source_app || '—'} highlights={highlights} />
+                : (thread.source_app || '—')}
+            </span>
             <div className="flex-1" />
             {thread.has_attachments && (
               <Paperclip className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" title={`${thread.attachment_count} attachments`} />

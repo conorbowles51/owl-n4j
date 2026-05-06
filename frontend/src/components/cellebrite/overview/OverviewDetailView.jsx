@@ -7,6 +7,7 @@ import {
   useTableWindow,
   sortRows,
 } from './overviewTableUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 
 /**
  * Shared shell for all Cellebrite Overview drill-down detail views.
@@ -117,19 +118,27 @@ export default function OverviewDetailView({
           Back
         </button>
 
-        <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded">
-          <Smartphone className="w-3 h-3 text-emerald-700" />
-          <span className="text-xs font-medium text-emerald-900">
-            {report?.device_model || 'Device'}
-          </span>
-          {report?.phone_owner_name && (
-            <>
-              <span className="text-emerald-300">·</span>
-              <User className="w-3 h-3 text-emerald-700" />
-              <span className="text-xs text-emerald-800">{report.phone_owner_name}</span>
-            </>
-          )}
-        </div>
+        {report?.report_key ? (
+          <PhoneIdentityChip
+            reportKey={report.report_key}
+            variant="full"
+            showIcon
+          />
+        ) : (
+          <div className="flex items-center gap-2 px-2 py-1 bg-emerald-50 border border-emerald-200 rounded">
+            <Smartphone className="w-3 h-3 text-emerald-700" />
+            <span className="text-xs font-medium text-emerald-900">
+              {report?.device_model || 'Device'}
+            </span>
+            {report?.phone_owner_name && (
+              <>
+                <span className="text-emerald-300">·</span>
+                <User className="w-3 h-3 text-emerald-700" />
+                <span className="text-xs text-emerald-800">{report.phone_owner_name}</span>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5">
           {Icon && <Icon className={`w-4 h-4 text-${color}-600`} />}

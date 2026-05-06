@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Calendar, Loader2, Map as MapIcon, Rows3, Columns2 } from 'lucide-react';
+import { Loader2, Map as MapIcon, Rows3, Columns2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -11,9 +11,12 @@ import EventsTable from './events/EventsTable';
 import EventTimelinePanel from './events/EventTimelinePanel';
 import EventDetailDrawer from './events/EventDetailDrawer';
 import IntersectionPanel from './events/IntersectionPanel';
+import CellebriteSearchInput from './shared/CellebriteSearchInput';
+import TimelineScrubber from './shared/TimelineScrubber';
 import { deviceColor } from './events/eventUtils';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildEventsContext } from '../../utils/chatContextSummary';
+import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 
 /**
  * Cellebrite Location & Event Center — orchestrates map + timeline + playback
@@ -35,8 +38,13 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   // --- Filter state ---
   const [activeEventTypes, setActiveEventTypes] = useState(new Set());
   const [onlyGeolocated, setOnlyGeolocated] = useState(false);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  // Scrubber-driven coarse window (Date | null). The string forms feed
+  // the existing server-side filter and the IntersectionPanel.
+  const [windowStart, setWindowStart] = useState(null);
+  const [windowEnd, setWindowEnd] = useState(null);
+  const startDate = windowStart ? toISODate(windowStart) : '';
+  const endDate = windowEnd ? toISODate(windowEnd) : '';
+  const [searchQuery, setSearchQuery] = useState('');
 
   // --- Data state ---
   const [eventTypes, setEventTypes] = useState([]);
@@ -58,14 +66,23 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   // --- Phase 7: view mode (map | split | table) ---
   const [viewMode, setViewMode] = useState('map');
 
+  // Pure in-memory search filter — synchronous per keystroke. The
+  // server-side fetch is unaffected (it's gated on selectedReportKeys,
+  // event types, and the scrubber window via startDate/endDate).
+  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+  const filteredEvents = useMemo(() => {
+    if (!searchQuery) return events;
+    return events.filter((ev) => matchItem(ev, parsedQuery, 'event', reports).matches);
+  }, [events, searchQuery, parsedQuery, reports]);
+
   // Derived: how many events have direct or nearest geolocation
   const geolocatedCount = useMemo(() => {
     let n = 0;
-    for (const e of events) {
+    for (const e of filteredEvents) {
       if (e.latitude != null && e.longitude != null) n += 1;
     }
     return n;
-  }, [events]);
+  }, [filteredEvents]);
 
   // View-aware AI context
   const rootRef = useRef(null);
@@ -242,7 +259,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       {/* Device selector — global across Cellebrite tabs */}
       <PhoneSelector />
 
-      {/* Type filter + date */}
+      {/* Type filter + view mode */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0 overflow-x-auto">
         <EventTypeFilter
           types={eventTypes}
@@ -251,28 +268,13 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
           onlyGeolocated={onlyGeolocated}
           onOnlyGeolocatedChange={setOnlyGeolocated}
         />
-        <div className="h-4 w-px bg-light-300 flex-shrink-0" />
-        <div className="flex items-center gap-1 text-xs flex-shrink-0">
-          <Calendar className="w-3.5 h-3.5 text-light-500" />
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-1.5 py-0.5 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-          <span className="text-light-400">→</span>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="px-1.5 py-0.5 text-xs border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
-          />
-        </div>
         <div className="flex-1" />
         {loading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
         <span className="text-xs text-light-500 flex-shrink-0">
-          {events.length.toLocaleString()} events
-          {geolocatedCount < events.length && (
+          {searchQuery
+            ? `${filteredEvents.length.toLocaleString()} of ${events.length.toLocaleString()}`
+            : `${events.length.toLocaleString()}`} event{events.length === 1 ? '' : 's'}
+          {geolocatedCount < filteredEvents.length && (
             <>
               {' '}
               · <span className="text-light-400">{geolocatedCount.toLocaleString()} geolocated</span>
@@ -287,12 +289,34 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         </div>
       </div>
 
+      {/* Histogram scrubber — replaces the old date-picker pair. Drives
+          the server-side coarse filter via startDate/endDate. */}
+      <TimelineScrubber
+        items={events}
+        windowStart={windowStart}
+        windowEnd={windowEnd}
+        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+      />
+
+      {/* Wide search bar */}
+      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
+        <CellebriteSearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder='Search events — try type:location app:WhatsApp from:John before:2023-01-15'
+          matchCount={filteredEvents.length}
+          totalCount={events.length}
+          itemNoun="event"
+          focusOnSlash
+        />
+      </div>
+
       {/* Main: map / split / table + intersection panel */}
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 flex flex-col min-h-0">
           {viewMode === 'map' && (
             <EventMapPanel
-              events={events}
+              events={filteredEvents}
               tracks={tracks}
               playheadTime={playheadTime}
               trailWindowMs={trailWindowMs}
@@ -320,7 +344,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
               </div>
               <div className="flex-1 min-h-0">
                 <EventsTable
-                  events={events}
+                  events={filteredEvents}
                   reports={reports}
                   playheadTime={playheadTime}
                   isPlaying={isPlaying}
@@ -332,7 +356,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
           )}
           {viewMode === 'table' && (
             <EventsTable
-              events={events}
+              events={filteredEvents}
               reports={reports}
               playheadTime={playheadTime}
               isPlaying={isPlaying}
@@ -358,7 +382,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
 
       {/* Playback bar */}
       <EventPlaybackBar
-        events={events}
+        events={filteredEvents}
         playheadTime={playheadTime}
         setPlayheadTime={setPlayheadTime}
         isPlaying={isPlaying}
@@ -370,7 +394,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       {/* Timeline (bottom third) */}
       <div className="flex-shrink-0" style={{ height: '30vh', minHeight: 180 }}>
         <EventTimelinePanel
-          events={events}
+          events={filteredEvents}
           reports={reports}
           selectedReportKeys={selectedReportKeys}
           playheadTime={playheadTime}
@@ -408,4 +432,11 @@ function ViewModeButton({ mode, current, onClick, icon: Icon, label }) {
       <span>{label}</span>
     </button>
   );
+}
+
+/** yyyy-mm-dd in local time — feeds the existing server-side date filter. */
+function toISODate(d) {
+  if (!(d instanceof Date) || isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

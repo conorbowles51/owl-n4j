@@ -2,6 +2,8 @@ import React from 'react';
 import { Trash2, Smartphone } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
 import { formatShortTime, paletteForSenderKey, senderInitials } from './commsUtils';
+import HighlightedText from '../shared/HighlightedText';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 
 /**
  * Chat-style message bubble with clear sender attribution.
@@ -32,7 +34,11 @@ export default function CommsMessageBubble({
   palette,
   showSenderName = true,
   isFirstInRun = true,
+  highlights = [],
+  reportKey,
+  showPhoneChip = false,
 }) {
+  const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
   const sender = item.sender || null;
   const isOwner = !!(sender && sender.is_owner);
   const senderKey = sender?.key || 'unknown';
@@ -106,7 +112,9 @@ export default function CommsMessageBubble({
             )}
             {item.body && (
               <div className="text-sm whitespace-pre-wrap break-words">
-                {item.body}
+                {highlights && highlights.length > 0
+                  ? <HighlightedText text={item.body} highlights={highlights} />
+                  : item.body}
               </div>
             )}
             {attachments.length > 0 && (
@@ -122,12 +130,20 @@ export default function CommsMessageBubble({
             )}
           </div>
           <div
-            className={`text-[10px] text-light-400 mt-0.5 px-1 ${
-              isOwner ? 'text-right' : ''
+            className={`text-[10px] text-light-400 mt-0.5 px-1 flex items-center gap-1 ${
+              isOwner ? 'flex-row-reverse text-right' : ''
             }`}
           >
-            {formatShortTime(item.timestamp)}
-            {item.source_app ? ` · ${item.source_app}` : ''}
+            <span>
+              {formatShortTime(item.timestamp)}
+              {item.source_app ? ` · ${item.source_app}` : ''}
+            </span>
+            {showPhoneChip && effectiveReportKey && (
+              <PhoneIdentityChip
+                reportKey={effectiveReportKey}
+                variant="dense"
+              />
+            )}
           </div>
         </div>
       </div>

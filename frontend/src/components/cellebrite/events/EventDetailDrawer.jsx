@@ -5,6 +5,8 @@ import CommsMessageBubble from '../comms/CommsMessageBubble';
 import CommsCallRow from '../comms/CommsCallRow';
 import CommsEmailCard from '../comms/CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 
 /**
@@ -51,6 +53,11 @@ export default function EventDetailDrawer({ caseId, event, onClose }) {
 
   const Icon = EVENT_ICONS[event.event_type] || Info;
   const color = EVENT_COLORS[event.event_type] || '#64748b';
+  // Show device origin in the header — drawer is shared across map,
+  // table, timeline so the user shouldn't have to remember which row
+  // they clicked.
+  const phoneCtx = usePhoneReports();
+  const showPhoneChip = !!phoneCtx?.hasMultiple && !!event.device_report_key;
 
   return (
     <div className="fixed inset-y-0 right-0 w-[30vw] min-w-[380px] max-w-[560px] bg-white shadow-2xl border-l border-light-200 z-40 flex flex-col">
@@ -71,6 +78,14 @@ export default function EventDetailDrawer({ caseId, event, onClose }) {
             <span className="tabular-nums">{formatTs(event.timestamp)}</span>
           </div>
         </div>
+        {showPhoneChip && (
+          <PhoneIdentityChip
+            reportKey={event.device_report_key}
+            variant="default"
+            showIcon
+            className="flex-shrink-0"
+          />
+        )}
         <LinkNodeToEntityButton caseId={caseId} nodeKey={event.node_key || event.id} />
         <button onClick={onClose} className="p-1 text-light-500 hover:text-light-800" title="Close (Esc)">
           <X className="w-4 h-4" />

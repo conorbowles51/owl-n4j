@@ -1,6 +1,7 @@
 import React from 'react';
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Phone, Video } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { formatShortTime, formatDuration } from './commsUtils';
 
 function iconForCall(direction, callType) {
@@ -15,7 +16,7 @@ function iconForCall(direction, callType) {
 /**
  * Compact row for a single call. Voicemail audio (if attached) renders inline.
  */
-export default function CommsCallRow({ item }) {
+export default function CommsCallRow({ item, reportKey, showPhoneChip = false }) {
   const Icon = iconForCall(item.direction, item.call_type);
   const isOwnerFrom = !!(item.sender && item.sender.is_owner);
   const isMissed = (item.call_type || '').toLowerCase() === 'missed';
@@ -24,6 +25,7 @@ export default function CommsCallRow({ item }) {
 
   const fromName = item.sender?.name || 'Unknown';
   const toName = item.recipient?.name || 'Unknown';
+  const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b border-light-100 hover:bg-light-50">
@@ -35,6 +37,13 @@ export default function CommsCallRow({ item }) {
           <span className="font-medium truncate">{toName}</span>
           {item.video_call && <Video className="w-3 h-3 text-light-500 flex-shrink-0" title="Video call" />}
           {isMissed && <span className="text-[10px] text-red-700 bg-red-50 px-1 rounded">Missed</span>}
+          {showPhoneChip && effectiveReportKey && (
+            <PhoneIdentityChip
+              reportKey={effectiveReportKey}
+              variant="dense"
+              className="flex-shrink-0 ml-auto"
+            />
+          )}
         </div>
         <div className="text-[10px] text-light-500 flex items-center gap-2">
           <span>{formatShortTime(item.timestamp)}</span>

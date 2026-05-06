@@ -11,6 +11,8 @@ import {
   eventsWithinTrail,
   parseTs,
 } from './eventUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
  * Build a divIcon with a circle coloured by event type, with a halo ring
@@ -72,6 +74,9 @@ export default function EventMapPanel({
   intersectionMatches = [],
   deviceColorOf,
 }) {
+  const phoneCtx = usePhoneReports();
+  const showPhoneChip = !!phoneCtx?.hasMultiple;
+
   const visibleEvents = useMemo(() => {
     if (!isPlaying || !playheadTime) return events;
     return eventsWithinTrail(events, playheadTime, trailWindowMs);
@@ -205,6 +210,14 @@ export default function EventMapPanel({
                 >
                   <Popup>
                     <div className="text-xs">
+                      {showPhoneChip && e.device_report_key && (
+                        <div className="mb-1">
+                          <PhoneIdentityChip
+                            reportKey={e.device_report_key}
+                            variant="default"
+                          />
+                        </div>
+                      )}
                       <div className="font-semibold">{e.label}</div>
                       <div className="text-light-600">{e.timestamp}</div>
                       {e.summary && <div className="mt-1">{e.summary.slice(0, 140)}</div>}
