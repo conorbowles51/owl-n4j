@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Mail, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import HighlightedText from '../shared/HighlightedText';
 import { formatShortTime, previewBody } from './commsUtils';
 
 /**
@@ -13,7 +14,9 @@ export default function CommsEmailCard({
   defaultExpanded = false,
   reportKey,
   showPhoneChip = false,
+  highlights = [],
 }) {
+  const hasHighlights = highlights && highlights.length > 0;
   const [expanded, setExpanded] = useState(defaultExpanded);
 
   const fromName = item.sender?.name || 'Unknown';
@@ -35,7 +38,9 @@ export default function CommsEmailCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 text-sm text-light-900">
             {expanded ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
-            <span className="font-medium truncate">{subject}</span>
+            <span className="font-medium truncate">
+              {hasHighlights ? <HighlightedText text={subject} highlights={highlights} /> : subject}
+            </span>
             {showPhoneChip && effectiveReportKey && (
               <PhoneIdentityChip
                 reportKey={effectiveReportKey}
@@ -60,7 +65,12 @@ export default function CommsEmailCard({
           </div>
           {!expanded && bodyHtml && (
             <div className="text-xs text-light-600 truncate mt-0.5">
-              {previewBody(hasHtml ? bodyHtml.replace(/<[^>]*>/g, ' ') : bodyHtml, 120)}
+              {(() => {
+                const preview = previewBody(hasHtml ? bodyHtml.replace(/<[^>]*>/g, ' ') : bodyHtml, 120);
+                return hasHighlights
+                  ? <HighlightedText text={preview} highlights={highlights} />
+                  : preview;
+              })()}
             </div>
           )}
         </div>

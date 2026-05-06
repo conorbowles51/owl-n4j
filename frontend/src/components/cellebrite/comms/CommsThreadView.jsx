@@ -16,7 +16,15 @@ import { usePhoneReports } from '../../../context/PhoneReportsContext';
  * Right-pane thread viewer. Fetches thread detail for the selected thread and
  * renders messages as bubbles, calls as rows, emails as cards (chronologically).
  */
-export default function CommsThreadView({ caseId, selectedThread }) {
+export default function CommsThreadView({
+  caseId,
+  selectedThread,
+  // When the parent's Comms Center search matches a message body in this
+  // thread, it passes the term down so we (a) seed our own search input
+  // with it and (b) auto-scroll to the first hit.
+  externalSearchQuery = '',
+  firstMatch = null,
+}) {
   const phoneCtx = usePhoneReports();
   const showPhoneChip = !!phoneCtx?.hasMultiple && !!selectedThread?.report_key;
   const phoneIdentity = showPhoneChip
@@ -30,14 +38,15 @@ export default function CommsThreadView({ caseId, selectedThread }) {
 
   // Per-thread search + scrubber. Reset whenever the user opens a new
   // thread so old query state doesn't leak across conversations.
-  const [searchQuery, setSearchQuery] = useState('');
+  // Seed from the parent's search if it matched a body in this thread.
+  const [searchQuery, setSearchQuery] = useState(externalSearchQuery || '');
   const [windowStart, setWindowStart] = useState(null);
   const [windowEnd, setWindowEnd] = useState(null);
   useEffect(() => {
-    setSearchQuery('');
+    setSearchQuery(externalSearchQuery || '');
     setWindowStart(null);
     setWindowEnd(null);
-  }, [selectedThread?.thread_id]);
+  }, [selectedThread?.thread_id, externalSearchQuery]);
 
   useEffect(() => {
     if (!caseId || !selectedThread) {
@@ -65,12 +74,27 @@ export default function CommsThreadView({ caseId, selectedThread }) {
     return () => { cancelled = true; };
   }, [caseId, selectedThread]);
 
-  // Auto-scroll to bottom on load
+  // Auto-scroll on load.
+  //   - If the parent passed `firstMatch`, jump to that message and
+  //     briefly flash a ring around it so the user sees what matched.
+  //   - Otherwise default to scroll-to-bottom (newest message).
   useEffect(() => {
-    if (scrollRef.current && detail?.items?.length) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!scrollRef.current || !detail?.items?.length) return;
+    if (firstMatch?.message_id) {
+      const el = scrollRef.current.querySelector(
+        `[data-message-id="${cssEscape(firstMatch.message_id)}"]`,
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('ring-2', 'ring-amber-400', 'ring-offset-1');
+        setTimeout(() => {
+          el.classList.remove('ring-2', 'ring-amber-400', 'ring-offset-1');
+        }, 2200);
+        return;
+      }
     }
-  }, [detail]);
+    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [detail, firstMatch]);
 
   if (!selectedThread) {
     return (
@@ -271,18 +295,31 @@ export default function CommsThreadView({ caseId, selectedThread }) {
             );
           }
           const item = row.item;
-          if (item.type === 'call') return <CommsCallRow key={item.id || idx} item={item} />;
-          if (item.type === 'email') return <CommsEmailCard key={item.id || idx} item={item} />;
+          // Wrap each item in a div tagged with data-message-id so the
+          // scroll-to-match effect can locate it. The inline child
+          // components stay agnostic of scrolling.
+          const wrapperProps = {
+            key: item.id || idx,
+            'data-message-id': item.id || '',
+            className: 'transition-shadow rounded',
+          };
+          if (item.type === 'call') {
+            return <div {...wrapperProps}><CommsCallRow item={item} /></div>;
+          }
+          if (item.type === 'email') {
+            return <div {...wrapperProps}><CommsEmailCard item={item} /></div>;
+          }
           // message
           return (
-            <CommsMessageBubble
-              key={item.id || idx}
-              item={item}
-              palette={palette}
-              showSenderName
-              isFirstInRun={row.isFirstInRun}
-              highlights={messageHighlights}
-            />
+            <div {...wrapperProps}>
+              <CommsMessageBubble
+                item={item}
+                palette={palette}
+                showSenderName
+                isFirstInRun={row.isFirstInRun}
+                highlights={messageHighlights}
+              />
+            </div>
           );
         })}
       </div>
@@ -299,4 +336,18 @@ function formatDateSep(d) {
   } catch {
     return d;
   }
+}
+
+/**
+ * Minimal CSS-attribute-selector escape — prefer native CSS.escape when
+ * available (modern browsers), fall back to a quote-and-backslash
+ * encoder for the few characters that can break a `[data-x="…"]`
+ * selector.
+ */
+function cssEscape(s) {
+  if (!s) return '';
+  if (typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function') {
+    return window.CSS.escape(String(s));
+  }
+  return String(s).replace(/(["\\])/g, '\\$1');
 }

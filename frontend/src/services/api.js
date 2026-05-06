@@ -2656,6 +2656,24 @@ export const cellebriteCommsAPI = {
   },
 
   /**
+   * Full-text search across message bodies, email subjects/bodies and
+   * call notes for the case. Returns:
+   *   { query, thread_ids: [...], matches: [{message_id, thread_id,
+   *     timestamp, source_app, report_key, snippet}], total }
+   *
+   * Used by Comms Center to narrow the thread list to threads-that-
+   * mention the term and auto-open the first matching thread scrolled
+   * to the matched message. Distinct from getThreads({search}) which
+   * only matches thread metadata.
+   */
+  searchMessages: (caseId, { q, reportKeys = null, limit = 200 } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId, q });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    params.append('limit', String(limit));
+    return fetchAPI(`/cellebrite/comms/messages/search?${params.toString()}`);
+  },
+
+  /**
    * Resolve a Cellebrite file UUID to its evidence record.
    */
   resolveAttachment: (caseId, fileId) =>

@@ -190,22 +190,102 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // thread_id, so opening the survivor still shows the same content.
   const dedupedThreads = useMemo(() => dedupeThreads(threads), [threads]);
 
-  // Pure in-memory thread search. Runs synchronously per keystroke
-  // because `threads` is already loaded — no network round-trip.
+  // ------------------------------------------------------------------
+  // Deep message-body search (server-side full-text)
+  //
+  // Thread metadata only includes the chat name + participant names, so
+  // typing a word that appears in message bodies wouldn't match locally.
+  // We hit /comms/messages/search after a 250ms debounce — instant for
+  // "common app/contact" terms (which match locally first), and one
+  // round-trip for "find this word in any chat".
+  // ------------------------------------------------------------------
+  const [deepSearch, setDeepSearch] = useState({
+    query: '',
+    threadIds: new Set(),
+    matchesByThread: {},
+    loading: false,
+  });
+
+  // Debounce + fire the deep search whenever the query (or scope) changes.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q || !caseId) {
+      setDeepSearch({ query: '', threadIds: new Set(), matchesByThread: {}, loading: false });
+      return;
+    }
+    let cancelled = false;
+    setDeepSearch((prev) => ({ ...prev, loading: true }));
+    const t = setTimeout(() => {
+      const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
+      cellebriteCommsAPI
+        .searchMessages(caseId, { q, reportKeys: reportKeysArr, limit: 300 })
+        .then((data) => {
+          if (cancelled) return;
+          const matchesByThread = {};
+          for (const m of data.matches || []) {
+            if (!m.thread_id) continue;
+            (matchesByThread[m.thread_id] ||= []).push(m);
+          }
+          setDeepSearch({
+            query: q,
+            threadIds: new Set(data.thread_ids || []),
+            matchesByThread,
+            loading: false,
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setDeepSearch({ query: q, threadIds: new Set(), matchesByThread: {}, loading: false });
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [caseId, searchQuery, selectedReportKeys]);
+
+  // In-memory thread metadata search (per keystroke, no debounce).
+  // Combined with deep-search results: a thread shows up if EITHER its
+  // metadata matches OR a message inside it matches.
   const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
   const { filteredThreads, threadHighlights } = useMemo(() => {
     if (!searchQuery) return { filteredThreads: dedupedThreads, threadHighlights: [] };
     const out = [];
     const allHighlights = new Set();
+    const deepHits = deepSearch.threadIds;
     for (const t of dedupedThreads) {
       const m = matchItem(t, parsedQuery, 'thread', reports);
-      if (m.matches) {
+      const inDeep = deepHits.has(t.thread_id);
+      if (m.matches || inDeep) {
         out.push(t);
         m.highlights.forEach((h) => allHighlights.add(h));
       }
     }
+    // Always highlight the literal search term itself, even if it only
+    // matched a body (so the row text gets `<mark>` if the term appears
+    // anywhere displayable).
+    if (searchQuery.trim()) allHighlights.add(searchQuery.trim().toLowerCase());
     return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
-  }, [dedupedThreads, searchQuery, parsedQuery, reports]);
+  }, [dedupedThreads, searchQuery, parsedQuery, reports, deepSearch.threadIds]);
+
+  // When the user types a deep-search term, automatically open the first
+  // matching thread so they can see the actual message immediately.
+  // Only fires when the user has no thread selected yet, or when the
+  // selected thread is no longer in the filtered list.
+  useEffect(() => {
+    if (!deepSearch.query) return;
+    if (deepSearch.loading) return;
+    if (filteredThreads.length === 0) return;
+    const stillPresent =
+      selectedThread && filteredThreads.some((t) => t.thread_id === selectedThread.thread_id);
+    if (stillPresent) return;
+    // Pick the first thread that has a message-body hit (those are the
+    // most relevant to the user's query); fall back to the first thread.
+    const first =
+      filteredThreads.find((t) => deepSearch.matchesByThread[t.thread_id]) ||
+      filteredThreads[0];
+    if (first) setSelectedThread(first);
+  }, [deepSearch.query, deepSearch.loading, deepSearch.matchesByThread, filteredThreads, selectedThread]);
 
   // Clear selected thread when it no longer matches filters
   useEffect(() => {
@@ -283,7 +363,16 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           />
         </div>
         <div className="flex-1 flex flex-col min-h-0">
-          <CommsThreadView caseId={caseId} selectedThread={selectedThread} />
+          <CommsThreadView
+            caseId={caseId}
+            selectedThread={selectedThread}
+            externalSearchQuery={searchQuery}
+            firstMatch={
+              selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
+                ? deepSearch.matchesByThread[selectedThread.thread_id][0]
+                : null
+            }
+          />
         </div>
       </div>
 

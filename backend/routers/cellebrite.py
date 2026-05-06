@@ -380,6 +380,35 @@ async def get_comms_between(
     return result
 
 
+@router.get("/comms/messages/search")
+async def search_comms_messages(
+    case_id: str = Query(...),
+    q: str = Query(..., min_length=1, description="Search term (matched against message body, subject, call notes)"),
+    report_keys: Optional[str] = Query(None, description="Comma-separated report keys"),
+    limit: int = Query(200, ge=1, le=1000, description="Max matches to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Full-text search across the bodies of every message / email / call note
+    in the case (filtered by selected phones). Returns the matching
+    thread_ids plus a ranked list of message snippets so the frontend can
+    narrow the thread list and auto-scroll to the first hit inside the
+    chosen thread.
+
+    Distinct from `/comms/threads?search=` which only matches thread-level
+    metadata (name, source_app). This endpoint searches inside the chats.
+    """
+    _require_case_access(case_id, current_user, db)
+    result = neo4j_service.search_cellebrite_comms_messages(
+        case_id=case_id,
+        query=q,
+        report_keys=_csv_param(report_keys),
+        limit=limit,
+    )
+    return result
+
+
 @router.get("/comms/attachment/{file_id}")
 async def resolve_comms_attachment(
     file_id: str,

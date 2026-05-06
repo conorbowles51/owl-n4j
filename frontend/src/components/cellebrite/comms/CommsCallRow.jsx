@@ -2,6 +2,7 @@ import React from 'react';
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Phone, Video } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import HighlightedText from '../shared/HighlightedText';
 import { formatShortTime, formatDuration } from './commsUtils';
 
 function iconForCall(direction, callType) {
@@ -16,7 +17,8 @@ function iconForCall(direction, callType) {
 /**
  * Compact row for a single call. Voicemail audio (if attached) renders inline.
  */
-export default function CommsCallRow({ item, reportKey, showPhoneChip = false }) {
+export default function CommsCallRow({ item, reportKey, showPhoneChip = false, highlights = [] }) {
+  const hasHighlights = highlights && highlights.length > 0;
   const Icon = iconForCall(item.direction, item.call_type);
   const isOwnerFrom = !!(item.sender && item.sender.is_owner);
   const isMissed = (item.call_type || '').toLowerCase() === 'missed';
@@ -32,9 +34,13 @@ export default function CommsCallRow({ item, reportKey, showPhoneChip = false })
       <Icon className={`w-4 h-4 flex-shrink-0 ${color}`} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-sm text-light-900">
-          <span className="font-medium truncate">{fromName}</span>
+          <span className="font-medium truncate">
+            {hasHighlights ? <HighlightedText text={fromName} highlights={highlights} /> : fromName}
+          </span>
           <span className="text-light-400">→</span>
-          <span className="font-medium truncate">{toName}</span>
+          <span className="font-medium truncate">
+            {hasHighlights ? <HighlightedText text={toName} highlights={highlights} /> : toName}
+          </span>
           {item.video_call && <Video className="w-3 h-3 text-light-500 flex-shrink-0" title="Video call" />}
           {isMissed && <span className="text-[10px] text-red-700 bg-red-50 px-1 rounded">Missed</span>}
           {showPhoneChip && effectiveReportKey && (

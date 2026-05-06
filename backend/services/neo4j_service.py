@@ -6886,6 +6886,101 @@ class Neo4jService:
         items = items[offset: offset + limit]
         return {"items": items, "total": total}
 
+    def search_cellebrite_comms_messages(
+        self,
+        case_id: str,
+        query: str,
+        report_keys: Optional[List[str]] = None,
+        limit: int = 200,
+    ) -> dict:
+        """
+        Full-text search across message bodies, email subjects/bodies and
+        call notes for the case. Returns the distinct thread_ids that
+        contain a match plus a ranked list of message snippets.
+
+        Frontend uses this to:
+          1. narrow the thread list to threads-that-mention-the-term, and
+          2. auto-open the first matching thread scrolled to the message.
+
+        Match algorithm: case-insensitive substring on `body`, `subject`,
+        and `name` of Communication / Email / PhoneCall nodes tagged
+        with cellebrite source_type and within the requested phones.
+
+        The returned snippet is the literal matched text plus up to 60
+        chars of context on either side, so the frontend can render a
+        preview without re-fetching the full message body.
+        """
+        q = (query or "").strip()
+        if not q:
+            return {"query": "", "thread_ids": [], "matches": [], "total": 0}
+
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "q_lower": q.lower(),
+        }
+        rk_filter = ""
+        if report_keys:
+            rk_filter = " AND m.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        # Match Communication (chat / message) nodes — substring on body
+        # OR subject OR name. We pull the message + its parent chat (so we
+        # can return the parent thread_id, which is what the UI lists).
+        cypher = f"""
+            MATCH (m:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
+            WHERE (
+                (m.body IS NOT NULL AND toLower(m.body) CONTAINS $q_lower)
+                OR (m.subject IS NOT NULL AND toLower(m.subject) CONTAINS $q_lower)
+                OR (m.name IS NOT NULL AND toLower(m.name) CONTAINS $q_lower)
+            ){rk_filter}
+            OPTIONAL MATCH (m)-[:PART_OF]->(parent:Communication)
+            WITH m,
+                 coalesce(parent.key, m.key) AS thread_key,
+                 coalesce(parent.source_app, m.source_app) AS source_app,
+                 coalesce(parent.cellebrite_report_key, m.cellebrite_report_key) AS report_key
+            RETURN m.key AS message_id,
+                   m.body AS body,
+                   m.subject AS subject,
+                   m.name AS name,
+                   m.timestamp AS timestamp,
+                   thread_key,
+                   source_app,
+                   report_key
+            ORDER BY m.timestamp DESC
+            LIMIT $limit
+        """
+        params["limit"] = limit
+
+        matches = []
+        thread_ids: list = []
+        seen_threads = set()
+        with self._driver.session() as session:
+            for rec in session.run(cypher, **params):
+                tk = rec["thread_key"]
+                snippet = _build_match_snippet(
+                    rec.get("body") or rec.get("subject") or rec.get("name") or "",
+                    q,
+                )
+                matches.append({
+                    "message_id": rec.get("message_id"),
+                    "thread_id": tk,
+                    "thread_type": "chat",
+                    "timestamp": rec.get("timestamp"),
+                    "source_app": rec.get("source_app"),
+                    "report_key": rec.get("report_key"),
+                    "snippet": snippet,
+                })
+                if tk and tk not in seen_threads:
+                    seen_threads.add(tk)
+                    thread_ids.append(tk)
+
+        return {
+            "query": q,
+            "thread_ids": thread_ids,
+            "matches": matches,
+            "total": len(matches),
+        }
+
     # ------------------------------------------------------------------
     # Cellebrite Location & Event Center (Phase 4) queries
     # ------------------------------------------------------------------
@@ -7928,6 +8023,35 @@ class Neo4jService:
 # ---------------------------------------------------------------------------
 # Helpers for event projections (used by get_cellebrite_events)
 # ---------------------------------------------------------------------------
+
+
+def _build_match_snippet(text: str, term: str, context_chars: int = 60) -> str:
+    """
+    Return a one-line preview of `text` centred on the first
+    case-insensitive occurrence of `term`, with up to `context_chars`
+    bytes of surrounding context. Used by /comms/messages/search to
+    show "…that's why I called — Monday morning…" style previews.
+    """
+    if not text:
+        return ""
+    if not term:
+        return text[: 2 * context_chars + 50]
+    haystack_lower = text.lower()
+    needle_lower = term.lower()
+    idx = haystack_lower.find(needle_lower)
+    if idx < 0:
+        # Caller already established a match — defensive fallback.
+        return text[: 2 * context_chars + 50]
+    start = max(0, idx - context_chars)
+    end = min(len(text), idx + len(term) + context_chars)
+    snippet = text[start:end]
+    if start > 0:
+        snippet = "…" + snippet
+    if end < len(text):
+        snippet = snippet + "…"
+    # Collapse runs of whitespace so the snippet is one clean line.
+    snippet = " ".join(snippet.split())
+    return snippet
 
 
 def _project_event(node, event_type: str) -> Optional[dict]:
