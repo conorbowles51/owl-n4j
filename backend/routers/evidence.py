@@ -1029,7 +1029,7 @@ async def check_cellebrite_folder(
         except ValueError:
             raise HTTPException(status_code=403, detail="Path outside case directory")
 
-        result = check_cellebrite_report(full_folder_path)
+        result = check_cellebrite_report(full_folder_path, case_id=case_id)
         return result
     except HTTPException:
         raise
@@ -1041,6 +1041,10 @@ class CellebriteProcessRequest(BaseModel):
     """Request to process a Cellebrite report folder."""
     case_id: str
     folder_path: str  # Folder path relative to case data directory
+    # When True, replace any existing PhoneReport in this case that
+    # would collide (same key / IMEI / evidence_number). The frontend
+    # sets this only after the user confirms in a duplicate dialog.
+    force: bool = False
 
 
 class CellebriteProcessResponse(BaseModel):
@@ -1081,12 +1085,33 @@ async def process_cellebrite_folder(
         if not full_folder_path.exists() or not full_folder_path.is_dir():
             raise HTTPException(status_code=404, detail="Folder not found")
 
-        # Quick pre-check that it looks like a Cellebrite report
-        detection = check_cellebrite_report(full_folder_path)
+        # Quick pre-check that it looks like a Cellebrite report,
+        # scoped to this case so we can detect duplicates up-front.
+        detection = check_cellebrite_report(full_folder_path, case_id=request.case_id)
         if not detection.get("suitable"):
             raise HTTPException(
                 status_code=400,
                 detail=detection.get("message", "Not a valid Cellebrite report"),
+            )
+
+        # Block duplicate ingests unless the user explicitly opts in
+        # via `force`. Returns 409 with the existing-report payload so
+        # the frontend can show a clear "replace existing?" dialog.
+        if detection.get("duplicate") and not request.force:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "duplicate_phone_report",
+                    "message": detection.get("message"),
+                    "existing": detection.get("existing"),
+                    "incoming": {
+                        "report_key": detection.get("report_key"),
+                        "device_model": detection.get("device_model"),
+                        "case_number": detection.get("case_number"),
+                        "evidence_number": detection.get("evidence_number"),
+                        "imei": detection.get("imei"),
+                    },
+                },
             )
 
         # Create background task
@@ -1106,12 +1131,15 @@ async def process_cellebrite_folder(
         task_id = task["id"]
         user_email = current_user.email
 
+        force_flag = request.force
+
         def run_cellebrite_background():
             process_cellebrite_report(
                 folder_path=full_folder_path,
                 case_id=request.case_id,
                 task_id=task_id,
                 owner=user_email,
+                force=force_flag,
             )
 
         import threading

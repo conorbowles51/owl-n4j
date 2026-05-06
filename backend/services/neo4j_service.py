@@ -5444,6 +5444,37 @@ class Neo4jService:
             for idx, record in enumerate(result):
                 r = dict(record["r"])
                 owner = dict(record["owner"]) if record["owner"] else None
+
+                # Effective device name precedence:
+                #   1. investigator-supplied override
+                #   2. parser-detected manufacturer + device_model
+                #   3. parser-detected device_model alone
+                #   4. literal fallback
+                manufacturer = r.get("manufacturer") or ""
+                detected_model = r.get("device_model") or ""
+                override = r.get("device_name_override") or ""
+                if override:
+                    effective = override
+                elif manufacturer and detected_model:
+                    effective = f"{manufacturer} {detected_model}"
+                elif detected_model:
+                    effective = detected_model
+                else:
+                    effective = "Unknown Device"
+
+                # Detected name candidates were JSON-encoded by the writer
+                # because Neo4j can't store list-of-maps natively.
+                import json as _json
+                candidates_raw = r.get("device_name_candidates")
+                candidates: list = []
+                if candidates_raw:
+                    try:
+                        parsed = _json.loads(candidates_raw)
+                        if isinstance(parsed, list):
+                            candidates = parsed
+                    except (ValueError, TypeError):
+                        candidates = []
+
                 reports.append({
                     "report_key": r.get("key", ""),
                     "report_name": r.get("name", ""),
@@ -5451,7 +5482,15 @@ class Neo4jService:
                     # identity. Ordering above guarantees the same phone gets
                     # the same colour across calls, refreshes and users.
                     "display_index": idx,
-                    "device_model": r.get("device_model", "Unknown Device"),
+                    # `device_model` is the *effective* display name so
+                    # every existing UI surface picks up the new
+                    # manufacturer composition + override automatically.
+                    "device_model": effective,
+                    "manufacturer": manufacturer,
+                    "detected_device_model": detected_model,
+                    "device_name_override": override or None,
+                    "device_name_candidates": candidates,
+                    "accessory_imeis": list(r.get("accessory_imeis") or []),
                     "phone_numbers": r.get("phone_numbers", ""),
                     "imei": r.get("imei", ""),
                     "extraction_type": r.get("extraction_type", ""),
@@ -5470,6 +5509,179 @@ class Neo4jService:
                     },
                 })
             return reports
+
+    def find_existing_phone_report(
+        self,
+        case_id: str,
+        report_key: Optional[str] = None,
+        imei: Optional[str] = None,
+        evidence_number: Optional[str] = None,
+    ) -> Optional[dict]:
+        """
+        Look up an already-ingested PhoneReport in the case that would
+        collide with a new ingest.
+
+        A "collision" is any of:
+          - same report_key (case_number + evidence_number tuple)
+          - same non-empty IMEI
+          - same evidence_number with same case_number
+
+        Returns the existing report's summary dict, or None.
+        """
+        # Build the WHERE clause dynamically so we don't accidentally
+        # match every record in the case when callers pass blank values.
+        clauses = []
+        params: dict = {"case_id": case_id}
+
+        if report_key:
+            clauses.append("r.key = $report_key")
+            params["report_key"] = report_key
+        if imei:
+            clauses.append("(r.imei IS NOT NULL AND r.imei <> '' AND r.imei = $imei)")
+            params["imei"] = imei
+        if evidence_number:
+            clauses.append(
+                "(r.evidence_number IS NOT NULL AND r.evidence_number <> '' "
+                "AND r.evidence_number = $evidence_number)"
+            )
+            params["evidence_number"] = evidence_number
+
+        if not clauses:
+            return None
+
+        query = (
+            "MATCH (r:PhoneReport {case_id: $case_id}) "
+            "WHERE " + " OR ".join(clauses) + " "
+            "OPTIONAL MATCH (r)-[:BELONGS_TO]->(owner:Person) "
+            "RETURN r, owner LIMIT 1"
+        )
+
+        with self._driver.session() as session:
+            result = session.run(query, **params)
+            record = result.single()
+            if not record:
+                return None
+            r = dict(record["r"])
+            owner = dict(record["owner"]) if record["owner"] else None
+            manufacturer = r.get("manufacturer") or ""
+            detected_model = r.get("device_model") or ""
+            override = r.get("device_name_override") or ""
+            if override:
+                effective = override
+            elif manufacturer and detected_model:
+                effective = f"{manufacturer} {detected_model}"
+            elif detected_model:
+                effective = detected_model
+            else:
+                effective = "Unknown Device"
+            return {
+                "report_key": r.get("key", ""),
+                "report_name": r.get("name", ""),
+                "device_model": effective,
+                "case_number": r.get("case_number", ""),
+                "evidence_number": r.get("evidence_number", ""),
+                "imei": r.get("imei", ""),
+                "phone_owner_name": owner.get("name", "") if owner else "",
+            }
+
+    def delete_phone_report(self, case_id: str, report_key: str) -> dict:
+        """
+        Delete a PhoneReport node and every node tagged with the same
+        cellebrite_report_key in the case.
+
+        Returns counts so callers can confirm what was removed.
+        """
+        with self._driver.session() as session:
+            # Count first so we can report what got deleted. Counting
+            # before delete also confirms the report exists.
+            count_result = session.run(
+                """
+                MATCH (n {case_id: $case_id, cellebrite_report_key: $key})
+                RETURN count(n) AS tagged_node_count
+                """,
+                case_id=case_id,
+                key=report_key,
+            )
+            tagged = count_result.single()["tagged_node_count"] if count_result else 0
+
+            report_count_result = session.run(
+                "MATCH (r:PhoneReport {case_id: $case_id, key: $key}) RETURN count(r) AS c",
+                case_id=case_id,
+                key=report_key,
+            )
+            report_count = report_count_result.single()["c"] if report_count_result else 0
+
+            if report_count == 0 and tagged == 0:
+                return {
+                    "status": "not_found",
+                    "report_key": report_key,
+                    "deleted_nodes": 0,
+                    "deleted_phone_report": 0,
+                }
+
+            # Delete every node carrying this report key (relationships
+            # are removed automatically with DETACH DELETE).
+            session.run(
+                """
+                MATCH (n {case_id: $case_id, cellebrite_report_key: $key})
+                DETACH DELETE n
+                """,
+                case_id=case_id,
+                key=report_key,
+            )
+            # And the central PhoneReport node itself (it carries `key`,
+            # not `cellebrite_report_key`, so it won't have matched above).
+            session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id, key: $key})
+                DETACH DELETE r
+                """,
+                case_id=case_id,
+                key=report_key,
+            )
+
+            return {
+                "status": "deleted",
+                "report_key": report_key,
+                "deleted_nodes": tagged,
+                "deleted_phone_report": report_count,
+            }
+
+    def update_phone_report_name_override(
+        self,
+        case_id: str,
+        report_key: str,
+        device_name_override: Optional[str],
+    ) -> Optional[dict]:
+        """
+        Set or clear the investigator-supplied device-name override on a
+        PhoneReport. Pass None or empty string to clear.
+
+        Returns the updated report summary, or None when the report
+        does not exist in the case.
+        """
+        cleaned = (device_name_override or "").strip() or None
+        with self._driver.session() as session:
+            result = session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id, key: $key})
+                SET r.device_name_override = $override
+                RETURN r
+                """,
+                case_id=case_id,
+                key=report_key,
+                override=cleaned,
+            )
+            record = result.single()
+            if not record:
+                return None
+            r = dict(record["r"])
+            return {
+                "report_key": r.get("key", ""),
+                "device_name_override": r.get("device_name_override") or None,
+                "manufacturer": r.get("manufacturer") or "",
+                "detected_device_model": r.get("device_model") or "",
+            }
 
     def get_cellebrite_cross_phone_graph(self, case_id: str) -> dict:
         """

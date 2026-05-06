@@ -67,13 +67,24 @@ async function fetchAPI(endpoint, options = {}) {
           const msg = err.msg || 'validation error';
           return `${field}: ${msg}`;
         }).join(', ');
-        throw new Error(`Validation error: ${validationErrors}`);
+        const ve = new Error(`Validation error: ${validationErrors}`);
+        ve.status = 422;
+        ve.detail = error.detail;
+        throw ve;
       }
-      // Handle various error response formats
-      const errorMessage = error.detail || error.message || error.error ||
-        (typeof error === 'string' ? error : JSON.stringify(error)) ||
-        `HTTP ${response.status}`;
-      throw new Error(errorMessage);
+      // FastAPI lets routes raise HTTPException(detail={...}) — when detail
+      // is a dict we want callers to be able to inspect it directly (e.g.
+      // duplicate-phone-report dialog needs the `existing` payload).
+      const detailIsDict = error && typeof error.detail === 'object' && error.detail !== null;
+      const errorMessage = detailIsDict
+        ? (error.detail.message || error.detail.reason || `HTTP ${response.status}`)
+        : (error.detail || error.message || error.error ||
+            (typeof error === 'string' ? error : JSON.stringify(error)) ||
+            `HTTP ${response.status}`);
+      const apiErr = new Error(errorMessage);
+      apiErr.status = response.status;
+      apiErr.detail = error?.detail;
+      throw apiErr;
     }
 
     // Handle 204 No Content responses (e.g., DELETE operations)
@@ -1612,14 +1623,20 @@ export const evidenceAPI = {
   },
 
   /**
-   * Process a Cellebrite UFED report folder
+   * Process a Cellebrite UFED report folder.
+   *
+   * Without `force`, the server returns HTTP 409 with the existing
+   * report's summary if a PhoneReport with the same key/IMEI already
+   * exists in the case. The frontend should surface that to the user
+   * and re-call with `force=true` only after explicit confirmation.
    */
-  processCellebriteFolder: (caseId, folderPath) =>
+  processCellebriteFolder: (caseId, folderPath, opts = {}) =>
     fetchAPI('/evidence/cellebrite/process', {
       method: 'POST',
       body: JSON.stringify({
         case_id: caseId,
         folder_path: folderPath,
+        force: !!opts.force,
       }),
       timeout: 60000,
     }),
@@ -2476,6 +2493,40 @@ export const cellebriteAPI = {
    */
   getReports: (caseId) =>
     fetchAPI(`/cellebrite/reports?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
+   * Delete a phone report and every node tagged with its key.
+   * Used by the Overview's per-card "Delete phone report" action.
+   *
+   * @param {string} caseId
+   * @param {string} reportKey - e.g. "cellebrite-220049582-06308586"
+   * @returns {Promise<{status, deleted_nodes, deleted_phone_report, deleted_evidence_records}>}
+   */
+  deleteReport: (caseId, reportKey) =>
+    fetchAPI(
+      `/cellebrite/reports/${encodeURIComponent(reportKey)}?case_id=${encodeURIComponent(caseId)}`,
+      { method: 'DELETE' },
+    ),
+
+  /**
+   * Update mutable fields on a phone report. Currently supports only
+   * `device_name_override`: pass a non-empty string to override the
+   * detected name, or null/empty to clear and revert to the parser's
+   * detected name.
+   *
+   * @param {string} caseId
+   * @param {string} reportKey
+   * @param {{device_name_override?: string|null}} body
+   */
+  patchReport: (caseId, reportKey, body) =>
+    fetchAPI(
+      `/cellebrite/reports/${encodeURIComponent(reportKey)}?case_id=${encodeURIComponent(caseId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body || {}),
+      },
+    ),
 
   /**
    * Get cross-phone graph (shared contacts across devices)

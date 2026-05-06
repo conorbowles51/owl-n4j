@@ -40,6 +40,17 @@ class DeviceInfo:
     factory_number: Optional[str] = None
     phone_activation: Optional[str] = None
     device_model: Optional[str] = None
+    # Canonical brand from DeviceInfoSelectedManufacturer / Manufacturer.
+    # Composes with device_model into the displayed label.
+    manufacturer: Optional[str] = None
+    # Every plausible device-name source we saw in the report, in priority
+    # order. Each entry is {source, value, extraction_id}. Lets the
+    # frontend offer the investigator a switcher between detected names.
+    device_name_candidates: List[Dict[str, str]] = field(default_factory=list)
+    # IMEIs seen on extractions OTHER than the device extraction (e.g.
+    # accessories, paired devices). Kept for diagnostics — not the
+    # canonical IMEI of the phone.
+    accessory_imeis: List[str] = field(default_factory=list)
 
 
 @dataclass

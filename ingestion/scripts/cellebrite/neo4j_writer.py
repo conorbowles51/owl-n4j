@@ -12,6 +12,7 @@ All nodes get:
   - deleted_state (Intact/Deleted/Trash)
 """
 
+import json
 import re
 import uuid
 from typing import List, Dict, Optional, Set, Callable, Tuple
@@ -387,6 +388,15 @@ class CellebriteNeo4jWriter:
         ci = self.report.case_info
         di = self.report.device_info
 
+        # device_name_candidates is a list-of-dicts which Neo4j can't
+        # store natively, so we JSON-encode it. Empty list → None so
+        # the prop is dropped entirely (cleaner than storing "[]").
+        candidates_json = (
+            json.dumps(di.device_name_candidates)
+            if di.device_name_candidates else None
+        )
+        accessory_imeis = list(di.accessory_imeis) if di.accessory_imeis else None
+
         props = {
             "id": str(uuid.uuid4()),
             "key": self.report_key,
@@ -406,7 +416,13 @@ class CellebriteNeo4jWriter:
             "crime_type": ci.crime_type,
             # Device info
             "device_model": di.device_model,
+            "manufacturer": di.manufacturer,
+            "device_name_candidates": candidates_json,
+            # Investigator-supplied override; null on first ingest. Set
+            # via PATCH /api/cellebrite/reports/{key}.
+            "device_name_override": None,
             "imei": di.imei,
+            "accessory_imeis": accessory_imeis,
             "os_type": di.os_type,
             "phone_numbers": di.msisdn,
         }

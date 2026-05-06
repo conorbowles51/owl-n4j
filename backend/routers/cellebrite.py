@@ -47,6 +47,110 @@ async def get_reports(
     return {"reports": reports}
 
 
+def _require_case_evidence_access(case_id: str, user: User, db: Session):
+    """Stronger access check for mutating phone-report operations."""
+    from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+    from uuid import UUID
+    try:
+        check_case_access(
+            db,
+            UUID(case_id),
+            user,
+            required_permission=("evidence", "upload"),
+        )
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+@router.delete("/reports/{report_key}")
+async def delete_phone_report(
+    report_key: str,
+    case_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Delete a PhoneReport and every node tagged with its
+    cellebrite_report_key in this case.
+
+    Cleans up the central PhoneReport node, all entities (Persons,
+    PhoneCalls, Communications, Locations, etc.) that were ingested
+    against this report, and any registered Cellebrite evidence
+    records keyed to it.
+    """
+    _require_case_evidence_access(case_id, current_user, db)
+
+    # Neo4j-side deletion (PhoneReport + tagged entities + relationships).
+    neo_result = neo4j_service.delete_phone_report(case_id, report_key)
+
+    # Drop any evidence_storage records that point at this report so
+    # the Files Explorer + main evidence list don't show ghost rows.
+    evidence_deleted = 0
+    try:
+        evidence_records = evidence_storage.list_files(case_id=case_id)
+        for rec in evidence_records:
+            if (
+                rec.get("source_type") == "cellebrite"
+                and rec.get("cellebrite_report_key") == report_key
+            ):
+                rec_id = rec.get("id")
+                if rec_id:
+                    evidence_storage.delete_record(rec_id)
+                    evidence_deleted += 1
+    except AttributeError:
+        # evidence_storage.delete_record is the canonical name; if a
+        # different helper exists, the loop is best-effort.
+        pass
+    except Exception:
+        pass
+
+    if neo_result.get("status") == "not_found" and evidence_deleted == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No phone report '{report_key}' in case",
+        )
+
+    return {
+        **neo_result,
+        "deleted_evidence_records": evidence_deleted,
+    }
+
+
+class PhoneReportUpdateRequest(BaseModel):
+    """PATCH body for /reports/{report_key} — only override editing for now."""
+    device_name_override: Optional[str] = None
+
+
+@router.patch("/reports/{report_key}")
+async def patch_phone_report(
+    report_key: str,
+    body: PhoneReportUpdateRequest,
+    case_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Update mutable fields on a PhoneReport. Currently supports only
+    `device_name_override`: pass a non-empty string to override the
+    detected device name, or null/empty to clear and revert to the
+    parser-detected name.
+    """
+    _require_case_evidence_access(case_id, current_user, db)
+    updated = neo4j_service.update_phone_report_name_override(
+        case_id=case_id,
+        report_key=report_key,
+        device_name_override=body.device_name_override,
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No phone report '{report_key}' in case",
+        )
+    return updated
+
+
 @router.get("/cross-phone-graph")
 async def get_cross_phone_graph(
     case_id: str = Query(...),

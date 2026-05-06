@@ -132,6 +132,11 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
   const [loadingDuplicates, setLoadingDuplicates] = useState(false);
   const [activeTask, setActiveTask] = useState(null); // Track active wiretap processing task for this folder
   const [cellebriteTask, setCellebriteTask] = useState(null); // Track active Cellebrite processing task
+  // When the server reports a duplicate phone-report (HTTP 409), we
+  // pop a confirmation dialog. Shape:
+  //   { folderPath, existing: {report_key, device_model, evidence_number, phone_owner_name},
+  //     incoming:  {device_model, evidence_number, imei}, message }
+  const [cellebriteDuplicate, setCellebriteDuplicate] = useState(null);
   const [activeTasksByFolder, setActiveTasksByFolder] = useState({}); // Track active tasks for multiple folders: {folderPath: task}
   const [previewedFileId, setPreviewedFileId] = useState(null); // Track which file is being previewed
   const [selectedFolderProfile, setSelectedFolderProfile] = useState(null); // Selected profile for folder processing
@@ -702,11 +707,30 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
 
   // Show single folder info if provided
   if (folderInfo) {
+    const handleConfirmReplace = async () => {
+      const dup = cellebriteDuplicate;
+      if (!dup) return;
+      try {
+        setCellebriteDuplicate(null);
+        setCellebriteTask({ id: 'pending', status: 'pending', progress: 0, total: 0 });
+        await evidenceAPI.processCellebriteFolder(caseId, dup.folderPath, { force: true });
+      } catch (err) {
+        console.error('Failed to replace existing Cellebrite report:', err);
+        setCellebriteTask(null);
+      }
+    };
     return (
       <div className="h-full overflow-y-auto p-4 bg-white">
         <h3 className="text-sm font-semibold text-owl-blue-900 mb-4">
           Folder Information
         </h3>
+        {cellebriteDuplicate && (
+          <CellebriteDuplicateDialog
+            payload={cellebriteDuplicate}
+            onCancel={() => setCellebriteDuplicate(null)}
+            onConfirm={handleConfirmReplace}
+          />
+        )}
 
         <div className="border border-light-200 rounded-lg p-4 bg-light-50">
           {/* Folder Header */}
@@ -1006,6 +1030,24 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                           setCellebriteTask({ id: 'pending', status: 'pending', progress: 0, total: 0 });
                           await evidenceAPI.processCellebriteFolder(caseId, folderInfo.path);
                         } catch (err) {
+                          // Server returns HTTP 409 with structured detail
+                          // when this case already has a phone report that
+                          // would collide. Surface the dialog so the user
+                          // can decide whether to replace.
+                          const detail = err?.detail;
+                          const isDuplicate =
+                            err?.status === 409 ||
+                            (detail && detail.reason === 'duplicate_phone_report');
+                          if (isDuplicate && detail && typeof detail === 'object') {
+                            setCellebriteTask(null);
+                            setCellebriteDuplicate({
+                              folderPath: folderInfo.path,
+                              existing: detail.existing || {},
+                              incoming: detail.incoming || {},
+                              message: detail.message || '',
+                            });
+                            return;
+                          }
                           console.error('Failed to start Cellebrite processing:', err);
                           setCellebriteTask(null);
                         }
@@ -1346,3 +1388,81 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
   );
 }
 
+/**
+ * Dialog shown when the server detects that ingesting this folder
+ * would collide with an existing PhoneReport in the case. The user can
+ * either cancel or replace the existing report (force re-ingest).
+ */
+function CellebriteDuplicateDialog({ payload, onCancel, onConfirm }) {
+  const { existing = {}, incoming = {}, message } = payload || {};
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg shadow-xl max-w-lg w-full p-5">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+            <AlertTriangle className="w-5 h-5 text-amber-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-base font-semibold text-owl-blue-900">
+              This phone is already in the case
+            </h2>
+            <p className="text-sm text-light-700 mt-1">
+              {message || 'A phone report with the same key or IMEI already exists in this case.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+          <div className="bg-light-50 border border-light-200 rounded p-3">
+            <div className="font-medium text-light-700 mb-1">Already in case</div>
+            <div className="space-y-0.5 text-light-600">
+              <div><span className="text-light-500">Device:</span> {existing.device_model || 'Unknown'}</div>
+              {existing.phone_owner_name && (
+                <div><span className="text-light-500">Owner:</span> {existing.phone_owner_name}</div>
+              )}
+              {existing.evidence_number && (
+                <div><span className="text-light-500">Evidence #:</span> {existing.evidence_number}</div>
+              )}
+              {existing.imei && (
+                <div><span className="text-light-500">IMEI:</span> {existing.imei}</div>
+              )}
+            </div>
+          </div>
+          <div className="bg-amber-50 border border-amber-200 rounded p-3">
+            <div className="font-medium text-amber-800 mb-1">About to ingest</div>
+            <div className="space-y-0.5 text-amber-900">
+              <div><span className="text-amber-700">Device:</span> {incoming.device_model || 'Unknown'}</div>
+              {incoming.evidence_number && (
+                <div><span className="text-amber-700">Evidence #:</span> {incoming.evidence_number}</div>
+              )}
+              {incoming.imei && (
+                <div><span className="text-amber-700">IMEI:</span> {incoming.imei}</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <p className="text-xs text-light-600 mt-3">
+          Replacing will delete the existing phone's data (including all
+          contacts, calls, messages, locations and emails) and re-ingest
+          from this folder.
+        </p>
+
+        <div className="flex justify-end gap-2 mt-5">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 text-xs font-medium border border-light-300 text-light-700 rounded hover:bg-light-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className="px-3 py-1.5 text-xs font-medium bg-amber-600 text-white rounded hover:bg-amber-700"
+          >
+            Replace existing
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

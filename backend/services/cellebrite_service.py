@@ -26,15 +26,22 @@ def _import_cellebrite():
     return detect_cellebrite_xml, ingest_cellebrite_report
 
 
-def check_cellebrite_report(folder_path: Path) -> Dict:
+def check_cellebrite_report(folder_path: Path, case_id: Optional[str] = None) -> Dict:
     """
     Check if a folder contains a Cellebrite UFED report.
 
     Reads only the first 4KB of XML files to check for the
     Cellebrite namespace — fast and non-destructive.
 
+    When `case_id` is provided, also checks for an existing PhoneReport
+    in that case that would collide with the new ingest. The result
+    carries `duplicate=True` and `existing` (the colliding report's
+    summary) so the frontend can prompt for confirmation before posting
+    to /cellebrite/process with `force=True`.
+
     Args:
         folder_path: Path to the folder to check
+        case_id:     Optional case to check for collisions in
 
     Returns:
         Dict with detection result including report metadata
@@ -61,22 +68,75 @@ def check_cellebrite_report(folder_path: Path) -> Dict:
         parser = CellebriteXMLParser(xml_path)
         report = parser.parse_header()
 
-        return {
+        # Compose the friendly device name the same way the reports
+        # endpoint does, so the dialog text matches what the user sees
+        # everywhere else.
+        manufacturer = report.device_info.manufacturer or ""
+        detected_model = report.device_info.device_model or ""
+        if manufacturer and detected_model:
+            display_device = f"{manufacturer} {detected_model}"
+        elif detected_model:
+            display_device = detected_model
+        else:
+            display_device = "Unknown Device"
+
+        # Mirror the report_key construction done by the orchestrator
+        # so we can detect collisions before the user even kicks off
+        # the ingest.
+        report_key = (
+            f"cellebrite-{report.case_info.case_number or 'unknown'}"
+            f"-{report.case_info.evidence_number or 'unknown'}"
+        )
+
+        existing = None
+        if case_id:
+            from .neo4j_service import neo4j_service
+            try:
+                existing = neo4j_service.find_existing_phone_report(
+                    case_id=case_id,
+                    report_key=report_key,
+                    imei=report.device_info.imei,
+                    evidence_number=report.case_info.evidence_number,
+                )
+            except Exception:
+                # Don't block the check on a transient Neo4j hiccup;
+                # the ingest path will surface any real failure.
+                existing = None
+
+        result: Dict = {
             "suitable": True,
             "message": "Cellebrite UFED report detected",
             "xml_file": xml_path.name,
+            "report_key": report_key,
             "report_name": report.report_name,
             "report_version": report.report_version,
             "case_number": report.case_info.case_number,
             "evidence_number": report.case_info.evidence_number,
             "examiner": report.case_info.examiner,
             "crime_type": report.case_info.crime_type,
-            "device_model": report.device_info.device_model,
+            "device_model": display_device,
+            "manufacturer": manufacturer,
+            "detected_device_model": detected_model,
+            "device_name_candidates": list(report.device_info.device_name_candidates),
             "imei": report.device_info.imei,
+            "accessory_imeis": list(report.device_info.accessory_imeis),
             "phone_numbers": report.device_info.msisdn,
             "node_count": report.node_count,
             "model_count": report.model_count,
+            "duplicate": False,
+            "existing": None,
         }
+
+        if existing:
+            result["duplicate"] = True
+            result["existing"] = existing
+            result["message"] = (
+                f"This case already contains '{existing.get('device_model') or 'a phone'}' "
+                f"(evidence {existing.get('evidence_number') or '—'}). "
+                "Re-ingest will replace the existing data."
+            )
+
+        return result
     except Exception as e:
         return {
             "suitable": False,
@@ -90,6 +150,7 @@ def process_cellebrite_report(
     task_id: str,
     owner: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
+    force: bool = False,
 ) -> Dict:
     """
     Process a Cellebrite UFED report folder (runs synchronously).
@@ -97,12 +158,19 @@ def process_cellebrite_report(
     Called from a background task. Updates the background task storage
     with progress and results.
 
+    When `force` is False and the case already contains a PhoneReport
+    that would collide with this one, the task fails fast with a
+    duplicate error and no graph mutation. When `force` is True, the
+    existing PhoneReport (and every node tagged with its
+    cellebrite_report_key) is deleted before the new ingest runs.
+
     Args:
         folder_path: Path to the Cellebrite report folder
         case_id: Case ID for graph isolation
         task_id: Background task ID for progress tracking
         owner: Username for evidence ownership
         log_callback: Optional progress logging callback
+        force: If True, replace any existing report with the same key
 
     Returns:
         Dict with ingestion result
@@ -131,6 +199,44 @@ def process_cellebrite_report(
         )
 
     try:
+        # Re-check for collisions at ingest time (the frontend may have
+        # called check_cellebrite_report earlier, but a race is possible
+        # if two ingests target the same case).
+        precheck = check_cellebrite_report(folder_path, case_id=case_id)
+        if precheck.get("duplicate") and not force:
+            existing = precheck.get("existing") or {}
+            background_task_storage.update_task(
+                task_id,
+                status=TaskStatus.FAILED.value,
+                completed_at=datetime.now().isoformat(),
+                error="duplicate_phone_report",
+            )
+            _log(
+                f"Refusing to ingest: a phone report with key "
+                f"{existing.get('report_key')} already exists in this case. "
+                "Pass force=true (or delete the existing report) to replace it."
+            )
+            return {
+                "status": "error",
+                "reason": "duplicate",
+                "existing": existing,
+            }
+
+        # If force is set and a duplicate exists, delete the existing
+        # PhoneReport (and every node tagged with its key) first so the
+        # fresh ingest doesn't pile on top.
+        if force and precheck.get("duplicate"):
+            existing = precheck.get("existing") or {}
+            existing_key = existing.get("report_key")
+            if existing_key:
+                from .neo4j_service import neo4j_service
+                deleted = neo4j_service.delete_phone_report(case_id, existing_key)
+                _log(
+                    f"Replaced existing phone report {existing_key}: "
+                    f"removed {deleted.get('deleted_nodes', 0)} nodes "
+                    f"+ {deleted.get('deleted_phone_report', 0)} PhoneReport node(s)."
+                )
+
         _, ingest_cellebrite_report = _import_cellebrite()
 
         result = ingest_cellebrite_report(

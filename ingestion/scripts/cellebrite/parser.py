@@ -119,8 +119,21 @@ class CellebriteXMLParser:
         Extracts: project attributes, sourceExtractions, caseInformation,
         and metadata (device info). Stops at <taggedFiles> to avoid
         parsing the bulk of the file.
+
+        Identity-bearing items (IMEI, manufacturer, device model) are
+        attributed to the *device extraction* — the one whose type is
+        Physical / FileSystem / Legacy / AdvancedLogical. SIM-card and
+        Report/Logical extractions are not treated as the device, so a
+        SIM's "Model = SIM" doesn't get mistaken for the phone's model
+        and an accessory's IMEI doesn't overwrite the device's IMEI.
         """
         report = CellebriteReport()
+
+        # Manufacturer / device-name candidates collected during the pass.
+        # Lower priority numbers win. We pick the best at the end.
+        # Each entry: (priority, source, value, extraction_id)
+        manufacturer_candidates: List[tuple] = []
+        device_model_candidates: List[tuple] = []
 
         for event, elem in ET.iterparse(str(self.xml_path), events=["start", "end"]):
             tag = _strip_ns(elem.tag)
@@ -180,15 +193,23 @@ class CellebriteXMLParser:
             # --- Metadata / Device Info ---
             elif event == "end" and tag == "item":
                 name = elem.get("name", "")
+                source_extraction = elem.get("sourceExtraction", "")
+                is_device = self._is_device_extraction(report, source_extraction)
                 # CDATA content
                 text = (elem.text or "").strip()
                 if not text:
                     elem.clear()
                     continue
 
-                if name == "IMEI" and not report.device_info.imei:
-                    report.device_info.imei = text
-                elif name == "IMSI" and not report.device_info.imsi:
+                # IMEI: only the device extraction's IMEI is canonical.
+                # Other IMEIs (accessories, paired devices) are kept on
+                # accessory_imeis for diagnostics.
+                if name == "IMEI":
+                    if is_device and not report.device_info.imei:
+                        report.device_info.imei = text
+                    elif not is_device and text not in report.device_info.accessory_imeis:
+                        report.device_info.accessory_imeis.append(text)
+                elif name == "IMSI" and is_device and not report.device_info.imsi:
                     report.device_info.imsi = text
                 elif name == "ICCID":
                     if text not in report.device_info.iccid:
@@ -198,11 +219,32 @@ class CellebriteXMLParser:
                         report.device_info.msisdn.append(text)
                 elif name == "DeviceInfoAndroidID" and not report.device_info.android_id:
                     report.device_info.android_id = text
+                # Manufacturer candidates — lower priority number wins.
+                # SIM-card values ("SIM Card") are excluded because they
+                # belong to a SIM extraction, not the device.
+                elif name == "DeviceInfoSelectedManufacturer" and is_device:
+                    manufacturer_candidates.append((1, "selected_manufacturer", text, source_extraction))
+                elif name == "Manufacturer" and is_device and text.lower() != "sim card":
+                    manufacturer_candidates.append((2, "manufacturer", text, source_extraction))
+                elif name == "DeviceInfoBrand" and is_device:
+                    manufacturer_candidates.append((3, "brand", text, source_extraction))
+                elif name == "Vendor" and is_device and text.lower() != "sim card":
+                    manufacturer_candidates.append((4, "vendor", text, source_extraction))
+                # Device-model candidates — lower priority number wins.
+                # The "SIM" literal is excluded because it appears on SIM
+                # extractions and is not the phone's model.
+                elif name == "DeviceInfoSelectedDeviceName" and is_device and text.upper() != "SIM":
+                    device_model_candidates.append((1, "selected_device_name", text, source_extraction))
+                elif name == "DeviceInfoDeviceModel" and is_device:
+                    device_model_candidates.append((2, "device_model", text, source_extraction))
+                elif name == "Model" and is_device and text.upper() != "SIM":
+                    device_model_candidates.append((3, "model", text, source_extraction))
                 elif name == "DeviceInfoBluetoothDeviceName":
                     report.device_info.bluetooth_name = text
-                    # Use bluetooth name as device model if available
-                    if not report.device_info.device_model:
-                        report.device_info.device_model = text
+                    # Bluetooth name is the lowest-priority device-name
+                    # candidate; kept so we never regress on reports that
+                    # ONLY have Bluetooth metadata.
+                    device_model_candidates.append((9, "bluetooth_name", text, source_extraction))
                 elif name == "DeviceInfoBluetoothDeviceAddress":
                     report.device_info.bluetooth_mac = text
                 elif name == "Mac Address":
@@ -235,17 +277,81 @@ class CellebriteXMLParser:
             ):
                 elem.clear()
 
+        # Resolve manufacturer + device model from collected candidates.
+        # Lowest priority number wins; ties broken by insertion order
+        # (which equals XML order, so the first occurrence wins).
+        manufacturer_candidates.sort(key=lambda t: t[0])
+        device_model_candidates.sort(key=lambda t: t[0])
+
+        if manufacturer_candidates:
+            report.device_info.manufacturer = manufacturer_candidates[0][2]
+        if device_model_candidates:
+            report.device_info.device_model = device_model_candidates[0][2]
+
+        # Persist every candidate (manufacturer + model) so the override
+        # popover can offer the investigator a switcher.
+        for _, source, value, extraction_id in device_model_candidates:
+            report.device_info.device_name_candidates.append({
+                "source": source,
+                "value": value,
+                "extraction_id": extraction_id,
+            })
+        for _, source, value, extraction_id in manufacturer_candidates:
+            report.device_info.device_name_candidates.append({
+                "source": source,
+                "value": value,
+                "extraction_id": extraction_id,
+            })
+
         self._log(
             f"Case: {report.case_info.case_number} - "
             f"{report.case_info.case_name} ({report.case_info.crime_type})"
         )
         self._log(
-            f"Device: {report.device_info.device_model or 'Unknown'}, "
+            f"Device: "
+            f"{(report.device_info.manufacturer + ' ') if report.device_info.manufacturer else ''}"
+            f"{report.device_info.device_model or 'Unknown'}, "
             f"IMEI: {report.device_info.imei or 'N/A'}, "
             f"Phone(s): {', '.join(report.device_info.msisdn) or 'N/A'}"
         )
 
         return report
+
+    # ------------------------------------------------------------------
+    # Extraction classification helpers
+    # ------------------------------------------------------------------
+
+    # Cellebrite extraction "type" values that represent the actual
+    # device (vs SIM cards, attached reports, etc.). Anything not in
+    # this set — SIM, Logical, Report — is treated as non-device, so
+    # its IMEIs / model strings can't be mistaken for the phone's.
+    _DEVICE_EXTRACTION_TYPES = {
+        "Physical",
+        "FileSystem",
+        "AdvancedLogical",
+        "Legacy",
+        "FullFileSystem",
+    }
+
+    def _is_device_extraction(self, report: CellebriteReport, extraction_id: str) -> bool:
+        """
+        Return True if `extraction_id` belongs to the device (phone)
+        rather than a SIM card or attached logical report.
+
+        Treats a missing or empty extraction_id as the device extraction
+        ONLY when the report has no explicit extractions to disambiguate;
+        otherwise, missing source means we can't safely attribute the
+        item to the device.
+        """
+        if not report.extractions:
+            return True
+        if not extraction_id:
+            return False
+        for ext in report.extractions:
+            if ext.extraction_id == extraction_id:
+                return ext.extraction_type in self._DEVICE_EXTRACTION_TYPES
+        # Unknown extraction id — be conservative and skip.
+        return False
 
     # ------------------------------------------------------------------
     # Phase 2: Parse tagged files (file index)
