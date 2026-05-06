@@ -96,7 +96,14 @@
       "Bash(echo \"spawned $!\")",
       "Bash(/home/conorbowles51/app_v2/venv/bin/python3 -c ' *)",
       "Bash(awk '$3 > 100000 {print}')",
-      "Bash(git check-ignore *)"
+      "Bash(git check-ignore *)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j status --short)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j pull --rebase --autostash)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j push origin main)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j log --oneline -5)",
+      "Bash(PYTHONPATH=ingestion/scripts:backend E2E_CASE_ID=e2e-test-1778039744 .venv/bin/python:*)",
+      "Bash(PYTHONPATH=ingestion/scripts:backend .venv/bin/python:*)",
+      "Bash(git -C /Users/neilbyrne/Documents/Owl/owl-n4j add backend/routers/cellebrite.py backend/services/neo4j_service.py frontend/src/components/cellebrite/CellebriteCommsCenter.jsx frontend/src/components/cellebrite/comms/CommsCallRow.jsx frontend/src/components/cellebrite/comms/CommsEmailCard.jsx frontend/src/components/cellebrite/comms/CommsThreadView.jsx frontend/src/services/api.js)"
     ]
   }
 }
