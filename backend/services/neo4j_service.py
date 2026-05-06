@@ -6843,8 +6843,13 @@ class Neo4jService:
                         row["event_type"] = "meeting"
                         events.append(row)
 
-        # Sort by timestamp ascending; apply limit+offset
-        events.sort(key=lambda e: (e.get("timestamp") or ""))
+        # Sort newest-first so when total > limit the cap drops the oldest
+        # events, not the most recent. Events without a timestamp sort to the
+        # back — a missing timestamp shouldn't push a real event out of the slice.
+        events.sort(
+            key=lambda e: (1 if e.get("timestamp") else 0, e.get("timestamp") or ""),
+            reverse=True,
+        )
         total = len(events)
         events = events[offset: offset + limit]
         return {"events": events, "total": total}

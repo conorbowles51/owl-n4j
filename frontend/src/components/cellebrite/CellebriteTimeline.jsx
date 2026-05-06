@@ -98,7 +98,7 @@ export default function CellebriteTimeline({ caseId, reports }) {
           startDate: startDate || null,
           endDate: endDate || null,
           onlyGeolocated: false,
-          limit: 5000,
+          limit: 500000,
         })
         .then((data) => {
           if (cancelled) return;

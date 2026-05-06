@@ -313,7 +313,7 @@ async def get_events(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     only_geolocated: bool = Query(False),
-    limit: int = Query(5000, ge=1, le=20000),
+    limit: int = Query(5000, ge=1, le=500000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
