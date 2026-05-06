@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, Users, Building2, Landmark, CreditCard, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, Search, Users, Building2, Landmark, CreditCard, ChevronDown, ChevronRight, Maximize2, X } from 'lucide-react';
 import { graphAPI } from '../../services/api';
+import NodeDetails from '../NodeDetails';
+import LinkNodeToEntityButton from '../entities/LinkNodeToEntityButton';
 
 const TABS = [
   { key: 'All', label: 'All', icon: null },
@@ -35,6 +37,38 @@ export default function EntitySummarySection({ caseId }) {
   const [sortBy, setSortBy] = useState('name');
   const [sortOpen, setSortOpen] = useState(false);
   const [expandedKeys, setExpandedKeys] = useState(new Set());
+
+  // Full-detail drawer. Pulls the entity's complete graph node via
+  // graphAPI.getNodeDetails so investigators can see verified facts,
+  // AI insights, properties, geocoding — and link the node to a
+  // Profile via NodeDetails' built-in button.
+  const [detailNode, setDetailNode] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
+
+  const openDetails = React.useCallback(
+    async (entity) => {
+      if (!caseId || !entity?.key) return;
+      setDetailNode({ key: entity.key, name: entity.name, type: entity.type });
+      setDetailLoading(true);
+      setDetailError(null);
+      try {
+        const full = await graphAPI.getNodeDetails(entity.key, caseId);
+        setDetailNode(full);
+      } catch (err) {
+        setDetailError(err?.message || 'Failed to load entity details');
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [caseId],
+  );
+
+  const closeDetails = () => {
+    setDetailNode(null);
+    setDetailLoading(false);
+    setDetailError(null);
+  };
 
   const fetchEntities = React.useCallback(() => {
     if (!caseId) return;
@@ -186,6 +220,41 @@ export default function EntitySummarySection({ caseId }) {
         </div>
       </div>
 
+      {/* Full-detail drawer mounted as a fixed slide-in. Anchored to the
+          right edge of the viewport so it doesn't fight the section's
+          own scroll. */}
+      {detailNode && (
+        <div className="fixed inset-y-0 right-0 w-[36vw] min-w-[420px] max-w-[680px] bg-white shadow-2xl border-l border-light-200 z-40 flex flex-col">
+          {detailLoading ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="w-5 h-5 animate-spin text-light-400" />
+            </div>
+          ) : detailError ? (
+            <div className="flex flex-col h-full">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-light-200">
+                <h2 className="text-base font-semibold text-owl-blue-900 truncate">
+                  {detailNode?.name || 'Entity'}
+                </h2>
+                <button
+                  onClick={closeDetails}
+                  className="p-1 text-light-500 hover:text-light-800"
+                  title="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-4 text-sm text-red-600">{detailError}</div>
+            </div>
+          ) : (
+            <NodeDetails
+              node={detailNode}
+              caseId={caseId}
+              onClose={closeDetails}
+            />
+          )}
+        </div>
+      )}
+
       {/* Entity List */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         {filtered.length === 0 ? (
@@ -237,6 +306,27 @@ export default function EntitySummarySection({ caseId }) {
                           {entity.insights_count}I
                         </span>
                       )}
+                      {/* Inline link to Profile — investigators can attach
+                          this entity to a dossier without leaving the
+                          summary view. */}
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <LinkNodeToEntityButton
+                          caseId={caseId}
+                          nodeKey={entity.key}
+                          compact
+                        />
+                      </span>
+                      {/* Full details: facts, AI insights, properties */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openDetails(entity);
+                        }}
+                        className="p-0.5 text-light-400 hover:text-owl-blue-600 rounded"
+                        title="View full details"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                      </button>
                     </div>
                   </div>
                   {isExpanded && hasSummary && (
