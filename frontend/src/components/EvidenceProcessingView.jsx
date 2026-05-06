@@ -236,22 +236,28 @@ export default function EvidenceProcessingView({
     }
   }, [caseId]);
 
+  // Filesystem sync is gated behind an explicit "Sync from disk" button.
+  // On mount we only show what's already in the system — no disk walks,
+  // no hashing, no large payloads.
+  const [syncing, setSyncing] = useState(false);
+  const handleSyncFromDisk = useCallback(async () => {
+    if (!caseId || syncing) return;
+    setSyncing(true);
+    try {
+      await evidenceAPI.syncFilesystem(caseId);
+      await loadFiles();
+    } catch (err) {
+      console.error('Filesystem sync failed:', err);
+      setError(err?.message || 'Filesystem sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [caseId, syncing, loadFiles]);
+
   useEffect(() => {
-    const init = async () => {
-      // Sync filesystem first to create records for any orphaned files
-      if (caseId) {
-        try {
-          await evidenceAPI.syncFilesystem(caseId);
-        } catch (err) {
-          // Non-critical — just log and continue
-          console.warn('Filesystem sync failed:', err);
-        }
-      }
-      loadFiles();
-      loadLogs();
-      loadProcessedWiretaps();
-    };
-    init();
+    loadFiles();
+    loadLogs();
+    loadProcessedWiretaps();
   }, [caseId, loadFiles, loadLogs, loadProcessedWiretaps]);
 
   // Poll logs every 5 seconds only while actively processing
@@ -1130,7 +1136,15 @@ export default function EvidenceProcessingView({
 
   const filteredUnprocessed = filterUnprocessed(unprocessed);
   const filteredProcessed = filterProcessed(processed);
-  
+
+  // Cap how many file rows we render to keep the page responsive on large
+  // cases (e.g. Cellebrite extractions can produce 10k+ files). Users can
+  // still see the full count and narrow the list via the filename/type
+  // filters above each list.
+  const RENDER_CAP = 500;
+  const visibleUnprocessed = filteredUnprocessed.slice(0, RENDER_CAP);
+  const visibleProcessed = filteredProcessed.slice(0, RENDER_CAP);
+
   const unprocessedTypes = getAllFileTypes(unprocessed);
   const processedTypes = getAllFileTypes(processed);
 
@@ -1745,6 +1759,14 @@ export default function EvidenceProcessingView({
                   >
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                   </button>
+                  <button
+                    onClick={handleSyncFromDisk}
+                    disabled={syncing}
+                    className="p-1.5 rounded-full hover:bg-light-100 disabled:opacity-50"
+                    title="Sync from disk (registers any unregistered files in this case folder — may be slow for large folders)"
+                  >
+                    <HardDrive className={`w-4 h-4 ${syncing ? 'animate-pulse' : ''}`} />
+                  </button>
                 </div>
               </div>
               
@@ -1809,8 +1831,13 @@ export default function EvidenceProcessingView({
                     Select files below and click &quot;Process&quot; above to begin evidence extraction.
                   </p>
                 )}
+                {filteredUnprocessed.length > RENDER_CAP && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+                    Showing first {RENDER_CAP.toLocaleString()} of {filteredUnprocessed.length.toLocaleString()} files. Use the filename or type filters above to narrow the list.
+                  </p>
+                )}
                 <div className="space-y-2">
-                  {filteredUnprocessed.map((file) => (
+                  {visibleUnprocessed.map((file) => (
                     <div
                       key={file.id}
                       className={`flex items-start gap-3 p-3 rounded-lg border ${
@@ -1940,8 +1967,14 @@ export default function EvidenceProcessingView({
                     : 'No files match the current filters.'}
                 </p>
               ) : (
+                <>
+                {filteredProcessed.length > RENDER_CAP && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+                    Showing first {RENDER_CAP.toLocaleString()} of {filteredProcessed.length.toLocaleString()} files. Use the filename or type filters above to narrow the list.
+                  </p>
+                )}
                 <div className="space-y-2">
-                  {filteredProcessed.map((file) => (
+                  {visibleProcessed.map((file) => (
                     <div
                       key={file.id}
                       onClick={() => toggleSelect(file.id)}
@@ -2006,6 +2039,7 @@ export default function EvidenceProcessingView({
                     </div>
                   ))}
                 </div>
+                </>
               )}
             </div>
           </div>

@@ -109,10 +109,110 @@ class EvidenceLogListResponse(BaseModel):
     logs: List[EvidenceLog]
 
 
+_CELLEBRITE_NS_MARKER = b"http://pa.cellebrite.com/report/2.0"
+
+# Pure path-pattern fingerprint for Cellebrite extraction artifacts.
+# Used in addition to (not instead of) the directory-prefix filter so we
+# also catch cases where a Cellebrite report folder doesn't expose a plain
+# `*.xml` at its top level — UFED exports often use suffixed names like
+# `Report.xmlExtra`, `Report.xmlTranslation`, `Report.xmlNodeSource` that
+# don't match `*.xml` globbing. Pure string match, zero file I/O.
+_CELLEBRITE_PATH_SEGMENTS = (
+    "/files/Audio/", "/files/Video/", "/files/Image/", "/files/Images/",
+    "/files/Document/", "/files/Documents/", "/files/Configuration/",
+    "/files/Application/", "/files/Applications/", "/files/Database/",
+    "/files/Databases/", "/files/Text/", "/files/Archive/", "/files/Archives/",
+    "/thumbnails/", "/useraccounts/", "/databases/", "/decoded/", "/native/",
+)
+_CELLEBRITE_FILENAME_SUFFIXES = (
+    ".xmlextra", ".xmltranslation", ".xmlnodesource", ".xmlmodel",
+    ".xmlmodelsource", ".xmltagged", ".xmllast", ".xmlmdfsource",
+)
+
+
+def _looks_like_cellebrite_artifact(stored_path: str) -> bool:
+    """
+    Heuristic: does this stored_path point inside a Cellebrite UFED tree?
+    Path-only check, no filesystem access.
+    """
+    if not stored_path:
+        return False
+    sp = stored_path.replace("\\", "/")
+    if any(seg in sp for seg in _CELLEBRITE_PATH_SEGMENTS):
+        return True
+    lower = sp.lower()
+    if any(lower.endswith(suf) for suf in _CELLEBRITE_FILENAME_SUFFIXES):
+        return True
+    return False
+
+
+def _is_cellebrite_report_root(dir_path: Path) -> bool:
+    """
+    Cheap check for a Cellebrite UFED report root: any .xml file in this
+    directory whose first 4KB contains the Cellebrite namespace.
+
+    Reads at most 4KB per XML, no recursion. Used to prune the sync walk
+    so we never touch the thousands of media/database files inside an
+    extraction. Those files only get read when the user explicitly
+    triggers Cellebrite processing on the folder.
+    """
+    try:
+        for xml_file in dir_path.glob("*.xml"):
+            try:
+                with xml_file.open("rb") as f:
+                    head = f.read(4096)
+                if _CELLEBRITE_NS_MARKER in head:
+                    return True
+            except (OSError, IOError):
+                continue
+    except (OSError, IOError):
+        pass
+    return False
+
+
+# (case_id) -> (case_dir_mtime_ns, list_of_root_prefix_strings)
+_CELLEBRITE_ROOTS_CACHE: dict = {}
+
+
+def _cellebrite_root_prefixes(case_id: str) -> List[str]:
+    """
+    Return absolute-path prefix strings for every Cellebrite UFED report
+    folder directly under the case's evidence root. Used by `list_evidence`
+    to filter out the (often hundreds of thousands of) extraction artifact
+    rows that pre-date the sync_filesystem prune fix.
+
+    Only top-level directories are checked — Cellebrite reports are always
+    uploaded as a single folder, never nested. Cached per (case_id, mtime)
+    so repeated calls during a page load are free.
+    """
+    case_dir = EVIDENCE_ROOT_DIR / case_id
+    if not case_dir.exists() or not case_dir.is_dir():
+        return []
+    try:
+        mtime = case_dir.stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    cached = _CELLEBRITE_ROOTS_CACHE.get(case_id)
+    if cached and cached[0] == mtime:
+        return cached[1]
+
+    prefixes: List[str] = []
+    try:
+        for entry in case_dir.iterdir():
+            if entry.is_dir() and _is_cellebrite_report_root(entry):
+                prefixes.append(str(entry).replace("\\", "/").rstrip("/") + "/")
+    except OSError:
+        pass
+
+    _CELLEBRITE_ROOTS_CACHE[case_id] = (mtime, prefixes)
+    return prefixes
+
+
 @router.get("", response_model=EvidenceListResponse)
 async def list_evidence(
     case_id: Optional[str] = None,
     status: Optional[str] = None,
+    include_cellebrite_artifacts: bool = False,
     user: dict = Depends(get_current_user),
 ):
     """
@@ -122,37 +222,158 @@ async def list_evidence(
         case_id: Optional case ID to filter by.
         status: Optional status filter
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
+        include_cellebrite_artifacts: If False (default), files that live
+            inside a Cellebrite UFED report subtree are filtered out. Those
+            files are not user-meaningful evidence rows — they are extraction
+            artifacts processed via /evidence/cellebrite/process. Including
+            them shipped 100K+ rows / ~100 MB JSON for a single case and
+            hung the Process Evidence page on slow links.
+
+    Document summaries are intentionally NOT inlined here — for cases with
+    thousands of processed files the Neo4j batch fetch made this endpoint
+    slow enough to hang the Process Evidence page. Fetch summaries on demand
+    via GET /api/evidence/summary/{filename}.
     """
     try:
         files = evidence_service.list_files(
             case_id=case_id,
             status=status,
         )
-        
-        # Get document summaries for processed files
-        if files and case_id:
-            processed_files = [f for f in files if f.get("status") == "processed"]
-            if processed_files:
-                try:
-                    # Get summaries from Neo4j
-                    doc_names = [f.get("original_filename", "") for f in processed_files]
-                    summaries = neo4j_service.get_document_summaries_batch(doc_names, case_id)
-                    
-                    # Add summaries to file records
-                    for file in files:
-                        if file.get("status") == "processed":
-                            filename = file.get("original_filename", "")
-                            if filename in summaries:
-                                file["summary"] = summaries[filename]
-                except Exception as e:
-                    # Don't fail the entire request if summary retrieval fails
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(f"Failed to load document summaries: {str(e)}")
-        
+        if not include_cellebrite_artifacts and case_id:
+            prefixes = _cellebrite_root_prefixes(case_id)
+            if prefixes:
+                # Path-fingerprint filter is only applied when at least one
+                # Cellebrite report root was detected for this case — that
+                # way non-Cellebrite cases never risk a false positive on
+                # an unrelated `files/Video/` or `thumbnails/` subfolder.
+                def _is_artifact(rec: dict) -> bool:
+                    sp = (rec.get("stored_path") or "").replace("\\", "/")
+                    if any(sp.startswith(p) for p in prefixes):
+                        return True
+                    return _looks_like_cellebrite_artifact(sp)
+                files = [r for r in files if not _is_artifact(r)]
+
+        # Project to a slim shape — `summary` (~2 KB per processed row) is
+        # fetched on demand via /evidence/summary/{filename} when the user
+        # opens a row. Shallow copy so we don't mutate the in-memory store.
+        files = [{k: v for k, v in rec.items() if k != "summary"} for rec in files]
+
         return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _sync_filesystem_blocking(case_id: str, owner_email: str) -> dict:
+    """
+    Walk the case directory and register any files that don't have an
+    evidence record yet. Runs synchronously — call via run_in_threadpool
+    from request handlers so it doesn't block the event loop.
+
+    Two safeguards against the "Cellebrite extraction has 50,000 files"
+    pathology that previously hung the Process Evidence page:
+      1. Cellebrite report subtrees are detected via XML signature on
+         entry and skipped wholesale. Their files are processed via the
+         dedicated Cellebrite endpoint, not as individual evidence rows.
+      2. For files that *do* need registering, sha256 is streamed in
+         1 MiB chunks rather than `read_bytes()`, so a multi-GB file
+         never sits in RAM.
+
+    The common case — no new files — does zero file I/O beyond os.stat.
+    """
+    import os
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    case_dir = EVIDENCE_ROOT_DIR / case_id
+    if not case_dir.exists() or not case_dir.is_dir():
+        return {"created": 0, "message": "Case directory does not exist"}
+
+    existing_records = evidence_storage.list_files(case_id=case_id)
+
+    known_paths = set()
+    for rec in existing_records:
+        sp = rec.get("stored_path", "")
+        if sp:
+            known_paths.add(sp.replace('\\', '/'))
+            try:
+                known_paths.add(str(Path(sp).resolve()).replace('\\', '/'))
+            except Exception:
+                pass
+
+    new_file_paths: list[Path] = []
+    skipped_cellebrite_dirs: list[str] = []
+
+    for dirpath, dirnames, filenames in os.walk(case_dir):
+        current_dir = Path(dirpath)
+
+        # If this directory is a Cellebrite report root, prune the entire
+        # subtree — don't list files, don't descend, don't read anything.
+        if _is_cellebrite_report_root(current_dir):
+            skipped_cellebrite_dirs.append(str(current_dir.relative_to(case_dir)) or ".")
+            dirnames[:] = []
+            continue
+
+        # Skip dot-directories in-place so os.walk doesn't descend.
+        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+
+        for filename in filenames:
+            if filename.startswith('.'):
+                continue
+            file_path = current_dir / filename
+
+            abs_path_str = str(file_path).replace('\\', '/')
+            try:
+                resolved_str = str(file_path.resolve()).replace('\\', '/')
+            except Exception:
+                resolved_str = abs_path_str
+
+            if abs_path_str in known_paths or resolved_str in known_paths:
+                continue
+
+            relative_path = str(file_path.relative_to(case_dir)).replace('\\', '/')
+            if any(p.endswith(relative_path) for p in known_paths):
+                continue
+
+            new_file_paths.append(file_path)
+
+    if skipped_cellebrite_dirs:
+        logger.info(
+            f"Filesystem sync: skipped {len(skipped_cellebrite_dirs)} Cellebrite "
+            f"report folder(s) for case {case_id}: {skipped_cellebrite_dirs[:5]}"
+        )
+
+    file_infos = []
+    for file_path in new_file_paths:
+        try:
+            size = file_path.stat().st_size
+            h = hashlib.sha256()
+            with file_path.open("rb") as f:
+                for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                    h.update(chunk)
+            sha = h.hexdigest()
+        except (OSError, PermissionError) as e:
+            logger.warning(f"Cannot read file {file_path}: {e}")
+            continue
+
+        file_infos.append({
+            "original_filename": file_path.name,
+            "stored_path": file_path,
+            "sha256": sha,
+            "size": size,
+        })
+
+    created_count = 0
+    if file_infos:
+        new_records = evidence_storage.add_files(
+            case_id=case_id,
+            files=file_infos,
+            owner=owner_email,
+        )
+        created_count = len(new_records)
+        logger.info(f"Filesystem sync: created {created_count} evidence records for case {case_id}")
+
+    return {"created": created_count, "message": f"Synced {created_count} file(s)"}
 
 
 @router.post("/sync-filesystem")
@@ -168,11 +389,6 @@ async def sync_filesystem(
     evidence records and creates 'unprocessed' records for them.
     This handles cases where files exist on disk but weren't properly registered.
     """
-    import hashlib
-    import logging
-
-    logger = logging.getLogger(__name__)
-
     try:
         from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
         from uuid import UUID
@@ -181,89 +397,10 @@ async def sync_filesystem(
         except (CaseNotFound, CaseAccessDenied) as e:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        case_dir = EVIDENCE_ROOT_DIR / case_id
-        if not case_dir.exists() or not case_dir.is_dir():
-            return {"created": 0, "message": "Case directory does not exist"}
-
-        # Get existing evidence records for this case
-        existing_records = evidence_storage.list_files(case_id=case_id)
-
-        # Build a set of known filenames (using original_filename) and stored paths
-        known_filenames = set()
-        known_stored_paths = set()
-        for rec in existing_records:
-            known_filenames.add(rec.get("original_filename", ""))
-            sp = rec.get("stored_path", "")
-            if sp:
-                known_stored_paths.add(sp)
-                # Also add just the resolved path in case it was stored differently
-                try:
-                    known_stored_paths.add(str(Path(sp).resolve()))
-                except Exception:
-                    pass
-
-        # Walk the case directory for files without evidence records
-        created_count = 0
-        file_infos = []
-        for file_path in case_dir.rglob("*"):
-            if not file_path.is_file():
-                continue
-            if file_path.name.startswith('.'):
-                continue
-
-            # Check if this file already has an evidence record
-            abs_path_str = str(file_path)
-            resolved_str = str(file_path.resolve())
-            filename = file_path.name
-
-            # Check by stored_path (both absolute and resolved)
-            if abs_path_str in known_stored_paths or resolved_str in known_stored_paths:
-                continue
-
-            # Check by filename (within this case)
-            # Only skip if there's a record with same filename AND same relative path
-            relative_path = str(file_path.relative_to(case_dir)).replace('\\', '/')
-            already_exists = False
-            for rec in existing_records:
-                rec_stored = rec.get("stored_path", "")
-                rec_filename = rec.get("original_filename", "")
-                # Match by filename for root-level files
-                if rec_filename == filename:
-                    # Check if the relative paths match
-                    if '/' not in relative_path and rec_filename == relative_path:
-                        already_exists = True
-                        break
-                    # For nested files, check if stored path ends with same relative path
-                    if rec_stored.replace('\\', '/').endswith(relative_path):
-                        already_exists = True
-                        break
-            if already_exists:
-                continue
-
-            # Read file content for hash computation
-            try:
-                content = file_path.read_bytes()
-            except (OSError, PermissionError) as e:
-                logger.warning(f"Cannot read file {file_path}: {e}")
-                continue
-
-            file_infos.append({
-                "original_filename": filename,
-                "stored_path": file_path,
-                "content": content,
-                "size": len(content),
-            })
-
-        if file_infos:
-            new_records = evidence_storage.add_files(
-                case_id=case_id,
-                files=file_infos,
-                owner=current_user.email,
-            )
-            created_count = len(new_records)
-            logger.info(f"Filesystem sync: created {created_count} evidence records for case {case_id}")
-
-        return {"created": created_count, "message": f"Synced {created_count} file(s)"}
+        # Offload the directory walk + hashing to a worker thread so the
+        # ASGI event loop stays free to serve other requests (e.g. /evidence)
+        # while a big Cellebrite case is being scanned.
+        return await run_in_threadpool(_sync_filesystem_blocking, case_id, current_user.email)
     except HTTPException:
         raise
     except Exception as e:
