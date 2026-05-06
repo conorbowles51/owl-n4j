@@ -430,8 +430,27 @@ class CellebriteNeo4jWriter:
         # Remove None values
         props = {k: v for k, v in props.items() if v is not None}
 
-        self._create_node("PhoneReport", self.report_key, props)
-        self._log(f"Created PhoneReport node: {self.report_key}")
+        # MERGE on (case_id, key) so a re-ingest of the same report updates
+        # the existing node instead of creating a duplicate. Preserve the
+        # investigator-supplied device_name_override across re-ingest by
+        # excluding it from the ON MATCH update.
+        match_props = {k: v for k, v in props.items() if k != "device_name_override"}
+        self.db.run_query(
+            """
+            MERGE (r:PhoneReport {case_id: $case_id, key: $key})
+            ON CREATE SET r = $create_props
+            ON MATCH SET r += $match_props
+            """,
+            case_id=self.case_id,
+            key=self.report_key,
+            create_props=props,
+            match_props=match_props,
+        )
+        # Track the key so the in-memory dedupe in _create_node still works
+        # for the rest of the writer run.
+        self._created_node_keys.add(self.report_key)
+        self.nodes_total += 1
+        self._log(f"Upserted PhoneReport node: {self.report_key}")
 
     def link_phone_owner_to_report(self):
         """Link phone owner to the PhoneReport node."""
