@@ -2,9 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { Loader2, Search, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
+import { usePhoneReports } from '../../context/PhoneReportsContext';
+import PhoneIdentityChip from './shared/PhoneIdentityChip';
 
 const NODE_COLORS = {
-  PhoneReport: '#059669',  // emerald-600
+  PhoneReport: '#059669',  // emerald-600 (fallback when no phone identity)
   Person: '#3b82f6',       // blue-500
   PersonShared: '#f59e0b', // amber-500
 };
@@ -13,6 +15,8 @@ const NODE_COLORS = {
  * Cross-phone graph visualization showing shared contacts across devices.
  */
 export default function CellebriteCrossPhoneGraph({ caseId }) {
+  const phoneCtx = usePhoneReports();
+
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,19 +75,48 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   const paintNode = useCallback((node, ctx, globalScale) => {
     const isReport = node.type === 'PhoneReport';
     const isShared = node.shared;
-    const color = isReport ? NODE_COLORS.PhoneReport : (isShared ? NODE_COLORS.PersonShared : NODE_COLORS.Person);
+
+    // Phone identity colour: a PhoneReport node IS a phone, so it uses
+    // its own report_key. A Person node carries one (or more) report_keys
+    // depending on whether they appear on one or multiple phones.
+    const phoneKey = node.report_key || node.cellebrite_report_key;
+    const phoneIdentity = phoneCtx && phoneKey
+      ? phoneCtx.getIdentityByKey(phoneKey)
+      : null;
+
+    // PhoneReport: fill with the phone's persistent palette colour so it
+    // matches every chip / stripe / map ring elsewhere in the app.
+    // Person: keep the existing semantic colours (default vs shared) but
+    // add a coloured ring in the phone's identity colour to show which
+    // phone owns the contact.
+    const fillColor = isReport && phoneIdentity
+      ? phoneIdentity.hex
+      : isReport
+      ? NODE_COLORS.PhoneReport
+      : isShared
+      ? NODE_COLORS.PersonShared
+      : NODE_COLORS.Person;
+
     const r = isReport ? 8 : 4 + Math.min(node.comm_count || 0, 10) * 0.3;
+
+    // Phone identity ring on Person nodes (non-report). Drawn first so
+    // the node fill sits inside it.
+    if (!isReport && phoneIdentity) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r + 2, 0, 2 * Math.PI);
+      ctx.fillStyle = phoneIdentity.hex;
+      ctx.fill();
+    }
 
     // Draw node
     ctx.beginPath();
     if (isReport) {
-      // Rounded rectangle for reports
       const size = r * 2;
       ctx.roundRect(node.x - r, node.y - r, size, size, 3);
     } else {
       ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
     }
-    ctx.fillStyle = color;
+    ctx.fillStyle = fillColor;
     ctx.fill();
 
     if (isShared) {
@@ -98,9 +131,12 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#334155';
-    const label = (node.name || '').substring(0, 20);
+    let label = (node.name || '').substring(0, 20);
+    if (isReport && phoneIdentity) {
+      label = `${phoneIdentity.short} · ${label}`;
+    }
     ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
-  }, []);
+  }, [phoneCtx]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
   const handleZoomOut = () => fgRef.current?.zoom(fgRef.current.zoom() / 1.5, 300);
@@ -151,11 +187,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 px-4 py-1.5 border-b border-light-100 text-xs text-light-600 flex-shrink-0">
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded" style={{ backgroundColor: NODE_COLORS.PhoneReport }} />
-          Device
-        </span>
+      <div className="flex items-center gap-4 px-4 py-1.5 border-b border-light-100 text-xs text-light-600 flex-shrink-0 flex-wrap">
         <span className="flex items-center gap-1">
           <span className="w-3 h-3 rounded-full" style={{ backgroundColor: NODE_COLORS.Person }} />
           Contact
@@ -164,6 +196,19 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           <span className="w-3 h-3 rounded-full border-2 border-amber-500" style={{ backgroundColor: NODE_COLORS.PersonShared }} />
           Shared Contact
         </span>
+        {phoneCtx?.hasMultiple && (
+          <>
+            <span className="h-4 w-px bg-light-300" />
+            <span className="text-light-500 font-medium">Phones:</span>
+            {phoneCtx.reports.map((r) => (
+              <PhoneIdentityChip
+                key={r.report_key}
+                reportKey={r.report_key}
+                variant="default"
+              />
+            ))}
+          </>
+        )}
       </div>
 
       {/* Graph */}

@@ -10,6 +10,7 @@ import CaseOverviewView from './workspace/CaseOverviewView';
 import VisualInvestigationTimeline from './workspace/VisualInvestigationTimeline';
 import CellebriteView from './cellebrite/CellebriteView';
 import NodeDetails from './NodeDetails';
+import { PhoneReportsProvider } from '../context/PhoneReportsContext';
 
 /**
  * WorkspaceView Component
@@ -534,6 +535,7 @@ export default function WorkspaceView({
   }
 
   return (
+    <PhoneReportsProvider caseId={caseId}>
     <div className="flex flex-col h-screen bg-light-50">
       {/* Case Header Bar */}
       <CaseHeaderBar
@@ -730,5 +732,6 @@ export default function WorkspaceView({
         )}
       </div>
     </div>
+    </PhoneReportsProvider>
   );
 }

@@ -1,6 +1,8 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { ArrowUp, ArrowDown, MapPin } from 'lucide-react';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { getPhoneIdentityByKey } from '../../../utils/phoneIdentity';
 
 /**
  * Simple windowed table for Cellebrite events. Does its own row-culling via
@@ -45,6 +47,18 @@ export default function EventsTable({
     }
     return m;
   }, [reports]);
+
+  // Pre-compute phone hex per report_key once so the windowed row
+  // renderer doesn't recompute identity for every visible row.
+  const phoneHexById = useMemo(() => {
+    const m = {};
+    for (const r of reports) {
+      m[r.report_key] = getPhoneIdentityByKey(r.report_key, reports).hex;
+    }
+    return m;
+  }, [reports]);
+
+  const showPhoneChip = reports.length > 1;
 
   // Sorted events
   const sortedEvents = useMemo(() => {
@@ -178,6 +192,8 @@ export default function EventsTable({
                 ev={ev}
                 top={top}
                 deviceLabel={deviceById[ev.device_report_key]}
+                phoneHex={phoneHexById[ev.device_report_key]}
+                showPhoneChip={showPhoneChip}
                 isSelected={isSelected}
                 isCurrent={isCurrent}
                 isFuture={isFuture}
@@ -235,6 +251,8 @@ const TableRow = React.memo(function TableRow({
   ev,
   top,
   deviceLabel,
+  phoneHex,
+  showPhoneChip,
   isSelected,
   isCurrent,
   isFuture,
@@ -261,6 +279,14 @@ const TableRow = React.memo(function TableRow({
     isFuture ? 'opacity-55' : '',
   ].join(' ');
 
+  // Phone accent stripe — 4px coloured left border on the row when there
+  // are multiple phones in the case. Inline style so it composes with
+  // the absolute-positioned grid layout.
+  const stripeStyle =
+    showPhoneChip && phoneHex
+      ? { borderLeftWidth: '4px', borderLeftStyle: 'solid', borderLeftColor: phoneHex }
+      : undefined;
+
   return (
     <div
       className={rowClasses}
@@ -268,6 +294,7 @@ const TableRow = React.memo(function TableRow({
         top,
         height: ROW_HEIGHT,
         gridTemplateColumns: COLUMN_TEMPLATE,
+        ...(stripeStyle || {}),
       }}
       onClick={onClick}
     >
@@ -284,8 +311,18 @@ const TableRow = React.memo(function TableRow({
           {EVENT_LABELS[ev.event_type] || ev.event_type}
         </span>
       </div>
-      <div className="px-2 border-r border-light-100 text-light-700 truncate" title={deviceLabel}>
-        {deviceLabel || ev.device_report_key || '—'}
+      <div
+        className="px-2 border-r border-light-100 text-light-700 truncate flex items-center gap-1.5"
+        title={deviceLabel}
+      >
+        {showPhoneChip && ev.device_report_key && (
+          <PhoneIdentityChip
+            reportKey={ev.device_report_key}
+            variant="dense"
+            className="flex-shrink-0"
+          />
+        )}
+        <span className="truncate">{deviceLabel || ev.device_report_key || '—'}</span>
       </div>
       <div className="px-2 border-r border-light-100 text-light-900 truncate" title={label}>
         {label}

@@ -6,12 +6,20 @@ import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { appIconEmoji, buildSenderPalette, senderInitials } from './commsUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
  * Right-pane thread viewer. Fetches thread detail for the selected thread and
  * renders messages as bubbles, calls as rows, emails as cards (chronologically).
  */
 export default function CommsThreadView({ caseId, selectedThread }) {
+  const phoneCtx = usePhoneReports();
+  const showPhoneChip = !!phoneCtx?.hasMultiple && !!selectedThread?.report_key;
+  const phoneIdentity = showPhoneChip
+    ? phoneCtx.getIdentityByKey(selectedThread.report_key)
+    : null;
+
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -119,8 +127,21 @@ export default function CommsThreadView({ caseId, selectedThread }) {
     }
   }
 
+  // Top accent stripe in the phone's identity colour — makes it
+  // unmistakable which phone the open conversation belongs to.
+  const stripeStyle = phoneIdentity
+    ? {
+        borderTopWidth: '4px',
+        borderTopStyle: 'solid',
+        borderTopColor: phoneIdentity.hex,
+      }
+    : undefined;
+
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-light-50 to-light-100">
+    <div
+      className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-light-50 to-light-100"
+      style={stripeStyle}
+    >
       {/* Header */}
       <div className="flex flex-col gap-1.5 px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-2">
@@ -133,6 +154,14 @@ export default function CommsThreadView({ caseId, selectedThread }) {
               {detail.thread?.source_app || '—'} · {detail.total.toLocaleString()} items
             </div>
           </div>
+          {showPhoneChip && (
+            <PhoneIdentityChip
+              reportKey={selectedThread.report_key}
+              variant="default"
+              showIcon
+              className="flex-shrink-0"
+            />
+          )}
           {caseId && detail.thread?.thread_id && (
             <LinkNodeToEntityButton caseId={caseId} nodeKey={detail.thread.thread_id} />
           )}

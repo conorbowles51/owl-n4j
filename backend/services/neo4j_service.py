@@ -5433,18 +5433,24 @@ class Neo4jService:
 
                 RETURN r, owner,
                        contact_count, call_count, message_count, location_count, email_count
-                ORDER BY r.name
+                ORDER BY coalesce(r.evidence_number, ''),
+                         coalesce(r.case_number, ''),
+                         coalesce(r.key, '')
                 """,
                 case_id=case_id,
             )
 
             reports = []
-            for record in result:
+            for idx, record in enumerate(result):
                 r = dict(record["r"])
                 owner = dict(record["owner"]) if record["owner"] else None
                 reports.append({
                     "report_key": r.get("key", ""),
                     "report_name": r.get("name", ""),
+                    # Stable zero-based palette slot for the frontend phone
+                    # identity. Ordering above guarantees the same phone gets
+                    # the same colour across calls, refreshes and users.
+                    "display_index": idx,
                     "device_model": r.get("device_model", "Unknown Device"),
                     "phone_numbers": r.get("phone_numbers", ""),
                     "imei": r.get("imei", ""),

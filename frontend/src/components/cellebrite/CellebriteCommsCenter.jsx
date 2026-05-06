@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Calendar, Search } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
-import CommsDeviceSelector from './comms/CommsDeviceSelector';
+import PhoneSelector from './shared/PhoneSelector';
+import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
 import CommsEntityFilter from './comms/CommsEntityFilter';
 import CommsTypeFilter from './comms/CommsTypeFilter';
 import CommsAppFilter from './comms/CommsAppFilter';
@@ -10,15 +11,25 @@ import CommsThreadView from './comms/CommsThreadView';
 import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildCommsContext } from '../../utils/chatContextSummary';
+import { usePhoneReports } from '../../context/PhoneReportsContext';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
+ *
+ * The phone selection is owned by PhoneReportsContext so it persists
+ * across tabs and across page refreshes. The `reports` prop is kept
+ * for backwards compatibility with callers that pass an explicit list,
+ * but when the context is available it is the source of truth.
  */
-export default function CellebriteCommsCenter({ caseId, reports = [] }) {
-  // --- Filter state ---
-  const [selectedReportKeys, setSelectedReportKeys] = useState(
-    () => new Set(reports.map(r => r.report_key))
+export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [] }) {
+  const phoneCtx = usePhoneReports();
+  const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
+  const fallbackSelection = useMemo(
+    () => new Set(fallbackReports.map(r => r.report_key)),
+    [fallbackReports],
   );
+  const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
+  const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
   const [fromKeys, setFromKeys] = useState(new Set());
   const [toKeys, setToKeys] = useState(new Set());
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
@@ -43,11 +54,6 @@ export default function CellebriteCommsCenter({ caseId, reports = [] }) {
   // View-aware AI context
   const rootRef = useRef(null);
   const { publish, clear } = useChatContext();
-
-  // If reports list changes (new ingestion), reset device selection to all
-  useEffect(() => {
-    setSelectedReportKeys(new Set(reports.map(r => r.report_key)));
-  }, [reports]);
 
   // Publish view context to ChatContext (debounced). Runs whenever the filters
   // or the threads list change.
@@ -173,28 +179,19 @@ export default function CellebriteCommsCenter({ caseId, reports = [] }) {
     if (!stillPresent) setSelectedThread(null);
   }, [threads, selectedThread]);
 
-  // Device toggle helpers
-  const toggleDevice = (key) => {
-    setSelectedReportKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-  const selectAllDevices = () => setSelectedReportKeys(new Set(reports.map(r => r.report_key)));
-  const clearDevices = () => setSelectedReportKeys(new Set());
+  if (phoneCtx?.noneSelected) {
+    return (
+      <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
+        <PhoneSelector />
+        <NoPhonesSelectedEmptyState />
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
-      {/* Device selector strip */}
-      <CommsDeviceSelector
-        reports={reports}
-        selectedReportKeys={selectedReportKeys}
-        onToggle={toggleDevice}
-        onSelectAll={selectAllDevices}
-        onClear={clearDevices}
-      />
+      {/* Device selector strip — global across Cellebrite tabs */}
+      <PhoneSelector />
 
       {/* Entity filter */}
       <CommsEntityFilter

@@ -25,6 +25,8 @@ import {
   Check,
 } from 'lucide-react';
 import { graphAPI } from '../services/api';
+import { usePhoneReports } from '../context/PhoneReportsContext';
+import PhoneIdentityChip from './cellebrite/shared/PhoneIdentityChip';
 import HeatmapLayer from './map/HeatmapLayer';
 import ProximityAnalysis from './map/ProximityAnalysis';
 import HotspotPanel from './map/HotspotPanel';
@@ -187,8 +189,11 @@ const createClusterIcon = (cluster) => {
   });
 };
 
-// Create custom marker icons by type with hover support
-const createIcon = (type, isSelected, isHovered = false) => {
+// Create custom marker icons by type with hover support.
+// When `phoneHex` is provided (Cellebrite-sourced entity), an outer halo
+// ring in the phone's identity colour is added so investigators can see
+// at a glance which phone the marker came from.
+const createIcon = (type, isSelected, isHovered = false, phoneHex = null) => {
   const color = TYPE_COLORS[type] || TYPE_COLORS.default;
   // Size hierarchy: selected > hovered > normal
   const size = isSelected ? 14 : isHovered ? 12 : 10;
@@ -199,6 +204,17 @@ const createIcon = (type, isSelected, isHovered = false) => {
     ? '0 4px 8px rgba(0,0,0,0.4)'
     : '0 2px 4px rgba(0,0,0,0.3)';
 
+  // Outer phone halo: 3 px ring outside the white border. Composed with
+  // box-shadow so it doesn't change the icon's hit-target geometry.
+  const phoneRing = phoneHex
+    ? `, 0 0 0 ${borderWidth + 3}px ${phoneHex}`
+    : '';
+
+  // Adjust iconSize when the halo is present so the popup anchor stays right.
+  const totalSize = phoneHex
+    ? size + borderWidth * 2 + 6
+    : size + borderWidth * 2;
+
   return L.divIcon({
     className: 'custom-marker',
     html: `
@@ -208,14 +224,14 @@ const createIcon = (type, isSelected, isHovered = false) => {
         background-color: ${color};
         border: ${borderWidth}px solid ${borderColor};
         border-radius: 50%;
-        box-shadow: ${shadow};
+        box-shadow: ${shadow}${phoneRing};
         transform: scale(${scale});
         transition: all 0.15s ease-out;
         ${isHovered ? 'cursor: pointer;' : ''}
       "></div>
     `,
-    iconSize: [size + borderWidth * 2, size + borderWidth * 2],
-    iconAnchor: [(size + borderWidth * 2) / 2, (size + borderWidth * 2) / 2],
+    iconSize: [totalSize, totalSize],
+    iconAnchor: [totalSize / 2, totalSize / 2],
     popupAnchor: [0, -size / 2 - borderWidth],
   });
 };
@@ -425,6 +441,21 @@ export default function MapView({
   caseId, // REQUIRED: Case ID for case-specific data
   containerStyle, // Optional: explicit style for MapContainer (e.g. minHeight in modals)
 }) {
+  // Phone-identity context: when present and there are 2+ phones, every
+  // marker that carries a `cellebrite_report_key` gets an outer halo ring
+  // in that phone's persistent palette colour. The provider may be absent
+  // (no Cellebrite reports in case) — getPhoneHex below falls back to null.
+  const phoneCtx = usePhoneReports();
+  const getPhoneHex = useCallback(
+    (entity) => {
+      if (!phoneCtx?.hasMultiple) return null;
+      const key = entity?.cellebrite_report_key || entity?.report_key;
+      if (!key) return null;
+      return phoneCtx.getIdentityByKey(key).hex;
+    },
+    [phoneCtx],
+  );
+
   const [locations, setLocations] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -823,7 +854,7 @@ export default function MapView({
               <Marker
                 key={entity.key}
                 position={[entity.latitude, entity.longitude]}
-                icon={createIcon(entity.type, isSelected, isHovered)}
+                icon={createIcon(entity.type, isSelected, isHovered, getPhoneHex(entity))}
                 entityType={entity.type}
                 eventHandlers={{
                   click: (e) => handleMarkerClick(entity, e),
@@ -864,7 +895,15 @@ export default function MapView({
                       />
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-gray-900 leading-tight">{entity.name}</div>
-                        <div className="text-xs text-gray-500 mt-0.5">{entity.type}</div>
+                        <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5 flex-wrap">
+                          <span>{entity.type}</span>
+                          {phoneCtx?.hasMultiple && (entity.cellebrite_report_key || entity.report_key) && (
+                            <PhoneIdentityChip
+                              reportKey={entity.cellebrite_report_key || entity.report_key}
+                              variant="default"
+                            />
+                          )}
+                        </div>
                       </div>
                       {entity.geocoding_confidence && (
                         <span className={`text-xs px-1.5 py-0.5 rounded ${

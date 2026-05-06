@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Search, Loader2 } from 'lucide-react';
 import { cellebriteFilesAPI, evidenceTagsAPI } from '../../services/api';
-import CommsDeviceSelector from './comms/CommsDeviceSelector';
+import PhoneSelector from './shared/PhoneSelector';
+import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
+import { usePhoneReports } from '../../context/PhoneReportsContext';
 import FilesTree from './files/FilesTree';
 import FilesList from './files/FilesList';
 import FileDetailPanel from './files/FileDetailPanel';
@@ -14,10 +16,15 @@ import { buildFilesContext } from '../../utils/chatContextSummary';
  * Shows the 20,876+ registered Cellebrite media files in a browseable tree
  * with a group-by switcher, plus a list + detail panel for viewing and tagging.
  */
-export default function CellebriteFilesExplorer({ caseId, reports = [] }) {
-  const [selectedReportKeys, setSelectedReportKeys] = useState(
-    () => new Set(reports.map((r) => r.report_key))
+export default function CellebriteFilesExplorer({ caseId, reports: reportsProp = [] }) {
+  const phoneCtx = usePhoneReports();
+  const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
+  const fallbackSelection = useMemo(
+    () => new Set(fallbackReports.map((r) => r.report_key)),
+    [fallbackReports],
   );
+  const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
+  const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
 
   const [groupBy, setGroupBy] = useState('category');
   const [tree, setTree] = useState(null);
@@ -42,11 +49,6 @@ export default function CellebriteFilesExplorer({ caseId, reports = [] }) {
   // View-aware AI context
   const rootRef = useRef(null);
   const { publish, clear } = useChatContext();
-
-  // Reset device selection when reports change
-  useEffect(() => {
-    setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
-  }, [reports]);
 
   // Publish view context for the AI assistant
   useEffect(() => {
@@ -157,19 +159,6 @@ export default function CellebriteFilesExplorer({ caseId, reports = [] }) {
     loadFiles();
   }, [loadFiles]);
 
-  // Device helpers
-  const toggleDevice = (key) => {
-    setSelectedReportKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-  const selectAllDevices = () =>
-    setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
-  const clearDevices = () => setSelectedReportKeys(new Set());
-
   // Selection helpers
   const toggleSelect = (id) => {
     setSelectedIds((prev) => {
@@ -197,15 +186,18 @@ export default function CellebriteFilesExplorer({ caseId, reports = [] }) {
     loadCaseTags();
   };
 
+  if (phoneCtx?.noneSelected) {
+    return (
+      <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
+        <PhoneSelector />
+        <NoPhonesSelectedEmptyState />
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
-      <CommsDeviceSelector
-        reports={reports}
-        selectedReportKeys={selectedReportKeys}
-        onToggle={toggleDevice}
-        onSelectAll={selectAllDevices}
-        onClear={clearDevices}
-      />
+      <PhoneSelector />
 
       {/* Top filters */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">

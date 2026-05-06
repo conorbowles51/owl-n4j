@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Calendar, Loader2, Map as MapIcon, Rows3, Columns2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
-import CommsDeviceSelector from './comms/CommsDeviceSelector';
+import PhoneSelector from './shared/PhoneSelector';
+import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
+import { usePhoneReports } from '../../context/PhoneReportsContext';
 import EventTypeFilter from './events/EventTypeFilter';
 import EventPlaybackBar from './events/EventPlaybackBar';
 import EventMapPanel from './events/EventMapPanel';
@@ -17,11 +19,20 @@ import { buildEventsContext } from '../../utils/chatContextSummary';
  * Cellebrite Location & Event Center — orchestrates map + timeline + playback
  * + intersection detection across devices.
  */
-export default function CellebriteEventCenter({ caseId, reports = [] }) {
-  // --- Filter state ---
-  const [selectedReportKeys, setSelectedReportKeys] = useState(
-    () => new Set(reports.map((r) => r.report_key))
+export default function CellebriteEventCenter({ caseId, reports: reportsProp = [] }) {
+  // --- Phone selection: sourced from PhoneReportsContext when available so
+  // the user's choice persists across tabs and refreshes. Falls back to the
+  // prop-supplied reports when no provider is mounted (e.g. unit tests).
+  const phoneCtx = usePhoneReports();
+  const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
+  const fallbackSelection = useMemo(
+    () => new Set(fallbackReports.map((r) => r.report_key)),
+    [fallbackReports],
   );
+  const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
+  const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
+
+  // --- Filter state ---
   const [activeEventTypes, setActiveEventTypes] = useState(new Set());
   const [onlyGeolocated, setOnlyGeolocated] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -59,11 +70,6 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
   // View-aware AI context
   const rootRef = useRef(null);
   const { publish, clear } = useChatContext();
-
-  // Reset device selection when reports change
-  useEffect(() => {
-    setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
-  }, [reports]);
 
   // Publish view context for the assistant.
   // NOTE: `playheadTime` is deliberately excluded from the effect deps so
@@ -192,19 +198,6 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
     return out;
   }, [intersectionResults]);
 
-  // Device toggle helpers
-  const toggleDevice = (key) => {
-    setSelectedReportKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-  const selectAllDevices = () =>
-    setSelectedReportKeys(new Set(reports.map((r) => r.report_key)));
-  const clearDevices = () => setSelectedReportKeys(new Set());
-
   // Jump to an intersection match
   const handleJumpToMatch = useCallback(
     (match) => {
@@ -235,16 +228,19 @@ export default function CellebriteEventCenter({ caseId, reports = [] }) {
     []
   );
 
+  if (phoneCtx?.noneSelected) {
+    return (
+      <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
+        <PhoneSelector />
+        <NoPhonesSelectedEmptyState />
+      </div>
+    );
+  }
+
   return (
     <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
-      {/* Device selector */}
-      <CommsDeviceSelector
-        reports={reports}
-        selectedReportKeys={selectedReportKeys}
-        onToggle={toggleDevice}
-        onSelectAll={selectAllDevices}
-        onClear={clearDevices}
-      />
+      {/* Device selector — global across Cellebrite tabs */}
+      <PhoneSelector />
 
       {/* Type filter + date */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0 overflow-x-auto">

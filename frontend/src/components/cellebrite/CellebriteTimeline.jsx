@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Loader2, Search, Calendar } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
-import CommsDeviceSelector from './comms/CommsDeviceSelector';
+import PhoneSelector from './shared/PhoneSelector';
+import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
+import { usePhoneReports } from '../../context/PhoneReportsContext';
 import EventTypeFilter from './events/EventTypeFilter';
 import EventDetailDrawer from './events/EventDetailDrawer';
+import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import {
   EVENT_COLORS,
   EVENT_ICONS,
@@ -26,11 +29,18 @@ import {
  * focusing on day-by-day behavioural patterns — no map, no playback, just
  * a clean activity log the investigator can scan and search.
  */
-export default function CellebriteTimeline({ caseId, reports }) {
-  // --- Filter state ---
-  const [selectedReportKeys, setSelectedReportKeys] = useState(
-    () => new Set((reports || []).map((r) => r.report_key))
+export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
+  // --- Phone selection: sourced from PhoneReportsContext when available so
+  // the selection persists across tabs and refreshes. ---
+  const phoneCtx = usePhoneReports();
+  const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
+  const fallbackSelection = useMemo(
+    () => new Set(fallbackReports.map((r) => r.report_key)),
+    [fallbackReports],
   );
+  const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
+  const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
+
   const [activeEventTypes, setActiveEventTypes] = useState(new Set());
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -44,11 +54,6 @@ export default function CellebriteTimeline({ caseId, reports }) {
 
   // --- Selection ---
   const [selectedEvent, setSelectedEvent] = useState(null);
-
-  // Reset device selection when reports change
-  useEffect(() => {
-    setSelectedReportKeys(new Set((reports || []).map((r) => r.report_key)));
-  }, [reports]);
 
   // Debounce search
   useEffect(() => {
@@ -150,29 +155,19 @@ export default function CellebriteTimeline({ caseId, reports }) {
     return groups;
   }, [events]);
 
-  // Device toggle helpers
-  const toggleDevice = (key) => {
-    setSelectedReportKeys((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-  const selectAllDevices = () =>
-    setSelectedReportKeys(new Set((reports || []).map((r) => r.report_key)));
-  const clearDevices = () => setSelectedReportKeys(new Set());
+  if (phoneCtx?.noneSelected) {
+    return (
+      <div className="flex flex-col h-full min-h-0 bg-white">
+        <PhoneSelector />
+        <NoPhonesSelectedEmptyState />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-white">
-      {/* Device selector */}
-      <CommsDeviceSelector
-        reports={reports}
-        selectedReportKeys={selectedReportKeys}
-        onToggle={toggleDevice}
-        onSelectAll={selectAllDevices}
-        onClear={clearDevices}
-      />
+      {/* Device selector — global across Cellebrite tabs */}
+      <PhoneSelector />
 
       {/* Type filter + date + search */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0 overflow-x-auto">
@@ -241,6 +236,7 @@ export default function CellebriteTimeline({ caseId, reports }) {
                       key={ev.id || ev.node_key || idx}
                       ev={ev}
                       reports={reports}
+                      showPhoneChip={reports.length > 1}
                       onClick={() => setSelectedEvent(ev)}
                     />
                   ))}
@@ -263,7 +259,7 @@ export default function CellebriteTimeline({ caseId, reports }) {
   );
 }
 
-function TimelineRow({ ev, reports, onClick }) {
+function TimelineRow({ ev, reports, onClick, showPhoneChip = false }) {
   const Icon = EVENT_ICONS[ev.event_type] || EVENT_ICONS.location;
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const dColor = deviceColorOf(ev.device_report_key, reports);
@@ -278,16 +274,27 @@ function TimelineRow({ ev, reports, onClick }) {
   else if (sender) direction = sender;
   else if (recipient) direction = `→ ${recipient}`;
 
+  // Phone accent stripe — 4px coloured left border when there are
+  // multiple phones in the case. Replaces the previous 2px ring around
+  // the event-type dot, which was nearly invisible.
+  const stripeStyle = showPhoneChip && ev.device_report_key
+    ? {
+        borderLeftWidth: '4px',
+        borderLeftStyle: 'solid',
+        borderLeftColor: dColor,
+      }
+    : undefined;
+
   return (
     <li
       onClick={onClick}
-      className="grid grid-cols-[80px_18px_1fr] items-start gap-2 py-1.5 px-2 rounded hover:bg-light-50 cursor-pointer"
+      style={stripeStyle}
+      className="grid grid-cols-[80px_18px_1fr] items-start gap-2 py-1.5 pl-2 pr-2 rounded hover:bg-light-50 cursor-pointer"
     >
       <span className="text-[11px] tabular-nums text-light-500 pt-0.5">{time}</span>
       <span
         className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
-        style={{ background: color, boxShadow: `0 0 0 2px ${dColor}` }}
-        title={`Device: ${dColor}`}
+        style={{ background: color }}
       />
       <div className="min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -303,6 +310,13 @@ function TimelineRow({ ev, reports, onClick }) {
           )}
           {ev.duration && (
             <span className="text-[10px] text-light-500">· {ev.duration}</span>
+          )}
+          {showPhoneChip && ev.device_report_key && (
+            <PhoneIdentityChip
+              reportKey={ev.device_report_key}
+              variant="dense"
+              className="ml-auto flex-shrink-0"
+            />
           )}
         </div>
         {direction && (

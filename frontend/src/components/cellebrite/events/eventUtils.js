@@ -53,21 +53,13 @@ export const EVENT_LABELS = {
   meeting: 'Meeting',
 };
 
-// Per-device colour palette (matches backend hint but deterministic in case backend omits)
-const DEVICE_PALETTE = [
-  '#2563eb', '#dc2626', '#059669', '#d97706',
-  '#7c3aed', '#0891b2', '#db2777', '#65a30d',
-];
+// Per-device colour palette is now owned by utils/phoneIdentity.js so the
+// same colour applies to every Cellebrite surface (Comms, Events, Map,
+// graph). This helper delegates to keep historical call sites working.
+import { phoneHexByKey } from '../../../utils/phoneIdentity';
 
 export function deviceColor(reportKey, reports = []) {
-  const idx = reports.findIndex((r) => r.report_key === reportKey);
-  if (idx < 0) {
-    // Fallback: hash the key
-    let h = 0;
-    for (const ch of reportKey || '') h = (h * 31 + ch.charCodeAt(0)) | 0;
-    return DEVICE_PALETTE[Math.abs(h) % DEVICE_PALETTE.length];
-  }
-  return DEVICE_PALETTE[idx % DEVICE_PALETTE.length];
+  return phoneHexByKey(reportKey, reports);
 }
 
 export function eventColor(eventType) {

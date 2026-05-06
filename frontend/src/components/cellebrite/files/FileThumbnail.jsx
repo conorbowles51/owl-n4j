@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Pin, Tag, Users } from 'lucide-react';
 import { evidenceUrl, videoFrameUrl, categoryIcon, categoryColor, formatSize } from './filesUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
  * A selectable thumbnail for a single Cellebrite file. Supports grid or list
@@ -18,6 +20,19 @@ export default function FileThumbnail({
   const Icon = categoryIcon(cat);
   const color = categoryColor(cat);
 
+  const phoneCtx = usePhoneReports();
+  const showPhoneChip = !!phoneCtx?.hasMultiple && !!file.cellebrite_report_key;
+  const phoneIdentity = showPhoneChip
+    ? phoneCtx.getIdentityByKey(file.cellebrite_report_key)
+    : null;
+  const stripeStyle = phoneIdentity
+    ? {
+        borderLeftWidth: '4px',
+        borderLeftStyle: 'solid',
+        borderLeftColor: phoneIdentity.hex,
+      }
+    : undefined;
+
   const url = file.id ? evidenceUrl(file.id) : null;
   const thumbUrl =
     cat === 'Image' && url
@@ -33,6 +48,7 @@ export default function FileThumbnail({
     return (
       <button
         onClick={onOpen}
+        style={stripeStyle}
         className={`w-full flex items-center gap-2 px-2 py-1.5 text-left border-b border-light-100 hover:bg-light-50 ${
           selected ? 'bg-owl-blue-50' : ''
         }`}
@@ -80,6 +96,12 @@ export default function FileThumbnail({
           </div>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0">
+          {showPhoneChip && (
+            <PhoneIdentityChip
+              reportKey={file.cellebrite_report_key}
+              variant="dense"
+            />
+          )}
           {file.is_relevant && <CheckCircle2 className="w-3 h-3 text-emerald-600" title="Marked relevant" />}
           {hasTags && <Tag className="w-3 h-3 text-amber-600" title={(file.tags || []).join(', ')} />}
           {hasEntities && <Users className="w-3 h-3 text-owl-blue-600" title={`${file.linked_entity_ids.length} linked entities`} />}
@@ -138,6 +160,17 @@ export default function FileThumbnail({
         {hasTags && <Tag className="w-3.5 h-3.5 text-amber-300 drop-shadow" />}
         {hasEntities && <Users className="w-3.5 h-3.5 text-owl-blue-300 drop-shadow" />}
       </div>
+
+      {/* Phone identity badge — top centre, between checkbox and status icons */}
+      {showPhoneChip && phoneIdentity && (
+        <div
+          className="absolute top-1 left-1/2 -translate-x-1/2 rounded-sm font-mono font-bold text-[10px] leading-none px-1 py-0.5 drop-shadow"
+          style={{ backgroundColor: phoneIdentity.hex, color: '#fff' }}
+          title={phoneIdentity.long}
+        >
+          {phoneIdentity.short}
+        </div>
+      )}
     </button>
   );
 }

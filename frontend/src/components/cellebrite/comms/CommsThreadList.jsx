@@ -1,18 +1,28 @@
 import React from 'react';
-import { MessageSquare, Phone, Mail, Paperclip, Smartphone, Loader2 } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Paperclip, Loader2 } from 'lucide-react';
 import { formatRelative, appIconEmoji } from './commsUtils';
+import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
  * Left-pane scrollable list of threads (chats + synthetic call/email threads).
  * Clicking a row selects the thread for display in CommsThreadView.
+ *
+ * Each row gets a 4px coloured accent stripe on the left + a small phone
+ * chip in the meta row, so investigators can identify the source phone
+ * without reading the device-name text.
  */
 export default function CommsThreadList({
   threads = [],
   loading = false,
   selectedThreadId,
   onSelect,
-  deviceById = {}, // map report_key → device label for badges
+  // deviceById left for backwards compatibility but no longer used —
+  // the PhoneIdentityChip pulls everything it needs from context.
+  deviceById = {},
 }) {
+  const phoneCtx = usePhoneReports();
+  const hasMultiple = !!phoneCtx?.hasMultiple;
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -38,14 +48,15 @@ export default function CommsThreadList({
           thread={t}
           isSelected={selectedThreadId === t.thread_id}
           onSelect={() => onSelect(t)}
-          deviceLabel={deviceById[t.report_key]}
+          phoneCtx={phoneCtx}
+          showPhoneChip={hasMultiple}
         />
       ))}
     </div>
   );
 }
 
-function ThreadRow({ thread, isSelected, onSelect, deviceLabel }) {
+function ThreadRow({ thread, isSelected, onSelect, phoneCtx, showPhoneChip }) {
   const Icon = thread.thread_type === 'chat'
     ? MessageSquare
     : thread.thread_type === 'calls'
@@ -61,9 +72,26 @@ function ThreadRow({ thread, isSelected, onSelect, deviceLabel }) {
     .join(', ');
   const extraCount = Math.max(0, participants.length - 2);
 
+  // Phone accent stripe — only show when there are multiple phones.
+  // When the thread is selected we keep the existing blue selection
+  // marker (a 4px owl-blue stripe) so selection state stays obvious;
+  // otherwise we show the phone's identity colour as a 4px stripe.
+  const identity = showPhoneChip && phoneCtx
+    ? phoneCtx.getIdentityByKey(thread.report_key)
+    : null;
+
+  const stripeStyle = !isSelected && identity
+    ? {
+        borderLeftWidth: '4px',
+        borderLeftStyle: 'solid',
+        borderLeftColor: identity.hex,
+      }
+    : undefined;
+
   return (
     <button
       onClick={onSelect}
+      style={stripeStyle}
       className={`w-full text-left border-b border-light-100 px-3 py-2 hover:bg-light-50 transition-colors ${
         isSelected ? 'bg-owl-blue-50 border-l-4 border-l-owl-blue-500' : ''
       }`}
@@ -79,18 +107,16 @@ function ThreadRow({ thread, isSelected, onSelect, deviceLabel }) {
               {displayNames || thread.name}
               {extraCount > 0 && <span className="text-light-500"> +{extraCount}</span>}
             </span>
+            {showPhoneChip && thread.report_key && (
+              <PhoneIdentityChip
+                reportKey={thread.report_key}
+                variant="dense"
+                className="flex-shrink-0 ml-auto"
+              />
+            )}
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-light-500">
             <span className="truncate">{thread.source_app || '—'}</span>
-            {deviceLabel && (
-              <>
-                <span>·</span>
-                <span className="flex items-center gap-0.5 flex-shrink-0" title={deviceLabel}>
-                  <Smartphone className="w-2.5 h-2.5" />
-                  {deviceLabel.length > 18 ? deviceLabel.slice(0, 18) + '…' : deviceLabel}
-                </span>
-              </>
-            )}
             <div className="flex-1" />
             {thread.has_attachments && (
               <Paperclip className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" title={`${thread.attachment_count} attachments`} />

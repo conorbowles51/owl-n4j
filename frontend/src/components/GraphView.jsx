@@ -5,6 +5,7 @@ import { graphAPI, profilesAPI } from '../services/api';
 import TimelineView from './timeline/TimelineView';
 import MapView from './MapView';
 import { convertGraphNodesToTimelineEvents, convertGraphNodesToMapLocations, hasTimelineData, hasMapData } from '../utils/graphDataConverter';
+import { usePhoneReports } from '../context/PhoneReportsContext';
 /**
  * Color palette for entity types
  */
@@ -134,6 +135,13 @@ const GraphView = forwardRef(function GraphView({
   const [allEntityTypes, setAllEntityTypes] = useState([]); // All entity types from database
   const [profileColors, setProfileColors] = useState({}); // Entity type colors from profile
   const [isLegendMinimized, setIsLegendMinimized] = useState(true); // Track if legend is minimized - default to minimized
+
+  // Phone identity context: when 2+ Cellebrite reports exist, nodes that
+  // carry a `cellebrite_report_key` get an outer halo ring in the phone's
+  // persistent palette colour so investigators can see at a glance which
+  // phone a node came from. Falls back gracefully when no provider is
+  // mounted or the case has no Cellebrite data.
+  const phoneCtx = usePhoneReports();
   
   // View mode state
   const [internalViewMode, setInternalViewMode] = useState('graph');
@@ -357,6 +365,18 @@ const GraphView = forwardRef(function GraphView({
     // Result graph nodes: all at full opacity, relevance indicated by border thickness
     ctx.save();
 
+    // Cellebrite phone halo: draw an outer disc in the phone's identity
+    // colour BEFORE the main node circle so the halo sits as a ring
+    // around the node fill. Only when 2+ phones are present.
+    const phoneKey = node.cellebrite_report_key || node.report_key;
+    if (phoneCtx?.hasMultiple && phoneKey) {
+      const haloHex = phoneCtx.getIdentityByKey(phoneKey).hex;
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, nodeRadius + 2.5, 0, 2 * Math.PI);
+      ctx.fillStyle = haloHex;
+      ctx.fill();
+    }
+
     // Node circle
     ctx.beginPath();
     ctx.arc(node.x, node.y, nodeRadius, 0, 2 * Math.PI);
@@ -397,7 +417,7 @@ const GraphView = forwardRef(function GraphView({
 
     ctx.fillText(displayLabel, node.x, node.y + nodeRadius + 2);
     ctx.restore();
-  }, [selectedNodes, hoveredNode, profileColors]);
+  }, [selectedNodes, hoveredNode, profileColors, phoneCtx]);
 
   // Link rendering - updated for light theme with optional labels
   const paintLink = useCallback((link, ctx, globalScale) => {

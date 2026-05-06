@@ -19,18 +19,21 @@ import {
 function makeEventIcon(eventType, deviceColor, highlighted = false) {
   const color = EVENT_COLORS[eventType] || '#64748b';
   const size = highlighted ? 16 : 12;
+  // Widened device-colour ring (2 px → 4 px) so the per-phone identity
+  // is visible on the map without requiring a hover. The white outer
+  // border keeps the marker readable on any base-tile colour.
   const html = `
     <div style="
       width:${size}px; height:${size}px; border-radius:50%;
       background:${color};
-      box-shadow: 0 0 0 2px ${deviceColor}, 0 0 0 3px rgba(255,255,255,0.9);
+      box-shadow: 0 0 0 4px ${deviceColor}, 0 0 0 5px rgba(255,255,255,0.9);
       ${highlighted ? 'animation: pulse-ring 1.2s infinite;' : ''}
     "></div>
   `;
   return L.divIcon({
     html,
-    iconSize: [size + 6, size + 6],
-    iconAnchor: [(size + 6) / 2, (size + 6) / 2],
+    iconSize: [size + 10, size + 10],
+    iconAnchor: [(size + 10) / 2, (size + 10) / 2],
     className: 'cellebrite-event-marker',
   });
 }
