@@ -55,7 +55,7 @@ export default function EntityListModal({ caseId, onClose }) {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-light-200">
-          <h2 className="text-base font-semibold text-owl-blue-900">Case Entities</h2>
+          <h2 className="text-base font-semibold text-owl-blue-900">Profiles</h2>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setCreating(true)}
@@ -140,8 +140,8 @@ export default function EntityListModal({ caseId, onClose }) {
           ) : filtered.length === 0 ? (
             <div className="text-center py-10 text-sm text-light-500">
               {entities.length === 0
-                ? 'No entities yet. Click "New" to create your first one.'
-                : 'No entities match your filters.'}
+                ? 'No profiles yet. Click "New" to create your first one.'
+                : 'No profiles match your filters.'}
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

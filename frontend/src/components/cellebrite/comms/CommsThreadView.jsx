@@ -304,10 +304,18 @@ export default function CommsThreadView({
             className: 'transition-shadow rounded',
           };
           if (item.type === 'call') {
-            return <div {...wrapperProps}><CommsCallRow item={item} /></div>;
+            return (
+              <div {...wrapperProps}>
+                <CommsCallRow item={item} caseId={caseId} />
+              </div>
+            );
           }
           if (item.type === 'email') {
-            return <div {...wrapperProps}><CommsEmailCard item={item} /></div>;
+            return (
+              <div {...wrapperProps}>
+                <CommsEmailCard item={item} caseId={caseId} />
+              </div>
+            );
           }
           // message
           return (
@@ -318,6 +326,7 @@ export default function CommsThreadView({
                 showSenderName
                 isFirstInRun={row.isFirstInRun}
                 highlights={messageHighlights}
+                caseId={caseId}
               />
             </div>
           );

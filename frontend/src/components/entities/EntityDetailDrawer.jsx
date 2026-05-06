@@ -30,7 +30,7 @@ export default function EntityDetailDrawer({ caseId, entityId, onClose, onEntity
       const data = await entitiesAPI.getContext(caseId, entityId);
       setContext(data);
     } catch (e) {
-      setError(e.message || 'Failed to load entity');
+      setError(e.message || 'Failed to load profile');
     } finally {
       setLoading(false);
     }
@@ -50,14 +50,14 @@ export default function EntityDetailDrawer({ caseId, entityId, onClose, onEntity
   }, [onClose]);
 
   const handleArchive = async () => {
-    if (!confirm('Archive this entity?')) return;
+    if (!confirm('Archive this profile?')) return;
     await entitiesAPI.archive(caseId, entityId);
     onEntityChanged?.();
     onClose?.();
   };
 
   const handleDelete = async () => {
-    if (!confirm('Permanently delete this entity and its links? This cannot be undone.')) return;
+    if (!confirm('Permanently delete this profile and its links? This cannot be undone.')) return;
     await entitiesAPI.delete(caseId, entityId);
     onEntityChanged?.();
     onClose?.();

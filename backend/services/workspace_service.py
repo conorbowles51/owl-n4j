@@ -339,6 +339,50 @@ class WorkspaceService:
             save_json_file(NOTES_FILE, self._notes)
             return True
         return False
+
+    def link_profiles_to_note(
+        self,
+        case_id: str,
+        note_id: str,
+        profile_ids: List[str],
+    ) -> Optional[Dict]:
+        """
+        Attach one or more Profile (CaseEntity) ids to a note. Stored as
+        an additive set on the note's `linked_entity_ids` field so the
+        same name we use on evidence records carries through here.
+        Returns the updated note, or None if the note doesn't exist.
+        """
+        case_notes = self._notes.get(case_id, {})
+        note = case_notes.get(note_id)
+        if not note:
+            return None
+        existing = set(note.get("linked_entity_ids") or [])
+        for pid in profile_ids or []:
+            if pid:
+                existing.add(pid)
+        note["linked_entity_ids"] = sorted(existing)
+        note["updated_at"] = datetime.now().isoformat()
+        save_json_file(NOTES_FILE, self._notes)
+        return note
+
+    def unlink_profiles_from_note(
+        self,
+        case_id: str,
+        note_id: str,
+        profile_ids: List[str],
+    ) -> Optional[Dict]:
+        """Remove one or more profile ids from a note's linked set."""
+        case_notes = self._notes.get(case_id, {})
+        note = case_notes.get(note_id)
+        if not note:
+            return None
+        existing = set(note.get("linked_entity_ids") or [])
+        for pid in profile_ids or []:
+            existing.discard(pid)
+        note["linked_entity_ids"] = sorted(existing)
+        note["updated_at"] = datetime.now().isoformat()
+        save_json_file(NOTES_FILE, self._notes)
+        return note
     
     # Findings Methods
 

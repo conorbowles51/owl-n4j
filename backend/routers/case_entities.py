@@ -17,7 +17,10 @@ from postgres.session import get_db
 from postgres.models.user import User
 from routers.users import get_current_db_user
 
-router = APIRouter(prefix="/api/entities", tags=["entities"])
+# NOTE: prefix is set at mount time in `main.py` so the same router can
+# be mounted at both `/api/entities` (legacy) and `/api/case-profiles`
+# (new investigator-facing name). Both URLs hit the same handlers.
+router = APIRouter(tags=["case-profiles"])
 
 
 def _require_case_access(case_id: str, user: User, db: Session):

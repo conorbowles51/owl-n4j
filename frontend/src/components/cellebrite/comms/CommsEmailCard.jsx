@@ -3,6 +3,7 @@ import { Mail, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
+import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { formatShortTime, previewBody } from './commsUtils';
 
 /**
@@ -15,6 +16,7 @@ export default function CommsEmailCard({
   reportKey,
   showPhoneChip = false,
   highlights = [],
+  caseId = null,
 }) {
   const hasHighlights = highlights && highlights.length > 0;
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -27,6 +29,7 @@ export default function CommsEmailCard({
   const hasHtml = /<[a-z][\s\S]*>/i.test(bodyHtml);
   const attachments = item.attachments || [];
   const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
+  const nodeKey = item.id || item.key;
 
   return (
     <div className="border-b border-light-100 bg-white">
@@ -47,6 +50,14 @@ export default function CommsEmailCard({
                 variant="dense"
                 className="flex-shrink-0 ml-auto"
               />
+            )}
+            {caseId && nodeKey && (
+              <span
+                onClick={(e) => e.stopPropagation()}
+                className="flex-shrink-0"
+              >
+                <LinkNodeToEntityButton caseId={caseId} nodeKey={nodeKey} compact />
+              </span>
             )}
           </div>
           <div className="text-[10px] text-light-500 mt-0.5 flex items-center gap-2">

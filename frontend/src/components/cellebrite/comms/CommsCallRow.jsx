@@ -3,6 +3,7 @@ import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Phone, Video } from 'lucide-
 import CommsAttachment from './CommsAttachment';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
+import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { formatShortTime, formatDuration } from './commsUtils';
 
 function iconForCall(direction, callType) {
@@ -17,7 +18,7 @@ function iconForCall(direction, callType) {
 /**
  * Compact row for a single call. Voicemail audio (if attached) renders inline.
  */
-export default function CommsCallRow({ item, reportKey, showPhoneChip = false, highlights = [] }) {
+export default function CommsCallRow({ item, reportKey, showPhoneChip = false, highlights = [], caseId = null }) {
   const hasHighlights = highlights && highlights.length > 0;
   const Icon = iconForCall(item.direction, item.call_type);
   const isOwnerFrom = !!(item.sender && item.sender.is_owner);
@@ -28,6 +29,7 @@ export default function CommsCallRow({ item, reportKey, showPhoneChip = false, h
   const fromName = item.sender?.name || 'Unknown';
   const toName = item.recipient?.name || 'Unknown';
   const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
+  const nodeKey = item.id || item.key;
 
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b border-light-100 hover:bg-light-50">
@@ -48,6 +50,13 @@ export default function CommsCallRow({ item, reportKey, showPhoneChip = false, h
               reportKey={effectiveReportKey}
               variant="dense"
               className="flex-shrink-0 ml-auto"
+            />
+          )}
+          {caseId && nodeKey && (
+            <LinkNodeToEntityButton
+              caseId={caseId}
+              nodeKey={nodeKey}
+              compact
             />
           )}
         </div>

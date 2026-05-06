@@ -94,7 +94,7 @@ export default function EntityEditorModal({
       onSaved?.(result);
       onClose?.();
     } catch (err) {
-      setError(err.message || 'Failed to save entity');
+      setError(err.message || 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -111,7 +111,7 @@ export default function EntityEditorModal({
       >
         <div className={`flex items-center justify-between p-4 border-b ${cls.bgSoft}`}>
           <h2 className={`text-base font-semibold ${cls.text}`}>
-            {isEdit ? 'Edit Entity' : 'New Entity'}
+            {isEdit ? 'Edit profile' : 'New profile'}
           </h2>
           <button type="button" onClick={onClose} className="text-light-500 hover:text-light-800">
             <X className="w-4 h-4" />

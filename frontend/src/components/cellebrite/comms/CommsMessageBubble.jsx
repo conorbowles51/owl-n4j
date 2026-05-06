@@ -4,6 +4,7 @@ import CommsAttachment from './CommsAttachment';
 import { formatShortTime, paletteForSenderKey, senderInitials } from './commsUtils';
 import HighlightedText from '../shared/HighlightedText';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 
 /**
  * Chat-style message bubble with clear sender attribution.
@@ -37,8 +38,10 @@ export default function CommsMessageBubble({
   highlights = [],
   reportKey,
   showPhoneChip = false,
+  caseId = null,
 }) {
   const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
+  const nodeKey = item.id || item.key;
   const sender = item.sender || null;
   const isOwner = !!(sender && sender.is_owner);
   const senderKey = sender?.key || 'unknown';
@@ -142,6 +145,13 @@ export default function CommsMessageBubble({
               <PhoneIdentityChip
                 reportKey={effectiveReportKey}
                 variant="dense"
+              />
+            )}
+            {caseId && nodeKey && (
+              <LinkNodeToEntityButton
+                caseId={caseId}
+                nodeKey={nodeKey}
+                compact
               />
             )}
           </div>

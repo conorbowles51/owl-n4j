@@ -7,6 +7,7 @@ import {
 import { graphAPI } from '../services/api';
 import { parseSearchQuery, getHighlightTerms } from '../utils/searchParser';
 import { highlightMatchedText } from '../utils/highlightText';
+import LinkNodeToEntityButton from './entities/LinkNodeToEntityButton';
 
 /**
  * Icon mapping for entity types
@@ -560,14 +561,22 @@ export default function NodeDetails({
             </span>
           </div>
         </div>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-light-100 rounded transition-colors"
-          >
-            <X className="w-4 h-4 text-light-600" />
-          </button>
-        )}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          {/* Universal "Link to profile" — works on any graph node that
+              has a key + case_id, which is almost everything. Lets the
+              investigator attach a node to a Profile dossier. */}
+          {caseId && node.key && (
+            <LinkNodeToEntityButton caseId={caseId} nodeKey={node.key} />
+          )}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-light-100 rounded transition-colors"
+            >
+              <X className="w-4 h-4 text-light-600" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Content */}

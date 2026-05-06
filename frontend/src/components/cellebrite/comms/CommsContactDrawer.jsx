@@ -231,6 +231,7 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
                 item={item}
                 reportKey={item.report_key}
                 showPhoneChip={showChip}
+                caseId={caseId}
               />
             );
           }
@@ -241,6 +242,7 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
                 item={item}
                 reportKey={item.report_key}
                 showPhoneChip={showChip}
+                caseId={caseId}
               />
             );
           }
@@ -254,6 +256,7 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
               isFirstInRun={row.isFirstInRun}
               reportKey={item.report_key}
               showPhoneChip={showChip}
+              caseId={caseId}
             />
           );
         })}

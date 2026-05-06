@@ -7,8 +7,12 @@ import EntityDetailDrawer from './EntityDetailDrawer';
 import EntityListModal from './EntityListModal';
 
 /**
- * Sidebar section listing the case's top entity profiles. Opens the detail
- * drawer on click and the full list modal via "View all".
+ * Sidebar section listing the case's top investigator profiles. Opens the
+ * detail drawer on click and the full list modal via "View all".
+ *
+ * "Profile" is the user-facing name. The data model behind it is the
+ * `:CaseEntity` Neo4j node; we keep the legacy variable / file names but
+ * every visible string says "Profile".
  *
  * Props:
  *   caseId
@@ -56,7 +60,7 @@ export default function EntitiesPanelSection({ caseId, collapsed = false, onTogg
         )}
         <Users className="w-4 h-4 text-owl-blue-700 flex-shrink-0" />
         <span className="text-sm font-semibold text-owl-blue-900 flex-1">
-          Entities
+          Profiles
           {total > 0 && (
             <span className="ml-1.5 text-xs text-light-500 font-normal">({total})</span>
           )}
@@ -67,7 +71,7 @@ export default function EntitiesPanelSection({ caseId, collapsed = false, onTogg
             setCreating(true);
           }}
           className="p-0.5 text-owl-blue-600 hover:bg-owl-blue-50 rounded"
-          title="Create new entity"
+          title="Create new profile"
         >
           <Plus className="w-3.5 h-3.5" />
         </button>
@@ -81,7 +85,7 @@ export default function EntitiesPanelSection({ caseId, collapsed = false, onTogg
             </div>
           ) : entities.length === 0 ? (
             <div className="text-xs text-light-500 italic py-2">
-              No entities yet. Track people, addresses, events, devices and more.
+              No profiles yet. Build a dossier on a person, address, event, vehicle, device or organisation.
             </div>
           ) : (
             <>

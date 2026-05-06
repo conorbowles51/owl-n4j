@@ -2261,6 +2261,22 @@ export const workspaceAPI = {
   deleteNote: (caseId, noteId) => fetchAPI(`/workspace/${caseId}/notes/${noteId}`, {
     method: 'DELETE',
   }),
+  /**
+   * Attach Profile (CaseEntity) ids to an investigative note. Additive.
+   */
+  linkNoteProfiles: (caseId, noteId, profileIds) =>
+    fetchAPI(`/workspace/${caseId}/notes/${noteId}/link-profiles`, {
+      method: 'POST',
+      body: { profile_ids: profileIds },
+    }),
+  /**
+   * Detach Profile ids from an investigative note.
+   */
+  unlinkNoteProfiles: (caseId, noteId, profileIds) =>
+    fetchAPI(`/workspace/${caseId}/notes/${noteId}/unlink-profiles`, {
+      method: 'POST',
+      body: { profile_ids: profileIds },
+    }),
 
   // Findings
   getFindings: (caseId) => fetchAPI(`/workspace/${caseId}/findings`),
@@ -2958,6 +2974,21 @@ export const entitiesAPI = {
   getContext: (caseId, entityId) =>
     fetchAPI(`/entities/${encodeURIComponent(entityId)}/context?case_id=${encodeURIComponent(caseId)}`),
 };
+
+/**
+ * Case Profiles API — user-facing alias for entitiesAPI.
+ *
+ * "Profile" is the new investigator-facing name for what the backend
+ * still stores as `:CaseEntity`. Same routes, same payloads — this is
+ * here so new code can `import { caseProfilesAPI }` without leaking
+ * the legacy name into call-sites. Old `entitiesAPI` consumers keep
+ * working unchanged.
+ *
+ * Note: not just `profilesAPI` because that name is already taken by
+ * the LLM-ingestion profiles API earlier in this file. Hence the
+ * `case` qualifier — matches the backend route /api/case-profiles.
+ */
+export const caseProfilesAPI = entitiesAPI;
 
 
 /**

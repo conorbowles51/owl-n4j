@@ -1063,6 +1063,59 @@ async def delete_note(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class NoteProfileLinkRequest(BaseModel):
+    """Body for linking/unlinking Profiles (CaseEntity) to/from a note."""
+    profile_ids: List[str]
+
+
+@router.post("/{case_id}/notes/{note_id}/link-profiles")
+async def link_profiles_to_note(
+    case_id: str,
+    note_id: str,
+    body: NoteProfileLinkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Attach one or more Profile ids to an investigative note."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+        note = workspace_service.link_profiles_to_note(case_id, note_id, body.profile_ids)
+        if note is None:
+            raise HTTPException(status_code=404, detail="Note not found")
+        return {"success": True, "note": note}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{case_id}/notes/{note_id}/unlink-profiles")
+async def unlink_profiles_from_note(
+    case_id: str,
+    note_id: str,
+    body: NoteProfileLinkRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Detach one or more Profile ids from an investigative note."""
+    try:
+        try:
+            get_case_if_allowed(db=db, case_id=UUID(case_id), user=current_user)
+        except (CaseNotFound, CaseAccessDenied):
+            raise HTTPException(status_code=404, detail="Case not found")
+        note = workspace_service.unlink_profiles_from_note(case_id, note_id, body.profile_ids)
+        if note is None:
+            raise HTTPException(status_code=404, detail="Note not found")
+        return {"success": True, "note": note}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Findings Endpoints
 
 

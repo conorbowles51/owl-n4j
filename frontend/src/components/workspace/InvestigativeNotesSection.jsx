@@ -4,6 +4,7 @@ import { workspaceAPI } from '../../services/api';
 import AttachToTheoryModal from './AttachToTheoryModal';
 import AddInvestigativeNoteModal from './AddInvestigativeNoteModal';
 import BuildGraphFromTextModal from './BuildGraphFromTextModal';
+import LinkNoteToProfilesButton from '../entities/LinkNoteToProfilesButton';
 
 /**
  * Investigative Notes Section
@@ -221,6 +222,16 @@ export default function InvestigativeNotesSection({
                         >
                           <Link2 className="w-4 h-4 text-owl-blue-600" />
                         </button>
+                        <LinkNoteToProfilesButton
+                          caseId={caseId}
+                          noteId={noteId}
+                          linkedProfileIds={note.linked_entity_ids || []}
+                          onChanged={() => {
+                            // Re-fetch so the new linked-profile chip count
+                            // reflects the change.
+                            workspaceAPI.getNotes(caseId).then((d) => setNotes(d.notes || []));
+                          }}
+                        />
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

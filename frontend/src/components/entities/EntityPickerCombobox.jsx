@@ -97,13 +97,13 @@ export default function EntityPickerCombobox({
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find or create an entity…"
+            placeholder="Find or create a profile…"
             className="w-full pl-7 pr-2 py-1 text-sm border border-light-300 rounded focus:outline-none focus:border-owl-blue-400"
           />
         </div>
         <button
           onClick={() => setCreating(true)}
-          title="Create new entity"
+          title="Create new profile"
           className="p-1.5 text-owl-blue-600 hover:bg-owl-blue-50 rounded"
         >
           <Plus className="w-4 h-4" />
@@ -154,7 +154,7 @@ export default function EntityPickerCombobox({
         )}
         {!loading && filtered.length === 0 && (
           <div className="p-3 text-xs text-light-500 italic text-center">
-            No matching entities. Use + to create one.
+            No matching profiles. Use + to create one.
           </div>
         )}
         {!loading &&

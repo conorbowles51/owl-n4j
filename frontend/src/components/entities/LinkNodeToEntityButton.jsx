@@ -57,10 +57,10 @@ export default function LinkNodeToEntityButton({ caseId, nodeKey, compact = fals
             ? 'inline-flex items-center gap-0.5 text-[10px] text-owl-blue-600 hover:underline'
             : 'inline-flex items-center gap-1 px-2 py-1 text-xs border border-light-300 rounded hover:bg-light-50 text-light-700'
         }
-        title="Link to entity profile"
+        title="Link to profile"
       >
         <Users className="w-3 h-3" />
-        {compact ? '' : 'Link to entity'}
+        {compact ? '' : 'Link to profile'}
       </button>
       {open && (
         <div className="absolute top-full right-0 mt-1 z-30">

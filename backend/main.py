@@ -115,7 +115,11 @@ app.include_router(maintenance_router)
 app.include_router(case_deadlines_router)
 app.include_router(cellebrite_router)
 app.include_router(triage_router)
-app.include_router(case_entities_router)
+# Investigator-curated dossier profiles. Mounted at both URLs:
+#   /api/case-profiles  — new canonical route (frontend uses this)
+#   /api/entities       — legacy alias (kept for back-compat)
+app.include_router(case_entities_router, prefix="/api/case-profiles")
+app.include_router(case_entities_router, prefix="/api/entities")
 
 
 @app.get("/")
