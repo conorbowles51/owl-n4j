@@ -5475,8 +5475,19 @@ class Neo4jService:
                     except (ValueError, TypeError):
                         candidates = []
 
+                # Defensive dedupe: the writer creates PhoneReport with raw
+                # CREATE (no uniqueness constraint), so a re-ingest of the
+                # same report can leave a stale duplicate node in the graph.
+                # Skip rows whose key was already emitted — both copies carry
+                # identical data, so the second is redundant.
+                report_key = r.get("key", "")
+                if report_key and any(
+                    existing["report_key"] == report_key for existing in reports
+                ):
+                    continue
+
                 reports.append({
-                    "report_key": r.get("key", ""),
+                    "report_key": report_key,
                     "report_name": r.get("name", ""),
                     # Stable zero-based palette slot for the frontend phone
                     # identity. Ordering above guarantees the same phone gets
