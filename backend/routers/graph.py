@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import select, text
 
 from services.neo4j_service import neo4j_service
 from services.last_graph_storage import last_graph_storage
@@ -1467,6 +1468,35 @@ async def merge_entities(
             detail=f"Cannot merge more than {MAX_MERGE_ENTITIES} entities at once",
         )
 
+    # Guard against concurrent merges involving overlapping entities
+    from postgres.models.merge_job import MergeJob as _MergeJobCheck
+
+    for key in unique_keys:
+        lock_id = hash(f"merge:{request.case_id}:{key}") & 0x7FFFFFFF
+        locked = db.execute(
+            text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
+            {"lock_id": lock_id},
+        ).scalar()
+        if not locked:
+            raise HTTPException(
+                status_code=409,
+                detail="An entity in your selection is already being merged. Try again shortly.",
+            )
+
+    active_merges = db.execute(
+        select(_MergeJobCheck).where(
+            _MergeJobCheck.case_id == request.case_id,
+            _MergeJobCheck.status.in_(["pending", "processing"]),
+        )
+    ).scalars().all()
+    for existing in active_merges:
+        overlap = set(existing.source_entity_keys or []) & set(unique_keys)
+        if overlap:
+            raise HTTPException(
+                status_code=409,
+                detail="One or more selected entities are already being merged.",
+            )
+
     try:
         # Fetch full entity details from Neo4j
         entity_payloads = []
@@ -1510,7 +1540,10 @@ async def merge_entities(
                         "type": conn.get("relationship", "RELATED_TO"),
                         "direction": conn.get("direction", "outgoing"),
                         "target_key": conn.get("key", ""),
-                        "properties": {},
+                        "properties": {
+                            k: v for k, v in (conn.get("rel_properties") or {}).items()
+                            if k not in ("case_id",) and isinstance(v, (str, int, float, bool))
+                        },
                     }
                     for conn in (details.get("connections") or [])
                     if conn.get("key")
@@ -1596,6 +1629,31 @@ async def merge_entities(
             success=False,
         )
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/merge-jobs/{merge_job_id}")
+async def get_merge_job(
+    merge_job_id: str,
+    user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return the status of a merge job for frontend progress tracking."""
+    from postgres.models.merge_job import MergeJob
+
+    job = db.execute(
+        select(MergeJob).where(MergeJob.id == merge_job_id)
+    ).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Merge job not found")
+
+    return {
+        "id": str(job.id),
+        "status": job.status,
+        "merged_entity_key": job.merged_entity_key,
+        "recycled_source_keys": job.recycled_source_keys,
+        "source_entity_keys": job.source_entity_keys,
+        "error_message": job.error_message,
+    }
 
 
 # --- Rejected Merge Pairs Endpoints ---

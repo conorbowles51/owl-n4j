@@ -422,6 +422,9 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const handleNodeRightClick = useCallback(
     (node: FGNode, event: MouseEvent) => {
       event.preventDefault()
+      if (!selectedNodeKeys.has(node.key)) {
+        addToSelection(node.key)
+      }
       openContextMenu({
         x: event.clientX,
         y: event.clientY,
@@ -429,7 +432,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         nodeLabel: node.label,
       })
     },
-    [openContextMenu]
+    [openContextMenu, selectedNodeKeys, addToSelection]
   )
 
   const handleNodeHover = useCallback(

@@ -22,6 +22,7 @@ import { BulkEditDialog } from "./BulkEditDialog"
 import { TablePagination } from "./TablePagination"
 import type { ColumnConfig } from "./TableColumnConfig"
 import { MergeEntitiesDialog } from "@/features/graph/components/MergeEntitiesDialog"
+import { useMergeTracker } from "@/features/graph/hooks/use-merge-tracker"
 import { AddNodeDialog } from "@/features/graph/components/AddNodeDialog"
 import {
   Dialog,
@@ -344,6 +345,8 @@ export function TablePage() {
     }
   }, [clearChecked, caseId, queryClient])
 
+  const mergeTracker = useMergeTracker({ onCompleted: handleMerged, onPartial: handleMerged })
+
   const handleCreated = useCallback(() => {
     if (caseId) {
       queryClient.invalidateQueries({ queryKey: ["graph", caseId] })
@@ -472,10 +475,15 @@ export function TablePage() {
       {/* Dialogs */}
       <MergeEntitiesDialog
         open={mergeOpen}
-        onOpenChange={setMergeOpen}
+        onOpenChange={(open) => {
+          setMergeOpen(open)
+          mergeTracker.setDialogOpen(open)
+        }}
         entities={checkedNodes}
         caseId={caseId ?? ""}
-        onMerged={handleMerged}
+        activeJob={mergeTracker.activeJob}
+        onStartTracking={mergeTracker.startTracking}
+        onClearJob={mergeTracker.clearJob}
       />
 
       <AddNodeDialog

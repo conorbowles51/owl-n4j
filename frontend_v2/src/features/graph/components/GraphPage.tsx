@@ -19,6 +19,7 @@ import { AddNodeDialog } from "./AddNodeDialog"
 import { EditNodeDialog } from "./EditNodeDialog"
 import { CreateRelationshipDialog } from "./CreateRelationshipDialog"
 import { MergeEntitiesDialog } from "./MergeEntitiesDialog"
+import { useMergeTracker } from "../hooks/use-merge-tracker"
 import { ExpandGraphDialog } from "./ExpandGraphDialog"
 import { EntityComparisonDialog } from "./EntityComparisonDialog"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
@@ -113,6 +114,8 @@ export function GraphPage() {
     queryClient.invalidateQueries({ queryKey: ["graph", "entity-types", caseId] })
     queryClient.invalidateQueries({ queryKey: ["graph", "recycle-bin", caseId] })
   }, [queryClient, caseId])
+
+  const mergeTracker = useMergeTracker({ onCompleted: refreshGraph, onPartial: refreshGraph })
 
   const handleNodeCreated = useCallback(() => refreshGraph(), [refreshGraph])
 
@@ -348,10 +351,15 @@ export function GraphPage() {
       />
       <MergeEntitiesDialog
         open={mergeOpen}
-        onOpenChange={setMergeOpen}
+        onOpenChange={(open) => {
+          setMergeOpen(open)
+          mergeTracker.setDialogOpen(open)
+        }}
         entities={mergeEntities}
         caseId={caseId!}
-        onMerged={refreshGraph}
+        activeJob={mergeTracker.activeJob}
+        onStartTracking={mergeTracker.startTracking}
+        onClearJob={mergeTracker.clearJob}
       />
       <ExpandGraphDialog
         open={expandOpen}

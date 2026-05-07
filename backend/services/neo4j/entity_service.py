@@ -260,7 +260,8 @@ class EntityService:
                         name: connected.name,
                         type: labels(connected)[0],
                         relationship: type(r),
-                        direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END
+                        direction: CASE WHEN startNode(r) = n THEN 'outgoing' ELSE 'incoming' END,
+                        rel_properties: properties(r)
                     }) AS connections
                 """,
                 **params,

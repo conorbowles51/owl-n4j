@@ -184,6 +184,16 @@ export const graphAPI = {
       `/api/evidence/engine/jobs/${encodeURIComponent(jobId)}`
     ),
 
+  getMergeJob: (mergeJobId: string) =>
+    fetchAPI<{
+      id: string
+      status: string
+      merged_entity_key: string | null
+      recycled_source_keys: string[] | null
+      source_entity_keys: string[]
+      error_message: string | null
+    }>(`/api/graph/merge-jobs/${encodeURIComponent(mergeJobId)}`),
+
   findSimilarEntities: (
     caseId: string,
     entityTypes?: string[] | null,

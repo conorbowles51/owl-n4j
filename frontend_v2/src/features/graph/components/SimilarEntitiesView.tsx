@@ -14,6 +14,7 @@ import { useSimilarEntities } from "../hooks/use-similar-entities"
 import { useEntityTypes } from "../hooks/use-graph-data"
 import { graphAPI } from "../api"
 import { MergeEntitiesDialog } from "./MergeEntitiesDialog"
+import { useMergeTracker } from "../hooks/use-merge-tracker"
 import { EntityComparisonDialog } from "./EntityComparisonDialog"
 import { getNodeColor } from "@/lib/theme"
 import type { GraphData, GraphNode, SimilarPair } from "@/types/graph.types"
@@ -53,6 +54,11 @@ export function SimilarEntitiesView({
     e2: GraphNode | null
     similarity: number
   }>({ e1: null, e2: null, similarity: 0 })
+
+  const mergeTracker = useMergeTracker({
+    onCompleted: () => { setMergeOpen(false); onRefresh() },
+    onPartial: () => { onRefresh() },
+  })
 
   const typeCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -397,14 +403,16 @@ export function SimilarEntitiesView({
 
       <MergeEntitiesDialog
         open={mergeOpen}
-        onOpenChange={setMergeOpen}
+        onOpenChange={(open) => {
+          setMergeOpen(open)
+          mergeTracker.setDialogOpen(open)
+        }}
         entities={[mergePair.e1, mergePair.e2].filter((e): e is GraphNode => e !== null)}
         caseId={caseId}
         similarity={mergePair.similarity}
-        onMerged={() => {
-          setMergeOpen(false)
-          onRefresh()
-        }}
+        activeJob={mergeTracker.activeJob}
+        onStartTracking={mergeTracker.startTracking}
+        onClearJob={mergeTracker.clearJob}
       />
     </div>
   )
