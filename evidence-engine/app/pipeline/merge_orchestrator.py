@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.job import Job, JobStatus
 from app.ontology.schema_builder import get_merge_schema
+from app.pipeline.merge_relationships import aggregate_relationships_for_merge
 from app.services import chroma_client, neo4j_client
 from app.services.cost_tracking import ingestion_cost_context
 from app.services.openai_client import chat_completion, embed_texts
@@ -225,28 +226,8 @@ async def _write_merged_entity(
 
     # Pre-aggregate relationships across source entities. Multiple sources
     # contributing the same (type, direction, target) merge into a single
-    # MERGE with their scalar properties unioned (first non-empty wins per key).
-    source_key_set = {e.get("key") for e in entities if e.get("key")}
-
-    agg: dict[tuple[str, str, str], dict[str, Any]] = {}
-    source_names: dict[tuple[str, str, str], str] = {}
-
-    for entity in entities:
-        for rel in entity.get("relationships") or []:
-            target_key = rel.get("target_key", "")
-            if not target_key or target_key in source_key_set:
-                continue
-            direction = rel.get("direction", "outgoing")
-            if direction not in ("outgoing", "incoming"):
-                direction = "outgoing"
-            rel_type = rel.get("type", "RELATED_TO")
-            safe_type = re.sub(r"[^A-Z0-9_]", "_", rel_type.upper()) or "RELATED_TO"
-            key = (safe_type, direction, target_key)
-            bucket = agg.setdefault(key, {"case_id": case_id})
-            for k, v in (rel.get("properties") or {}).items():
-                if isinstance(v, (str, int, float, bool)) and k not in bucket:
-                    bucket[k] = v
-            source_names.setdefault(key, entity.get("name", "?"))
+    # MERGE with scalar properties and provenance unioned.
+    agg, source_names = aggregate_relationships_for_merge(entities, case_id)
 
     rel_count = 0
     for (safe_type, direction, target_key), rel_props in agg.items():
@@ -255,7 +236,12 @@ async def _write_merged_entity(
                 f"MATCH (a {{id: $source_id}}) "
                 f"MATCH (b {{key: $target_key, case_id: $case_id}}) "
                 f"MERGE (a)-[r:{safe_type}]->(b) "
-                f"SET r += $props "
+                f"WITH r, $props AS props, r.source_files AS prev_sf, r.source_quotes AS prev_sq "
+                f"SET r += props, "
+                f"r.source_files = reduce(acc = [], x IN (coalesce(prev_sf, []) + coalesce(props.source_files, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
+                f"r.source_quotes = coalesce(prev_sq, []) + "
+                f"[q IN coalesce(props.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])] "
                 f"RETURN count(r) AS matched"
             )
         else:
@@ -263,7 +249,12 @@ async def _write_merged_entity(
                 f"MATCH (a {{key: $target_key, case_id: $case_id}}) "
                 f"MATCH (b {{id: $source_id}}) "
                 f"MERGE (a)-[r:{safe_type}]->(b) "
-                f"SET r += $props "
+                f"WITH r, $props AS props, r.source_files AS prev_sf, r.source_quotes AS prev_sq "
+                f"SET r += props, "
+                f"r.source_files = reduce(acc = [], x IN (coalesce(prev_sf, []) + coalesce(props.source_files, [])) "
+                f"| CASE WHEN x IN acc THEN acc ELSE acc + x END), "
+                f"r.source_quotes = coalesce(prev_sq, []) + "
+                f"[q IN coalesce(props.source_quotes, []) WHERE NOT q IN coalesce(prev_sq, [])] "
                 f"RETURN count(r) AS matched"
             )
 

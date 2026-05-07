@@ -56,7 +56,7 @@ export function SimilarEntitiesView({
   }>({ e1: null, e2: null, similarity: 0 })
 
   const mergeTracker = useMergeTracker({
-    onCompleted: () => { setMergeOpen(false); onRefresh() },
+    onCompleted: () => { onRefresh() },
     onPartial: () => { onRefresh() },
   })
 

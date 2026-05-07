@@ -4,6 +4,7 @@ Graph Router - endpoints for graph visualization data.
 
 from typing import Optional, List, Dict, Any
 from uuid import UUID
+import hashlib
 import json
 import asyncio
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
@@ -19,7 +20,9 @@ from services.llm_service import LLMService
 from services.geo_rescan_service import rescan_case_locations
 from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.rejected_pairs_service import RejectedPairsService
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from routers.auth import get_current_user
+from routers.users import get_current_db_user
 from postgres.session import get_db
 
 router = APIRouter(prefix="/api/graph", tags=["graph"])
@@ -78,6 +81,63 @@ class FindSimilarEntitiesRequest(BaseModel):
 
 
 MAX_MERGE_ENTITIES = 25
+MERGE_RELATIONSHIP_IDENTITY_FIELDS = frozenset(
+    {"source_id", "target_id", "id", "case_id", "source", "target"}
+)
+MERGE_RELATIONSHIP_PROVENANCE_FIELDS = frozenset({"source_files", "source_quotes"})
+
+
+def _merge_advisory_lock_id(case_id: str, entity_key: str) -> int:
+    """Return a process-stable signed 64-bit advisory lock key."""
+    digest = hashlib.blake2b(
+        f"merge:{case_id}:{entity_key}".encode("utf-8"),
+        digest_size=8,
+    ).digest()
+    return int.from_bytes(digest, byteorder="big", signed=True)
+
+
+def _as_string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if item is not None and str(item)]
+    if isinstance(value, (str, int, float, bool)) and str(value):
+        return [str(value)]
+    return []
+
+
+def _relationship_merge_payload(conn: Dict[str, Any]) -> Dict[str, Any]:
+    rel_props = conn.get("rel_properties") or {}
+    properties = {
+        k: v for k, v in rel_props.items()
+        if k not in MERGE_RELATIONSHIP_IDENTITY_FIELDS
+        and k not in MERGE_RELATIONSHIP_PROVENANCE_FIELDS
+        and isinstance(v, (str, int, float, bool))
+    }
+    return {
+        "type": conn.get("relationship", "RELATED_TO"),
+        "direction": conn.get("direction", "outgoing"),
+        "target_key": conn.get("key", ""),
+        "properties": properties,
+        "source_files": _as_string_list(rel_props.get("source_files")),
+        "source_quotes": _as_string_list(rel_props.get("source_quotes")),
+    }
+
+
+def _acquire_merge_entity_locks(
+    db: Session,
+    case_id: str,
+    entity_keys: List[str],
+) -> None:
+    for key in sorted(entity_keys):
+        lock_id = _merge_advisory_lock_id(case_id, key)
+        locked = db.execute(
+            text("SELECT pg_try_advisory_xact_lock(CAST(:lock_id AS bigint))"),
+            {"lock_id": lock_id},
+        ).scalar()
+        if not locked:
+            raise HTTPException(
+                status_code=409,
+                detail="An entity in your selection is already being merged. Try again shortly.",
+            )
 
 
 class MergeEntitiesRequest(BaseModel):
@@ -1471,17 +1531,7 @@ async def merge_entities(
     # Guard against concurrent merges involving overlapping entities
     from postgres.models.merge_job import MergeJob as _MergeJobCheck
 
-    for key in unique_keys:
-        lock_id = hash(f"merge:{request.case_id}:{key}") & 0x7FFFFFFF
-        locked = db.execute(
-            text("SELECT pg_try_advisory_xact_lock(:lock_id)"),
-            {"lock_id": lock_id},
-        ).scalar()
-        if not locked:
-            raise HTTPException(
-                status_code=409,
-                detail="An entity in your selection is already being merged. Try again shortly.",
-            )
+    _acquire_merge_entity_locks(db, request.case_id, unique_keys)
 
     active_merges = db.execute(
         select(_MergeJobCheck).where(
@@ -1536,15 +1586,7 @@ async def merge_entities(
                     and isinstance(v, (str, int, float, bool))
                 },
                 "relationships": [
-                    {
-                        "type": conn.get("relationship", "RELATED_TO"),
-                        "direction": conn.get("direction", "outgoing"),
-                        "target_key": conn.get("key", ""),
-                        "properties": {
-                            k: v for k, v in (conn.get("rel_properties") or {}).items()
-                            if k not in ("case_id",) and isinstance(v, (str, int, float, bool))
-                        },
-                    }
+                    _relationship_merge_payload(conn)
                     for conn in (details.get("connections") or [])
                     if conn.get("key")
                 ],
@@ -1634,7 +1676,7 @@ async def merge_entities(
 @router.get("/merge-jobs/{merge_job_id}")
 async def get_merge_job(
     merge_job_id: str,
-    user: dict = Depends(get_current_user),
+    current_user = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """Return the status of a merge job for frontend progress tracking."""
@@ -1645,6 +1687,11 @@ async def get_merge_job(
     ).scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Merge job not found")
+
+    try:
+        check_case_access(db, job.case_id, current_user, required_permission=("case", "view"))
+    except (CaseNotFound, CaseAccessDenied) as e:
+        raise HTTPException(status_code=403, detail=str(e))
 
     return {
         "id": str(job.id),

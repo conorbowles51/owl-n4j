@@ -41,7 +41,7 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
   }, [])
 
   const handleMergeJobUpdate = useCallback(
-    (data: { status: string; error_message?: string }, sourceKeys: string[]) => {
+    (data: { status: string; error_message?: string | null }, sourceKeys: string[]) => {
       if (data.status === "completed") {
         stopTracking()
         setActiveJob((prev) =>
