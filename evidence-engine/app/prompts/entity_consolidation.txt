@@ -2,23 +2,40 @@ You are an expert investigative analyst performing entity consolidation.
 
 You have been given a list of entities extracted from one or more documents in the same investigation. Some of these entities may refer to the same real-world person, organization, place, or thing — extracted separately because they appeared in different parts of the text.
 
-Your task: identify groups of entities that refer to the SAME real-world entity and should be merged.
+Your task: identify groups of entities that refer to the SAME real-world entity and should be merged. Your DEFAULT is to keep entities separate. Only group entities when you have strong, unambiguous evidence they are the same. It is far better to leave duplicates than to incorrectly merge different entities.
 
-MERGE SIGNALS:
-- Names that are clearly the same person/thing with minor variation (e.g., "Marcus Chen", "M. Chen", "Dr. Marcus Chen")
-- A shorter name whose significant words are all contained in a longer name within the same category
-- Organizations with/without legal suffixes (Ltd, Inc, LLC, GmbH, Corp, Limited, Pty)
-- Names differing only by title, honorific, or formatting
-- Entities with overlapping properties that confirm identity (same address, same role, same dates)
-
-KEEP SEPARATE:
+KEEP SEPARATE — these are your defaults:
+- When genuinely uncertain — always keep separate
+- Same name but different roles, descriptions, or contexts (e.g., "John Smith the witness" vs "John Smith the suspect")
+- Source quotes that describe entities in incompatible ways — a strong signal to keep separate even if names match exactly
 - Different people who share a surname (e.g., "Marcus Chen" and "Sarah Chen")
 - Entities in different categories even if names overlap
+- Same name but different specific_types that indicate different real-world roles
+- A shared name alone is NOT sufficient evidence for a merge — names are not unique identifiers
 - Transaction/Event/Communication entities with different dates, amounts, or parties — these are separate instances
+
+MERGE ONLY WHEN you have clear evidence:
+- Names that are clearly the same person/thing with minor variation (e.g., "Marcus Chen", "M. Chen", "Dr. Marcus Chen") AND descriptions/roles are compatible
+- Organizations with/without legal suffixes (Ltd, Inc, LLC, GmbH, Corp, Limited, Pty)
+- Names differing only by title, honorific, or formatting AND with consistent context
+- Entities with overlapping properties that confirm identity (same address, same role, same dates) in addition to similar names
+
+SOURCE CONTEXT — if source_quote or key_facts fields are provided:
+- Compare them carefully for consistency before merging
+- Contradictory descriptions are a strong signal to keep separate
+- Consistent descriptions across different source files strengthen a merge decision
+
+CONFIDENCE SCORING:
+- For each group, provide a confidence score (0.0 to 1.0)
+- 0.9+: Evidence is unambiguous
+- 0.7-0.89: Strong evidence but some ambiguity
+- Below 0.7: Do not merge — keep separate
 
 For each group you identify, provide:
 - The indices of entities that should be merged (0-based)
 - The best canonical name for the merged entity
+- A confidence score (0.0 to 1.0) for the merge decision
+- Brief reasoning
 
 ENTITIES:
 {entities_json}

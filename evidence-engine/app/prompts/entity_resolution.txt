@@ -1,28 +1,42 @@
 You are an expert at entity resolution — determining whether two entity records refer to the same real-world thing.
 
-For each pair below, decide: MERGE (same entity) or KEEP_SEPARATE (different entities).
+Your DEFAULT decision is KEEP_SEPARATE. Only choose MERGE when you have strong, unambiguous evidence that both records refer to the exact same real-world entity. It is far better to leave two records for the same entity than to incorrectly merge two different entities.
 
-STRONG MERGE SIGNALS — these patterns almost always indicate the SAME entity:
-- Names that differ only by title or honorific (Mr., Dr., Prof., Sgt., etc.) — "Dr. Marcus Chen" and "Marcus Chen" are the SAME person
-- A shorter name whose significant tokens are all present in the longer name — "Chen" within "Marcus Chen", "Nexus Trading" within "Nexus Trading Limited"
-- Names sharing all significant tokens but differing only in order or filler words
-- An organization's full name vs. its abbreviation or name without legal suffix (Ltd, Inc, LLC, GmbH, Corp, Limited, Pty)
-- Names that differ only by punctuation, case, or minor formatting (e.g., "Nexus Trading Ltd." and "Nexus Trading Ltd")
+For each pair below, decide: MERGE (same entity) or KEEP_SEPARATE (different entities), along with a confidence score from 0.0 to 1.0.
 
-ALSO CONSIDER:
-- Name variations (nicknames, abbreviations, misspellings, formal vs informal)
-- Overlapping properties (same address, same role, same dates)
-- Context clues (same document, same case, related entities)
+KEEP SEPARATE — these are your defaults:
+- When genuinely uncertain — always keep separate
+- Same name but different roles, descriptions, or contexts (e.g., "John Smith the detective" vs "John Smith the suspect")
+- Source quotes that describe the entities in incompatible ways — a strong KEEP_SEPARATE signal even if names match exactly
+- Different source documents with no cross-referencing evidence connecting them
+- Names that share a surname but have clearly different first names (e.g., "Marcus Chen" vs "Sarah Chen")
+- Entities in different categories
+- Same name but different specific_types that indicate different real-world roles (e.g., "Witness" vs "Suspect")
+- A shared name alone is NOT sufficient evidence for a merge — names are not unique identifiers
 
-KEEP SEPARATE when:
-- Names share a surname but have clearly different first names (e.g., "Marcus Chen" vs "Sarah Chen")
-- Entities are in different categories
-- When genuinely uncertain and no supporting evidence exists for a merge
+MERGE ONLY WHEN you have clear evidence:
+- Names that differ only by title or honorific (Mr., Dr., Prof., Sgt., etc.) AND descriptions/roles are compatible — "Dr. Marcus Chen" and "Marcus Chen" described in the same role
+- An organization's full name vs. its abbreviation or name without legal suffix (Ltd, Inc, LLC, GmbH, Corp, Limited, Pty) — "Nexus Trading Limited" and "Nexus Trading Ltd"
+- Names differing only by punctuation, case, or minor formatting
+- A shorter name whose significant tokens are all present in the longer name AND the context confirms they refer to the same entity — not just a substring match
+- Names sharing all significant tokens but differing only in order or filler words, AND with compatible properties/descriptions
 
 IMPORTANT — Transaction / Event / Communication entities:
 - These are "instance" entities where multiple records with the same name are legitimate
 - Two transactions with the same name but different dates, amounts, or parties are SEPARATE instances — do NOT merge them
 - Only merge these if they have the same date AND same amount AND same parties (i.e., they are truly duplicate records of the same event)
+
+SOURCE CONTEXT — if source_quote or verified_facts fields are provided:
+- Compare them carefully for consistency
+- Contradictory descriptions are a strong KEEP_SEPARATE signal
+- Example: "the lead investigator on the case" vs "a person of interest" — even with the same name, these are different people
+- Consistent descriptions across different documents strengthen a MERGE decision
+
+CONFIDENCE SCORING:
+- 0.9-1.0: Evidence is unambiguous (e.g., exact formatting variation like "Ltd" vs "Limited")
+- 0.7-0.89: Strong evidence but some ambiguity remains
+- 0.5-0.69: Moderate evidence, uncertain
+- Below 0.5: Weak evidence, likely different entities
 
 ENTITY PAIRS:
 {pairs_json}
@@ -30,6 +44,7 @@ ENTITY PAIRS:
 For each pair, respond with:
 - pair_index: the index of the pair (0-based)
 - decision: "MERGE" or "KEEP_SEPARATE"
+- confidence: your confidence in this decision (0.0 to 1.0)
 - reasoning: brief explanation
 
 Respond with JSON matching the required schema.

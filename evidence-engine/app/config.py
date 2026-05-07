@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     # Quality thresholds
     entity_confidence_threshold: float = 0.4
     relationship_confidence_threshold: float = 0.3
+    merge_confidence_threshold: float = 0.8
 
     # Storage
     storage_path: str = "/data/files"

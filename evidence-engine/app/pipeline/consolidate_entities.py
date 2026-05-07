@@ -22,6 +22,8 @@ from app.pipeline.extract_entities import RawEntity, RawRelationship
 from app.pipeline.mandatory_rules import merge_mandatory_instructions, prepend_mandatory_rules
 from app.services.openai_client import chat_completion
 
+CHUNK_ADJACENCY_THRESHOLD = 2
+
 logger = logging.getLogger(__name__)
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
@@ -54,32 +56,37 @@ def _deterministic_consolidate(
     entities: list[RawEntity],
     relationships: list[RawRelationship],
 ) -> tuple[list[RawEntity], list[RawRelationship], dict[str, str], int]:
-    """Merge entities with identical normalized names within the same category.
-    Also cross-matches aliases against names.
+    """Merge entities with identical normalized names within the same category,
+    but ONLY when they come from the same source file and adjacent chunks.
+
+    Cross-file same-name entities are left for LLM consolidation (Pass 2).
 
     Returns (entities, relationships, id_remap, merge_count).
     """
     if not entities:
         return entities, relationships, {}, 0
 
-    # Group by (category, normalized_name), skip instance categories
-    groups: dict[tuple[str, str], list[int]] = {}
+    def _chunks_adjacent(i: int, j: int) -> bool:
+        return abs(entities[i].source_chunk_index - entities[j].source_chunk_index) <= CHUNK_ADJACENCY_THRESHOLD
+
+    # Group by (category, normalized_name, source_file), skip instance categories
+    groups: dict[tuple[str, str, str], list[int]] = {}
     for i, e in enumerate(entities):
         if e.category in INSTANCE_CATEGORIES:
             continue
-        key = (e.category, _normalize(e.name))
+        key = (e.category, _normalize(e.name), e.source_file)
         groups.setdefault(key, []).append(i)
 
-    # Also build alias → entity index lookup
-    alias_map: dict[tuple[str, str], list[int]] = {}
+    # Also build alias → entity index lookup (scoped to source_file)
+    alias_map: dict[tuple[str, str, str], list[int]] = {}
     for i, e in enumerate(entities):
         if e.category in INSTANCE_CATEGORIES:
             continue
         for alias in e.properties.get("aliases") or []:
-            alias_key = (e.category, _normalize(str(alias)))
+            alias_key = (e.category, _normalize(str(alias)), e.source_file)
             alias_map.setdefault(alias_key, []).append(i)
 
-    # Merge alias matches into groups
+    # Merge alias matches into groups (same file only)
     for alias_key, alias_indices in alias_map.items():
         if alias_key in groups:
             existing = set(groups[alias_key])
@@ -87,7 +94,7 @@ def _deterministic_consolidate(
                 if idx not in existing:
                     groups[alias_key].append(idx)
 
-    # Build merge sets using a simple union-find approach
+    # Build merge sets — only union entities from adjacent chunks
     parent: dict[int, int] = {}
 
     def find(x: int) -> int:
@@ -104,8 +111,10 @@ def _deterministic_consolidate(
 
     for indices in groups.values():
         if len(indices) > 1:
-            for i in range(1, len(indices)):
-                union(indices[0], indices[i])
+            for i in range(len(indices)):
+                for j in range(i + 1, len(indices)):
+                    if _chunks_adjacent(indices[i], indices[j]):
+                        union(indices[i], indices[j])
 
     # Collect merge groups
     merge_groups: dict[int, list[int]] = {}
@@ -223,6 +232,12 @@ async def _llm_consolidate(
             desc = e.properties.get("description")
             if desc:
                 entry["description"] = desc
+            if e.source_quote:
+                entry["source_quote"] = e.source_quote[:500]
+            if e.verified_facts:
+                key_facts = [f["text"] for f in e.verified_facts[:3] if f.get("text")]
+                if key_facts:
+                    entry["key_facts"] = key_facts
             entity_list.append(entry)
 
         entities_json = json.dumps(entity_list, indent=2)
@@ -264,8 +279,17 @@ async def _llm_consolidate(
             for group in groups:
                 local_indices = group.get("indices", [])
                 canonical_name = group.get("canonical_name", "")
+                group_confidence = group.get("confidence", 0.0)
 
                 if len(local_indices) < 2:
+                    continue
+
+                if group_confidence < settings.merge_confidence_threshold:
+                    names = [entities[indices[li]].name for li in local_indices if 0 <= li < len(indices)]
+                    logger.info(
+                        "Low-confidence consolidation rejected (%.2f) for %s: %s",
+                        group_confidence, category, names,
+                    )
                     continue
 
                 # Map local indices back to global indices
