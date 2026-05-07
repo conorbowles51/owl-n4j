@@ -13,6 +13,7 @@ from postgres.models.cost_record import CostRecord
 from postgres.models.user import User
 from models.llm_models import get_model_by_id
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+from utils.text_sanitize import sanitize_json, sanitize_text
 
 
 DEFAULT_CONVERSATION_STATUS = "active"
@@ -185,13 +186,17 @@ def append_conversation_turn(
     ) or 0
 
     revision_id = revision.id if revision else None
-    selected_keys_payload = selected_entity_keys or None
+    selected_keys_payload = sanitize_json(selected_entity_keys) if selected_entity_keys else None
+    sanitized_user_question = sanitize_text(user_question or "")
+    sanitized_assistant_answer = sanitize_text(assistant_answer or "")
+    sanitized_sources = sanitize_json(sources) if sources else None
+    sanitized_result_graph = sanitize_json(result_graph) if result_graph else None
 
     user_message = ChatMessage(
         conversation_id=conversation.id,
         sequence_number=next_sequence + 1,
         role="user",
-        content=user_question,
+        content=sanitized_user_question,
         context_scope=context_scope,
         selected_entity_keys=selected_keys_payload,
         case_revision_id=revision_id,
@@ -201,14 +206,14 @@ def append_conversation_turn(
         conversation_id=conversation.id,
         sequence_number=next_sequence + 2,
         role="assistant",
-        content=assistant_answer,
+        content=sanitized_assistant_answer,
         context_scope=context_scope,
         selected_entity_keys=selected_keys_payload,
-        source_payload=sources or None,
+        source_payload=sanitized_sources,
         model_provider=provider,
         model_id=model_id,
         cost_record_id=cost_record.id if cost_record else None,
-        result_graph_json=result_graph or None,
+        result_graph_json=sanitized_result_graph,
         case_revision_id=revision_id,
         snapshot_id=snapshot_id,
     )
@@ -240,13 +245,13 @@ def replace_conversation_messages(
             conversation_id=conversation.id,
             sequence_number=index,
             role=message.get("role", "assistant"),
-            content=message.get("content", ""),
+            content=sanitize_text(message.get("content", "")),
             context_scope=message.get("scope"),
-            selected_entity_keys=message.get("selected_entity_keys"),
-            source_payload=message.get("sources"),
+            selected_entity_keys=sanitize_json(message.get("selected_entity_keys")),
+            source_payload=sanitize_json(message.get("sources")),
             model_provider=(message.get("model_info") or {}).get("provider"),
             model_id=(message.get("model_info") or {}).get("model_id"),
-            result_graph_json=message.get("resultGraph"),
+            result_graph_json=sanitize_json(message.get("resultGraph")),
             case_revision_id=revision_id,
             snapshot_id=(message.get("provenance") or {}).get("snapshot_id"),
             created_at=_message_timestamp(message) or datetime.now(timezone.utc),

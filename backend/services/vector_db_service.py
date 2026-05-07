@@ -308,6 +308,8 @@ class VectorDBService:
                         f"Delete data/chromadb/ and re-ingest with consistent embedding model."
                     )
 
+        from utils.text_sanitize import sanitize_text
+
         metadata = metadata or {}
         metadata["chunk_id"] = chunk_id
 
@@ -316,15 +318,17 @@ class VectorDBService:
         for k, v in metadata.items():
             if v is None:
                 cleaned_metadata[k] = ""
-            elif isinstance(v, (str, int, float, bool)):
+            elif isinstance(v, str):
+                cleaned_metadata[k] = sanitize_text(v)
+            elif isinstance(v, (int, float, bool)):
                 cleaned_metadata[k] = v
             else:
-                cleaned_metadata[k] = str(v)
+                cleaned_metadata[k] = sanitize_text(str(v))
 
         self.chunk_collection.upsert(
             ids=[chunk_id],
             embeddings=[embedding],
-            documents=[text],
+            documents=[sanitize_text(text)],
             metadatas=[cleaned_metadata]
         )
 

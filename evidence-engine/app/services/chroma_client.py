@@ -4,6 +4,7 @@ import chromadb
 from chromadb.api import ClientAPI
 
 from app.config import settings
+from app.utils.text_sanitize import sanitize_json, sanitize_text
 
 _client: ClientAPI | None = None
 
@@ -34,6 +35,14 @@ def delete_collection(name: str) -> None:
         pass
 
 
+def _clean_documents(documents: list[str]) -> list[str]:
+    return [sanitize_text(d) for d in documents]
+
+
+def _clean_metadatas(metadatas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [sanitize_json(m) if m else m for m in metadatas]
+
+
 def add_embeddings(
     collection: chromadb.Collection,
     ids: list[str],
@@ -41,6 +50,8 @@ def add_embeddings(
     documents: list[str],
     metadatas: list[dict[str, Any]],
 ) -> None:
+    documents = _clean_documents(documents)
+    metadatas = _clean_metadatas(metadatas)
     batch_size = 500
     for i in range(0, len(ids), batch_size):
         end = i + batch_size
@@ -59,6 +70,8 @@ def upsert_embeddings(
     documents: list[str],
     metadatas: list[dict[str, Any]],
 ) -> None:
+    documents = _clean_documents(documents)
+    metadatas = _clean_metadatas(metadatas)
     batch_size = 500
     for i in range(0, len(ids), batch_size):
         end = i + batch_size

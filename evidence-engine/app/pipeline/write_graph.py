@@ -10,6 +10,7 @@ from app.pipeline.resolve_entities import (
 from app.services import chroma_client, neo4j_client
 from app.services.geocoding import build_geocode_request, geocoding_service
 from app.services.openai_client import embed_texts
+from app.utils.text_sanitize import sanitize_json
 
 _ontology = load_ontology()
 ENTITY_CATEGORIES = _ontology.categories
@@ -131,7 +132,7 @@ async def _write_entities(
     batch_size = 500
     for category, nodes in by_cat.items():
         for i in range(0, len(nodes), batch_size):
-            batch = nodes[i : i + batch_size]
+            batch = sanitize_json(nodes[i : i + batch_size])
             query = (
                 f"UNWIND $nodes AS node "
                 f"MERGE (n:{category} {{id: node.id}}) "
@@ -219,7 +220,7 @@ async def _write_relationships(
     batch_size = 500
     for rel_type, rels in by_type.items():
         for i in range(0, len(rels), batch_size):
-            batch = rels[i : i + batch_size]
+            batch = sanitize_json(rels[i : i + batch_size])
             query = (
                 f"UNWIND $rels AS rel "
                 f"MATCH (a {{id: rel.source_id}}) "

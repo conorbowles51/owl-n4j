@@ -17,6 +17,7 @@ import openpyxl
 
 from app.config import settings
 from app.services.openai_client import chat_completion, transcribe_audio
+from app.utils.text_sanitize import sanitize_json, sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -545,31 +546,40 @@ async def _extract_video(file_path: str, file_name: str) -> ExtractedDocument:
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
+def _sanitize_extracted(doc: ExtractedDocument) -> ExtractedDocument:
+    return ExtractedDocument(
+        text=sanitize_text(doc.text),
+        metadata=sanitize_json(doc.metadata) if doc.metadata else {},
+        tables=[sanitize_text(t) for t in (doc.tables or [])],
+    )
+
+
 async def extract_text(file_path: str, file_name: str) -> ExtractedDocument:
     ext = Path(file_name).suffix.lower()
 
     if ext == ".pdf":
-        return _extract_pdf(file_path)
+        doc = _extract_pdf(file_path)
     elif ext in (".docx", ".doc"):
-        return _extract_docx(file_path)
+        doc = _extract_docx(file_path)
     elif ext in (".xlsx", ".xls"):
-        return _extract_xlsx(file_path)
+        doc = _extract_xlsx(file_path)
     elif ext == ".csv":
-        return _extract_csv(file_path)
+        doc = _extract_csv(file_path)
     elif ext in (".html", ".htm"):
-        return _extract_html(file_path)
+        doc = _extract_html(file_path)
     elif ext in (".md", ".markdown"):
-        return _extract_markdown(file_path)
+        doc = _extract_markdown(file_path)
     elif ext in IMAGE_EXTENSIONS:
-        return await _extract_image(file_path, file_name)
+        doc = await _extract_image(file_path, file_name)
     elif ext in VIDEO_EXTENSIONS:
-        return await _extract_video(file_path, file_name)
+        doc = await _extract_video(file_path, file_name)
     elif ext in AUDIO_EXTENSIONS:
-        return await _extract_audio(file_path)
+        doc = await _extract_audio(file_path)
     else:
-        # Fallback: read as plain text
         try:
             text = Path(file_path).read_text(encoding="utf-8", errors="replace")
-            return ExtractedDocument(text=text, metadata={"file_type": "text"})
+            doc = ExtractedDocument(text=text, metadata={"file_type": "text"})
         except Exception as e:
             raise ValueError(f"Unsupported file type: {ext}") from e
+
+    return _sanitize_extracted(doc)

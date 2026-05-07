@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from utils.text_sanitize import sanitize_text
+
 
 def _extract_html_text(raw: str) -> str:
     """Extract clean text from raw HTML string using lxml."""
@@ -65,6 +67,13 @@ def extract_text_from_file(file_path: Path) -> Optional[str]:
     Returns:
         Extracted text or None if extraction fails
     """
+    text = _extract_text_from_file_raw(file_path)
+    if text is None:
+        return None
+    return sanitize_text(text)
+
+
+def _extract_text_from_file_raw(file_path: Path) -> Optional[str]:
     if not file_path.exists():
         return None
 
