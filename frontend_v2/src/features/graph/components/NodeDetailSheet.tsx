@@ -165,6 +165,12 @@ export function NodeDetailSheet({
             <NodeBadge type={detail.type} />
             <h3 className="truncate text-sm font-semibold">{detail.label}</h3>
           </div>
+          {Array.isArray(detail.properties.aliases) &&
+            (detail.properties.aliases as unknown[]).length > 0 && (
+              <p className="mt-0.5 truncate text-[11px] italic text-muted-foreground">
+                also known as: {(detail.properties.aliases as string[]).join(", ")}
+              </p>
+            )}
           {detail.confidence !== undefined && (
             <div className="mt-1.5 max-w-[200px]">
               <ConfidenceBar value={detail.confidence} />

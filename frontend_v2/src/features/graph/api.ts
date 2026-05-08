@@ -27,6 +27,7 @@ function toGraphData(raw: RawGraphData): GraphData {
       type: (n.type || "").toLowerCase(),
       confidence: n.confidence,
       mentioned: n.mentioned,
+      aliases: Array.isArray(n.aliases) ? (n.aliases as string[]) : [],
       properties: n.properties ?? {},
     })),
     edges: (raw.links ?? []).map((e: RawEdge) => ({

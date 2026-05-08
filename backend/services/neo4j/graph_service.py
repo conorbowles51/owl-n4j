@@ -214,12 +214,14 @@ class GraphService:
                     nk = record["key"]
                     if nk not in node_keys:
                         node_keys.add(nk)
+                        node_props = record.get("node_props") or {}
                         nodes.append({
                             "key": nk,
                             "name": record["name"] or nk,
                             "type": record["type"],
                             "confidence": record["confidence"],
-                            "mentioned": (record.get("node_props") or {}).get("mentioned"),
+                            "mentioned": node_props.get("mentioned"),
+                            "aliases": node_props.get("aliases") or [],
                         })
 
                 links = []
@@ -293,12 +295,14 @@ class GraphService:
                 node_key = record["key"]
                 if node_key not in node_keys:
                     node_keys.add(node_key)
+                    node_props = record.get("node_props") or {}
                     nodes.append({
                         "key": node_key,
                         "name": record["name"] or node_key,
                         "type": record["type"],
                         "confidence": record["confidence"],
-                        "mentioned": (record.get("node_props") or {}).get("mentioned"),
+                        "mentioned": node_props.get("mentioned"),
+                        "aliases": node_props.get("aliases") or [],
                     })
 
             if node_keys and len(node_keys) > 0:

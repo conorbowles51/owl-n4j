@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import type { GraphData, GraphNode } from "@/types/graph.types"
 import { useGraphStore } from "@/stores/graph.store"
+import { buildEntityFuse, filterNodesBySearch } from "../lib/entity-search"
 
 interface SearchResult {
   node: GraphNode
@@ -10,6 +11,11 @@ interface SearchResult {
 
 export function useGraphSearch(data: GraphData | undefined) {
   const { searchTerm, filters } = useGraphStore()
+
+  const fuse = useMemo(
+    () => (data ? buildEntityFuse(data.nodes) : null),
+    [data]
+  )
 
   const filteredData = useMemo(() => {
     if (!data) return undefined
@@ -24,23 +30,15 @@ export function useGraphSearch(data: GraphData | undefined) {
 
     if (activeFilters.length > 0) {
       nodes = nodes.filter((n) => activeFilters.includes(n.type))
-      const nodeKeys = new Set(nodes.map((n) => n.key))
-      edges = edges.filter(
-        (e) => nodeKeys.has(e.source) && nodeKeys.has(e.target)
-      )
     }
 
-    // Apply search term
-    if (searchTerm.trim()) {
-      const term = searchTerm.toLowerCase()
-      nodes = nodes.filter(
-        (n) =>
-          n.label.toLowerCase().includes(term) ||
-          n.type.toLowerCase().includes(term) ||
-          Object.values(n.properties).some(
-            (v) => typeof v === "string" && v.toLowerCase().includes(term)
-          )
-      )
+    // Apply search term (fuzzy + alias-aware)
+    if (searchTerm.trim() && fuse) {
+      nodes = filterNodesBySearch(nodes, searchTerm, fuse)
+    }
+
+    // Drop edges whose endpoints didn't survive
+    if (nodes.length !== data.nodes.length) {
       const nodeKeys = new Set(nodes.map((n) => n.key))
       edges = edges.filter(
         (e) => nodeKeys.has(e.source) && nodeKeys.has(e.target)
@@ -48,21 +46,18 @@ export function useGraphSearch(data: GraphData | undefined) {
     }
 
     return { nodes, edges }
-  }, [data, searchTerm, filters])
+  }, [data, searchTerm, filters, fuse])
 
   const searchResults = useMemo((): SearchResult[] => {
-    if (!data || !searchTerm.trim()) return []
-    const term = searchTerm.toLowerCase()
-
-    return data.nodes
-      .filter((n) => n.label.toLowerCase().includes(term))
+    if (!data || !searchTerm.trim() || !fuse) return []
+    return filterNodesBySearch(data.nodes, searchTerm, fuse)
       .slice(0, 20)
       .map((node) => ({
         node,
         matchField: "label",
         matchValue: node.label,
       }))
-  }, [data, searchTerm])
+  }, [data, searchTerm, fuse])
 
   return {
     filteredData,

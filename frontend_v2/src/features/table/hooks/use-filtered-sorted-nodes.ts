@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import type { GraphNode, GraphEdge } from "@/types/graph.types"
 import type { SortColumn } from "../stores/table.store"
 import type { RelationshipInfo } from "./use-relationship-nodes"
+import { buildEntityFuse, filterNodesBySearch } from "@/features/graph/lib/entity-search"
 
 interface UseFilteredSortedNodesParams {
   nodes: GraphNode[]
@@ -23,14 +24,6 @@ interface UseFilteredSortedNodesResult {
   typeCounts: Map<string, number>
   connectionCounts: Map<string, number>
   sourceCounts: Map<string, number>
-}
-
-function getNodeSearchText(node: GraphNode): string {
-  const parts = [node.label, node.type, node.summary ?? "", node.notes ?? ""]
-  for (const val of Object.values(node.properties)) {
-    if (val != null) parts.push(String(val))
-  }
-  return parts.join(" ").toLowerCase()
 }
 
 function getNodeSortValue(
@@ -106,16 +99,17 @@ export function useFilteredSortedNodes({
     return counts
   }, [nodes])
 
+  const fuse = useMemo(() => buildEntityFuse(nodes), [nodes])
+
   const result = useMemo(() => {
     // [1] Type filter
     let filtered = selectedTypes.size > 0
       ? nodes.filter((n) => selectedTypes.has(n.type))
       : [...nodes]
 
-    // [2] Text search
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase()
-      filtered = filtered.filter((n) => getNodeSearchText(n).includes(term))
+    // [2] Text search (fuzzy + alias-aware)
+    if (searchTerm.trim()) {
+      filtered = filterNodesBySearch(filtered, searchTerm, fuse)
     }
 
     // [3] Multi-column sort
@@ -146,7 +140,7 @@ export function useFilteredSortedNodes({
         : filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
 
     return { filteredNodes: filtered, pageNodes, filteredCount, pageCount }
-  }, [nodes, searchTerm, selectedTypes, sortColumns, pageSize, currentPage, connectionCounts, sourceCounts, relationshipMap])
+  }, [nodes, searchTerm, selectedTypes, sortColumns, pageSize, currentPage, connectionCounts, sourceCounts, relationshipMap, fuse])
 
   return {
     ...result,
