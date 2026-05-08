@@ -1,3 +1,4 @@
+import { useState } from "react"
 import { Info, Loader2, MessageSquare, PanelRightClose } from "lucide-react"
 import { useParams, useMatch } from "react-router-dom"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ import { useGraphStore } from "@/stores/graph.store"
 import { useEvidenceStore } from "@/features/evidence/evidence.store"
 import { cn } from "@/lib/cn"
 import { NodeDetailSheet } from "@/features/graph/components/NodeDetailSheet"
+import { EditNodeDialog } from "@/features/graph/components/EditNodeDialog"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
 
 /**
@@ -114,6 +116,7 @@ export function CaseSidePanelContent() {
   const setTab = useUIStore((s) => s.setGraphPanelTab)
   const selectedNodeKeys = useGraphStore((s) => s.selectedNodeKeys)
   const hasSelection = selectedNodeKeys.size > 0
+  const [editNodeKey, setEditNodeKey] = useState<string | null>(null)
 
   return (
     <div className="flex h-full flex-col border-l border-border bg-card">
@@ -165,7 +168,10 @@ export function CaseSidePanelContent() {
       <div className="flex-1 overflow-hidden">
         {tab === "detail" ? (
           hasSelection ? (
-            <NodeDetailSheet caseId={caseId!} />
+            <NodeDetailSheet
+              caseId={caseId!}
+              onEditNode={(nodeKey) => setEditNodeKey(nodeKey)}
+            />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
               <Info className="size-8 text-muted-foreground/40" />
@@ -181,6 +187,13 @@ export function CaseSidePanelContent() {
           caseId && <ChatSidePanel caseId={caseId} />
         )}
       </div>
+
+      <EditNodeDialog
+        open={!!editNodeKey}
+        onOpenChange={(open) => !open && setEditNodeKey(null)}
+        nodeKey={editNodeKey}
+        caseId={caseId!}
+      />
     </div>
   )
 }
