@@ -70,19 +70,29 @@ export function parseQuery(query) {
       exclude = true;
       t = t.slice(1);
     }
-    // not:foo  — alias for -foo
+    // Operator detection is restricted to KNOWN_OPERATORS (+ "not") so
+    // that random colon-bearing input — pasted URLs ("http://..."),
+    // file paths ("C:\\Users\\..."), MAC addresses, IP:port pairs — is
+    // treated as plain free-text instead of being mis-parsed into a
+    // bogus operator. This was the user-reported "avoid symbols like
+    // slashes" issue: a paste containing "://" was silently swallowed
+    // as the unknown operator "http" and produced no matches.
     const opMatch = t.match(/^([a-zA-Z]+):(.*)$/);
-    if (opMatch) {
+    const knownOpHere = opMatch && (
+      opMatch[1].toLowerCase() === 'not'
+      || KNOWN_OPERATORS.has(opMatch[1].toLowerCase())
+    );
+    if (knownOpHere) {
       const op = opMatch[1].toLowerCase();
       const val = stripQuotes(opMatch[2]).toLowerCase();
       if (op === 'not') {
         if (val) result.excludes.push(val);
         continue;
       }
-      if (KNOWN_OPERATORS.has(op) && val) {
+      if (val) {
         if (op === 'before' || op === 'after') {
-          const t = parseDate(val);
-          if (t != null) result.operators[op] = t;
+          const ts = parseDate(val);
+          if (ts != null) result.operators[op] = ts;
         } else {
           // Multiple of the same operator — keep them as an array so
           // the matcher can do (matches A or B). Edge case; rare.
@@ -94,10 +104,8 @@ export function parseQuery(query) {
             result.operators[op] = [result.operators[op], val];
           }
         }
-        continue;
       }
-      // Unknown operator — fall through and treat the whole token as
-      // a free-text term so e.g. typing "foo:" doesn't silently swallow.
+      continue;
     }
     const cleaned = stripQuotes(t).toLowerCase();
     if (!cleaned) continue;

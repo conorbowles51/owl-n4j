@@ -7126,6 +7126,12 @@ class Neo4jService:
         q = (query or "").strip()
         if not q:
             return {"query": "", "thread_ids": [], "matches": [], "total": 0}
+        # Guard against absurdly long queries — anything past ~200 chars is
+        # almost certainly a paste mishap, and very long CONTAINS predicates
+        # explode Neo4j's substring scan cost on body text. Truncate rather
+        # than reject so the user still gets a useful result.
+        if len(q) > 200:
+            q = q[:200]
 
         params: Dict[str, Any] = {
             "case_id": case_id,
