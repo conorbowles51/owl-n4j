@@ -62,17 +62,78 @@ class Neo4jService:
                 auth=(NEO4J_USER, NEO4J_PASSWORD),
             )
             self._ensure_case_id_index()
+            self._ensure_cellebrite_indexes()
             # Track which cases have already been backfilled this process
             self._backfilled_keys: set = set()
             self._backfilled_refs: set = set()
 
     def _ensure_case_id_index(self):
-        """Create index on case_id for performance."""
+        """
+        Create per-label range indexes on case_id for the labels we filter
+        on by case_id everywhere. Neo4j 5 range indexes require a label —
+        the previous label-less form was invalid Cypher and silently
+        swallowed by the broad except below, so case_id queries were
+        running as full label scans.
+        """
+        labels = [
+            "Person", "Organization", "Location", "Communication", "PhoneCall",
+            "Email", "PhoneReport", "CellTower", "WirelessNetwork",
+            "DeviceEvent", "AppSession", "SearchedItem", "VisitedPage",
+            "Meeting", "Document", "Evidence", "Transaction", "Account",
+        ]
         try:
             with self._driver.session() as session:
-                session.run("CREATE INDEX node_case_id IF NOT EXISTS FOR (n) ON (n.case_id)")
+                for label in labels:
+                    idx_name = f"idx_{label.lower()}_case_id"
+                    session.run(
+                        f"CREATE INDEX {idx_name} IF NOT EXISTS "
+                        f"FOR (n:{label}) ON (n.case_id)"
+                    )
         except Exception:
-            # Index may already exist or Neo4j version doesn't support this syntax
+            # Index may already exist, label may not — keep boot resilient.
+            pass
+
+    def _ensure_cellebrite_indexes(self):
+        """
+        Composite range indexes on (case_id, cellebrite_report_key) for the
+        labels every Cellebrite tab filters on. Without these, queries like
+        `MATCH (c:Communication {case_id, cellebrite_report_key, source_type})`
+        do a full label scan + property filter on every load — turning Comms
+        Center / Timeline / Location & Events into multi-second waits even
+        for cases with only a few thousand records.
+
+        Index creation is online (writes are not blocked) and IF NOT EXISTS
+        means subsequent boots are no-ops.
+        """
+        composite_labels = [
+            "Person", "PhoneCall", "Communication", "Email", "Location",
+            "CellTower", "WirelessNetwork", "DeviceEvent", "AppSession",
+            "SearchedItem", "VisitedPage", "Meeting",
+        ]
+        single_indexes = [
+            ("PhoneReport", "key"),
+            ("Communication", "chat_id"),
+            ("Communication", "timestamp"),
+            ("PhoneCall", "timestamp"),
+            ("Email", "timestamp"),
+            ("Location", "timestamp"),
+        ]
+        try:
+            with self._driver.session() as session:
+                for label in composite_labels:
+                    idx_name = f"idx_{label.lower()}_case_report"
+                    session.run(
+                        f"CREATE INDEX {idx_name} IF NOT EXISTS "
+                        f"FOR (n:{label}) ON (n.case_id, n.cellebrite_report_key)"
+                    )
+                for label, prop in single_indexes:
+                    idx_name = f"idx_{label.lower()}_{prop}"
+                    session.run(
+                        f"CREATE INDEX {idx_name} IF NOT EXISTS "
+                        f"FOR (n:{label}) ON (n.{prop})"
+                    )
+        except Exception:
+            # Stay resilient on boot — slow queries are better than a crashed backend.
             pass
 
     def close(self):
@@ -5863,6 +5924,15 @@ class Neo4jService:
 
         active_types = event_types if event_types else list(type_map.keys())
 
+        # Per-type cap = offset + limit. The first (offset+limit) globally
+        # ordered rows are guaranteed to come from the per-type top
+        # (offset+limit) by the same order — so capping inside each UNION
+        # subquery preserves correctness while bounding the scan to
+        # `len(active_types) × per_type_cap` rows instead of "every matching
+        # row in the case".
+        per_type_cap = max(limit + offset, limit)
+        params["per_type_cap"] = per_type_cap
+
         for etype in active_types:
             if etype not in type_map:
                 continue
@@ -5872,11 +5942,14 @@ class Neo4jService:
                 WHERE {where_clause}
                   AND n.timestamp IS NOT NULL
                   AND n.source_type = 'cellebrite'
-                RETURN n.timestamp AS timestamp,
-                       '{etype}' AS event_type,
-                       coalesce(n.{summary_field}, '') AS summary,
-                       n.cellebrite_report_key AS report_key,
-                       n.key AS node_key
+                WITH n.timestamp AS timestamp,
+                     '{etype}' AS event_type,
+                     coalesce(n.{summary_field}, '') AS summary,
+                     n.cellebrite_report_key AS report_key,
+                     n.key AS node_key
+                ORDER BY timestamp
+                LIMIT $per_type_cap
+                RETURN timestamp, event_type, summary, report_key, node_key
             """)
 
         if not union_parts:
@@ -6174,10 +6247,19 @@ class Neo4jService:
         active_types = set(thread_types) if thread_types else {"chat", "calls", "emails"}
         threads: list = []
 
+        # Per-block cap. Each thread block (chat / calls / emails) returns at
+        # most this many threads before the final merge / sort / paginate. The
+        # cap exists primarily to bound the *expansion* work on large cases
+        # (e.g. don't OPTIONAL MATCH every message in every chat just to
+        # compute counts that the user won't scroll to). Truncation is
+        # surfaced to the caller via `truncated`.
+        per_block_cap = max(limit + offset, limit)
+        truncated = False
+
         rk_filter_chat = ""
         rk_filter_call = ""
         rk_filter_email = ""
-        params: Dict[str, Any] = {"case_id": case_id}
+        params: Dict[str, Any] = {"case_id": case_id, "per_block_cap": per_block_cap}
         if report_keys:
             rk_filter_chat = "AND chat.cellebrite_report_key IN $report_keys"
             rk_filter_call = "AND c.cellebrite_report_key IN $report_keys"
@@ -6216,9 +6298,17 @@ class Neo4jService:
                     search_clause = " AND (toLower(chat.name) CONTAINS toLower($search) OR toLower(chat.source_app) CONTAINS toLower($search))"
                     params["search"] = search
 
+                # Pre-cap chats using the denormalized chat.last_activity
+                # property *before* the per-chat OPTIONAL MATCH on messages
+                # — without this, every chat in the case has its messages
+                # expanded just to compute counts. For a case with thousands
+                # of chats this was the dominant cost in Comms Center load.
                 query = f"""
                     MATCH (chat:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
                     WHERE chat.chat_id IS NOT NULL {rk_filter_chat} {app_filter_chat} {date_filter_chat} {search_clause}
+                    WITH chat
+                    ORDER BY chat.last_activity IS NULL, chat.last_activity DESC
+                    LIMIT $per_block_cap
                     OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(chat)
                     OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
                       WHERE msg.body IS NOT NULL
@@ -6230,8 +6320,10 @@ class Neo4jService:
                     RETURN chat, participants, msg_count, attach_count, last_msg_ts, first_msg_ts
                     ORDER BY coalesce(last_msg_ts, chat.last_activity) DESC
                 """
+                chat_block_count = 0
                 result = session.run(query, params)
                 for record in result:
+                    chat_block_count += 1
                     chat = dict(record["chat"])
                     participants = [dict(p) for p in record["participants"] if p is not None]
 
@@ -6263,18 +6355,27 @@ class Neo4jService:
                         "first_activity": record["first_msg_ts"] or chat.get("start_time"),
                         "report_key": chat.get("cellebrite_report_key"),
                     })
+                if chat_block_count >= per_block_cap:
+                    truncated = True
 
             # ---- Synthetic call threads (per participant pair + report) ----
             if "calls" in active_types:
+                # Cap pair aggregations after the WITH so we don't materialise
+                # one row per (caller, callee, report) for cases with millions
+                # of permutations. ORDER BY call_count DESC keeps the
+                # most-active pairs which are the likely-of-interest ones.
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
                     WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call}
                     WITH a, b, c.cellebrite_report_key AS rk,
                          collect(c) AS calls
-                    RETURN a, b, rk,
-                           size(calls) AS call_count,
-                           reduce(s = 0, cc IN calls | s + coalesce(cc.attachment_count, 0)) AS attach_count,
-                           [cc IN calls | cc.timestamp] AS timestamps
+                    WITH a, b, rk,
+                         size(calls) AS call_count,
+                         reduce(s = 0, cc IN calls | s + coalesce(cc.attachment_count, 0)) AS attach_count,
+                         [cc IN calls | cc.timestamp] AS timestamps
+                    ORDER BY call_count DESC
+                    LIMIT $per_block_cap
+                    RETURN a, b, rk, call_count, attach_count, timestamps
                 """
                 result = session.run(query, params)
                 # Neo4j returns one row per (a,b) AND one per (b,a) when both
@@ -6338,6 +6439,8 @@ class Neo4jService:
                             if existing.get("first_activity") is None or ts_min < existing["first_activity"]:
                                 existing["first_activity"] = ts_min
 
+                if len(call_pairs) >= per_block_cap:
+                    truncated = True
                 threads.extend(call_pairs.values())
 
             # ---- Synthetic email threads (per participant pair + report) ----
@@ -6347,10 +6450,13 @@ class Neo4jService:
                     WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email}
                     WITH a, b, e.cellebrite_report_key AS rk,
                          collect(e) AS emails
-                    RETURN a, b, rk,
-                           size(emails) AS email_count,
-                           reduce(s = 0, ee IN emails | s + coalesce(ee.attachment_count, 0)) AS attach_count,
-                           [ee IN emails | ee.timestamp] AS timestamps
+                    WITH a, b, rk,
+                         size(emails) AS email_count,
+                         reduce(s = 0, ee IN emails | s + coalesce(ee.attachment_count, 0)) AS attach_count,
+                         [ee IN emails | ee.timestamp] AS timestamps
+                    ORDER BY email_count DESC
+                    LIMIT $per_block_cap
+                    RETURN a, b, rk, email_count, attach_count, timestamps
                 """
                 result = session.run(query, params)
                 # Same dedupe pattern as calls — merge bidirectional pairs
@@ -6408,6 +6514,8 @@ class Neo4jService:
                             if existing.get("first_activity") is None or ts_min < existing["first_activity"]:
                                 existing["first_activity"] = ts_min
 
+                if len(email_pairs) >= per_block_cap:
+                    truncated = True
                 threads.extend(email_pairs.values())
 
         # Merge duplicate synthetic threads (same pair, same report, both directions — already grouped by query)
@@ -6417,7 +6525,12 @@ class Neo4jService:
         total = len(threads)
         # Apply pagination
         threads = threads[offset: offset + limit]
-        return {"threads": threads, "total": total}
+        return {
+            "threads": threads,
+            "total": total,
+            "truncated": truncated,
+            "per_block_cap": per_block_cap,
+        }
 
     def get_cellebrite_thread_detail(
         self,
@@ -7037,19 +7150,37 @@ class Neo4jService:
             "power", "device_event", "app_session", "search", "visit", "meeting",
         }
 
+        # Per-type cap: each Cypher returns at most `per_type_cap` newest rows
+        # ordered by timestamp DESC. We then merge-sort them and slice to
+        # offset+limit. Memory upper bound becomes ~12 × per_type_cap rather
+        # than "every matching event in the case" (which previously made
+        # this endpoint multi-second on busy cases with no useful indexes).
+        # `truncated_types` records which types hit their cap so the response
+        # can flag silent truncation honestly per the project rule.
+        per_type_cap = max(limit + offset, limit)
         events: list = []
+        truncated_types: set = set()
         with self._driver.session() as session:
-            # Helper to accumulate results from one cypher
+            # Helper to accumulate results from one cypher and mark the type
+            # as truncated when the per-type cap is reached.
             def _add(cypher: str, params: dict, event_type: str, projector):
-                r = session.run(cypher, params)
-                for rec in r:
+                rows = list(session.run(cypher, params))
+                if len(rows) >= per_type_cap:
+                    truncated_types.add(event_type)
+                for rec in rows:
                     row = projector(rec)
                     if row:
                         row["event_type"] = event_type
                         events.append(row)
 
             where, p = self._build_event_filters(report_keys, start_date, end_date, source_apps)
-            base_params = {"case_id": case_id, **p}
+            base_params = {"case_id": case_id, "per_type_cap": per_type_cap, **p}
+
+            # ORDER BY trick: for types where timestamp may be NULL, we want
+            # nulls to sort last so they don't crowd out real events when
+            # we cap. `n.timestamp IS NULL` is `false (0)` for real values
+            # and `true (1)` for nulls, so ascending puts non-null first.
+            ts_order = "ORDER BY n.timestamp IS NULL, n.timestamp DESC"
 
             if "location" in active:
                 extra = "" if not only_geolocated else "AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL"
@@ -7057,6 +7188,8 @@ class Neo4jService:
                     MATCH (n:Location {{source_type:'cellebrite'}})
                     WHERE {where} {extra}
                     RETURN n
+                    {ts_order}
+                    LIMIT $per_type_cap
                 """
                 _add(cypher, base_params, "location", lambda rec: _project_event(rec["n"], "location"))
 
@@ -7066,6 +7199,8 @@ class Neo4jService:
                     MATCH (n:CellTower {{source_type:'cellebrite'}})
                     WHERE {where} {extra}
                     RETURN n
+                    {ts_order}
+                    LIMIT $per_type_cap
                 """
                 _add(cypher, base_params, "cell_tower", lambda rec: _project_event(rec["n"], "cell_tower"))
 
@@ -7074,6 +7209,8 @@ class Neo4jService:
                     MATCH (n:WirelessNetwork {{source_type:'cellebrite'}})
                     WHERE {where} AND n.timestamp IS NOT NULL
                     RETURN n
+                    ORDER BY n.timestamp DESC
+                    LIMIT $per_type_cap
                 """
                 _add(cypher, base_params, "wifi", lambda rec: _project_event(rec["n"], "wifi"))
 
@@ -7083,6 +7220,9 @@ class Neo4jService:
                 cypher = f"""
                     MATCH (n:PhoneCall {{source_type:'cellebrite'}})
                     WHERE {where} {extra}
+                    WITH n
+                    {ts_order}
+                    LIMIT $per_type_cap
                     OPTIONAL MATCH (src:Person)-[:CALLED]->(n)
                     OPTIONAL MATCH (n)-[:CALLED_TO]->(dst:Person)
                     RETURN n, src, dst
@@ -7096,6 +7236,9 @@ class Neo4jService:
                 cypher = f"""
                     MATCH (n:Communication {{source_type:'cellebrite'}})
                     WHERE {where} AND n.body IS NOT NULL {extra}
+                    WITH n
+                    {ts_order}
+                    LIMIT $per_type_cap
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(n)
                     OPTIONAL MATCH (n)-[:PART_OF]->(chat:Communication)
                     RETURN n, sender, chat
@@ -7109,6 +7252,9 @@ class Neo4jService:
                 cypher = f"""
                     MATCH (n:Email {{source_type:'cellebrite'}})
                     WHERE {where} {extra}
+                    WITH n
+                    {ts_order}
+                    LIMIT $per_type_cap
                     OPTIONAL MATCH (src:Person)-[:EMAILED]->(n)
                     OPTIONAL MATCH (n)-[:SENT_TO]->(dst:Person)
                     RETURN n, src, dst
@@ -7121,9 +7267,16 @@ class Neo4jService:
                     MATCH (n:DeviceEvent {{source_type:'cellebrite'}})
                     WHERE {where}
                     RETURN n
+                    {ts_order}
+                    LIMIT $per_type_cap
                 """
-                r = session.run(cypher, base_params)
-                for rec in r:
+                rows = list(session.run(cypher, base_params))
+                if len(rows) >= per_type_cap:
+                    if "power" in active:
+                        truncated_types.add("power")
+                    if "device_event" in active:
+                        truncated_types.add("device_event")
+                for rec in rows:
                     n = dict(rec["n"])
                     etype = "power" if n.get("event_type") == "power" else "device_event"
                     if etype in active:
@@ -7137,6 +7290,8 @@ class Neo4jService:
                     MATCH (n:AppSession {{source_type:'cellebrite'}})
                     WHERE {where}
                     RETURN n
+                    {ts_order}
+                    LIMIT $per_type_cap
                 """
                 _add(cypher, base_params, "app_session", lambda rec: _project_event(rec["n"], "app_session"))
 
@@ -7145,6 +7300,8 @@ class Neo4jService:
                     MATCH (n:SearchedItem {{source_type:'cellebrite'}})
                     WHERE {where} AND n.timestamp IS NOT NULL
                     RETURN n
+                    ORDER BY n.timestamp DESC
+                    LIMIT $per_type_cap
                 """
                 _add(cypher, base_params, "search", lambda rec: _project_event(rec["n"], "search"))
 
@@ -7153,21 +7310,23 @@ class Neo4jService:
                     MATCH (n:VisitedPage {{source_type:'cellebrite'}})
                     WHERE {where} AND n.timestamp IS NOT NULL
                     RETURN n
+                    ORDER BY n.timestamp DESC
+                    LIMIT $per_type_cap
                 """
                 _add(cypher, base_params, "visit", lambda rec: _project_event(rec["n"], "visit"))
 
             if "meeting" in active:
-                cypher = f"""
-                    MATCH (n:Meeting {{case_id:$case_id, source_type:'cellebrite'}})
-                    WHERE {where.replace('n.case_id = $case_id', 'true')} AND n.timestamp IS NOT NULL
-                    RETURN n
-                """
                 # Meetings may not have all filter fields; simpler filter
-                r = session.run(
-                    "MATCH (n:Meeting {case_id:$case_id}) WHERE n.timestamp IS NOT NULL RETURN n",
+                rows = list(session.run(
+                    "MATCH (n:Meeting {case_id:$case_id}) "
+                    "WHERE n.timestamp IS NOT NULL "
+                    "RETURN n ORDER BY n.timestamp DESC LIMIT $per_type_cap",
                     case_id=case_id,
-                )
-                for rec in r:
+                    per_type_cap=per_type_cap,
+                ))
+                if len(rows) >= per_type_cap:
+                    truncated_types.add("meeting")
+                for rec in rows:
                     row = _project_event(rec["n"], "meeting")
                     if row:
                         row["event_type"] = "meeting"
@@ -7180,9 +7339,18 @@ class Neo4jService:
             key=lambda e: (1 if e.get("timestamp") else 0, e.get("timestamp") or ""),
             reverse=True,
         )
+        # `total` is now the post-cap count (was the true pre-slice count).
+        # The frontend reads `events.length` for display; `truncated` /
+        # `truncated_types` is the honest signal that more rows exist.
         total = len(events)
         events = events[offset: offset + limit]
-        return {"events": events, "total": total}
+        return {
+            "events": events,
+            "total": total,
+            "truncated": bool(truncated_types),
+            "truncated_types": sorted(truncated_types),
+            "per_type_cap": per_type_cap,
+        }
 
     def get_cellebrite_event_types(
         self,

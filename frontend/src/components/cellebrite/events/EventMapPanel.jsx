@@ -63,6 +63,25 @@ function BoundsFitter({ events, tracks, enabled }) {
   return null;
 }
 
+/**
+ * Tells Leaflet to recompute its container size whenever the parent
+ * tab becomes visible again. Without this the map renders at zero
+ * size when the events tab was inactive (display:none) at mount, then
+ * stays mis-sized until the user resizes the browser window.
+ */
+function VisibilityInvalidator({ isActive }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!isActive) return;
+    // Defer to the next paint so the container has its real size.
+    const id = requestAnimationFrame(() => {
+      try { map.invalidateSize(); } catch { /* ignore */ }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isActive, map]);
+  return null;
+}
+
 export default function EventMapPanel({
   events = [],
   tracks = [],
@@ -73,6 +92,9 @@ export default function EventMapPanel({
   selectedEventId,
   intersectionMatches = [],
   deviceColorOf,
+  // True when the parent tab is the active one. The map needs to
+  // know so it can invalidateSize() after being un-hidden.
+  isActive = true,
 }) {
   const phoneCtx = usePhoneReports();
   const showPhoneChip = !!phoneCtx?.hasMultiple;
@@ -170,6 +192,7 @@ export default function EventMapPanel({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <BoundsFitter events={events} tracks={tracks} enabled />
+        <VisibilityInvalidator isActive={isActive} />
 
         {/* Device tracks */}
         {splitTracks.map((t) => (

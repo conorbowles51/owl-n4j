@@ -23,7 +23,7 @@ import { usePhoneReports } from '../../context/PhoneReportsContext';
  *   - "Delete phone report" trash → remove the PhoneReport and every
  *     node tagged with its key from the case (with confirmation).
  */
-export default function CellebriteOverview({ caseId, reports }) {
+export default function CellebriteOverview({ caseId, reports, onReportsChanged }) {
   const phoneCtx = usePhoneReports();
 
   // When set, we render the matching detail view instead of the cards grid.
@@ -47,6 +47,7 @@ export default function CellebriteOverview({ caseId, reports }) {
       // Refresh the global phone-reports context so every Cellebrite
       // tab (selector chip strip, identity chips, etc.) updates.
       if (phoneCtx?.refresh) await phoneCtx.refresh();
+      if (onReportsChanged) await onReportsChanged();
     } catch (err) {
       setDeleteError(err?.message || 'Failed to delete phone report');
     } finally {
@@ -114,6 +115,7 @@ export default function CellebriteOverview({ caseId, reports }) {
           onSaved={async () => {
             setEditTarget(null);
             if (phoneCtx?.refresh) await phoneCtx.refresh();
+            if (onReportsChanged) await onReportsChanged();
           }}
         />
       )}

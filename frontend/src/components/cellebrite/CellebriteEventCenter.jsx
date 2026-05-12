@@ -3,6 +3,7 @@ import { Loader2, Map as MapIcon, Rows3, Columns2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
+import TabLoadingIndicator from './shared/TabLoadingIndicator';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import EventTypeFilter from './events/EventTypeFilter';
 import EventPlaybackBar from './events/EventPlaybackBar';
@@ -22,7 +23,7 @@ import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
  * Cellebrite Location & Event Center — orchestrates map + timeline + playback
  * + intersection detection across devices.
  */
-export default function CellebriteEventCenter({ caseId, reports: reportsProp = [] }) {
+export default function CellebriteEventCenter({ caseId, reports: reportsProp = [], isActive = true }) {
   // --- Phone selection: sourced from PhoneReportsContext when available so
   // the user's choice persists across tabs and refreshes. Falls back to the
   // prop-supplied reports when no provider is mounted (e.g. unit tests).
@@ -51,6 +52,8 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   const [events, setEvents] = useState([]);
   const [tracks, setTracks] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStage, setLoadingStage] = useState('');
 
   // --- Playback ---
   const [playheadTime, setPlayheadTime] = useState(null);
@@ -155,7 +158,12 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
     };
   }, [caseId, selectedReportKeys]);
 
-  // Fetch events + tracks when filters change (debounced)
+  // Fetch events + tracks when filters change (debounced).
+  //
+  // Phased fetch: one events call per active event type, plus one
+  // tracks call. The progress bar advances as each Neo4j round-trip
+  // resolves so the user can see real movement on slow loads. Per-type
+  // limit stays at 5000.
   useEffect(() => {
     if (!caseId) return;
     if (activeEventTypes.size === 0) {
@@ -165,37 +173,60 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
     }
     let cancelled = false;
     setLoading(true);
+    setLoadingProgress(0);
+    setLoadingStage('');
+    setEvents([]);
     const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
     const typesArr = [...activeEventTypes];
+    const totalSteps = typesArr.length + 1; // +1 for tracks
 
     const t = setTimeout(() => {
-      Promise.all([
-        cellebriteEventsAPI.getEvents(caseId, {
-          reportKeys: reportKeysArr,
-          eventTypes: typesArr,
-          startDate: startDate || null,
-          endDate: endDate || null,
-          onlyGeolocated,
-          limit: 5000,
-        }),
-        cellebriteEventsAPI.getTracks(caseId, {
-          reportKeys: reportKeysArr,
-          startDate: startDate || null,
-          endDate: endDate || null,
-        }),
-      ])
-        .then(([evData, trData]) => {
+      (async () => {
+        const aggregated = [];
+        for (let i = 0; i < typesArr.length; i += 1) {
           if (cancelled) return;
-          setEvents(evData.events || []);
+          const etype = typesArr[i];
+          setLoadingStage(`Loading ${etype.replace('_', ' ')} events`);
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const data = await cellebriteEventsAPI.getEvents(caseId, {
+              reportKeys: reportKeysArr,
+              eventTypes: [etype],
+              startDate: startDate || null,
+              endDate: endDate || null,
+              onlyGeolocated,
+              limit: 5000,
+            });
+            if (cancelled) return;
+            aggregated.push(...(data.events || []));
+          } catch {
+            // Skip failed stages so a single broken type doesn't
+            // blank the map.
+          }
+          setLoadingProgress(Math.round(((i + 1) / totalSteps) * 100));
+        }
+
+        if (cancelled) return;
+        setEvents(aggregated);
+
+        setLoadingStage('Loading device tracks');
+        try {
+          const trData = await cellebriteEventsAPI.getTracks(caseId, {
+            reportKeys: reportKeysArr,
+            startDate: startDate || null,
+            endDate: endDate || null,
+          });
+          if (cancelled) return;
           setTracks(trData.tracks || []);
-          setLoading(false);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setEvents([]);
-          setTracks([]);
-          setLoading(false);
-        });
+        } catch {
+          if (!cancelled) setTracks([]);
+        }
+
+        if (cancelled) return;
+        setLoadingProgress(100);
+        setLoading(false);
+        setLoadingStage('');
+      })();
     }, 300);
 
     return () => {
@@ -311,7 +342,20 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         />
       </div>
 
-      {/* Main: map / split / table + intersection panel */}
+      {/* Main: map / split / table + intersection panel.
+          During the initial load (no events yet) render a prominent
+          progress indicator instead of an empty map — Neo4j event queries
+          can take long enough on first load that a small corner spinner
+          is easy to miss. */}
+      {loading && events.length === 0 ? (
+        <div className="flex-1 min-h-0">
+          <TabLoadingIndicator
+            label="Loading phone events"
+            progress={loadingProgress}
+            stage={loadingStage}
+          />
+        </div>
+      ) : (
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 flex flex-col min-h-0">
           {viewMode === 'map' && (
@@ -325,6 +369,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
               onEventClick={setSelectedEvent}
               intersectionMatches={activeIntersectionMatches}
               deviceColorOf={deviceColorOf}
+              isActive={isActive}
             />
           )}
           {viewMode === 'split' && (
@@ -340,6 +385,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
                   onEventClick={setSelectedEvent}
                   intersectionMatches={activeIntersectionMatches}
                   deviceColorOf={deviceColorOf}
+                  isActive={isActive}
                 />
               </div>
               <div className="flex-1 min-h-0">
@@ -379,6 +425,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
           onToggleCollapsed={setIntersectionCollapsed}
         />
       </div>
+      )}
 
       {/* Playback bar */}
       <EventPlaybackBar

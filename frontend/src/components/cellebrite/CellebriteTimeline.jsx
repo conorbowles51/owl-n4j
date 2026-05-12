@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Loader2 } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
+import TabLoadingIndicator from './shared/TabLoadingIndicator';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import EventTypeFilter from './events/EventTypeFilter';
 import EventDetailDrawer from './events/EventDetailDrawer';
@@ -57,6 +57,8 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const [eventTypes, setEventTypes] = useState([]);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingStage, setLoadingStage] = useState('');
 
   // --- Selection ---
   const [selectedEvent, setSelectedEvent] = useState(null);
@@ -93,6 +95,11 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // Fetch events whenever the *server-side* filters change. Search is
   // applied in-memory in a useMemo below, so adding it here would
   // pointlessly re-run the Cypher round-trip on every keystroke.
+  //
+  // Phased fetch: one call per active event type so we can show real
+  // progress as each Neo4j query resolves. Per-type LIMIT keeps each
+  // call to a manageable size (the previous single call asked for
+  // limit=500000 which routinely never completed on busy cases).
   useEffect(() => {
     if (!caseId) return;
     if (activeEventTypes.size === 0) {
@@ -101,28 +108,44 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     }
     let cancelled = false;
     setLoading(true);
+    setLoadingProgress(0);
+    setLoadingStage('');
+    setEvents([]);
     const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
+    const stages = [...activeEventTypes];
+
     const t = setTimeout(() => {
-      cellebriteEventsAPI
-        .getEvents(caseId, {
-          reportKeys: reportKeysArr,
-          eventTypes: [...activeEventTypes],
-          startDate: startDate || null,
-          endDate: endDate || null,
-          onlyGeolocated: false,
-          limit: 500000,
-        })
-        .then((data) => {
+      (async () => {
+        const aggregated = [];
+        for (let i = 0; i < stages.length; i += 1) {
           if (cancelled) return;
-          setEvents(data.events || []);
-          setLoading(false);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setEvents([]);
-          setLoading(false);
-        });
+          const etype = stages[i];
+          setLoadingStage(`Loading ${etype.replace('_', ' ')} events`);
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const data = await cellebriteEventsAPI.getEvents(caseId, {
+              reportKeys: reportKeysArr,
+              eventTypes: [etype],
+              startDate: startDate || null,
+              endDate: endDate || null,
+              onlyGeolocated: false,
+              limit: 5000,
+            });
+            if (cancelled) return;
+            aggregated.push(...(data.events || []));
+          } catch {
+            // Skip failed stages so a single broken type doesn't
+            // blank out the whole timeline.
+          }
+          setLoadingProgress(Math.round(((i + 1) / stages.length) * 100));
+        }
+        if (cancelled) return;
+        setEvents(aggregated);
+        setLoading(false);
+        setLoadingStage('');
+      })();
     }, 250);
+
     return () => {
       cancelled = true;
       clearTimeout(t);
@@ -213,7 +236,6 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
           onOnlyGeolocatedChange={() => {}}
         />
         <div className="flex-1" />
-        {loading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
       </div>
 
       {/* Histogram scrubber — replaces the old date-picker pair */}
@@ -240,7 +262,13 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
 
       {/* Body — grouped chronological list */}
       <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto">
-        {filteredEvents.length === 0 && !loading ? (
+        {loading && events.length === 0 ? (
+          <TabLoadingIndicator
+            label="Loading timeline events"
+            progress={loadingProgress}
+            stage={loadingStage}
+          />
+        ) : filteredEvents.length === 0 && !loading ? (
           <div className="flex items-center justify-center h-full text-sm text-light-500 italic">
             {events.length === 0
               ? 'No phone events match the current filters.'

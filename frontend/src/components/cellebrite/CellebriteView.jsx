@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Smartphone, Network, Clock, Users, MessageSquare, MapPin, FolderTree, Loader2,
 } from 'lucide-react';
@@ -23,12 +23,49 @@ const TABS = [
 
 /**
  * Main Cellebrite Multi-Phone View container.
- * Renders a tab bar and the active tab's content.
+ * Renders a tab bar and every previously-visited tab's content.
+ *
+ * Tabs are *kept mounted* once visited (display:none when inactive)
+ * so flipping between tabs doesn't trigger a full reload of their
+ * fetched data. The first visit to a tab pays the load cost; every
+ * subsequent visit is instant.
  */
 export default function CellebriteView({ caseId }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Tabs that have been activated at least once. We render only these
+  // (so we don't pay the load cost for tabs the user never opens) and
+  // keep them rendered for the rest of the session.
+  const [mountedTabs, setMountedTabs] = useState(() => new Set(['overview']));
+
+  // Reset mounted set when the case changes — different case means
+  // different data; we want the load cost to be paid per case.
+  useEffect(() => {
+    setMountedTabs(new Set(['overview']));
+    setActiveTab('overview');
+  }, [caseId]);
+
+  // Whenever the user activates a new tab, add it to the mounted set.
+  const handleTabClick = (key) => {
+    setActiveTab(key);
+    setMountedTabs((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+  };
+
+  const refreshReports = useCallback(async () => {
+    if (!caseId) return;
+    try {
+      const data = await cellebriteAPI.getReports(caseId);
+      setReports(data.reports || []);
+    } catch {
+      setReports([]);
+    }
+  }, [caseId]);
 
   useEffect(() => {
     if (!caseId) return;
@@ -76,7 +113,7 @@ export default function CellebriteView({ caseId }) {
         {TABS.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
-            onClick={() => setActiveTab(key)}
+            onClick={() => handleTabClick(key)}
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === key
                 ? 'border-emerald-500 text-emerald-700'
@@ -93,30 +130,68 @@ export default function CellebriteView({ caseId }) {
         </span>
       </div>
 
-      {/* Tab Content */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        {activeTab === 'overview' && (
-          <CellebriteOverview caseId={caseId} reports={reports} />
+      {/* Tab Content — every visited tab stays mounted (display:none
+          when inactive) so re-selecting it skips the reload entirely.
+          The `isActive` prop lets descendants react to becoming
+          visible (e.g. Leaflet needs invalidateSize() after being
+          un-hidden, otherwise it draws at the wrong size). */}
+      <div className="flex-1 min-h-0 overflow-hidden relative">
+        {mountedTabs.has('overview') && (
+          <TabPane active={activeTab === 'overview'}>
+            <CellebriteOverview caseId={caseId} reports={reports} onReportsChanged={refreshReports} isActive={activeTab === 'overview'} />
+          </TabPane>
         )}
-        {activeTab === 'comms' && (
-          <CellebriteCommsCenter caseId={caseId} reports={reports} />
+        {mountedTabs.has('comms') && (
+          <TabPane active={activeTab === 'comms'}>
+            <CellebriteCommsCenter caseId={caseId} reports={reports} isActive={activeTab === 'comms'} />
+          </TabPane>
         )}
-        {activeTab === 'events' && (
-          <CellebriteEventCenter caseId={caseId} reports={reports} />
+        {mountedTabs.has('events') && (
+          <TabPane active={activeTab === 'events'}>
+            <CellebriteEventCenter caseId={caseId} reports={reports} isActive={activeTab === 'events'} />
+          </TabPane>
         )}
-        {activeTab === 'files' && (
-          <CellebriteFilesExplorer caseId={caseId} reports={reports} />
+        {mountedTabs.has('files') && (
+          <TabPane active={activeTab === 'files'}>
+            <CellebriteFilesExplorer caseId={caseId} reports={reports} isActive={activeTab === 'files'} />
+          </TabPane>
         )}
-        {activeTab === 'graph' && (
-          <CellebriteCrossPhoneGraph caseId={caseId} />
+        {mountedTabs.has('graph') && (
+          <TabPane active={activeTab === 'graph'}>
+            <CellebriteCrossPhoneGraph caseId={caseId} isActive={activeTab === 'graph'} />
+          </TabPane>
         )}
-        {activeTab === 'timeline' && (
-          <CellebriteTimeline caseId={caseId} reports={reports} />
+        {mountedTabs.has('timeline') && (
+          <TabPane active={activeTab === 'timeline'}>
+            <CellebriteTimeline caseId={caseId} reports={reports} isActive={activeTab === 'timeline'} />
+          </TabPane>
         )}
-        {activeTab === 'communications' && (
-          <CellebriteCommunicationView caseId={caseId} />
+        {mountedTabs.has('communications') && (
+          <TabPane active={activeTab === 'communications'}>
+            <CellebriteCommunicationView caseId={caseId} isActive={activeTab === 'communications'} />
+          </TabPane>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Wrapper that keeps a tab's DOM in the document but hides it via
+ * `display:none` when inactive. Cheaper than unmount/remount and
+ * preserves the child's React state and scroll position.
+ *
+ * `display:none` is preferred over `visibility:hidden` so layout-
+ * sensitive children (Leaflet maps, virtualised lists) don't get
+ * sized at zero while inactive.
+ */
+function TabPane({ active, children }) {
+  return (
+    <div
+      className="absolute inset-0"
+      style={{ display: active ? 'block' : 'none' }}
+    >
+      {children}
     </div>
   );
 }

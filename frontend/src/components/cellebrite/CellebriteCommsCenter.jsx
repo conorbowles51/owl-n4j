@@ -56,6 +56,8 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   const [threads, setThreads] = useState([]);
   const [threadsTotal, setThreadsTotal] = useState(0);
   const [threadsLoading, setThreadsLoading] = useState(false);
+  const [threadsProgress, setThreadsProgress] = useState(0);
+  const [threadsStage, setThreadsStage] = useState('');
 
   const [selectedThread, setSelectedThread] = useState(null);
 
@@ -143,36 +145,80 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     return () => { cancelled = true; };
   }, [caseId, selectedReportKeys]);
 
-  // Load threads when filters change
+  // Load threads when filters change.
+  // Phased fetch: one server call per thread type so we can show real
+  // progress as each stage resolves (chat threads are usually the
+  // heaviest stage, calls and emails are quicker). The resulting
+  // arrays are merged client-side, sorted by last_activity DESC, and
+  // capped to the visible limit.
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
     setThreadsLoading(true);
+    setThreadsProgress(0);
+    setThreadsStage('');
+    setThreads([]);
+    setThreadsTotal(0);
+
     const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
-    cellebriteCommsAPI.getThreads(caseId, {
+    const baseArgs = {
       reportKeys: reportKeysArr,
       fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
       toKeys: toKeys.size > 0 ? [...toKeys] : null,
-      threadTypes: threadTypesParam,
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
       endDate: endDate || null,
-      // Search runs in-memory below (filteredThreads useMemo) so the
-      // server-side filter is no longer needed and re-fetching per
-      // keystroke would be pointless.
       limit: 300,
-    }).then((data) => {
-      if (!cancelled) {
-        setThreads(data.threads || []);
-        setThreadsTotal(data.total || 0);
-        setThreadsLoading(false);
+    };
+
+    // Friendly labels for the active set, in stable order.
+    const STAGE_LABELS = {
+      chat: 'Loading chat conversations',
+      calls: 'Loading call threads',
+      emails: 'Loading email threads',
+    };
+    const stages = threadTypesParam.length > 0
+      ? threadTypesParam
+      : ['chat', 'calls', 'emails'];
+
+    (async () => {
+      const aggregated = [];
+      let totalSum = 0;
+
+      for (let i = 0; i < stages.length; i += 1) {
+        if (cancelled) return;
+        const t = stages[i];
+        setThreadsStage(STAGE_LABELS[t] || `Loading ${t}`);
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const data = await cellebriteCommsAPI.getThreads(caseId, {
+            ...baseArgs,
+            threadTypes: [t],
+          });
+          if (cancelled) return;
+          aggregated.push(...(data.threads || []));
+          totalSum += Number(data.total || 0);
+        } catch {
+          // One stage failing shouldn't blank the whole tab — just
+          // skip its rows and keep going.
+        }
+        setThreadsProgress(Math.round(((i + 1) / stages.length) * 100));
       }
-    }).catch(() => {
-      if (!cancelled) {
-        setThreads([]);
-        setThreadsLoading(false);
-      }
-    });
+
+      if (cancelled) return;
+
+      // Same sort + slice the server used to apply itself.
+      aggregated.sort(
+        (a, b) => (b.last_activity || '').localeCompare(a.last_activity || ''),
+      );
+      const sliced = aggregated.slice(0, baseArgs.limit);
+
+      setThreads(sliced);
+      setThreadsTotal(totalSum);
+      setThreadsLoading(false);
+      setThreadsStage('');
+    })();
+
     return () => { cancelled = true; };
   }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate]);
 
@@ -356,6 +402,8 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           <CommsThreadList
             threads={filteredThreads}
             loading={threadsLoading || entitiesLoading}
+            loadingProgress={threadsProgress}
+            loadingStage={threadsStage}
             selectedThreadId={selectedThread?.thread_id}
             onSelect={setSelectedThread}
             deviceById={deviceById}

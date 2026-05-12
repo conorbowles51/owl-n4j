@@ -1,8 +1,9 @@
 import React from 'react';
-import { MessageSquare, Phone, Mail, Paperclip, Loader2 } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Paperclip } from 'lucide-react';
 import { formatRelative, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
+import TabLoadingIndicator from '../shared/TabLoadingIndicator';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
 /**
@@ -16,6 +17,8 @@ import { usePhoneReports } from '../../../context/PhoneReportsContext';
 export default function CommsThreadList({
   threads = [],
   loading = false,
+  loadingProgress = 0,
+  loadingStage = '',
   selectedThreadId,
   onSelect,
   // deviceById left for backwards compatibility but no longer used —
@@ -27,9 +30,11 @@ export default function CommsThreadList({
   const hasMultiple = !!phoneCtx?.hasMultiple;
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-5 h-5 animate-spin text-light-400" />
-      </div>
+      <TabLoadingIndicator
+        label="Loading conversations"
+        progress={loadingProgress}
+        stage={loadingStage}
+      />
     );
   }
 
