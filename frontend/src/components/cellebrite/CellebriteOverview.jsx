@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import {
   Smartphone, Phone, MessageSquare, MapPin, Mail, User, Hash, Shield,
-  Trash2, Pencil, Loader2, X, Check,
+  Trash2, Pencil, Loader2, X, Check, AlertTriangle, ChevronDown, ChevronRight,
+  CheckCircle2,
 } from 'lucide-react';
 import OverviewContactsView from './overview/OverviewContactsView';
 import OverviewCallsView from './overview/OverviewCallsView';
@@ -245,7 +246,119 @@ function DeviceCard({ report, onDrillDown, onDelete, onEditName }) {
           />
         </div>
       </div>
+
+      {/* Ingestion reconciliation: surfaced only when present, prominent
+          only when something looks wrong. Lets the investigator confirm we
+          processed everything Cellebrite reported, or spot a gap. */}
+      {report.reconciliation && (
+        <ReconciliationPanel reconciliation={report.reconciliation} />
+      )}
     </div>
+  );
+}
+
+/**
+ * Compact per-card panel comparing Cellebrite XML model counts against the
+ * counts persisted to Neo4j. Defaults to collapsed; always-visible if any
+ * row has status="under" or "not_supported".
+ */
+function ReconciliationPanel({ reconciliation }) {
+  const summary = reconciliation?.summary || {};
+  const rows = Array.isArray(reconciliation?.rows) ? reconciliation.rows : [];
+
+  const hasIssues = (summary.types_under || 0) > 0;
+  const hasUnknown = (summary.types_not_supported || 0) > 0;
+  // Default-open when there's something the investigator should look at.
+  const [open, setOpen] = useState(hasIssues);
+
+  if (rows.length === 0) return null;
+
+  const totalXml = summary.total_xml_models || 0;
+
+  return (
+    <div className="border-t border-light-100 px-4 py-2 text-xs">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between gap-2 text-left text-light-600 hover:text-owl-blue-700"
+      >
+        <span className="flex items-center gap-1.5">
+          {hasIssues ? (
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+          ) : (
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          )}
+          <span className="font-medium">
+            {hasIssues
+              ? `Reconciliation: ${summary.types_under} type${summary.types_under === 1 ? '' : 's'} under-persisted`
+              : 'Reconciliation: all counts match'}
+          </span>
+          <span className="text-light-400">
+            ({totalXml.toLocaleString()} XML models, {rows.length} types)
+          </span>
+        </span>
+        {open ? (
+          <ChevronDown className="w-3.5 h-3.5 text-light-400" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 text-light-400" />
+        )}
+      </button>
+
+      {open && (
+        <div className="mt-2 max-h-48 overflow-y-auto rounded border border-light-100">
+          <table className="w-full text-[11px]">
+            <thead className="bg-light-50 text-light-500">
+              <tr>
+                <th className="text-left px-2 py-1 font-medium">Model type</th>
+                <th className="text-right px-2 py-1 font-medium">XML</th>
+                <th className="text-right px-2 py-1 font-medium">Persisted</th>
+                <th className="text-left px-2 py-1 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <ReconciliationRow key={r.model_type} row={r} />
+              ))}
+            </tbody>
+          </table>
+          {hasUnknown && (
+            <div className="px-2 py-1 text-[10px] text-light-500 bg-light-50 border-t border-light-100">
+              "Not supported" types are present in the XML but the parser
+              has no writer for them yet. They are recorded for visibility
+              and can be added later if useful.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const STATUS_STYLE = {
+  ok:           { label: 'ok',            cls: 'text-emerald-700 bg-emerald-50' },
+  nested:       { label: 'nested',        cls: 'text-owl-blue-700 bg-owl-blue-50' },
+  skipped:      { label: 'skipped',       cls: 'text-light-500 bg-light-50' },
+  under:        { label: 'under',         cls: 'text-amber-800 bg-amber-50' },
+  not_supported:{ label: 'not supported', cls: 'text-light-500 bg-light-50' },
+};
+
+function ReconciliationRow({ row }) {
+  const style = STATUS_STYLE[row.status] || STATUS_STYLE.ok;
+  return (
+    <tr className="border-t border-light-100">
+      <td className="px-2 py-1 text-owl-blue-900 font-mono">{row.model_type}</td>
+      <td className="px-2 py-1 text-right tabular-nums">
+        {row.xml_count.toLocaleString()}
+      </td>
+      <td className="px-2 py-1 text-right tabular-nums">
+        {row.persisted_count.toLocaleString()}
+      </td>
+      <td className="px-2 py-1">
+        <span className={`px-1.5 py-px rounded text-[10px] uppercase tracking-wide ${style.cls}`}>
+          {style.label}
+        </span>
+      </td>
+    </tr>
   );
 }
 

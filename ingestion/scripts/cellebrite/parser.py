@@ -103,6 +103,12 @@ class CellebriteXMLParser:
         self.log_callback = log_callback
         self._total_models = 0
         self._parsed_models = 0
+        # XML-side counts per modelType, captured BEFORE the SUPPORTED filter
+        # so we can reconcile what Cellebrite reported vs what we persisted.
+        # Only top-level <model> elements are counted (depth == 1) — nested
+        # models (e.g. InstantMessages inside a Chat) are not double-counted
+        # here; the writer's per-node counters cover those.
+        self._xml_counts_by_type: Dict[str, int] = {}
 
     def _log(self, msg: str):
         if self.log_callback:
@@ -481,6 +487,15 @@ class CellebriteXMLParser:
 
                 model_type = elem.get("type", "")
 
+                # Count every top-level model BEFORE the supported/skipped
+                # gate so reconciliation can show "Cellebrite reported X of
+                # type Y, we persisted Z" (including types we deliberately
+                # don't write). Unknown/new model types show up here too.
+                if model_type:
+                    self._xml_counts_by_type[model_type] = (
+                        self._xml_counts_by_type.get(model_type, 0) + 1
+                    )
+
                 # Only process top-level models in supported types
                 if model_type in SKIPPED_MODEL_TYPES:
                     elem.clear()
@@ -570,3 +585,8 @@ class CellebriteXMLParser:
     @property
     def parsed_models(self) -> int:
         return self._parsed_models
+
+    @property
+    def xml_counts_by_type(self) -> Dict[str, int]:
+        """Top-level <model> counts per modelType seen in <decodedData>."""
+        return dict(self._xml_counts_by_type)

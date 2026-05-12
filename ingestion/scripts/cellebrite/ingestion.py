@@ -15,14 +15,90 @@ Usage:
     )
 """
 
+import json
 import time
 from pathlib import Path
 from typing import Optional, Callable, List
 
-from .parser import CellebriteXMLParser
+from .parser import CellebriteXMLParser, SUPPORTED_MODEL_TYPES, SKIPPED_MODEL_TYPES
 from .neo4j_writer import CellebriteNeo4jWriter
 from .file_linker import CellebriteFileLinker
 from .models import ParsedModel
+
+
+# Maps Cellebrite XML modelType → list of writer stat keys that count it.
+# Some types produce multiple node kinds (Chat creates 1 chat + N inline
+# message nodes), so a strict 1:1 isn't always possible; the `nested` flag
+# tells the reconciler "the persisted count won't equal the XML count by
+# design — display both, don't flag as missing".
+_RECONCILE_MAP: dict = {
+    "Contact":          {"stats": ["contacts_created"],     "nested": False},
+    "Call":             {"stats": ["calls_created"],        "nested": False},
+    "Chat":             {"stats": ["chats_created"],        "nested": False},
+    "InstantMessage":   {"stats": ["messages_created"],     "nested": True},
+    "Email":            {"stats": ["emails_created"],       "nested": False},
+    "Location":         {"stats": ["locations_created"],    "nested": False},
+    "UserAccount":      {"stats": ["accounts_created"],     "nested": False},
+    "SearchedItem":     {"stats": ["searches_created"],     "nested": False},
+    "VisitedPage":      {"stats": ["visited_pages_created"],"nested": False},
+    "CalendarEntry":    {"stats": ["meetings_created"],     "nested": False},
+    "Password":         {"stats": ["credentials_created"],  "nested": False},
+    "WebBookmark":      {"stats": ["bookmarks_created"],    "nested": False},
+    "WirelessNetwork":  {"stats": ["wifi_networks_created"],"nested": False},
+    "RecognizedDevice": {"stats": ["devices_created"],      "nested": False},
+}
+
+
+def _build_reconciliation(
+    xml_counts: dict,
+    writer_stats: dict,
+) -> dict:
+    """
+    Compare XML modelType counts against persisted node counts and produce
+    a per-type breakdown the UI can render as a banner / inspector panel.
+
+    Status values:
+        ok            persisted >= xml (within tolerance), 1:1 mapping
+        nested        type produces nested children — count expected to differ
+        skipped       in SKIPPED_MODEL_TYPES, not written by design
+        not_supported model type seen in XML but no writer for it
+        under         persisted < xml for a 1:1 type — likely a parser bug
+    """
+    rows = []
+    for model_type, xml_count in sorted(xml_counts.items(), key=lambda kv: -kv[1]):
+        info = _RECONCILE_MAP.get(model_type)
+        if info:
+            persisted = sum(writer_stats.get(k, 0) for k in info["stats"])
+            if info["nested"]:
+                status = "nested"
+            elif persisted >= xml_count:
+                status = "ok"
+            else:
+                status = "under"
+        else:
+            persisted = 0
+            if model_type in SKIPPED_MODEL_TYPES:
+                status = "skipped"
+            elif model_type in SUPPORTED_MODEL_TYPES:
+                # Type is in SUPPORTED set but not in _RECONCILE_MAP yet
+                # (e.g. helper models like Attachment, Party). Don't flag.
+                status = "ok"
+            else:
+                status = "not_supported"
+        rows.append({
+            "model_type": model_type,
+            "xml_count": int(xml_count),
+            "persisted_count": int(persisted),
+            "status": status,
+        })
+
+    summary = {
+        "total_xml_models": int(sum(xml_counts.values())),
+        "types_seen": len(xml_counts),
+        "types_under": sum(1 for r in rows if r["status"] == "under"),
+        "types_not_supported": sum(1 for r in rows if r["status"] == "not_supported"),
+    }
+    return {"summary": summary, "rows": rows}
 
 
 def detect_cellebrite_xml(report_dir: Path) -> Optional[Path]:
@@ -228,10 +304,47 @@ def ingest_cellebrite_report(
         _log("Step 9/9: Skipping media registration (no evidence storage)")
 
     # ------------------------------------------------------------------
-    # Done — compile statistics
+    # Done — compile statistics + reconciliation report
     # ------------------------------------------------------------------
     elapsed = time.time() - start_time
     stats = writer.get_stats()
+
+    # Build XML-vs-persisted reconciliation. This answers the user-facing
+    # question "did we process everything Cellebrite reported?" — surfaced
+    # as a banner on the Cellebrite Overview tab.
+    reconciliation = _build_reconciliation(parser.xml_counts_by_type, stats)
+
+    # Write to disk next to the report so it's discoverable without DB
+    # access (useful for re-ingest comparisons and offline review).
+    try:
+        report_path = report_dir / "owl_ingest_report.json"
+        report_path.write_text(json.dumps({
+            "report_key": report_key,
+            "case_id": case_id,
+            "report_name": report.report_name,
+            "duration_seconds": round(elapsed, 1),
+            "reconciliation": reconciliation,
+        }, indent=2))
+        _log(f"Wrote reconciliation report: {report_path.name}")
+    except OSError as e:
+        _log(f"WARNING: could not write reconciliation report: {e}")
+
+    # Persist a compact form on the PhoneReport node so the UI can fetch
+    # it via the existing /reports endpoint without reading the disk file.
+    try:
+        with db._driver.session() as session:
+            session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $cid, key: $rk})
+                SET r.ingest_reconciliation = $payload
+                """,
+                cid=case_id,
+                rk=report_key,
+                payload=json.dumps(reconciliation),
+            )
+    except Exception as e:
+        _log(f"WARNING: could not persist reconciliation on PhoneReport: {e}")
+
     stats.update({
         "status": "success",
         "report_key": report_key,
@@ -245,6 +358,7 @@ def ingest_cellebrite_report(
         "media_files_registered": media_registered,
         "model_file_references": sum(len(v) for v in model_file_map.values()),
         "duration_seconds": round(elapsed, 1),
+        "reconciliation": reconciliation,
     })
 
     _log(

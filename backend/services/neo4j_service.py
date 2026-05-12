@@ -33,6 +33,23 @@ def parse_json_field(value: Optional[str]) -> Optional[List]:
         return None
 
 
+def _decode_reconciliation(value: Optional[str]) -> Optional[dict]:
+    """
+    Decode the JSON-stringified reconciliation report stored on PhoneReport
+    nodes by the ingestion pipeline. Returns None if missing or malformed,
+    so the API just omits the field for older reports.
+    """
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
 def safe_float(value, default=0) -> float:
     """Convert a value to float, returning default if it's None, NaN, or invalid."""
     if value is None:
@@ -5579,6 +5596,13 @@ class Neo4jService:
                         "locations": record["location_count"],
                         "emails": record["email_count"],
                     },
+                    # Per-modelType reconciliation (XML count vs persisted
+                    # count). Stored as JSON on the PhoneReport node by the
+                    # ingestion pipeline; absent for reports ingested before
+                    # the reconciliation feature shipped.
+                    "reconciliation": _decode_reconciliation(
+                        r.get("ingest_reconciliation")
+                    ),
                 })
             return reports
 
