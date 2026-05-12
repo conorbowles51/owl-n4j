@@ -33,6 +33,53 @@ def parse_json_field(value: Optional[str]) -> Optional[List]:
         return None
 
 
+def _normalize_date_bound(value: Optional[str]) -> Optional[str]:
+    """
+    Normalize a date-bound parameter coming from the API to a clean
+    YYYY-MM-DD string suitable for string comparison against the
+    pre-truncated `n.date` property.
+
+    The API historically accepts:
+      - "2024-03-15"                         (already correct)
+      - "2024-03-15T14:23:11.000Z"           (ISO with T)
+      - "2024-03-15 14:23:11+02:00"          (ISO with space)
+      - "2024-03-15T14:23:11"                (naive ISO)
+
+    Returns None for anything we can't confidently parse, so the caller
+    can drop the filter rather than apply a broken predicate. The previous
+    code passed the raw value into a Cypher string comparison against
+    `n.timestamp`, which silently produced wrong results when the stored
+    timestamp had a different format than the bound (the user-reported
+    "2022 data appearing in newer windows" bug).
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        try:
+            value = str(value)
+        except Exception:
+            return None
+    s = value.strip()
+    if not s:
+        return None
+    # Cut at first 'T' or whitespace — both are valid ISO separators.
+    for sep in ("T", " "):
+        if sep in s:
+            s = s.split(sep, 1)[0]
+            break
+    # Strip timezone designators that snuck through (rare).
+    if s.endswith("Z"):
+        s = s[:-1]
+    # Validate YYYY-MM-DD shape without pulling datetime in the hot path.
+    if len(s) != 10 or s[4] != "-" or s[7] != "-":
+        return None
+    try:
+        int(s[0:4]); int(s[5:7]); int(s[8:10])
+    except ValueError:
+        return None
+    return s
+
+
 def _decode_reconciliation(value: Optional[str]) -> Optional[dict]:
     """
     Decode the JSON-stringified reconciliation report stored on PhoneReport
@@ -5927,13 +5974,15 @@ class Neo4jService:
             where_parts.append("n.cellebrite_report_key IN $report_keys")
             params["report_keys"] = report_keys
 
-        if start_date:
-            where_parts.append("n.timestamp >= $start_date")
-            params["start_date"] = start_date
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            where_parts.append("coalesce(n.date, n.timestamp, '') >= $start_date")
+            params["start_date"] = sd
 
-        if end_date:
-            where_parts.append("n.timestamp <= $end_date")
-            params["end_date"] = end_date
+        if ed:
+            where_parts.append("coalesce(n.date, n.timestamp, '') <= $end_date")
+            params["end_date"] = ed
 
         where_clause = " AND ".join(where_parts)
 
@@ -6300,19 +6349,34 @@ class Neo4jService:
             app_filter_email = "AND e.source_app IN $source_apps"
             params["source_apps"] = list(source_apps)
 
+        # Normalize date bounds to YYYY-MM-DD up front. Compare against the
+        # pre-truncated `n.date` property where available (always populated
+        # by the Cellebrite writer for events with a timestamp); for chat
+        # threads — which carry `last_activity`/`start_time` strings only —
+        # use a substring prefix that's still safe across timezone formats.
         date_filter_chat = ""
         date_filter_call = ""
         date_filter_email = ""
-        if start_date:
-            date_filter_chat += " AND chat.last_activity >= $start_date"
-            date_filter_call += " AND c.timestamp >= $start_date"
-            date_filter_email += " AND e.timestamp >= $start_date"
-            params["start_date"] = start_date
-        if end_date:
-            date_filter_chat += " AND chat.start_time <= $end_date"
-            date_filter_call += " AND c.timestamp <= $end_date"
-            date_filter_email += " AND e.timestamp <= $end_date"
-            params["end_date"] = end_date
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            # PhoneCall / Email have a real `date` column; chats only have
+            # `last_activity` as an ISO string — prefix-compare is correct
+            # because YYYY-MM-DD orders the same lexicographically as ISO.
+            date_filter_chat += " AND coalesce(chat.last_activity, '') >= $start_date"
+            date_filter_call += " AND coalesce(c.date, c.timestamp, '') >= $start_date"
+            date_filter_email += " AND coalesce(e.date, e.timestamp, '') >= $start_date"
+            params["start_date"] = sd
+        if ed:
+            # Use end-of-day inclusive bound so a YYYY-MM-DD upper limit
+            # actually includes events from that day. Without this, an
+            # end_date='2024-03-15' would exclude any event on 2024-03-15.
+            ed_inclusive = f"{ed}T23:59:59.999"
+            date_filter_chat += " AND coalesce(chat.start_time, chat.last_activity, '') <= $end_date_incl"
+            date_filter_call += " AND coalesce(c.date, c.timestamp, '') <= $end_date"
+            date_filter_email += " AND coalesce(e.date, e.timestamp, '') <= $end_date"
+            params["end_date"] = ed
+            params["end_date_incl"] = ed_inclusive
 
         with self._driver.session() as session:
             # ---- Chat threads (real Communication nodes with chat_id) ----
@@ -6868,16 +6932,22 @@ class Neo4jService:
         date_filter_msg = ""
         date_filter_call = ""
         date_filter_email = ""
-        if start_date:
-            date_filter_msg = " AND msg.timestamp >= $start_date"
-            date_filter_call = " AND c.timestamp >= $start_date"
-            date_filter_email = " AND e.timestamp >= $start_date"
-            params["start_date"] = start_date
-        if end_date:
-            date_filter_msg += " AND msg.timestamp <= $end_date"
-            date_filter_call += " AND c.timestamp <= $end_date"
-            date_filter_email += " AND e.timestamp <= $end_date"
-            params["end_date"] = end_date
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            # Compare on the writer-normalized `date` field where present;
+            # fall back to the raw timestamp string only if `date` is absent.
+            # This eliminates the "2022 data appearing in newer windows"
+            # bug caused by inconsistent timestamp formats across source apps.
+            date_filter_msg = " AND coalesce(msg.date, msg.timestamp, '') >= $start_date"
+            date_filter_call = " AND coalesce(c.date, c.timestamp, '') >= $start_date"
+            date_filter_email = " AND coalesce(e.date, e.timestamp, '') >= $start_date"
+            params["start_date"] = sd
+        if ed:
+            date_filter_msg += " AND coalesce(msg.date, msg.timestamp, '') <= $end_date"
+            date_filter_call += " AND coalesce(c.date, c.timestamp, '') <= $end_date"
+            date_filter_email += " AND coalesce(e.date, e.timestamp, '') <= $end_date"
+            params["end_date"] = ed
 
         items: list = []
 
@@ -7142,12 +7212,18 @@ class Neo4jService:
         if report_keys:
             parts.append(f"{prefix}.cellebrite_report_key IN $report_keys")
             params["report_keys"] = list(report_keys)
-        if start_date:
-            parts.append(f"{prefix}.timestamp >= $start_date")
-            params["start_date"] = start_date
-        if end_date:
-            parts.append(f"{prefix}.timestamp <= $end_date")
-            params["end_date"] = end_date
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            # Compare against `date` (YYYY-MM-DD) where present, falling
+            # back to the raw `timestamp` string. Mixed timestamp formats
+            # across source apps (some with timezone, some without) made
+            # the previous direct timestamp comparison unreliable.
+            parts.append(f"coalesce({prefix}.date, {prefix}.timestamp, '') >= $start_date")
+            params["start_date"] = sd
+        if ed:
+            parts.append(f"coalesce({prefix}.date, {prefix}.timestamp, '') <= $end_date")
+            params["end_date"] = ed
         if source_apps:
             parts.append(f"{prefix}.source_app IN $source_apps")
             params["source_apps"] = list(source_apps)
@@ -7453,12 +7529,14 @@ class Neo4jService:
             rk_filter = "AND n.cellebrite_report_key IN $report_keys"
             params["report_keys"] = list(report_keys)
         date_filter = ""
-        if start_date:
-            date_filter += " AND n.timestamp >= $start_date"
-            params["start_date"] = start_date
-        if end_date:
-            date_filter += " AND n.timestamp <= $end_date"
-            params["end_date"] = end_date
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            date_filter += " AND coalesce(n.date, n.timestamp, '') >= $start_date"
+            params["start_date"] = sd
+        if ed:
+            date_filter += " AND coalesce(n.date, n.timestamp, '') <= $end_date"
+            params["end_date"] = ed
 
         points_by_device: Dict[str, list] = {}
         with self._driver.session() as session:
