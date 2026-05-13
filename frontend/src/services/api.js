@@ -2684,6 +2684,35 @@ export const cellebriteCommsAPI = {
    * to the matched message. Distinct from getThreads({search}) which
    * only matches thread metadata.
    */
+  /**
+   * Cheap aggregation across the comms feed shape — total count, per-type
+   * counts, min/max date, per-day histogram. No item rows. Same filter
+   * contract as getBetween() so the scrubber + tab counts can render
+   * before any feed page returns.
+   *
+   * Returns { total, type_counts: {message, call, email}, min_date,
+   *           max_date, histogram: [{date, count}] }
+   */
+  getEnvelope: (caseId, {
+    fromKeys = null,
+    toKeys = null,
+    types = null,
+    reportKeys = null,
+    sourceApps = null,
+    startDate = null,
+    endDate = null,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
+    if (toKeys?.length) params.append('to_keys', toKeys.join(','));
+    if (types?.length) params.append('types', types.join(','));
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    return fetchAPI(`/cellebrite/comms/envelope?${params.toString()}`);
+  },
+
   searchMessages: (caseId, { q, reportKeys = null, limit = 200 } = {}) => {
     const params = new URLSearchParams({ case_id: caseId, q });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));

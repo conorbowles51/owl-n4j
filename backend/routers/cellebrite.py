@@ -383,6 +383,43 @@ async def get_comms_between(
     return result
 
 
+@router.get("/comms/envelope")
+async def get_comms_envelope(
+    case_id: str = Query(...),
+    from_keys: Optional[str] = Query(None),
+    to_keys: Optional[str] = Query(None),
+    types: Optional[str] = Query(None, description="Comma-separated: message,call,email"),
+    report_keys: Optional[str] = Query(None),
+    source_apps: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Cheap aggregation across the comms feed shape.
+
+    Returns total count, per-type counts, min/max date and a per-day
+    histogram WITHOUT loading any item rows. Powers the timeline
+    scrubber's true min/max + density curve so it can render before
+    the body /comms/between request returns.
+
+    Same filter contract as /comms/between so the envelope is always
+    consistent with what a body fetch would surface.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_comms_envelope(
+        case_id=case_id,
+        report_keys=_csv_param(report_keys),
+        from_keys=_csv_param(from_keys),
+        to_keys=_csv_param(to_keys),
+        types=_csv_param(types),
+        source_apps=_csv_param(source_apps),
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
 @router.get("/comms/messages/search")
 async def search_comms_messages(
     case_id: str = Query(...),

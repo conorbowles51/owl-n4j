@@ -7099,6 +7099,182 @@ class Neo4jService:
         items = items[offset: offset + limit]
         return {"items": items, "total": total}
 
+    def get_cellebrite_comms_envelope(
+        self,
+        case_id: str,
+        report_keys: Optional[List[str]] = None,
+        from_keys: Optional[List[str]] = None,
+        to_keys: Optional[List[str]] = None,
+        types: Optional[List[str]] = None,
+        source_apps: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> dict:
+        """
+        Cheap aggregation across the comms feed shape: total count,
+        per-type counts, min/max date, and a per-day histogram.
+
+        Powers the timeline scrubber's "honest" min/max + density curve
+        without forcing the client to load any item rows. The point is
+        to render the scrubber + tab counts BEFORE any feed pages
+        arrive, then page the body separately via /comms/between.
+
+        Cypher does the heavy lifting in three small UNION ALL legs
+        (one per type) — each leg returns one (date, count) row per
+        distinct date, gated by the same filters /comms/between uses
+        so the envelope is always consistent with what the body fetch
+        would return.
+        """
+        active_types = set(types or ["message", "call", "email"])
+
+        # Build shared params + per-type filter fragments. Date bounds
+        # use the same normalizer + coalesce(date, timestamp) trick the
+        # body fetch uses so the envelope is honest about exclusions.
+        params: Dict[str, Any] = {"case_id": case_id}
+        rk_filter_msg = ""
+        rk_filter_call = ""
+        rk_filter_email = ""
+        if report_keys:
+            rk_filter_msg = " AND msg.cellebrite_report_key IN $report_keys"
+            rk_filter_call = " AND c.cellebrite_report_key IN $report_keys"
+            rk_filter_email = " AND e.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        from_filter_msg = from_filter_call = from_filter_email = ""
+        if from_keys:
+            from_filter_msg = " AND sender.key IN $from_keys"
+            from_filter_call = " AND src.key IN $from_keys"
+            from_filter_email = " AND a.key IN $from_keys"
+            params["from_keys"] = list(from_keys)
+
+        to_filter_msg = to_filter_call = to_filter_email = ""
+        if to_keys:
+            to_filter_msg = " AND recipient.key IN $to_keys"
+            to_filter_call = " AND dst.key IN $to_keys"
+            to_filter_email = " AND b.key IN $to_keys"
+            params["to_keys"] = list(to_keys)
+
+        app_filter_msg = app_filter_call = app_filter_email = ""
+        if source_apps:
+            app_filter_msg = " AND msg.source_app IN $source_apps"
+            app_filter_call = " AND c.source_app IN $source_apps"
+            app_filter_email = " AND e.source_app IN $source_apps"
+            params["source_apps"] = list(source_apps)
+
+        date_filter_msg = date_filter_call = date_filter_email = ""
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            date_filter_msg = " AND coalesce(msg.date, msg.timestamp, '') >= $start_date"
+            date_filter_call = " AND coalesce(c.date, c.timestamp, '') >= $start_date"
+            date_filter_email = " AND coalesce(e.date, e.timestamp, '') >= $start_date"
+            params["start_date"] = sd
+        if ed:
+            date_filter_msg += " AND coalesce(msg.date, msg.timestamp, '') <= $end_date"
+            date_filter_call += " AND coalesce(c.date, c.timestamp, '') <= $end_date"
+            date_filter_email += " AND coalesce(e.date, e.timestamp, '') <= $end_date"
+            params["end_date"] = ed
+
+        type_counts = {"message": 0, "call": 0, "email": 0}
+        # Histogram is per-day → frontend may downsample. Server returns
+        # the raw day buckets so the same payload feeds both a coarse
+        # scrubber and a fine zoom-in.
+        per_day: Dict[str, int] = {}
+        min_date: Optional[str] = None
+        max_date: Optional[str] = None
+
+        with self._driver.session() as session:
+            if "message" in active_types:
+                cypher = f"""
+                    MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
+                    MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
+                    WHERE msg.case_id = $case_id
+                      AND msg.source_type = 'cellebrite'
+                      AND coalesce(msg.date, msg.timestamp, '') <> ''
+                      {rk_filter_msg}{from_filter_msg}{to_filter_msg}
+                      {app_filter_msg}{date_filter_msg}
+                    WITH coalesce(msg.date, substring(msg.timestamp, 0, 10)) AS d, msg
+                    RETURN d, count(DISTINCT msg) AS c
+                """
+                rs = session.run(cypher, **params)
+                for r in rs:
+                    d = r["d"]
+                    c = r["c"]
+                    if not d:
+                        continue
+                    type_counts["message"] += c
+                    per_day[d] = per_day.get(d, 0) + c
+                    if min_date is None or d < min_date:
+                        min_date = d
+                    if max_date is None or d > max_date:
+                        max_date = d
+
+            if "call" in active_types:
+                cypher = f"""
+                    MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
+                    WHERE c.case_id = $case_id
+                      AND c.source_type = 'cellebrite'
+                      AND coalesce(c.date, c.timestamp, '') <> ''
+                      {rk_filter_call}{from_filter_call}{to_filter_call}
+                      {app_filter_call}{date_filter_call}
+                    WITH coalesce(c.date, substring(c.timestamp, 0, 10)) AS d, c
+                    RETURN d, count(DISTINCT c) AS cnt
+                """
+                rs = session.run(cypher, **params)
+                for r in rs:
+                    d = r["d"]
+                    cnt = r["cnt"]
+                    if not d:
+                        continue
+                    type_counts["call"] += cnt
+                    per_day[d] = per_day.get(d, 0) + cnt
+                    if min_date is None or d < min_date:
+                        min_date = d
+                    if max_date is None or d > max_date:
+                        max_date = d
+
+            if "email" in active_types:
+                cypher = f"""
+                    MATCH (a:Person)-[:EMAILED]->(e:Email)-[:SENT_TO]->(b:Person)
+                    WHERE e.case_id = $case_id
+                      AND e.source_type = 'cellebrite'
+                      AND coalesce(e.date, e.timestamp, '') <> ''
+                      {rk_filter_email}{from_filter_email}{to_filter_email}
+                      {app_filter_email}{date_filter_email}
+                    WITH coalesce(e.date, substring(e.timestamp, 0, 10)) AS d, e
+                    RETURN d, count(DISTINCT e) AS cnt
+                """
+                rs = session.run(cypher, **params)
+                for r in rs:
+                    d = r["d"]
+                    cnt = r["cnt"]
+                    if not d:
+                        continue
+                    type_counts["email"] += cnt
+                    per_day[d] = per_day.get(d, 0) + cnt
+                    if min_date is None or d < min_date:
+                        min_date = d
+                    if max_date is None or d > max_date:
+                        max_date = d
+
+        total = type_counts["message"] + type_counts["call"] + type_counts["email"]
+
+        # Sort the histogram chronologically so the client doesn't have
+        # to. Days with zero count are absent — frontend bridges them
+        # when rendering the bar chart.
+        hist = [
+            {"date": d, "count": c}
+            for d, c in sorted(per_day.items())
+        ]
+
+        return {
+            "total": total,
+            "type_counts": type_counts,
+            "min_date": min_date,
+            "max_date": max_date,
+            "histogram": hist,
+        }
+
     def search_cellebrite_comms_messages(
         self,
         case_id: str,
