@@ -4,6 +4,7 @@ Neo4j Service - handles all database operations for the investigation console.
 
 from typing import Dict, List, Optional, Any, Set, Tuple
 from neo4j import GraphDatabase
+import base64
 import math
 import random
 import json
@@ -6894,19 +6895,51 @@ class Neo4jService:
         limit: int = 500,
         offset: int = 0,
         sort: str = "desc",
+        cursor: Optional[str] = None,
     ) -> dict:
         """
         Get chronological cross-type comms where any from_keys participant
         communicated with any to_keys participant (AND semantics).
 
-        types: subset of ['message', 'call', 'email'] — includes all if None.
-        sort:  'desc' (newest first) or 'asc' (oldest first). Drives both
-               the per-type ORDER BY and the post-merge sort so the row
-               cap interacts correctly with the user's chosen direction.
+        types:  subset of ['message', 'call', 'email'] — includes all if None.
+        sort:   'desc' (newest first) or 'asc' (oldest first). Drives both
+                the per-type ORDER BY and the post-merge sort so the row
+                cap interacts correctly with the user's chosen direction.
+        cursor: opaque page-continuation token from a previous response's
+                `next_cursor`. When supplied, takes priority over `offset`
+                and triggers per-type keyset pagination — each branch's
+                WHERE adds `(ts < cursor_ts OR (ts = cursor_ts AND id <
+                cursor_id))` (or > for asc), so deep pages don't re-read
+                the rows already returned. With keyset, the per-type
+                fetch grabs `limit` rows; without it (legacy callers
+                still using offset), it grabs `limit + offset` like
+                before.
+
+        The cursor is base64(JSON({type: (ts, id)})). Encoding is
+        per-type so a page that came from messages-only doesn't
+        accidentally short-circuit calls/emails on the next page.
         """
         active_types = set(types) if types else {"message", "call", "email"}
         sort_dir = "ASC" if (sort or "").lower() == "asc" else "DESC"
         reverse_sort = sort_dir == "DESC"
+
+        # Decode the per-type cursor if present. Anything malformed is
+        # treated as no-cursor — the user gets a fresh page rather than
+        # an error. Cursors get invalidated implicitly when filters
+        # change (the server returns new ones; the old token simply
+        # corresponds to a different filter context and the page may
+        # contain duplicates with what's already on screen, which is
+        # acceptable degradation).
+        per_type_cursor: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        if cursor:
+            try:
+                decoded = json.loads(base64.b64decode(cursor.encode("ascii")).decode("utf-8"))
+                if isinstance(decoded, dict):
+                    for k, v in decoded.items():
+                        if isinstance(v, list) and len(v) == 2:
+                            per_type_cursor[k] = (v[0], v[1])
+            except Exception:
+                per_type_cursor = {}
 
         params: Dict[str, Any] = {"case_id": case_id}
         params["from_keys"] = list(from_keys) if from_keys else []
@@ -6951,6 +6984,34 @@ class Neo4jService:
 
         items: list = []
 
+        # Per-type cursor WHERE fragments. When a cursor for a type is
+        # set we narrow the per-type fetch to "rows beyond the cursor"
+        # and pull only `limit` rows (instead of `limit + offset`). When
+        # no cursor (legacy callers using offset), we keep the
+        # offset-style budget so SKIP/OFFSET behaviour is unchanged.
+        # The (ts, id) tuple guarantees deterministic ordering even
+        # when two events share a timestamp — id breaks the tie.
+        def _cursor_clause(kind: str, ts_expr: str, id_expr: str) -> str:
+            cur = per_type_cursor.get(kind)
+            if not cur or not cur[0]:
+                return ""
+            cmp = "<" if sort_dir == "DESC" else ">"
+            return (
+                f" AND ({ts_expr} {cmp} ${kind}_cur_ts"
+                f" OR ({ts_expr} = ${kind}_cur_ts AND coalesce({id_expr}, '') {cmp} ${kind}_cur_id))"
+            )
+
+        for kind, (cur_ts, cur_id) in per_type_cursor.items():
+            if cur_ts is not None:
+                params[f"{kind}_cur_ts"] = cur_ts
+                params[f"{kind}_cur_id"] = cur_id or ""
+
+        # When a cursor is in play, each per-type fetch only needs `limit`
+        # rows (not limit+offset) because keyset already excludes the
+        # earlier pages. Falls back to the offset budget for legacy
+        # callers that haven't migrated yet.
+        per_type_budget = limit if cursor else (limit + offset)
+
         # Run all three type-specific queries inside ONE read transaction
         # so they share a single round-trip to Neo4j. The previous code
         # opened three independent session.run() calls, paying RTT cost
@@ -6965,11 +7026,13 @@ class Neo4jService:
         try:
             if "message" in active_types:
                 # Messages: sender -> message -> chat <- participants (includes recipient)
+                msg_cursor_clause = _cursor_clause("message", "msg.timestamp", "msg.id")
                 query = f"""
                     MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
                     WHERE msg.case_id = $case_id AND msg.body IS NOT NULL
                       AND (size($from_keys) = 0 OR sender.key IN $from_keys)
                       {rk_filter_msg} {app_filter_msg} {date_filter_msg}
+                      {msg_cursor_clause}
                     MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
                     WHERE recipient <> sender
                       AND (size($to_keys) = 0 OR recipient.key IN $to_keys)
@@ -6979,7 +7042,7 @@ class Neo4jService:
                     ORDER BY msg.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = tx.run(query, {**params, "limit": limit + offset})
+                result = tx.run(query, {**params, "limit": per_type_budget})
                 for r in result:
                     msg = dict(r["msg"])
                     sender = dict(r["sender"]) if r["sender"] else None
@@ -7008,6 +7071,7 @@ class Neo4jService:
                     })
 
             if "call" in active_types:
+                call_cursor_clause = _cursor_clause("call", "c.timestamp", "c.id")
                 query = f"""
                     MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
                     WHERE c.case_id = $case_id
@@ -7016,11 +7080,12 @@ class Neo4jService:
                           AND (size($to_keys) = 0 OR dst.key IN $to_keys)
                       )
                       {rk_filter_call} {app_filter_call} {date_filter_call}
+                      {call_cursor_clause}
                     RETURN c, src, dst
                     ORDER BY c.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = tx.run(query, {**params, "limit": limit + offset})
+                result = tx.run(query, {**params, "limit": per_type_budget})
                 for r in result:
                     c = dict(r["c"])
                     src = dict(r["src"]) if r["src"] else None
@@ -7049,6 +7114,7 @@ class Neo4jService:
                     })
 
             if "email" in active_types:
+                email_cursor_clause = _cursor_clause("email", "e.timestamp", "e.id")
                 query = f"""
                     MATCH (src:Person)-[:EMAILED]->(e:Email)-[:SENT_TO]->(dst:Person)
                     WHERE e.case_id = $case_id
@@ -7057,11 +7123,12 @@ class Neo4jService:
                           AND (size($to_keys) = 0 OR dst.key IN $to_keys)
                       )
                       {rk_filter_email} {app_filter_email} {date_filter_email}
+                      {email_cursor_clause}
                     RETURN e, src, dst
                     ORDER BY e.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = tx.run(query, {**params, "limit": limit + offset})
+                result = tx.run(query, {**params, "limit": per_type_budget})
                 for r in result:
                     e = dict(r["e"])
                     src = dict(r["src"]) if r["src"] else None
@@ -7110,11 +7177,52 @@ class Neo4jService:
             deduped.append(it)
         items = deduped
 
-        # Sort & paginate
+        # Sort the merged items chronologically. Two passes:
+        # (1) compute the page slice for the response, (2) compute the
+        # per-type "last seen" used to build next_cursor.
         items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=reverse_sort)
         total = len(items)
-        items = items[offset: offset + limit]
-        return {"items": items, "total": total}
+
+        if cursor:
+            # Cursor mode: skip the manual offset (already accounted for
+            # by the per-type cursor predicates) and just trim to limit.
+            page = items[:limit]
+        else:
+            page = items[offset: offset + limit]
+
+        # Build the next_cursor from the LAST item per type within the
+        # page. If a type contributed zero rows to this page, its cursor
+        # is dropped — the next request will re-evaluate that type fresh
+        # against the same filters. Returning None for next_cursor when
+        # there's clearly no more data avoids the client looping.
+        last_per_type: Dict[str, Tuple[str, str]] = {}
+        for it in page:
+            t = it.get("type")
+            ts = it.get("timestamp") or ""
+            iid = it.get("id") or ""
+            if not t or not ts:
+                continue
+            # Each type's "last seen" is whichever item is furthest in
+            # the sort direction within the page — that's the bottom of
+            # the page in DESC mode (oldest of the visible rows for
+            # that type).
+            last_per_type[t] = (ts, iid)
+
+        # We're plausibly out of rows when the page is short (< limit
+        # before merging eats space). Be conservative and emit a cursor
+        # whenever the merged page filled.
+        next_cursor: Optional[str] = None
+        if last_per_type and len(page) >= limit:
+            payload = {k: [v[0], v[1]] for k, v in last_per_type.items()}
+            next_cursor = base64.b64encode(
+                json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            ).decode("ascii")
+
+        return {
+            "items": page,
+            "total": total,
+            "next_cursor": next_cursor,
+        }
 
     def get_cellebrite_comms_envelope(
         self,

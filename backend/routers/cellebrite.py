@@ -361,6 +361,14 @@ async def get_comms_between(
     offset: int = Query(0, ge=0),
     sort: str = Query("desc", regex="^(asc|desc)$",
                       description="Order: 'desc' (newest first) or 'asc' (oldest first)"),
+    cursor: Optional[str] = Query(
+        None,
+        description=(
+            "Opaque continuation token from a previous response's `next_cursor`. "
+            "Takes priority over `offset` when supplied — engages keyset "
+            "pagination so deep pages don't re-read earlier rows."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -378,6 +386,7 @@ async def get_comms_between(
         limit=limit,
         offset=offset,
         sort=sort,
+        cursor=cursor,
     )
     _resolve_attachments(case_id, result.get("items", []))
     return result

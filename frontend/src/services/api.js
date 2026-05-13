@@ -2658,6 +2658,7 @@ export const cellebriteCommsAPI = {
     limit = 500,
     offset = 0,
     sort = 'desc',
+    cursor = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
@@ -2668,7 +2669,14 @@ export const cellebriteCommsAPI = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     params.append('limit', String(limit));
-    params.append('offset', String(offset));
+    // When a cursor is supplied, omit `offset` — the server engages
+    // keyset pagination and offset becomes a no-op. Send it only for
+    // legacy callers that don't yet pass cursor.
+    if (cursor) {
+      params.append('cursor', cursor);
+    } else {
+      params.append('offset', String(offset));
+    }
     if (sort) params.append('sort', sort);
     return fetchAPI(`/cellebrite/comms/between?${params.toString()}`);
   },
