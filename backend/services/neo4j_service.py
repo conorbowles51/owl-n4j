@@ -6951,7 +6951,18 @@ class Neo4jService:
 
         items: list = []
 
-        with self._driver.session() as session:
+        # Run all three type-specific queries inside ONE read transaction
+        # so they share a single round-trip to Neo4j. The previous code
+        # opened three independent session.run() calls, paying RTT cost
+        # three times per page load. Composite indexes added in commit
+        # fbe8df0 (case_id + cellebrite_report_key) keep each query
+        # cheap; combining them here cuts the wall-clock latency users
+        # see on the deployed env. Session/tx lifecycle is managed
+        # manually instead of via `with` because we need the tx to span
+        # all three branches before commit.
+        session = self._driver.session()
+        tx = session.begin_transaction()
+        try:
             if "message" in active_types:
                 # Messages: sender -> message -> chat <- participants (includes recipient)
                 query = f"""
@@ -6968,7 +6979,7 @@ class Neo4jService:
                     ORDER BY msg.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = session.run(query, {**params, "limit": limit + offset})
+                result = tx.run(query, {**params, "limit": limit + offset})
                 for r in result:
                     msg = dict(r["msg"])
                     sender = dict(r["sender"]) if r["sender"] else None
@@ -7009,7 +7020,7 @@ class Neo4jService:
                     ORDER BY c.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = session.run(query, {**params, "limit": limit + offset})
+                result = tx.run(query, {**params, "limit": limit + offset})
                 for r in result:
                     c = dict(r["c"])
                     src = dict(r["src"]) if r["src"] else None
@@ -7050,7 +7061,7 @@ class Neo4jService:
                     ORDER BY e.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = session.run(query, {**params, "limit": limit + offset})
+                result = tx.run(query, {**params, "limit": limit + offset})
                 for r in result:
                     e = dict(r["e"])
                     src = dict(r["src"]) if r["src"] else None
@@ -7076,6 +7087,12 @@ class Neo4jService:
                         ] if dst else [],
                         "report_key": e.get("cellebrite_report_key"),
                     })
+            tx.commit()
+        except Exception:
+            tx.rollback()
+            raise
+        finally:
+            session.close()
 
         # Dedupe — the same message can be returned multiple times when a
         # chat has many participants and the from/to filters overlap. Keep the
