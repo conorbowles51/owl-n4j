@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Smartphone, Network, Clock, Users, MessageSquare, MapPin, FolderTree, Loader2,
+  Globe,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import CellebriteOverview from './CellebriteOverview';
@@ -9,6 +10,7 @@ import CellebriteTimeline from './CellebriteTimeline';
 import CellebriteCommunicationView from './CellebriteCommunicationView';
 import CellebriteCommsCenter from './CellebriteCommsCenter';
 import CellebriteEventCenter from './CellebriteEventCenter';
+import CellebriteLocations from './CellebriteLocations';
 import CellebriteFilesExplorer from './CellebriteFilesExplorer';
 import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
 import { CellebriteSelectionProvider } from './shared/CellebriteSelectionContext';
@@ -17,6 +19,10 @@ import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
   { key: 'comms', label: 'Comms Center', icon: MessageSquare },
+  // Locations gets its own tab — promoted out of Events Center to
+  // match Cellebrite Reader's "Device Locations" surface and so the
+  // map-centric workflow doesn't compete with the wider event feed.
+  { key: 'locations', label: 'Locations', icon: Globe },
   { key: 'events', label: 'Location & Events', icon: MapPin },
   { key: 'files', label: 'Files', icon: FolderTree },
   { key: 'graph', label: 'Cross-Phone Graph', icon: Network },
@@ -154,6 +160,11 @@ export default function CellebriteView({ caseId }) {
         {mountedTabs.has('comms') && (
           <TabPane active={activeTab === 'comms'}>
             <CellebriteCommsCenter caseId={caseId} reports={reports} isActive={activeTab === 'comms'} />
+          </TabPane>
+        )}
+        {mountedTabs.has('locations') && (
+          <TabPane active={activeTab === 'locations'}>
+            <CellebriteLocations caseId={caseId} reports={reports} isActive={activeTab === 'locations'} />
           </TabPane>
         )}
         {mountedTabs.has('events') && (
