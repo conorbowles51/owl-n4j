@@ -102,7 +102,9 @@ export default function EventDetailDrawer({ caseId, event, onClose }) {
   );
 }
 
-function EventBody({ event, detail }) {
+// Exported so the universal CellebriteSelectionRail can reuse the same
+// projection logic instead of duplicating the type-by-type rendering.
+export function EventBody({ event, detail }) {
   const lat = detail.latitude ?? detail.nearest_location_lat;
   const lon = detail.longitude ?? detail.nearest_location_lon;
   const geoDirect = detail.latitude != null && detail.longitude != null;

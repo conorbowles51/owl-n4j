@@ -19,6 +19,7 @@ import { useChatContext } from '../../contexts/ChatContext';
 import { buildEventsContext } from '../../utils/chatContextSummary';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import { useCellebriteStatus } from './shared/CellebriteStatusBar';
+import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 
 /**
  * Cellebrite Location & Event Center — orchestrates map + timeline + playback
@@ -75,6 +76,38 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
 
   // --- Selection / drawer / intersections ---
   const [selectedEvent, setSelectedEvent] = useState(null);
+
+  // Bridge local selection state into the universal CellebriteSelection
+  // context so the right-rail can render whatever the user just picked.
+  // We wrap setSelectedEvent so every existing call site keeps its
+  // behaviour (highlights the marker on the map, scrolls the table)
+  // AND gets the rail dispatch for free.
+  const { selectEntity, clearSelection } = useCellebriteSelection();
+  const setSelectedEventAndPublish = useCallback((evOrUpdater) => {
+    // The state setter accepts either a value or an updater function;
+    // we only need to publish the resolved value, so collapse it via
+    // the functional form to avoid stale-closure bugs.
+    setSelectedEvent((prev) => {
+      const next = typeof evOrUpdater === 'function' ? evOrUpdater(prev) : evOrUpdater;
+      if (!next) {
+        clearSelection();
+      } else {
+        // Map the event-row's event_type onto the rail's selection type
+        // so the renderer registry picks the right accordion. Falls
+        // back to 'event' for any unrecognised type.
+        const t = next.event_type || 'event';
+        selectEntity({
+          type: t,
+          id: next.id || next.node_key,
+          caseId,
+          reportKey: next.device_report_key,
+          payload: next,
+          source: 'events',
+        });
+      }
+      return next;
+    });
+  }, [caseId, selectEntity, clearSelection]);
   const [intersectionResults, setIntersectionResults] = useState({});
   const [intersectionCollapsed, setIntersectionCollapsed] = useState(false);
 
@@ -300,8 +333,8 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         if (!isNaN(t.getTime())) setPlayheadTime(t);
       }
       if (match.evidence && match.evidence.length > 0) {
-        // Open drawer for the first evidence event
-        setSelectedEvent({
+        // Open drawer + publish to rail for the first evidence event.
+        setSelectedEventAndPublish({
           id: match.evidence[0].event_id,
           node_key: match.evidence[0].event_id,
           label: match.evidence[0].label,
@@ -412,7 +445,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
               trailWindowMs={trailWindowMs}
               isPlaying={isPlaying}
               selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
-              onEventClick={setSelectedEvent}
+              onEventClick={setSelectedEventAndPublish}
               intersectionMatches={activeIntersectionMatches}
               deviceColorOf={deviceColorOf}
               isActive={isActive}
@@ -428,7 +461,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
                   trailWindowMs={trailWindowMs}
                   isPlaying={isPlaying}
                   selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
-                  onEventClick={setSelectedEvent}
+                  onEventClick={setSelectedEventAndPublish}
                   intersectionMatches={activeIntersectionMatches}
                   deviceColorOf={deviceColorOf}
                   isActive={isActive}
@@ -441,7 +474,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
                   playheadTime={playheadTime}
                   isPlaying={isPlaying}
                   selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
-                  onEventClick={setSelectedEvent}
+                  onEventClick={setSelectedEventAndPublish}
                 />
               </div>
             </>
@@ -453,7 +486,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
               playheadTime={playheadTime}
               isPlaying={isPlaying}
               selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
-              onEventClick={setSelectedEvent}
+              onEventClick={setSelectedEventAndPublish}
             />
           )}
         </div>
@@ -492,7 +525,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
           selectedReportKeys={selectedReportKeys}
           playheadTime={playheadTime}
           setPlayheadTime={setPlayheadTime}
-          onEventClick={setSelectedEvent}
+          onEventClick={setSelectedEventAndPublish}
           deviceColorOf={deviceColorOf}
         />
       </div>
@@ -502,7 +535,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         <EventDetailDrawer
           caseId={caseId}
           event={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
+          onClose={() => setSelectedEventAndPublish(null)}
         />
       )}
     </div>

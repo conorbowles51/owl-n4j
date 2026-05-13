@@ -9,10 +9,21 @@
  */
 
 import GenericAccordion from './GenericAccordion';
+import EventAccordion from './EventAccordion';
 
 const RENDERERS = {
-  // Filled in by B6b/c/d as we wire each tab. Until then every type
-  // falls through to the generic key/value renderer.
+  // Event-like selections from the Events Center (any of the artifact
+  // types it surfaces) all use one accordion that fetches detail and
+  // delegates to the same projection logic as EventDetailDrawer.
+  event:        EventAccordion,
+  message:      EventAccordion,
+  call:         EventAccordion,
+  email:        EventAccordion,
+  location:     EventAccordion,
+  cell_tower:   EventAccordion,
+  wifi:         EventAccordion,
+  device_event: EventAccordion,
+  app_session:  EventAccordion,
 };
 
 export function rendererFor(type) {
