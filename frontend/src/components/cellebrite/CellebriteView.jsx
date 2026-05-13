@@ -10,6 +10,7 @@ import CellebriteCommunicationView from './CellebriteCommunicationView';
 import CellebriteCommsCenter from './CellebriteCommsCenter';
 import CellebriteEventCenter from './CellebriteEventCenter';
 import CellebriteFilesExplorer from './CellebriteFilesExplorer';
+import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
@@ -107,6 +108,7 @@ export default function CellebriteView({ caseId }) {
   }
 
   return (
+    <CellebriteStatusProvider>
     <div className="flex flex-col h-full min-h-0">
       {/* Tab Bar */}
       <div className="flex items-center border-b border-light-200 bg-light-50 px-4 flex-shrink-0">
@@ -172,7 +174,13 @@ export default function CellebriteView({ caseId }) {
           </TabPane>
         )}
       </div>
+
+      {/* Persistent Reader-style status bar — every tab feeds counts via
+          useCellebriteStatus(); shell renders them in one place so the
+          investigator never has to ask "is this all of it?". */}
+      <CellebriteStatusBar />
     </div>
+    </CellebriteStatusProvider>
   );
 }
 

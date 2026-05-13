@@ -18,6 +18,7 @@ import { deviceColor } from './events/eventUtils';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildEventsContext } from '../../utils/chatContextSummary';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
+import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 
 /**
  * Cellebrite Location & Event Center — orchestrates map + timeline + playback
@@ -86,6 +87,22 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
     }
     return n;
   }, [filteredEvents]);
+
+  // Publish counts to the persistent status bar. The "geolocated" hint
+  // makes it obvious how much of the displayed pool is map-renderable
+  // without forcing the user to read the page header.
+  useCellebriteStatus({
+    isActive,
+    total: events.length,
+    displayed: filteredEvents.length,
+    selected: selectedEvent ? 1 : 0,
+    label: 'events',
+    hint: loading
+      ? (loadingStage || 'Loading…')
+      : (events.length > 0
+          ? `${geolocatedCount.toLocaleString()} geolocated`
+          : null),
+  });
 
   // View-aware AI context
   const rootRef = useRef(null);

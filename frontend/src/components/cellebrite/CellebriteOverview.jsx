@@ -11,6 +11,7 @@ import OverviewLocationsView from './overview/OverviewLocationsView';
 import OverviewEmailsView from './overview/OverviewEmailsView';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
+import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 
 /**
  * Device cards dashboard showing all ingested phone reports.
@@ -24,8 +25,18 @@ import { usePhoneReports } from '../../context/PhoneReportsContext';
  *   - "Delete phone report" trash → remove the PhoneReport and every
  *     node tagged with its key from the case (with confirmation).
  */
-export default function CellebriteOverview({ caseId, reports, onReportsChanged }) {
+export default function CellebriteOverview({ caseId, reports, onReportsChanged, isActive = true }) {
   const phoneCtx = usePhoneReports();
+
+  // Status bar — Overview is the simplest case: one row per device, no
+  // filtering, no selection. drillDown counts as a focus event.
+  useCellebriteStatus({
+    isActive,
+    total: (reports || []).length,
+    displayed: (reports || []).length,
+    selected: 0,
+    label: 'devices',
+  });
 
   // When set, we render the matching detail view instead of the cards grid.
   // Shape: { category: "contacts" | "calls" | ..., report: <reportObj> }

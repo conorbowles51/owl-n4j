@@ -15,6 +15,7 @@ import { useChatContext } from '../../contexts/ChatContext';
 import { buildCommsContext } from '../../utils/chatContextSummary';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
+import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -24,7 +25,7 @@ import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
  * for backwards compatibility with callers that pass an explicit list,
  * but when the context is available it is the source of truth.
  */
-export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [] }) {
+export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [], isActive = true }) {
   const phoneCtx = usePhoneReports();
   const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
   const fallbackSelection = useMemo(
@@ -313,6 +314,23 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     if (searchQuery.trim()) allHighlights.add(searchQuery.trim().toLowerCase());
     return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
   }, [dedupedThreads, searchQuery, parsedQuery, reports, deepSearch.threadIds]);
+
+  // Publish counts to the persistent status bar. `total` is the server's
+  // own count (or the deduped pool when smaller), `displayed` is what
+  // survives the active search / filters, `selected` is 1 when a thread
+  // is open so the bar mirrors the user's current focus.
+  useCellebriteStatus({
+    isActive,
+    total: Math.max(threadsTotal, dedupedThreads.length),
+    displayed: filteredThreads.length,
+    selected: selectedThread ? 1 : 0,
+    label: 'threads',
+    hint: threadsLoading
+      ? (threadsStage || 'Loading…')
+      : (threadsTotal > dedupedThreads.length
+          ? `Server reports ${threadsTotal.toLocaleString()} total — ${dedupedThreads.length.toLocaleString()} after dedupe`
+          : null),
+  });
 
   // When the user types a deep-search term, automatically open the first
   // matching thread so they can see the actual message immediately.
