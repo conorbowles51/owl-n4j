@@ -10,6 +10,7 @@
 
 import GenericAccordion from './GenericAccordion';
 import EventAccordion from './EventAccordion';
+import LocationTileAccordion from './LocationTileAccordion';
 
 const RENDERERS = {
   // Event-like selections from the Events Center (any of the artifact
@@ -24,6 +25,10 @@ const RENDERERS = {
   wifi:         EventAccordion,
   device_event: EventAccordion,
   app_session:  EventAccordion,
+  // Aggregated location tile from the Locations tab — fetches the
+  // rows inside the bucket and lets the user drill into any one of
+  // them (clicking re-publishes as type 'location').
+  location_tile: LocationTileAccordion,
 };
 
 export function rendererFor(type) {
@@ -38,6 +43,7 @@ const TYPE_LABELS = {
   call: 'Call',
   email: 'Email',
   location: 'Location',
+  location_tile: 'Location tile',
   cell_tower: 'Cell tower',
   contact: 'Contact',
   app_session: 'App session',
