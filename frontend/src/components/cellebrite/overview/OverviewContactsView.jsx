@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { User, Smartphone, Phone, MessageSquare, Mail } from 'lucide-react';
 import { cellebriteOverviewAPI } from '../../../services/api';
 import OverviewDetailView from './OverviewDetailView';
 import ContactDetailDrawer from './ContactDetailDrawer';
+import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 
 const COLUMNS = [
   {
@@ -91,6 +92,26 @@ const COLUMNS = [
 export default function OverviewContactsView({ caseId, report, onBack }) {
   const [openContact, setOpenContact] = useState(null);
 
+  // Bridge contact selection into the universal rail. Drawer + rail
+  // both render during the transition; once the rail is proven solid,
+  // the slide-over can be removed in a follow-up.
+  const { selectEntity, clearSelection } = useCellebriteSelection();
+  const handleContactSelect = useCallback((row) => {
+    setOpenContact(row);
+    if (row) {
+      selectEntity({
+        type: 'contact',
+        id: row.key,
+        caseId,
+        reportKey: report?.report_key,
+        payload: row,
+        source: 'overview',
+      });
+    } else {
+      clearSelection();
+    }
+  }, [caseId, report?.report_key, selectEntity, clearSelection]);
+
   const fetchPage = (cid, rk, opts) => cellebriteOverviewAPI.getContacts(cid, rk, opts);
 
   return (
@@ -105,7 +126,7 @@ export default function OverviewContactsView({ caseId, report, onBack }) {
         defaultSort={{ key: 'interactions', dir: 'desc' }}
         fetchPage={fetchPage}
         caseId={caseId}
-        onRowClick={(row) => setOpenContact(row)}
+        onRowClick={handleContactSelect}
       />
       {openContact && (
         <ContactDetailDrawer
@@ -113,7 +134,7 @@ export default function OverviewContactsView({ caseId, report, onBack }) {
           reportKey={report?.report_key}
           contactKey={openContact.key}
           contactPreview={openContact}
-          onClose={() => setOpenContact(null)}
+          onClose={() => handleContactSelect(null)}
         />
       )}
     </>
