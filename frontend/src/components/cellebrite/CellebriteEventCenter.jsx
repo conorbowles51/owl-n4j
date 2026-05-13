@@ -38,8 +38,17 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
 
   // --- Filter state ---
-  const [activeEventTypes, setActiveEventTypes] = useState(new Set());
-  const [onlyGeolocated, setOnlyGeolocated] = useState(false);
+  // Restore from localStorage on first mount. Keyed per-case so two
+  // cases open in different tabs don't share view filters. Wrapped in
+  // try/catch because localStorage can throw (private mode, quota).
+  const persistKey = caseId ? `cellebrite.events.${caseId}` : null;
+  const restored = useMemo(() => readPersistedView(persistKey), [persistKey]);
+  const [activeEventTypes, setActiveEventTypes] = useState(
+    () => new Set(restored?.activeEventTypes || [])
+  );
+  const [onlyGeolocated, setOnlyGeolocated] = useState(
+    () => Boolean(restored?.onlyGeolocated)
+  );
   // Scrubber-driven coarse window (Date | null). The string forms feed
   // the existing server-side filter and the IntersectionPanel.
   const [windowStart, setWindowStart] = useState(null);
@@ -59,7 +68,9 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   // --- Playback ---
   const [playheadTime, setPlayheadTime] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackSpeed, setPlaybackSpeed] = useState(60); // 60x = 1h real per sec wall
+  const [playbackSpeed, setPlaybackSpeed] = useState(
+    () => (typeof restored?.playbackSpeed === 'number' ? restored.playbackSpeed : 60)
+  ); // 60x = 1h real per sec wall
   const trailWindowMs = 30 * 60 * 1000; // 30 min
 
   // --- Selection / drawer / intersections ---
@@ -68,7 +79,9 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   const [intersectionCollapsed, setIntersectionCollapsed] = useState(false);
 
   // --- Phase 7: view mode (map | split | table) ---
-  const [viewMode, setViewMode] = useState('map');
+  const [viewMode, setViewMode] = useState(
+    () => (['map', 'split', 'table'].includes(restored?.viewMode) ? restored.viewMode : 'map')
+  );
 
   // Pure in-memory search filter — synchronous per keystroke. The
   // server-side fetch is unaffected (it's gated on selectedReportKeys,
@@ -87,6 +100,22 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
     }
     return n;
   }, [filteredEvents]);
+
+  // Persist view filters per case so a refresh / tab-revisit lands on
+  // the same selections. Excludes playheadTime + windowStart/windowEnd
+  // intentionally — those represent the current investigation moment,
+  // not a view preference, and are confusing to restore from a stale
+  // session. localStorage writes are wrapped in try/catch (quota /
+  // private mode).
+  useEffect(() => {
+    if (!persistKey) return;
+    writePersistedView(persistKey, {
+      activeEventTypes: Array.from(activeEventTypes),
+      onlyGeolocated,
+      viewMode,
+      playbackSpeed,
+    });
+  }, [persistKey, activeEventTypes, onlyGeolocated, viewMode, playbackSpeed]);
 
   // Publish counts to the persistent status bar. The "geolocated" hint
   // makes it obvious how much of the displayed pool is map-renderable
@@ -503,4 +532,33 @@ function toISODate(d) {
   if (!(d instanceof Date) || isNaN(d.getTime())) return '';
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Read the persisted view-state for this case, or null when missing /
+ * malformed. Bumped a `v` field so we can evolve the shape without
+ * blowing up on stale storage entries — unknown versions return null
+ * and the user gets defaults.
+ */
+function readPersistedView(key) {
+  if (!key || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== 1) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedView(key, data) {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ v: 1, ...data }));
+  } catch {
+    // Quota / private mode / disabled storage — fail silently; the
+    // view still works for the current session, just won't restore.
+  }
 }

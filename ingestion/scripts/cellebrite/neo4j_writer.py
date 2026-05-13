@@ -150,7 +150,7 @@ class CellebriteNeo4jWriter:
 
     def _base_props(self, model: ParsedModel, key: str, name: str) -> Dict:
         """Build base properties common to all Cellebrite nodes."""
-        return {
+        props = {
             "id": str(uuid.uuid4()),
             "key": key,
             "name": name,
@@ -160,6 +160,13 @@ class CellebriteNeo4jWriter:
             "source_type": "cellebrite",
             "deleted_state": model.deleted_state,
         }
+        # Cellebrite tags every model with a parser-supplied confidence
+        # ("High" / "Medium" / "Low" / numeric). Carry it through so the
+        # UI can dim or annotate low-confidence rows. Drop blank values
+        # so older nodes that didn't capture this still match cleanly.
+        if model.decoding_confidence:
+            props["decoding_confidence"] = model.decoding_confidence
+        return props
 
     def _attachment_props(self, model: ParsedModel) -> Dict:
         """Build attachment_file_ids / attachment_count for a model, if any."""
@@ -731,9 +738,14 @@ class CellebriteNeo4jWriter:
         timestamp = model.get_field("TimeStamp")
         loc_type = model.get_field("Type")
 
-        # Get coordinates from nested Position/Coordinate
+        # Get coordinates from nested Position/Coordinate. Cellebrite
+        # also embeds accuracy ("PrecisionInMeters" / "Precision" /
+        # "HorizontalAccuracy") and a free-form address inside the same
+        # Position model — pull them through so the map renderer can
+        # show a halo radius and "place" search has a string to match.
         lat = None
         lon = None
+        accuracy_meters = None
         position = model.model_fields.get("Position")
         if position:
             lat_str = position.get_field("Latitude")
@@ -743,9 +755,65 @@ class CellebriteNeo4jWriter:
                 lon = float(lon_str) if lon_str else None
             except (ValueError, TypeError):
                 pass
+            # Accuracy field name varies by extraction format; try the
+            # common ones in order. Numeric coercion is best-effort.
+            for fld in ("PrecisionInMeters", "Precision", "HorizontalAccuracy"):
+                v = position.get_field(fld)
+                if v is None:
+                    continue
+                try:
+                    accuracy_meters = float(v)
+                    break
+                except (TypeError, ValueError):
+                    continue
 
         if lat is None or lon is None:
             return  # Skip locations without coordinates
+
+        # Build a free-form address from PositionAddress sub-fields if
+        # present. Order matches typical postal display so the result is
+        # human-readable; we keep individual components alongside in case
+        # search ever wants to filter by city/country specifically.
+        address_str = None
+        address_parts: Dict[str, Optional[str]] = {}
+        addr_model = model.model_fields.get("PositionAddress")
+        if addr_model:
+            for fld, key in (
+                ("Street", "address_street"),
+                ("HouseNumber", "address_house_number"),
+                ("City", "address_city"),
+                ("State", "address_state"),
+                ("PostalCode", "address_postal_code"),
+                ("Country", "address_country"),
+            ):
+                v = addr_model.get_field(fld)
+                if v:
+                    address_parts[key] = v
+            ordered = [
+                address_parts.get("address_house_number"),
+                address_parts.get("address_street"),
+                address_parts.get("address_city"),
+                address_parts.get("address_state"),
+                address_parts.get("address_postal_code"),
+                address_parts.get("address_country"),
+            ]
+            joined = ", ".join(p for p in ordered if p)
+            if joined:
+                address_str = joined
+
+        # Confidence: Cellebrite uses both a top-level "Confidence" field
+        # (carved locations) and the model-level decoding_confidence
+        # already captured in _base_props. We surface the field-level
+        # one separately because it's a numeric score for carved data
+        # rather than a string label.
+        confidence_score = None
+        conf_raw = model.get_field("Confidence")
+        if conf_raw is not None:
+            try:
+                confidence_score = float(conf_raw)
+            except (TypeError, ValueError):
+                # Sometimes "High"/"Medium"/"Low"; keep as string.
+                confidence_score = conf_raw
 
         loc_key = f"loc-{model.model_id[:12]}"
 
@@ -756,6 +824,13 @@ class CellebriteNeo4jWriter:
             "location_type": loc_type,
             "source_app": source,
         })
+        if accuracy_meters is not None:
+            props["accuracy_meters"] = accuracy_meters
+        if confidence_score is not None:
+            props["confidence_score"] = confidence_score
+        if address_str:
+            props["address"] = address_str
+            props.update({k: v for k, v in address_parts.items() if v})
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
@@ -1033,11 +1108,26 @@ class CellebriteNeo4jWriter:
                     pass
 
         radius = None
-        radius_raw = model.get_field("Radius") or model.get_field("Precision")
+        radius_raw = (
+            model.get_field("Radius")
+            or model.get_field("Precision")
+            or model.get_field("PrecisionInMeters")
+            or model.get_field("HorizontalAccuracy")
+        )
         try:
             radius = float(radius_raw) if radius_raw else None
         except (TypeError, ValueError):
             pass
+
+        # Confidence — same dual-shape as Location (carved cell-towers
+        # often carry a numeric Confidence; fall back to string).
+        confidence_score = None
+        conf_raw = model.get_field("Confidence")
+        if conf_raw is not None:
+            try:
+                confidence_score = float(conf_raw)
+            except (TypeError, ValueError):
+                confidence_score = conf_raw
 
         if not cell_id and lat is None and lon is None:
             return  # Not enough data to be useful
@@ -1054,7 +1144,12 @@ class CellebriteNeo4jWriter:
             "rssi": rssi,
             "latitude": lat,
             "longitude": lon,
+            # Keep the historical `radius` name AND surface the field
+            # under the same `accuracy_meters` key the Location node uses
+            # so the map renderer can apply one consistent halo logic.
             "radius": radius,
+            "accuracy_meters": radius,
+            "confidence_score": confidence_score,
             "source_app": source,
         })
         if timestamp:

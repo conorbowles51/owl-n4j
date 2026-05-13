@@ -8437,6 +8437,18 @@ def _project_event(node, event_type: str) -> Optional[dict]:
         "thread_id": None,
         "is_geolocated": bool(is_geo),
         "location_source": loc_source,
+        # Per-point precision in metres if Cellebrite carried it (or
+        # CellTower's radius). Frontend uses this to render a halo so
+        # the user can see uncertainty without opening the detail rail.
+        "accuracy_meters": n.get("accuracy_meters"),
+        # Either a numeric carving confidence or a string label
+        # ("High"/"Medium"/"Low"). Pass through unchanged so the UI can
+        # decide rendering — we don't fabricate scores we didn't see.
+        "confidence_score": n.get("confidence_score"),
+        # Free-form address composed at ingestion from PositionAddress
+        # sub-fields. Empty for points without address metadata; drives
+        # the future `place:` search operator.
+        "address": n.get("address"),
         "attachment_count": int(n.get("attachment_count") or 0),
         "state": n.get("state"),
         "app_name": n.get("app_name"),
