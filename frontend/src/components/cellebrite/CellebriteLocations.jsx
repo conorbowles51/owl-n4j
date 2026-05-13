@@ -271,7 +271,7 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
           <CellebriteSearchInput
             value={searchQuery}
             onChange={setSearchQuery}
-            placeholder="Search locations — try app:GoogleMaps after:2024-01-01"
+            placeholder="Search locations — try place:london or near:51.5,-0.1,5km"
             matchCount={mapEvents.length}
             totalCount={locations.length}
             itemNoun="location"

@@ -13,16 +13,21 @@
  *   highlights, and a uniform feature set across every Cellebrite tab.
  *
  * Operators (case-insensitive prefix; combine freely):
- *   type:call           — event_type / thread_type / human label
- *   from:John           — sender / first-non-owner participant name+identifier
- *   to:+123             — counterpart / recipient
- *   app:WhatsApp        — source_app
- *   phone:P1            — phone short label or device_model substring
- *   before:2023-01-15   — ISO date upper bound on item.timestamp / last_activity
- *   after:2022-12-01    — ISO date lower bound
- *   "exact text"        — quoted exact-substring match
- *   -word  /  not:word  — exclude matches containing this term
- *   anything else       — free-text substring match across the haystack
+ *   type:call               — event_type / thread_type / human label
+ *   from:John               — sender / first-non-owner participant name+identifier
+ *   to:+123                 — counterpart / recipient
+ *   app:WhatsApp            — source_app
+ *   phone:P1                — phone short label or device_model substring
+ *   before:2023-01-15       — ISO date upper bound on item.timestamp / last_activity
+ *   after:2022-12-01        — ISO date lower bound
+ *   place:london            — substring match on reverse-geocoded fields
+ *                             (address / place_name / country / admin levels)
+ *                             Items without geocode info fail closed — the
+ *                             user asked a place question, get place answers.
+ *   near:51.5,-0.1,5km      — within radius of lat,lng. Unit km|m, default km.
+ *   "exact text"            — quoted exact-substring match
+ *   -word  /  not:word      — exclude matches containing this term
+ *   anything else           — free-text substring match across the haystack
  *
  * The matcher is purely synchronous and deterministic. It returns
  * `{ matches, highlights }` so a row renderer can wrap matched
@@ -35,6 +40,12 @@
 
 const KNOWN_OPERATORS = new Set([
   'type', 'from', 'to', 'app', 'phone', 'before', 'after',
+  // Geo operators (G5). `place:` does substring matching across the
+  // reverse-geocoded fields (address / place_name / country / admin
+  // levels) added by G4. `near:` takes "lat,lng,radius" with optional
+  // unit suffix (km|m, default km) and filters items by haversine
+  // distance from the supplied centre.
+  'place', 'near',
 ]);
 
 /**
@@ -58,6 +69,8 @@ export function parseQuery(query) {
       phone: null,
       before: null,   // Date.getTime() once parsed
       after: null,    // Date.getTime() once parsed
+      place: null,    // string; substring match on geocoded fields
+      near: null,     // { lat, lng, radiusMeters } once parsed
     },
   };
   if (!query || typeof query !== 'string') return result;
@@ -93,6 +106,13 @@ export function parseQuery(query) {
         if (op === 'before' || op === 'after') {
           const ts = parseDate(val);
           if (ts != null) result.operators[op] = ts;
+        } else if (op === 'near') {
+          // "lat,lng,radius[unit]" — parse once, store the structured
+          // form so the matcher doesn't re-parse on every row. Bad
+          // input drops silently (no operator applied) rather than
+          // erroring; same posture as the date operators.
+          const parsed = parseNearSpec(val);
+          if (parsed) result.operators.near = parsed;
         } else {
           // Multiple of the same operator — keep them as an array so
           // the matcher can do (matches A or B). Edge case; rare.
@@ -146,6 +166,53 @@ function stripQuotes(s) {
   return s;
 }
 
+/**
+ * Parse a `near:` operator value of the form "lat,lng,radius[unit]".
+ *   - Coordinates are decimal degrees (signed).
+ *   - Radius is a positive number; unit defaults to km, "m" also accepted.
+ *   - Examples: "51.5,-0.1,5km", "40.7128,-74.006,500m", "37.77,-122.42,2"
+ *
+ * Returns { lat, lng, radiusMeters } or null on any parse failure.
+ * Bad input drops silently in parseQuery — same posture as bad dates.
+ */
+function parseNearSpec(raw) {
+  if (!raw) return null;
+  const parts = String(raw).split(',').map((s) => s.trim());
+  if (parts.length < 3) return null;
+  const lat = parseFloat(parts[0]);
+  const lng = parseFloat(parts[1]);
+  if (!isFinite(lat) || !isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  // Pull a numeric prefix off the radius token + optional unit suffix.
+  // Anything else than km/m falls back to km — catches "5KM" / "5kms".
+  const radiusToken = parts[2].toLowerCase();
+  const m = radiusToken.match(/^([\d.]+)\s*(km|m|meters|metre|meter)?$/);
+  if (!m) return null;
+  const value = parseFloat(m[1]);
+  if (!isFinite(value) || value <= 0) return null;
+  const unit = (m[2] || 'km').toLowerCase();
+  const radiusMeters = unit === 'm' || unit.startsWith('met') ? value : value * 1000;
+  return { lat, lng, radiusMeters };
+}
+
+/**
+ * Haversine distance in metres between two lat/lng pairs. Used by
+ * the `near:` operator. Self-contained so the search engine doesn't
+ * pull a math library for one-off use.
+ */
+function haversineMeters(lat1, lng1, lat2, lng2) {
+  if (!isFinite(lat1) || !isFinite(lng1) || !isFinite(lat2) || !isFinite(lng2)) {
+    return Infinity;
+  }
+  const R = 6371008.8; // mean Earth radius in metres
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 function parseDate(s) {
   // Accept YYYY-MM-DD, YYYY/MM/DD, YYYY-MM-DD HH:MM, full ISO.
   const cleaned = s.trim().replace(/\//g, '-');
@@ -173,9 +240,9 @@ function partyToText(p) {
  */
 export function buildHaystack(item, kind, reports = []) {
   if (!item) {
-    return { full: '', fields: { type: '', from: '', to: '', app: '', phone: '' } };
+    return { full: '', fields: { type: '', from: '', to: '', app: '', phone: '', place: '' } };
   }
-  const fields = { type: '', from: '', to: '', app: '', phone: '' };
+  const fields = { type: '', from: '', to: '', app: '', phone: '', place: '' };
   const parts = [];
 
   const phoneIdentity = (() => {
@@ -231,6 +298,24 @@ export function buildHaystack(item, kind, reports = []) {
     }
     if (item.location_formatted) parts.push(item.location_formatted.toLowerCase());
   }
+
+  // Geocoded place fields (G4) — populated whichever kind we are.
+  // Combined into one searchable blob the `place:` operator scopes
+  // against, while also feeding the free-text haystack so an
+  // unscoped "london" still hits when the address has it.
+  const placeBits = [
+    item.address,
+    item.place_name,
+    item.country,
+    item.country_code,
+    item.admin1,
+    item.admin2,
+  ].filter(Boolean).map((v) => String(v).toLowerCase());
+  if (placeBits.length) {
+    fields.place = placeBits.join(' ');
+    parts.push(fields.place);
+  }
+
   return { full: parts.filter(Boolean).join(' '), fields };
 }
 
@@ -272,6 +357,26 @@ export function matchItem(item, parsed, kind, reports = []) {
   if (ops.app && !valueMatches(ops.app, fields.app)) return NO_MATCH;
   if (ops.phone && !valueMatches(ops.phone, fields.phone)) return NO_MATCH;
 
+  // place: scopes free-text matching to the reverse-geocoded fields
+  // only. Items that have no geocode info (fields.place is '') fail
+  // closed — investigators get exactly what was matched on, no
+  // surprise hits from body text that happens to contain the term.
+  if (ops.place) {
+    if (!fields.place) return NO_MATCH;
+    if (!valueMatches(ops.place, fields.place)) return NO_MATCH;
+  }
+
+  // near: filters by haversine distance from a centre point. Items
+  // without coordinates fail closed — same posture as place:; the
+  // user asked a geo question, the rows we keep have geo answers.
+  if (ops.near) {
+    const lat = item.latitude;
+    const lng = item.longitude;
+    if (lat == null || lng == null) return NO_MATCH;
+    const d = haversineMeters(ops.near.lat, ops.near.lng, lat, lng);
+    if (d > ops.near.radiusMeters) return NO_MATCH;
+  }
+
   if (ops.before != null || ops.after != null) {
     const t = timestampOf(item, kind);
     if (t == null) return NO_MATCH;
@@ -293,12 +398,14 @@ export function matchItem(item, parsed, kind, reports = []) {
   // Operator values are also worth highlighting in body text where they
   // happen to appear (e.g. typing `app:WhatsApp` should still highlight
   // "WhatsApp" in the displayed source_app text).
-  for (const k of ['type', 'from', 'to', 'app', 'phone']) {
+  for (const k of ['type', 'from', 'to', 'app', 'phone', 'place']) {
     const v = ops[k];
     if (!v) continue;
     if (Array.isArray(v)) v.forEach((vi) => vi && highlights.push(vi));
     else highlights.push(v);
   }
+  // near: doesn't get highlighted — there's nothing useful to mark
+  // in a text body for a coordinate match.
   return { matches: true, highlights: dedupe(highlights) };
 }
 

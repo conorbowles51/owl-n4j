@@ -7512,8 +7512,20 @@ class Neo4jService:
         end_date: Optional[str],
         source_apps: Optional[List[str]],
         prefix: str = "n",
+        place: Optional[str] = None,
+        near: Optional[Tuple[float, float, float]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
-        """Build a shared WHERE fragment for event queries."""
+        """
+        Build a shared WHERE fragment for event queries.
+
+        place: substring (case-insensitive) matched against the
+               reverse-geocoded fields stamped by G4. Items without
+               geocode info fail closed — the user asked a place
+               question, the rows we keep have place answers.
+        near:  (lat, lng, radius_meters). Filters by haversine
+               distance from the centre, computed in Cypher via
+               point.distance() (Neo4j 5+).
+        """
         parts = [f"{prefix}.case_id = $case_id"]
         params: Dict[str, Any] = {}
         if report_keys:
@@ -7534,6 +7546,44 @@ class Neo4jService:
         if source_apps:
             parts.append(f"{prefix}.source_app IN $source_apps")
             params["source_apps"] = list(source_apps)
+        if place:
+            # OR across the geocoded fields so a single substring
+            # matches whichever level of the address pyramid carries
+            # it. toLower keeps the comparison case-insensitive.
+            place_lower = str(place).strip().lower()
+            if place_lower:
+                parts.append(
+                    "("
+                    f"toLower(coalesce({prefix}.address, '')) CONTAINS $place_q"
+                    f" OR toLower(coalesce({prefix}.place_name, '')) CONTAINS $place_q"
+                    f" OR toLower(coalesce({prefix}.country, '')) CONTAINS $place_q"
+                    f" OR toLower(coalesce({prefix}.country_code, '')) CONTAINS $place_q"
+                    f" OR toLower(coalesce({prefix}.admin1, '')) CONTAINS $place_q"
+                    f" OR toLower(coalesce({prefix}.admin2, '')) CONTAINS $place_q"
+                    ")"
+                )
+                params["place_q"] = place_lower
+        if near:
+            lat, lng, radius_m = near
+            try:
+                lat_f = float(lat); lng_f = float(lng); rad_f = float(radius_m)
+            except (TypeError, ValueError):
+                lat_f = lng_f = rad_f = None
+            if lat_f is not None and rad_f and rad_f > 0:
+                # point.distance() works on Neo4j 5; the values are
+                # WGS84 points so distance is metres without further
+                # conversion. The not-null guard avoids an IS NOT NULL
+                # comparison error on points that were never set.
+                parts.append(
+                    f"{prefix}.latitude IS NOT NULL AND {prefix}.longitude IS NOT NULL "
+                    f"AND point.distance("
+                    f"point({{latitude: {prefix}.latitude, longitude: {prefix}.longitude}}), "
+                    "point({latitude: $near_lat, longitude: $near_lng})"
+                    ") <= $near_radius_m"
+                )
+                params["near_lat"] = lat_f
+                params["near_lng"] = lng_f
+                params["near_radius_m"] = rad_f
         return " AND ".join(parts), params
 
     def get_cellebrite_events(
@@ -7547,6 +7597,8 @@ class Neo4jService:
         source_apps: Optional[List[str]] = None,
         limit: int = 5000,
         offset: int = 0,
+        place: Optional[str] = None,
+        near: Optional[Tuple[float, float, float]] = None,
     ) -> dict:
         """
         Unified event feed for the Location & Event Center.
@@ -7580,7 +7632,10 @@ class Neo4jService:
                         row["event_type"] = event_type
                         events.append(row)
 
-            where, p = self._build_event_filters(report_keys, start_date, end_date, source_apps)
+            where, p = self._build_event_filters(
+                report_keys, start_date, end_date, source_apps,
+                place=place, near=near,
+            )
             base_params = {"case_id": case_id, "per_type_cap": per_type_cap, **p}
 
             # ORDER BY trick: for types where timestamp may be NULL, we want

@@ -8,7 +8,7 @@ Analytics endpoints for the Cellebrite Multi-Phone View:
 - Communication network analysis
 """
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
@@ -511,11 +511,29 @@ async def get_events(
     only_geolocated: bool = Query(False),
     limit: int = Query(5000, ge=1, le=500000),
     offset: int = Query(0, ge=0),
+    place: Optional[str] = Query(
+        None,
+        description=(
+            "Substring (case-insensitive) matched against the reverse-"
+            "geocoded fields stamped at ingestion (address / place_name / "
+            "country / country_code / admin1 / admin2). Items without "
+            "geocode metadata are excluded — narrowed to geo-known rows."
+        ),
+    ),
+    near: Optional[str] = Query(
+        None,
+        description=(
+            "Geo radius filter as 'lat,lng,radius[unit]'. Unit is km|m, "
+            "default km. Example: 51.5074,-0.1278,5km. Items without "
+            "coordinates are excluded."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
     """Unified event feed for the Location & Event Center."""
     _require_case_access(case_id, current_user, db)
+    near_tuple = _parse_near_param(near)
     return neo4j_service.get_cellebrite_events(
         case_id=case_id,
         report_keys=_csv_param(report_keys),
@@ -526,7 +544,43 @@ async def get_events(
         only_geolocated=only_geolocated,
         limit=limit,
         offset=offset,
+        place=place or None,
+        near=near_tuple,
     )
+
+
+def _parse_near_param(raw: Optional[str]) -> Optional[Tuple[float, float, float]]:
+    """
+    Parse a `near` query param of the form 'lat,lng,radius[unit]'.
+    Returns (lat, lng, radius_meters) or None on any parse failure —
+    bad input drops the filter rather than 400ing, mirroring the
+    client-side parser's posture so UI typos degrade quietly.
+    """
+    if not raw:
+        return None
+    parts = [s.strip() for s in str(raw).split(",")]
+    if len(parts) < 3:
+        return None
+    try:
+        lat = float(parts[0])
+        lng = float(parts[1])
+    except (TypeError, ValueError):
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+        return None
+    import re as _re
+    m = _re.match(r"^([\d.]+)\s*(km|m|meters|metre|meter)?$", parts[2].lower())
+    if not m:
+        return None
+    try:
+        value = float(m.group(1))
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    unit = (m.group(2) or "km").lower()
+    radius_m = value if unit == "m" or unit.startswith("met") else value * 1000.0
+    return (lat, lng, radius_m)
 
 
 @router.get("/events/types")

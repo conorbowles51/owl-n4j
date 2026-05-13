@@ -131,6 +131,14 @@ export default function CellebriteSearchInput({
             <li><code className="bg-light-100 px-1 rounded">app:WhatsApp</code> — source app</li>
             <li><code className="bg-light-100 px-1 rounded">phone:P1</code> — by phone short label or model</li>
             <li><code className="bg-light-100 px-1 rounded">before:2023-01-15</code> / <code className="bg-light-100 px-1 rounded">after:2022-12-01</code></li>
+            <li>
+              <code className="bg-light-100 px-1 rounded">place:london</code> — by reverse-geocoded address / city / country
+              <span className="text-[10px] text-light-500"> (only on rows the geocoder enriched)</span>
+            </li>
+            <li>
+              <code className="bg-light-100 px-1 rounded">near:51.5,-0.1,5km</code> — within radius of a point
+              <span className="text-[10px] text-light-500"> (km|m, default km)</span>
+            </li>
             <li><code className="bg-light-100 px-1 rounded">"exact phrase"</code> — substring match</li>
             <li><code className="bg-light-100 px-1 rounded">-foo</code> — exclude rows containing "foo"</li>
           </ul>
