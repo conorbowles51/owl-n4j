@@ -24,6 +24,12 @@ export default function CommsThreadView({
   // with it and (b) auto-scroll to the first hit.
   externalSearchQuery = '',
   firstMatch = null,
+  // Optional rail-aware item-select handler. When set, every bubble /
+  // call row / email card publishes the clicked item to the universal
+  // selection rail. selectedItemId drives the per-row "selected" ring
+  // so the user can see which item the rail is currently showing.
+  onItemSelect = null,
+  selectedItemId = null,
 }) {
   const phoneCtx = usePhoneReports();
   const showPhoneChip = !!phoneCtx?.hasMultiple && !!selectedThread?.report_key;
@@ -303,17 +309,28 @@ export default function CommsThreadView({
             'data-message-id': item.id || '',
             className: 'transition-shadow rounded',
           };
+          const isSelected = selectedItemId != null && (item.id === selectedItemId);
           if (item.type === 'call') {
             return (
               <div {...wrapperProps}>
-                <CommsCallRow item={item} caseId={caseId} />
+                <CommsCallRow
+                  item={item}
+                  caseId={caseId}
+                  onSelect={onItemSelect}
+                  selected={isSelected}
+                />
               </div>
             );
           }
           if (item.type === 'email') {
             return (
               <div {...wrapperProps}>
-                <CommsEmailCard item={item} caseId={caseId} />
+                <CommsEmailCard
+                  item={item}
+                  caseId={caseId}
+                  onSelect={onItemSelect}
+                  selected={isSelected}
+                />
               </div>
             );
           }
@@ -327,6 +344,8 @@ export default function CommsThreadView({
                 isFirstInRun={row.isFirstInRun}
                 highlights={messageHighlights}
                 caseId={caseId}
+                onSelect={onItemSelect}
+                selected={isSelected}
               />
             </div>
           );

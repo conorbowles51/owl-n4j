@@ -18,7 +18,17 @@ function iconForCall(direction, callType) {
 /**
  * Compact row for a single call. Voicemail audio (if attached) renders inline.
  */
-export default function CommsCallRow({ item, reportKey, showPhoneChip = false, highlights = [], caseId = null }) {
+export default function CommsCallRow({
+  item,
+  reportKey,
+  showPhoneChip = false,
+  highlights = [],
+  caseId = null,
+  // Optional rail-aware select handler. When set, the row becomes
+  // clickable and publishes the call to the universal rail.
+  onSelect = null,
+  selected = false,
+}) {
   const hasHighlights = highlights && highlights.length > 0;
   const Icon = iconForCall(item.direction, item.call_type);
   const isOwnerFrom = !!(item.sender && item.sender.is_owner);
@@ -31,8 +41,31 @@ export default function CommsCallRow({ item, reportKey, showPhoneChip = false, h
   const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
   const nodeKey = item.id || item.key;
 
+  const interactive = typeof onSelect === 'function';
+  const rowProps = interactive
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: (e) => {
+          if (e.defaultPrevented) return;
+          onSelect(item);
+        },
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(item);
+          }
+        },
+        className: `flex items-center gap-3 px-4 py-2 border-b border-light-100 cursor-pointer ${
+          selected ? 'bg-emerald-50/60 ring-1 ring-emerald-300/60' : 'hover:bg-light-50'
+        }`,
+      }
+    : {
+        className: 'flex items-center gap-3 px-4 py-2 border-b border-light-100 hover:bg-light-50',
+      };
+
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b border-light-100 hover:bg-light-50">
+    <div {...rowProps}>
       <Icon className={`w-4 h-4 flex-shrink-0 ${color}`} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-sm text-light-900">

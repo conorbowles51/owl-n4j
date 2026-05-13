@@ -25,6 +25,10 @@ export default function CommsCrossTypeTimeline({
   startDate,
   endDate,
   onJumpToThread,
+  // Optional rail-aware select handler. Fires alongside onJumpToThread
+  // so a single row click both navigates to the parent thread (if the
+  // caller wants that) and publishes the item to the universal rail.
+  onItemSelect = null,
 }) {
   const [expanded, setExpanded] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -215,14 +219,27 @@ export default function CommsCrossTypeTimeline({
           ) : (
             <div style={{ height: totalHeight, position: 'relative' }}>
               <div style={{ height: topPad }} />
-              {visibleItems.map((item, i) => (
-                <TimelineRow
-                  key={`${item.id || 'x'}-${startIdx + i}`}
-                  item={item}
-                  showPhoneChip={hasMultiplePhones}
-                  onClick={onJumpToThread ? () => onJumpToThread(item) : null}
-                />
-              ))}
+              {visibleItems.map((item, i) => {
+                // Compose row click: jump-to-thread (if caller provided it)
+                // AND publish to the rail (if a rail-aware caller is wired).
+                // Using a single click handler keeps the row affordance
+                // unambiguous and avoids two rapid state updates fighting
+                // each other when both are wired.
+                const handleRowClick = (onJumpToThread || onItemSelect)
+                  ? () => {
+                      if (onJumpToThread) onJumpToThread(item);
+                      if (onItemSelect) onItemSelect(item);
+                    }
+                  : null;
+                return (
+                  <TimelineRow
+                    key={`${item.id || 'x'}-${startIdx + i}`}
+                    item={item}
+                    showPhoneChip={hasMultiplePhones}
+                    onClick={handleRowClick}
+                  />
+                );
+              })}
               <div style={{ height: bottomPad }} />
             </div>
           )}

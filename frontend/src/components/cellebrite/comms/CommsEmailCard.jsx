@@ -17,6 +17,12 @@ export default function CommsEmailCard({
   showPhoneChip = false,
   highlights = [],
   caseId = null,
+  // Optional rail-aware select handler. Toggling the email expand
+  // state ALSO publishes — clicking the title bar always sends the
+  // selection to the rail, which mirrors how the other comms rows
+  // behave (single click = select).
+  onSelect = null,
+  selected = false,
 }) {
   const hasHighlights = highlights && highlights.length > 0;
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -30,11 +36,19 @@ export default function CommsEmailCard({
   const attachments = item.attachments || [];
   const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
   const nodeKey = item.id || item.key;
+  const interactive = typeof onSelect === 'function';
 
   return (
-    <div className="border-b border-light-100 bg-white">
+    <div
+      className={`border-b border-light-100 bg-white ${
+        selected ? 'ring-1 ring-emerald-300/60 bg-emerald-50/30' : ''
+      }`}
+    >
       <button
-        onClick={() => setExpanded(!expanded)}
+        onClick={() => {
+          setExpanded(!expanded);
+          if (interactive) onSelect(item);
+        }}
         className="w-full flex items-start gap-2 px-4 py-2 text-left hover:bg-light-50 transition-colors"
       >
         <Mail className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600" />

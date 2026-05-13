@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
@@ -16,6 +16,7 @@ import { buildCommsContext } from '../../utils/chatContextSummary';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import { useCellebriteStatus } from './shared/CellebriteStatusBar';
+import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -68,6 +69,45 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   const [envelopeLoading, setEnvelopeLoading] = useState(false);
 
   const [selectedThread, setSelectedThread] = useState(null);
+
+  // Per-message selection — drives the universal right-rail. The
+  // thread-level state above stays separate (it picks which thread to
+  // render in the middle pane); this picks which message/call/email
+  // inside that thread the rail should show. Cleared when the thread
+  // changes so a stale id doesn't outlive its container.
+  const { selectEntity } = useCellebriteSelection();
+  const [selectedItemId, setSelectedItemId] = useState(null);
+  useEffect(() => {
+    setSelectedItemId(null);
+  }, [selectedThread?.thread_id]);
+
+  const handleItemSelect = useCallback((item) => {
+    if (!item) return;
+    setSelectedItemId(item.id || null);
+    // Map comms item shape onto the rail's selection contract. The
+    // event-like accordion in the rail handles all three types so we
+    // pass the type straight through (message / call / email).
+    selectEntity({
+      type: item.type || 'message',
+      id: item.id,
+      caseId,
+      reportKey: item.report_key || item.cellebrite_report_key,
+      payload: {
+        // Mirror the projected fields the EventBody renderer expects
+        // (it was originally written for the events-tab payload shape).
+        ...item,
+        node_key: item.id,
+        event_type: item.type,
+        label:
+          item.type === 'email'
+            ? (item.subject || '(no subject)')
+            : item.type === 'call'
+              ? `${item.sender?.name || 'Unknown'} → ${item.recipient?.name || 'Unknown'}`
+              : (item.body || '(message)').slice(0, 80),
+      },
+      source: 'comms',
+    });
+  }, [caseId, selectEntity]);
 
   // View-aware AI context
   const rootRef = useRef(null);
@@ -503,6 +543,8 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
                 ? deepSearch.matchesByThread[selectedThread.thread_id][0]
                 : null
             }
+            onItemSelect={handleItemSelect}
+            selectedItemId={selectedItemId}
           />
         </div>
       </div>
@@ -517,6 +559,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         sourceApps={activeApps}
         startDate={startDate || null}
         endDate={endDate || null}
+        onItemSelect={handleItemSelect}
       />
     </div>
   );

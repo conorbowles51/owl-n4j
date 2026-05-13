@@ -39,6 +39,14 @@ export default function CommsMessageBubble({
   reportKey,
   showPhoneChip = false,
   caseId = null,
+  // Optional: when set, the whole row becomes a button that publishes
+  // the item to the universal selection rail. Wired by Comms Center;
+  // omitted by callers that don't have a rail (e.g. EventDetailDrawer
+  // which already shows the same content).
+  onSelect = null,
+  // For keyboard nav / a11y: rail-aware callers pass the currently-
+  // selected item id so the bubble can render a thin selection ring.
+  selected = false,
 }) {
   const effectiveReportKey = reportKey || item.report_key || item.cellebrite_report_key;
   const nodeKey = item.id || item.key;
@@ -62,8 +70,40 @@ export default function CommsMessageBubble({
   const colAlign = isOwner ? 'items-end' : 'items-start';
   const showHeader = showSenderName && isFirstInRun;
 
+  // The whole bubble row is the click target when a rail-aware caller
+  // passes onSelect. We use a div+role="button" rather than a real
+  // <button> because the bubble already contains nested clickables
+  // (LinkNodeToEntityButton, attachment thumbs) that would be illegal
+  // children of a button element. data-message-id stays where the
+  // search jump-scroll expects to find it.
+  const interactive = typeof onSelect === 'function';
+  const rowProps = interactive
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: (e) => {
+          // Don't trigger select when the user actually clicked an
+          // inner action button or link. Those handlers stop
+          // propagation themselves; this is belt-and-braces.
+          if (e.defaultPrevented) return;
+          onSelect(item);
+        },
+        onKeyDown: (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(item);
+          }
+        },
+        className: `flex ${isOwner ? 'justify-end' : 'justify-start'} px-3 py-0.5 cursor-pointer ${
+          selected ? 'bg-emerald-50/60 ring-1 ring-emerald-300/60 rounded' : 'hover:bg-light-50/60'
+        }`,
+      }
+    : {
+        className: `flex ${isOwner ? 'justify-end' : 'justify-start'} px-3 py-0.5`,
+      };
+
   return (
-    <div className={`flex ${isOwner ? 'justify-end' : 'justify-start'} px-3 py-0.5`}>
+    <div {...rowProps}>
       <div className={`max-w-[75%] flex ${rowDir} items-end gap-1.5`}>
         {/* Avatar — only on first bubble of a run; reserve space on others
             so consecutive bubbles stay aligned with the run leader. */}
