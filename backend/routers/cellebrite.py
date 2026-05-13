@@ -552,6 +552,80 @@ async def get_event_tracks(
     )
 
 
+@router.get("/locations/tiles")
+async def get_location_tiles(
+    case_id: str = Query(...),
+    zoom: int = Query(6, ge=0, le=14),
+    report_keys: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    bbox: Optional[str] = Query(
+        None,
+        description="Optional viewport: 'south,west,north,east' (degrees).",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Tile-aggregated locations for the map at the requested zoom.
+
+    Returns per-cell counts and top source apps so 100K+ raw points
+    don't have to ship to the client just to be clustered. Frontend
+    should switch to /events?event_types=location for street-level
+    zooms (≥ 15) where raw points are smaller than tile boundaries.
+    """
+    _require_case_access(case_id, current_user, db)
+    bbox_tuple = None
+    if bbox:
+        try:
+            parts = [float(x.strip()) for x in bbox.split(",")]
+            if len(parts) == 4:
+                bbox_tuple = (parts[0], parts[1], parts[2], parts[3])
+        except ValueError:
+            # Bad bbox = drop the filter rather than 400 — the user
+            # gets the unfiltered aggregation, which is still useful.
+            bbox_tuple = None
+    return neo4j_service.get_cellebrite_location_tiles(
+        case_id=case_id,
+        zoom=zoom,
+        report_keys=_csv_param(report_keys),
+        start_date=start_date,
+        end_date=end_date,
+        bbox=bbox_tuple,
+    )
+
+
+@router.get("/locations/in-tile")
+async def get_locations_in_tile(
+    case_id: str = Query(...),
+    cell_x: int = Query(...),
+    cell_y: int = Query(...),
+    cell_deg: float = Query(..., gt=0),
+    report_keys: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    limit: int = Query(200, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Raw location rows inside one aggregated tile — paginated list for
+    the rail's tile-contents view (G3). cell_x/cell_y/cell_deg should
+    be carried straight back from a tiles-endpoint response.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_locations_in_tile(
+        case_id=case_id,
+        cell_x=cell_x,
+        cell_y=cell_y,
+        cell_deg=cell_deg,
+        report_keys=_csv_param(report_keys),
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+    )
+
+
 @router.get("/events/detail/{node_key}")
 async def get_event_detail(
     node_key: str,

@@ -7818,6 +7818,201 @@ class Neo4jService:
                 })
         return out
 
+    def get_cellebrite_location_tiles(
+        self,
+        case_id: str,
+        zoom: int,
+        report_keys: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        bbox: Optional[Tuple[float, float, float, float]] = None,
+    ) -> dict:
+        """
+        Tile-aggregated locations for the map at the requested zoom.
+
+        For a case with 100K+ locations, returning every point so the
+        frontend can cluster client-side is wasteful — it's ~12 MB JSON
+        across the wire when ~5 KB of bucket counts would suffice. This
+        endpoint aggregates locations into a quadkey-style lat/lon grid
+        whose cell size is set by `zoom`, returning per-tile count and
+        top source apps.
+
+        Frontend consumes this for zoom < 15; at higher zoom levels
+        the existing /events?event_types=location endpoint returns the
+        raw rows (small enough at street-level to render directly).
+
+        bbox: optional (south, west, north, east) — when supplied,
+              constrains the aggregation to the visible area; the tile
+              cell size is still driven by `zoom` so smooth panning
+              gives consistent bucket sizes.
+        """
+        # Tile resolution: degrees per cell. Each zoom step doubles
+        # resolution. zoom=0 ≈ ~22.5° per cell (continent-scale chunks);
+        # zoom=10 ≈ ~0.022° (~2.4 km at the equator).
+        # We clamp zoom to [0, 14] — past that, raw points are smaller
+        # than tile boundaries, so the caller should switch endpoints.
+        z = max(0, min(int(zoom or 0), 14))
+        cell_deg = 360.0 / (2 ** (z + 4))  # tuneable; +4 keeps small-z sane
+
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "cell_deg": cell_deg,
+        }
+        rk_filter = ""
+        if report_keys:
+            rk_filter = " AND n.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        date_filter = ""
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            date_filter += " AND coalesce(n.date, n.timestamp, '') >= $start_date"
+            params["start_date"] = sd
+        if ed:
+            date_filter += " AND coalesce(n.date, n.timestamp, '') <= $end_date"
+            params["end_date"] = ed
+
+        bbox_filter = ""
+        if bbox:
+            south, west, north, east = bbox
+            bbox_filter = (
+                " AND n.latitude >= $bbox_s AND n.latitude <= $bbox_n"
+                " AND n.longitude >= $bbox_w AND n.longitude <= $bbox_e"
+            )
+            params.update({
+                "bbox_s": float(south),
+                "bbox_n": float(north),
+                "bbox_w": float(west),
+                "bbox_e": float(east),
+            })
+
+        # Bucket via floor(lat / cell) and floor(lon / cell). Returning
+        # the bucket index (cell_x, cell_y) plus the bucket centroid lat/
+        # lon means the frontend can cluster-render without re-deriving
+        # the grid. We collect distinct source apps per bucket so the
+        # rail's tile-contents view can preview "WhatsApp + Google Maps
+        # +3 more" without a follow-up fetch.
+        cypher = f"""
+            MATCH (n:Location {{case_id: $case_id, source_type: 'cellebrite'}})
+            WHERE n.latitude IS NOT NULL AND n.longitude IS NOT NULL
+              {rk_filter}{date_filter}{bbox_filter}
+            WITH
+              toInteger(floor(n.latitude  / $cell_deg)) AS cy,
+              toInteger(floor(n.longitude / $cell_deg)) AS cx,
+              n
+            RETURN
+              cy, cx,
+              count(*) AS cnt,
+              avg(n.latitude)  AS lat,
+              avg(n.longitude) AS lon,
+              collect(DISTINCT n.source_app)[..6] AS apps
+            ORDER BY cnt DESC
+            LIMIT 5000
+        """
+        tiles: List[dict] = []
+        total = 0
+        with self._driver.session() as session:
+            rs = session.run(cypher, **params)
+            for r in rs:
+                cnt = int(r["cnt"] or 0)
+                total += cnt
+                tiles.append({
+                    "tile_id": f"{z}-{r['cy']}-{r['cx']}",
+                    "cell_x": int(r["cx"]),
+                    "cell_y": int(r["cy"]),
+                    "lat": r["lat"],
+                    "lon": r["lon"],
+                    "count": cnt,
+                    "top_apps": [a for a in (r["apps"] or []) if a],
+                })
+
+        return {
+            "zoom": z,
+            "cell_deg": cell_deg,
+            "tiles": tiles,
+            "total": total,
+        }
+
+    def get_cellebrite_locations_in_tile(
+        self,
+        case_id: str,
+        cell_x: int,
+        cell_y: int,
+        cell_deg: float,
+        report_keys: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        limit: int = 200,
+    ) -> dict:
+        """
+        Raw locations within a single aggregated tile.
+
+        Powers G3 — the "tile click → rail with tile contents" path.
+        Cheap because the tile bounds collapse the search space to one
+        cell of the lat/lon grid.
+        """
+        if cell_deg <= 0:
+            return {"items": [], "total": 0}
+
+        lat_lo = cell_y * cell_deg
+        lat_hi = (cell_y + 1) * cell_deg
+        lon_lo = cell_x * cell_deg
+        lon_hi = (cell_x + 1) * cell_deg
+
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "lat_lo": lat_lo,
+            "lat_hi": lat_hi,
+            "lon_lo": lon_lo,
+            "lon_hi": lon_hi,
+            "limit": int(limit),
+        }
+        rk_filter = ""
+        if report_keys:
+            rk_filter = " AND n.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        date_filter = ""
+        sd = _normalize_date_bound(start_date)
+        ed = _normalize_date_bound(end_date)
+        if sd:
+            date_filter += " AND coalesce(n.date, n.timestamp, '') >= $start_date"
+            params["start_date"] = sd
+        if ed:
+            date_filter += " AND coalesce(n.date, n.timestamp, '') <= $end_date"
+            params["end_date"] = ed
+
+        cypher = f"""
+            MATCH (n:Location {{case_id: $case_id, source_type: 'cellebrite'}})
+            WHERE n.latitude  >= $lat_lo AND n.latitude  < $lat_hi
+              AND n.longitude >= $lon_lo AND n.longitude < $lon_hi
+              {rk_filter}{date_filter}
+            RETURN n
+            ORDER BY n.timestamp DESC
+            LIMIT $limit
+        """
+        items = []
+        with self._driver.session() as session:
+            rs = session.run(cypher, **params)
+            for r in rs:
+                n = dict(r["n"])
+                items.append({
+                    "id": n.get("id") or n.get("key"),
+                    "node_key": n.get("key"),
+                    "label": n.get("name") or "Location",
+                    "timestamp": n.get("timestamp"),
+                    "latitude": n.get("latitude"),
+                    "longitude": n.get("longitude"),
+                    "source_app": n.get("source_app"),
+                    "location_type": n.get("location_type"),
+                    "address": n.get("address"),
+                    "accuracy_meters": n.get("accuracy_meters"),
+                    "confidence_score": n.get("confidence_score"),
+                    "device_report_key": n.get("cellebrite_report_key"),
+                })
+        return {"items": items, "total": len(items)}
+
     def get_cellebrite_event_tracks(
         self,
         case_id: str,

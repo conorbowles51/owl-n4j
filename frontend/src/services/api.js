@@ -2797,6 +2797,55 @@ export const cellebriteEventsAPI = {
   },
 
   /**
+   * Tile-aggregated locations for the map at the requested zoom.
+   * Returns per-cell counts + top source apps so 100K+ raw points
+   * don't ship just to be clustered client-side. Use for zoom < 15.
+   */
+  getLocationTiles: (caseId, {
+    zoom = 6,
+    reportKeys = null,
+    startDate = null,
+    endDate = null,
+    bbox = null,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId, zoom: String(zoom) });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (bbox && bbox.length === 4) {
+      params.append('bbox', bbox.join(','));
+    }
+    return fetchAPI(`/cellebrite/locations/tiles?${params.toString()}`);
+  },
+
+  /**
+   * Raw rows inside a single aggregated tile — used by the rail's
+   * tile-contents view. cell_x/cell_y/cell_deg come straight from
+   * a tiles response.
+   */
+  getLocationsInTile: (caseId, {
+    cellX,
+    cellY,
+    cellDeg,
+    reportKeys = null,
+    startDate = null,
+    endDate = null,
+    limit = 200,
+  } = {}) => {
+    const params = new URLSearchParams({
+      case_id: caseId,
+      cell_x: String(cellX),
+      cell_y: String(cellY),
+      cell_deg: String(cellDeg),
+      limit: String(limit),
+    });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    return fetchAPI(`/cellebrite/locations/in-tile?${params.toString()}`);
+  },
+
+  /**
    * Per-device polyline tracks.
    */
   getTracks: (caseId, {
