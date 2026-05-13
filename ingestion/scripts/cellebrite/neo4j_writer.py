@@ -23,6 +23,29 @@ from .models import ParsedModel, Party, CellebriteReport
 # when this module is loaded from the ingestion scripts directory.
 
 
+def _geocode_lat_lon(lat: float, lon: float) -> Optional[Dict]:
+    """
+    Reverse-geocode a coordinate via the backend's pluggable geocoder.
+
+    Lazy-imported because (a) the ingestion module sometimes runs in
+    contexts where backend isn't on PYTHONPATH, and (b) the geocoder
+    module touches env vars at import time — keeping the import lazy
+    means a typo in env doesn't crash the writer, only this one
+    point's enrichment.
+
+    Returns the canonical geocoder shape (see backend/services/geocoder.py)
+    or None if the backend module isn't reachable.
+    """
+    try:
+        from services.geocoder import reverse_geocode
+    except Exception:
+        return None
+    try:
+        return reverse_geocode(float(lat), float(lon))
+    except Exception:
+        return None
+
+
 def _normalise_phone(raw: Optional[str]) -> Optional[str]:
     """Normalize a phone number for deduplication."""
     if not raw:
@@ -830,7 +853,31 @@ class CellebriteNeo4jWriter:
             props["confidence_score"] = confidence_score
         if address_str:
             props["address"] = address_str
+            # Source marker so reverse-geocoded vs Cellebrite-provided
+            # addresses are distinguishable downstream — investigators
+            # can audit "was this address from the device or inferred?".
+            props["geocode_source"] = "cellebrite"
             props.update({k: v for k, v in address_parts.items() if v})
+        else:
+            # Cellebrite didn't carry an address — try the configured
+            # reverse-geocoder. Default-off (returns geocode_source =
+            # "none" if no backend is set), so this is a no-op on
+            # deploys that haven't opted in. Wrapped in try/except
+            # because ingestion must not fail if the geocoder is
+            # misconfigured at runtime.
+            try:
+                geo = _geocode_lat_lon(lat, lon)
+            except Exception:
+                geo = None
+            if geo:
+                # Only stamp non-null fields so we don't pollute the
+                # node with "address: null". Always include the source
+                # marker so audits work.
+                for k in ("address", "place_name", "country", "country_code",
+                          "admin1", "admin2", "geocode_source", "geocode_accuracy"):
+                    v = geo.get(k)
+                    if v is not None:
+                        props[k] = v
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None

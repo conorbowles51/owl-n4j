@@ -118,3 +118,9 @@ Pillow==12.1.1
 pytesseract>=0.3.10
 openai-whisper>=20231117
 striprtf>=0.0.26
+# Optional — enables the GeoNames fallback backend for reverse-
+# geocoding Cellebrite locations (city-level, in-process). Active
+# only when GEOCODER=geonames or GEOCODER_FALLBACK=geonames is set.
+# Pulls in numpy + scipy as transitive deps; safe to skip on minimal
+# installs that don't need the city-name fallback.
+reverse-geocoder>=1.5.1

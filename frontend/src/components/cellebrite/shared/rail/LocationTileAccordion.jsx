@@ -129,8 +129,23 @@ export default function LocationTileAccordion({ selection }) {
                 </div>
                 <div className="text-light-500 mt-0.5">
                   {it.source_app && <span>{it.source_app}</span>}
-                  {it.source_app && it.address && <span className="mx-1">·</span>}
-                  {it.address && <span className="truncate">{it.address}</span>}
+                  {it.source_app && (it.address || it.place_name) && <span className="mx-1">·</span>}
+                  {(it.address || it.place_name) && (
+                    <span className="truncate">
+                      {it.address || it.place_name}
+                      {!it.address && it.country && (
+                        <span className="text-light-400"> · {it.country}</span>
+                      )}
+                    </span>
+                  )}
+                  {it.geocode_source && it.geocode_source !== 'cellebrite' && it.geocode_source !== 'none' && (
+                    <span
+                      className="ml-1 text-[9px] uppercase tracking-wide bg-light-100 text-light-500 px-1 rounded"
+                      title={`Reverse-geocoded via ${it.geocode_source}`}
+                    >
+                      via {it.geocode_source}
+                    </span>
+                  )}
                 </div>
               </li>
             ))}

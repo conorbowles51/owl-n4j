@@ -47,6 +47,20 @@ async def get_reports(
     return {"reports": reports}
 
 
+@router.get("/geocoder/status")
+async def get_geocoder_status(
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Diagnostic snapshot for ops — which reverse-geocoder backend the
+    server picked up at startup, and whether its deps are wired
+    correctly. Returns a flat dict; harmless to expose to any
+    authenticated user since it carries no case data.
+    """
+    from services.geocoder import geocoder_status
+    return geocoder_status()
+
+
 def _require_case_evidence_access(case_id: str, user: User, db: Session):
     """Stronger access check for mutating phone-report operations."""
     from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied

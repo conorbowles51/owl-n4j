@@ -8007,6 +8007,15 @@ class Neo4jService:
                     "source_app": n.get("source_app"),
                     "location_type": n.get("location_type"),
                     "address": n.get("address"),
+                    # Reverse-geocoded fields — see _project_event for
+                    # the source-attribution semantics.
+                    "place_name": n.get("place_name"),
+                    "country": n.get("country"),
+                    "country_code": n.get("country_code"),
+                    "admin1": n.get("admin1"),
+                    "admin2": n.get("admin2"),
+                    "geocode_source": n.get("geocode_source"),
+                    "geocode_accuracy": n.get("geocode_accuracy"),
                     "accuracy_meters": n.get("accuracy_meters"),
                     "confidence_score": n.get("confidence_score"),
                     "device_report_key": n.get("cellebrite_report_key"),
@@ -8942,9 +8951,20 @@ def _project_event(node, event_type: str) -> Optional[dict]:
         # decide rendering — we don't fabricate scores we didn't see.
         "confidence_score": n.get("confidence_score"),
         # Free-form address composed at ingestion from PositionAddress
-        # sub-fields. Empty for points without address metadata; drives
-        # the future `place:` search operator.
+        # sub-fields, or reverse-geocoded via the configured Nominatim
+        # / GeoNames backend when Cellebrite didn't carry one.
         "address": n.get("address"),
+        # Reverse-geocoded admin levels — populated when GEOCODER is
+        # configured at ingestion time. `geocode_source` tells the UI
+        # which path produced the address ("cellebrite" / "nominatim"
+        # / "geonames" / "none") so it can label inferred data honestly.
+        "place_name": n.get("place_name"),
+        "country": n.get("country"),
+        "country_code": n.get("country_code"),
+        "admin1": n.get("admin1"),
+        "admin2": n.get("admin2"),
+        "geocode_source": n.get("geocode_source"),
+        "geocode_accuracy": n.get("geocode_accuracy"),
         "attachment_count": int(n.get("attachment_count") or 0),
         "state": n.get("state"),
         "app_name": n.get("app_name"),

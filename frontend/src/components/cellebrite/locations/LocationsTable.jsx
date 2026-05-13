@@ -80,7 +80,25 @@ export default function LocationsTable({ locations = [], selectedId = null, onRo
                   </td>
                 )}
                 <td className="px-3 py-1 truncate max-w-[280px] text-light-700">
-                  {loc.address || '—'}
+                  {loc.address || loc.place_name || '—'}
+                  {/* Tiny source-attribution badge so investigators can
+                      tell at a glance whether the address is the
+                      device's own or inferred via reverse-geocode.
+                      Cellebrite-provided rows get no badge (the
+                      default presumption); inferred rows are flagged. */}
+                  {loc.geocode_source && loc.geocode_source !== 'cellebrite' && loc.geocode_source !== 'none' && (
+                    <span
+                      className="ml-1.5 text-[9px] uppercase tracking-wide bg-light-100 text-light-600 px-1 py-px rounded"
+                      title={`Address reverse-geocoded via ${loc.geocode_source}${loc.geocode_accuracy ? ` (${loc.geocode_accuracy})` : ''}`}
+                    >
+                      via {loc.geocode_source}
+                    </span>
+                  )}
+                  {(loc.country || loc.admin1) && !loc.address && (
+                    <span className="ml-1 text-light-500 text-[10px]">
+                      {[loc.admin1, loc.country].filter(Boolean).join(', ')}
+                    </span>
+                  )}
                 </td>
               </tr>
             );
