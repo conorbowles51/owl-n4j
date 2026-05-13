@@ -12,6 +12,15 @@ import { EVENT_COLORS } from '../events/eventUtils';
  *   items: Array<{ timestamp: string|Date, event_type?: string }>
  *     — anything with a parseable timestamp. Other fields are optional;
  *       event_type drives the per-bar stack colours when present.
+ *   envelope?: { minDate?: string, maxDate?: string,
+ *                histogram?: [{date, count}], total?: number,
+ *                loading?: boolean, hasMoreThanItems?: boolean }
+ *     — when provided, the scrubber uses these for its true bounds and
+ *       density curve instead of (or in addition to) what it can derive
+ *       from `items`. Wired by Comms Center to the cheap envelope
+ *       endpoint so the bar reflects the WHOLE dataset, not just the
+ *       loaded slice. `hasMoreThanItems` flips on a "+more" tint to make
+ *       it visually obvious we're showing more than is currently loaded.
  *   windowStart: Date | null
  *   windowEnd:   Date | null
  *   onWindowChange: (start: Date|null, end: Date|null) => void
@@ -23,6 +32,7 @@ import { EVENT_COLORS } from '../events/eventUtils';
  */
 export default function TimelineScrubber({
   items = [],
+  envelope = null,
   windowStart = null,
   windowEnd = null,
   onWindowChange,
@@ -40,9 +50,15 @@ export default function TimelineScrubber({
   // the component first mounts with empty items and later receives data.
   // The only conditional return is the LAST line before the JSX block.
   // ------------------------------------------------------------------
+  // The envelope (when present) is authoritative for bounds and density.
+  // It comes from a cheap server-side aggregation that sees the WHOLE
+  // dataset, not just the loaded slice — without it the scrubber lies
+  // about end dates whenever the body fetch was capped.
   const { minTs, maxTs, buckets, bucketSizeMs, bucketUnit } = useMemo(
-    () => buildBuckets(items, bucketKey),
-    [items, bucketKey],
+    () => (envelope && (envelope.histogram || envelope.minDate)
+      ? buildBucketsFromEnvelope(envelope, bucketKey)
+      : buildBuckets(items, bucketKey)),
+    [envelope, items, bucketKey],
   );
 
   const colorFor = useCallback(
@@ -302,11 +318,31 @@ export default function TimelineScrubber({
         </div>
       </div>
 
+      {/* Loading stripe — shown while the envelope is recomputing so the
+          user can tell the bar is briefly out of date vs. genuinely
+          showing zero. Subtle by design; doesn't move the layout. */}
+      {envelope?.loading && (
+        <div className="absolute left-3 right-3 top-2 h-0.5 bg-owl-blue-200/40 overflow-hidden rounded-full">
+          <div className="h-full w-1/3 bg-owl-blue-500/60 animate-pulse" />
+        </div>
+      )}
+
       {/* Window summary + reset */}
       <div className="flex items-center justify-between mt-1 text-[11px] text-light-600">
         <div>
           {isFullWindow ? (
-            <span className="text-light-500">All time · {items.length.toLocaleString()} item{items.length === 1 ? '' : 's'}</span>
+            <span className="text-light-500">
+              All time · {(envelope?.total ?? items.length).toLocaleString()} item
+              {(envelope?.total ?? items.length) === 1 ? '' : 's'}
+              {envelope?.hasMoreThanItems && (
+                <span
+                  className="ml-1 text-amber-700"
+                  title="Scrubber bounds reflect the whole dataset; the body fetch is showing a slice"
+                >
+                  · scrubber covers full range
+                </span>
+              )}
+            </span>
           ) : (
             <span>
               <span className="font-medium text-light-800">{formatTick(effectiveStart, bucketUnit)}</span>
@@ -332,6 +368,61 @@ export default function TimelineScrubber({
 // ---------------------------------------------------------------------------
 // Bucket builder
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the bucket array from a server envelope { histogram: [{date,
+ * count}], minDate, maxDate }. The histogram is per-day; if the span
+ * is too long for daily bars we re-aggregate into weeks. If the span
+ * is short and the histogram is empty (e.g. a freshly-filtered slice
+ * with no matches yet) we return an empty bucket set, which the
+ * component handles by rendering nothing.
+ */
+function buildBucketsFromEnvelope(envelope, bucketKey) {
+  const hist = Array.isArray(envelope.histogram) ? envelope.histogram : [];
+  const minDate = envelope.minDate || (hist.length ? hist[0].date : null);
+  const maxDate = envelope.maxDate || (hist.length ? hist[hist.length - 1].date : null);
+  if (!minDate || !maxDate) {
+    return { minTs: null, maxTs: null, buckets: [], bucketSizeMs: 0, bucketUnit: 'day' };
+  }
+  // Parse YYYY-MM-DD as midnight LOCAL — matches the writer's day cut.
+  const minTs = new Date(`${minDate}T00:00:00`).getTime();
+  const maxTs = new Date(`${maxDate}T23:59:59.999`).getTime();
+  if (isNaN(minTs) || isNaN(maxTs) || minTs >= maxTs) {
+    return { minTs: null, maxTs: null, buckets: [], bucketSizeMs: 0, bucketUnit: 'day' };
+  }
+  const span = maxTs - minTs;
+  const unit = pickBucketUnit(span, bucketKey);
+  const sizeMs = unitMs(unit);
+  const startBucket = floorTo(minTs, unit);
+  const bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  const buckets = [];
+  for (let i = 0; i < bucketCount; i++) {
+    buckets.push({
+      start: startBucket + i * sizeMs,
+      end: startBucket + (i + 1) * sizeMs,
+      count: 0,
+      byType: {},
+    });
+  }
+  // Map per-day histogram into the chosen bucket unit. Per-day → daily
+  // is 1:1; per-day → weekly aggregates 7-day spans into one bar.
+  for (const row of hist) {
+    if (!row || !row.date) continue;
+    const ts = new Date(`${row.date}T12:00:00`).getTime();
+    if (isNaN(ts)) continue;
+    const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((ts - startBucket) / sizeMs)));
+    const c = Number(row.count) || 0;
+    buckets[idx].count += c;
+    buckets[idx].byType.envelope = (buckets[idx].byType.envelope || 0) + c;
+  }
+  return {
+    minTs: startBucket,
+    maxTs: startBucket + bucketCount * sizeMs,
+    buckets,
+    bucketSizeMs: sizeMs,
+    bucketUnit: unit,
+  };
+}
 
 function buildBuckets(items, bucketKey) {
   if (!items || items.length === 0) {

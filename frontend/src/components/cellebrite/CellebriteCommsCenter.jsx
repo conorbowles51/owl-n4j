@@ -60,6 +60,13 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   const [threadsProgress, setThreadsProgress] = useState(0);
   const [threadsStage, setThreadsStage] = useState('');
 
+  // Envelope = cheap aggregation across the whole comms shape (no item
+  // rows). Powers the "honest" scrubber bounds + density curve and the
+  // status bar's true total. Fetched in parallel with the body load
+  // so the UI can render the bar before the threads themselves arrive.
+  const [envelope, setEnvelope] = useState(null);
+  const [envelopeLoading, setEnvelopeLoading] = useState(false);
+
   const [selectedThread, setSelectedThread] = useState(null);
 
   // View-aware AI context
@@ -223,6 +230,39 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     return () => { cancelled = true; };
   }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate]);
 
+  // Envelope fetch — runs in parallel with the threads load so the
+  // scrubber bounds + density bars + status bar's true total can paint
+  // before any thread row arrives. Same filter inputs as the threads
+  // load (minus searchQuery, which is client-side only).
+  //
+  // The envelope endpoint expects feed-item type names ("message",
+  // "call", "email"), not the thread-type names ("chat", "calls",
+  // "emails") used by /comms/threads, so we send activeTypes directly.
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    setEnvelopeLoading(true);
+    cellebriteCommsAPI.getEnvelope(caseId, {
+      reportKeys: selectedReportKeys.size > 0 ? [...selectedReportKeys] : null,
+      fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
+      toKeys: toKeys.size > 0 ? [...toKeys] : null,
+      types: activeTypes.size > 0 ? [...activeTypes] : null,
+      sourceApps: activeApps.size > 0 ? [...activeApps] : null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+    }).then(env => {
+      if (cancelled) return;
+      setEnvelope(env || null);
+      setEnvelopeLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      // Don't blank an existing envelope on transient errors — the bar
+      // would briefly collapse to "no data" and confuse the user.
+      setEnvelopeLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, activeTypes, activeApps, startDate, endDate]);
+
   // Cellebrite sometimes ingests the same logical conversation twice
   // — e.g. once as a Chat node and once as a Conversation node, or once
   // with an extra participant captured ("+1") and once without. Both
@@ -315,21 +355,31 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
   }, [dedupedThreads, searchQuery, parsedQuery, reports, deepSearch.threadIds]);
 
-  // Publish counts to the persistent status bar. `total` is the server's
-  // own count (or the deduped pool when smaller), `displayed` is what
-  // survives the active search / filters, `selected` is 1 when a thread
-  // is open so the bar mirrors the user's current focus.
+  // Publish counts to the persistent status bar.
+  //
+  // `total` prefers the envelope's true item count over the threads
+  // list length — the envelope sees every message/call/email matching
+  // the active filters, while the threads list is bounded by the
+  // server's per-block cap. `displayed` stays the post-filter thread
+  // count so the bar mirrors what the user can actually click on.
+  // The hint surfaces the gap when the loaded slice is materially
+  // smaller than the envelope so the user knows there's "more under
+  // the hood" without surprising them on scroll.
+  const envelopeTotal = envelope?.total ?? null;
+  const trueTotal = envelopeTotal ?? Math.max(threadsTotal, dedupedThreads.length);
   useCellebriteStatus({
     isActive,
-    total: Math.max(threadsTotal, dedupedThreads.length),
+    total: trueTotal,
     displayed: filteredThreads.length,
     selected: selectedThread ? 1 : 0,
     label: 'threads',
     hint: threadsLoading
       ? (threadsStage || 'Loading…')
-      : (threadsTotal > dedupedThreads.length
-          ? `Server reports ${threadsTotal.toLocaleString()} total — ${dedupedThreads.length.toLocaleString()} after dedupe`
-          : null),
+      : envelopeLoading
+        ? 'Computing envelope…'
+        : (envelopeTotal != null && envelopeTotal > dedupedThreads.length
+            ? `Envelope: ${envelopeTotal.toLocaleString()} items across ${dedupedThreads.length.toLocaleString()} loaded threads`
+            : null),
   });
 
   // When the user types a deep-search term, automatically open the first
@@ -393,9 +443,24 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         <div className="flex-1" />
       </div>
 
-      {/* Histogram scrubber over the loaded threads */}
+      {/* Histogram scrubber — envelope-driven, so its bounds and density
+          curve reflect the WHOLE filtered shape, not just what we
+          managed to load. Falls back to `items` when the envelope
+          hasn't loaded yet. */}
       <TimelineScrubber
         items={threads}
+        envelope={envelope ? {
+          minDate: envelope.min_date,
+          maxDate: envelope.max_date,
+          histogram: envelope.histogram,
+          total: envelope.total,
+          loading: envelopeLoading,
+          // True whenever the envelope's cardinality exceeds the loaded
+          // body slice — surfaces the "scrubber covers full range"
+          // annotation so users understand why bounds extend past
+          // visible rows.
+          hasMoreThanItems: typeof envelope.total === 'number' && envelope.total > threads.length,
+        } : null}
         windowStart={windowStart}
         windowEnd={windowEnd}
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
