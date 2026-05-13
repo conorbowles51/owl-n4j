@@ -11,6 +11,8 @@ import CellebriteCommsCenter from './CellebriteCommsCenter';
 import CellebriteEventCenter from './CellebriteEventCenter';
 import CellebriteFilesExplorer from './CellebriteFilesExplorer';
 import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
+import { CellebriteSelectionProvider } from './shared/CellebriteSelectionContext';
+import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
@@ -109,6 +111,7 @@ export default function CellebriteView({ caseId }) {
 
   return (
     <CellebriteStatusProvider>
+    <CellebriteSelectionProvider>
     <div className="flex flex-col h-full min-h-0">
       {/* Tab Bar */}
       <div className="flex items-center border-b border-light-200 bg-light-50 px-4 flex-shrink-0">
@@ -131,6 +134,11 @@ export default function CellebriteView({ caseId }) {
           {reports.length} device{reports.length !== 1 ? 's' : ''}
         </span>
       </div>
+
+      {/* Tab content + persistent right-rail share one horizontal flex
+          row so the rail visually attaches to whatever tab is active.
+          Rail width is its own concern (collapsible 360 ↔ 48 px). */}
+      <div className="flex flex-1 min-h-0">
 
       {/* Tab Content — every visited tab stays mounted (display:none
           when inactive) so re-selecting it skips the reload entirely.
@@ -175,11 +183,20 @@ export default function CellebriteView({ caseId }) {
         )}
       </div>
 
+      {/* Universal right-rail — shows whatever the active tab last
+          selected. Always rendered (collapsible to a 48px icon strip
+          when the user wants screen-space back). The rail itself is
+          inert until a tab calls selectEntity(); empty + collapsed by
+          default so it doesn't stomp on existing layouts on first load. */}
+      <CellebriteSelectionRail caseId={caseId} />
+      </div>
+
       {/* Persistent Reader-style status bar — every tab feeds counts via
           useCellebriteStatus(); shell renders them in one place so the
           investigator never has to ask "is this all of it?". */}
       <CellebriteStatusBar />
     </div>
+    </CellebriteSelectionProvider>
     </CellebriteStatusProvider>
   );
 }
