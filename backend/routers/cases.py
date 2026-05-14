@@ -207,11 +207,13 @@ def get_case(
     """
     Get a specific case by ID.
 
-    Requires case.view permission.
+    Requires case.view permission. Response is enriched with the same
+    fields as the list endpoint (owner_name, user_role, is_owner, next_deadline_*).
     """
     try:
-        case = get_case_if_allowed(db=db, case_id=case_id, user=current_user)
-        return case
+        case, membership = check_case_access(
+            db=db, case_id=case_id, user=current_user, required_permission=("case", "view")
+        )
     except CaseNotFound:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -222,6 +224,28 @@ def get_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied",
         )
+
+    user_is_super_admin = is_super_admin(current_user)
+    owner = db.query(User).filter(User.id == case.owner_user_id).first()
+    is_actual_owner = (
+        membership is not None and membership.membership_role.value == "owner"
+    )
+    deadline_info = get_next_deadline_for_cases(db, [case.id]).get(case.id)
+
+    return CaseResponse(
+        id=case.id,
+        title=case.title,
+        description=case.description,
+        created_by_user_id=case.created_by_user_id,
+        owner_user_id=case.owner_user_id,
+        created_at=case.created_at,
+        updated_at=case.updated_at,
+        owner_name=owner.name if owner else None,
+        user_role=get_user_role_for_case(membership, user_is_super_admin),
+        is_owner=is_actual_owner,
+        next_deadline_date=deadline_info[0] if deadline_info else None,
+        next_deadline_name=deadline_info[1] if deadline_info else None,
+    )
 
 
 @router.patch("/{case_id}", response_model=CaseResponse)
