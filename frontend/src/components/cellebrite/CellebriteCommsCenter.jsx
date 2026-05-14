@@ -495,126 +495,142 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       {/* Device selector strip — global across Cellebrite tabs */}
       <PhoneSelector />
 
-      {/* Entity filter */}
-      <CommsEntityFilter
-        entities={entities}
-        fromKeys={fromKeys}
-        toKeys={toKeys}
-        onFromChange={setFromKeys}
-        onToChange={setToKeys}
-      />
+      {/* Layout — three resizable tiers:
+            1. From/To entity filter (top, resizable height)
+            2. Source row + type row + scrubber + search + thread
+               split (middle, takes whatever's left after 1 and 3)
+            3. Cross-type timeline (bottom, resizable height)
+          All three persist their sizes per-case in localStorage so
+          investigators get their preferred layout back next session.
 
-      {/* Source-app filter row */}
-      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-white flex-shrink-0 overflow-x-auto">
-        <span className="text-xs text-light-600 font-medium flex-shrink-0">Source:</span>
-        <CommsAppFilter apps={sourceApps} active={activeApps} onChange={setActiveApps} />
-      </div>
-
-      {/* Type filter row */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
-        <CommsTypeFilter active={activeTypes} onChange={setActiveTypes} />
-        <div className="flex-1" />
-      </div>
-
-      {/* Histogram scrubber — envelope-driven, so its bounds and density
-          curve reflect the WHOLE filtered shape, not just what we
-          managed to load. Falls back to `items` when the envelope
-          hasn't loaded yet. */}
-      <TimelineScrubber
-        items={threads}
-        envelope={envelope ? {
-          minDate: envelope.min_date,
-          maxDate: envelope.max_date,
-          histogram: envelope.histogram,
-          total: envelope.total,
-          loading: envelopeLoading,
-          // True whenever the envelope's cardinality exceeds the loaded
-          // body slice — surfaces the "scrubber covers full range"
-          // annotation so users understand why bounds extend past
-          // visible rows.
-          hasMoreThanItems: typeof envelope.total === 'number' && envelope.total > threads.length,
-        } : null}
-        windowStart={windowStart}
-        windowEnd={windowEnd}
-        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
-      />
-
-      {/* Wide thread search */}
-      <div className="px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
-        <CellebriteSearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder='Search threads — try type:chat from:John app:WhatsApp'
-          matchCount={filteredThreads.length}
-          totalCount={threads.length}
-          itemNoun="thread"
-          focusOnSlash
-        />
-      </div>
-
-      {/* Main area split into:
-            - Top: thread list | thread view (horizontal split, drag
-              the divider to give the message feed more width)
-            - Bottom: cross-type timeline (drag the horizontal handle
-              to give the message feed more vertical space — this is
-              the fix for "the messaging row is hard to work in")
-          Both splits persist their sizes per-case in localStorage so
-          investigators get their preferred layout back next time. */}
+          Without the explicit drag-resize on tier 1 the From/To
+          filter eats half the screen on busy cases — its content is
+          unbounded (one row per entity) and the windowed render
+          sized itself to whatever container height it got. */}
       <ResizableSplit
         direction="vertical"
-        storageKey={`cb.comms.bottomTimeline.${caseId}`}
-        defaultSize={520}
-        minSize={120}
-        maxSize={1200}
+        storageKey={`cb.comms.entityFilter.${caseId}`}
+        defaultSize={220}
+        minSize={80}
+        maxSize={500}
         className="flex-1"
         first={(
-          <ResizableSplit
-            direction="horizontal"
-            storageKey={`cb.comms.threadList.${caseId}`}
-            defaultSize={320}
-            minSize={200}
-            maxSize={600}
-            className="h-full"
-            first={(
-              <CommsThreadList
-                threads={filteredThreads}
-                loading={threadsLoading || entitiesLoading}
-                loadingProgress={threadsProgress}
-                loadingStage={threadsStage}
-                selectedThreadId={selectedThread?.thread_id}
-                onSelect={setSelectedThread}
-                deviceById={deviceById}
-                highlights={threadHighlights}
-              />
-            )}
-            second={(
-              <CommsThreadView
-                caseId={caseId}
-                selectedThread={selectedThread}
-                externalSearchQuery={searchQuery}
-                firstMatch={
-                  selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
-                    ? deepSearch.matchesByThread[selectedThread.thread_id][0]
-                    : null
-                }
-                onItemSelect={handleItemSelect}
-                selectedItemId={selectedItemId}
-              />
-            )}
+          <CommsEntityFilter
+            entities={entities}
+            fromKeys={fromKeys}
+            toKeys={toKeys}
+            onFromChange={setFromKeys}
+            onToChange={setToKeys}
           />
         )}
         second={(
-          <CommsCrossTypeTimeline
-            caseId={caseId}
-            fromKeys={fromKeys}
-            toKeys={toKeys}
-            reportKeys={selectedReportKeys}
-            types={activeTypes}
-            sourceApps={activeApps}
-            startDate={startDate || null}
-            endDate={endDate || null}
-            onItemSelect={handleItemSelect}
-          />
+          <div className="flex flex-col h-full min-h-0">
+            {/* Source-app filter row */}
+            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-white flex-shrink-0 overflow-x-auto">
+              <span className="text-xs text-light-600 font-medium flex-shrink-0">Source:</span>
+              <CommsAppFilter apps={sourceApps} active={activeApps} onChange={setActiveApps} />
+            </div>
+
+            {/* Type filter row */}
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
+              <CommsTypeFilter active={activeTypes} onChange={setActiveTypes} />
+              <div className="flex-1" />
+            </div>
+
+            {/* Histogram scrubber — envelope-driven, so its bounds and
+                density curve reflect the WHOLE filtered shape, not
+                just what we managed to load. Falls back to `items`
+                when the envelope hasn't loaded yet. */}
+            <TimelineScrubber
+              items={threads}
+              envelope={envelope ? {
+                minDate: envelope.min_date,
+                maxDate: envelope.max_date,
+                histogram: envelope.histogram,
+                total: envelope.total,
+                loading: envelopeLoading,
+                hasMoreThanItems: typeof envelope.total === 'number' && envelope.total > threads.length,
+              } : null}
+              windowStart={windowStart}
+              windowEnd={windowEnd}
+              onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+            />
+
+            {/* Wide thread search */}
+            <div className="px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
+              <CellebriteSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder='Search threads — try type:chat from:John app:WhatsApp'
+                matchCount={filteredThreads.length}
+                totalCount={threads.length}
+                itemNoun="thread"
+                focusOnSlash
+              />
+            </div>
+
+            {/* Inner split: thread list | thread view (horizontal)
+                ↕ cross-type timeline (vertical). The bottom timeline
+                is the one users want to push down to give the message
+                feed room — its default is intentionally modest. */}
+            <ResizableSplit
+              direction="vertical"
+              storageKey={`cb.comms.bottomTimeline.${caseId}`}
+              defaultSize={180}
+              minSize={60}
+              maxSize={600}
+              className="flex-1"
+              first={(
+                <ResizableSplit
+                  direction="horizontal"
+                  storageKey={`cb.comms.threadList.${caseId}`}
+                  defaultSize={320}
+                  minSize={200}
+                  maxSize={600}
+                  className="h-full"
+                  first={(
+                    <CommsThreadList
+                      threads={filteredThreads}
+                      loading={threadsLoading || entitiesLoading}
+                      loadingProgress={threadsProgress}
+                      loadingStage={threadsStage}
+                      selectedThreadId={selectedThread?.thread_id}
+                      onSelect={setSelectedThread}
+                      deviceById={deviceById}
+                      highlights={threadHighlights}
+                    />
+                  )}
+                  second={(
+                    <CommsThreadView
+                      caseId={caseId}
+                      selectedThread={selectedThread}
+                      externalSearchQuery={searchQuery}
+                      firstMatch={
+                        selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
+                          ? deepSearch.matchesByThread[selectedThread.thread_id][0]
+                          : null
+                      }
+                      onItemSelect={handleItemSelect}
+                      selectedItemId={selectedItemId}
+                    />
+                  )}
+                />
+              )}
+              second={(
+                <CommsCrossTypeTimeline
+                  caseId={caseId}
+                  fromKeys={fromKeys}
+                  toKeys={toKeys}
+                  reportKeys={selectedReportKeys}
+                  types={activeTypes}
+                  sourceApps={activeApps}
+                  startDate={startDate || null}
+                  endDate={endDate || null}
+                  onItemSelect={handleItemSelect}
+                />
+              )}
+            />
+          </div>
         )}
       />
     </div>

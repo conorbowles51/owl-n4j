@@ -136,7 +136,7 @@ export default function CommsEntityFilter({
   const hasSelection = fromKeys.size > 0 || toKeys.size > 0;
 
   return (
-    <div className="flex flex-col border-b border-light-200 bg-white flex-shrink-0">
+    <div className="flex flex-col border-b border-light-200 bg-white h-full min-h-0">
       {/* Selection bar */}
       {hasSelection && (
         <div className="flex items-center gap-2 px-4 py-1.5 bg-owl-blue-50 border-b border-owl-blue-100 text-xs">
@@ -166,7 +166,7 @@ export default function CommsEntityFilter({
       )}
 
       {/* Two panels side by side */}
-      <div className="grid grid-cols-2 divide-x divide-light-200">
+      <div className="grid grid-cols-2 divide-x divide-light-200 flex-1 min-h-0">
         <EntityPanel
           title="From (senders)"
           accent="blue"
@@ -294,7 +294,7 @@ function EntityPanel({ title, accent, entities, selectedKeys, search, onSearchCh
         </div>
       </div>
 
-      <div ref={scrollRef} className="overflow-y-auto max-h-[180px] min-h-[120px]">
+      <div ref={scrollRef} className="overflow-y-auto flex-1 min-h-0">
         {entities.length === 0 ? (
           <div className="p-4 text-center text-xs text-light-400 italic">No participants</div>
         ) : (
