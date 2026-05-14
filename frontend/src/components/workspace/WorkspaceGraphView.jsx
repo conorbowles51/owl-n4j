@@ -24,6 +24,7 @@ export default function WorkspaceGraphView({
   onClearTheoryFilter,
   tableScope,
   onTableScopeChange,
+  fullGraphLoading = false,
   viewMode: externalViewMode,
   onViewModeChange,
   tableViewState,
@@ -132,15 +133,20 @@ export default function WorkspaceGraphView({
           hasMapData={hasMap}
         />
         {currentViewMode === 'table' && (
-          <GraphSearchFilter
-            mode={graphSearchMode || 'filter'}
-            onModeChange={onGraphModeChange}
-            onFilterChange={onGraphFilterChange}
-            onQueryChange={onGraphQueryChange}
-            onSearch={onGraphSearchExecute}
-            placeholder="Filter table nodes..."
-            disabled={false}
-          />
+          <div className="flex items-center gap-2">
+            <GraphSearchFilter
+              mode={graphSearchMode || 'filter'}
+              onModeChange={onGraphModeChange}
+              onFilterChange={onGraphFilterChange}
+              onQueryChange={onGraphQueryChange}
+              onSearch={onGraphSearchExecute}
+              placeholder="Filter table nodes..."
+              disabled={false}
+            />
+            {fullGraphLoading && (
+              <span className="text-xs text-light-500 italic">Loading full graph…</span>
+            )}
+          </div>
         )}
         {theoryGraphKeys && theoryGraphKeys.length > 0 && currentViewMode !== 'timeline' && currentViewMode !== 'map' && (
           <div className="flex items-center gap-4">

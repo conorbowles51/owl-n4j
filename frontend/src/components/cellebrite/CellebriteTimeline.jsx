@@ -117,6 +117,11 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     const t = setTimeout(() => {
       (async () => {
         const aggregated = [];
+        // A Neo4j node can carry multiple event-type labels (e.g. a
+        // cell-tower ping that's also a location), so the same event
+        // can come back from more than one per-type stage. Dedupe by
+        // id so React keys stay unique and counts aren't inflated.
+        const seen = new Set();
         for (let i = 0; i < stages.length; i += 1) {
           if (cancelled) return;
           const etype = stages[i];
@@ -132,7 +137,14 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
               limit: 5000,
             });
             if (cancelled) return;
-            aggregated.push(...(data.events || []));
+            for (const ev of (data.events || [])) {
+              const key = ev.id || ev.node_key;
+              if (key) {
+                if (seen.has(key)) continue;
+                seen.add(key);
+              }
+              aggregated.push(ev);
+            }
           } catch {
             // Skip failed stages so a single broken type doesn't
             // blank out the whole timeline.

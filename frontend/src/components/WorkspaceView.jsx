@@ -46,6 +46,11 @@ export default function WorkspaceView({
   const [graphSearchFieldScope, setGraphSearchFieldScope] = useState('all'); // 'all' | 'selected'
   const [graphSearchMode, setGraphSearchMode] = useState('filter');
   const [pendingGraphSearch, setPendingGraphSearch] = useState('');
+  // Full graph (all nodes incl. properties) is expensive on big cases — load
+  // lazily on first query (search / theory build / full-scope toggle), not on mount.
+  const [fullGraphLoading, setFullGraphLoading] = useState(false);
+  const fullGraphLoadingRef = useRef(false);
+  const fullGraphPromiseRef = useRef(null);
   const [selectedNodes, setSelectedNodes] = useState([]); // Array of node objects from table
   const [selectedNodesDetails, setSelectedNodesDetails] = useState([]); // Array of node details
   const loadNodeDetailsTimerRef = useRef(null);
@@ -92,15 +97,16 @@ export default function WorkspaceView({
         // Show workspace immediately with preview graph while full graph loads
         setLoading(false);
 
-        // Load presence + workspace data in parallel with full graph
-        const [presence, witnessesData, tasksData, deadlinesData, pinnedData, fullGraph] = await Promise.all([
+        // Reset full graph for the new case — lazy-loaded on first query
+        setFullGraphData({ nodes: [], links: [] });
+
+        // Load presence + workspace data in parallel
+        const [presence, witnessesData, tasksData, deadlinesData, pinnedData] = await Promise.all([
           workspaceAPI.getPresence(caseId).catch(() => ({ online_users: [] })),
           workspaceAPI.getWitnesses(caseId).catch(() => ({ witnesses: [] })),
           workspaceAPI.getTasks(caseId).catch(() => ({ tasks: [] })),
           workspaceAPI.getDeadlines(caseId).catch(() => ({ deadlines: [] })),
           workspaceAPI.getPinnedItems(caseId).catch(() => ({ pinned_items: [] })),
-          // Phase 2: Full graph in background (for table/search/theory filtering)
-          graphAPI.getGraph({ case_id: caseId }),
         ]);
 
         setOnlineUsers(presence.online_users || []);
@@ -108,9 +114,6 @@ export default function WorkspaceView({
         setTasks(tasksData.tasks || []);
         setDeadlines(deadlinesData.deadlines || []);
         setPinnedItems(pinnedData.pinned_items || []);
-        setFullGraphData(fullGraph);
-        // Re-apply filter — will cap to top-100 for graph view, but fullGraphData has all nodes
-        applyGraphFilter(fullGraph, graphSearchTerm);
       } catch (err) {
         console.error('Failed to load workspace data:', err);
         setLoading(false);
@@ -203,6 +206,35 @@ export default function WorkspaceView({
     }
   }, [caseId, graphSearchTerm, applyGraphFilter]);
 
+  // Lazy load full graph on first query (search / theory / full-scope toggle).
+  // De-duped: concurrent callers share the same in-flight promise.
+  const ensureFullGraph = useCallback(async () => {
+    if (!caseId) return null;
+    if (fullGraphData.nodes.length > 0) return fullGraphData;
+    if (fullGraphLoadingRef.current && fullGraphPromiseRef.current) {
+      return fullGraphPromiseRef.current;
+    }
+    fullGraphLoadingRef.current = true;
+    setFullGraphLoading(true);
+    const promise = (async () => {
+      try {
+        const graph = await graphAPI.getGraph({ case_id: caseId });
+        const newGraph = { nodes: [...graph.nodes], links: [...graph.links] };
+        setFullGraphData(newGraph);
+        return newGraph;
+      } catch (err) {
+        console.error('Failed to lazy-load full graph:', err);
+        return null;
+      } finally {
+        fullGraphLoadingRef.current = false;
+        fullGraphPromiseRef.current = null;
+        setFullGraphLoading(false);
+      }
+    })();
+    fullGraphPromiseRef.current = promise;
+    return promise;
+  }, [caseId, fullGraphData]);
+
   const handleRefreshPinned = useCallback(async () => {
     try {
       const pinnedData = await workspaceAPI.getPinnedItems(caseId);
@@ -233,8 +265,10 @@ export default function WorkspaceView({
       }
     };
 
+    // Document upload should refresh the full graph only when it's already
+    // loaded — don't trigger an expensive load just because docs changed.
     const handleDocumentsRefresh = () => {
-      handleRefreshGraph();
+      if (fullGraphData.nodes.length > 0) handleRefreshGraph();
     };
 
     window.addEventListener('theory-graph-built', handleTheoryGraphBuilt);
@@ -243,14 +277,22 @@ export default function WorkspaceView({
       window.removeEventListener('theory-graph-built', handleTheoryGraphBuilt);
       window.removeEventListener('documents-refresh', handleDocumentsRefresh);
     };
-  }, [handleRefreshGraph]);
+  }, [handleRefreshGraph, fullGraphData]);
 
-  // Filter graph when theory keys or search term changes
+  // Filter graph when theory keys or search term changes.
+  // If a query is active but full graph isn't loaded yet, lazy-load it then filter.
   useEffect(() => {
+    const hasQuery =
+      (theoryGraphKeys && theoryGraphKeys.length > 0) ||
+      (graphSearchTerm && graphSearchTerm.trim().length > 0);
     if (fullGraphData.nodes.length > 0) {
       applyGraphFilter(fullGraphData, graphSearchTerm);
+    } else if (hasQuery) {
+      ensureFullGraph().then((loaded) => {
+        if (loaded) applyGraphFilter(loaded, graphSearchTerm);
+      });
     }
-  }, [theoryGraphKeys, fullGraphData, graphSearchTerm, applyGraphFilter]);
+  }, [theoryGraphKeys, fullGraphData, graphSearchTerm, applyGraphFilter, ensureFullGraph]);
 
   // Reset graph when theory filter is cleared
   const handleClearTheoryFilter = useCallback(() => {
@@ -262,6 +304,15 @@ export default function WorkspaceView({
       applyGraphFilter(fullGraphData, graphSearchTerm);
     }
   }, [fullGraphData, graphSearchTerm, applyGraphFilter]);
+
+  // Toggle table scope. 'full' inside an active theory needs the full graph,
+  // so lazy-load if missing.
+  const handleTableScopeChange = useCallback((scope) => {
+    setTableScope(scope);
+    if (scope === 'full' && theoryGraphKeys && theoryGraphKeys.length > 0) {
+      ensureFullGraph();
+    }
+  }, [theoryGraphKeys, ensureFullGraph]);
 
   // Graph update handlers (defined after applyGraphFilter)
   const handleUpdateNode = useCallback(async (nodeKey, updates) => {
@@ -652,7 +703,8 @@ export default function WorkspaceView({
                 theoryName={theoryName}
                 onClearTheoryFilter={handleClearTheoryFilter}
                 tableScope={tableScope}
-                onTableScopeChange={setTableScope}
+                onTableScopeChange={handleTableScopeChange}
+                fullGraphLoading={fullGraphLoading}
                 viewMode={viewMode}
                 onViewModeChange={setViewMode}
                 tableViewState={tableTableViewState}

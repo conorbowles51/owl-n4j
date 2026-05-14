@@ -72,8 +72,6 @@ const COLUMNS = [
 export default function OverviewCallsView({ caseId, report, onBack }) {
   const [openEvent, setOpenEvent] = useState(null);
 
-  const fetchPage = (cid, rk, opts) => cellebriteOverviewAPI.getCalls(cid, rk, opts);
-
   const onRowClick = (row) => {
     // Project the row into an event-like shape for EventDetailDrawer
     setOpenEvent({
@@ -99,7 +97,7 @@ export default function OverviewCallsView({ caseId, report, onBack }) {
         onBack={onBack}
         columns={COLUMNS}
         defaultSort={{ key: 'timestamp', dir: 'desc' }}
-        fetchPage={fetchPage}
+        fetchPage={cellebriteOverviewAPI.getCalls}
         caseId={caseId}
         onRowClick={onRowClick}
       />

@@ -720,7 +720,6 @@ class WorkspaceService:
                                 "log_type": log.get("type"),
                                 "user": log.get("user"),
                                 "success": log.get("success"),
-                                "details": details,
                             },
                         })
         except Exception as e:

@@ -9307,12 +9307,24 @@ class Neo4jService:
                 return None
             p = dict(rec["p"])
 
-            # Recent calls and messages involving this contact, on this device
+            # Recent calls and messages involving this contact, on this device.
+            # Traverse from the single Person outward — the previous form started
+            # from every PhoneCall/Communication in the report and checked the
+            # relationship for each, an O(N) scan per click on big phones.
             calls_rs = session.run(
                 """
-                MATCH (c:PhoneCall {case_id: $case_id, cellebrite_report_key: $rk})
                 MATCH (p:Person {case_id: $case_id, key: $contact_key})
-                WHERE (p)-[:CALLED]->(c) OR (c)-[:CALLED_TO]->(p)
+                CALL {
+                    WITH p
+                    MATCH (p)-[:CALLED]->(c:PhoneCall)
+                    WHERE c.case_id = $case_id AND c.cellebrite_report_key = $rk
+                    RETURN c
+                    UNION
+                    WITH p
+                    MATCH (c:PhoneCall)-[:CALLED_TO]->(p)
+                    WHERE c.case_id = $case_id AND c.cellebrite_report_key = $rk
+                    RETURN c
+                }
                 RETURN c
                 ORDER BY c.timestamp DESC
                 LIMIT $lim
@@ -9326,12 +9338,23 @@ class Neo4jService:
 
             msgs_rs = session.run(
                 """
-                MATCH (m:Communication {case_id: $case_id, cellebrite_report_key: $rk})
-                WHERE m.body IS NOT NULL
                 MATCH (p:Person {case_id: $case_id, key: $contact_key})
-                WHERE (p)-[:SENT_MESSAGE]->(m)
-                   OR EXISTS { MATCH (m)-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p) }
-                RETURN m
+                CALL {
+                    WITH p
+                    MATCH (p)-[:SENT_MESSAGE]->(m:Communication)
+                    WHERE m.case_id = $case_id
+                      AND m.cellebrite_report_key = $rk
+                      AND m.body IS NOT NULL
+                    RETURN m
+                    UNION
+                    WITH p
+                    MATCH (p)-[:PARTICIPATED_IN]->(chat:Communication)<-[:PART_OF]-(m:Communication)
+                    WHERE m.case_id = $case_id
+                      AND m.cellebrite_report_key = $rk
+                      AND m.body IS NOT NULL
+                    RETURN m
+                }
+                RETURN DISTINCT m
                 ORDER BY m.timestamp DESC
                 LIMIT $lim
                 """,

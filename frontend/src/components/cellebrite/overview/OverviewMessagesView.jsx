@@ -56,8 +56,6 @@ const COLUMNS = [
 export default function OverviewMessagesView({ caseId, report, onBack }) {
   const [openEvent, setOpenEvent] = useState(null);
 
-  const fetchPage = (cid, rk, opts) => cellebriteOverviewAPI.getMessages(cid, rk, opts);
-
   const onRowClick = (row) => {
     setOpenEvent({
       id: row.id,
@@ -83,7 +81,7 @@ export default function OverviewMessagesView({ caseId, report, onBack }) {
         onBack={onBack}
         columns={COLUMNS}
         defaultSort={{ key: 'timestamp', dir: 'desc' }}
-        fetchPage={fetchPage}
+        fetchPage={cellebriteOverviewAPI.getMessages}
         caseId={caseId}
         onRowClick={onRowClick}
       />

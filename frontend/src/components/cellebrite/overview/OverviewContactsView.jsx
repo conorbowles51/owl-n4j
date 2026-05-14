@@ -112,8 +112,6 @@ export default function OverviewContactsView({ caseId, report, onBack }) {
     }
   }, [caseId, report?.report_key, selectEntity, clearSelection]);
 
-  const fetchPage = (cid, rk, opts) => cellebriteOverviewAPI.getContacts(cid, rk, opts);
-
   return (
     <>
       <OverviewDetailView
@@ -124,7 +122,7 @@ export default function OverviewContactsView({ caseId, report, onBack }) {
         onBack={onBack}
         columns={COLUMNS}
         defaultSort={{ key: 'interactions', dir: 'desc' }}
-        fetchPage={fetchPage}
+        fetchPage={cellebriteOverviewAPI.getContacts}
         caseId={caseId}
         onRowClick={handleContactSelect}
       />

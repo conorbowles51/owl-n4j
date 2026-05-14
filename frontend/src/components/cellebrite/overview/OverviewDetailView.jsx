@@ -54,13 +54,18 @@ export default function OverviewDetailView({
     return () => clearTimeout(id);
   }, [search]);
 
+  // Hold fetchPage in a ref so its identity doesn't trigger fetches on
+  // every parent render (callers were passing inline closures pre-fix).
+  const fetchPageRef = useRef(fetchPage);
+  fetchPageRef.current = fetchPage;
+
   // Fetch when filters / device change
   useEffect(() => {
     if (!report?.report_key || !caseId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchPage(caseId, report.report_key, {
+    fetchPageRef.current(caseId, report.report_key, {
       search: debouncedSearch || null,
       limit: 1000,
       offset: 0,
@@ -80,7 +85,7 @@ export default function OverviewDetailView({
     return () => {
       cancelled = true;
     };
-  }, [caseId, report?.report_key, debouncedSearch, fetchPage]);
+  }, [caseId, report?.report_key, debouncedSearch]);
 
   // Sort
   const sortedRows = useMemo(() => sortRows(rows, sort.key, sort.dir), [rows, sort]);

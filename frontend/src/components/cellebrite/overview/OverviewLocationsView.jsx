@@ -49,8 +49,6 @@ const COLUMNS = [
 export default function OverviewLocationsView({ caseId, report, onBack }) {
   const [openEvent, setOpenEvent] = useState(null);
 
-  const fetchPage = (cid, rk, opts) => cellebriteOverviewAPI.getLocations(cid, rk, opts);
-
   const onRowClick = (row) => {
     setOpenEvent({
       id: row.id,
@@ -74,7 +72,7 @@ export default function OverviewLocationsView({ caseId, report, onBack }) {
         onBack={onBack}
         columns={COLUMNS}
         defaultSort={{ key: 'timestamp', dir: 'desc' }}
-        fetchPage={fetchPage}
+        fetchPage={cellebriteOverviewAPI.getLocations}
         caseId={caseId}
         onRowClick={onRowClick}
       />

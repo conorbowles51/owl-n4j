@@ -15,17 +15,22 @@ export default function InvestigationTimelineSection({
   fullHeight = false,
 }) {
   const [events, setEvents] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [expandedThreads, setExpandedThreads] = useState(new Set());
 
+  // Lazy-fetch the timeline only when the section is expanded — the endpoint
+  // aggregates everything for the case and can be 10+MB on big cases. Cache
+  // the result so re-expanding doesn't re-fetch.
   useEffect(() => {
+    if (!caseId || isCollapsed || hasLoaded) return;
+
     const loadTimeline = async () => {
-      if (!caseId) return;
-      
       setLoading(true);
       try {
         const data = await workspaceAPI.getInvestigationTimeline(caseId);
         setEvents(data.events || []);
+        setHasLoaded(true);
       } catch (err) {
         console.error('Failed to load investigation timeline:', err);
       } finally {
@@ -34,6 +39,12 @@ export default function InvestigationTimelineSection({
     };
 
     loadTimeline();
+  }, [caseId, isCollapsed, hasLoaded]);
+
+  // Reset cache when the case changes
+  useEffect(() => {
+    setEvents([]);
+    setHasLoaded(false);
   }, [caseId]);
 
   // Group events by thread
