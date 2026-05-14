@@ -80,14 +80,35 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
 
   // Per-message selection — drives the universal right-rail. The
   // thread-level state above stays separate (it picks which thread to
-  // render in the middle pane); this picks which message/call/email
+  // render in the middle pane); this picks which message/call/even
   // inside that thread the rail should show. Cleared when the thread
   // changes so a stale id doesn't outlive its container.
-  const { selectEntity } = useCellebriteSelection();
+  const { selectEntity, selection } = useCellebriteSelection();
   const [selectedItemId, setSelectedItemId] = useState(null);
   useEffect(() => {
     setSelectedItemId(null);
   }, [selectedThread?.thread_id]);
+
+  // Phase G3 — listen for "Filter Comms" intents published from the
+  // Contacts (unified) tab. The unified row carries the union of
+  // person_keys for everyone known by that canonical phone number;
+  // we slot them into the From AND To filter sets so the resulting
+  // feed shows every comm to/from this human across every alias.
+  // Use a ref to track the last consumed intent id so we don't
+  // re-apply on every selection state change.
+  const lastFilterIntentRef = useRef(null);
+  useEffect(() => {
+    if (!selection) return;
+    if (selection.type !== 'contact_unified') return;
+    if (selection.payload?._filter_intent !== 'comms') return;
+    if (lastFilterIntentRef.current === selection.id) return;
+    lastFilterIntentRef.current = selection.id;
+    const personKeys = selection.payload?.person_keys || [];
+    if (personKeys.length === 0) return;
+    const ks = new Set(personKeys);
+    setFromKeys(ks);
+    setToKeys(new Set(ks));
+  }, [selection]);
 
   const handleItemSelect = useCallback((item) => {
     if (!item) return;

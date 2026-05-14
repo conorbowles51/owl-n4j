@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Smartphone, Network, Clock, Users, MessageSquare, MapPin, FolderTree, Loader2,
-  Globe,
+  Globe, UserCheck,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import CellebriteOverview from './CellebriteOverview';
@@ -12,13 +12,19 @@ import CellebriteCommsCenter from './CellebriteCommsCenter';
 import CellebriteEventCenter from './CellebriteEventCenter';
 import CellebriteLocations from './CellebriteLocations';
 import CellebriteFilesExplorer from './CellebriteFilesExplorer';
+import CellebriteUnifiedContacts from './CellebriteUnifiedContacts';
 import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
-import { CellebriteSelectionProvider } from './shared/CellebriteSelectionContext';
+import { CellebriteSelectionProvider, useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
   { key: 'comms', label: 'Comms Center', icon: MessageSquare },
+  // Unified contacts: rolls Persons up by canonical phone number so
+  // the same human across multiple phones (different alias names)
+  // shows as one row. Direct response to user feedback that
+  // investigators couldn't see "everyone who's texting +1-202-805-2817".
+  { key: 'unified', label: 'Contacts (unified)', icon: UserCheck },
   // Locations gets its own tab — promoted out of Events Center to
   // match Cellebrite Reader's "Device Locations" surface and so the
   // map-centric workflow doesn't compete with the wider event feed.
@@ -118,6 +124,11 @@ export default function CellebriteView({ caseId }) {
   return (
     <CellebriteStatusProvider>
     <CellebriteSelectionProvider>
+    {/* Cross-tab intent listener — when a tab publishes a selection
+        with `_filter_intent: 'comms'` (e.g. the unified-contacts
+        "Filter Comms" button), switch the active tab to Comms so the
+        user sees the just-applied filter take effect. */}
+    <FilterIntentTabSwitcher onSwitchToComms={() => handleTabClick('comms')} />
     <div className="flex flex-col h-full min-h-0">
       {/* Tab Bar */}
       <div className="flex items-center border-b border-light-200 bg-light-50 px-4 flex-shrink-0">
@@ -160,6 +171,11 @@ export default function CellebriteView({ caseId }) {
         {mountedTabs.has('comms') && (
           <TabPane active={activeTab === 'comms'}>
             <CellebriteCommsCenter caseId={caseId} reports={reports} isActive={activeTab === 'comms'} />
+          </TabPane>
+        )}
+        {mountedTabs.has('unified') && (
+          <TabPane active={activeTab === 'unified'}>
+            <CellebriteUnifiedContacts caseId={caseId} isActive={activeTab === 'unified'} />
           </TabPane>
         )}
         {mountedTabs.has('locations') && (
@@ -230,4 +246,28 @@ function TabPane({ active, children }) {
       {children}
     </div>
   );
+}
+
+/**
+ * Subscribes to selection changes inside the rail provider so the
+ * surrounding CellebriteView shell can react to cross-tab intents.
+ * Currently the only intent we honour is `_filter_intent: 'comms'`
+ * from the unified-contacts tab — fired when the user clicks the
+ * "Filter Comms" button on a row, expecting both the filter to be
+ * applied AND the active tab to switch to Comms.
+ *
+ * Implemented as its own component because useCellebriteSelection()
+ * needs to live inside the provider; CellebriteView itself wraps it.
+ */
+function FilterIntentTabSwitcher({ onSwitchToComms }) {
+  const { selection } = useCellebriteSelection();
+  const lastConsumedRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!selection) return;
+    if (selection.payload?._filter_intent !== 'comms') return;
+    if (lastConsumedRef.current === selection.id) return;
+    lastConsumedRef.current = selection.id;
+    onSwitchToComms?.();
+  }, [selection, onSwitchToComms]);
+  return null;
 }

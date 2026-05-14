@@ -1038,6 +1038,46 @@ async def overview_contacts(
     )
 
 
+@router.get("/contacts/unified")
+async def contacts_unified(
+    case_id: str = Query(..., description="Case ID"),
+    report_keys: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated phone-report keys to scope the rollup. "
+            "When omitted, uses every cellebrite Person in the case."
+        ),
+    ),
+    search: Optional[str] = Query(
+        None,
+        description="Substring filter on canonical number, display number, or any alias name.",
+    ),
+    limit: int = Query(500, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Roll up Person nodes by canonical (E.164) phone number so the same
+    human across multiple phones — even with different alias names —
+    surfaces as a single row with the alias list attached.
+
+    Returns rows ordered by phone-owner status, then total interaction
+    volume desc.
+    """
+    _require_case_access(case_id, current_user, db)
+    rk_list = None
+    if report_keys:
+        rk_list = [k.strip() for k in report_keys.split(",") if k.strip()]
+    return neo4j_service.get_unified_contacts(
+        case_id=case_id,
+        report_keys=rk_list,
+        search=search,
+        limit=limit,
+        offset=offset,
+    )
+
+
 @router.get("/overview/calls")
 async def overview_calls(
     case_id: str = Query(...),

@@ -2965,6 +2965,35 @@ export const cellebriteEventsAPI = {
     ),
 
   /**
+   * Roll up all Person nodes by canonical (E.164) phone number — so
+   * the same human across multiple phones, even with different alias
+   * names, surfaces as one row with the alias list attached. Used by
+   * the Contacts (unified) tab and the Comms entity filter's
+   * "Group by number" toggle.
+   *
+   * reportKeys, when provided, scopes the rollup to those phones; the
+   * counts and aliases reflect only what those phones see. When
+   * omitted, rolls up across the whole case.
+   */
+  getUnifiedContacts: (caseId, {
+    reportKeys = null,
+    search = null,
+    limit = 500,
+    offset = 0,
+  } = {}) => {
+    const qs = new URLSearchParams({
+      case_id: caseId,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (reportKeys && reportKeys.length) {
+      qs.set('report_keys', reportKeys.join(','));
+    }
+    if (search) qs.set('search', search);
+    return fetchAPI(`/cellebrite/contacts/unified?${qs.toString()}`);
+  },
+
+  /**
    * Run one or more intersection detection methods on demand.
    * methods: array of "spatial"|"cell_tower"|"wifi"|"comm_hub"|"convoy"
    * params: optional per-method param object

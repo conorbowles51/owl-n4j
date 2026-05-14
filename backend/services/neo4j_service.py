@@ -8732,6 +8732,235 @@ class Neo4jService:
                 })
             return {"rows": rows, "total": total_count}
 
+    def get_unified_contacts(
+        self,
+        case_id: str,
+        report_keys: Optional[List[str]] = None,
+        search: Optional[str] = None,
+        limit: int = 500,
+        offset: int = 0,
+    ) -> dict:
+        """
+        Roll up Person nodes by canonical (E.164-normalised) phone number
+        so investigators can see "who across all phones is +12028052817"
+        in one row, with the alias names each device used.
+
+        Persons whose `phone_numbers` can't be normalised (alphanumeric
+        senders, app IDs, short codes) are kept under their raw key as a
+        single-alias row — they're not lost from the rollup, they just
+        don't merge with anyone else.
+
+        Returns:
+            {
+                "rows": [
+                    {
+                        "canonical": "+12028052817" | null,
+                        "display_number": "+1 (202) 805-2817" | null,
+                        "aliases": [
+                            {"name": "Alex", "key": "phone-...",
+                             "report_keys": ["..."]},
+                            ...                       # most-used name first
+                        ],
+                        "report_keys": [...],         # union across aliases
+                        "person_keys": [...],         # union (for filter wiring)
+                        "is_phone_owner": bool,       # any alias is owner
+                        "msg_count": N,
+                        "call_count": N,
+                        "email_count": N,
+                        "first_seen": "ISO" | null,
+                        "last_seen":  "ISO" | null,
+                        "interactions": N             # sum of the three
+                    },
+                    ...                               # ordered by interactions desc
+                ],
+                "total": N                            # rows BEFORE limit/offset
+            }
+
+        `report_keys`, when provided, restricts BOTH the Person filter
+        and the count MATCHes — so the rollup reflects "what these
+        selected phones see" rather than the case-wide picture.
+        """
+        # Local import: keeps the cellebrite-only normaliser out of
+        # neo4j_service's top-of-file dep set. Cheap (no I/O).
+        from services.phone_normalise import normalise, display_format
+
+        params: Dict[str, Any] = {"case_id": case_id}
+        rk_clause = ""
+        if report_keys:
+            rk_clause = " AND p.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        # Person fetch — lean projection. We do all grouping + counting
+        # in Python because the canonical key is computed by our
+        # normaliser, not derivable inside Cypher without ugly regex.
+        with self._driver.session() as session:
+            persons = list(session.run(
+                f"""
+                MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite'}})
+                WHERE p.key IS NOT NULL {rk_clause}
+                RETURN p.key AS key,
+                       p.name AS name,
+                       p.phone_numbers AS phone_numbers,
+                       p.cellebrite_report_key AS report_key,
+                       coalesce(p.is_phone_owner, false) AS is_phone_owner
+                """,
+                params,
+            ))
+
+            # Bucket by canonical number (or by raw key if not normalisable).
+            # Each bucket aggregates aliases + per-device usage.
+            buckets: Dict[str, dict] = {}
+            for rec in persons:
+                key = rec["key"]
+                name = rec["name"] or key
+                rk = rec["report_key"]
+                phones = list(rec["phone_numbers"] or [])
+
+                # Try every phone string until one normalises. If none
+                # do, the bucket key is the raw person key — it'll sit
+                # alone in its own single-alias row.
+                canonical = None
+                for raw in phones:
+                    canonical = normalise(raw)
+                    if canonical:
+                        break
+
+                bucket_key = canonical or f"raw:{key}"
+                b = buckets.get(bucket_key)
+                if not b:
+                    b = {
+                        "canonical": canonical,
+                        "display_number": display_format(canonical),
+                        # Per-alias dict keyed by (name, person_key) so the
+                        # same name on different phones shows up once per
+                        # phone (the report_keys list captures that).
+                        "_alias_map": {},
+                        "person_keys": set(),
+                        "report_keys": set(),
+                        "is_phone_owner": False,
+                    }
+                    buckets[bucket_key] = b
+
+                b["person_keys"].add(key)
+                if rk:
+                    b["report_keys"].add(rk)
+                if rec["is_phone_owner"]:
+                    b["is_phone_owner"] = True
+
+                alias_key = (name, key)
+                alias = b["_alias_map"].get(alias_key)
+                if not alias:
+                    alias = {"name": name, "key": key, "report_keys": set()}
+                    b["_alias_map"][alias_key] = alias
+                if rk:
+                    alias["report_keys"].add(rk)
+
+            # Apply optional search filter on number OR alias name.
+            if search:
+                needle = search.lower()
+                buckets = {
+                    k: b for k, b in buckets.items()
+                    if (b["canonical"] and needle in b["canonical"])
+                    or (b["display_number"] and needle in b["display_number"].lower())
+                    or any(needle in a["name"].lower() for a in b["_alias_map"].values())
+                }
+
+            # Counts pass: one query per bucket, scoped to the union
+            # of person_keys for that canonical group. Three separate
+            # OPTIONAL MATCH branches keep the per-event-type counts
+            # honest (using DISTINCT on the event node, so a message
+            # touching two aliases in the bucket only counts once).
+            for bucket in buckets.values():
+                pk = list(bucket["person_keys"])
+                if not pk:
+                    bucket["call_count"] = 0
+                    bucket["msg_count"] = 0
+                    bucket["email_count"] = 0
+                    bucket["first_seen"] = None
+                    bucket["last_seen"] = None
+                    continue
+                # Three small DISTINCT counts — cheaper than one
+                # clever joined query at this scale (typically 50-300
+                # buckets per case, each touching <1K events).
+                calls_r = session.run(
+                    """
+                    MATCH (p:Person {case_id:$case_id})-[:CALLED|CALLED_TO]-(c:PhoneCall {case_id:$case_id})
+                    WHERE p.key IN $person_keys
+                    RETURN count(DISTINCT c) AS n,
+                           min(c.timestamp) AS lo, max(c.timestamp) AS hi
+                    """,
+                    case_id=case_id, person_keys=pk,
+                ).single()
+                msgs_r = session.run(
+                    """
+                    MATCH (p:Person {case_id:$case_id})-[:SENT_MESSAGE]-(m:Communication {case_id:$case_id})
+                    WHERE p.key IN $person_keys
+                    RETURN count(DISTINCT m) AS n,
+                           min(m.timestamp) AS lo, max(m.timestamp) AS hi
+                    """,
+                    case_id=case_id, person_keys=pk,
+                ).single()
+                emails_r = session.run(
+                    """
+                    MATCH (p:Person {case_id:$case_id})-[:EMAILED|SENT_TO]-(e:Email {case_id:$case_id})
+                    WHERE p.key IN $person_keys
+                    RETURN count(DISTINCT e) AS n,
+                           min(e.timestamp) AS lo, max(e.timestamp) AS hi
+                    """,
+                    case_id=case_id, person_keys=pk,
+                ).single()
+                bucket["call_count"] = int(calls_r["n"] or 0) if calls_r else 0
+                bucket["msg_count"] = int(msgs_r["n"] or 0) if msgs_r else 0
+                bucket["email_count"] = int(emails_r["n"] or 0) if emails_r else 0
+                lows = [r["lo"] for r in (calls_r, msgs_r, emails_r) if r and r["lo"]]
+                highs = [r["hi"] for r in (calls_r, msgs_r, emails_r) if r and r["hi"]]
+                bucket["first_seen"] = min(lows) if lows else None
+                bucket["last_seen"] = max(highs) if highs else None
+
+            # Materialise rows. Aliases sorted by best-effort frequency
+            # proxy (number of report_keys they appear on, then name).
+            rows = []
+            for b in buckets.values():
+                aliases = sorted(
+                    b["_alias_map"].values(),
+                    key=lambda a: (-len(a["report_keys"]), a["name"]),
+                )
+                # Convert sets → lists for JSON serialisation.
+                for a in aliases:
+                    a["report_keys"] = sorted(a["report_keys"])
+                interactions = (
+                    b["msg_count"] + b["call_count"] + b["email_count"]
+                )
+                rows.append({
+                    "canonical": b["canonical"],
+                    "display_number": b["display_number"],
+                    "aliases": aliases,
+                    "person_keys": sorted(b["person_keys"]),
+                    "report_keys": sorted(b["report_keys"]),
+                    "is_phone_owner": b["is_phone_owner"],
+                    "msg_count": b["msg_count"],
+                    "call_count": b["call_count"],
+                    "email_count": b["email_count"],
+                    "first_seen": b["first_seen"],
+                    "last_seen": b["last_seen"],
+                    "interactions": interactions,
+                })
+
+            # Sort: phone-owner aliases first (the case's own users),
+            # then by interaction volume desc, then by display number.
+            rows.sort(
+                key=lambda r: (
+                    not r["is_phone_owner"],
+                    -r["interactions"],
+                    r["display_number"] or "zzz",
+                )
+            )
+            total = len(rows)
+            return {
+                "rows": rows[offset : offset + limit],
+                "total": total,
+            }
+
     def get_overview_calls(
         self,
         case_id: str,

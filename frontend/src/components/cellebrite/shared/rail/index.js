@@ -11,6 +11,7 @@
 import GenericAccordion from './GenericAccordion';
 import EventAccordion from './EventAccordion';
 import LocationTileAccordion from './LocationTileAccordion';
+import UnifiedContactAccordion from './UnifiedContactAccordion';
 
 const RENDERERS = {
   // Event-like selections from the Events Center (any of the artifact
@@ -29,6 +30,9 @@ const RENDERERS = {
   // rows inside the bucket and lets the user drill into any one of
   // them (clicking re-publishes as type 'location').
   location_tile: LocationTileAccordion,
+  // Unified-by-number contact rolled up across all phones in the case
+  // (Phase G). Payload is the full rollup row so no extra fetch.
+  contact_unified: UnifiedContactAccordion,
 };
 
 export function rendererFor(type) {
@@ -46,6 +50,7 @@ const TYPE_LABELS = {
   location_tile: 'Location tile',
   cell_tower: 'Cell tower',
   contact: 'Contact',
+  contact_unified: 'Contact (unified)',
   app_session: 'App session',
   device_event: 'Device event',
   event: 'Event',

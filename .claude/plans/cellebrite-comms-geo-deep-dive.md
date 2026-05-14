@@ -381,3 +381,113 @@ These are perf, not correctness — the data does land. Park until F1–F3 ship.
 2. Return to deferred items from §5: **D11 Watch List**, **D13 Geofence intersection**, **D14 Off-thread parsing**.
 3. Park **F4** (extra perf passes) until user confirms the lived-in feel is acceptable.
 4. **E15 Ingest-without-files** + **E16 Phased ingestion** — only when the user signal demands.
+
+---
+
+## 11. Phase G — Unified-by-number contacts (added 2026-05-13)
+
+**Customer ask (verbatim):**
+> all these guys have different contact names for probably some of the
+> same people. Can, in the cellebrite view, connect via phone number?
+> so meaning if everyone is texting 202-805-2817 we want to see the all
+> the messages by number so show the number and put in parenthesis the
+> different contact names used.
+> example: 202-805-2817 (Alex, Boss, Solorzano, Chief Owl, Alex Cell)
+
+**Decisions (locked in via AskUserQuestion):**
+
+| Aspect | Choice |
+|---|---|
+| Placement | Both — Comms filter chip rollup + new "Contacts (unified)" tab |
+| Match key | E.164-normalised phone number |
+| Alias display | All aliases as wrapped chip group |
+| Click behaviour | Click filters Comms feed; right-click / hover icon opens unified rail |
+
+### G1. Backend — canonical number + rollup endpoint
+
+- New helper `services/cellebrite/phone_normalise.py`:
+  - `normalise(raw: str, default_region: str = 'US') -> str | None`
+    Returns E.164 (`+12028052817`) or `None` for un-normalisable inputs
+    (short codes, alphanumeric senders, app IDs).
+  - Lightweight regex first; fall back to `phonenumbers` library if it's
+    already a dep, otherwise stick with regex (10-digit US default,
+    keep leading-+ as-is).
+
+- New `Neo4jService.get_unified_contacts(case_id, report_keys, search, limit, offset)`:
+  - One Cypher pass that gathers all Person nodes in the case (filtered
+    by `report_keys` if provided), groups by canonical number, returns
+    rows of:
+    ```
+    {
+      "canonical": "+12028052817",        # null for non-phone aliases
+      "display_number": "+1 (202) 805-2817",
+      "aliases": [{"name":"Alex","key":"phone-...","report_keys":["..."]},...],
+      "report_keys": [...],               # union across aliases
+      "person_keys": [...],               # union across aliases (for filter wiring)
+      "msg_count": N,
+      "call_count": N,
+      "email_count": N,
+      "first_seen": "2026-...",
+      "last_seen":  "2026-..."
+    }
+    ```
+  - Counts come from a follow-up MATCH on the unioned `person_keys`.
+  - Aliases sorted by frequency (most-used name first).
+
+- New endpoint `GET /api/cellebrite/contacts/unified?case_id=&report_keys=&search=&limit=&offset=`.
+
+### G2. Frontend — new "Contacts (unified)" tab
+
+- Add to `CellebriteView.jsx` tab tree alongside Overview / Comms /
+  Locations / Files / Events.
+- New `components/cellebrite/CellebriteUnifiedContacts.jsx`:
+  - Sortable table: number, alias chip-group, msg/call/email counts,
+    first/last seen, devices.
+  - Click row → publish unified-contact selection through the rail
+    (right rail shows `UnifiedContactAccordion`).
+  - "Filter Comms feed" button per row → switch to Comms tab with the
+    union of person_keys pre-selected.
+
+### G3. Comms entity filter — group by canonical number
+
+- `CommsEntityFilter.jsx`: add a "Group by number" toggle (default ON).
+  When ON:
+  - Fetch the unified rollup (cached per case + report_keys).
+  - Render each canonical row as a single chip:
+    `+1 (202) 805-2817`
+    with the alias chip-group below the number (small wrapped pills).
+  - Selecting the chip pushes the union of `person_keys` into the
+    existing comms filter.
+- When OFF: behaves exactly as today (per-Person rows).
+
+### G4. Unified rail accordion
+
+- New `components/cellebrite/shared/rail/UnifiedContactAccordion.jsx`:
+  - Header: canonical number + alias chip-group.
+  - Body: per-device breakdown (phone chip + alias used on that phone +
+    counts), recent comms across all aliases (uses the existing
+    `/related`-style projection but anchored on the unioned key set).
+- Register in `rail/index.js` against `type: 'contact_unified'`.
+
+### G5 (deferred). Cross-channel ID unification
+
+Not in this batch — add only if user signal demands. Would extend
+G1's normaliser to also fold:
+- Email addresses (when the same name + same phone aliases also share
+  an email)
+- App-only IDs (Telegram username, WhatsApp ID) using the existing
+  Person-name overlap as a join key.
+
+This is materially harder (false-positive risk goes up) so it belongs
+behind a feature flag.
+
+### Build sequence
+
+1. **G1** backend (normaliser + endpoint) — must be first; everything
+   below consumes it.
+2. **G2** new tab — easiest win for the customer; ships a visible
+   table they can browse straight away.
+3. **G3** Comms filter toggle — the immediate quality-of-life win the
+   customer described.
+4. **G4** rail accordion — ties it together so right-click on a chip
+   gives a full per-number drill-in.
