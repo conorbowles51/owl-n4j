@@ -5,15 +5,10 @@ import { X, Loader2 } from 'lucide-react';
  * Progress dialog for loading case versions
  */
 export default function LoadCaseProgressDialog({ isOpen, onClose, current, total, caseName, version }) {
-  console.log('LoadCaseProgressDialog render check:', { isOpen, current, total, caseName, version });
-  
-  if (!isOpen) {
-    console.log('LoadCaseProgressDialog: isOpen is false, not rendering');
-    return null;
-  }
-
-  console.log('LoadCaseProgressDialog: Rendering dialog');
-  
+  if (!isOpen) return null;
+  // (Previously logged a render-check + isOpen-false + Rendering trio
+  // here on every parent render — emitted ~75 times per case open and
+  // drowned the console without adding diagnostic value.)
   const percentage = total > 0 ? Math.round((current / total) * 100) : 0;
 
   return (

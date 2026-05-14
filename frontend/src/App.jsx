@@ -2249,10 +2249,47 @@ function AppInner() {
 
   // Load timeline - from subgraph when nodes are selected, from main graph when not
   const [timelineData, setTimelineData] = useState([]);
-  
+
+  // ---------------------------------------------------------------
+  // Lazy-load gate for the case-wide timeline fetch.
+  //
+  // Background: a busy Cellebrite case (OPDMD28: ~63K events across 8
+  // phones) would block the whole "Open case" path on a 5-20 MB JSON
+  // payload + parse + a backend Cypher pass over every event in the
+  // case — even when the user never opens the Timeline view. The fetch
+  // ran unconditionally whenever currentCaseId / dateRange changed.
+  //
+  // Now we only fetch when a timeline-data consumer has actually been
+  // mounted at least once this session. `timelineEverNeeded` flips true
+  // the first time viewMode lands on 'timeline' or 'map' and stays
+  // true for the remainder of the session — so toggling back to the
+  // graph view doesn't drop the cache, and switching to timeline a
+  // second time is instant.
+  //
+  // The case-overview AI context (further down) only reads
+  // timelineData when it's non-empty, so it transparently degrades
+  // to "no timeline summary" until the user has opened the timeline
+  // view at least once. That's an acceptable trade for case-open
+  // taking ~3s less.
+  // ---------------------------------------------------------------
+  const [timelineEverNeeded, setTimelineEverNeeded] = useState(false);
+  useEffect(() => {
+    if (viewMode === 'timeline' || viewMode === 'map') {
+      setTimelineEverNeeded(true);
+    }
+  }, [viewMode]);
+  // Reset the gate when the user switches cases — the previous case's
+  // "ever needed" decision shouldn't carry across, otherwise the new
+  // case eagerly loads on case-open just because the prior session
+  // visited timeline.
+  useEffect(() => {
+    setTimelineEverNeeded(false);
+    setTimelineData([]);
+  }, [currentCaseId]);
+
   // Calculate min/max dates from timeline for DateRangeFilter
   const [dateExtents, setDateExtents] = useState({ min: null, max: null });
-  
+
   useEffect(() => {
     if (timelineData && timelineData.length > 0) {
       const dates = timelineData
@@ -2260,11 +2297,11 @@ function AppInner() {
         .filter(d => d)
         .map(d => new Date(d))
         .filter(d => !isNaN(d.getTime())); // Filter out invalid dates
-      
+
       if (dates.length > 0) {
         const minTimestamp = Math.min(...dates.map(d => d.getTime()));
         const maxTimestamp = Math.max(...dates.map(d => d.getTime()));
-        
+
         // Validate timestamps before creating Date objects
         if (!isNaN(minTimestamp) && !isNaN(maxTimestamp)) {
           setDateExtents({
@@ -2275,8 +2312,13 @@ function AppInner() {
       }
     }
   }, [timelineData]);
-  
+
   useEffect(() => {
+    // Skip the (potentially huge) case-wide timeline fetch until a
+    // consumer has actually mounted. See `timelineEverNeeded` above
+    // for the rationale.
+    if (!timelineEverNeeded) return;
+
     const loadTimeline = async () => {
       try {
         // Pass date range and case_id to timeline API if set
@@ -2318,20 +2360,12 @@ function AppInner() {
           
           const filteredEvents = events.filter(event => {
             // Check if the event itself is in the context nodes
-            if (contextKeysSet.has(event.key)) {
-              console.log('✅ Event matches by key:', event.key);
-              return true;
-            }
-            
-            // Check if event is connected to any context nodes via connections array
+            if (contextKeysSet.has(event.key)) return true;
+            // Check if event is connected to any context nodes via the
+            // connections array.
             if (event.connections && Array.isArray(event.connections)) {
-              const matchingConnections = event.connections.filter(conn => 
-                conn.key && contextKeysSet.has(conn.key)
-              );
-              
-              if (matchingConnections.length > 0) {
-                console.log('✅ Event connected via:', event.key, '->', matchingConnections.map(c => c.key));
-                return true;
+              for (const conn of event.connections) {
+                if (conn.key && contextKeysSet.has(conn.key)) return true;
               }
             }
             return false;
@@ -2355,7 +2389,7 @@ function AppInner() {
       }
     };
     loadTimeline();
-  }, [timelineContextKeys, dateRange, currentCaseId]);
+  }, [timelineContextKeys, dateRange, currentCaseId, timelineEverNeeded]);
 
   // Load snapshots on mount and when case changes
   useEffect(() => {
