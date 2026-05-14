@@ -1254,12 +1254,22 @@ class Neo4jService:
                     json.dumps(payload, separators=(",", ":")).encode("utf-8")
                 ).decode("ascii")
 
+            # NB: `total` means rows in THIS response (page size), NOT
+            # the dataset cardinality — naming was a footgun once
+            # pagination shipped. `count` is the same number under a
+            # less ambiguous name; new readers should prefer it.
+            # Computing a true dataset total would require a separate
+            # COUNT(*) Cypher pass per request and we deliberately
+            # don't pay for that here. `total` stays for backwards
+            # compat with any caller that's already wired to it.
+            page_count = len(events)
             return {
                 "events": events,
-                "total": len(events),
+                "count": page_count,
+                "total": page_count,
                 "next_cursor": next_cursor,
             }
-            
+
     def get_shortest_paths_subgraph(self, node_keys: List[str], max_depth: int = 10, case_id: str = None) -> Dict[str, List]:
         """
         Find shortest paths between all pairs of selected nodes and return as subgraph.
@@ -6358,14 +6368,13 @@ class Neo4jService:
                     "is_owner": bool(record["is_owner"]),
                     "device_keys": list(record["device_keys"] or []),
                     "device_count": int(record["device_count"] or 0),
-                    # Counts omitted — caller can re-fetch with
-                    # with_counts=true when needed. Default to 0 so
-                    # frontend code that reads them stays well-defined.
-                    "call_count": 0,
-                    "message_count": 0,
-                    "email_count": 0,
-                    "as_sender_count": 0,
-                    "as_recipient_count": 0,
+                    # Count keys are intentionally OMITTED from lean
+                    # responses — re-fetch with with_counts=true to get
+                    # them. Frontend reads use the (e.call_count || 0)
+                    # idiom so missing keys are safe; previously we
+                    # zeroed-and-shipped these and that turned out to
+                    # be ~6 MB of pointless transit on a 13K-entity
+                    # case (per on-box perf measurement).
                 })
             return entities
 

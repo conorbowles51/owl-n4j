@@ -58,7 +58,12 @@ async def get_timeline(
 
         {
             "events":      [...],   # zero or more event rows
-            "total":       N,       # rows in THIS response (page size)
+            "count":       N,       # rows in THIS response (preferred)
+            "total":       N,       # legacy alias for count — same value;
+                                    # name kept for backwards compat with
+                                    # callers that wire to "total" before
+                                    # pagination shipped. Note this is NOT
+                                    # the dataset cardinality.
             "next_cursor": str|None # token for the next page, or null
                                     # if no more pages exist
         }
