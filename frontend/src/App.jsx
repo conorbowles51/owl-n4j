@@ -2332,16 +2332,39 @@ function AppInner() {
         if (currentCaseId) {
           timelineParams.caseId = currentCaseId;
         }
+        // Engage server-side keyset pagination. Without `limit` the
+        // server returns the entire matching set in one shot — for
+        // OPDMD28 that's 29.5 MB / 9.7s. We auto-page in 2000-row
+        // chunks until either next_cursor is null or we hit a hard
+        // safety cap (~50K events) to avoid runaway loops on cases
+        // with malformed cursors.
+        timelineParams.limit = 2000;
 
-        const response = await timelineAPI.getEvents(timelineParams);
-        // Handle both array response and object with events property
-        const events = Array.isArray(response) ? response : (response?.events || []);
-        
-        // Ensure events is an array
-        if (!Array.isArray(events)) {
-          console.warn('Timeline API returned non-array data:', response);
-          setTimelineData([]);
-          return;
+        const events = [];
+        let cursor = null;
+        const HARD_CAP = 50000;
+        for (let page = 0; page < 30; page += 1) {
+          const reqParams = cursor ? { ...timelineParams, cursor } : timelineParams;
+          // eslint-disable-next-line no-await-in-loop
+          const response = await timelineAPI.getEvents(reqParams);
+          // Defensive: handle the legacy array shape too in case the
+          // server hasn't been updated yet.
+          const pageEvents = Array.isArray(response)
+            ? response
+            : (response?.events || []);
+          if (!Array.isArray(pageEvents)) {
+            console.warn('Timeline API returned non-array data:', response);
+            break;
+          }
+          events.push(...pageEvents);
+          cursor = response?.next_cursor || null;
+          if (!cursor) break;
+          if (events.length >= HARD_CAP) {
+            console.warn(
+              `Timeline auto-pagination hit ${HARD_CAP}-event safety cap; stopping.`,
+            );
+            break;
+          }
         }
 
         // Use timelineContextKeys for filtering (separate from inspection selection)

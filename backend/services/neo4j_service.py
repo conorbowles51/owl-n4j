@@ -1101,9 +1101,23 @@ class Neo4jService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         case_id: str = None,
-    ) -> List[Dict]:
+        limit: Optional[int] = None,
+        cursor: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
-        Get all nodes that have dates, sorted chronologically.
+        Get nodes that have dates, sorted chronologically (asc).
+
+        Pagination: when `limit` is set, returns at most `limit` rows
+        and a `next_cursor` token. The token is base64(JSON({date,
+        time, key})) — a (date, time, key) keyset that the next call
+        passes back as `cursor` to fetch the page beyond it. Cost per
+        page is bounded by `limit`, NOT by how deep into the dataset
+        you've scrolled (cf. SKIP/OFFSET which re-scans skipped rows).
+
+        Backwards compat: when both `limit` and `cursor` are unset,
+        the entire matching set is returned in one shot — the
+        original (slow on big cases) behaviour. New callers should
+        always pass `limit`.
 
         Args:
             event_types: Filter by specific types (e.g., ['Transaction', 'Payment']).
@@ -1111,9 +1125,11 @@ class Neo4jService:
             start_date: Filter events on or after this date (YYYY-MM-DD)
             end_date: Filter events on or before this date (YYYY-MM-DD)
             case_id: REQUIRED - Filter to only include nodes belonging to this case
+            limit:   Max rows per page. None disables pagination.
+            cursor:  Opaque page token from a previous response.
 
         Returns:
-            List of nodes with their connected entities, sorted by date
+            {events: [...], total: <page row count>, next_cursor: <str|None>}
         """
         with self._driver.session() as session:
             # Build date filter conditions
@@ -1136,6 +1152,43 @@ class Neo4jService:
                 type_filter = "AND labels(n)[0] IN $types"
                 params["types"] = event_types
 
+            # Decode cursor into (date, time, key). Bad input drops the
+            # cursor silently and the caller gets a fresh first page —
+            # same posture as comms/between (c764f03). NULL `time` rows
+            # use the coalesce sentinel below ('00:00:00') so the
+            # comparison stays well-defined across rows.
+            cursor_clause = ""
+            if cursor:
+                try:
+                    decoded = json.loads(base64.b64decode(cursor.encode("ascii")).decode("utf-8"))
+                    if isinstance(decoded, dict) and decoded.get("date"):
+                        params["cursor_date"] = decoded["date"]
+                        params["cursor_time"] = decoded.get("time") or "00:00:00"
+                        params["cursor_key"] = decoded.get("key") or ""
+                        # Strict tuple comparison: (date, time, key) >
+                        # cursor. Cypher doesn't have row-comparison
+                        # operators, so we expand it. The order matches
+                        # ORDER BY date ASC, time ASC, key ASC so deep
+                        # pages don't re-read earlier rows.
+                        cursor_clause = (
+                            " AND (n.date > $cursor_date"
+                            " OR (n.date = $cursor_date AND coalesce(n.time, '00:00:00') > $cursor_time)"
+                            " OR (n.date = $cursor_date AND coalesce(n.time, '00:00:00') = $cursor_time"
+                            "     AND coalesce(n.key, '') > $cursor_key))"
+                        )
+                except Exception:
+                    cursor_clause = ""
+
+            # LIMIT clause is optional — only injected when the caller
+            # opted into pagination. We fetch limit+1 so we can tell
+            # whether a next page exists without a separate count query.
+            limit_clause = ""
+            page_size = None
+            if limit and limit > 0:
+                page_size = int(limit)
+                params["limit_plus_one"] = page_size + 1
+                limit_clause = " LIMIT $limit_plus_one"
+
             # Always filter by case_id
             query = f"""
                 MATCH (n)
@@ -1143,6 +1196,7 @@ class Neo4jService:
                 {type_filter}
                 {date_filter}
                 AND n.case_id = $case_id
+                {cursor_clause}
                 OPTIONAL MATCH (n)-[r]-(connected)
                 WHERE NOT connected:Document AND NOT connected:Case AND connected.case_id = $case_id
                 WITH n, collect(DISTINCT {{
@@ -1162,7 +1216,8 @@ class Neo4jService:
                     n.summary AS summary,
                     n.notes AS notes,
                     connections
-                ORDER BY n.date ASC, n.time ASC
+                ORDER BY n.date ASC, coalesce(n.time, '00:00:00') ASC, coalesce(n.key, '') ASC
+                {limit_clause}
             """
 
             result = session.run(query, **params)
@@ -1182,7 +1237,28 @@ class Neo4jService:
                 }
                 events.append(event)
 
-            return events
+            # Pagination housekeeping: if we asked for limit+1 and got
+            # limit+1 back, there's a next page. Drop the sentinel row
+            # and emit a cursor pointing at the new tail. If we got
+            # fewer rows than asked for, we're at the end — no cursor.
+            next_cursor = None
+            if page_size is not None and len(events) > page_size:
+                events = events[:page_size]
+                tail = events[-1]
+                payload = {
+                    "date": tail.get("date"),
+                    "time": tail.get("time") or "00:00:00",
+                    "key": tail.get("key") or "",
+                }
+                next_cursor = base64.b64encode(
+                    json.dumps(payload, separators=(",", ":")).encode("utf-8")
+                ).decode("ascii")
+
+            return {
+                "events": events,
+                "total": len(events),
+                "next_cursor": next_cursor,
+            }
             
     def get_shortest_paths_subgraph(self, node_keys: List[str], max_depth: int = 10, case_id: str = None) -> Dict[str, List]:
         """

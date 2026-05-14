@@ -914,24 +914,33 @@ export const queryAPI = {
  */
 export const timelineAPI = {
   /**
-   * Get timeline events
-   * @param {Object} options - Filter options
+   * Get timeline events.
+   *
+   * Pagination is opt-in: pass `limit` to engage server-side keyset
+   * pagination, then loop calling again with the response's
+   * `next_cursor` until it comes back null. Without `limit` the
+   * server returns the entire matching set (legacy behaviour, can
+   * be tens of MB on busy cases — avoid for new code).
+   *
+   * @param {Object} options
    * @param {string} options.caseId - REQUIRED: Filter to events in this case
    * @param {string} [options.types] - Comma-separated event types
    * @param {string} [options.startDate] - Filter start date (YYYY-MM-DD)
    * @param {string} [options.endDate] - Filter end date (YYYY-MM-DD)
+   * @param {number} [options.limit]  - Page size (1-5000)
+   * @param {string} [options.cursor] - Continuation token from a prior response
+   * @returns {Promise<{events:Array, total:number, next_cursor:string|null}>}
    */
-  getEvents: async ({ caseId, types, startDate, endDate } = {}) => {
+  getEvents: async ({ caseId, types, startDate, endDate, limit, cursor } = {}) => {
     const params = new URLSearchParams();
     params.append('case_id', caseId);
     if (types) params.append('types', types);
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    if (limit) params.append('limit', String(limit));
+    if (cursor) params.append('cursor', cursor);
 
-    const response = await fetchAPI(`/timeline?${params.toString()}`);
-    // The API returns { events: [...], total: ... }
-    // Return the full response object so TimelineView can access both events and total
-    return response;
+    return fetchAPI(`/timeline?${params.toString()}`);
   },
 
   /**

@@ -158,18 +158,32 @@ export default function TimelineView({
       setError(null);
       try {
         if (timelineData !== null && Array.isArray(timelineData)) {
-          // Use pre-filtered timelineData from parent
+          // Use pre-filtered timelineData from parent (the common
+          // case — App.jsx pre-loads the case-wide timeline lazily).
           setAllEvents(timelineData);
           setEvents(timelineData);
           setIsLoading(false);
           return;
         }
-        
-        // Fallback: load from API if no timelineData provided
-        const data = await timelineAPI.getEvents();
-        const allEvents = Array.isArray(data) ? data : (data?.events || []);
-        setAllEvents(allEvents);
-        setEvents(allEvents);
+
+        // Fallback: load from API if no timelineData provided. This
+        // path is rare (most callers pass timelineData in) but we
+        // still page it to avoid a 9.7s/30 MB blocking call if a
+        // future caller wires it directly without a parent fetch.
+        const collected = [];
+        let cursor = null;
+        const HARD_CAP = 50000;
+        for (let page = 0; page < 30; page += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          const data = await timelineAPI.getEvents({ limit: 2000, cursor });
+          const pageEvents = Array.isArray(data) ? data : (data?.events || []);
+          collected.push(...pageEvents);
+          cursor = data?.next_cursor || null;
+          if (!cursor) break;
+          if (collected.length >= HARD_CAP) break;
+        }
+        setAllEvents(collected);
+        setEvents(collected);
       } catch (err) {
         console.error('Timeline load error:', err);
         setError(err.message);
@@ -177,7 +191,7 @@ export default function TimelineView({
         setIsLoading(false);
       }
     }
-    
+
     loadTimeline();
   }, [timelineData]);
 

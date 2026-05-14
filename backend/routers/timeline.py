@@ -28,29 +28,54 @@ async def get_timeline(
         ...,
         description="REQUIRED: Filter to events in this case"
     ),
+    limit: Optional[int] = Query(
+        None,
+        ge=1,
+        le=5000,
+        description=(
+            "Max events per page. When omitted, returns the entire "
+            "matching set in one shot (legacy behaviour). New callers "
+            "should always pass this — case-wide returns can hit "
+            "tens of MB on busy cases (OPDMD28: 29.5 MB / 9.7s)."
+        ),
+    ),
+    cursor: Optional[str] = Query(
+        None,
+        description=(
+            "Opaque continuation token from a previous response's "
+            "`next_cursor`. Engages keyset pagination so deep pages "
+            "don't re-read earlier rows. Filter parameters MUST match "
+            "the request that produced the cursor — changing them "
+            "mid-pagination yields undefined ordering."
+        ),
+    ),
 ):
     """
-    Get timeline events sorted chronologically for a specific case.
+    Get timeline events sorted chronologically (date asc, time asc, key asc) for a specific case.
 
     Returns events (Transaction, Payment, Communication, etc.) that have dates,
-    along with their connected entities.
+    along with their connected entities. Response shape:
+
+        {
+            "events":      [...],   # zero or more event rows
+            "total":       N,       # rows in THIS response (page size)
+            "next_cursor": str|None # token for the next page, or null
+                                    # if no more pages exist
+        }
     """
     # Parse comma-separated types if provided
     event_types = None
     if types:
         event_types = [t.strip() for t in types.split(",") if t.strip()]
-    
-    events = neo4j_service.get_timeline_events(
+
+    return neo4j_service.get_timeline_events(
         event_types=event_types,
         start_date=start_date,
         end_date=end_date,
         case_id=case_id,
+        limit=limit,
+        cursor=cursor,
     )
-    
-    return {
-        "events": events,
-        "total": len(events),
-    }
 
 
 @router.get("/types")
