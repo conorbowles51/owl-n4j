@@ -2947,6 +2947,24 @@ export const cellebriteEventsAPI = {
     ),
 
   /**
+   * Fetch related comms for a clicked event — surrounding thread
+   * messages + cross-channel pair window. Used by the rail accordion
+   * to give the user one-click drill-in to the conversation context
+   * and any nearby calls/emails between the same parties.
+   *
+   * Returns { anchor, thread: [...], around: [...] }. Both lists are
+   * empty for non-comms anchors (Location, CellTower, etc.) — caller
+   * should hide their sub-sections in that case.
+   */
+  getEventRelated: (caseId, nodeKey, { windowH = 24, limit = 50 } = {}) =>
+    fetchAPI(
+      `/cellebrite/events/${encodeURIComponent(nodeKey)}/related`
+        + `?case_id=${encodeURIComponent(caseId)}`
+        + `&window_h=${windowH}`
+        + `&limit=${limit}`
+    ),
+
+  /**
    * Run one or more intersection detection methods on demand.
    * methods: array of "spatial"|"cell_tower"|"wifi"|"comm_hub"|"convoy"
    * params: optional per-method param object

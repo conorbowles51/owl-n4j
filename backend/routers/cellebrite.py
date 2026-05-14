@@ -737,6 +737,40 @@ async def get_event_detail(
     return detail
 
 
+@router.get("/events/{node_key}/related")
+async def get_event_related(
+    node_key: str,
+    case_id: str = Query(..., description="Case ID the event belongs to"),
+    window_h: int = Query(24, ge=1, le=168, description="Hours either side of the anchor for the cross-channel pair window"),
+    limit: int = Query(50, ge=1, le=200, description="Max rows per bucket (thread / around)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Surface related comms for a clicked event so the right rail can show
+    conversation thread + cross-channel context for the same parties
+    without forcing the user to leave the rail.
+
+    Returns:
+        {
+            "anchor": { node_key, label, timestamp, sender, recipient, thread_key },
+            "thread": [event-row, ...],   # surrounding messages in same thread
+            "around": [event-row, ...]    # comms with same parties within ±window_h
+        }
+
+    Cheap by design — keyset filters on (case_id, time, party_keys), no
+    full text fan-out. Returns empty buckets gracefully when the anchor
+    is a non-comms node (Location, CellTower, etc.).
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_event_related(
+        case_id=case_id,
+        node_key=node_key,
+        window_h=window_h,
+        limit=limit,
+    )
+
+
 class IntersectionRunRequest(BaseModel):
     methods: List[str]
     report_keys: Optional[List[str]] = None

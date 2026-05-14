@@ -8427,6 +8427,227 @@ class Neo4jService:
                     return props
         return None
 
+    def get_event_related(
+        self,
+        case_id: str,
+        node_key: str,
+        window_h: int = 24,
+        limit: int = 50,
+    ) -> dict:
+        """
+        Return events related to a clicked comms event, in two buckets:
+
+            {
+                "thread":  [event-rows],   # surrounding messages in the same conversation
+                "around":  [event-rows],   # cross-channel pair window (±window_h hours)
+                "anchor":  { "node_key": ..., "label": ..., "timestamp": ... }
+            }
+
+        - **thread**: only populated for messages that have a parent
+          Communication thread; ordered chronologically; capped at `limit`
+          rows centred on the anchor.
+        - **around**: comms (calls/messages/emails) involving the SAME
+          party pair as the anchor, within ±window_h hours of the anchor's
+          timestamp. Self-comms (sender == recipient) are excluded.
+
+        Cheap by design — no full-text fan-out, just per-relationship
+        keyset filters on (case_id, time, party_keys). Returns empty
+        buckets gracefully when the anchor is a non-comms node (e.g.
+        Location, CellTower) — the rail just shows the existing detail.
+        """
+        # Find the anchor's label + party keys + timestamp + thread_id (if any)
+        # in one shot. The detail-fetch already does most of this; we redo it
+        # here in a leaner shape so the rail can fire this in parallel with
+        # the detail call without serialising the two.
+        anchor_query = """
+            MATCH (n {case_id:$case_id, key:$key})
+            WHERE n:PhoneCall OR n:Email OR n:Communication
+            OPTIONAL MATCH (src:Person)-[r1:CALLED|EMAILED|SENT_MESSAGE]->(n)
+            OPTIONAL MATCH (n)-[r2:CALLED_TO|SENT_TO]->(dst:Person)
+            OPTIONAL MATCH (n)-[:PART_OF]->(parent:Communication)
+            OPTIONAL MATCH (other:Person)-[:PARTICIPATED_IN]->(parent)
+              WHERE other <> src OR src IS NULL
+            WITH n, src, dst, parent,
+                 collect(DISTINCT other.key) AS thread_party_keys
+            RETURN labels(n) AS labels,
+                   n.key AS key,
+                   n.timestamp AS timestamp,
+                   n.date AS date,
+                   n.time AS time,
+                   src.key AS sender_key,
+                   src.name AS sender_name,
+                   dst.key AS recipient_key,
+                   dst.name AS recipient_name,
+                   parent.key AS thread_key,
+                   thread_party_keys
+            LIMIT 1
+        """
+        with self._driver.session() as session:
+            r = session.run(anchor_query, case_id=case_id, key=node_key).single()
+            if not r:
+                return {"thread": [], "around": [], "anchor": None}
+
+            anchor_label = next(
+                (l for l in (r["labels"] or []) if l in ("PhoneCall", "Email", "Communication")),
+                None,
+            )
+            sender_key = r["sender_key"]
+            recipient_key = r["recipient_key"]
+            thread_key = r["thread_key"]
+            thread_parties: List[str] = list(r["thread_party_keys"] or [])
+            anchor_ts = r["timestamp"]
+            anchor_date = r["date"]
+            anchor_time = r["time"]
+
+            # The pair set used for the cross-channel window. For
+            # messages this includes thread participants too so a
+            # group-chat anchor pulls in the calls/emails between
+            # those same people, not just the direct sender→recipient
+            # pair which often doesn't exist on group messages.
+            pair_keys = [k for k in {sender_key, recipient_key, *thread_parties} if k]
+
+            anchor_dict = {
+                "node_key": r["key"],
+                "label": anchor_label or "Event",
+                "timestamp": anchor_ts,
+                "date": anchor_date,
+                "time": anchor_time,
+                "sender": {"key": sender_key, "name": r["sender_name"]} if sender_key else None,
+                "recipient": {"key": recipient_key, "name": r["recipient_name"]} if recipient_key else None,
+                "thread_key": thread_key,
+            }
+
+            thread_rows: List[dict] = []
+            around_rows: List[dict] = []
+
+            # ----------------- Thread branch -----------------
+            # Only meaningful for messages with a parent thread node.
+            # Returns siblings ordered chronologically; the UI can scroll
+            # within the cap. We don't centre-on-anchor here (would need
+            # a second window query); the cap is generous enough that
+            # the anchor is almost always present in the slice.
+            if anchor_label == "Communication" and thread_key:
+                thread_q = """
+                    MATCH (parent:Communication {case_id:$case_id, key:$thread_key})
+                    MATCH (sib:Communication)-[:PART_OF]->(parent)
+                    OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(sib)
+                    RETURN sib AS n, sender AS sender, parent AS chat
+                    ORDER BY coalesce(sib.timestamp, sib.date) ASC
+                    LIMIT $limit
+                """
+                for row in session.run(
+                    thread_q,
+                    case_id=case_id,
+                    thread_key=thread_key,
+                    limit=int(limit),
+                ):
+                    proj = _project_message(row["n"], row.get("sender"), row.get("chat"))
+                    if proj:
+                        thread_rows.append(proj)
+
+            # ----------------- Around branch -----------------
+            # Cross-channel: any PhoneCall / Email / Communication where
+            # both the sender and at-least-one recipient are in the pair
+            # set, within ±window_h of the anchor's timestamp. Sorted by
+            # absolute time-distance from the anchor so the closest
+            # events surface first regardless of direction.
+            if pair_keys and (anchor_ts or anchor_date):
+                # Compute the window in plain ISO date for the date-only
+                # filter, and an extra timestamp filter when anchor_ts
+                # is present. This dual approach handles both the rich
+                # timestamp case and the date-only case (Cellebrite
+                # sometimes carries one but not both).
+                from datetime import datetime, timedelta
+                ref = None
+                if anchor_ts:
+                    try:
+                        ref = datetime.fromisoformat(anchor_ts.replace("Z", "+00:00"))
+                    except (ValueError, AttributeError):
+                        ref = None
+                if ref is None and anchor_date:
+                    try:
+                        ref = datetime.fromisoformat(anchor_date)
+                    except (ValueError, AttributeError):
+                        ref = None
+                if ref is not None:
+                    lo = (ref - timedelta(hours=window_h)).isoformat()
+                    hi = (ref + timedelta(hours=window_h)).isoformat()
+                    lo_d = (ref - timedelta(hours=window_h)).date().isoformat()
+                    hi_d = (ref + timedelta(hours=window_h)).date().isoformat()
+                    around_q = """
+                        // Calls
+                        MATCH (c:PhoneCall {case_id:$case_id})
+                        WHERE coalesce(c.timestamp, c.date) >= $lo_d
+                          AND coalesce(c.timestamp, c.date) <= $hi_d
+                          AND c.key <> $anchor_key
+                        OPTIONAL MATCH (cs:Person)-[:CALLED]->(c)
+                        OPTIONAL MATCH (c)-[:CALLED_TO]->(cd:Person)
+                        WITH c, cs, cd
+                        WHERE (cs IS NOT NULL AND cs.key IN $pair_keys)
+                           OR (cd IS NOT NULL AND cd.key IN $pair_keys)
+                        RETURN 'call' AS kind, c AS n, cs AS src, cd AS dst, NULL AS chat
+                        UNION ALL
+                        // Messages
+                        MATCH (m:Communication {case_id:$case_id})
+                        WHERE coalesce(m.timestamp, m.date) >= $lo_d
+                          AND coalesce(m.timestamp, m.date) <= $hi_d
+                          AND m.key <> $anchor_key
+                        OPTIONAL MATCH (ms:Person)-[:SENT_MESSAGE]->(m)
+                        OPTIONAL MATCH (m)-[:PART_OF]->(mt:Communication)
+                        OPTIONAL MATCH (mp:Person)-[:PARTICIPATED_IN]->(mt)
+                        WITH m, ms, mt, collect(DISTINCT mp.key) AS mt_keys
+                        WHERE (ms IS NOT NULL AND ms.key IN $pair_keys)
+                           OR any(k IN mt_keys WHERE k IN $pair_keys)
+                        RETURN 'message' AS kind, m AS n, ms AS src, NULL AS dst, mt AS chat
+                        UNION ALL
+                        // Emails
+                        MATCH (e:Email {case_id:$case_id})
+                        WHERE coalesce(e.timestamp, e.date) >= $lo_d
+                          AND coalesce(e.timestamp, e.date) <= $hi_d
+                          AND e.key <> $anchor_key
+                        OPTIONAL MATCH (es:Person)-[:EMAILED]->(e)
+                        OPTIONAL MATCH (e)-[:SENT_TO]->(ed:Person)
+                        WITH e, es, ed
+                        WHERE (es IS NOT NULL AND es.key IN $pair_keys)
+                           OR (ed IS NOT NULL AND ed.key IN $pair_keys)
+                        RETURN 'email' AS kind, e AS n, es AS src, ed AS dst, NULL AS chat
+                    """
+                    for row in session.run(
+                        around_q,
+                        case_id=case_id,
+                        lo_d=lo_d, hi_d=hi_d,
+                        anchor_key=node_key,
+                        pair_keys=pair_keys,
+                    ):
+                        kind = row["kind"]
+                        if kind == "call":
+                            proj = _project_call(row["n"], row.get("src"), row.get("dst"))
+                        elif kind == "message":
+                            proj = _project_message(row["n"], row.get("src"), row.get("chat"))
+                        else:  # email
+                            proj = _project_event(row["n"], "email")
+                        if proj:
+                            around_rows.append(proj)
+
+                    # Sort by distance from the anchor's timestamp.
+                    def _dist(r):
+                        ts = r.get("timestamp")
+                        if not ts:
+                            return float("inf")
+                        try:
+                            return abs((datetime.fromisoformat(ts.replace("Z", "+00:00")) - ref).total_seconds())
+                        except (ValueError, AttributeError):
+                            return float("inf")
+                    around_rows.sort(key=_dist)
+                    if len(around_rows) > limit:
+                        around_rows = around_rows[:limit]
+
+            return {
+                "anchor": anchor_dict,
+                "thread": thread_rows,
+                "around": around_rows,
+            }
+
     # ------------------------------------------------------------------
     # Phase 8: Overview drill-down detail queries
     # Each is scoped to a single (case_id, report_key) pair and paginates.
