@@ -491,3 +491,84 @@ behind a feature flag.
    customer described.
 4. **G4** rail accordion — ties it together so right-click on a chip
    gives a full per-number drill-in.
+
+---
+
+## 12. Phase H — Resizable Cellebrite tab panes (added 2026-05-13)
+
+**User pain:** "It's very hard to work in the messaging row even with
+the Conversation timeline minimized." The Comms Center (and other
+Cellebrite tabs) stack their internal panes with fixed heights — when
+the user wants to focus on the message feed, the From/To filter and
+the histogram scrubber are eating space they don't need at that
+moment.
+
+**Decisions (locked in via AskUserQuestion):**
+- **Scope:** all Cellebrite tabs in one pass (Comms / Locations /
+  Events / Unified Contacts).
+- **Persistence:** per-case localStorage. Investigators get their
+  layout back when they reopen a case.
+
+### H1. Reusable `<ResizableSplit>` primitive
+
+`frontend/src/components/cellebrite/shared/ResizableSplit.jsx`
+
+```
+<ResizableSplit
+  storageKey="cb.comms.filter.{caseId}"
+  direction="vertical"          // also supports horizontal
+  defaultSize={220}             // px for the "first" pane
+  minSize={80} maxSize={500}
+  first={<EntityFilter ... />}
+  second={<MessageFeed ... />}
+/>
+```
+
+- 8px draggable divider with hover affordance + grab cursor.
+- `pointermove` listener on `document` while dragging — same trick the
+  rail uses for its width split.
+- Reads + writes `localStorage[storageKey]`. Per-case keys keep "this
+  case is comms-heavy" preferences distinct from "this case is
+  location-heavy".
+- Companion hook `useResizablePane(storageKey, defaultSize)` for sites
+  where the consumer already has its own outer flex and just wants the
+  height value.
+
+### H2. Comms Center splits
+
+Two stacked drag handles between:
+1. From/To filter ↕ Histogram scrubber + filter chips
+2. Histogram scrubber + filter chips ↕ Conversation feed
+
+Default heights: filter 220px, scrubber+chips 140px. Feed flexes.
+
+`storageKey` shape: `cb.comms.{section}.{caseId}` so the Comms-feed
+preferences for case OPDMD28 don't bleed into another case.
+
+### H3. Locations tab split
+
+Map ↕ table split (currently fixed `h-64` on the table). Drag handle
+between map and table; same primitive.
+
+### H4. Events Center split
+
+Same pattern as Locations — the existing map/table split becomes
+draggable.
+
+### What we're NOT building this round (deferred)
+
+- **Horizontal splits**: e.g. side-by-side map+table inside Locations.
+  Today's vertical stack works fine; horizontal can land in a follow-
+  up if someone asks.
+- **Save preset layouts**: per-case is enough; saving named layouts
+  per investigator is complexity we don't need until someone wants it.
+- **Drag-to-fully-collapse**: the resize handles bound the panes by
+  `minSize`. If users want a section gone, the existing collapse
+  buttons (where they exist) handle that better.
+
+### Build sequence
+
+1. **H1** primitive — must come first; everything else consumes it.
+2. **H2** Comms — the immediate user pain.
+3. **H3** Locations — quick win, single split.
+4. **H4** Events Center — same as Locations.

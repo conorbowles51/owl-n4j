@@ -8,6 +8,7 @@ import EventMapPanel from './events/EventMapPanel';
 import TimelineScrubber from './shared/TimelineScrubber';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import LocationsTable from './locations/LocationsTable';
+import ResizableSplit from './shared/ResizableSplit';
 import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
@@ -286,42 +287,54 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
 
       {/* Map / table split. Map gets the larger share — table scrolls
           underneath. Reader's Device Locations view uses the same
-          horizontal banner-then-table layout. */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        <div className="flex-1 min-h-0 relative">
-          {error && (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-red-700 bg-white/80 z-10">
-              {error}
-            </div>
-          )}
-          {loading && mapEvents.length === 0 && (
-            <div className="absolute inset-0 flex items-center justify-center text-sm text-light-500 bg-white/80 z-10">
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              Loading locations…
-            </div>
-          )}
-          <EventMapPanel
-            events={mapEvents}
-            tracks={renderMode === 'raw' ? tracks : []}
-            playheadTime={null}
-            trailWindowMs={30 * 60 * 1000}
-            isPlaying={false}
-            selectedEventId={selectedId}
-            onEventClick={handleSelect}
-            intersectionMatches={[]}
-            deviceColorOf={deviceColorOf}
-            isActive={isActive}
-          />
-        </div>
-        <div className="h-64 border-t border-light-200 flex-shrink-0 overflow-hidden">
+          horizontal banner-then-table layout.
+
+          Resizable: drag the divider to give the map or table more
+          room. Persisted per-case so the user's preferred ratio comes
+          back next session. */}
+      <ResizableSplit
+        direction="vertical"
+        storageKey={`cb.locations.mapTable.${caseId}`}
+        defaultSize={420}
+        minSize={120}
+        maxSize={1200}
+        className="flex-1"
+        first={(
+          <div className="h-full relative">
+            {error && (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-red-700 bg-white/80 z-10">
+                {error}
+              </div>
+            )}
+            {loading && mapEvents.length === 0 && (
+              <div className="absolute inset-0 flex items-center justify-center text-sm text-light-500 bg-white/80 z-10">
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                Loading locations…
+              </div>
+            )}
+            <EventMapPanel
+              events={mapEvents}
+              tracks={renderMode === 'raw' ? tracks : []}
+              playheadTime={null}
+              trailWindowMs={30 * 60 * 1000}
+              isPlaying={false}
+              selectedEventId={selectedId}
+              onEventClick={handleSelect}
+              intersectionMatches={[]}
+              deviceColorOf={deviceColorOf}
+              isActive={isActive}
+            />
+          </div>
+        )}
+        second={(
           <LocationsTable
             locations={renderMode === 'raw' ? mapEvents : tileMarkers}
             selectedId={selectedId}
             onRowClick={handleSelect}
             reports={reports}
           />
-        </div>
-      </div>
+        )}
+      />
     </div>
   );
 }

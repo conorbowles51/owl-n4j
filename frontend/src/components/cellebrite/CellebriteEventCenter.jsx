@@ -14,6 +14,7 @@ import EventDetailDrawer from './events/EventDetailDrawer';
 import IntersectionPanel from './events/IntersectionPanel';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
+import ResizableSplit from './shared/ResizableSplit';
 import { deviceColor } from './events/eventUtils';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildEventsContext } from '../../utils/chatContextSummary';
@@ -459,8 +460,14 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
             />
           )}
           {viewMode === 'split' && (
-            <>
-              <div className="flex-1 min-h-0 border-b border-light-200">
+            <ResizableSplit
+              direction="vertical"
+              storageKey={`cb.events.split.${caseId}`}
+              defaultSize={400}
+              minSize={120}
+              maxSize={1200}
+              className="h-full"
+              first={(
                 <EventMapPanel
                   events={events}
                   tracks={tracks}
@@ -473,8 +480,8 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
                   deviceColorOf={deviceColorOf}
                   isActive={isActive}
                 />
-              </div>
-              <div className="flex-1 min-h-0">
+              )}
+              second={(
                 <EventsTable
                   events={filteredEvents}
                   reports={reports}
@@ -483,8 +490,8 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
                   selectedEventId={selectedEvent?.id || selectedEvent?.node_key}
                   onEventClick={setSelectedEventAndPublish}
                 />
-              </div>
-            </>
+              )}
+            />
           )}
           {viewMode === 'table' && (
             <EventsTable

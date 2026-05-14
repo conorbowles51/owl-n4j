@@ -11,6 +11,7 @@ import CommsThreadView from './comms/CommsThreadView';
 import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
+import ResizableSplit from './shared/ResizableSplit';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildCommsContext } from '../../utils/chatContextSummary';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
@@ -551,47 +552,70 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         />
       </div>
 
-      {/* Main split: thread list | thread view */}
-      <div className="flex flex-1 min-h-0">
-        <div className="w-80 border-r border-light-200 flex flex-col min-h-0 flex-shrink-0">
-          <CommsThreadList
-            threads={filteredThreads}
-            loading={threadsLoading || entitiesLoading}
-            loadingProgress={threadsProgress}
-            loadingStage={threadsStage}
-            selectedThreadId={selectedThread?.thread_id}
-            onSelect={setSelectedThread}
-            deviceById={deviceById}
-            highlights={threadHighlights}
+      {/* Main area split into:
+            - Top: thread list | thread view (horizontal split, drag
+              the divider to give the message feed more width)
+            - Bottom: cross-type timeline (drag the horizontal handle
+              to give the message feed more vertical space — this is
+              the fix for "the messaging row is hard to work in")
+          Both splits persist their sizes per-case in localStorage so
+          investigators get their preferred layout back next time. */}
+      <ResizableSplit
+        direction="vertical"
+        storageKey={`cb.comms.bottomTimeline.${caseId}`}
+        defaultSize={520}
+        minSize={120}
+        maxSize={1200}
+        className="flex-1"
+        first={(
+          <ResizableSplit
+            direction="horizontal"
+            storageKey={`cb.comms.threadList.${caseId}`}
+            defaultSize={320}
+            minSize={200}
+            maxSize={600}
+            className="h-full"
+            first={(
+              <CommsThreadList
+                threads={filteredThreads}
+                loading={threadsLoading || entitiesLoading}
+                loadingProgress={threadsProgress}
+                loadingStage={threadsStage}
+                selectedThreadId={selectedThread?.thread_id}
+                onSelect={setSelectedThread}
+                deviceById={deviceById}
+                highlights={threadHighlights}
+              />
+            )}
+            second={(
+              <CommsThreadView
+                caseId={caseId}
+                selectedThread={selectedThread}
+                externalSearchQuery={searchQuery}
+                firstMatch={
+                  selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
+                    ? deepSearch.matchesByThread[selectedThread.thread_id][0]
+                    : null
+                }
+                onItemSelect={handleItemSelect}
+                selectedItemId={selectedItemId}
+              />
+            )}
           />
-        </div>
-        <div className="flex-1 flex flex-col min-h-0">
-          <CommsThreadView
+        )}
+        second={(
+          <CommsCrossTypeTimeline
             caseId={caseId}
-            selectedThread={selectedThread}
-            externalSearchQuery={searchQuery}
-            firstMatch={
-              selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
-                ? deepSearch.matchesByThread[selectedThread.thread_id][0]
-                : null
-            }
+            fromKeys={fromKeys}
+            toKeys={toKeys}
+            reportKeys={selectedReportKeys}
+            types={activeTypes}
+            sourceApps={activeApps}
+            startDate={startDate || null}
+            endDate={endDate || null}
             onItemSelect={handleItemSelect}
-            selectedItemId={selectedItemId}
           />
-        </div>
-      </div>
-
-      {/* Bottom cross-type timeline */}
-      <CommsCrossTypeTimeline
-        caseId={caseId}
-        fromKeys={fromKeys}
-        toKeys={toKeys}
-        reportKeys={selectedReportKeys}
-        types={activeTypes}
-        sourceApps={activeApps}
-        startDate={startDate || null}
-        endDate={endDate || null}
-        onItemSelect={handleItemSelect}
+        )}
       />
     </div>
   );
