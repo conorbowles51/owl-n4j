@@ -8784,31 +8784,81 @@ class Neo4jService:
         # neo4j_service's top-of-file dep set. Cheap (no I/O).
         from services.phone_normalise import normalise, display_format
 
-        params: Dict[str, Any] = {"case_id": case_id}
+        # Hard cap on the Person fanout — no real investigation has 10K+
+        # unique humans in their contacts. The cap is a safety rail so a
+        # malformed case (or a phantom 100K-Person case) can't wedge
+        # the backend like the unbounded version did. If we ever hit
+        # this limit in real data, surface a "truncated" hint in the
+        # UI rather than uncapping silently.
+        PERSON_CAP = 5000
+        # Cap aliases per bucket so a really busy number (like a
+        # delivery service that 50 phones all named differently) doesn't
+        # blow out the response payload.
+        ALIASES_PER_BUCKET = 30
+
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "person_cap": PERSON_CAP,
+        }
         rk_clause = ""
         if report_keys:
             rk_clause = " AND p.cellebrite_report_key IN $report_keys"
             params["report_keys"] = list(report_keys)
 
-        # Person fetch — lean projection. We do all grouping + counting
-        # in Python because the canonical key is computed by our
-        # normaliser, not derivable inside Cypher without ugly regex.
+        # Single Cypher pass: pull every Person AND their per-person
+        # event counts + min/max timestamps in one round-trip. We do
+        # the canonical-number bucketing in Python (the regex
+        # normaliser doesn't translate cleanly to Cypher and the
+        # bucketing math is dict ops on at-most-5000 rows, microseconds
+        # of work). The previous version did 3 Cypher queries PER
+        # BUCKET — at hundreds of buckets that was thousands of
+        # serial round-trips, which wedged the Neo4j connection pool
+        # and killed the backend on OPDMD28-scale cases.
         with self._driver.session() as session:
             persons = list(session.run(
                 f"""
                 MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite'}})
                 WHERE p.key IS NOT NULL {rk_clause}
+                CALL {{
+                    WITH p
+                    OPTIONAL MATCH (p)-[:CALLED|CALLED_TO]-(c:PhoneCall {{case_id:$case_id}})
+                    RETURN count(DISTINCT c) AS calls,
+                           min(c.timestamp) AS calls_lo,
+                           max(c.timestamp) AS calls_hi
+                }}
+                CALL {{
+                    WITH p
+                    OPTIONAL MATCH (p)-[:SENT_MESSAGE]-(m:Communication {{case_id:$case_id}})
+                    RETURN count(DISTINCT m) AS msgs,
+                           min(m.timestamp) AS msgs_lo,
+                           max(m.timestamp) AS msgs_hi
+                }}
+                CALL {{
+                    WITH p
+                    OPTIONAL MATCH (p)-[:EMAILED|SENT_TO]-(e:Email {{case_id:$case_id}})
+                    RETURN count(DISTINCT e) AS emails,
+                           min(e.timestamp) AS emails_lo,
+                           max(e.timestamp) AS emails_hi
+                }}
                 RETURN p.key AS key,
                        p.name AS name,
                        p.phone_numbers AS phone_numbers,
                        p.cellebrite_report_key AS report_key,
-                       coalesce(p.is_phone_owner, false) AS is_phone_owner
+                       coalesce(p.is_phone_owner, false) AS is_phone_owner,
+                       calls, calls_lo, calls_hi,
+                       msgs, msgs_lo, msgs_hi,
+                       emails, emails_lo, emails_hi
+                ORDER BY (calls + msgs + emails) DESC
+                LIMIT $person_cap
                 """,
                 params,
             ))
 
+            person_count = len(persons)
+            truncated = person_count >= PERSON_CAP
+
             # Bucket by canonical number (or by raw key if not normalisable).
-            # Each bucket aggregates aliases + per-device usage.
+            # Each bucket aggregates aliases + counts + timestamp range.
             buckets: Dict[str, dict] = {}
             for rec in persons:
                 key = rec["key"]
@@ -8838,6 +8888,11 @@ class Neo4jService:
                         "person_keys": set(),
                         "report_keys": set(),
                         "is_phone_owner": False,
+                        "call_count": 0,
+                        "msg_count": 0,
+                        "email_count": 0,
+                        "_lo": None,
+                        "_hi": None,
                     }
                     buckets[bucket_key] = b
 
@@ -8846,6 +8901,29 @@ class Neo4jService:
                     b["report_keys"].add(rk)
                 if rec["is_phone_owner"]:
                     b["is_phone_owner"] = True
+
+                # Counts: sum across aliases. NB the per-Person counts
+                # came back via per-Person OPTIONAL MATCH so a message
+                # that names two aliases in the same bucket WILL be
+                # counted twice. For the rollup display this is the
+                # less-bad failure — it slightly inflates very-active
+                # contacts; the alternative (subquery on the union of
+                # keys) was the N+1 query that wedged the backend.
+                # If precise dedup matters for a future caller, that's
+                # a server-side tweak we can do then.
+                b["call_count"] += int(rec["calls"] or 0)
+                b["msg_count"] += int(rec["msgs"] or 0)
+                b["email_count"] += int(rec["emails"] or 0)
+
+                # Min/max across the bucket — pull only non-null values
+                # since an alias with zero of a given event type
+                # contributes nulls.
+                for lo_v in (rec["calls_lo"], rec["msgs_lo"], rec["emails_lo"]):
+                    if lo_v and (b["_lo"] is None or lo_v < b["_lo"]):
+                        b["_lo"] = lo_v
+                for hi_v in (rec["calls_hi"], rec["msgs_hi"], rec["emails_hi"]):
+                    if hi_v and (b["_hi"] is None or hi_v > b["_hi"]):
+                        b["_hi"] = hi_v
 
                 alias_key = (name, key)
                 alias = b["_alias_map"].get(alias_key)
@@ -8865,66 +8943,26 @@ class Neo4jService:
                     or any(needle in a["name"].lower() for a in b["_alias_map"].values())
                 }
 
-            # Counts pass: one query per bucket, scoped to the union
-            # of person_keys for that canonical group. Three separate
-            # OPTIONAL MATCH branches keep the per-event-type counts
-            # honest (using DISTINCT on the event node, so a message
-            # touching two aliases in the bucket only counts once).
-            for bucket in buckets.values():
-                pk = list(bucket["person_keys"])
-                if not pk:
-                    bucket["call_count"] = 0
-                    bucket["msg_count"] = 0
-                    bucket["email_count"] = 0
-                    bucket["first_seen"] = None
-                    bucket["last_seen"] = None
-                    continue
-                # Three small DISTINCT counts — cheaper than one
-                # clever joined query at this scale (typically 50-300
-                # buckets per case, each touching <1K events).
-                calls_r = session.run(
-                    """
-                    MATCH (p:Person {case_id:$case_id})-[:CALLED|CALLED_TO]-(c:PhoneCall {case_id:$case_id})
-                    WHERE p.key IN $person_keys
-                    RETURN count(DISTINCT c) AS n,
-                           min(c.timestamp) AS lo, max(c.timestamp) AS hi
-                    """,
-                    case_id=case_id, person_keys=pk,
-                ).single()
-                msgs_r = session.run(
-                    """
-                    MATCH (p:Person {case_id:$case_id})-[:SENT_MESSAGE]-(m:Communication {case_id:$case_id})
-                    WHERE p.key IN $person_keys
-                    RETURN count(DISTINCT m) AS n,
-                           min(m.timestamp) AS lo, max(m.timestamp) AS hi
-                    """,
-                    case_id=case_id, person_keys=pk,
-                ).single()
-                emails_r = session.run(
-                    """
-                    MATCH (p:Person {case_id:$case_id})-[:EMAILED|SENT_TO]-(e:Email {case_id:$case_id})
-                    WHERE p.key IN $person_keys
-                    RETURN count(DISTINCT e) AS n,
-                           min(e.timestamp) AS lo, max(e.timestamp) AS hi
-                    """,
-                    case_id=case_id, person_keys=pk,
-                ).single()
-                bucket["call_count"] = int(calls_r["n"] or 0) if calls_r else 0
-                bucket["msg_count"] = int(msgs_r["n"] or 0) if msgs_r else 0
-                bucket["email_count"] = int(emails_r["n"] or 0) if emails_r else 0
-                lows = [r["lo"] for r in (calls_r, msgs_r, emails_r) if r and r["lo"]]
-                highs = [r["hi"] for r in (calls_r, msgs_r, emails_r) if r and r["hi"]]
-                bucket["first_seen"] = min(lows) if lows else None
-                bucket["last_seen"] = max(highs) if highs else None
+            # Materialise first/last seen from the per-bucket min/max
+            # we accumulated above. Names changed for the response
+            # contract.
+            for b in buckets.values():
+                b["first_seen"] = b.pop("_lo", None)
+                b["last_seen"] = b.pop("_hi", None)
 
             # Materialise rows. Aliases sorted by best-effort frequency
             # proxy (number of report_keys they appear on, then name).
+            # Capped at ALIASES_PER_BUCKET to keep the payload bounded
+            # for pathological cases (e.g. a courier number in 50
+            # phones' contact lists).
             rows = []
             for b in buckets.values():
-                aliases = sorted(
+                all_aliases = sorted(
                     b["_alias_map"].values(),
                     key=lambda a: (-len(a["report_keys"]), a["name"]),
                 )
+                aliases = all_aliases[:ALIASES_PER_BUCKET]
+                aliases_truncated_by = max(0, len(all_aliases) - ALIASES_PER_BUCKET)
                 # Convert sets → lists for JSON serialisation.
                 for a in aliases:
                     a["report_keys"] = sorted(a["report_keys"])
@@ -8935,6 +8973,7 @@ class Neo4jService:
                     "canonical": b["canonical"],
                     "display_number": b["display_number"],
                     "aliases": aliases,
+                    "aliases_truncated_by": aliases_truncated_by,
                     "person_keys": sorted(b["person_keys"]),
                     "report_keys": sorted(b["report_keys"]),
                     "is_phone_owner": b["is_phone_owner"],
@@ -8959,6 +8998,13 @@ class Neo4jService:
             return {
                 "rows": rows[offset : offset + limit],
                 "total": total,
+                # If true, the upstream Person fetch hit PERSON_CAP and
+                # the rollup is incomplete — callers should surface
+                # this to the user so they don't wonder why a number
+                # they expect isn't in the list.
+                "truncated": truncated,
+                "person_count": person_count,
+                "person_cap": PERSON_CAP,
             }
 
     def get_overview_calls(

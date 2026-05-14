@@ -35,6 +35,11 @@ export default function CellebriteUnifiedContacts({ caseId, isActive = true }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
+  // Backend signals truncation when the case has more Person nodes
+  // than the safety cap (5K) so we can warn the user that the rollup
+  // is incomplete instead of pretending it's the full picture.
+  const [truncated, setTruncated] = useState(false);
+  const [personCount, setPersonCount] = useState(0);
 
   // Fetch the rollup whenever the case, the phone selection, or the
   // hydration state changes. Search is applied locally so the user
@@ -53,6 +58,8 @@ export default function CellebriteUnifiedContacts({ caseId, isActive = true }) {
       .then((res) => {
         if (cancelled) return;
         setRows(res?.rows || []);
+        setTruncated(!!res?.truncated);
+        setPersonCount(res?.person_count || 0);
         setLoading(false);
       })
       .catch((e) => {
@@ -116,6 +123,13 @@ export default function CellebriteUnifiedContacts({ caseId, isActive = true }) {
           focusOnSlash
         />
       </div>
+      {truncated && (
+        <div className="px-4 py-1.5 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 flex-shrink-0">
+          This case has {personCount.toLocaleString()}+ contacts —
+          rollup capped at the top {personCount.toLocaleString()} by activity.
+          Rare contacts beyond that may not appear here.
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-auto">
         {loading && rows.length === 0 ? (
