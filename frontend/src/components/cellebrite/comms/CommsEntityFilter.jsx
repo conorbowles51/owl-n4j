@@ -208,9 +208,61 @@ function Chip({ children, color, onRemove }) {
   );
 }
 
+// Fixed row height — keeps the windowed scroll math trivial and
+// matches the per-row padding/border of the button below. If the
+// row template ever grows (e.g. multi-line layout), bump this.
+const ENTITY_ROW_PX = 28;
+// Render this many rows above + below the viewport so a smooth
+// scroll never reaches the edge before more rows are mounted.
+const ENTITY_OVERSCAN = 12;
+
 function EntityPanel({ title, accent, entities, selectedKeys, search, onSearchChange, onToggle, sortKey, onSortChange }) {
   const headerColor = accent === 'green' ? 'text-emerald-700' : 'text-owl-blue-700';
   const rowSelectedBg = accent === 'green' ? 'bg-emerald-50' : 'bg-owl-blue-50';
+
+  // Windowed render — without this, a 13K-entity case (OPDMD28) would
+  // mount 13K buttons per panel × 2 panels = 26K DOM nodes on first
+  // paint, freezing the main thread for ~30s. We keep the entire
+  // entities array in memory but only mount the slice currently
+  // visible in the scroller (+ overscan).
+  const scrollRef = React.useRef(null);
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const [viewportH, setViewportH] = React.useState(180);
+  React.useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    setViewportH(el.clientHeight || 180);
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    // ResizeObserver in case the panel's max-height changes (e.g. user
+    // resizes the window). Falls back to one-shot measure if RO isn't
+    // available.
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => setViewportH(el.clientHeight || 180));
+      ro.observe(el);
+    }
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (ro) ro.disconnect();
+    };
+  }, []);
+  // Reset scroll to top when the entity list itself changes (search
+  // narrows the list, sort changes order, etc.) — otherwise scrollTop
+  // can point past the end of a now-shorter list.
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [entities]);
+
+  const startIdx = Math.max(0, Math.floor(scrollTop / ENTITY_ROW_PX) - ENTITY_OVERSCAN);
+  const endIdx = Math.min(
+    entities.length,
+    Math.ceil((scrollTop + viewportH) / ENTITY_ROW_PX) + ENTITY_OVERSCAN,
+  );
+  const topPad = startIdx * ENTITY_ROW_PX;
+  const bottomPad = Math.max(0, (entities.length - endIdx) * ENTITY_ROW_PX);
+  const visible = entities.slice(startIdx, endIdx);
 
   return (
     <div className="flex flex-col min-h-0">
@@ -242,11 +294,13 @@ function EntityPanel({ title, accent, entities, selectedKeys, search, onSearchCh
         </div>
       </div>
 
-      <div className="overflow-y-auto max-h-[180px] min-h-[120px]">
+      <div ref={scrollRef} className="overflow-y-auto max-h-[180px] min-h-[120px]">
         {entities.length === 0 ? (
           <div className="p-4 text-center text-xs text-light-400 italic">No participants</div>
         ) : (
-          entities.map(e => {
+          <>
+            {topPad > 0 && <div style={{ height: topPad }} />}
+            {visible.map(e => {
             const isSelected = selectedKeys.has(e.key);
             const total = (e.call_count || 0) + (e.message_count || 0) + (e.email_count || 0);
             return (
@@ -294,7 +348,9 @@ function EntityPanel({ title, accent, entities, selectedKeys, search, onSearchCh
                 </span>
               </button>
             );
-          })
+          })}
+            {bottomPad > 0 && <div style={{ height: bottomPad }} />}
+          </>
         )}
       </div>
     </div>
