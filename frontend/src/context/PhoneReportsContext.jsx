@@ -71,13 +71,21 @@ export function PhoneReportsProvider({ caseId, children }) {
   const [selectedReportKeys, setSelectedReportKeys] = useState(new Set());
   // Track whether we've completed initial hydration so re-renders don't
   // overwrite the user's selection during the load roundtrip.
+  // hydratedRef is for internal write gating; `hydrated` (state below)
+  // is exposed so consumers can wait for the first selection to settle
+  // before firing expensive effects — without that gate, every Comms /
+  // Events / Locations effect runs once with empty selection (returns
+  // nothing useful) then re-runs once selection arrives, doubling
+  // every per-tab API call on case open.
   const hydratedRef = useRef(false);
+  const [hydrated, setHydrated] = useState(false);
 
   const fetchReports = useCallback(async () => {
     if (!caseId) {
       setReports([]);
       setSelectedReportKeys(new Set());
       hydratedRef.current = true;
+      setHydrated(true);
       return;
     }
     setLoading(true);
@@ -103,11 +111,13 @@ export function PhoneReportsProvider({ caseId, children }) {
       setSelectedReportKeys(next);
       saveSelection(caseId, next);
       hydratedRef.current = true;
+      setHydrated(true);
     } catch (err) {
       setError(err);
       setReports([]);
       setSelectedReportKeys(new Set());
       hydratedRef.current = true;
+      setHydrated(true);
     } finally {
       setLoading(false);
     }
@@ -115,6 +125,7 @@ export function PhoneReportsProvider({ caseId, children }) {
 
   useEffect(() => {
     hydratedRef.current = false;
+    setHydrated(false);
     fetchReports();
   }, [fetchReports]);
 
@@ -179,6 +190,12 @@ export function PhoneReportsProvider({ caseId, children }) {
       noneSelected:
         reports.length > 0 && selectedReportKeys.size === 0,
       loading,
+      // True once fetchReports has resolved (success OR error) for the
+      // current caseId. Consumers should gate expensive per-tab effects
+      // on this so they don't fire once with empty selection then
+      // re-fire when the real selection arrives, doubling every API
+      // call on case open.
+      hydrated,
       error,
       toggleReport,
       selectAll,
@@ -195,6 +212,7 @@ export function PhoneReportsProvider({ caseId, children }) {
       activeReports,
       selectedReportKeys,
       loading,
+      hydrated,
       error,
       toggleReport,
       selectAll,

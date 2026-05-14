@@ -35,6 +35,14 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   );
   const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
   const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
+  // When the context is the source of truth, wait for it to finish
+  // hydrating before firing any per-tab fetches. Without this, every
+  // effect downstream runs once with an empty selection (fast no-op
+  // server response), then re-runs the moment hydration completes,
+  // doubling every Comms API call on case open. When we're operating
+  // off the explicit reports prop instead (legacy callers), there's
+  // nothing to wait for.
+  const reportsReady = phoneCtx ? phoneCtx.hydrated : true;
   const [fromKeys, setFromKeys] = useState(new Set());
   const [toKeys, setToKeys] = useState(new Set());
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
@@ -170,6 +178,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // Load entities + source apps when report set changes
   useEffect(() => {
     if (!caseId) return;
+    if (!reportsReady) return;
     let cancelled = false;
     setEntitiesLoading(true);
     const keys = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
@@ -191,7 +200,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       }
     });
     return () => { cancelled = true; };
-  }, [caseId, selectedReportKeys]);
+  }, [caseId, selectedReportKeys, reportsReady]);
 
   // Load threads when filters change.
   // Phased fetch: one server call per thread type so we can show real
@@ -201,6 +210,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // capped to the visible limit.
   useEffect(() => {
     if (!caseId) return;
+    if (!reportsReady) return;
     let cancelled = false;
     setThreadsLoading(true);
     setThreadsProgress(0);
@@ -268,7 +278,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     })();
 
     return () => { cancelled = true; };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady]);
 
   // Envelope fetch — runs in parallel with the threads load so the
   // scrubber bounds + density bars + status bar's true total can paint
@@ -280,6 +290,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // "emails") used by /comms/threads, so we send activeTypes directly.
   useEffect(() => {
     if (!caseId) return;
+    if (!reportsReady) return;
     let cancelled = false;
     setEnvelopeLoading(true);
     cellebriteCommsAPI.getEnvelope(caseId, {
@@ -301,7 +312,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       setEnvelopeLoading(false);
     });
     return () => { cancelled = true; };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, activeTypes, activeApps, startDate, endDate]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, activeTypes, activeApps, startDate, endDate, reportsReady]);
 
   // Cellebrite sometimes ingests the same logical conversation twice
   // — e.g. once as a Chat node and once as a Conversation node, or once

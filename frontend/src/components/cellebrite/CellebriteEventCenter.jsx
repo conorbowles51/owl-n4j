@@ -37,6 +37,11 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   );
   const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
   const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
+  // Wait for the PhoneReportsContext to finish hydrating before
+  // firing per-tab fetches — otherwise the first render sees an
+  // empty selection and runs every effect twice (once empty, once
+  // populated). See PhoneReportsContext docs on `hydrated`.
+  const reportsReady = phoneCtx ? phoneCtx.hydrated : true;
 
   // --- Filter state ---
   // Restore from localStorage on first mount. Keyed per-case so two
@@ -215,6 +220,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   // Fetch event types when report set changes
   useEffect(() => {
     if (!caseId) return;
+    if (!reportsReady) return;
     let cancelled = false;
     const keys = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
     cellebriteEventsAPI
@@ -235,7 +241,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
     return () => {
       cancelled = true;
     };
-  }, [caseId, selectedReportKeys]);
+  }, [caseId, selectedReportKeys, reportsReady]);
 
   // Fetch events + tracks when filters change (debounced).
   //
@@ -245,6 +251,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   // limit stays at 5000.
   useEffect(() => {
     if (!caseId) return;
+    if (!reportsReady) return;
     if (activeEventTypes.size === 0) {
       setEvents([]);
       setTracks([]);
@@ -312,7 +319,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       clearTimeout(t);
     };
-  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, startDate, endDate]);
+  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, startDate, endDate, reportsReady]);
 
   // Derive list of active intersection match centres (for map flagging)
   const activeIntersectionMatches = useMemo(() => {

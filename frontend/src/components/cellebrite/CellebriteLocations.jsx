@@ -31,6 +31,9 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   );
   const reports = phoneCtx?.reports?.length ? phoneCtx.reports : fallbackReports;
   const selectedReportKeys = phoneCtx ? phoneCtx.selectedReportKeys : fallbackSelection;
+  // Wait for the PhoneReportsContext to finish hydrating before
+  // firing per-tab fetches — see CommsCenter for the rationale.
+  const reportsReady = phoneCtx ? phoneCtx.hydrated : true;
 
   // --- Filter state ---
   const [windowStart, setWindowStart] = useState(null);
@@ -60,6 +63,7 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // cheap aggregation endpoint; raw mode pulls the individual points.
   useEffect(() => {
     if (!caseId) return undefined;
+    if (!reportsReady) return undefined;
     if (selectedReportKeys.size === 0) {
       setLocations([]);
       setTiles([]);
@@ -118,7 +122,7 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
     return () => {
       cancelled = true;
     };
-  }, [caseId, selectedReportKeys, startDate, endDate, renderMode]);
+  }, [caseId, selectedReportKeys, startDate, endDate, renderMode, reportsReady]);
 
   // Synthesize event-shaped rows for the map. In tiles mode each tile
   // becomes one marker with its centroid + count surfaced via label/
