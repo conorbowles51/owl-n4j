@@ -9311,6 +9311,13 @@ class Neo4jService:
             # Traverse from the single Person outward — the previous form started
             # from every PhoneCall/Communication in the report and checked the
             # relationship for each, an O(N) scan per click on big phones.
+            #
+            # Direction is now derived from WHICH branch of the UNION matched
+            # so the UI can show in/out arrows. From the phone owner's POV:
+            #   - branch with (p)-[:CALLED]->(c)      → contact CALLED owner = INCOMING
+            #   - branch with (c)-[:CALLED_TO]->(p)   → owner called CONTACT = OUTGOING
+            #   - branch with (p)-[:SENT_MESSAGE]->(m) → contact SENT m = INCOMING
+            #   - participant branch: derive from m.sender_key vs contact_key
             calls_rs = session.run(
                 """
                 MATCH (p:Person {case_id: $case_id, key: $contact_key})
@@ -9318,14 +9325,14 @@ class Neo4jService:
                     WITH p
                     MATCH (p)-[:CALLED]->(c:PhoneCall)
                     WHERE c.case_id = $case_id AND c.cellebrite_report_key = $rk
-                    RETURN c
+                    RETURN c, 'incoming' AS direction
                     UNION
                     WITH p
                     MATCH (c:PhoneCall)-[:CALLED_TO]->(p)
                     WHERE c.case_id = $case_id AND c.cellebrite_report_key = $rk
-                    RETURN c
+                    RETURN c, 'outgoing' AS direction
                 }
-                RETURN c
+                RETURN c, direction
                 ORDER BY c.timestamp DESC
                 LIMIT $lim
                 """,
@@ -9334,8 +9341,12 @@ class Neo4jService:
                 contact_key=contact_key,
                 lim=int(recent_limit),
             )
-            recent_calls = [dict(r["c"]) for r in calls_rs]
+            recent_calls = [(dict(r["c"]), r["direction"]) for r in calls_rs]
 
+            # Messages: pull the sender key alongside so we can derive
+            # direction (contact-sent = incoming, owner/other-sent =
+            # outgoing). Also pull thread parent key so the UI can open
+            # the conversation in the rail.
             msgs_rs = session.run(
                 """
                 MATCH (p:Person {case_id: $case_id, key: $contact_key})
@@ -9345,16 +9356,18 @@ class Neo4jService:
                     WHERE m.case_id = $case_id
                       AND m.cellebrite_report_key = $rk
                       AND m.body IS NOT NULL
-                    RETURN m
+                    OPTIONAL MATCH (m)-[:PART_OF]->(t:Communication)
+                    RETURN m, p.key AS sender_key, t.key AS thread_id
                     UNION
                     WITH p
                     MATCH (p)-[:PARTICIPATED_IN]->(chat:Communication)<-[:PART_OF]-(m:Communication)
                     WHERE m.case_id = $case_id
                       AND m.cellebrite_report_key = $rk
                       AND m.body IS NOT NULL
-                    RETURN m
+                    OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
+                    RETURN m, sender.key AS sender_key, chat.key AS thread_id
                 }
-                RETURN DISTINCT m
+                RETURN DISTINCT m, sender_key, thread_id
                 ORDER BY m.timestamp DESC
                 LIMIT $lim
                 """,
@@ -9363,7 +9376,10 @@ class Neo4jService:
                 contact_key=contact_key,
                 lim=int(recent_limit),
             )
-            recent_messages = [dict(r["m"]) for r in msgs_rs]
+            recent_messages = [
+                (dict(r["m"]), r["sender_key"], r["thread_id"])
+                for r in msgs_rs
+            ]
 
             return {
                 "contact": {
@@ -9378,12 +9394,15 @@ class Neo4jService:
                     {
                         "key": c.get("key"),
                         "timestamp": c.get("timestamp"),
-                        "direction": c.get("direction"),
+                        # Derived from the relationship traversal above —
+                        # not the raw c.direction property which can be
+                        # ambiguous depending on which side recorded it.
+                        "direction": direction,
                         "call_type": c.get("call_type"),
                         "duration": c.get("duration"),
                         "source_app": c.get("source_app"),
                     }
-                    for c in recent_calls
+                    for (c, direction) in recent_calls
                 ],
                 "recent_messages": [
                     {
@@ -9391,8 +9410,21 @@ class Neo4jService:
                         "timestamp": m.get("timestamp"),
                         "source_app": m.get("source_app"),
                         "body": (m.get("body") or "")[:300],
+                        # 'incoming' = sent BY this contact (so the
+                        # phone owner received it). 'outgoing' = sent
+                        # by anyone else in the chat (typically the
+                        # owner; in group chats can be a third party).
+                        "direction": (
+                            "incoming" if sender_key == contact_key
+                            else "outgoing"
+                        ),
+                        "sender_key": sender_key,
+                        # Thread parent key — used by the UI to open the
+                        # whole conversation in the rail anchored on
+                        # this message.
+                        "thread_id": thread_id,
                     }
-                    for m in recent_messages
+                    for (m, sender_key, thread_id) in recent_messages
                 ],
             }
 
