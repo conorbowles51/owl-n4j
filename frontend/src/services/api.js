@@ -2511,13 +2511,64 @@ export const usersAPI = {
 /**
  * Cellebrite Multi-Phone Analytics API
  */
+// Single-flight cache for /cellebrite/reports keyed by caseId.
+// Each entry holds either an `inflight` promise (concurrent callers
+// share it) or a resolved `value` (recent callers reuse it for
+// REPORTS_CACHE_TTL_MS). Cleared on errors and on every mutating
+// endpoint via cellebriteAPI.invalidateReports.
+const _reportsCache = new Map();
+const REPORTS_CACHE_TTL_MS = 1500;
+
 export const cellebriteAPI = {
   /**
-   * List all ingested PhoneReport nodes for a case
+   * List all ingested PhoneReport nodes for a case.
+   *
+   * Single-flighted: concurrent calls for the same caseId share a
+   * single in-flight HTTP request. Result is cached for a short TTL
+   * (1.5s) so independent components mounting at roughly the same
+   * time on case open don't each trigger their own round-trip — we
+   * observed 6 separate /reports calls per case open before this.
+   *
+   * Mutating endpoints (deleteReport, patchReport) call invalidateReports
+   * to bust the cache so subsequent reads see fresh data.
+   *
    * @param {string} caseId - REQUIRED: Case ID
    */
-  getReports: (caseId) =>
-    fetchAPI(`/cellebrite/reports?case_id=${encodeURIComponent(caseId)}`),
+  getReports: (caseId) => {
+    const now = Date.now();
+    const entry = _reportsCache.get(caseId);
+    if (entry) {
+      // Coalesce concurrent callers onto one in-flight promise.
+      if (entry.inflight) return entry.inflight;
+      // Reuse a recent successful response.
+      if (now - entry.cachedAt < REPORTS_CACHE_TTL_MS) {
+        return Promise.resolve(entry.value);
+      }
+    }
+    const promise = fetchAPI(`/cellebrite/reports?case_id=${encodeURIComponent(caseId)}`)
+      .then((value) => {
+        _reportsCache.set(caseId, { value, cachedAt: Date.now(), inflight: null });
+        return value;
+      })
+      .catch((err) => {
+        // Don't poison the cache on failure — let the next caller
+        // retry. Clearing inflight is enough.
+        _reportsCache.delete(caseId);
+        throw err;
+      });
+    _reportsCache.set(caseId, { value: null, cachedAt: 0, inflight: promise });
+    return promise;
+  },
+
+  /**
+   * Drop the cached /reports response for a case so the next
+   * getReports() will re-fetch. Called by the mutating endpoints
+   * automatically; expose for callers that update reports out of
+   * band (e.g. an ingestion completion handler).
+   */
+  invalidateReports: (caseId) => {
+    _reportsCache.delete(caseId);
+  },
 
   /**
    * Delete a phone report and every node tagged with its key.
@@ -2531,7 +2582,12 @@ export const cellebriteAPI = {
     fetchAPI(
       `/cellebrite/reports/${encodeURIComponent(reportKey)}?case_id=${encodeURIComponent(caseId)}`,
       { method: 'DELETE' },
-    ),
+    ).then((res) => {
+      // Bust the single-flight cache so subsequent getReports() sees
+      // the deleted phone disappear instead of replaying a stale list.
+      _reportsCache.delete(caseId);
+      return res;
+    }),
 
   /**
    * Update mutable fields on a phone report. Currently supports only
@@ -2551,7 +2607,12 @@ export const cellebriteAPI = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body || {}),
       },
-    ),
+    ).then((res) => {
+      // Bust the single-flight cache so the next getReports() picks
+      // up renamed devices / new override values.
+      _reportsCache.delete(caseId);
+      return res;
+    }),
 
   /**
    * Get cross-phone graph (shared contacts across devices)
