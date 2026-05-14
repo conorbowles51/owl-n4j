@@ -276,13 +276,26 @@ def _resolve_attachments(case_id: str, items: List[dict]) -> None:
 async def get_comms_entities(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None, description="Comma-separated report keys"),
+    with_counts: bool = Query(
+        False,
+        description=(
+            "When true, includes per-entity call/message/email counts. "
+            "Adds 5 OPTIONAL MATCH passes to the Cypher; on busy cases "
+            "(OPDMD28: 13K entities) this takes ~12s + ~13MB. Default "
+            "false ships only the cheap fields the filter UI needs to "
+            "render — counts default to 0; opt in only when sorting by "
+            "activity."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    """List distinct comms participants with per-entity comm counts and device membership."""
+    """List distinct comms participants. Counts opt-in via with_counts."""
     _require_case_access(case_id, current_user, db)
     keys = _csv_param(report_keys)
-    entities = neo4j_service.get_cellebrite_comms_entities(case_id=case_id, report_keys=keys)
+    entities = neo4j_service.get_cellebrite_comms_entities(
+        case_id=case_id, report_keys=keys, with_counts=with_counts,
+    )
     return {"entities": entities}
 
 

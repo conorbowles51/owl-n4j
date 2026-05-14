@@ -2594,11 +2594,17 @@ export const cellebriteAPI = {
  */
 export const cellebriteCommsAPI = {
   /**
-   * List all comms participants (Person entities) with aggregate counts and device membership.
+   * List all comms participants (Person entities) with device membership.
+   *
+   * `withCounts` (default false) toggles per-entity call/message/email
+   * count aggregation. On busy cases the counts add ~10s + 10s of MB
+   * to the response, so default-off keeps the entity filter snappy.
+   * Opt in only when the caller actually needs activity-based sorting.
    */
-  getEntities: (caseId, reportKeys = null) => {
+  getEntities: (caseId, reportKeys = null, { withCounts = false } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (withCounts) params.append('with_counts', 'true');
     return fetchAPI(`/cellebrite/comms/entities?${params.toString()}`);
   },
 

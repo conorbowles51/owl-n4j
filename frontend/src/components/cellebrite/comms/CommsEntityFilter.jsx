@@ -26,7 +26,11 @@ export default function CommsEntityFilter({
 }) {
   const [fromSearch, setFromSearch] = useState('');
   const [toSearch, setToSearch] = useState('');
-  const [sortKey, setSortKey] = useState('activity'); // 'name' | 'activity' | 'comms'
+  // Default to alphabetical because the parent now fetches entities
+  // without per-entity comms counts (counts default to 0 in lean mode).
+  // Activity/comms sort still works if a caller threads down a list
+  // that was fetched with `withCounts: true`.
+  const [sortKey, setSortKey] = useState('name'); // 'name' | 'activity' | 'comms'
   const nameCacheRef = useRef(new Map());
 
   // Build name cache for persistent chip labels

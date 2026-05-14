@@ -6210,12 +6210,24 @@ class Neo4jService:
         self,
         case_id: str,
         report_keys: Optional[List[str]] = None,
+        with_counts: bool = False,
     ) -> list:
         """
         Get all distinct Person entities for the Comms Center filter panels.
 
-        Deduplicated by Person.key across devices. Returns counts of calls,
-        messages, emails (as sender and as recipient), device membership.
+        Deduplicated by Person.key across devices.
+
+        with_counts: when True, returns the original behaviour — five
+            extra OPTIONAL MATCH + collect(DISTINCT id) aggregations
+            per entity to compute call/message/email counts. Slow on
+            big cases (OPDMD28: 12s, 13 MB for 13K entities).
+
+            When False (default), returns only the cheap fields the
+            filter UI actually needs to render — name, phone_numbers,
+            is_owner, device_keys, device_count. Frontend sort by
+            comms-volume degrades to sort-by-name; it can re-fetch
+            with with_counts=true on demand if the user picks an
+            activity-based sort.
         """
         params: Dict[str, Any] = {"case_id": case_id}
         report_filter = ""
@@ -6224,77 +6236,119 @@ class Neo4jService:
             params["report_keys"] = list(report_keys)
 
         with self._driver.session() as session:
+            if with_counts:
+                # Slow path — preserved for callers that explicitly opt in.
+                query = f"""
+                    MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                    WHERE p.key IS NOT NULL {report_filter}
+                    WITH p.key AS key,
+                         collect(DISTINCT p) AS persons,
+                         collect(DISTINCT p.cellebrite_report_key) AS device_keys,
+                         collect(DISTINCT p.name) AS names,
+                         collect(DISTINCT p.phone_numbers) AS phone_lists,
+                         max(toString(coalesce(p.is_phone_owner, false))) AS is_owner_str
+
+                    // Count comms involving any of these person-instances
+                    UNWIND persons AS person
+                    OPTIONAL MATCH (person)-[:CALLED]->(c:PhoneCall)
+                      WHERE (size($report_keys_list) = 0 OR c.cellebrite_report_key IN $report_keys_list)
+                    WITH key, device_keys, names, phone_lists, is_owner_str, persons,
+                         collect(DISTINCT c.id) AS calls_out_ids
+
+                    UNWIND persons AS person
+                    OPTIONAL MATCH (c2:PhoneCall)-[:CALLED_TO]->(person)
+                      WHERE (size($report_keys_list) = 0 OR c2.cellebrite_report_key IN $report_keys_list)
+                    WITH key, device_keys, names, phone_lists, is_owner_str, persons,
+                         calls_out_ids, collect(DISTINCT c2.id) AS calls_in_ids
+
+                    UNWIND persons AS person
+                    OPTIONAL MATCH (person)-[:SENT_MESSAGE]->(m:Communication)
+                      WHERE m.body IS NOT NULL
+                        AND (size($report_keys_list) = 0 OR m.cellebrite_report_key IN $report_keys_list)
+                    WITH key, device_keys, names, phone_lists, is_owner_str,
+                         calls_out_ids, calls_in_ids, persons,
+                         collect(DISTINCT m.id) AS msgs_sent_ids
+
+                    UNWIND persons AS person
+                    OPTIONAL MATCH (person)-[:PARTICIPATED_IN]->(chat:Communication)
+                      WHERE chat.chat_id IS NOT NULL
+                        AND (size($report_keys_list) = 0 OR chat.cellebrite_report_key IN $report_keys_list)
+                    OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
+                      WHERE msg.body IS NOT NULL
+                    WITH key, device_keys, names, phone_lists, is_owner_str,
+                         calls_out_ids, calls_in_ids, msgs_sent_ids, persons,
+                         collect(DISTINCT msg.id) AS msgs_received_ids
+
+                    UNWIND persons AS person
+                    OPTIONAL MATCH (person)-[:EMAILED]->(e1:Email)
+                      WHERE (size($report_keys_list) = 0 OR e1.cellebrite_report_key IN $report_keys_list)
+                    WITH key, device_keys, names, phone_lists, is_owner_str,
+                         calls_out_ids, calls_in_ids, msgs_sent_ids, msgs_received_ids, persons,
+                         collect(DISTINCT e1.id) AS emails_sent_ids
+
+                    UNWIND persons AS person
+                    OPTIONAL MATCH (e2:Email)-[:SENT_TO]->(person)
+                      WHERE (size($report_keys_list) = 0 OR e2.cellebrite_report_key IN $report_keys_list)
+                    WITH key, device_keys, names, phone_lists, is_owner_str,
+                         calls_out_ids, calls_in_ids, msgs_sent_ids, msgs_received_ids,
+                         emails_sent_ids, collect(DISTINCT e2.id) AS emails_received_ids
+
+                    RETURN key,
+                           head(names) AS name,
+                           head(phone_lists) AS phone_numbers,
+                           is_owner_str = 'true' AS is_owner,
+                           device_keys,
+                           size(device_keys) AS device_count,
+                           size(calls_out_ids) + size(calls_in_ids) AS call_count,
+                           size(msgs_sent_ids) + size(msgs_received_ids) AS message_count,
+                           size(emails_sent_ids) + size(emails_received_ids) AS email_count,
+                           size(calls_out_ids) + size(msgs_sent_ids) + size(emails_sent_ids) AS as_sender_count,
+                           size(calls_in_ids) + size(msgs_received_ids) + size(emails_received_ids) AS as_recipient_count
+                    ORDER BY call_count + message_count + email_count DESC
+                """
+                params["report_keys_list"] = list(report_keys) if report_keys else []
+                result = session.run(query, params)
+                entities = []
+                for record in result:
+                    entities.append({
+                        "key": record["key"],
+                        "name": record["name"] or record["key"],
+                        "phone_numbers": record["phone_numbers"] or [],
+                        "is_owner": bool(record["is_owner"]),
+                        "device_keys": list(record["device_keys"] or []),
+                        "device_count": int(record["device_count"] or 0),
+                        "call_count": int(record["call_count"] or 0),
+                        "message_count": int(record["message_count"] or 0),
+                        "email_count": int(record["email_count"] or 0),
+                        "as_sender_count": int(record["as_sender_count"] or 0),
+                        "as_recipient_count": int(record["as_recipient_count"] or 0),
+                    })
+                return entities
+
+            # Lean path — what the entity-filter UI actually needs to
+            # render. No interaction-count aggregations; sorts default
+            # to alphabetical until the caller opts in to with_counts.
+            # Empirically ~80% smaller payload + ~80% faster Cypher on
+            # OPDMD28 (13s/13MB → ~2s/2MB). Frontend filter still works
+            # for picking participants; it just can't sort by activity
+            # until counts are populated.
             query = f"""
                 MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
                 WHERE p.key IS NOT NULL {report_filter}
                 WITH p.key AS key,
-                     collect(DISTINCT p) AS persons,
                      collect(DISTINCT p.cellebrite_report_key) AS device_keys,
                      collect(DISTINCT p.name) AS names,
                      collect(DISTINCT p.phone_numbers) AS phone_lists,
                      max(toString(coalesce(p.is_phone_owner, false))) AS is_owner_str
-
-                // Count comms involving any of these person-instances
-                UNWIND persons AS person
-                OPTIONAL MATCH (person)-[:CALLED]->(c:PhoneCall)
-                  WHERE (size($report_keys_list) = 0 OR c.cellebrite_report_key IN $report_keys_list)
-                WITH key, device_keys, names, phone_lists, is_owner_str, persons,
-                     collect(DISTINCT c.id) AS calls_out_ids
-
-                UNWIND persons AS person
-                OPTIONAL MATCH (c2:PhoneCall)-[:CALLED_TO]->(person)
-                  WHERE (size($report_keys_list) = 0 OR c2.cellebrite_report_key IN $report_keys_list)
-                WITH key, device_keys, names, phone_lists, is_owner_str, persons,
-                     calls_out_ids, collect(DISTINCT c2.id) AS calls_in_ids
-
-                UNWIND persons AS person
-                OPTIONAL MATCH (person)-[:SENT_MESSAGE]->(m:Communication)
-                  WHERE m.body IS NOT NULL
-                    AND (size($report_keys_list) = 0 OR m.cellebrite_report_key IN $report_keys_list)
-                WITH key, device_keys, names, phone_lists, is_owner_str,
-                     calls_out_ids, calls_in_ids, persons,
-                     collect(DISTINCT m.id) AS msgs_sent_ids
-
-                UNWIND persons AS person
-                OPTIONAL MATCH (person)-[:PARTICIPATED_IN]->(chat:Communication)
-                  WHERE chat.chat_id IS NOT NULL
-                    AND (size($report_keys_list) = 0 OR chat.cellebrite_report_key IN $report_keys_list)
-                OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
-                  WHERE msg.body IS NOT NULL
-                WITH key, device_keys, names, phone_lists, is_owner_str,
-                     calls_out_ids, calls_in_ids, msgs_sent_ids, persons,
-                     collect(DISTINCT msg.id) AS msgs_received_ids
-
-                UNWIND persons AS person
-                OPTIONAL MATCH (person)-[:EMAILED]->(e1:Email)
-                  WHERE (size($report_keys_list) = 0 OR e1.cellebrite_report_key IN $report_keys_list)
-                WITH key, device_keys, names, phone_lists, is_owner_str,
-                     calls_out_ids, calls_in_ids, msgs_sent_ids, msgs_received_ids, persons,
-                     collect(DISTINCT e1.id) AS emails_sent_ids
-
-                UNWIND persons AS person
-                OPTIONAL MATCH (e2:Email)-[:SENT_TO]->(person)
-                  WHERE (size($report_keys_list) = 0 OR e2.cellebrite_report_key IN $report_keys_list)
-                WITH key, device_keys, names, phone_lists, is_owner_str,
-                     calls_out_ids, calls_in_ids, msgs_sent_ids, msgs_received_ids,
-                     emails_sent_ids, collect(DISTINCT e2.id) AS emails_received_ids
-
                 RETURN key,
                        head(names) AS name,
                        head(phone_lists) AS phone_numbers,
                        is_owner_str = 'true' AS is_owner,
                        device_keys,
-                       size(device_keys) AS device_count,
-                       size(calls_out_ids) + size(calls_in_ids) AS call_count,
-                       size(msgs_sent_ids) + size(msgs_received_ids) AS message_count,
-                       size(emails_sent_ids) + size(emails_received_ids) AS email_count,
-                       size(calls_out_ids) + size(msgs_sent_ids) + size(emails_sent_ids) AS as_sender_count,
-                       size(calls_in_ids) + size(msgs_received_ids) + size(emails_received_ids) AS as_recipient_count
-                ORDER BY call_count + message_count + email_count DESC
+                       size(device_keys) AS device_count
+                ORDER BY name
             """
-            params["report_keys_list"] = list(report_keys) if report_keys else []
             result = session.run(query, params)
-
             entities = []
             for record in result:
                 entities.append({
@@ -6304,11 +6358,14 @@ class Neo4jService:
                     "is_owner": bool(record["is_owner"]),
                     "device_keys": list(record["device_keys"] or []),
                     "device_count": int(record["device_count"] or 0),
-                    "call_count": int(record["call_count"] or 0),
-                    "message_count": int(record["message_count"] or 0),
-                    "email_count": int(record["email_count"] or 0),
-                    "as_sender_count": int(record["as_sender_count"] or 0),
-                    "as_recipient_count": int(record["as_recipient_count"] or 0),
+                    # Counts omitted — caller can re-fetch with
+                    # with_counts=true when needed. Default to 0 so
+                    # frontend code that reads them stays well-defined.
+                    "call_count": 0,
+                    "message_count": 0,
+                    "email_count": 0,
+                    "as_sender_count": 0,
+                    "as_recipient_count": 0,
                 })
             return entities
 
