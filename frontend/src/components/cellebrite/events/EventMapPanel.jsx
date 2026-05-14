@@ -42,9 +42,13 @@ function makeEventIcon(eventType, deviceColor, highlighted = false) {
 
 function BoundsFitter({ events, tracks, enabled }) {
   const map = useMap();
-  const fitted = useRef(false);
+  // Track point count instead of a one-shot bool — late-arriving data
+  // (the common case: tiles/events fetch resolves AFTER first paint)
+  // would otherwise fly past a frozen `fitted=true` and the user gets
+  // a blank world map at zoom 2 over an empty Atlantic.
+  const lastCount = useRef(0);
   useEffect(() => {
-    if (!enabled || fitted.current) return;
+    if (!enabled) return;
     const points = [];
     for (const e of events) {
       if (e.latitude != null && e.longitude != null) points.push([e.latitude, e.longitude]);
@@ -52,10 +56,12 @@ function BoundsFitter({ events, tracks, enabled }) {
     for (const t of tracks) {
       for (const p of t.points || []) points.push([p.lat, p.lon]);
     }
-    if (points.length === 0) return;
+    // Only re-fit when the count grew — avoids stealing the user's
+    // pan/zoom on every render where the same data passes through.
+    if (points.length === 0 || points.length === lastCount.current) return;
     try {
       map.fitBounds(L.latLngBounds(points), { padding: [30, 30], maxZoom: 14 });
-      fitted.current = true;
+      lastCount.current = points.length;
     } catch {
       // ignore
     }
@@ -65,20 +71,27 @@ function BoundsFitter({ events, tracks, enabled }) {
 
 /**
  * Tells Leaflet to recompute its container size whenever the parent
- * tab becomes visible again. Without this the map renders at zero
- * size when the events tab was inactive (display:none) at mount, then
- * stays mis-sized until the user resizes the browser window.
+ * tab becomes visible again, OR when fresh data lands. Without this
+ * the map renders at zero size when the events tab was inactive
+ * (display:none) at mount, OR shows a frozen blank canvas when tiles
+ * arrive after the parent flex finishes its first paint.
  */
-function VisibilityInvalidator({ isActive }) {
+function VisibilityInvalidator({ isActive, dataKey }) {
   const map = useMap();
   useEffect(() => {
     if (!isActive) return;
     // Defer to the next paint so the container has its real size.
+    // Re-keying on `dataKey` (an event-count fingerprint passed from
+    // the parent) means a kick on every data arrival, not just on
+    // tab-visibility flips. This is the fix for the Locations tab
+    // blank-map bug — tiles come back after the first paint and the
+    // earlier mount-only invalidate had already fired against a 0-h
+    // container.
     const id = requestAnimationFrame(() => {
       try { map.invalidateSize(); } catch { /* ignore */ }
     });
     return () => cancelAnimationFrame(id);
-  }, [isActive, map]);
+  }, [isActive, dataKey, map]);
   return null;
 }
 
@@ -192,7 +205,10 @@ export default function EventMapPanel({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <BoundsFitter events={events} tracks={tracks} enabled />
-        <VisibilityInvalidator isActive={isActive} />
+        <VisibilityInvalidator
+          isActive={isActive}
+          dataKey={`${events.length}:${tracks.length}`}
+        />
 
         {/* Device tracks */}
         {splitTracks.map((t) => (
