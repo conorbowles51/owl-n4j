@@ -1,11 +1,31 @@
-import React, { useState } from 'react';
-import { Mail, Paperclip, Folder } from 'lucide-react';
+import React from 'react';
+import { Mail, Paperclip, Folder, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { cellebriteOverviewAPI } from '../../../services/api';
 import OverviewDetailView from './OverviewDetailView';
-import EventDetailDrawer from '../events/EventDetailDrawer';
+import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 import { formatTs } from '../events/eventUtils';
 
+// Tiny in/out chip — mirrors the visual language used by Messages and
+// Contacts so investigators see the same indicator everywhere.
+function DirectionChip({ direction }) {
+  const isIncoming = direction === 'incoming';
+  const Arrow = isIncoming ? ArrowDownLeft : ArrowUpRight;
+  const colour = isIncoming ? 'text-blue-700' : 'text-emerald-700';
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase ${colour}`}>
+      <Arrow className="w-3 h-3" />
+      {isIncoming ? 'In' : 'Out'}
+    </span>
+  );
+}
+
 const COLUMNS = [
+  {
+    key: 'direction',
+    label: '',
+    width: 'minmax(50px, 60px)',
+    render: (r) => <DirectionChip direction={r.direction} />,
+  },
   {
     key: 'timestamp',
     label: 'Time',
@@ -67,44 +87,72 @@ const COLUMNS = [
 ];
 
 export default function OverviewEmailsView({ caseId, report, onBack }) {
-  const [openEvent, setOpenEvent] = useState(null);
+  const { selectEntity } = useCellebriteSelection();
 
+  // Click an email → publish a 'thread' rail selection so the
+  // ThreadAccordion shows the WHOLE pair conversation (everything
+  // between sender and first recipient, on this device) with this
+  // email as the scroll-to anchor. Replaces the legacy single-email
+  // EventDetailDrawer — investigators wanted to see the conversation
+  // context, not just the one email body.
+  //
+  // When the row has no thread_id (single email with no resolvable
+  // pair, or sender == recipient) fall back to a single-email rail
+  // selection so the rail still has something to show.
   const onRowClick = (row) => {
-    setOpenEvent({
-      id: row.id,
-      node_key: row.node_key,
-      event_type: 'email',
-      label: row.subject || 'Email',
-      summary: row.subject,
-      timestamp: row.timestamp,
-      latitude: null,
-      longitude: null,
-      sender: row.from_key ? { key: row.from_key, name: row.from_name } : null,
-      counterpart: row.to_key ? { key: row.to_key, name: row.to_name } : null,
+    if (!row?.thread_id) {
+      selectEntity({
+        type: 'email',
+        id: row.id || row.node_key,
+        caseId,
+        reportKey: report?.report_key,
+        payload: {
+          ...row,
+          node_key: row.node_key || row.id,
+          event_type: 'email',
+          label: row.subject || 'Email',
+          summary: row.subject,
+          sender: row.from_key ? { key: row.from_key, name: row.from_name } : null,
+          counterpart: row.to_key ? { key: row.to_key, name: row.to_name } : null,
+        },
+        source: 'overview.emails',
+      });
+      return;
+    }
+    selectEntity({
+      type: 'thread',
+      id: row.thread_id,
+      caseId,
+      reportKey: report?.report_key,
+      payload: {
+        thread_id: row.thread_id,
+        // Backend get_thread_detail handles 'emails' type by parsing
+        // the synthetic id back into report_key + party pair and
+        // rebuilding the pair feed.
+        thread_type: 'emails',
+        report_key: report?.report_key,
+        // Anchor on the clicked email so ThreadAccordion's wrapper
+        // around CommsThreadView's firstMatch handler scrolls to it
+        // and flashes the highlight ring.
+        message_id: row.id || row.node_key,
+        label: row.subject || 'Email conversation',
+      },
+      source: 'overview.emails',
     });
   };
 
   return (
-    <>
-      <OverviewDetailView
-        report={report}
-        title="Emails"
-        icon={Mail}
-        color="red"
-        onBack={onBack}
-        columns={COLUMNS}
-        defaultSort={{ key: 'timestamp', dir: 'desc' }}
-        fetchPage={cellebriteOverviewAPI.getEmails}
-        caseId={caseId}
-        onRowClick={onRowClick}
-      />
-      {openEvent && (
-        <EventDetailDrawer
-          caseId={caseId}
-          event={openEvent}
-          onClose={() => setOpenEvent(null)}
-        />
-      )}
-    </>
+    <OverviewDetailView
+      report={report}
+      title="Emails"
+      icon={Mail}
+      color="red"
+      onBack={onBack}
+      columns={COLUMNS}
+      defaultSort={{ key: 'timestamp', dir: 'desc' }}
+      fetchPage={cellebriteOverviewAPI.getEmails}
+      caseId={caseId}
+      onRowClick={onRowClick}
+    />
   );
 }

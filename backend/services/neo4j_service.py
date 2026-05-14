@@ -9265,6 +9265,37 @@ class Neo4jService:
                 src = dict(rec["src"]) if rec["src"] else None
                 dsts = [dict(d) for d in rec["dsts"] if d is not None]
                 first_dst = dsts[0] if dsts else None
+
+                # Synthesise a per-pair thread_id matching the format used
+                # in get_threads/get_thread_detail for emails:
+                #   emails-{report_key}-{sorted_keyA}-{sorted_keyB}
+                # This lets the UI ask the existing thread-detail endpoint
+                # for the whole "everything between these two parties"
+                # conversation. When sender or first recipient is missing
+                # we leave thread_id null — the UI falls back to a
+                # single-email rail selection.
+                from_key = src.get("key") if src else None
+                to_key = first_dst.get("key") if first_dst else None
+                thread_id = None
+                if from_key and to_key and from_key != to_key:
+                    pair = sorted([from_key, to_key])
+                    thread_id = f"emails-{report_key}-{pair[0]}-{pair[1]}"
+
+                # Derive direction (incoming / outgoing) from the phone
+                # owner's POV. The owner is the Person with
+                # is_phone_owner=true on this device. If sender is owner
+                # → outgoing; if any recipient is owner → incoming;
+                # otherwise (rare; both external in a forwarded thread)
+                # fall back to outgoing as a safe default.
+                from_is_owner = bool(src.get("is_phone_owner")) if src else False
+                any_dst_is_owner = any(d.get("is_phone_owner") for d in dsts)
+                if from_is_owner:
+                    direction = "outgoing"
+                elif any_dst_is_owner:
+                    direction = "incoming"
+                else:
+                    direction = "outgoing"
+
                 rows.append({
                     "key": e.get("key"),
                     "id": e.get("id"),
@@ -9277,12 +9308,17 @@ class Neo4jService:
                     "folder": e.get("folder"),
                     "email_status": e.get("email_status"),
                     "from_name": (src.get("name") if src else None),
-                    "from_key": (src.get("key") if src else None),
+                    "from_key": from_key,
                     "to_name": (first_dst.get("name") if first_dst else None),
-                    "to_key": (first_dst.get("key") if first_dst else None),
+                    "to_key": to_key,
                     "to_count": len(dsts),
                     "attachment_count": int(e.get("attachment_count") or 0),
                     "deleted_state": e.get("deleted_state"),
+                    # Phase F additions: thread_id + direction so the UI
+                    # can open the whole pair conversation in the rail
+                    # and tag rows with in/out indicators.
+                    "thread_id": thread_id,
+                    "direction": direction,
                 })
             return {"rows": rows, "total": total_count}
 
