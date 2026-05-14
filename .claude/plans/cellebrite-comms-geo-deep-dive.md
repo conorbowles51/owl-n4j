@@ -572,3 +572,40 @@ draggable.
 2. **H2** Comms — the immediate user pain.
 3. **H3** Locations — quick win, single split.
 4. **H4** Events Center — same as Locations.
+
+---
+
+## 13. Phase I — RFC-822 email threading at ingestion (PARKED)
+
+**Why parked, not built now:** today's "email thread" in the UI is a
+synthetic per-pair grouping (everything between sender and first
+recipient on this device). That's good enough to surface
+conversation context — investigators stopped asking once the
+ThreadAccordion landed.
+
+**What true threading would change:**
+- Parse `Message-ID`, `In-Reply-To`, and `References` headers at
+  ingestion in `services/triage_processors/email_processor.py`
+- Persist them on the `Email` node (already partly done — `message_id`
+  is captured)
+- Add `[:REPLIES_TO]` or `[:IN_THREAD]` relationships between Email
+  nodes during the writer pass
+- Build a `(:EmailThread)` parent node per `References` chain so the
+  thread has its own identity (subject normalisation, participant
+  list, message count) — same shape as `(:Communication)` thread
+  parents for chats
+- Update `get_thread_detail` to handle a new `thread_type='email_thread'`
+  that fetches by parent reference, not by party-pair
+- `get_overview_emails` would emit the real `thread_id` when the
+  email belongs to one, falling back to the per-pair synthetic id
+  for orphaned messages
+
+**Effort sketch:** medium. The header parsing is the easy bit; the
+fiddly part is normalising subjects (RE:/FWD: stripping) and
+deduping when the same email arrives in two mailboxes (Sent + Inbox).
+Risk: `References` chains can get long and noisy in real corporate
+mail; need a sensible cap.
+
+**Trigger to build:** when an investigator says "I want to see the
+actual reply chain" rather than "I want to see emails between these
+two parties".

@@ -70,6 +70,29 @@ function BoundsFitter({ events, tracks, enabled }) {
 }
 
 /**
+ * Pans the map to a specific event whenever `flyToId` changes. Used
+ * by callers (e.g. OverviewLocationsView) that drive selection from
+ * a side table — clicking a row should fly the map to that point and
+ * pop its marker bubble. Optional; ignored when `flyToId` is null.
+ */
+function FlyToSelected({ events, flyToId, zoom = 14 }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!flyToId) return;
+    const target = events.find((e) => (e.id || e.node_key) === flyToId);
+    if (!target || target.latitude == null || target.longitude == null) return;
+    try {
+      map.flyTo([target.latitude, target.longitude], Math.max(map.getZoom(), zoom), {
+        duration: 0.6,
+      });
+    } catch {
+      // ignore — Leaflet throws if the map isn't ready yet
+    }
+  }, [flyToId, events, map, zoom]);
+  return null;
+}
+
+/**
  * Tells Leaflet to recompute its container size whenever the parent
  * tab becomes visible again, OR when fresh data lands. Without this
  * the map renders at zero size when the events tab was inactive
@@ -103,6 +126,12 @@ export default function EventMapPanel({
   isPlaying = false,
   onEventClick,
   selectedEventId,
+  // When set, the map flies to the event with this id whenever it
+  // changes. Independent of selectedEventId (which only controls the
+  // marker highlight ring) so callers can choose: highlight-only,
+  // fly-to-only, or both. Used by Overview Locations where clicking a
+  // row should pan the map.
+  flyToId = null,
   intersectionMatches = [],
   deviceColorOf,
   // True when the parent tab is the active one. The map needs to
@@ -209,6 +238,8 @@ export default function EventMapPanel({
           isActive={isActive}
           dataKey={`${events.length}:${tracks.length}`}
         />
+        <FlyToSelected events={events} flyToId={flyToId} />
+
 
         {/* Device tracks */}
         {splitTracks.map((t) => (
