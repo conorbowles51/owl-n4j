@@ -12,6 +12,7 @@ import GenericAccordion from './GenericAccordion';
 import EventAccordion from './EventAccordion';
 import LocationTileAccordion from './LocationTileAccordion';
 import UnifiedContactAccordion from './UnifiedContactAccordion';
+import ThreadAccordion from './ThreadAccordion';
 
 const RENDERERS = {
   // Event-like selections from the Events Center (any of the artifact
@@ -33,6 +34,11 @@ const RENDERERS = {
   // Unified-by-number contact rolled up across all phones in the case
   // (Phase G). Payload is the full rollup row so no extra fetch.
   contact_unified: UnifiedContactAccordion,
+  // Whole conversation rendered in the rail with optional jump-to-message
+  // anchor. Used by Overview Messages and any other surface that wants
+  // "show me this message in its conversation" behaviour without a
+  // full-page navigate.
+  thread:       ThreadAccordion,
 };
 
 export function rendererFor(type) {
@@ -54,6 +60,7 @@ const TYPE_LABELS = {
   app_session: 'App session',
   device_event: 'Device event',
   event: 'Event',
+  thread: 'Conversation',
   generic: 'Item',
 };
 
