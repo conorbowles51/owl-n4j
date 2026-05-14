@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { X, Users, Search, Download, Settings } from 'lucide-react';
+import { X, Users, Search, Download, Settings, ChevronLeft, ChevronRight } from 'lucide-react';
 import { workspaceAPI, casesAPI, graphAPI } from '../services/api';
 import { parseSearchQuery, matchesQuery } from '../utils/searchParser';
 import CaseContextPanel from './workspace/CaseContextPanel';
@@ -53,6 +53,11 @@ export default function WorkspaceView({
   const [tasks, setTasks] = useState([]);
   const [deadlines, setDeadlines] = useState([]);
   const [pinnedItems, setPinnedItems] = useState([]);
+  // Per-session collapse for the left context panel — only meaningful
+  // in Cellebrite mode where users want max horizontal screen space
+  // for the multi-pane comms/locations views. Not persisted; flips
+  // back to expanded on page reload (matches the rail's behaviour).
+  const [leftCollapsed, setLeftCollapsed] = useState(false);
 
   // Cap the graph view to the top N nodes by connection degree (matches App.jsx)
   const GRAPH_VIEW_NODE_LIMIT = 100;
@@ -550,23 +555,52 @@ export default function WorkspaceView({
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Panel: Case Context */}
-        <div className="w-80 border-r border-light-200 bg-white overflow-y-auto">
-          <CaseContextPanel
-            caseId={caseId}
-            caseName={caseName || caseData?.name || 'Untitled Case'}
-            caseContext={caseContext}
-            onUpdateContext={handleUpdateContext}
-            authUsername={authUsername}
-            selectedSection={selectedSection}
-            onSectionSelect={handleSectionSelect}
-            pinnedItems={pinnedItems}
-            onRefreshPinned={async () => {
-              const data = await workspaceAPI.getPinnedItems(caseId);
-              setPinnedItems(data.pinned_items || []);
-            }}
-          />
-        </div>
+        {/* Left Panel: Case Context.
+            Collapsible only when in Cellebrite mode — that view has
+            its own multi-pane layout (Phone Reports tabs + universal
+            rail) that benefits from the extra horizontal space. The
+            other views render the panel as before. */}
+        {selectedSection === 'cellebrite' && leftCollapsed ? (
+          <div className="w-8 border-r border-light-200 bg-light-50 flex flex-col items-center pt-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setLeftCollapsed(false)}
+              className="p-1 rounded hover:bg-light-200 text-light-600"
+              title="Expand left panel"
+              aria-label="Expand left panel"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <div className="w-80 border-r border-light-200 bg-white overflow-y-auto relative flex-shrink-0">
+            {selectedSection === 'cellebrite' && (
+              <button
+                type="button"
+                onClick={() => setLeftCollapsed(true)}
+                className="absolute top-2 right-2 p-1 rounded hover:bg-light-100 text-light-500 hover:text-light-700 z-10"
+                title="Collapse left panel"
+                aria-label="Collapse left panel"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+            )}
+            <CaseContextPanel
+              caseId={caseId}
+              caseName={caseName || caseData?.name || 'Untitled Case'}
+              caseContext={caseContext}
+              onUpdateContext={handleUpdateContext}
+              authUsername={authUsername}
+              selectedSection={selectedSection}
+              onSectionSelect={handleSectionSelect}
+              pinnedItems={pinnedItems}
+              onRefreshPinned={async () => {
+                const data = await workspaceAPI.getPinnedItems(caseId);
+                setPinnedItems(data.pinned_items || []);
+              }}
+            />
+          </div>
+        )}
 
         {/* Center/Right Panels */}
         {selectedSection === 'case-overview' ? (
