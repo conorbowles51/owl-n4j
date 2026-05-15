@@ -6558,12 +6558,19 @@ class Neo4jService:
                     chat = dict(record["chat"])
                     participants = [dict(p) for p in record["participants"] if p is not None]
 
-                    # Participant filter: if from_keys or to_keys provided, ensure at least one matches
-                    if from_keys or to_keys:
+                    # Participant filter: if from_keys or to_keys provided, ensure at least one matches.
+                    # `participant_keys` is the involvement (OR) variant — used by Filter Comms
+                    # intents and the "Any direction" mode of the Participants picker. A thread
+                    # passes when at least one of its participants is in the involvement set
+                    # (sender OR receiver — direction-agnostic). Layered on top of the existing
+                    # from/to AND filters so callers can mix all three.
+                    if from_keys or to_keys or participant_keys:
                         pkeys = {p.get("key") for p in participants if p.get("key")}
                         if from_keys and not any(k in pkeys for k in from_keys):
                             continue
                         if to_keys and not any(k in pkeys for k in to_keys):
+                            continue
+                        if participant_keys and not any(k in pkeys for k in participant_keys):
                             continue
 
                     threads.append({
@@ -6619,12 +6626,14 @@ class Neo4jService:
                     a_key, b_key = a.get("key"), b.get("key")
                     if not a_key or not b_key:
                         continue
-                    # Participant filter
-                    if from_keys or to_keys:
+                    # Participant filter (see chat branch for `participant_keys` semantics).
+                    if from_keys or to_keys or participant_keys:
                         pkeys = {a_key, b_key}
                         if from_keys and not any(k in pkeys for k in from_keys):
                             continue
                         if to_keys and not any(k in pkeys for k in to_keys):
+                            continue
+                        if participant_keys and not any(k in pkeys for k in participant_keys):
                             continue
 
                     pair_keys = tuple(sorted([a_key, b_key]))
@@ -6698,11 +6707,13 @@ class Neo4jService:
                     a_key, b_key = a.get("key"), b.get("key")
                     if not a_key or not b_key:
                         continue
-                    if from_keys or to_keys:
+                    if from_keys or to_keys or participant_keys:
                         pkeys = {a_key, b_key}
                         if from_keys and not any(k in pkeys for k in from_keys):
                             continue
                         if to_keys and not any(k in pkeys for k in to_keys):
+                            continue
+                        if participant_keys and not any(k in pkeys for k in participant_keys):
                             continue
 
                     pair_keys = tuple(sorted([a_key, b_key]))
@@ -7105,6 +7116,7 @@ class Neo4jService:
         case_id: str,
         from_keys: Optional[List[str]] = None,
         to_keys: Optional[List[str]] = None,
+        participant_keys: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
         report_keys: Optional[List[str]] = None,
         source_apps: Optional[List[str]] = None,
@@ -7162,6 +7174,13 @@ class Neo4jService:
         params: Dict[str, Any] = {"case_id": case_id}
         params["from_keys"] = list(from_keys) if from_keys else []
         params["to_keys"] = list(to_keys) if to_keys else []
+        # Involvement (OR) keys. Used by Filter Comms intents and the
+        # "Any direction" participants mode. Empty list = no involvement
+        # filter; otherwise sender OR recipient must be in the set —
+        # solves the "Filter Comms by one contact returns nothing"
+        # bug where the same key in both from_keys and to_keys collapsed
+        # to "sender == recipient" (i.e. self-msgs only).
+        params["participant_keys"] = list(participant_keys) if participant_keys else []
         rk_filter_msg = ""
         rk_filter_call = ""
         rk_filter_email = ""
@@ -7243,7 +7262,13 @@ class Neo4jService:
         tx = session.begin_transaction()
         try:
             if "message" in active_types:
-                # Messages: sender -> message -> chat <- participants (includes recipient)
+                # Messages: sender -> message -> chat <- participants (includes recipient).
+                #
+                # Involvement (`participant_keys`) is OR over sender + recipient: the
+                # message qualifies if the sender is in the set OR any participant in
+                # the chat (other than sender) is. This is the fix for "Filter Comms
+                # by one contact returns nothing" — previously the same key in
+                # from_keys + to_keys forced sender == recipient.
                 msg_cursor_clause = _cursor_clause("message", "msg.timestamp", "msg.id")
                 query = f"""
                     MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
@@ -7256,6 +7281,9 @@ class Neo4jService:
                       AND (size($to_keys) = 0 OR recipient.key IN $to_keys)
                     WITH msg, sender, chat,
                          collect(DISTINCT recipient) AS recipients
+                    WHERE size($participant_keys) = 0
+                       OR sender.key IN $participant_keys
+                       OR ANY(rp IN recipients WHERE rp.key IN $participant_keys)
                     RETURN msg, sender, recipients, chat
                     ORDER BY msg.timestamp {sort_dir}
                     LIMIT $limit
@@ -7296,6 +7324,11 @@ class Neo4jService:
                       AND (
                           (size($from_keys) = 0 OR src.key IN $from_keys)
                           AND (size($to_keys) = 0 OR dst.key IN $to_keys)
+                      )
+                      AND (
+                          size($participant_keys) = 0
+                          OR src.key IN $participant_keys
+                          OR dst.key IN $participant_keys
                       )
                       {rk_filter_call} {app_filter_call} {date_filter_call}
                       {call_cursor_clause}
@@ -7339,6 +7372,11 @@ class Neo4jService:
                       AND (
                           (size($from_keys) = 0 OR src.key IN $from_keys)
                           AND (size($to_keys) = 0 OR dst.key IN $to_keys)
+                      )
+                      AND (
+                          size($participant_keys) = 0
+                          OR src.key IN $participant_keys
+                          OR dst.key IN $participant_keys
                       )
                       {rk_filter_email} {app_filter_email} {date_filter_email}
                       {email_cursor_clause}
@@ -7448,6 +7486,7 @@ class Neo4jService:
         report_keys: Optional[List[str]] = None,
         from_keys: Optional[List[str]] = None,
         to_keys: Optional[List[str]] = None,
+        participant_keys: Optional[List[str]] = None,
         types: Optional[List[str]] = None,
         source_apps: Optional[List[str]] = None,
         start_date: Optional[str] = None,
@@ -7497,6 +7536,17 @@ class Neo4jService:
             to_filter_email = " AND b.key IN $to_keys"
             params["to_keys"] = list(to_keys)
 
+        # Involvement (OR) filter — same semantics as in
+        # get_cellebrite_comms_between. Keeps the envelope consistent
+        # with the body fetch when callers use the "Any direction" /
+        # Filter Comms intent.
+        inv_filter_msg = inv_filter_call = inv_filter_email = ""
+        if participant_keys:
+            inv_filter_msg = " AND (sender.key IN $participant_keys OR recipient.key IN $participant_keys)"
+            inv_filter_call = " AND (src.key IN $participant_keys OR dst.key IN $participant_keys)"
+            inv_filter_email = " AND (a.key IN $participant_keys OR b.key IN $participant_keys)"
+            params["participant_keys"] = list(participant_keys)
+
         app_filter_msg = app_filter_call = app_filter_email = ""
         if source_apps:
             app_filter_msg = " AND msg.source_app IN $source_apps"
@@ -7534,7 +7584,7 @@ class Neo4jService:
                     WHERE msg.case_id = $case_id
                       AND msg.source_type = 'cellebrite'
                       AND coalesce(msg.date, msg.timestamp, '') <> ''
-                      {rk_filter_msg}{from_filter_msg}{to_filter_msg}
+                      {rk_filter_msg}{from_filter_msg}{to_filter_msg}{inv_filter_msg}
                       {app_filter_msg}{date_filter_msg}
                     WITH coalesce(msg.date, substring(msg.timestamp, 0, 10)) AS d, msg
                     RETURN d, count(DISTINCT msg) AS c
@@ -7558,7 +7608,7 @@ class Neo4jService:
                     WHERE c.case_id = $case_id
                       AND c.source_type = 'cellebrite'
                       AND coalesce(c.date, c.timestamp, '') <> ''
-                      {rk_filter_call}{from_filter_call}{to_filter_call}
+                      {rk_filter_call}{from_filter_call}{to_filter_call}{inv_filter_call}
                       {app_filter_call}{date_filter_call}
                     WITH coalesce(c.date, substring(c.timestamp, 0, 10)) AS d, c
                     RETURN d, count(DISTINCT c) AS cnt
@@ -7582,7 +7632,7 @@ class Neo4jService:
                     WHERE e.case_id = $case_id
                       AND e.source_type = 'cellebrite'
                       AND coalesce(e.date, e.timestamp, '') <> ''
-                      {rk_filter_email}{from_filter_email}{to_filter_email}
+                      {rk_filter_email}{from_filter_email}{to_filter_email}{inv_filter_email}
                       {app_filter_email}{date_filter_email}
                     WITH coalesce(e.date, substring(e.timestamp, 0, 10)) AS d, e
                     RETURN d, count(DISTINCT e) AS cnt

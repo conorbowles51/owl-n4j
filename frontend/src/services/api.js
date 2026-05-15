@@ -2686,6 +2686,11 @@ export const cellebriteCommsAPI = {
     reportKeys = null,
     fromKeys = null,
     toKeys = null,
+    // Direction-agnostic involvement filter — when set, threads
+    // qualify if any participant is in the set. OR-combined with
+    // from_keys/to_keys server-side. Used by Filter Comms intents
+    // and the Participants picker's "Any direction" mode.
+    participantKeys = null,
     threadTypes = null,
     sourceApps = null,
     startDate = null,
@@ -2698,6 +2703,7 @@ export const cellebriteCommsAPI = {
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
     if (toKeys?.length) params.append('to_keys', toKeys.join(','));
+    if (participantKeys?.length) params.append('participant_keys', participantKeys.join(','));
     if (threadTypes?.length) params.append('thread_types', threadTypes.join(','));
     if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
     if (startDate) params.append('start_date', startDate);
@@ -2730,6 +2736,8 @@ export const cellebriteCommsAPI = {
   getBetween: (caseId, {
     fromKeys = null,
     toKeys = null,
+    // Direction-agnostic involvement filter — see getThreads().
+    participantKeys = null,
     types = null,
     reportKeys = null,
     sourceApps = null,
@@ -2743,6 +2751,7 @@ export const cellebriteCommsAPI = {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
     if (toKeys?.length) params.append('to_keys', toKeys.join(','));
+    if (participantKeys?.length) params.append('participant_keys', participantKeys.join(','));
     if (types?.length) params.append('types', types.join(','));
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
     if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
@@ -2784,6 +2793,8 @@ export const cellebriteCommsAPI = {
   getEnvelope: (caseId, {
     fromKeys = null,
     toKeys = null,
+    // Direction-agnostic involvement filter — see getThreads().
+    participantKeys = null,
     types = null,
     reportKeys = null,
     sourceApps = null,
@@ -2793,6 +2804,7 @@ export const cellebriteCommsAPI = {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
     if (toKeys?.length) params.append('to_keys', toKeys.join(','));
+    if (participantKeys?.length) params.append('participant_keys', participantKeys.join(','));
     if (types?.length) params.append('types', types.join(','));
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
     if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));

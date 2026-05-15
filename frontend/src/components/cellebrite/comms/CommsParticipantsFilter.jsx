@@ -2,44 +2,47 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   X, Search, Smartphone, User, ChevronDown, ChevronRight, Filter,
   ChevronLeft, ChevronRight as ChevronRightSm,
+  Split, GitMerge,
 } from 'lucide-react';
 
 /**
- * Phase K1 (revised again) — Bidirectional From / To filter.
+ * Phase K1 — Participants filter with a Mode toggle.
  *
- * The previous K1 revision combined From + To into a single
- * Participants picker with per-chip role toggles. User feedback:
- * the original split layout (From column on the left, To on the
- * right) was clearer; investigators liked seeing direction as
- * geography. Bring it back, but keep the K1 wins:
+ * Two layouts share the same chrome (collapsible header, count, clear-all,
+ * persistent selected-chips strip):
  *
- *   - Collapsible header chrome (chevron + count + clear-all)
- *   - Inline search per panel — no popovers
- *   - Per-panel pagination (50 rows / page) so big cases don't
- *     blow out vertically
- *   - Selected items persist across pages even if no longer
- *     matching the current search
+ *   • Split  (default) — two side-by-side panels: From and To. Direction
+ *     matters; investigators see direction as geography. Each selected
+ *     person carries role 'from', 'to', or 'any' (in both buckets).
  *
- * Backend contract unchanged: parent (CommsCenter) derives
- * fromKeys / toKeys sets from this and feeds them to the existing
- * /comms/threads + /comms/envelope params.
+ *   • Any    — single list, every selected person becomes role 'any'.
+ *     Backend semantics flip: parent serialises selections via
+ *     `participant_keys` (OR/involvement) instead of `from_keys`/`to_keys`,
+ *     so "filter by this contact" returns every comm involving them
+ *     regardless of direction. This is what Filter Comms from a contact
+ *     row was always intended to do — Split mode required sender to equal
+ *     recipient and silently returned nothing.
  *
- * The participants list is two distinct selections — From and To.
- * Cross-tab Filter Comms intents seed entities into BOTH (role
- * 'any') for the panoramic "every comm involving this person" feel.
+ * The Mode pill is the cure for the "filtered but nothing showed up" bug
+ * the user reported; Filter Comms intents force mode → Any so the default
+ * surface from contacts/calls/emails just works.
+ *
+ * Backend contract is unchanged for Split mode. Mode is owned by the
+ * parent (per-case localStorage) and passed in.
  */
 export default function CommsParticipantsFilter({
   entities = [],
-  // Parent passes a `participants` array { key, name, role } and a
-  // setter; we adapt that to From/To Sets internally for the panels.
+  // Parent passes a `participants` array { key, name, role } and a setter.
   participants = [],
   onParticipantsChange,
+  // 'split' (default) or 'any'. Owned by parent so the serialiser
+  // (CommsCenter) and the picker stay in lockstep.
+  mode = 'split',
+  onModeChange,
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
-  // Derive the current from/to selections from the participants
-  // array. role='from' → in fromKeys only; role='to' → toKeys only;
-  // role='any' → both (the panoramic case from Filter Comms intents).
+  // From/To Sets derived from participants for the Split-mode panels.
   const fromKeys = useMemo(() => {
     const s = new Set();
     for (const p of participants) {
@@ -54,11 +57,16 @@ export default function CommsParticipantsFilter({
     }
     return s;
   }, [participants]);
+  // The Any-mode panel just shows everyone selected (any role) as a
+  // single set. Toggling adds/removes with role 'any'.
+  const anyKeys = useMemo(() => {
+    const s = new Set();
+    for (const p of participants) s.add(p.key);
+    return s;
+  }, [participants]);
 
   // Toggle inclusion of `key` in either the From or To bucket.
-  // Roles update so a person in BOTH buckets carries role='any'
-  // (round-trippable through Filter Comms intents).
-  const toggleIn = (bucket, key, name) => {
+  const toggleSplit = (bucket, key, name) => {
     const inFrom = fromKeys.has(key);
     const inTo = toKeys.has(key);
     let nextInFrom = inFrom;
@@ -77,9 +85,25 @@ export default function CommsParticipantsFilter({
     onParticipantsChange(next);
   };
 
+  // Any-mode: a single bucket. Toggle off removes; toggle on adds with
+  // role 'any'. If a participant was in role 'from' or 'to' before the
+  // user flipped to Any, we leave the row untouched until the user
+  // actively toggles it (so flipping modes is non-destructive).
+  const toggleAny = (key, name) => {
+    if (anyKeys.has(key)) {
+      onParticipantsChange(participants.filter(p => p.key !== key));
+    } else {
+      onParticipantsChange([
+        ...participants,
+        { key, name: name || key, role: 'any' },
+      ]);
+    }
+  };
+
   const clearAll = () => onParticipantsChange([]);
 
   const totalSelected = participants.length;
+  const isAny = mode === 'any';
 
   return (
     <div className="border-b border-light-200 bg-white flex-shrink-0">
@@ -89,7 +113,7 @@ export default function CommsParticipantsFilter({
           type="button"
           onClick={() => setCollapsed(v => !v)}
           className="flex items-center gap-1 text-[11px] text-light-700 hover:text-owl-blue-700"
-          title={collapsed ? 'Expand From / To filter' : 'Collapse From / To filter'}
+          title={collapsed ? 'Expand participants filter' : 'Collapse participants filter'}
         >
           {collapsed
             ? <ChevronRight className="w-3 h-3" />
@@ -97,52 +121,67 @@ export default function CommsParticipantsFilter({
           <Filter className="w-3 h-3" />
           <span className="font-semibold">Participants</span>
           <span className="text-light-500">
-            (From {fromKeys.size} · To {toKeys.size})
+            {isAny
+              ? `(Any · ${anyKeys.size})`
+              : `(From ${fromKeys.size} · To ${toKeys.size})`}
           </span>
         </button>
+
+        {/* Mode pill — Split / Any. Tiny, sits next to the title so the
+            user always sees the active mode without expanding. */}
+        <ModePill mode={mode} onChange={onModeChange} />
+
         <div className="flex-1" />
         {totalSelected > 0 && (
           <button
             type="button"
             onClick={clearAll}
             className="text-[11px] text-light-500 hover:text-red-700"
-            title="Clear From and To selections"
+            title="Clear all selections"
           >
             Clear all
           </button>
         )}
       </div>
 
-      {/* Body — two panels side by side, each with its own search +
-          paginated list. Hidden when collapsed; the selected-chips
-          row stays visible (rendered below) so the user always
-          knows what's filtered. */}
+      {/* Body — Split mode: two panels. Any mode: one wider panel. */}
       {!collapsed && (
-        <div className="grid grid-cols-2 divide-x divide-light-200">
-          <SidePanel
-            title="From"
-            entities={entities}
-            selected={fromKeys}
-            onToggle={(e) => toggleIn('from', e.key, e.name)}
-          />
-          <SidePanel
-            title="To"
-            entities={entities}
-            selected={toKeys}
-            onToggle={(e) => toggleIn('to', e.key, e.name)}
-          />
-        </div>
+        isAny ? (
+          <div>
+            <SidePanel
+              title="Anyone involved (sender or recipient)"
+              entities={entities}
+              selected={anyKeys}
+              onToggle={(e) => toggleAny(e.key, e.name)}
+              wide
+            />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 divide-x divide-light-200">
+            <SidePanel
+              title="From"
+              entities={entities}
+              selected={fromKeys}
+              onToggle={(e) => toggleSplit('from', e.key, e.name)}
+            />
+            <SidePanel
+              title="To"
+              entities={entities}
+              selected={toKeys}
+              onToggle={(e) => toggleSplit('to', e.key, e.name)}
+            />
+          </div>
+        )
       )}
 
-      {/* Compact selected-chips strip — visible regardless of
-          collapse state so the user can always see (and remove)
-          selections without expanding the panels. */}
+      {/* Selected chips — same in both modes. */}
       {totalSelected > 0 && (
         <div className="flex flex-wrap items-center gap-1.5 px-3 py-1 border-t border-light-100 bg-light-50">
           {participants.map(p => (
             <SelectedChip
               key={`${p.role}:${p.key}`}
               participant={p}
+              modeIsAny={isAny}
               onRemove={() => {
                 onParticipantsChange(participants.filter(x => x.key !== p.key));
               }}
@@ -157,23 +196,55 @@ export default function CommsParticipantsFilter({
 const PAGE_SIZE = 50;
 
 /**
- * One side of the From / To split. Search + paginated list.
- * Selected items always appear in the list (pinned to the top of
- * page 1) even when they don't match the current search, so the
- * user can always deselect them.
+ * Mode toggle pill — Split / Any. Render-only; state lives in the parent.
  */
-function SidePanel({ title, entities, selected, onToggle }) {
+function ModePill({ mode, onChange }) {
+  const isAny = mode === 'any';
+  return (
+    <div className="inline-flex border border-light-300 rounded overflow-hidden text-[10px] ml-1">
+      <button
+        type="button"
+        onClick={() => onChange?.('split')}
+        className={`flex items-center gap-1 px-1.5 py-0.5 transition-colors ${
+          !isAny
+            ? 'bg-owl-blue-100 text-owl-blue-800'
+            : 'bg-white text-light-600 hover:bg-light-100'
+        }`}
+        title="Split mode — separate From and To"
+      >
+        <Split className="w-2.5 h-2.5" />
+        From / To
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange?.('any')}
+        className={`flex items-center gap-1 px-1.5 py-0.5 border-l border-light-300 transition-colors ${
+          isAny
+            ? 'bg-emerald-100 text-emerald-800'
+            : 'bg-white text-light-600 hover:bg-light-100'
+        }`}
+        title="Any mode — direction-agnostic involvement"
+      >
+        <GitMerge className="w-2.5 h-2.5" />
+        Any
+      </button>
+    </div>
+  );
+}
+
+/**
+ * One side of the From / To split, or the single Any-mode panel.
+ * Search + paginated list. Selected items always appear in the list
+ * (pinned to the top of page 1) even when they don't match the current
+ * search, so the user can always deselect them.
+ */
+function SidePanel({ title, entities, selected, onToggle, wide = false }) {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
 
   // Reset to page 0 whenever the search changes.
   useEffect(() => { setPage(0); }, [search]);
 
-  // Build the displayed list:
-  //   1. Stub rows for selected keys not yet present in entities
-  //      (e.g. seeded by Filter Comms intent before entities loaded)
-  //   2. Pinned selected entries (in entities-array order — stable)
-  //   3. Search-filtered remainder
   const display = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const isMatch = (e) =>
@@ -195,9 +266,13 @@ function SidePanel({ title, entities, selected, onToggle }) {
   const sliceEnd = sliceStart + PAGE_SIZE;
   const visible = display.slice(sliceStart, sliceEnd);
 
+  // Wide panels (Any mode) get more vertical room because they're the
+  // only panel — the From/To split has TWO panels eating the same space
+  // so each is shorter.
+  const listMax = wide ? 'max-h-[260px]' : 'max-h-[180px]';
+
   return (
     <div className="flex flex-col">
-      {/* Panel header — title + count */}
       <div className="flex items-center gap-1 px-2 py-1 border-b border-light-200 bg-light-50">
         <span className="text-[11px] font-semibold text-owl-blue-900">{title}</span>
         <span className="text-[10px] text-light-500">
@@ -205,13 +280,12 @@ function SidePanel({ title, entities, selected, onToggle }) {
         </span>
       </div>
 
-      {/* Search */}
       <div className="flex items-center gap-1 px-2 py-1 border-b border-light-100">
         <Search className="w-3 h-3 text-light-400" />
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${title.toLowerCase()}…`}
+          placeholder="Search…"
           className="flex-1 text-xs bg-transparent focus:outline-none text-light-900 min-w-0"
         />
         {search && (
@@ -226,9 +300,7 @@ function SidePanel({ title, entities, selected, onToggle }) {
         )}
       </div>
 
-      {/* Paginated list — fixed height bounds the panel so nothing
-          blows out vertically. Both panels match in height. */}
-      <div className="overflow-y-auto max-h-[180px] min-h-[100px]">
+      <div className={`overflow-y-auto ${listMax} min-h-[100px]`}>
         {visible.length === 0 ? (
           <div className="px-2 py-3 text-[11px] text-light-500 italic text-center">
             {search ? 'No matches.' : 'No entities.'}
@@ -270,7 +342,6 @@ function SidePanel({ title, entities, selected, onToggle }) {
         )}
       </div>
 
-      {/* Pager — only shown when there's more than one page */}
       {pageCount > 1 && (
         <div className="flex items-center gap-1 px-2 py-0.5 border-t border-light-100 bg-light-50 text-[10px] text-light-600">
           <button
@@ -303,19 +374,24 @@ function SidePanel({ title, entities, selected, onToggle }) {
   );
 }
 
-/** Always-visible chip in the selected-chips strip. */
-function SelectedChip({ participant, onRemove }) {
+/**
+ * Always-visible chip in the selected-chips strip. In Any mode the
+ * label is just "Any" regardless of the participant's stored role —
+ * the Split-mode role data is preserved on the participant so flipping
+ * back to Split picks up where the user left off.
+ */
+function SelectedChip({ participant, modeIsAny, onRemove }) {
   const role = participant.role || 'any';
-  const label =
-    role === 'from' ? 'From' :
-    role === 'to' ? 'To' :
-    'Any';
-  const styles =
-    role === 'from'
-      ? 'bg-owl-blue-50 border-owl-blue-300 text-owl-blue-900'
-      : role === 'to'
-        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
-        : 'bg-light-100 border-light-300 text-light-800';
+  const label = modeIsAny
+    ? 'Any'
+    : (role === 'from' ? 'From' : role === 'to' ? 'To' : 'Any');
+  const styles = modeIsAny
+    ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+    : (role === 'from'
+        ? 'bg-owl-blue-50 border-owl-blue-300 text-owl-blue-900'
+        : role === 'to'
+          ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+          : 'bg-light-100 border-light-300 text-light-800');
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] ${styles}`}>
       <span className="text-[9px] uppercase tracking-wide opacity-70">

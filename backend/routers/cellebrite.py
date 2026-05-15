@@ -321,6 +321,14 @@ async def get_comms_threads(
     report_keys: Optional[str] = Query(None),
     from_keys: Optional[str] = Query(None, description="Comma-separated Person keys in From"),
     to_keys: Optional[str] = Query(None, description="Comma-separated Person keys in To"),
+    participant_keys: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated Person keys for direction-agnostic involvement filter. "
+            "A thread passes when at least one of its participants is in this set. "
+            "OR-combined with from_keys/to_keys when present."
+        ),
+    ),
     thread_types: Optional[str] = Query(None, description="Comma-separated: chat,calls,emails"),
     source_apps: Optional[str] = Query(None, description="Comma-separated source app names"),
     start_date: Optional[str] = Query(None),
@@ -338,6 +346,7 @@ async def get_comms_threads(
         report_keys=_csv_param(report_keys),
         from_keys=_csv_param(from_keys),
         to_keys=_csv_param(to_keys),
+        participant_keys=_csv_param(participant_keys),
         thread_types=_csv_param(thread_types),
         source_apps=_csv_param(source_apps),
         start_date=start_date,
@@ -385,6 +394,14 @@ async def get_comms_between(
     case_id: str = Query(...),
     from_keys: Optional[str] = Query(None),
     to_keys: Optional[str] = Query(None),
+    participant_keys: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated Person keys for direction-agnostic involvement filter. "
+            "An item passes when sender OR recipient is in this set. Used by "
+            "Filter Comms intents and the 'Any direction' participants mode."
+        ),
+    ),
     types: Optional[str] = Query(None, description="Comma-separated: message,call,email"),
     report_keys: Optional[str] = Query(None),
     source_apps: Optional[str] = Query(None, description="Comma-separated source app names"),
@@ -411,6 +428,7 @@ async def get_comms_between(
         case_id=case_id,
         from_keys=_csv_param(from_keys),
         to_keys=_csv_param(to_keys),
+        participant_keys=_csv_param(participant_keys),
         types=_csv_param(types),
         report_keys=_csv_param(report_keys),
         source_apps=_csv_param(source_apps),
@@ -430,6 +448,10 @@ async def get_comms_envelope(
     case_id: str = Query(...),
     from_keys: Optional[str] = Query(None),
     to_keys: Optional[str] = Query(None),
+    participant_keys: Optional[str] = Query(
+        None,
+        description="Direction-agnostic involvement filter (see /comms/between).",
+    ),
     types: Optional[str] = Query(None, description="Comma-separated: message,call,email"),
     report_keys: Optional[str] = Query(None),
     source_apps: Optional[str] = Query(None),
@@ -455,6 +477,7 @@ async def get_comms_envelope(
         report_keys=_csv_param(report_keys),
         from_keys=_csv_param(from_keys),
         to_keys=_csv_param(to_keys),
+        participant_keys=_csv_param(participant_keys),
         types=_csv_param(types),
         source_apps=_csv_param(source_apps),
         start_date=start_date,
