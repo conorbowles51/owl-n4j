@@ -93,6 +93,18 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "1600"))
 # Parallel Processing Configuration
 MAX_INGESTION_WORKERS = int(os.getenv("MAX_INGESTION_WORKERS", "4"))
 
+# Triage Configuration
+TRIAGE_SCAN_BATCH_SIZE = int(os.getenv("TRIAGE_SCAN_BATCH_SIZE", "500"))
+TRIAGE_SCAN_WORKERS = int(os.getenv("TRIAGE_SCAN_WORKERS", "4"))
+TRIAGE_ALLOWED_ROOTS = [
+    root.strip()
+    for root in os.getenv("TRIAGE_ALLOWED_ROOTS", "").split(os.pathsep)
+    if root.strip()
+]
+NSRL_RATE_LIMIT = int(os.getenv("NSRL_RATE_LIMIT", "5"))
+VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY")
+VIRUSTOTAL_RATE_LIMIT = int(os.getenv("VIRUSTOTAL_RATE_LIMIT", "4"))
+
 # Image Processing Configuration
 IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "tesseract")
 TESSERACT_LANG = os.getenv("TESSERACT_LANG", "eng")

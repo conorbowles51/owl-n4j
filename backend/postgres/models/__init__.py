@@ -12,6 +12,7 @@ from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
 from postgres.models.evidence import EvidenceFolder, EvidenceFile, IngestionLog
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.runtime_state import BackgroundTask, PresenceSession, WiretapProcessedFolder
+from postgres.models.triage import TriageCase, TriageStage, TriageTemplate, TriageHashSet
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -31,6 +32,7 @@ __all__ = [
     "CaseRevision", "ChatConversation", "ChatMessage",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",
+    "TriageCase", "TriageStage", "TriageTemplate", "TriageHashSet",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
     "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
