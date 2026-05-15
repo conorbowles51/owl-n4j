@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Mail, Paperclip, Folder, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 import { cellebriteOverviewAPI } from '../../../services/api';
 import OverviewDetailView from './OverviewDetailView';
+import FilterCommsButton from './FilterCommsButton';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 import { formatTs } from '../events/eventUtils';
 
@@ -19,75 +20,96 @@ function DirectionChip({ direction }) {
   );
 }
 
-const COLUMNS = [
-  {
-    key: 'direction',
-    label: '',
-    width: 'minmax(50px, 60px)',
-    render: (r) => <DirectionChip direction={r.direction} />,
-  },
-  {
-    key: 'timestamp',
-    label: 'Time',
-    width: 'minmax(140px, 160px)',
-    render: (r) => (r.timestamp ? formatTs(r.timestamp) : '—'),
-  },
-  {
-    key: 'subject',
-    label: 'Subject',
-    width: 'minmax(220px, 1.5fr)',
-    render: (r) => r.subject || '(no subject)',
-  },
-  {
-    key: 'from_name',
-    label: 'From',
-    width: 'minmax(140px, 200px)',
-    render: (r) => r.from_name || r.from_key || '—',
-  },
-  {
-    key: 'to_name',
-    label: 'To',
-    width: 'minmax(140px, 200px)',
-    render: (r) => {
-      if (!r.to_name && !r.to_key) return '—';
-      const main = r.to_name || r.to_key;
-      const more = r.to_count > 1 ? ` +${r.to_count - 1}` : '';
-      return `${main}${more}`;
-    },
-  },
-  {
-    key: 'folder',
-    label: 'Folder',
-    width: 'minmax(120px, 160px)',
-    render: (r) =>
-      r.folder ? (
-        <span className="flex items-center gap-1">
-          <Folder className="w-2.5 h-2.5 text-light-500" />
-          <span className="truncate">{r.folder}</span>
-        </span>
-      ) : (
-        '—'
-      ),
-  },
-  {
-    key: 'attachment_count',
-    label: 'Attach.',
-    width: 'minmax(80px, 100px)',
-    align: 'right',
-    render: (r) =>
-      r.attachment_count > 0 ? (
-        <span className="flex items-center justify-end gap-1 text-amber-700">
-          <Paperclip className="w-3 h-3" />
-          {r.attachment_count}
-        </span>
-      ) : (
-        '—'
-      ),
-  },
-];
-
 export default function OverviewEmailsView({ caseId, report, onBack }) {
   const { selectEntity } = useCellebriteSelection();
+  const reportKey = report?.report_key;
+
+  // Columns built inside the function so the trailing 'Filter Comms'
+  // column closes over caseId / reportKey. Emails carry both from_key
+  // and to_key so the filter seeds the full pair (everything between
+  // these two parties — chat + calls + emails).
+  const COLUMNS = useMemo(() => [
+    {
+      key: 'direction',
+      label: '',
+      width: 'minmax(50px, 60px)',
+      render: (r) => <DirectionChip direction={r.direction} />,
+    },
+    {
+      key: 'timestamp',
+      label: 'Time',
+      width: 'minmax(140px, 160px)',
+      render: (r) => (r.timestamp ? formatTs(r.timestamp) : '—'),
+    },
+    {
+      key: 'subject',
+      label: 'Subject',
+      width: 'minmax(220px, 1.5fr)',
+      render: (r) => r.subject || '(no subject)',
+    },
+    {
+      key: 'from_name',
+      label: 'From',
+      width: 'minmax(140px, 200px)',
+      render: (r) => r.from_name || r.from_key || '—',
+    },
+    {
+      key: 'to_name',
+      label: 'To',
+      width: 'minmax(140px, 200px)',
+      render: (r) => {
+        if (!r.to_name && !r.to_key) return '—';
+        const main = r.to_name || r.to_key;
+        const more = r.to_count > 1 ? ` +${r.to_count - 1}` : '';
+        return `${main}${more}`;
+      },
+    },
+    {
+      key: 'folder',
+      label: 'Folder',
+      width: 'minmax(120px, 160px)',
+      render: (r) =>
+        r.folder ? (
+          <span className="flex items-center gap-1">
+            <Folder className="w-2.5 h-2.5 text-light-500" />
+            <span className="truncate">{r.folder}</span>
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      key: 'attachment_count',
+      label: 'Attach.',
+      width: 'minmax(80px, 100px)',
+      align: 'right',
+      render: (r) =>
+        r.attachment_count > 0 ? (
+          <span className="flex items-center justify-end gap-1 text-amber-700">
+            <Paperclip className="w-3 h-3" />
+            {r.attachment_count}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      key: '_filter',
+      label: '',
+      width: 'minmax(40px, 48px)',
+      align: 'right',
+      sortable: false,
+      render: (r) => (
+        <FilterCommsButton
+          caseId={caseId}
+          reportKey={reportKey}
+          personKeys={[r.from_key, r.to_key]}
+          intentId={`overview.email.${r.id || r.node_key}`}
+          label={`${r.from_name || r.from_key || '?'} ↔ ${r.to_name || r.to_key || '?'}`}
+        />
+      ),
+    },
+  ], [caseId, reportKey]);
 
   // Click an email → publish a 'thread' rail selection so the
   // ThreadAccordion shows the WHOLE pair conversation (everything

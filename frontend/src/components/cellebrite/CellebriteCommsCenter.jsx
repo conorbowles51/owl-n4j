@@ -90,17 +90,17 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     setSelectedItemId(null);
   }, [selectedThread?.thread_id]);
 
-  // Phase G3 — listen for "Filter Comms" intents published from the
-  // Contacts (unified) tab. The unified row carries the union of
-  // person_keys for everyone known by that canonical phone number;
-  // we slot them into the From AND To filter sets so the resulting
-  // feed shows every comm to/from this human across every alias.
+  // Type-agnostic "Filter Comms" intent listener. Originally added
+  // for the Contacts (unified) tab (Phase G3); broadened so any
+  // surface — Overview Contacts/Messages/Calls/Emails, search results,
+  // future panes — can publish a selection with
+  // `_filter_intent: 'comms'` + `person_keys: [...]` and have the
+  // Comms feed seed both the From and To filter with that union.
   // Use a ref to track the last consumed intent id so we don't
   // re-apply on every selection state change.
   const lastFilterIntentRef = useRef(null);
   useEffect(() => {
     if (!selection) return;
-    if (selection.type !== 'contact_unified') return;
     if (selection.payload?._filter_intent !== 'comms') return;
     if (lastFilterIntentRef.current === selection.id) return;
     lastFilterIntentRef.current = selection.id;

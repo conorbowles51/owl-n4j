@@ -1,60 +1,85 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { MessageSquare, Paperclip } from 'lucide-react';
 import { cellebriteOverviewAPI } from '../../../services/api';
 import OverviewDetailView from './OverviewDetailView';
+import FilterCommsButton from './FilterCommsButton';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 import { formatTs } from '../events/eventUtils';
 import { appIconEmoji } from '../comms/commsUtils';
 
-const COLUMNS = [
-  {
-    key: 'timestamp',
-    label: 'Time',
-    width: 'minmax(140px, 160px)',
-    render: (r) => (r.timestamp ? formatTs(r.timestamp) : '—'),
-  },
-  {
-    key: 'source_app',
-    label: 'App',
-    width: 'minmax(120px, 150px)',
-    render: (r) => (
-      <span className="flex items-center gap-1.5">
-        <span>{appIconEmoji(r.source_app)}</span>
-        <span className="truncate">{r.source_app || '—'}</span>
-      </span>
-    ),
-  },
-  {
-    key: 'sender_name',
-    label: 'Sender',
-    width: 'minmax(120px, 180px)',
-    render: (r) => r.sender_name || r.sender_key || '—',
-  },
-  {
-    key: 'body_preview',
-    label: 'Body',
-    width: 'minmax(220px, 1.5fr)',
-    render: (r) => r.body_preview || '',
-  },
-  {
-    key: 'attachment_count',
-    label: 'Attachments',
-    width: 'minmax(100px, 120px)',
-    align: 'right',
-    render: (r) =>
-      r.attachment_count > 0 ? (
-        <span className="flex items-center justify-end gap-1 text-amber-700">
-          <Paperclip className="w-3 h-3" />
-          {r.attachment_count}
-        </span>
-      ) : (
-        '—'
-      ),
-  },
-];
-
 export default function OverviewMessagesView({ caseId, report, onBack }) {
   const { selectEntity } = useCellebriteSelection();
+  const reportKey = report?.report_key;
+
+  // Columns built inside the component so the trailing 'Filter Comms'
+  // column closes over caseId / reportKey. Sender_key is the only
+  // person key we have on a Message row; the recipient lives behind
+  // the thread, so single-key filter is the best we can do here
+  // without an extra fetch. Filtering by sender alone still gives
+  // investigators "every comm involving this sender" which is
+  // usually what they want.
+  const COLUMNS = useMemo(() => [
+    {
+      key: 'timestamp',
+      label: 'Time',
+      width: 'minmax(140px, 160px)',
+      render: (r) => (r.timestamp ? formatTs(r.timestamp) : '—'),
+    },
+    {
+      key: 'source_app',
+      label: 'App',
+      width: 'minmax(120px, 150px)',
+      render: (r) => (
+        <span className="flex items-center gap-1.5">
+          <span>{appIconEmoji(r.source_app)}</span>
+          <span className="truncate">{r.source_app || '—'}</span>
+        </span>
+      ),
+    },
+    {
+      key: 'sender_name',
+      label: 'Sender',
+      width: 'minmax(120px, 180px)',
+      render: (r) => r.sender_name || r.sender_key || '—',
+    },
+    {
+      key: 'body_preview',
+      label: 'Body',
+      width: 'minmax(220px, 1.5fr)',
+      render: (r) => r.body_preview || '',
+    },
+    {
+      key: 'attachment_count',
+      label: 'Attachments',
+      width: 'minmax(100px, 120px)',
+      align: 'right',
+      render: (r) =>
+        r.attachment_count > 0 ? (
+          <span className="flex items-center justify-end gap-1 text-amber-700">
+            <Paperclip className="w-3 h-3" />
+            {r.attachment_count}
+          </span>
+        ) : (
+          '—'
+        ),
+    },
+    {
+      key: '_filter',
+      label: '',
+      width: 'minmax(40px, 48px)',
+      align: 'right',
+      sortable: false,
+      render: (r) => (
+        <FilterCommsButton
+          caseId={caseId}
+          reportKey={reportKey}
+          personKeys={[r.sender_key]}
+          intentId={`overview.message.${r.id || r.node_key}`}
+          label={r.sender_name || r.sender_key || 'Sender'}
+        />
+      ),
+    },
+  ], [caseId, reportKey]);
 
   // Click a row → publish a 'thread' selection so the rail's
   // ThreadAccordion renders the WHOLE conversation with the clicked
