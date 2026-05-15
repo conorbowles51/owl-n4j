@@ -12,7 +12,6 @@ import type {
   DateRangeParams,
   OverviewKind,
   PagedParams,
-  PhoneReport,
   ReportScopedParams,
 } from "../types"
 

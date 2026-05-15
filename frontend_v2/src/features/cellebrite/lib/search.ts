@@ -1,6 +1,8 @@
 import type { CellebriteRecord, PhoneReport } from "../types"
 
-const KNOWN_OPERATORS = new Set([
+type TextOperator = "type" | "from" | "to" | "app" | "phone" | "place"
+
+const KNOWN_OPERATORS = new Set<string>([
   "type",
   "from",
   "to",
@@ -11,6 +13,8 @@ const KNOWN_OPERATORS = new Set([
   "place",
   "near",
 ])
+
+const TEXT_OPERATORS = new Set<string>(["type", "from", "to", "app", "phone", "place"])
 
 export interface NearSpec {
   lat: number
@@ -86,7 +90,7 @@ export function parseCellebriteQuery(query: string): ParsedCellebriteQuery {
         if (near) parsed.operators.near = near
         continue
       }
-      addOperatorValue(parsed, operatorName, value)
+      if (isTextOperator(operatorName)) addOperatorValue(parsed, operatorName, value)
       continue
     }
 
@@ -99,7 +103,11 @@ export function parseCellebriteQuery(query: string): ParsedCellebriteQuery {
   return parsed
 }
 
-function addOperatorValue(parsed: ParsedCellebriteQuery, key: keyof ParsedCellebriteQuery["operators"], value: string) {
+function isTextOperator(value: string): value is TextOperator {
+  return TEXT_OPERATORS.has(value)
+}
+
+function addOperatorValue(parsed: ParsedCellebriteQuery, key: TextOperator, value: string) {
   const current = parsed.operators[key]
   if (typeof current === "number" || (current && typeof current === "object")) return
   if (current == null) {

@@ -35,6 +35,11 @@ const FinancialPage = lazy(() =>
     default: m.FinancialPage,
   }))
 )
+const CellebritePage = lazy(() =>
+  import("@/features/cellebrite/components/CellebritePage").then((m) => ({
+    default: m.CellebritePage,
+  }))
+)
 
 // Lazy-loaded feature pages
 const ChatPage = lazy(() =>
@@ -129,6 +134,7 @@ export function AppRoutes() {
             <Route path="map" element={<LazyPage><MapPage /></LazyPage>} />
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
             <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
+            <Route path="cellebrite" element={<LazyPage><CellebritePage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />
