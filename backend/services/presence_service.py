@@ -1,160 +1,192 @@
 """
-Presence Service
+Postgres-backed presence service.
 
 Tracks active workspace sessions and user presence for real-time collaboration.
 """
 
-import json
-from pathlib import Path
-from typing import Dict, List, Optional, Set
-from datetime import datetime, timedelta
-from threading import Lock
+from __future__ import annotations
+
 import uuid
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from threading import RLock
+from typing import Callable, Dict, Iterator, List, Optional
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-STORAGE_DIR = BASE_DIR / "data"
-WORKSPACE_SESSIONS_FILE = STORAGE_DIR / "workspace_sessions.json"
+from sqlalchemy import delete, desc, select
+from sqlalchemy.orm import Session
 
-
-def ensure_storage_dir():
-    """Ensure the storage directory exists."""
-    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def load_sessions() -> Dict:
-    """Load workspace sessions from JSON file."""
-    ensure_storage_dir()
-    if not WORKSPACE_SESSIONS_FILE.exists():
-        return {}
-    try:
-        with open(WORKSPACE_SESSIONS_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
-        print(f"Error loading workspace sessions: {e}")
-        return {}
+from postgres.models.runtime_state import PresenceSession
+from postgres.session import get_background_session
 
 
-def save_sessions(sessions: Dict):
-    """Save workspace sessions to JSON file."""
-    ensure_storage_dir()
-    temp_file = WORKSPACE_SESSIONS_FILE.with_suffix('.tmp')
-    try:
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(sessions, f, indent=2, ensure_ascii=False, default=str)
-        temp_file.replace(WORKSPACE_SESSIONS_FILE)
-    except IOError as e:
-        print(f"Error saving workspace sessions: {e}")
-        raise
+SessionFactory = Callable[[], Session]
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _format_datetime(value: datetime | str | None) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
 
 
 class PresenceService:
     """Service for tracking user presence in workspace sessions."""
-    
-    def __init__(self):
-        self._sessions: Dict[str, Dict] = load_sessions()
-        self._active_sessions: Dict[str, Dict] = {}  # In-memory active sessions (session_id -> session_data)
-        self._lock = Lock()
-        self._cleanup_interval = timedelta(minutes=5)  # Clean up stale sessions every 5 minutes
-    
+
+    def __init__(
+        self,
+        session_factory: SessionFactory | None = None,
+        stale_timeout_minutes: int = 30,
+    ) -> None:
+        self._session_factory = session_factory
+        self._lock = RLock()
+        self._stale_timeout = timedelta(minutes=stale_timeout_minutes)
+
+    @contextmanager
+    def _session_scope(self, db: Session | None = None) -> Iterator[Session]:
+        if db is not None:
+            yield db
+            return
+
+        if self._session_factory is not None:
+            session = self._session_factory()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+            return
+
+        with get_background_session() as session:
+            yield session
+
+    @staticmethod
+    def _to_dict(session: PresenceSession) -> Dict:
+        return {
+            "session_id": session.session_id,
+            "case_id": session.case_id,
+            "user_id": session.user_id,
+            "username": session.username,
+            "ip_address": session.ip_address,
+            "device_info": session.device_info,
+            "started_at": _format_datetime(session.started_at),
+            "last_active": _format_datetime(session.last_active),
+        }
+
     def create_session(
         self,
         case_id: str,
         user_id: str,
         username: str,
         ip_address: Optional[str] = None,
-        device_info: Optional[str] = None
+        device_info: Optional[str] = None,
+        *,
+        db: Session | None = None,
     ) -> str:
         """Create a new workspace session."""
         session_id = f"ws_{uuid.uuid4().hex[:16]}"
-        now = datetime.now().isoformat()
-        
-        session_data = {
-            "session_id": session_id,
-            "case_id": case_id,
-            "user_id": user_id,
-            "username": username,
-            "ip_address": ip_address,
-            "device_info": device_info,
-            "started_at": now,
-            "last_active": now
-        }
-        
+        timestamp = _now()
+
         with self._lock:
-            self._active_sessions[session_id] = session_data
-            # Also persist to disk
-            if case_id not in self._sessions:
-                self._sessions[case_id] = {}
-            self._sessions[case_id][session_id] = session_data
-            save_sessions(self._sessions)
-        
+            with self._session_scope(db) as session:
+                session.add(
+                    PresenceSession(
+                        session_id=session_id,
+                        case_id=case_id,
+                        user_id=user_id,
+                        username=username,
+                        ip_address=ip_address,
+                        device_info=device_info,
+                        started_at=timestamp,
+                        last_active=timestamp,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    )
+                )
+                session.flush()
+
         return session_id
-    
-    def update_session_activity(self, session_id: str):
+
+    def update_session_activity(self, session_id: str, *, db: Session | None = None) -> None:
         """Update last active timestamp for a session."""
         with self._lock:
-            if session_id in self._active_sessions:
-                self._active_sessions[session_id]["last_active"] = datetime.now().isoformat()
-                # Update in persisted sessions
-                session = self._active_sessions[session_id]
-                case_id = session.get("case_id")
-                if case_id and case_id in self._sessions:
-                    if session_id in self._sessions[case_id]:
-                        self._sessions[case_id][session_id]["last_active"] = self._active_sessions[session_id]["last_active"]
-                        save_sessions(self._sessions)
-    
-    def remove_session(self, session_id: str):
+            with self._session_scope(db) as session:
+                record = session.get(PresenceSession, session_id)
+                if record is not None:
+                    timestamp = _now()
+                    record.last_active = timestamp
+                    record.updated_at = timestamp
+                    session.flush()
+
+    def remove_session(self, session_id: str, *, db: Session | None = None) -> None:
         """Remove a session (user left workspace)."""
         with self._lock:
-            if session_id in self._active_sessions:
-                session = self._active_sessions[session_id]
-                case_id = session.get("case_id")
-                del self._active_sessions[session_id]
-                
-                # Remove from persisted sessions
-                if case_id and case_id in self._sessions:
-                    if session_id in self._sessions[case_id]:
-                        del self._sessions[case_id][session_id]
-                        save_sessions(self._sessions)
-    
-    def get_online_users(self, case_id: str) -> List[Dict]:
+            with self._session_scope(db) as session:
+                record = session.get(PresenceSession, session_id)
+                if record is not None:
+                    session.delete(record)
+                    session.flush()
+
+    def get_online_users(self, case_id: str, *, db: Session | None = None) -> List[Dict]:
         """Get list of users currently online in a workspace."""
+        cutoff = _now() - self._stale_timeout
+
         with self._lock:
-            online_users = []
-            seen_users = set()
-            
-            # Check active sessions
-            for session in self._active_sessions.values():
-                if session.get("case_id") == case_id:
-                    user_id = session.get("user_id")
-                    username = session.get("username")
-                    if user_id and user_id not in seen_users:
-                        online_users.append({
-                            "user_id": user_id,
-                            "username": username
-                        })
-                        seen_users.add(user_id)
-            
-            return online_users
-    
-    def cleanup_stale_sessions(self, timeout_minutes: int = 30):
+            with self._session_scope(db) as session:
+                statement = (
+                    select(PresenceSession)
+                    .where(
+                        PresenceSession.case_id == case_id,
+                        PresenceSession.last_active >= cutoff,
+                    )
+                    .order_by(desc(PresenceSession.last_active))
+                )
+                records = session.scalars(statement).all()
+
+                online_users = []
+                seen_users = set()
+                for record in records:
+                    if record.user_id not in seen_users:
+                        online_users.append(
+                            {
+                                "user_id": record.user_id,
+                                "username": record.username,
+                            }
+                        )
+                        seen_users.add(record.user_id)
+
+                return online_users
+
+    def cleanup_stale_sessions(
+        self,
+        timeout_minutes: int = 30,
+        *,
+        db: Session | None = None,
+    ) -> int:
         """Remove sessions that haven't been active for timeout_minutes."""
-        cutoff = datetime.now() - timedelta(minutes=timeout_minutes)
-        cutoff_iso = cutoff.isoformat()
-        
+        cutoff = _now() - timedelta(minutes=timeout_minutes)
+
         with self._lock:
-            stale_sessions = []
-            for session_id, session in self._active_sessions.items():
-                last_active = session.get("last_active", "")
-                if last_active < cutoff_iso:
-                    stale_sessions.append(session_id)
-            
-            for session_id in stale_sessions:
-                self.remove_session(session_id)
-    
-    def get_session(self, session_id: str) -> Optional[Dict]:
+            with self._session_scope(db) as session:
+                result = session.execute(
+                    delete(PresenceSession).where(PresenceSession.last_active < cutoff)
+                )
+                session.flush()
+                return result.rowcount or 0
+
+    def get_session(self, session_id: str, *, db: Session | None = None) -> Optional[Dict]:
         """Get session data by session_id."""
         with self._lock:
-            return self._active_sessions.get(session_id)
+            with self._session_scope(db) as session:
+                record = session.get(PresenceSession, session_id)
+                return self._to_dict(record) if record else None
 
 
 # Singleton instance
