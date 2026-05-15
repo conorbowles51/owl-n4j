@@ -694,3 +694,127 @@ March 3rd"), and get all matching points back.
 **Trigger to build:** when investigators say "I want to lasso the
 crime scene on the map and see who was there between 14:00 and 16:00."
 
+
+---
+
+## 15. Phase K — Comms Center redesign (planned 2026-05-14)
+
+**User pain (after living with it):** even with the resizable panes
+shipped in Phase H, the Comms Center feels squeezed. Six rows of
+header chrome (~470px) plus a ~150px bottom timeline leaves too
+little room for the actual conversation feed on a 1080p laptop.
+
+**Locked-in user decisions:**
+- **All three improvement strategies together** (compact toolbar +
+  Browse/Read mode + fold cross-type timeline).
+- **From/To becomes Participants** with per-chip `Any | From | To`
+  direction toggle, AND the panel(s) collapsible for users who want
+  more space.
+
+### K1. Participants combined filter (replaces split From/To)
+
+Replace the two side-by-side EntityFilter panels with a single
+"Participants" picker. Selection model:
+
+```
+[ + Add participant ]  [ Alex ↕ ✕ ]  [ Boss ↕ ✕ ]  [ Mom ↑ ✕ ]
+```
+
+Each selected chip carries a per-chip role:
+- ↕ **Any** (default) — comm where this person is in either role
+- ↑ **From** — comm where this person is the sender
+- ↓ **To**   — comm where this person is the recipient
+
+Click the role icon on a chip to cycle through the three states.
+
+**Filter logic (server-side params):**
+- All `Any` participants → unioned into a `participants:[k1,k2]`
+  array; filter is `(sender IN list) OR (any recipient IN list)`.
+- `From` participants → added to `from_keys` (existing param).
+- `To` participants → added to `to_keys` (existing param).
+- Mixed selections combine the three (AND across role groups).
+
+The picker itself opens as a popover: searchable list of entities,
+similar to the current EntityPanel content but presented once.
+Collapsible: chevron button hides the filter strip entirely; chips
+stay visible in compact form so the user knows what's filtered.
+
+### K2. Compact toolbar (single row)
+
+Collapse three current rows (Source app filter row, Type filter row,
+Search bar row) into one toolbar:
+
+```
+[Search........................] [📱 Apps (3) ▾] [💬 Msg ☎ Call ✉ Email] [📊 Scrubber ▾] [⋯]
+```
+
+- **Search**: stays inline as the most-used input.
+- **Apps**: dropdown popover. Counter shows "3" if 3 apps active,
+  otherwise "All apps". Inside the popover: the same pill grid we
+  show today.
+- **Type pills**: stay visible (3 toggles, ~80px wide combined).
+- **Scrubber**: collapsed to an 8px-tall density spark that expands
+  to the full TimelineScrubber on click. The spark still shows the
+  envelope curve at low resolution so users can see "is there a
+  spike worth zooming into?" without expanding.
+- **Overflow `⋯`**: dropdown for less-used controls (clear filters,
+  export, etc.).
+
+### K3. Browse / Read mode toggle
+
+Top-level toggle in the header (next to PhoneSelector or in the
+toolbar):
+
+- **Browse mode** (default): full toolbar visible, bottom timeline
+  visible. Same as today.
+- **Read mode**: all filter chrome hidden. Thread list + thread
+  view eat the screen. Bottom timeline hidden. Search stays as a
+  thin button that expands to full search on click.
+
+Per-case localStorage so the user's preferred mode persists across
+visits to the same case.
+
+### K4. Fold cross-type timeline into main scrubber
+
+The bottom `CommsCrossTypeTimeline` is always-mounted, ~150px tall,
+and shows tick marks for every message/call/email. Its information
+isn't unique — it's a denser view of the same envelope the main
+scrubber already aggregates.
+
+Replacement: extend the main scrubber to render colored tick marks
+underneath its density curve:
+- Amber dots for messages
+- Blue dots for calls
+- Red dots for emails
+
+Click a tick → jump-to behaviour the cross-type timeline already
+provides. The dedicated bottom pane goes away entirely.
+
+### Build order
+
+1. **K1** — Participants filter. Biggest UX win, hardest piece.
+2. **K2** — Compact toolbar. Reclaims most vertical space once K1
+   has shrunk the participants section.
+3. **K3** — Browse/Read toggle. Tiny code, huge perceived
+   improvement. Can ship independently of K1/K2.
+4. **K4** — Fold bottom timeline. Last because it touches the
+   scrubber and main split simultaneously; lowest urgency once K1+K2
+   have reclaimed enough space.
+
+**Trade-offs accepted:**
+- Power users who currently use the From / To split will need to
+  click the role toggle on each chip instead of placing entities in
+  the right column. Direction-strict filtering is rare; the cost is
+  a click.
+- The dropdown popovers add discoverability friction vs. always-
+  visible pills. Counters next to each dropdown ('Apps (3)') and a
+  visible affordance arrow mitigate this.
+- Read mode hides controls — users still in Browse/Read confusion
+  can hit the toggle to flip back. Esc could also exit Read mode
+  for a fast-bail.
+
+**Trigger to revisit:** if the chip-with-direction-toggle pattern
+proves confusing in user testing, fall back to two collapsible
+panels (Participants-Any + Participants-Strict-Direction) instead
+of per-chip toggles.
+

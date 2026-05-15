@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, BookOpen, SlidersHorizontal } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -53,6 +53,26 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   const [windowStart, setWindowStart] = useState(null);
   const [windowEnd, setWindowEnd] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Phase K3 — Browse / Read mode toggle. Browse = full filter
+  // chrome (default; matches the legacy layout). Read = collapse
+  // every filter row + the bottom cross-type timeline so the thread
+  // list + thread view get the entire screen. Per-case localStorage
+  // so the user's choice persists across visits to the same case.
+  const viewModeKey = `cb.comms.viewMode.${caseId || 'unknown'}`;
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window === 'undefined') return 'browse';
+    try {
+      const stored = window.localStorage.getItem(viewModeKey);
+      return stored === 'read' ? 'read' : 'browse';
+    } catch { return 'browse'; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(viewModeKey, viewMode); }
+    catch { /* ignore */ }
+  }, [viewMode, viewModeKey]);
+  const isReadMode = viewMode === 'read';
 
   // ISO yyyy-mm-dd derived from the scrubber window for the API.
   const startDate = windowStart ? toISODate(windowStart) : '';
@@ -490,10 +510,101 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     );
   }
 
+  // The horizontal thread-list / thread-view split — same in Browse
+  // and Read modes, so extracted once and rendered into either
+  // surrounding layout below.
+  const threadSplit = (
+    <ResizableSplit
+      direction="horizontal"
+      storageKey={`cb.comms.threadList.${caseId}`}
+      defaultSize={320}
+      minSize={200}
+      maxSize={600}
+      className="h-full"
+      first={(
+        <CommsThreadList
+          threads={filteredThreads}
+          loading={threadsLoading || entitiesLoading}
+          loadingProgress={threadsProgress}
+          loadingStage={threadsStage}
+          selectedThreadId={selectedThread?.thread_id}
+          onSelect={setSelectedThread}
+          deviceById={deviceById}
+          highlights={threadHighlights}
+        />
+      )}
+      second={(
+        <CommsThreadView
+          caseId={caseId}
+          selectedThread={selectedThread}
+          externalSearchQuery={searchQuery}
+          firstMatch={
+            selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
+              ? deepSearch.matchesByThread[selectedThread.thread_id][0]
+              : null
+          }
+          onItemSelect={handleItemSelect}
+          selectedItemId={selectedItemId}
+        />
+      )}
+    />
+  );
+
+  // Mode toggle button rendered into both layouts so the user can
+  // flip back to Browse from Read with a single click.
+  const modeToggle = (
+    <ModeToggleButton viewMode={viewMode} setViewMode={setViewMode} />
+  );
+
+  // ---------------- Read mode: max-feed layout ----------------
+  // No filter chrome, no bottom timeline, no scrubber. Just the
+  // thread split filling the screen + a thin search bar + the mode
+  // toggle (so the user can get back to Browse). Filter state from
+  // the Browse mode is preserved — it's still applied to threads,
+  // we just don't show the controls.
+  if (isReadMode) {
+    return (
+      <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
+        <PhoneSelector />
+        <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-light-50 flex-shrink-0">
+          {modeToggle}
+          <div className="flex-1 max-w-2xl">
+            <CellebriteSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder='Search threads — type:chat from:John app:WhatsApp'
+              matchCount={filteredThreads.length}
+              totalCount={threads.length}
+              itemNoun="thread"
+              focusOnSlash
+              compact
+            />
+          </div>
+          <span className="text-[11px] text-light-500">
+            Filter chrome hidden — switch to Browse to refine
+          </span>
+        </div>
+        <div className="flex-1 min-h-0">
+          {threadSplit}
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------- Browse mode: full layout (default) ----------------
+
   return (
     <div ref={rootRef} className="flex flex-col h-full min-h-0 bg-white">
       {/* Device selector strip — global across Cellebrite tabs */}
       <PhoneSelector />
+
+      {/* Mode toggle row */}
+      <div className="flex items-center gap-2 px-4 py-1 border-b border-light-200 bg-light-50 flex-shrink-0">
+        {modeToggle}
+        <span className="text-[11px] text-light-500">
+          Browse mode — switch to Read to maximise the conversation feed
+        </span>
+      </div>
 
       {/* Layout — three resizable tiers:
             1. From/To entity filter (top, resizable height)
@@ -580,42 +691,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
               minSize={60}
               maxSize={600}
               className="flex-1"
-              first={(
-                <ResizableSplit
-                  direction="horizontal"
-                  storageKey={`cb.comms.threadList.${caseId}`}
-                  defaultSize={320}
-                  minSize={200}
-                  maxSize={600}
-                  className="h-full"
-                  first={(
-                    <CommsThreadList
-                      threads={filteredThreads}
-                      loading={threadsLoading || entitiesLoading}
-                      loadingProgress={threadsProgress}
-                      loadingStage={threadsStage}
-                      selectedThreadId={selectedThread?.thread_id}
-                      onSelect={setSelectedThread}
-                      deviceById={deviceById}
-                      highlights={threadHighlights}
-                    />
-                  )}
-                  second={(
-                    <CommsThreadView
-                      caseId={caseId}
-                      selectedThread={selectedThread}
-                      externalSearchQuery={searchQuery}
-                      firstMatch={
-                        selectedThread && deepSearch.matchesByThread[selectedThread.thread_id]
-                          ? deepSearch.matchesByThread[selectedThread.thread_id][0]
-                          : null
-                      }
-                      onItemSelect={handleItemSelect}
-                      selectedItemId={selectedItemId}
-                    />
-                  )}
-                />
-              )}
+              first={threadSplit}
               second={(
                 <CommsCrossTypeTimeline
                   caseId={caseId}
@@ -633,6 +709,47 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           </div>
         )}
       />
+    </div>
+  );
+}
+
+/**
+ * Two-state toggle: Browse (full filter chrome) vs Read (collapse
+ * everything to maximise the conversation feed). Filter STATE is
+ * preserved across the toggle — only the controls are hidden in
+ * Read mode. Per-case localStorage handled by the parent so the
+ * toggle itself is stateless.
+ */
+function ModeToggleButton({ viewMode, setViewMode }) {
+  const isRead = viewMode === 'read';
+  return (
+    <div className="inline-flex border border-light-300 rounded overflow-hidden text-[11px]">
+      <button
+        type="button"
+        onClick={() => setViewMode('browse')}
+        className={`flex items-center gap-1 px-2 py-0.5 transition-colors ${
+          !isRead
+            ? 'bg-owl-blue-100 text-owl-blue-800'
+            : 'bg-white text-light-600 hover:bg-light-100'
+        }`}
+        title="Browse mode — full filter controls"
+      >
+        <SlidersHorizontal className="w-3 h-3" />
+        Browse
+      </button>
+      <button
+        type="button"
+        onClick={() => setViewMode('read')}
+        className={`flex items-center gap-1 px-2 py-0.5 border-l border-light-300 transition-colors ${
+          isRead
+            ? 'bg-owl-blue-100 text-owl-blue-800'
+            : 'bg-white text-light-600 hover:bg-light-100'
+        }`}
+        title="Read mode — hide filter chrome, max conversation space"
+      >
+        <BookOpen className="w-3 h-3" />
+        Read
+      </button>
     </div>
   );
 }
