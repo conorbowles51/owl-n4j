@@ -152,16 +152,17 @@ export default function CellebriteView({ caseId }) {
         </span>
       </div>
 
-      {/* Tab content + persistent right-rail share one horizontal flex
-          row so the rail visually attaches to whatever tab is active.
-          Rail width is its own concern (collapsible 360 ↔ 48 px). */}
-      <div className="flex flex-1 min-h-0">
-
       {/* Tab Content — every visited tab stays mounted (display:none
           when inactive) so re-selecting it skips the reload entirely.
           The `isActive` prop lets descendants react to becoming
           visible (e.g. Leaflet needs invalidateSize() after being
-          un-hidden, otherwise it draws at the wrong size). */}
+          un-hidden, otherwise it draws at the wrong size).
+
+          The selection flyout (CellebriteSelectionRail) used to live
+          here as a persistent right-dock; it's now a slide-in flyout
+          that's mounted at the bottom of this component (overlays via
+          fixed positioning) so it pays zero layout cost when no
+          selection is active. */}
       <div className="flex-1 min-h-0 overflow-hidden relative">
         {mountedTabs.has('overview') && (
           <TabPane active={activeTab === 'overview'}>
@@ -210,13 +211,10 @@ export default function CellebriteView({ caseId }) {
         )}
       </div>
 
-      {/* Universal right-rail — shows whatever the active tab last
-          selected. Always rendered (collapsible to a 48px icon strip
-          when the user wants screen-space back). The rail itself is
-          inert until a tab calls selectEntity(); empty + collapsed by
-          default so it doesn't stomp on existing layouts on first load. */}
+      {/* Universal selection flyout — overlays the page (fixed
+          position) when something is selected, returns nothing when
+          nothing is. No layout cost, no permanent dock. */}
       <CellebriteSelectionRail caseId={caseId} />
-      </div>
 
       {/* Persistent Reader-style status bar — every tab feeds counts via
           useCellebriteStatus(); shell renders them in one place so the

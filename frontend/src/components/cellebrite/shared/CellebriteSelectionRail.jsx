@@ -1,159 +1,123 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
-  ChevronRight, ChevronLeft, X, Phone, MessageSquare, Mail, MapPin,
+  X, Phone, MessageSquare, Mail, MapPin,
   Smartphone, User, Activity, Layers, Inbox,
 } from 'lucide-react';
 import { useCellebriteSelection } from './CellebriteSelectionContext';
 import { rendererFor, labelFor } from './rail';
 
-const RAIL_KEY_BASE = 'cellebrite.rail.collapsed';
-
 /**
- * Persistent right-rail for Cellebrite tabs (Reader pattern).
+ * Cellebrite selection flyout (was a persistent right rail).
  *
- * Sits at the right edge of every Cellebrite tab; renders a type-aware
- * detail view for whatever the active tab last selected. Collapsible to
- * a 48px icon strip for screen-space.
+ * Slides in from the right when the user selects something via
+ * selectEntity(). Closed otherwise — paying zero layout cost when no
+ * selection exists. Same accordion registry, same cross-surface
+ * re-publishing as the previous rail; just no permanent dock.
  *
- * Expanded width: 360px. Collapsed width: 48px. The collapsed state is
- * persisted per-case (so expanding once carries across tabs and across
- * refresh) but the SELECTION itself is not persisted — landing on a
- * stale id after a refresh would just produce a "loading… not found"
- * which is worse than starting empty.
+ * Why it changed: the persistent rail was a constant 360px tax on
+ * every Cellebrite layout, paid even when the user hadn't selected
+ * anything. Investigators here scan tables → click one row → read →
+ * dismiss → scan again. That's intermittent need; the flyout pays
+ * cost only when the rail is actually useful.
  *
- * The `caseId` prop is used only to scope the collapsed-flag in
- * localStorage; the rail itself doesn't fetch or care about case
- * identity. Renderers can read it via the selection's caseId field.
+ * Renderers in shared/rail/ are unchanged — they only render the
+ * accordion body, not the flyout chrome.
+ *
+ * Dismissal:
+ *   - X button in the header
+ *   - Esc key (window listener while open)
+ *   - Click outside (the dim backdrop)
+ *
+ * The `caseId` prop is no longer used — kept in the signature so
+ * callers don't have to update at the same time as this conversion.
  */
+// eslint-disable-next-line no-unused-vars
 export default function CellebriteSelectionRail({ caseId }) {
   const { selection, clearSelection } = useCellebriteSelection();
+  const open = !!selection;
 
-  // Default to COLLAPSED so we don't steal 360px from every existing
-  // Cellebrite layout on first load. The first time the user clicks
-  // anything that calls selectEntity() we auto-expand (effect below).
-  // After that, the user's manual collapse/expand state persists.
-  const persistKey = caseId ? `${RAIL_KEY_BASE}.${caseId}` : null;
-  const [collapsed, setCollapsed] = useState(() => {
-    const stored = readCollapsed(persistKey);
-    // null = no prior preference -> default collapsed
-    return stored == null ? true : stored;
-  });
-
-  // First-selection auto-expand. Only triggers when the user has never
-  // manually toggled the rail (stored === null); after that, respect
-  // their preference even if a new selection arrives.
+  // Esc key dismisses while open.
   useEffect(() => {
-    if (!selection) return;
-    const stored = readCollapsed(persistKey);
-    if (stored == null && collapsed) {
-      setCollapsed(false);
-    }
-    // We deliberately don't include `collapsed` in deps — we only want
-    // this to react to selection arrival, not to user-driven collapses.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection?.id, selection?.type, persistKey]);
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') clearSelection();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, clearSelection]);
 
-  // Persist collapsed state per-case so flipping it once carries across
-  // tabs and across refresh. Wrapped in try/catch (private mode, quota).
-  useEffect(() => {
-    if (!persistKey || typeof window === 'undefined') return;
-    try {
-      window.localStorage.setItem(persistKey, JSON.stringify({ v: 1, collapsed }));
-    } catch {
-      // Storage failure is non-fatal — the rail still works for the session.
-    }
-  }, [persistKey, collapsed]);
+  // Render nothing when there's no selection — the flyout has zero
+  // DOM footprint and no layout impact when closed. Selection arrival
+  // mounts both backdrop + panel together; CSS transition handles the
+  // slide-in.
+  if (!open) return null;
 
-  // ----- Collapsed state: thin icon strip -----
-  if (collapsed) {
-    return (
-      <div
-        className="flex flex-col items-center w-12 border-l border-light-200 bg-light-50 flex-shrink-0"
-        role="complementary"
-        aria-label="Cellebrite selection rail (collapsed)"
-      >
-        <button
-          type="button"
-          onClick={() => setCollapsed(false)}
-          className="w-12 h-10 flex items-center justify-center text-light-500 hover:text-owl-blue-700 border-b border-light-200"
-          title="Expand details rail"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        {selection && (
-          <div
-            className="w-12 h-10 flex items-center justify-center text-emerald-600"
-            title={`Selected: ${labelFor(selection.type)}`}
-          >
-            {iconFor(selection.type, 'w-4 h-4')}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ----- Expanded state: full rail -----
-  const Renderer = selection ? rendererFor(selection.type) : null;
+  const Renderer = rendererFor(selection.type);
 
   return (
-    <aside
-      className="flex flex-col w-[360px] border-l border-light-200 bg-white flex-shrink-0 min-h-0"
-      role="complementary"
-      aria-label="Cellebrite selection rail"
-    >
-      {/* Header */}
-      <div className="flex items-center gap-1.5 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
-        {selection ? (
-          <>
-            <span className="text-emerald-600">
-              {iconFor(selection.type, 'w-3.5 h-3.5')}
-            </span>
-            <span className="text-xs font-semibold text-owl-blue-900">
-              {labelFor(selection.type)}
-            </span>
-            {selection.payload?.name && (
-              <span className="text-xs text-light-600 truncate" title={selection.payload.name}>
-                · {selection.payload.name}
-              </span>
-            )}
-            <div className="flex-1" />
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="p-1 text-light-400 hover:text-light-700 rounded"
-              title="Clear selection"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </>
-        ) : (
-          <>
-            <Inbox className="w-3.5 h-3.5 text-light-400" />
-            <span className="text-xs text-light-500">No selection</span>
-            <div className="flex-1" />
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => setCollapsed(true)}
-          className="p-1 text-light-400 hover:text-owl-blue-700 rounded"
-          title="Collapse rail"
-        >
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
+    <>
+      {/* Dim backdrop — click anywhere outside the panel dismisses.
+          Translucent so the user keeps visual context of what's
+          underneath; full opacity would feel modal which the rail is
+          intentionally not. */}
+      <div
+        className="fixed inset-0 bg-black/10 z-30"
+        onClick={clearSelection}
+        aria-hidden="true"
+      />
 
-      {/* Body */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {selection && Renderer ? (
+      {/* Slide-in panel */}
+      <aside
+        className="fixed top-0 right-0 bottom-0 w-[480px] max-w-[90vw] bg-white border-l border-light-200 shadow-2xl z-40 flex flex-col animate-flyout-slide"
+        role="complementary"
+        aria-label="Cellebrite selection details"
+        // Stop propagation so clicks on the panel don't dismiss it via
+        // the backdrop's onClick.
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Inline keyframes — keeps the animation self-contained
+            without needing a tailwind config change. */}
+        <style>{`
+          @keyframes flyout-slide-in {
+            from { transform: translateX(100%); }
+            to   { transform: translateX(0); }
+          }
+          .animate-flyout-slide {
+            animation: flyout-slide-in 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+          }
+        `}</style>
+
+        {/* Header */}
+        <div className="flex items-center gap-1.5 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
+          <span className="text-emerald-600">
+            {iconFor(selection.type, 'w-3.5 h-3.5')}
+          </span>
+          <span className="text-xs font-semibold text-owl-blue-900">
+            {labelFor(selection.type)}
+          </span>
+          {selection.payload?.name && (
+            <span className="text-xs text-light-600 truncate" title={selection.payload.name}>
+              · {selection.payload.name}
+            </span>
+          )}
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="p-1 text-light-400 hover:text-light-700 rounded"
+            title="Close (Esc)"
+            aria-label="Close details flyout"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 min-h-0 overflow-y-auto">
           <Renderer selection={selection} />
-        ) : (
-          <div className="px-3 py-6 text-xs text-light-500 text-center">
-            Select an item to see its details here.
-          </div>
-        )}
-      </div>
-    </aside>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -169,24 +133,5 @@ function iconFor(type, cls = 'w-4 h-4') {
     case 'device_event': return <Activity className={cls} />;
     case 'event':        return <Layers className={cls} />;
     default:             return <Inbox className={cls} />;
-  }
-}
-
-/**
- * Returns the persisted collapsed flag, or null when no preference has
- * been stored yet. Distinguishing null from false lets the caller
- * default to collapsed on first run AND auto-expand on first selection
- * — without overriding a user who has explicitly chosen `expanded`.
- */
-function readCollapsed(key) {
-  if (!key || typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.v !== 1) return null;
-    return Boolean(parsed.collapsed);
-  } catch {
-    return null;
   }
 }

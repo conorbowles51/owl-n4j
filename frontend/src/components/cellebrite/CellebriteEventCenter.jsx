@@ -10,7 +10,6 @@ import EventPlaybackBar from './events/EventPlaybackBar';
 import EventMapPanel from './events/EventMapPanel';
 import EventsTable from './events/EventsTable';
 import EventTimelinePanel from './events/EventTimelinePanel';
-import EventDetailDrawer from './events/EventDetailDrawer';
 import IntersectionPanel from './events/IntersectionPanel';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
@@ -556,14 +555,10 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         />
       </div>
 
-      {/* Drawer */}
-      {selectedEvent && (
-        <EventDetailDrawer
-          caseId={caseId}
-          event={selectedEvent}
-          onClose={() => setSelectedEventAndPublish(null)}
-        />
-      )}
+      {/* Selection flyout is rendered globally by CellebriteView —
+          we just publish via setSelectedEventAndPublish (which calls
+          selectEntity under the hood). No local drawer mount —
+          would otherwise double-call the new flyout. */}
     </div>
   );
 }

@@ -5,7 +5,7 @@ import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
 import TabLoadingIndicator from './shared/TabLoadingIndicator';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import EventTypeFilter from './events/EventTypeFilter';
-import EventDetailDrawer from './events/EventDetailDrawer';
+import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
@@ -61,6 +61,11 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const [loadingStage, setLoadingStage] = useState('');
 
   // --- Selection ---
+  // Selection drives the universal selection flyout via the
+  // CellebriteSelectionContext — replaces the legacy slide-over
+  // EventDetailDrawer that used to mount here. Avoids double-call
+  // (drawer + flyout) on every row click.
+  const { selectEntity } = useCellebriteSelection();
   const [selectedEvent, setSelectedEvent] = useState(null);
 
   // ISO yyyy-mm-dd derived from the scrubber window, sent to the
@@ -306,7 +311,17 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
                       reports={reports}
                       showPhoneChip={reports.length > 1}
                       highlights={highlights}
-                      onClick={() => setSelectedEvent(ev)}
+                      onClick={() => {
+                        setSelectedEvent(ev);
+                        selectEntity({
+                          type: ev.event_type || 'event',
+                          id: ev.id || ev.node_key,
+                          caseId,
+                          reportKey: ev.device_report_key,
+                          payload: { ...ev, node_key: ev.node_key || ev.id },
+                          source: 'timeline',
+                        });
+                      }}
                     />
                   ))}
                 </ul>
@@ -316,14 +331,8 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         )}
       </div>
 
-      {/* Drawer */}
-      {selectedEvent && (
-        <EventDetailDrawer
-          caseId={caseId}
-          event={selectedEvent}
-          onClose={() => setSelectedEvent(null)}
-        />
-      )}
+      {/* Selection flyout is rendered globally by CellebriteView —
+          we just publish via selectEntity(). No local drawer mount. */}
     </div>
   );
 }
