@@ -29,6 +29,7 @@ from routers.maintenance import router as maintenance_router
 from routers.case_deadlines import router as case_deadlines_router
 from routers.evidence_folders import router as evidence_folders_router
 from routers.cellebrite import router as cellebrite_router
+from routers.triage import router as triage_router
 
 __all__ = [
     "graph_router",
@@ -58,4 +59,5 @@ __all__ = [
     "case_deadlines_router",
     "evidence_folders_router",
     "cellebrite_router",
+    "triage_router",
 ]

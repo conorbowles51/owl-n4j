@@ -19,6 +19,7 @@ from postgres.models.runtime_state import (
     SystemLog,
     WiretapProcessedFolder,
 )
+from postgres.models.triage import TriageCase, TriageStage, TriageTemplate, TriageHashSet
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -39,6 +40,7 @@ __all__ = [
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",
     "LastGraphState", "SnapshotRecord", "SystemLog",
+    "TriageCase", "TriageStage", "TriageTemplate", "TriageHashSet",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
     "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
