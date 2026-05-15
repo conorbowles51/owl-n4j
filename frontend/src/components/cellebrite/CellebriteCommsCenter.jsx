@@ -878,12 +878,72 @@ function CrossTypeTimelineFlyover({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // User-resizable height. Drag the top edge up/down to grow/shrink.
+  // Bounds: minimum 120px so the chrome stays usable; maximum 80vh
+  // so the flyover never quite covers the entire feed (a sliver of
+  // context behind it is part of the design — keeps the user
+  // anchored). Default 40vh. Per-case localStorage so the user's
+  // preferred size persists across visits.
+  const heightKey = `cb.comms.timelineFlyoverHeight.${caseId || 'unknown'}`;
+  const defaultHeight = Math.round(window.innerHeight * 0.4);
+  const [height, setHeight] = useState(() => {
+    if (typeof window === 'undefined') return defaultHeight;
+    try {
+      const stored = window.localStorage.getItem(heightKey);
+      const n = stored ? Number(stored) : NaN;
+      if (Number.isFinite(n) && n >= 120) return Math.min(n, window.innerHeight * 0.8);
+    } catch { /* ignore */ }
+    return defaultHeight;
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(heightKey, String(Math.round(height))); }
+    catch { /* ignore */ }
+  }, [height, heightKey]);
+
+  // Drag state lives in a ref so the document-level pointermove
+  // handler doesn't re-render the component every pixel — it just
+  // updates the height state which IS reactive.
+  const dragRef = useRef({ active: false, startY: 0, startHeight: 0 });
+  const onPointerDown = useCallback((ev) => {
+    ev.preventDefault();
+    dragRef.current = {
+      active: true,
+      startY: ev.clientY,
+      startHeight: height,
+    };
+    // Lock the cursor + suppress text selection while dragging.
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (mv) => {
+      if (!dragRef.current.active) return;
+      // Pulling UP grows the flyover (negative delta), pulling DOWN
+      // shrinks it. Bounded by min 120px and 80vh.
+      const delta = dragRef.current.startY - mv.clientY;
+      const next = Math.max(
+        120,
+        Math.min(window.innerHeight * 0.8, dragRef.current.startHeight + delta),
+      );
+      setHeight(next);
+    };
+    const onUp = () => {
+      dragRef.current.active = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [height]);
+
   return (
     <aside
       className="fixed left-0 right-0 bottom-0 z-30 bg-white border-t border-light-200 shadow-2xl flex flex-col animate-timeline-slide"
       role="complementary"
       aria-label="Cross-type comms timeline"
-      style={{ maxHeight: '50vh', height: '40vh' }}
+      style={{ height: `${height}px` }}
     >
       <style>{`
         @keyframes timeline-slide-up {
@@ -895,13 +955,25 @@ function CrossTypeTimelineFlyover({
         }
       `}</style>
 
+      {/* Top-edge resize handle — sits across the whole top edge so
+          the user can grab anywhere along it. Hover affordance
+          (emerald accent) matches the resizable splits we already
+          have elsewhere in the Cellebrite tabs. */}
+      <div
+        onPointerDown={onPointerDown}
+        className="h-1.5 cursor-row-resize bg-light-100 hover:bg-emerald-300 active:bg-emerald-400 transition-colors flex-shrink-0"
+        title="Drag to resize the timeline flyover"
+        role="separator"
+        aria-orientation="horizontal"
+      />
+
       <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-light-200 bg-light-50 flex-shrink-0">
         <Activity className="w-3.5 h-3.5 text-emerald-600" />
         <span className="text-xs font-semibold text-owl-blue-900">
           Conversation timeline
         </span>
         <span className="text-[11px] text-light-500">
-          · cross-type events under the active filters
+          · cross-type events under the active filters · drag the top edge to resize
         </span>
         <div className="flex-1" />
         <button

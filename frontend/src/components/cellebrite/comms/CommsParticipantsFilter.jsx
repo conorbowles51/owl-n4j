@@ -1,79 +1,85 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  X, Search, Smartphone, User, ChevronDown, ChevronRight,
-  ArrowUp, ArrowDown, ArrowLeftRight, Filter,
+  X, Search, Smartphone, User, ChevronDown, ChevronRight, Filter,
+  ChevronLeft, ChevronRight as ChevronRightSm,
 } from 'lucide-react';
 
 /**
- * Phase K1 (revised) — Participants combined filter.
+ * Phase K1 (revised again) — Bidirectional From / To filter.
  *
- * The previous version put the picker behind an "Add participant"
- * button → popover. User feedback: the popover indirection is
- * annoying; show the picker inline.
+ * The previous K1 revision combined From + To into a single
+ * Participants picker with per-chip role toggles. User feedback:
+ * the original split layout (From column on the left, To on the
+ * right) was clearer; investigators liked seeing direction as
+ * geography. Bring it back, but keep the K1 wins:
  *
- * New shape: when the strip is EXPANDED (default) the chips appear
- * at the top, and a search input + filtered entity list appear
- * directly beneath. Click an entity row to add it as an 'any' chip.
- * Click a chip's role icon (↕ / ↑ / ↓) to cycle role. The whole
- * strip collapses via the chevron — chips stay visible in compact
- * form so the user knows what's filtered.
+ *   - Collapsible header chrome (chevron + count + clear-all)
+ *   - Inline search per panel — no popovers
+ *   - Per-panel pagination (50 rows / page) so big cases don't
+ *     blow out vertically
+ *   - Selected items persist across pages even if no longer
+ *     matching the current search
  *
- * Selection model unchanged: array of `{ key, name, role }` where
- * role ∈ 'any' | 'from' | 'to'. Parent (CommsCenter) derives the
- * legacy fromKeys / toKeys sets from this.
+ * Backend contract unchanged: parent (CommsCenter) derives
+ * fromKeys / toKeys sets from this and feeds them to the existing
+ * /comms/threads + /comms/envelope params.
+ *
+ * The participants list is two distinct selections — From and To.
+ * Cross-tab Filter Comms intents seed entities into BOTH (role
+ * 'any') for the panoramic "every comm involving this person" feel.
  */
 export default function CommsParticipantsFilter({
   entities = [],
-  participants,
+  // Parent passes a `participants` array { key, name, role } and a
+  // setter; we adapt that to From/To Sets internally for the panels.
+  participants = [],
   onParticipantsChange,
 }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [search, setSearch] = useState('');
-  const inputRef = useRef(null);
 
-  // Cycle role any → from → to → any
-  const cycleRole = (key) => {
-    const order = ['any', 'from', 'to'];
-    const cur = participants.find(p => p.key === key);
-    if (!cur) return;
-    const next = order[(order.indexOf(cur.role) + 1) % order.length];
-    onParticipantsChange(participants.map(p =>
-      p.key === key ? { ...p, role: next } : p,
-    ));
+  // Derive the current from/to selections from the participants
+  // array. role='from' → in fromKeys only; role='to' → toKeys only;
+  // role='any' → both (the panoramic case from Filter Comms intents).
+  const fromKeys = useMemo(() => {
+    const s = new Set();
+    for (const p of participants) {
+      if (p.role === 'from' || p.role === 'any') s.add(p.key);
+    }
+    return s;
+  }, [participants]);
+  const toKeys = useMemo(() => {
+    const s = new Set();
+    for (const p of participants) {
+      if (p.role === 'to' || p.role === 'any') s.add(p.key);
+    }
+    return s;
+  }, [participants]);
+
+  // Toggle inclusion of `key` in either the From or To bucket.
+  // Roles update so a person in BOTH buckets carries role='any'
+  // (round-trippable through Filter Comms intents).
+  const toggleIn = (bucket, key, name) => {
+    const inFrom = fromKeys.has(key);
+    const inTo = toKeys.has(key);
+    let nextInFrom = inFrom;
+    let nextInTo = inTo;
+    if (bucket === 'from') nextInFrom = !inFrom;
+    if (bucket === 'to') nextInTo = !inTo;
+
+    const next = participants.filter(p => p.key !== key);
+    if (nextInFrom && nextInTo) {
+      next.push({ key, name: name || key, role: 'any' });
+    } else if (nextInFrom) {
+      next.push({ key, name: name || key, role: 'from' });
+    } else if (nextInTo) {
+      next.push({ key, name: name || key, role: 'to' });
+    }
+    onParticipantsChange(next);
   };
-  const setRole = (key, nextRole) => {
-    onParticipantsChange(participants.map(p =>
-      p.key === key ? { ...p, role: nextRole } : p,
-    ));
-  };
-  const removeChip = (key) => {
-    onParticipantsChange(participants.filter(p => p.key !== key));
-  };
+
   const clearAll = () => onParticipantsChange([]);
-  const addEntity = (entity) => {
-    if (participants.some(p => p.key === entity.key)) return;
-    onParticipantsChange([
-      ...participants,
-      { key: entity.key, name: entity.name || entity.key, role: 'any' },
-    ]);
-    // Keep search query so multi-add of similar names is fast.
-    inputRef.current?.focus();
-  };
 
-  // Filter the entity list by search needle. Cap displayed rows so
-  // the inline list doesn't dominate the screen on big cases (13K+
-  // entities); user is expected to narrow with search.
-  const existingKeys = useMemo(
-    () => new Set(participants.map(p => p.key)),
-    [participants],
-  );
-  const filteredEntities = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return entities.slice(0, 50);
-    return entities
-      .filter(e => (e.name || e.key || '').toLowerCase().includes(needle))
-      .slice(0, 50);
-  }, [entities, search]);
+  const totalSelected = participants.length;
 
   return (
     <div className="border-b border-light-200 bg-white flex-shrink-0">
@@ -83,201 +89,249 @@ export default function CommsParticipantsFilter({
           type="button"
           onClick={() => setCollapsed(v => !v)}
           className="flex items-center gap-1 text-[11px] text-light-700 hover:text-owl-blue-700"
-          title={collapsed ? 'Expand participants filter' : 'Collapse participants filter'}
+          title={collapsed ? 'Expand From / To filter' : 'Collapse From / To filter'}
         >
           {collapsed
             ? <ChevronRight className="w-3 h-3" />
             : <ChevronDown className="w-3 h-3" />}
           <Filter className="w-3 h-3" />
           <span className="font-semibold">Participants</span>
-          <span className="text-light-500">({participants.length})</span>
+          <span className="text-light-500">
+            (From {fromKeys.size} · To {toKeys.size})
+          </span>
         </button>
         <div className="flex-1" />
-        {participants.length > 0 && (
+        {totalSelected > 0 && (
           <button
             type="button"
             onClick={clearAll}
             className="text-[11px] text-light-500 hover:text-red-700"
-            title="Remove every participant from the filter"
+            title="Clear From and To selections"
           >
             Clear all
           </button>
         )}
       </div>
 
-      {/* Chip strip — always visible (even when collapsed) so the
-          user knows what's filtered. */}
-      {participants.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5">
-          {participants.map(p => (
-            <ParticipantChip
-              key={p.key}
-              participant={p}
-              onCycleRole={() => cycleRole(p.key)}
-              onSetRole={(role) => setRole(p.key, role)}
-              onRemove={() => removeChip(p.key)}
-            />
-          ))}
+      {/* Body — two panels side by side, each with its own search +
+          paginated list. Hidden when collapsed; the selected-chips
+          row stays visible (rendered below) so the user always
+          knows what's filtered. */}
+      {!collapsed && (
+        <div className="grid grid-cols-2 divide-x divide-light-200">
+          <SidePanel
+            title="From"
+            entities={entities}
+            selected={fromKeys}
+            onToggle={(e) => toggleIn('from', e.key, e.name)}
+          />
+          <SidePanel
+            title="To"
+            entities={entities}
+            selected={toKeys}
+            onToggle={(e) => toggleIn('to', e.key, e.name)}
+          />
         </div>
       )}
 
-      {/* Inline picker — only when expanded. Search input + filtered
-          entity list directly below the chips so adding is one click,
-          no popover. */}
-      {!collapsed && (
-        <div className="px-3 pb-2">
-          <div className="flex items-center gap-1 px-2 py-1 border border-light-300 rounded bg-white focus-within:border-owl-blue-400">
-            <Search className="w-3 h-3 text-light-400" />
-            <input
-              ref={inputRef}
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Add participant — search by name or number…"
-              className="flex-1 text-xs bg-transparent focus:outline-none text-light-900"
+      {/* Compact selected-chips strip — visible regardless of
+          collapse state so the user can always see (and remove)
+          selections without expanding the panels. */}
+      {totalSelected > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1 border-t border-light-100 bg-light-50">
+          {participants.map(p => (
+            <SelectedChip
+              key={`${p.role}:${p.key}`}
+              participant={p}
+              onRemove={() => {
+                onParticipantsChange(participants.filter(x => x.key !== p.key));
+              }}
             />
-            {search && (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="text-light-400 hover:text-light-700 p-0.5"
-                title="Clear search"
-              >
-                <X className="w-3 h-3" />
-              </button>
-            )}
-          </div>
-          <div className="mt-1 border border-light-200 rounded bg-light-50 max-h-[180px] overflow-y-auto">
-            {filteredEntities.length === 0 ? (
-              <div className="px-2 py-3 text-[11px] text-light-500 italic text-center">
-                {search ? 'No matching entities.' : 'No entities loaded yet.'}
-              </div>
-            ) : (
-              filteredEntities.map(e => {
-                const already = existingKeys.has(e.key);
-                return (
-                  <button
-                    key={e.key}
-                    type="button"
-                    disabled={already}
-                    onClick={() => addEntity(e)}
-                    className={`flex items-center gap-1.5 w-full px-2 py-1 text-left text-xs ${
-                      already
-                        ? 'text-light-400 cursor-default'
-                        : 'text-light-800 hover:bg-owl-blue-50'
-                    }`}
-                  >
-                    {e.is_owner
-                      ? <Smartphone className="w-3 h-3 text-emerald-600 flex-shrink-0" />
-                      : <User className="w-3 h-3 text-light-400 flex-shrink-0" />}
-                    <span className="truncate">{e.name || e.key}</span>
-                    {already && (
-                      <span className="ml-auto text-[10px] text-light-400">added</span>
-                    )}
-                  </button>
-                );
-              })
-            )}
-            {entities.length > filteredEntities.length && filteredEntities.length === 50 && (
-              <div className="px-2 py-1 text-[10px] text-light-500 border-t border-light-200 bg-white">
-                Showing first 50 — narrow with search.
-              </div>
-            )}
-          </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-/** Per-participant chip with a role-cycle button and an X. */
-function ParticipantChip({ participant, onCycleRole, onSetRole, onRemove }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const wrapperRef = useRef(null);
-  useEffect(() => {
-    if (!menuOpen) return undefined;
-    const onDoc = (ev) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(ev.target)) {
-        setMenuOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [menuOpen]);
+const PAGE_SIZE = 50;
 
-  const role = participant.role || 'any';
-  const styles = ROLE_STYLES[role];
+/**
+ * One side of the From / To split. Search + paginated list.
+ * Selected items always appear in the list (pinned to the top of
+ * page 1) even when they don't match the current search, so the
+ * user can always deselect them.
+ */
+function SidePanel({ title, entities, selected, onToggle }) {
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(0);
+
+  // Reset to page 0 whenever the search changes.
+  useEffect(() => { setPage(0); }, [search]);
+
+  // Build the displayed list:
+  //   1. Stub rows for selected keys not yet present in entities
+  //      (e.g. seeded by Filter Comms intent before entities loaded)
+  //   2. Pinned selected entries (in entities-array order — stable)
+  //   3. Search-filtered remainder
+  const display = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    const isMatch = (e) =>
+      !needle || (e.name || e.key || '').toLowerCase().includes(needle);
+
+    const pinned = entities.filter(e => selected.has(e.key));
+    const rest = entities.filter(e => !selected.has(e.key) && isMatch(e));
+    const presentKeys = new Set(pinned.map(e => e.key));
+    const stubs = [...selected]
+      .filter(k => !presentKeys.has(k))
+      .map(k => ({ key: k, name: k, _stub: true }));
+
+    return [...stubs, ...pinned, ...rest];
+  }, [entities, selected, search]);
+
+  const pageCount = Math.max(1, Math.ceil(display.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const sliceStart = safePage * PAGE_SIZE;
+  const sliceEnd = sliceStart + PAGE_SIZE;
+  const visible = display.slice(sliceStart, sliceEnd);
+
   return (
-    <span
-      ref={wrapperRef}
-      className={`relative inline-flex items-center gap-1 pl-1 pr-1 py-0.5 rounded-full border text-[11px] ${styles.chip}`}
-    >
-      <button
-        type="button"
-        onClick={onCycleRole}
-        onContextMenu={(ev) => { ev.preventDefault(); setMenuOpen(true); }}
-        className={`inline-flex items-center justify-center w-5 h-5 rounded-full ${styles.role}`}
-        title={`Role: ${role}. Click to cycle, right-click to pick.`}
-      >
-        {role === 'from' ? <ArrowUp className="w-3 h-3" /> :
-         role === 'to' ? <ArrowDown className="w-3 h-3" /> :
-         <ArrowLeftRight className="w-3 h-3" />}
-      </button>
-      <span className={`truncate max-w-[140px] ${styles.text}`} title={participant.name}>
+    <div className="flex flex-col">
+      {/* Panel header — title + count */}
+      <div className="flex items-center gap-1 px-2 py-1 border-b border-light-200 bg-light-50">
+        <span className="text-[11px] font-semibold text-owl-blue-900">{title}</span>
+        <span className="text-[10px] text-light-500">
+          ({selected.size} selected · {display.length} shown)
+        </span>
+      </div>
+
+      {/* Search */}
+      <div className="flex items-center gap-1 px-2 py-1 border-b border-light-100">
+        <Search className="w-3 h-3 text-light-400" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Search ${title.toLowerCase()}…`}
+          className="flex-1 text-xs bg-transparent focus:outline-none text-light-900 min-w-0"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => setSearch('')}
+            className="text-light-400 hover:text-light-700 p-0.5"
+            title="Clear search"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Paginated list — fixed height bounds the panel so nothing
+          blows out vertically. Both panels match in height. */}
+      <div className="overflow-y-auto max-h-[180px] min-h-[100px]">
+        {visible.length === 0 ? (
+          <div className="px-2 py-3 text-[11px] text-light-500 italic text-center">
+            {search ? 'No matches.' : 'No entities.'}
+          </div>
+        ) : (
+          visible.map(e => {
+            const isSelected = selected.has(e.key);
+            return (
+              <button
+                key={e.key}
+                type="button"
+                onClick={() => onToggle(e)}
+                className={`flex items-center gap-1.5 w-full px-2 py-1 text-left text-xs ${
+                  isSelected
+                    ? 'bg-owl-blue-50 text-owl-blue-900'
+                    : 'text-light-800 hover:bg-light-100'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => {}}
+                  className="flex-shrink-0 w-3 h-3 accent-owl-blue-600 pointer-events-none"
+                />
+                {e.is_owner
+                  ? <Smartphone className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                  : <User className="w-3 h-3 text-light-400 flex-shrink-0" />}
+                <span className="truncate" title={e.name || e.key}>
+                  {e.name || e.key}
+                </span>
+                {e._stub && (
+                  <span className="ml-auto text-[9px] text-light-400 uppercase tracking-wide">
+                    pending
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* Pager — only shown when there's more than one page */}
+      {pageCount > 1 && (
+        <div className="flex items-center gap-1 px-2 py-0.5 border-t border-light-100 bg-light-50 text-[10px] text-light-600">
+          <button
+            type="button"
+            disabled={safePage === 0}
+            onClick={() => setPage(p => Math.max(0, p - 1))}
+            className="p-0.5 hover:text-owl-blue-700 disabled:text-light-300"
+            title="Previous page"
+          >
+            <ChevronLeft className="w-3 h-3" />
+          </button>
+          <span className="tabular-nums">
+            {safePage + 1} / {pageCount}
+          </span>
+          <button
+            type="button"
+            disabled={safePage >= pageCount - 1}
+            onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+            className="p-0.5 hover:text-owl-blue-700 disabled:text-light-300"
+            title="Next page"
+          >
+            <ChevronRightSm className="w-3 h-3" />
+          </button>
+          <span className="ml-auto text-light-500">
+            {sliceStart + 1}–{Math.min(sliceEnd, display.length)} of {display.length}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Always-visible chip in the selected-chips strip. */
+function SelectedChip({ participant, onRemove }) {
+  const role = participant.role || 'any';
+  const label =
+    role === 'from' ? 'From' :
+    role === 'to' ? 'To' :
+    'Any';
+  const styles =
+    role === 'from'
+      ? 'bg-owl-blue-50 border-owl-blue-300 text-owl-blue-900'
+      : role === 'to'
+        ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+        : 'bg-light-100 border-light-300 text-light-800';
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border text-[11px] ${styles}`}>
+      <span className="text-[9px] uppercase tracking-wide opacity-70">
+        {label}
+      </span>
+      <span className="truncate max-w-[140px]" title={participant.name}>
         {participant.name}
       </span>
       <button
         type="button"
         onClick={onRemove}
-        className={`flex-shrink-0 ml-0.5 p-0.5 rounded hover:opacity-70 ${styles.text}`}
+        className="flex-shrink-0 ml-0.5 p-0.5 rounded hover:opacity-70"
         title="Remove from filter"
       >
         <X className="w-3 h-3" />
       </button>
-
-      {menuOpen && (
-        <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-light-200 shadow-lg rounded text-[11px] min-w-[120px]">
-          {[
-            { v: 'any', label: 'Either', icon: ArrowLeftRight },
-            { v: 'from', label: 'Sender (from)', icon: ArrowUp },
-            { v: 'to', label: 'Recipient (to)', icon: ArrowDown },
-          ].map(opt => {
-            const active = role === opt.v;
-            const I = opt.icon;
-            return (
-              <button
-                key={opt.v}
-                type="button"
-                onClick={() => { onSetRole(opt.v); setMenuOpen(false); }}
-                className={`flex items-center gap-1.5 w-full px-2 py-1 hover:bg-light-100 ${
-                  active ? 'bg-owl-blue-50 text-owl-blue-800 font-semibold' : 'text-light-700'
-                }`}
-              >
-                <I className="w-3 h-3" />
-                {opt.label}
-                {active && <span className="ml-auto text-owl-blue-600">●</span>}
-              </button>
-            );
-          })}
-        </div>
-      )}
     </span>
   );
 }
-
-const ROLE_STYLES = {
-  any: {
-    chip: 'bg-light-100 border-light-300',
-    role: 'bg-light-300 text-light-700',
-    text: 'text-light-800',
-  },
-  from: {
-    chip: 'bg-owl-blue-50 border-owl-blue-300',
-    role: 'bg-owl-blue-200 text-owl-blue-800',
-    text: 'text-owl-blue-900',
-  },
-  to: {
-    chip: 'bg-emerald-50 border-emerald-300',
-    role: 'bg-emerald-200 text-emerald-800',
-    text: 'text-emerald-900',
-  },
-};
