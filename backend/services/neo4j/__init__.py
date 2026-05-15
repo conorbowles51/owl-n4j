@@ -17,6 +17,7 @@ from services.neo4j.algorithm_service import algorithm_service
 from services.neo4j.document_service import document_service
 from services.neo4j.geo_service import geo_service
 from services.neo4j.timeline_service import timeline_service
+from services.neo4j.cellebrite_service import cellebrite_service, resolve_file_parents
 
 
 class Neo4jServiceFacade:
@@ -110,6 +111,38 @@ class Neo4jServiceFacade:
 
     # ── Timeline ───────────────────────────────────────────────────────
     get_timeline_events = staticmethod(timeline_service.get_timeline_events)
+
+    # ── Cellebrite analytics ───────────────────────────────────────────
+    get_cellebrite_reports = staticmethod(cellebrite_service.get_cellebrite_reports)
+    find_existing_phone_report = staticmethod(cellebrite_service.find_existing_phone_report)
+    delete_phone_report = staticmethod(cellebrite_service.delete_phone_report)
+    update_phone_report_name_override = staticmethod(cellebrite_service.update_phone_report_name_override)
+    get_cellebrite_cross_phone_graph = staticmethod(cellebrite_service.get_cellebrite_cross_phone_graph)
+    get_cellebrite_timeline = staticmethod(cellebrite_service.get_cellebrite_timeline)
+    get_cellebrite_communication_network = staticmethod(cellebrite_service.get_cellebrite_communication_network)
+    get_cellebrite_comms_entities = staticmethod(cellebrite_service.get_cellebrite_comms_entities)
+    get_cellebrite_comms_source_apps = staticmethod(cellebrite_service.get_cellebrite_comms_source_apps)
+    get_cellebrite_comms_threads = staticmethod(cellebrite_service.get_cellebrite_comms_threads)
+    get_cellebrite_thread_detail = staticmethod(cellebrite_service.get_cellebrite_thread_detail)
+    get_cellebrite_comms_between = staticmethod(cellebrite_service.get_cellebrite_comms_between)
+    get_cellebrite_comms_envelope = staticmethod(cellebrite_service.get_cellebrite_comms_envelope)
+    search_cellebrite_comms_messages = staticmethod(cellebrite_service.search_cellebrite_comms_messages)
+    get_cellebrite_events = staticmethod(cellebrite_service.get_cellebrite_events)
+    get_cellebrite_event_types = staticmethod(cellebrite_service.get_cellebrite_event_types)
+    get_cellebrite_location_tiles = staticmethod(cellebrite_service.get_cellebrite_location_tiles)
+    get_cellebrite_locations_in_tile = staticmethod(cellebrite_service.get_cellebrite_locations_in_tile)
+    get_cellebrite_event_tracks = staticmethod(cellebrite_service.get_cellebrite_event_tracks)
+    get_cellebrite_event_detail = staticmethod(cellebrite_service.get_cellebrite_event_detail)
+    get_event_related = staticmethod(cellebrite_service.get_event_related)
+    get_overview_contacts = staticmethod(cellebrite_service.get_overview_contacts)
+    get_unified_contacts = staticmethod(cellebrite_service.get_unified_contacts)
+    get_overview_calls = staticmethod(cellebrite_service.get_overview_calls)
+    get_overview_messages = staticmethod(cellebrite_service.get_overview_messages)
+    get_overview_locations = staticmethod(cellebrite_service.get_overview_locations)
+    get_overview_emails = staticmethod(cellebrite_service.get_overview_emails)
+    get_overview_contact_detail = staticmethod(cellebrite_service.get_overview_contact_detail)
+    get_contact_comms_feed = staticmethod(cellebrite_service.get_contact_comms_feed)
+    resolve_cellebrite_file_parents = staticmethod(cellebrite_service.resolve_file_parents)
 
 
 neo4j_service = Neo4jServiceFacade()
