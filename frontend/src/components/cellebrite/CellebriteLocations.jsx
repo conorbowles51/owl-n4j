@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, MapPin } from 'lucide-react';
+import { Loader2, MapPin, Route } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import PhoneSelector from './shared/PhoneSelector';
@@ -55,10 +55,36 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // is gated behind a button so users can drill in when they want
   // street-level detail. The choice is per-session, not persisted.
   const [renderMode, setRenderMode] = useState('tiles');
+  // Trajectory mode: time-ordered polyline through visible points.
+  // Only meaningful in raw mode (tile centroids aren't a path);
+  // toggling it on while in tiles mode auto-switches to raw.
+  const [trajectoryOn, setTrajectoryOn] = useState(false);
+  // Fly-to-on-row-click: encode click time so the map's FlyToSelected
+  // effect re-fires even when the user clicks the same row twice
+  // after panning the map manually.
+  const [flyToId, setFlyToId] = useState(null);
   // Coarse zoom we feed to the tiles endpoint. Reader-style approach:
   // a single coarse view for the whole case; finer-grained drilldowns
   // come from clicking a tile (G3) rather than from map zoom-tracking.
   const TILE_ZOOM = 6;
+
+  // Trajectory needs individual points, not aggregated tiles. When
+  // the user enables trajectory while in tiles mode, slip into raw
+  // mode automatically so the polyline has data to draw.
+  useEffect(() => {
+    if (trajectoryOn && renderMode === 'tiles') {
+      setRenderMode('raw');
+    }
+  }, [trajectoryOn, renderMode]);
+
+  // Same auto-switch when the user starts typing a search — tiles
+  // are server-aggregated centroids with no addresses, so any
+  // place:/near:/text query needs raw points to filter against.
+  useEffect(() => {
+    if (searchQuery && searchQuery.trim() && renderMode === 'tiles') {
+      setRenderMode('raw');
+    }
+  }, [searchQuery, renderMode]);
 
   // Fetch locations across the selected phones. Tiles mode hits the
   // cheap aggregation endpoint; raw mode pulls the individual points.
@@ -179,6 +205,42 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
     [reports],
   );
 
+  // Trajectory tracks. When the toggle is on AND we're in raw mode
+  // (tiles mode auto-switched above), build one synth track per
+  // device sorted chronologically. The map's existing track renderer
+  // draws cyan-ish polylines through them.
+  const trajectoryTracks = useMemo(() => {
+    if (!trajectoryOn || renderMode !== 'raw') return [];
+    // Group by device so each phone gets its own polyline coloured
+    // by its identity — matches the Events Center / Overview pattern.
+    const byDevice = new Map();
+    for (const loc of locations) {
+      if (loc.latitude == null || loc.longitude == null || !loc.timestamp) continue;
+      const rk = loc.device_report_key || 'unknown';
+      if (!byDevice.has(rk)) byDevice.set(rk, []);
+      byDevice.get(rk).push({
+        lat: loc.latitude,
+        lon: loc.longitude,
+        timestamp: loc.timestamp,
+      });
+    }
+    const out = [];
+    for (const [rk, pts] of byDevice.entries()) {
+      if (pts.length < 2) continue;
+      pts.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+      out.push({
+        device_report_key: rk,
+        points: pts,
+        color_hint: deviceColorOf(rk),
+      });
+    }
+    return out;
+  }, [trajectoryOn, renderMode, locations, deviceColorOf]);
+
+  // The actual flyToId we hand the map is the bare id (the
+  // ::timestamp suffix is just our re-trigger signal).
+  const flyToIdForMap = flyToId ? flyToId.split('::')[0] : null;
+
   // Selection bridge — clicking a marker or table row publishes to the
   // universal rail. Type 'location' routes to EventAccordion (raw row);
   // type 'location_tile' routes to LocationTileAccordion (which fetches
@@ -190,10 +252,15 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   const handleSelect = useCallback((row) => {
     if (!row) {
       setSelectedId(null);
+      setFlyToId(null);
       return;
     }
     const id = row.id || row.node_key || null;
     setSelectedId(id);
+    // Encode the click time so the map's FlyToSelected effect re-
+    // fires even when the user clicks the same row twice after
+    // panning the map manually.
+    if (id) setFlyToId(id + '::' + Date.now());
     if (row.event_type === 'location_tile' && row._tile) {
       selectEntity({
         type: 'location_tile',
@@ -243,9 +310,10 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
     <div className="h-full flex flex-col bg-white min-h-0">
       <PhoneSelector />
 
-      {/* Mode toggle + scrubber. Tiles mode hides the scrubber + search
-          (they don't carry meaningful info when the rows have been
-          server-aggregated). Raw mode keeps both for finer drilldown. */}
+      {/* Mode toggle + trajectory toggle. Tiles is the default for
+          big cases (cheap server-side aggregation); raw mode shows
+          individual points. Trajectory needs raw points to draw a
+          polyline so enabling it auto-switches modes (effect above). */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-light-50 text-xs">
         <span className="text-light-500">View:</span>
         <ModeButton current={renderMode} mode="tiles" onClick={setRenderMode}>
@@ -254,11 +322,43 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         <ModeButton current={renderMode} mode="raw" onClick={setRenderMode}>
           Raw points
         </ModeButton>
-        <span className="ml-2 text-light-400">
+        <button
+          type="button"
+          onClick={() => setTrajectoryOn((v) => !v)}
+          className={`ml-2 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors ${
+            trajectoryOn
+              ? 'bg-cyan-100 border-cyan-300 text-cyan-800'
+              : 'bg-white border-light-300 text-light-700 hover:bg-light-100'
+          }`}
+          title={
+            trajectoryOn
+              ? 'Hide chronological trajectory line'
+              : 'Draw a polyline through points in time order (auto-switches to raw mode)'
+          }
+        >
+          <Route className="w-3 h-3" />
+          {trajectoryOn ? 'Trajectory ON' : 'Show trajectory'}
+        </button>
+        <span className="ml-2 text-light-400 truncate">
           {renderMode === 'tiles'
-            ? 'Cheap server-side aggregation. Click a tile for the rows it contains.'
-            : 'Capped at 5,000 points — narrow with date/search to focus.'}
+            ? 'Click a tile for the rows it contains.'
+            : 'Capped at 5,000 points — narrow with date/search.'}
         </span>
+      </div>
+
+      {/* Search bar — always visible. Tiles mode does substring match
+          on the rare tiles that carry textual top_apps; raw mode does
+          full per-point filtering with place: / near: support. */}
+      <div className="px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
+        <CellebriteSearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder="Search — try place:london, near:38.97,-76.91,5km, app:WhatsApp, after:2024-01-01"
+          matchCount={renderMode === 'raw' ? mapEvents.length : tileMarkers.length}
+          totalCount={renderMode === 'raw' ? locations.length : tileMarkers.length}
+          itemNoun={renderMode === 'raw' ? 'location' : 'tile'}
+          focusOnSlash
+        />
       </div>
 
       {renderMode === 'raw' && (
@@ -268,21 +368,6 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
           windowEnd={windowEnd}
           onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
         />
-      )}
-
-      {/* Search — only useful in raw mode. */}
-      {renderMode === 'raw' && (
-        <div className="px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
-          <CellebriteSearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            placeholder="Search locations — try place:london or near:51.5,-0.1,5km"
-            matchCount={mapEvents.length}
-            totalCount={locations.length}
-            itemNoun="location"
-            focusOnSlash
-          />
-        </div>
       )}
 
       {/* Map / table split. Map gets the larger share — table scrolls
@@ -314,11 +399,16 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
             )}
             <EventMapPanel
               events={mapEvents}
-              tracks={renderMode === 'raw' ? tracks : []}
+              tracks={
+                trajectoryOn
+                  ? trajectoryTracks
+                  : (renderMode === 'raw' ? tracks : [])
+              }
               playheadTime={null}
               trailWindowMs={30 * 60 * 1000}
               isPlaying={false}
               selectedEventId={selectedId}
+              flyToId={flyToIdForMap}
               onEventClick={handleSelect}
               intersectionMatches={[]}
               deviceColorOf={deviceColorOf}

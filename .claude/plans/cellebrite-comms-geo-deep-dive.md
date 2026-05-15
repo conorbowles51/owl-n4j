@@ -609,3 +609,88 @@ mail; need a sensible cap.
 **Trigger to build:** when an investigator says "I want to see the
 actual reply chain" rather than "I want to see emails between these
 two parties".
+
+---
+
+## 14. Phase J — Complex spatial + temporal search (PARKED)
+
+**User ask:** describe boundaries in English ("everywhere within 5km
+of the Mall in DC") AND set time bounds ("between 14:00 and 16:00 on
+March 3rd"), and get all matching points back.
+
+**What we already have:**
+- `place:london` — substring match on geocoded address / place_name /
+  country / admin levels (Phase D `8550415`).
+- `near:51.5,-0.1,5km` — radius around a centre point (Phase D).
+- Date range filter (`startDate` / `endDate` query params on
+  `/cellebrite/events`).
+- Server-side reverse-geocoding (Phase D, optional via Nominatim or
+  GeoNames).
+
+**What's missing for the full ask:**
+
+1. **English place → bounding shape resolution.**
+   "The Mall in DC" needs a forward-geocode + a polygon (not a single
+   centre). Today our `near:` is point + radius. Forward-geocoding a
+   landmark via Nominatim returns a `boundingbox` and a `geojson`
+   polygon — both usable.
+
+2. **Polygon-in-Cypher matching.**
+   Neo4j 5 has `point.distance` (already used for `near:`). For
+   polygons we need either:
+   - Server-side filtering: pull candidate points by bounding box
+     first, then point-in-polygon test in Python (cheap on the
+     post-bbox set, expensive on the whole case).
+   - APOC `apoc.spatial.geocodeOnce` + `apoc.spatial.distance` are
+     in scope but APOC isn't installed everywhere — would need to be
+     a deploy prerequisite.
+
+3. **Temporal-window combinator with spatial filter.**
+   Trivial in Cypher once both inputs are typed — `WHERE
+   point.distance(...) < r AND date >= $lo AND date <= $hi`. The
+   harder part is the **per-day window** ("between 14:00 and 16:00
+   every day") which needs a per-row time-of-day extraction.
+
+4. **English query parser.**
+   "Within 5km of the Mall in DC between 14:00 and 16:00 on March
+   3rd" needs to parse into structured form. Two paths:
+   - **Strict DSL**: `place:"the Mall in DC" within:5km date:2024-03-03 time:14:00-16:00` —
+     extends our existing `parseQuery` token grammar. Predictable,
+     no LLM, fast. Investigators learn it once.
+   - **LLM-driven**: free-form English → JSON via the existing chat
+     context channel. Friendlier, handles any phrasing, but
+     unreliable on ambiguous inputs and needs a feedback loop ("did
+     you mean X?").
+
+5. **Map-driven boundary drawing.**
+   Investigators sometimes want to draw a polygon directly on the
+   map and ask "show me everything inside this." Leaflet has the
+   `leaflet-draw` plugin (~30 KB). One-line add to EventMapPanel,
+   raises a `drawn:created` event with the polygon's GeoJSON.
+
+**Effort sketch (relative cost):**
+- Drawn-polygon filtering (frontend Leaflet-draw + client-side
+  point-in-polygon on the visible 5K cap): **small**, days.
+- Forward-geocode for English place names + bbox/polygon: **medium**,
+  needs Nominatim search endpoint + caching layer.
+- DSL extension for time-of-day windows: **medium**, parser tweak +
+  per-row filter.
+- LLM-driven free-form parser: **large**, needs eval harness, fall-
+  back to DSL on parse failure, telemetry to learn from misses.
+- APOC-based server-side spatial in Neo4j: **large**, deploy chore.
+
+**Proposed sequence when this gets prioritised:**
+1. **J1** — Leaflet-draw polygon on map + "filter to drawn area"
+   button. Fastest investigator win, no backend changes.
+2. **J2** — Extend the search DSL with `time:HH:MM-HH:MM` (per-day
+   time-of-day window).
+3. **J3** — Forward-geocode English place names via
+   `/api/cellebrite/geocoder/forward?q=...` returning `{lat, lon,
+   bbox, polygon}`. Hook into `place:"…"` to support polygon match
+   when the geocoder returns one.
+4. **J4** — LLM English → DSL translator with the existing chat
+   context. Strictly optional sugar; the DSL is the truth.
+
+**Trigger to build:** when investigators say "I want to lasso the
+crime scene on the map and see who was there between 14:00 and 16:00."
+
