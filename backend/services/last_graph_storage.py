@@ -1,78 +1,110 @@
 """
-Last Graph Storage
+Postgres-backed last graph storage.
 
-Stores the Cypher needed to recreate the most recently-cleared graph,
-so the user can restore it via the UI.
+Stores the Cypher needed to recreate the most recently cleared graph so the UI
+can offer a restore path without relying on a JSON file.
 """
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Optional, Dict
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timezone
+from threading import RLock
+from typing import Callable, Dict, Iterator, Optional
 
-from config import BASE_DIR
+from sqlalchemy.orm import Session
 
-
-DATA_DIR = BASE_DIR / "data"
-STORAGE_FILE = DATA_DIR / "last_graph.json"
-
-
-def _ensure_dir() -> None:
-  DATA_DIR.mkdir(parents=True, exist_ok=True)
+from postgres.models.runtime_state import LastGraphState
+from postgres.session import get_background_session
 
 
-def _load_last_graph() -> Optional[Dict]:
-  _ensure_dir()
-  if not STORAGE_FILE.exists():
-    return None
-  try:
-    with open(STORAGE_FILE, "r", encoding="utf-8") as f:
-      return json.load(f)
-  except (json.JSONDecodeError, OSError):
-    return None
+SessionFactory = Callable[[], Session]
+LAST_GRAPH_KEY = "global"
 
 
-def _save_last_graph(data: Dict) -> None:
-  _ensure_dir()
-  tmp = STORAGE_FILE.with_suffix(".tmp")
-  with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2, ensure_ascii=False)
-  tmp.replace(STORAGE_FILE)
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _format_datetime(value: datetime | str | None) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    return value.isoformat()
 
 
 class LastGraphStorage:
-  """Stores the last-cleared graph's Cypher and metadata."""
+    """Stores the last-cleared graph's Cypher and metadata in Postgres."""
 
-  def __init__(self) -> None:
-    self._data: Optional[Dict] = _load_last_graph()
+    def __init__(self, session_factory: SessionFactory | None = None) -> None:
+        self._session_factory = session_factory
+        self._lock = RLock()
 
-  def get(self) -> Optional[Dict]:
-    """Get the last stored graph metadata, or None if not present."""
-    return self._data
+    @contextmanager
+    def _session_scope(self, db: Session | None = None) -> Iterator[Session]:
+        if db is not None:
+            yield db
+            return
 
-  def set(self, cypher: str) -> Dict:
-    """
-    Store a new last graph snapshot.
+        if self._session_factory is not None:
+            session = self._session_factory()
+            try:
+                yield session
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+            return
 
-    Args:
-      cypher: Cypher string that can recreate the graph.
-    """
-    record = {
-      "cypher": cypher,
-      "saved_at": datetime.now().isoformat(),
-    }
-    self._data = record
-    _save_last_graph(record)
-    return record
+        with get_background_session() as session:
+            yield session
+
+    def get(self, *, db: Session | None = None) -> Optional[Dict]:
+        """Get the last stored graph metadata, or None if not present."""
+        with self._lock:
+            with self._session_scope(db) as session:
+                record = session.get(LastGraphState, LAST_GRAPH_KEY)
+                if record is None:
+                    return None
+                return {
+                    "cypher": record.cypher,
+                    "saved_at": _format_datetime(record.saved_at),
+                }
+
+    def set(self, cypher: str, *, db: Session | None = None) -> Dict:
+        """
+        Store a new last graph snapshot.
+
+        Args:
+            cypher: Cypher string that can recreate the graph.
+            db: Optional request-scoped SQLAlchemy session.
+        """
+        timestamp = _now()
+        with self._lock:
+            with self._session_scope(db) as session:
+                record = session.get(LastGraphState, LAST_GRAPH_KEY)
+                if record is None:
+                    record = LastGraphState(
+                        key=LAST_GRAPH_KEY,
+                        cypher=cypher,
+                        saved_at=timestamp,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    )
+                    session.add(record)
+                else:
+                    record.cypher = cypher
+                    record.saved_at = timestamp
+                    record.updated_at = timestamp
+
+                session.flush()
+                return {
+                    "cypher": record.cypher,
+                    "saved_at": _format_datetime(record.saved_at),
+                }
 
 
 last_graph_storage = LastGraphStorage()
-
-
-
-
-
-
-

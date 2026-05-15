@@ -12,7 +12,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from services.snapshot_storage import snapshot_storage
-from services.snapshot_chunk_storage import save_chunk, reassemble_chunks
 from .auth import get_current_user
 
 router = APIRouter(prefix="/api/snapshots", tags=["snapshots"])
@@ -47,6 +46,9 @@ class SnapshotCreate(BaseModel):
     chat_history: Optional[List[dict]] = None
     ai_overview: Optional[str] = None  # AI-generated overview of the snapshot
     work_state: Optional[dict] = None  # Complete work state (graph, table, selections, etc.)
+    case_id: Optional[str] = None
+    case_version: Optional[int] = None
+    case_name: Optional[str] = None
 
 
 class SnapshotChunkCreate(BaseModel):
@@ -99,9 +101,9 @@ async def create_snapshot(snapshot: SnapshotCreate, user: dict = Depends(get_cur
         "timestamp": timestamp,
         "created_at": timestamp,
         "owner": user["username"],
-        "case_id": getattr(snapshot, "case_id", None),  # Include case info if provided
-        "case_version": getattr(snapshot, "case_version", None),
-        "case_name": getattr(snapshot, "case_name", None),
+        "case_id": snapshot.case_id,
+        "case_version": snapshot.case_version,
+        "case_name": snapshot.case_name,
     }
     
     # Save to persistent storage (will automatically chunk if too large)
@@ -211,14 +213,7 @@ async def get_snapshot(snapshot_id: str, user: dict = Depends(get_current_user))
 
 @router.delete("/{snapshot_id}")
 async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_user)):
-    """Delete a snapshot and remove it from all case versions."""
-    from services.case_storage import case_storage
-    
-    # Reload storage to ensure we have latest data before checking
-    snapshot_storage.reload()
-    
-    # Check if snapshot exists in storage (by checking the in-memory dict after reload)
-    # This is more efficient than calling get() which would reload again
+    """Delete a snapshot owned by the current user."""
     all_snapshots = snapshot_storage.get_all()
     snapshot_data = None
     for sid, data in all_snapshots.items():
@@ -236,55 +231,16 @@ async def delete_snapshot(snapshot_id: str, user: dict = Depends(get_current_use
     
     if snapshot_data is None or snapshot_data.get("owner") != user["username"]:
         raise HTTPException(status_code=404, detail="Snapshot not found")
-    
-    # Get the snapshot ID for case cleanup (use the id field if available, otherwise the key)
-    snapshot_id_for_cases = snapshot_data.get("id") or snapshot_id
-    
-    # Delete from snapshot storage
+
     if not snapshot_storage.delete(snapshot_id):
         raise HTTPException(status_code=404, detail="Snapshot not found")
-    
-    # Remove snapshot from all case versions
-    case_storage.reload()
-    all_cases = case_storage.get_all(owner=user["username"])
-    cases_updated = False
-    
-    for case_id, case_data in all_cases.items():
-        versions = case_data.get("versions", [])
-        version_updated = False
-        
-        for version in versions:
-            snapshots = version.get("snapshots", [])
-            original_count = len(snapshots)
-            # Filter out the deleted snapshot
-            updated_snapshots = [s for s in snapshots if s.get("id") != snapshot_id_for_cases and s.get("id") != snapshot_id]
-            
-            if len(updated_snapshots) != original_count:
-                version["snapshots"] = updated_snapshots
-                version_updated = True
-        
-        if version_updated:
-            # Update the case in memory
-            case_storage._cases[case_id] = case_data
-            cases_updated = True
-    
-    if cases_updated:
-        # Save all updated cases to disk
-        from services.case_storage import save_cases
-        save_cases(case_storage._cases)
-    
+
     return {"status": "deleted", "id": snapshot_id}
 
 
 @router.delete("")
 async def delete_all_snapshots(user: dict = Depends(get_current_user)):
-    """Delete all snapshots for the current user and remove them from all case versions."""
-    from services.case_storage import case_storage
-    
-    # Reload storage to ensure we have latest data
-    snapshot_storage.reload()
-    
-    # Get all snapshots owned by the user
+    """Delete all snapshots owned by the current user."""
     all_snapshots = snapshot_storage.get_all()
     user_snapshot_ids = []
     
@@ -296,7 +252,6 @@ async def delete_all_snapshots(user: dict = Depends(get_current_user)):
             if snapshot_id_field and snapshot_id_field != snapshot_id:
                 user_snapshot_ids.append(snapshot_id_field)
     
-    # Delete all user snapshots
     deleted_count = 0
     for snapshot_id in user_snapshot_ids:
         try:
@@ -304,36 +259,7 @@ async def delete_all_snapshots(user: dict = Depends(get_current_user)):
                 deleted_count += 1
         except Exception as e:
             print(f"Error deleting snapshot {snapshot_id}: {e}")
-    
-    # Remove all snapshots from all case versions
-    case_storage.reload()
-    all_cases = case_storage.get_all(owner=user["username"])
-    cases_updated = False
-    
-    for case_id, case_data in all_cases.items():
-        versions = case_data.get("versions", [])
-        version_updated = False
-        
-        for version in versions:
-            snapshots = version.get("snapshots", [])
-            # Filter out all user snapshots
-            updated_snapshots = [
-                s for s in snapshots 
-                if s.get("id") not in user_snapshot_ids and s.get("owner") != user["username"]
-            ]
-            
-            if len(updated_snapshots) != len(snapshots):
-                version["snapshots"] = updated_snapshots
-                version_updated = True
-        
-        if version_updated:
-            case_storage._cases[case_id] = case_data
-            cases_updated = True
-    
-    if cases_updated:
-        from services.case_storage import save_cases
-        save_cases(case_storage._cases)
-    
+
     return {"status": "deleted", "count": deleted_count}
 
 

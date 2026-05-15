@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Index, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -75,3 +75,55 @@ class PresenceSession(Base, TimestampMixin):
     device_info: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     last_active: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LastGraphState(Base, TimestampMixin):
+    """Cypher snapshot for restoring the most recently cleared Neo4j graph."""
+
+    __tablename__ = "last_graph_states"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    cypher: Mapped[str] = mapped_column(Text, nullable=False)
+    saved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SnapshotRecord(Base, TimestampMixin):
+    """Investigation snapshot persisted as structured runtime state in Postgres."""
+
+    __tablename__ = "snapshots"
+    __table_args__ = (
+        Index("ix_snapshots_owner_created", "owner", "created_at"),
+        Index("ix_snapshots_case_created", "case_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    owner: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    case_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    case_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    case_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    snapshot_timestamp: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    data: Mapped[dict] = mapped_column(_jsonb_column(), server_default="{}", nullable=False)
+
+
+class SystemLog(Base, TimestampMixin):
+    """Runtime system log entry persisted in Postgres."""
+
+    __tablename__ = "system_logs"
+    __table_args__ = (
+        Index("ix_system_logs_timestamp", "timestamp"),
+        Index("ix_system_logs_type_timestamp", "log_type", "timestamp"),
+        Index("ix_system_logs_origin_timestamp", "origin", "timestamp"),
+        Index("ix_system_logs_user_timestamp", "user", "timestamp"),
+        Index("ix_system_logs_success_timestamp", "success", "timestamp"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    log_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    origin: Mapped[str] = mapped_column(String(64), nullable=False)
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    user: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[dict] = mapped_column(_jsonb_column(), server_default="{}", nullable=False)
