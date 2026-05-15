@@ -8782,7 +8782,12 @@ class Neo4jService:
         """
         # Local import: keeps the cellebrite-only normaliser out of
         # neo4j_service's top-of-file dep set. Cheap (no I/O).
-        from services.phone_normalise import normalise, display_format
+        from services.phone_normalise import (
+            normalise,
+            normalise_all,
+            normalise_from_person_key,
+            display_format,
+        )
 
         # Hard cap on the Person fanout — no real investigation has 10K+
         # unique humans in their contacts. The cap is a safety rail so a
@@ -8857,33 +8862,37 @@ class Neo4jService:
             person_count = len(persons)
             truncated = person_count >= PERSON_CAP
 
-            # Bucket by canonical number (or by raw key if not normalisable).
-            # Each bucket aggregates aliases + counts + timestamp range.
+            # Bucket by canonical number(s) — a single Person joins
+            # EVERY canonical bucket their data points at, not just the
+            # first. This is the unification logic that makes the
+            # rollup actually unify: a Person with phones
+            # ["12407063672", "5892435332"] joins both +12407063672
+            # AND +15892435332 buckets, so any other Person carrying
+            # either number ends up grouped with them.
+            #
+            # Sources of canonical candidates per Person, in priority
+            # order:
+            #   1. Every string in `phone_numbers` (most explicit)
+            #   2. The Person's `name` if it looks like a number
+            #      (Cellebrite stores unsaved-contact callers this way)
+            #   3. The `phone-{digits}` person key itself (last-resort
+            #      signal — Cellebrite minted the key from the number)
+            #
+            # When NO source produces a canonical, the Person sits
+            # alone under a synthetic `raw:{key}` bucket so they're
+            # not lost from the table.
             buckets: Dict[str, dict] = {}
-            for rec in persons:
-                key = rec["key"]
-                name = rec["name"] or key
-                rk = rec["report_key"]
-                phones = list(rec["phone_numbers"] or [])
 
-                # Try every phone string until one normalises. If none
-                # do, the bucket key is the raw person key — it'll sit
-                # alone in its own single-alias row.
-                canonical = None
-                for raw in phones:
-                    canonical = normalise(raw)
-                    if canonical:
-                        break
-
-                bucket_key = canonical or f"raw:{key}"
-                b = buckets.get(bucket_key)
-                if not b:
+            def _ensure_bucket(bk, canonical):
+                b = buckets.get(bk)
+                if b is None:
                     b = {
                         "canonical": canonical,
                         "display_number": display_format(canonical),
-                        # Per-alias dict keyed by (name, person_key) so the
-                        # same name on different phones shows up once per
-                        # phone (the report_keys list captures that).
+                        # Per-alias dict keyed by (name, person_key) so
+                        # the same name on different phones shows up
+                        # once per phone (the report_keys list captures
+                        # that).
                         "_alias_map": {},
                         "person_keys": set(),
                         "report_keys": set(),
@@ -8894,44 +8903,87 @@ class Neo4jService:
                         "_lo": None,
                         "_hi": None,
                     }
-                    buckets[bucket_key] = b
+                    buckets[bk] = b
+                return b
 
-                b["person_keys"].add(key)
-                if rk:
-                    b["report_keys"].add(rk)
-                if rec["is_phone_owner"]:
-                    b["is_phone_owner"] = True
+            for rec in persons:
+                key = rec["key"]
+                name = rec["name"] or key
+                rk = rec["report_key"]
+                phones = list(rec["phone_numbers"] or [])
 
-                # Counts: sum across aliases. NB the per-Person counts
-                # came back via per-Person OPTIONAL MATCH so a message
-                # that names two aliases in the same bucket WILL be
-                # counted twice. For the rollup display this is the
-                # less-bad failure — it slightly inflates very-active
-                # contacts; the alternative (subquery on the union of
-                # keys) was the N+1 query that wedged the backend.
-                # If precise dedup matters for a future caller, that's
-                # a server-side tweak we can do then.
-                b["call_count"] += int(rec["calls"] or 0)
-                b["msg_count"] += int(rec["msgs"] or 0)
-                b["email_count"] += int(rec["emails"] or 0)
+                # Gather every canonical candidate for this Person.
+                # Order matters for the de-dup but not for joining —
+                # we add the Person to every distinct canonical bucket.
+                candidates = list(normalise_all(phones))
+                # Name fallback — if no phone strings normalised AND
+                # the name looks like a number, accept it. Common for
+                # unsaved-contact rows where Cellebrite uses the raw
+                # number as the display name.
+                if not candidates:
+                    name_canon = normalise(name)
+                    if name_canon:
+                        candidates.append(name_canon)
+                # Person-key fallback — Cellebrite mints the key as
+                # `phone-{digits}` so it's a strong signal even when
+                # the rest of the data is junk. Only adds if not
+                # already covered by phones / name.
+                key_canon = normalise_from_person_key(key)
+                if key_canon and key_canon not in candidates:
+                    candidates.append(key_canon)
 
-                # Min/max across the bucket — pull only non-null values
-                # since an alias with zero of a given event type
-                # contributes nulls.
-                for lo_v in (rec["calls_lo"], rec["msgs_lo"], rec["emails_lo"]):
-                    if lo_v and (b["_lo"] is None or lo_v < b["_lo"]):
-                        b["_lo"] = lo_v
-                for hi_v in (rec["calls_hi"], rec["msgs_hi"], rec["emails_hi"]):
-                    if hi_v and (b["_hi"] is None or hi_v > b["_hi"]):
-                        b["_hi"] = hi_v
+                # Deduplicate across the sources.
+                candidates = list(dict.fromkeys(candidates))
 
-                alias_key = (name, key)
-                alias = b["_alias_map"].get(alias_key)
-                if not alias:
-                    alias = {"name": name, "key": key, "report_keys": set()}
-                    b["_alias_map"][alias_key] = alias
-                if rk:
-                    alias["report_keys"].add(rk)
+                if not candidates:
+                    # No canonical at all — Person sits alone under a
+                    # synthetic key so they still appear in the table.
+                    target_buckets = [_ensure_bucket(f"raw:{key}", None)]
+                else:
+                    target_buckets = [_ensure_bucket(c, c) for c in candidates]
+
+                for b in target_buckets:
+                    b["person_keys"].add(key)
+                    if rk:
+                        b["report_keys"].add(rk)
+                    if rec["is_phone_owner"]:
+                        b["is_phone_owner"] = True
+
+                    # Counts: sum across aliases. NB the per-Person
+                    # counts came back via per-Person OPTIONAL MATCH so
+                    # a message that names two aliases in the same
+                    # bucket WILL be counted twice. For the rollup
+                    # display this is the less-bad failure — slightly
+                    # inflates very-active contacts; the alternative
+                    # (subquery on the union of keys) was the N+1 query
+                    # that wedged the backend.
+                    #
+                    # When a Person joins multiple canonical buckets
+                    # the per-Person counts are added to EACH bucket —
+                    # also a slight inflation, but the alternative
+                    # (splitting comms per number) requires per-event
+                    # number resolution we don't have.
+                    b["call_count"] += int(rec["calls"] or 0)
+                    b["msg_count"] += int(rec["msgs"] or 0)
+                    b["email_count"] += int(rec["emails"] or 0)
+
+                    # Min/max across the bucket — pull only non-null
+                    # values since an alias with zero of a given event
+                    # type contributes nulls.
+                    for lo_v in (rec["calls_lo"], rec["msgs_lo"], rec["emails_lo"]):
+                        if lo_v and (b["_lo"] is None or lo_v < b["_lo"]):
+                            b["_lo"] = lo_v
+                    for hi_v in (rec["calls_hi"], rec["msgs_hi"], rec["emails_hi"]):
+                        if hi_v and (b["_hi"] is None or hi_v > b["_hi"]):
+                            b["_hi"] = hi_v
+
+                    alias_key = (name, key)
+                    alias = b["_alias_map"].get(alias_key)
+                    if alias is None:
+                        alias = {"name": name, "key": key, "report_keys": set()}
+                        b["_alias_map"][alias_key] = alias
+                    if rk:
+                        alias["report_keys"].add(rk)
 
             # Apply optional search filter on number OR alias name.
             if search:
