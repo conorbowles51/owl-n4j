@@ -24,7 +24,6 @@ from services.system_log_service import system_log_service, LogType, LogOrigin
 from services.case_service import get_case_if_allowed, CaseNotFound, CaseAccessDenied
 from services.vector_db_service import vector_db_service
 from services.embedding_service import EmbeddingService
-from services.evidence_storage import evidence_storage  # TODO: remove after full migration
 from services.evidence_db_storage import EvidenceDBStorage
 from services.neo4j_service import neo4j_service
 from pathlib import Path
