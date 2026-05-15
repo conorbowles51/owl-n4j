@@ -10,13 +10,37 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 from sqlalchemy import func, select, and_
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
 from services.processing_profile_service import normalize_instruction_list
+
+
+def _coerce_uuid(value: Any) -> uuid.UUID | None:
+    if isinstance(value, uuid.UUID):
+        return value
+    if value is None:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def _clean_string_list(values: Iterable[Any] | None) -> List[str]:
+    if not values:
+        return []
+    cleaned = []
+    for value in values:
+        if value is None:
+            continue
+        item = str(value).strip()
+        if item:
+            cleaned.append(item)
+    return sorted(set(cleaned))
 
 
 # ---------------------------------------------------------------------------
@@ -296,12 +320,273 @@ class EvidenceDBStorage:
                 owner=owner,
                 created_by_id=created_by_id,
                 legacy_id=fd.get("legacy_id"),
+                source_type=fd.get("source_type"),
+                cellebrite_report_key=fd.get("cellebrite_report_key"),
+                cellebrite_file_id=fd.get("cellebrite_file_id"),
+                cellebrite_model_id=fd.get("cellebrite_model_id"),
+                cellebrite_category=fd.get("cellebrite_category"),
+                tags=_clean_string_list(fd.get("tags")),
+                linked_entity_ids=_clean_string_list(fd.get("linked_entity_ids")),
+                metadata_=fd.get("metadata") or {},
             )
             db.add(ef)
             created.append(ef)
 
         db.flush()
         return created
+
+    @staticmethod
+    def add_cellebrite_files(
+        db: Session,
+        case_id: uuid.UUID,
+        files_data: List[Dict[str, Any]],
+        owner: Optional[str] = None,
+        folder_id: Optional[uuid.UUID] = None,
+        created_by_id: Optional[uuid.UUID] = None,
+    ) -> List[EvidenceFile]:
+        """
+        Register Cellebrite extracted media files in Postgres.
+
+        Each item should include original_filename, stored_path, sha256,
+        size, cellebrite_report_key, cellebrite_file_id, cellebrite_model_id,
+        and cellebrite_category. Duplicate detection mirrors add_files(), but
+        rows keep the UFED file ID so attachment APIs can resolve them later.
+        """
+        created: List[EvidenceFile] = []
+        for fd in files_data:
+            sha256 = fd["sha256"]
+            existing = db.scalars(
+                select(EvidenceFile).where(EvidenceFile.sha256 == sha256).limit(1)
+            ).first()
+            is_dup = existing is not None
+
+            ef = EvidenceFile(
+                case_id=case_id,
+                folder_id=folder_id,
+                original_filename=fd["original_filename"],
+                stored_path=str(fd["stored_path"]),
+                size=fd.get("size", 0),
+                sha256=sha256,
+                status=fd.get("status") or "unprocessed",
+                is_duplicate=is_dup,
+                duplicate_of_id=existing.id if existing else None,
+                owner=owner,
+                created_by_id=created_by_id,
+                legacy_id=fd.get("legacy_id"),
+                source_type="cellebrite",
+                cellebrite_report_key=fd.get("cellebrite_report_key"),
+                cellebrite_file_id=fd.get("cellebrite_file_id"),
+                cellebrite_model_id=fd.get("cellebrite_model_id"),
+                cellebrite_category=fd.get("cellebrite_category"),
+                tags=_clean_string_list(fd.get("tags")),
+                linked_entity_ids=_clean_string_list(fd.get("linked_entity_ids")),
+                metadata_=fd.get("metadata") or {},
+            )
+            db.add(ef)
+            created.append(ef)
+
+        db.flush()
+        return created
+
+    @staticmethod
+    def get_by_cellebrite_file_ids(
+        db: Session,
+        case_id: uuid.UUID,
+        file_ids: Sequence[str],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Resolve UFED file UUIDs to evidence API dicts for one case."""
+        wanted = [str(file_id) for file_id in file_ids if file_id]
+        if not wanted:
+            return {}
+        rows = db.scalars(
+            select(EvidenceFile).where(
+                EvidenceFile.case_id == case_id,
+                EvidenceFile.source_type == "cellebrite",
+                EvidenceFile.cellebrite_file_id.in_(wanted),
+            )
+        ).all()
+
+        out: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            key = row.cellebrite_file_id
+            if not key:
+                continue
+            existing = out.get(key)
+            if existing is None or (existing.get("is_duplicate") and not row.is_duplicate):
+                out[key] = EvidenceDBStorage._file_to_dict(row)
+        return out
+
+    @staticmethod
+    def delete_by_cellebrite_report_key(
+        db: Session,
+        case_id: uuid.UUID,
+        report_key: str,
+    ) -> int:
+        """Delete all Postgres evidence rows registered for a Cellebrite report."""
+        rows = list(db.scalars(
+            select(EvidenceFile).where(
+                EvidenceFile.case_id == case_id,
+                EvidenceFile.source_type == "cellebrite",
+                EvidenceFile.cellebrite_report_key == report_key,
+            )
+        ).all())
+        for row in rows:
+            db.delete(row)
+        if rows:
+            db.flush()
+        return len(rows)
+
+    @staticmethod
+    def list_cellebrite_files(
+        db: Session,
+        case_id: uuid.UUID,
+        report_keys: Optional[Sequence[str]] = None,
+        category: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        conditions = [
+            EvidenceFile.case_id == case_id,
+            EvidenceFile.source_type == "cellebrite",
+        ]
+        if report_keys:
+            conditions.append(EvidenceFile.cellebrite_report_key.in_(list(report_keys)))
+        if category:
+            conditions.append(EvidenceFile.cellebrite_category == category)
+        rows = db.scalars(
+            select(EvidenceFile).where(*conditions).order_by(EvidenceFile.original_filename)
+        ).all()
+        return [EvidenceDBStorage._file_to_dict(row) for row in rows]
+
+    @staticmethod
+    def add_tags(db: Session, evidence_ids: Sequence[Any], tags: Sequence[str]) -> int:
+        clean = _clean_string_list(tags)
+        if not clean:
+            return 0
+        updated = 0
+        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
+            merged = _clean_string_list([*(ef.tags or []), *clean])
+            if merged != (ef.tags or []):
+                ef.tags = merged
+                updated += 1
+            elif ef.tags is None:
+                ef.tags = merged
+        if updated:
+            db.flush()
+        return updated
+
+    @staticmethod
+    def remove_tags(db: Session, evidence_ids: Sequence[Any], tags: Sequence[str]) -> int:
+        remove = set(_clean_string_list(tags))
+        if not remove:
+            return 0
+        updated = 0
+        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
+            existing = set(ef.tags or [])
+            if existing & remove:
+                ef.tags = sorted(existing - remove)
+                updated += 1
+        if updated:
+            db.flush()
+        return updated
+
+    @staticmethod
+    def set_tags(db: Session, evidence_id: Any, tags: Sequence[str]) -> bool:
+        file_id = _coerce_uuid(evidence_id)
+        if file_id is None:
+            return False
+        ef = db.get(EvidenceFile, file_id)
+        if not ef:
+            return False
+        ef.tags = _clean_string_list(tags)
+        db.flush()
+        return True
+
+    @staticmethod
+    def get_tag_counts(db: Session, case_id: uuid.UUID) -> List[Dict[str, Any]]:
+        counts: Dict[str, int] = {}
+        rows = db.scalars(select(EvidenceFile.tags).where(EvidenceFile.case_id == case_id)).all()
+        for tags in rows:
+            for tag in tags or []:
+                counts[tag] = counts.get(tag, 0) + 1
+        return [
+            {"tag": tag, "count": count}
+            for tag, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+
+    @staticmethod
+    def link_entities(
+        db: Session,
+        evidence_ids: Sequence[Any],
+        entity_ids: Sequence[str],
+    ) -> int:
+        clean = _clean_string_list(entity_ids)
+        if not clean:
+            return 0
+        updated = 0
+        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
+            merged = _clean_string_list([*(ef.linked_entity_ids or []), *clean])
+            if merged != (ef.linked_entity_ids or []):
+                ef.linked_entity_ids = merged
+                updated += 1
+        if updated:
+            db.flush()
+        return updated
+
+    @staticmethod
+    def unlink_entities(
+        db: Session,
+        evidence_ids: Sequence[Any],
+        entity_ids: Sequence[str],
+    ) -> int:
+        remove = set(_clean_string_list(entity_ids))
+        if not remove:
+            return 0
+        updated = 0
+        for ef in EvidenceDBStorage._files_for_ids(db, evidence_ids):
+            existing = set(ef.linked_entity_ids or [])
+            if existing & remove:
+                ef.linked_entity_ids = sorted(existing - remove)
+                updated += 1
+        if updated:
+            db.flush()
+        return updated
+
+    @staticmethod
+    def list_by_entity(db: Session, case_id: uuid.UUID, entity_id: str) -> List[Dict[str, Any]]:
+        if not entity_id:
+            return []
+        rows = db.scalars(
+            select(EvidenceFile).where(EvidenceFile.case_id == case_id)
+        ).all()
+        return [
+            EvidenceDBStorage._file_to_dict(row)
+            for row in rows
+            if entity_id in (row.linked_entity_ids or [])
+        ]
+
+    @staticmethod
+    def unlink_entities_from_all(db: Session, case_id: uuid.UUID, entity_id: str) -> int:
+        if not entity_id:
+            return 0
+        updated = 0
+        rows = db.scalars(
+            select(EvidenceFile).where(EvidenceFile.case_id == case_id)
+        ).all()
+        for row in rows:
+            existing = set(row.linked_entity_ids or [])
+            if entity_id in existing:
+                existing.discard(entity_id)
+                row.linked_entity_ids = sorted(existing)
+                updated += 1
+        if updated:
+            db.flush()
+        return updated
+
+    @staticmethod
+    def _files_for_ids(db: Session, evidence_ids: Sequence[Any]) -> List[EvidenceFile]:
+        ids = [file_id for file_id in (_coerce_uuid(value) for value in evidence_ids) if file_id]
+        if not ids:
+            return []
+        return list(db.scalars(select(EvidenceFile).where(EvidenceFile.id.in_(ids))).all())
 
     @staticmethod
     def find_by_engine_job_id(db: Session, engine_job_id: str) -> Optional[EvidenceFile]:
@@ -642,6 +927,14 @@ class EvidenceDBStorage:
             "entity_count": ef.entity_count,
             "relationship_count": ef.relationship_count,
             "last_processed_folder_id": str(ef.last_processed_folder_id) if ef.last_processed_folder_id else None,
+            "source_type": ef.source_type,
+            "cellebrite_report_key": ef.cellebrite_report_key,
+            "cellebrite_file_id": ef.cellebrite_file_id,
+            "cellebrite_model_id": ef.cellebrite_model_id,
+            "cellebrite_category": ef.cellebrite_category,
+            "tags": list(ef.tags or []),
+            "linked_entity_ids": list(ef.linked_entity_ids or []),
+            "metadata": dict(ef.metadata_ or {}),
         }
 
     @staticmethod

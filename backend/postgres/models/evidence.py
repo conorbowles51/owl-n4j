@@ -15,12 +15,17 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    JSON,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
+
+
+def _jsonb_column():
+    return JSONB().with_variant(JSON(), "sqlite")
 
 
 class EvidenceFolder(Base, TimestampMixin):
@@ -55,7 +60,7 @@ class EvidenceFolder(Base, TimestampMixin):
         nullable=True,
     )
 
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", _jsonb_column(), server_default="{}", nullable=False)
 
     # Folder context & profile — used for LLM extraction prompt enrichment.
     # context_instructions: free-text context injected into entity extraction prompts.
@@ -63,8 +68,8 @@ class EvidenceFolder(Base, TimestampMixin):
     # profile_overrides: structured JSONB for additive profile settings
     #   (currently only special_entity_types).
     context_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    mandatory_instructions: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
-    profile_overrides: Mapped[dict | None] = mapped_column("profile_overrides", JSONB, nullable=True)
+    mandatory_instructions: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
+    profile_overrides: Mapped[dict | None] = mapped_column("profile_overrides", _jsonb_column(), nullable=True)
 
     # Relationships
     case = relationship("Case", foreign_keys=[case_id])
@@ -91,6 +96,17 @@ class EvidenceFile(Base, TimestampMixin):
         Index("ix_evidence_files_sha256", "sha256"),
         Index("ix_evidence_files_case_status", "case_id", "status"),
         Index("ix_evidence_files_legacy_id", "legacy_id"),
+        Index("ix_evidence_files_source_type", "source_type"),
+        Index("ix_evidence_files_case_source", "case_id", "source_type"),
+        Index("ix_evidence_files_case_cellebrite_report", "case_id", "cellebrite_report_key"),
+        Index("ix_evidence_files_case_cellebrite_file", "case_id", "cellebrite_file_id"),
+        Index("ix_evidence_files_case_cellebrite_model", "case_id", "cellebrite_model_id"),
+        Index(
+            "ix_evidence_files_case_cellebrite_source_report",
+            "case_id",
+            "source_type",
+            "cellebrite_report_key",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -137,13 +153,20 @@ class EvidenceFile(Base, TimestampMixin):
     entity_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     relationship_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processing_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    last_processed_profile_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    last_processed_profile_snapshot: Mapped[dict | None] = mapped_column(_jsonb_column(), nullable=True)
     last_processed_folder_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("evidence_folders.id", ondelete="SET NULL"),
         nullable=True,
     )
-    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, server_default="{}", nullable=False)
+    source_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cellebrite_report_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cellebrite_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cellebrite_model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    cellebrite_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tags: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
+    linked_entity_ids: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
+    metadata_: Mapped[dict] = mapped_column("metadata", _jsonb_column(), server_default="{}", nullable=False)
 
     # Relationships
     case = relationship("Case", foreign_keys=[case_id])
@@ -181,7 +204,7 @@ class IngestionLog(Base):
     level: Mapped[str] = mapped_column(String(20), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     filename: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    extra: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    extra: Mapped[dict] = mapped_column(_jsonb_column(), server_default="{}", nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
