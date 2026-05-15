@@ -11,6 +11,7 @@ from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
 from postgres.models.evidence import EvidenceFolder, EvidenceFile, IngestionLog
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
+from postgres.models.runtime_state import BackgroundTask, PresenceSession, WiretapProcessedFolder
 from postgres.models.workspace import (
     WorkspaceContext,
     WorkspaceWitness,
@@ -29,6 +30,7 @@ __all__ = [
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
+    "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",
     "WorkspaceContext", "WorkspaceWitness", "WorkspaceTheory",
     "WorkspaceTask", "WorkspaceNote", "WorkspaceFinding", "WorkspacePinnedItem",
     "WorkspaceDeadlineConfig",
