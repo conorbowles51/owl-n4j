@@ -3,14 +3,11 @@ import { Loader2, BookOpen, SlidersHorizontal } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
-import CommsEntityFilter from './comms/CommsEntityFilter';
-import CommsTypeFilter from './comms/CommsTypeFilter';
-import CommsAppFilter from './comms/CommsAppFilter';
+import CommsParticipantsFilter from './comms/CommsParticipantsFilter';
+import CommsCompactToolbar from './comms/CommsCompactToolbar';
 import CommsThreadList from './comms/CommsThreadList';
 import CommsThreadView from './comms/CommsThreadView';
-import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
-import TimelineScrubber from './shared/TimelineScrubber';
 import ResizableSplit from './shared/ResizableSplit';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildCommsContext } from '../../utils/chatContextSummary';
@@ -44,8 +41,57 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // off the explicit reports prop instead (legacy callers), there's
   // nothing to wait for.
   const reportsReady = phoneCtx ? phoneCtx.hydrated : true;
-  const [fromKeys, setFromKeys] = useState(new Set());
-  const [toKeys, setToKeys] = useState(new Set());
+  // Phase K1 — Participants combined filter. Each entry:
+  //   { key: 'phone-…', name: 'Alex', role: 'any' | 'from' | 'to' }
+  // The PARENT (this component) derives the legacy fromKeys / toKeys
+  // sets from this array at fetch time so the backend stays untouched.
+  // 'any' chips contribute to BOTH sets (server filter is union); 'from'
+  // chips contribute to fromKeys only; 'to' chips contribute to toKeys
+  // only. Effect: a single 'any' chip = "every comm involving this
+  // person" without forcing the user to pick a direction.
+  const [participants, setParticipants] = useState([]);
+  const fromKeys = useMemo(() => {
+    const out = new Set();
+    for (const p of participants) {
+      if (p.role === 'from' || p.role === 'any') out.add(p.key);
+    }
+    return out;
+  }, [participants]);
+  const toKeys = useMemo(() => {
+    const out = new Set();
+    for (const p of participants) {
+      if (p.role === 'to' || p.role === 'any') out.add(p.key);
+    }
+    return out;
+  }, [participants]);
+  // Tiny shims so the cross-tab "Filter Comms" intent listener (which
+  // expects setFromKeys / setToKeys callable) keeps working without
+  // change — when a Filter Comms click slams in a list of person_keys
+  // we round-trip them through the new participants model as 'any'.
+  const setFromKeys = useCallback((nextSet) => {
+    const keys = nextSet instanceof Set ? [...nextSet] : (nextSet || []);
+    setParticipants((prev) => {
+      // For each key, ensure a participant exists; flip its role to
+      // 'any' so it's effective in both directions (matches the
+      // pre-K1 behaviour where seeding both From and To = panoramic).
+      const byKey = new Map(prev.map(p => [p.key, p]));
+      for (const k of keys) {
+        const existing = byKey.get(k);
+        if (existing) {
+          byKey.set(k, { ...existing, role: 'any' });
+        } else {
+          byKey.set(k, { key: k, name: k, role: 'any' });
+        }
+      }
+      return [...byKey.values()];
+    });
+  }, []);
+  const setToKeys = useCallback((nextSet) => {
+    // Same effect — every Filter Comms intent winds up with 'any'
+    // chips. Kept as a separate function so the existing call sites
+    // don't have to change.
+    setFromKeys(nextSet);
+  }, [setFromKeys]);
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
   const [activeApps, setActiveApps] = useState(new Set()); // empty = all apps
   // Scrubber-driven coarse window (Date | null). Maps to startDate/endDate
@@ -81,6 +127,25 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // --- Data state ---
   const [entities, setEntities] = useState([]);
   const [entitiesLoading, setEntitiesLoading] = useState(false);
+
+  // Backfill participant chip names once entities load — Filter Comms
+  // intents may seed a chip before entities arrive (the chip then
+  // shows the raw key); this resolves the prettier name retroactively
+  // without changing the chip key (filter still applies).
+  useEffect(() => {
+    if (!entities.length) return;
+    setParticipants((prev) => {
+      let dirty = false;
+      const next = prev.map(p => {
+        if (p.name && p.name !== p.key) return p;
+        const e = entities.find(x => x.key === p.key);
+        if (!e || !e.name || e.name === p.key) return p;
+        dirty = true;
+        return { ...p, name: e.name };
+      });
+      return dirty ? next : prev;
+    });
+  }, [entities]);
 
   const [sourceApps, setSourceApps] = useState([]);
 
@@ -618,97 +683,51 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           filter eats half the screen on busy cases — its content is
           unbounded (one row per entity) and the windowed render
           sized itself to whatever container height it got. */}
-      <ResizableSplit
-        direction="vertical"
-        storageKey={`cb.comms.entityFilter.${caseId}`}
-        defaultSize={220}
-        minSize={80}
-        maxSize={500}
-        className="flex-1"
-        first={(
-          <CommsEntityFilter
-            entities={entities}
-            fromKeys={fromKeys}
-            toKeys={toKeys}
-            onFromChange={setFromKeys}
-            onToChange={setToKeys}
-          />
-        )}
-        second={(
-          <div className="flex flex-col h-full min-h-0">
-            {/* Source-app filter row */}
-            <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-200 bg-white flex-shrink-0 overflow-x-auto">
-              <span className="text-xs text-light-600 font-medium flex-shrink-0">Source:</span>
-              <CommsAppFilter apps={sourceApps} active={activeApps} onChange={setActiveApps} />
-            </div>
-
-            {/* Type filter row */}
-            <div className="flex items-center gap-3 px-4 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
-              <CommsTypeFilter active={activeTypes} onChange={setActiveTypes} />
-              <div className="flex-1" />
-            </div>
-
-            {/* Histogram scrubber — envelope-driven, so its bounds and
-                density curve reflect the WHOLE filtered shape, not
-                just what we managed to load. Falls back to `items`
-                when the envelope hasn't loaded yet. */}
-            <TimelineScrubber
-              items={threads}
-              envelope={envelope ? {
-                minDate: envelope.min_date,
-                maxDate: envelope.max_date,
-                histogram: envelope.histogram,
-                total: envelope.total,
-                loading: envelopeLoading,
-                hasMoreThanItems: typeof envelope.total === 'number' && envelope.total > threads.length,
-              } : null}
-              windowStart={windowStart}
-              windowEnd={windowEnd}
-              onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
-            />
-
-            {/* Wide thread search */}
-            <div className="px-4 py-2 border-b border-light-200 bg-white flex-shrink-0">
-              <CellebriteSearchInput
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder='Search threads — try type:chat from:John app:WhatsApp'
-                matchCount={filteredThreads.length}
-                totalCount={threads.length}
-                itemNoun="thread"
-                focusOnSlash
-              />
-            </div>
-
-            {/* Inner split: thread list | thread view (horizontal)
-                ↕ cross-type timeline (vertical). The bottom timeline
-                is the one users want to push down to give the message
-                feed room — its default is intentionally modest. */}
-            <ResizableSplit
-              direction="vertical"
-              storageKey={`cb.comms.bottomTimeline.${caseId}`}
-              defaultSize={180}
-              minSize={60}
-              maxSize={600}
-              className="flex-1"
-              first={threadSplit}
-              second={(
-                <CommsCrossTypeTimeline
-                  caseId={caseId}
-                  fromKeys={fromKeys}
-                  toKeys={toKeys}
-                  reportKeys={selectedReportKeys}
-                  types={activeTypes}
-                  sourceApps={activeApps}
-                  startDate={startDate || null}
-                  endDate={endDate || null}
-                  onItemSelect={handleItemSelect}
-                />
-              )}
-            />
-          </div>
-        )}
+      {/* Phase K1: Participants filter — self-contained collapsible
+          chip strip; the old ResizableSplit between it and the rest
+          of the page was a workaround for the From/To filter eating
+          half the screen, no longer needed. */}
+      <CommsParticipantsFilter
+        entities={entities}
+        participants={participants}
+        onParticipantsChange={setParticipants}
       />
+
+      {/* Phase K2: Compact toolbar combining search + type pills +
+          source dropdown + scrubber-handle. Reclaims the three
+          stacked rows of header chrome the old layout had. */}
+      <CommsCompactToolbar
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        searchMatchCount={filteredThreads.length}
+        searchTotalCount={threads.length}
+        activeTypes={activeTypes}
+        onTypesChange={setActiveTypes}
+        sourceApps={sourceApps}
+        activeApps={activeApps}
+        onAppsChange={setActiveApps}
+        scrubberItems={threads}
+        scrubberEnvelope={envelope ? {
+          minDate: envelope.min_date,
+          maxDate: envelope.max_date,
+          histogram: envelope.histogram,
+          total: envelope.total,
+          loading: envelopeLoading,
+          hasMoreThanItems: typeof envelope.total === 'number' && envelope.total > threads.length,
+        } : null}
+        windowStart={windowStart}
+        windowEnd={windowEnd}
+        onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+      />
+
+      {/* Phase K4: bottom cross-type timeline removed. Its info was
+          a denser view of the same envelope the main scrubber
+          already shows; the dedicated pane was paying ~150px of
+          permanent vertical cost for a duplicate view. The
+          conversation feed now gets the entire remaining height. */}
+      <div className="flex-1 min-h-0">
+        {threadSplit}
+      </div>
     </div>
   );
 }
