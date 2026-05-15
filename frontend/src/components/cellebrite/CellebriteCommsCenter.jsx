@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, BookOpen, SlidersHorizontal } from 'lucide-react';
+import { Loader2, BookOpen, SlidersHorizontal, Activity, X } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -7,6 +7,7 @@ import CommsParticipantsFilter from './comms/CommsParticipantsFilter';
 import CommsCompactToolbar from './comms/CommsCompactToolbar';
 import CommsThreadList from './comms/CommsThreadList';
 import CommsThreadView from './comms/CommsThreadView';
+import CommsCrossTypeTimeline from './comms/CommsCrossTypeTimeline';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import ResizableSplit from './shared/ResizableSplit';
 import { useChatContext } from '../../contexts/ChatContext';
@@ -119,6 +120,24 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     catch { /* ignore */ }
   }, [viewMode, viewModeKey]);
   const isReadMode = viewMode === 'read';
+
+  // Phase K4 (revised) — cross-type timeline as a slide-in flyover
+  // from the bottom edge. The K4 first-pass removed it entirely;
+  // user pushed back ('this is a huge piece') so it's back, but
+  // doesn't pay layout cost when off. Default closed; toggle from
+  // the mode-bar button. Per-case localStorage so the user's
+  // last preference (open/closed) persists.
+  const timelineFlyoverKey = `cb.comms.timelineFlyover.${caseId || 'unknown'}`;
+  const [timelineFlyoverOpen, setTimelineFlyoverOpen] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try { return window.localStorage.getItem(timelineFlyoverKey) === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(timelineFlyoverKey, timelineFlyoverOpen ? '1' : '0'); }
+    catch { /* ignore */ }
+  }, [timelineFlyoverOpen, timelineFlyoverKey]);
 
   // ISO yyyy-mm-dd derived from the scrubber window for the API.
   const startDate = windowStart ? toISODate(windowStart) : '';
@@ -622,8 +641,33 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // Mode toggle button rendered into both layouts so the user can
   // flip back to Browse from Read with a single click.
   const modeToggle = (
-    <ModeToggleButton viewMode={viewMode} setViewMode={setViewMode} />
+    <ModeToggleButton
+      viewMode={viewMode}
+      setViewMode={setViewMode}
+      timelineFlyoverOpen={timelineFlyoverOpen}
+      setTimelineFlyoverOpen={setTimelineFlyoverOpen}
+    />
   );
+
+  // Cross-type timeline flyover. Mounted at the root level so it
+  // overlays both Browse and Read layouts identically. Slides in
+  // from the bottom edge (separate from the right-rail flyout
+  // so they can co-exist without fighting for the same edge).
+  // Caps at 50vh so it never eats the whole feed.
+  const timelineFlyover = timelineFlyoverOpen ? (
+    <CrossTypeTimelineFlyover
+      caseId={caseId}
+      fromKeys={fromKeys}
+      toKeys={toKeys}
+      reportKeys={selectedReportKeys}
+      types={activeTypes}
+      sourceApps={activeApps}
+      startDate={startDate || null}
+      endDate={endDate || null}
+      onItemSelect={handleItemSelect}
+      onClose={() => setTimelineFlyoverOpen(false)}
+    />
+  ) : null;
 
   // ---------------- Read mode: max-feed layout ----------------
   // No filter chrome, no bottom timeline, no scrubber. Just the
@@ -656,6 +700,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         <div className="flex-1 min-h-0">
           {threadSplit}
         </div>
+        {timelineFlyover}
       </div>
     );
   }
@@ -724,56 +769,166 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
       />
 
-      {/* Phase K4: bottom cross-type timeline removed. Its info was
-          a denser view of the same envelope the main scrubber
-          already shows; the dedicated pane was paying ~150px of
-          permanent vertical cost for a duplicate view. The
-          conversation feed now gets the entire remaining height. */}
+      {/* Phase K4 (revised): cross-type timeline returns as a slide-
+          in flyover from the bottom edge instead of an always-mounted
+          panel. Mounted at the root so it overlays without eating
+          layout cost when off. Toggle from the Timeline button in
+          the mode bar. */}
       <div className="flex-1 min-h-0">
         {threadSplit}
       </div>
+      {timelineFlyover}
     </div>
   );
 }
 
 /**
- * Two-state toggle: Browse (full filter chrome) vs Read (collapse
- * everything to maximise the conversation feed). Filter STATE is
- * preserved across the toggle — only the controls are hidden in
- * Read mode. Per-case localStorage handled by the parent so the
- * toggle itself is stateless.
+ * Three-button mode bar:
+ *   - Browse  (full filter chrome — default)
+ *   - Read    (collapse all chrome, max conversation space)
+ *   - Timeline (toggle the cross-type bottom flyover)
+ *
+ * Browse / Read are MUTUALLY EXCLUSIVE layout modes (one or the
+ * other). Timeline is INDEPENDENT — it's a flyover overlay that
+ * works on top of either layout. The visual styling reflects this:
+ * Browse/Read share a pill-radio look, Timeline is a separate
+ * pressable button alongside.
+ *
+ * Filter STATE is preserved across the toggle — only the controls
+ * are hidden in Read mode. Per-case localStorage handled by the
+ * parent so the toggle itself is stateless.
  */
-function ModeToggleButton({ viewMode, setViewMode }) {
+function ModeToggleButton({
+  viewMode, setViewMode,
+  timelineFlyoverOpen, setTimelineFlyoverOpen,
+}) {
   const isRead = viewMode === 'read';
   return (
-    <div className="inline-flex border border-light-300 rounded overflow-hidden text-[11px]">
+    <div className="inline-flex items-center gap-1.5">
+      {/* Browse / Read — paired pill toggle (mutually exclusive) */}
+      <div className="inline-flex border border-light-300 rounded overflow-hidden text-[11px]">
+        <button
+          type="button"
+          onClick={() => setViewMode('browse')}
+          className={`flex items-center gap-1 px-2 py-0.5 transition-colors ${
+            !isRead
+              ? 'bg-owl-blue-100 text-owl-blue-800'
+              : 'bg-white text-light-600 hover:bg-light-100'
+          }`}
+          title="Browse mode — full filter controls"
+        >
+          <SlidersHorizontal className="w-3 h-3" />
+          Browse
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode('read')}
+          className={`flex items-center gap-1 px-2 py-0.5 border-l border-light-300 transition-colors ${
+            isRead
+              ? 'bg-owl-blue-100 text-owl-blue-800'
+              : 'bg-white text-light-600 hover:bg-light-100'
+          }`}
+          title="Read mode — hide filter chrome, max conversation space"
+        >
+          <BookOpen className="w-3 h-3" />
+          Read
+        </button>
+      </div>
+
+      {/* Timeline — independent toggle for the cross-type flyover.
+          Works on top of either Browse or Read mode. */}
       <button
         type="button"
-        onClick={() => setViewMode('browse')}
-        className={`flex items-center gap-1 px-2 py-0.5 transition-colors ${
-          !isRead
-            ? 'bg-owl-blue-100 text-owl-blue-800'
-            : 'bg-white text-light-600 hover:bg-light-100'
+        onClick={() => setTimelineFlyoverOpen(v => !v)}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] border rounded transition-colors ${
+          timelineFlyoverOpen
+            ? 'bg-emerald-100 border-emerald-300 text-emerald-800'
+            : 'bg-white border-light-300 text-light-600 hover:bg-light-100'
         }`}
-        title="Browse mode — full filter controls"
+        title={
+          timelineFlyoverOpen
+            ? 'Hide the cross-type timeline'
+            : 'Show the cross-type timeline (slides in from bottom)'
+        }
       >
-        <SlidersHorizontal className="w-3 h-3" />
-        Browse
-      </button>
-      <button
-        type="button"
-        onClick={() => setViewMode('read')}
-        className={`flex items-center gap-1 px-2 py-0.5 border-l border-light-300 transition-colors ${
-          isRead
-            ? 'bg-owl-blue-100 text-owl-blue-800'
-            : 'bg-white text-light-600 hover:bg-light-100'
-        }`}
-        title="Read mode — hide filter chrome, max conversation space"
-      >
-        <BookOpen className="w-3 h-3" />
-        Read
+        <Activity className="w-3 h-3" />
+        Timeline
       </button>
     </div>
+  );
+}
+
+/**
+ * Cross-type timeline bottom flyover. Slides up from the bottom
+ * edge with a 220ms ease — same animation language as the right-
+ * rail flyout. Caps at 50vh so it never eats the whole feed even
+ * if the user opens it while the conversation is short.
+ *
+ * Dismissal: X button, Esc key, or toggling the Timeline button
+ * off in the mode bar.
+ */
+function CrossTypeTimelineFlyover({
+  caseId, fromKeys, toKeys, reportKeys, types, sourceApps,
+  startDate, endDate, onItemSelect, onClose,
+}) {
+  // Esc to dismiss.
+  useEffect(() => {
+    const onKey = (ev) => { if (ev.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <aside
+      className="fixed left-0 right-0 bottom-0 z-30 bg-white border-t border-light-200 shadow-2xl flex flex-col animate-timeline-slide"
+      role="complementary"
+      aria-label="Cross-type comms timeline"
+      style={{ maxHeight: '50vh', height: '40vh' }}
+    >
+      <style>{`
+        @keyframes timeline-slide-up {
+          from { transform: translateY(100%); }
+          to   { transform: translateY(0); }
+        }
+        .animate-timeline-slide {
+          animation: timeline-slide-up 220ms cubic-bezier(0.22, 0.61, 0.36, 1);
+        }
+      `}</style>
+
+      <div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-light-200 bg-light-50 flex-shrink-0">
+        <Activity className="w-3.5 h-3.5 text-emerald-600" />
+        <span className="text-xs font-semibold text-owl-blue-900">
+          Conversation timeline
+        </span>
+        <span className="text-[11px] text-light-500">
+          · cross-type events under the active filters
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 text-light-400 hover:text-light-700 rounded"
+          title="Close (Esc)"
+          aria-label="Close timeline flyover"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <CommsCrossTypeTimeline
+          caseId={caseId}
+          fromKeys={fromKeys}
+          toKeys={toKeys}
+          reportKeys={reportKeys}
+          types={types}
+          sourceApps={sourceApps}
+          startDate={startDate}
+          endDate={endDate}
+          onItemSelect={onItemSelect}
+        />
+      </div>
+    </aside>
   );
 }
 

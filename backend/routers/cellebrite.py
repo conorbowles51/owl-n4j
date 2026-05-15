@@ -1123,7 +1123,13 @@ async def overview_locations(
     case_id: str = Query(...),
     report_key: str = Query(...),
     search: Optional[str] = Query(None),
-    limit: int = Query(500, ge=1, le=2000),
+    # Higher cap than the other overview endpoints because the
+    # Locations tab is a map-first surface — investigators want
+    # every point at once for trajectory + bounds-fitting, not a
+    # paged 500. 10K covers location-heavy phones from real cases
+    # (OPDMD28's busiest tile alone holds ~700 points; whole-device
+    # totals run a few thousand).
+    limit: int = Query(5000, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
