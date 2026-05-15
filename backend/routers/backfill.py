@@ -11,7 +11,11 @@ from routers.auth import get_current_user
 from services.neo4j_service import neo4j_service
 from services.vector_db_service import vector_db_service
 from services.embedding_service import embedding_service
-from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
+from config import BASE_DIR
+from postgres.models.evidence import EvidenceFile
+from postgres.session import get_background_session
+from services.evidence_db_storage import EvidenceDBStorage
+from sqlalchemy import select
 from pathlib import Path
 
 # PDF extraction - use pypdf directly to avoid complex import dependencies
@@ -47,6 +51,7 @@ except Exception as e:
     traceback.print_exc()
 
 router = APIRouter(prefix="/api/backfill", tags=["backfill"])
+EVIDENCE_ROOT_DIR = BASE_DIR / "ingestion" / "data"
 
 
 class BackfillRequest(BaseModel):
@@ -212,17 +217,12 @@ def extract_text_from_file(file_path: Path) -> Optional[str]:
 
 def find_evidence_file(doc_name: str) -> Optional[Path]:
     """Find the evidence file corresponding to a document name."""
-    # Search through all evidence records
-    all_evidence = evidence_storage.get_all()
-    
-    for evidence in all_evidence:
-        original_filename = evidence.get("original_filename", "")
-        if original_filename == doc_name:
-            stored_path_str = evidence.get("stored_path", "")
-            if stored_path_str:
-                stored_path = Path(stored_path_str)
-                if stored_path.exists():
-                    return stored_path
+    with get_background_session() as db:
+        evidence = EvidenceDBStorage.find_by_filename(db, doc_name)
+        if evidence and evidence.stored_path:
+            stored_path = Path(evidence.stored_path)
+            if stored_path.exists():
+                return stored_path
     
     # Also try direct search in evidence root directory
     for case_dir in EVIDENCE_ROOT_DIR.iterdir():
@@ -297,11 +297,15 @@ def backfill_documents_for_user(
                 if found_count == 0:
                     log_callback("error", f"No documents found in Neo4j. Please verify the document IDs are correct.")
         elif username and username != "all":
-            # Use list_files to filter by owner
-            user_evidence_list = evidence_storage.list_files(owner=username)
+            with get_background_session() as db:
+                user_evidence_list = list(
+                    db.scalars(
+                        select(EvidenceFile).where(EvidenceFile.owner == username)
+                    ).all()
+                )
             user_doc_names = set()
             for evidence in user_evidence_list:
-                original_filename = evidence.get("original_filename", "")
+                original_filename = evidence.original_filename
                 if original_filename:
                     user_doc_names.add(original_filename)
             

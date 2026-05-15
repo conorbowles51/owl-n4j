@@ -14,10 +14,11 @@ import urllib.request
 import urllib.error
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
-from pathlib import Path
 
 from services.llm_service import LLMService
 from services.neo4j_service import neo4j_service
+from postgres.models.geocoding_cache import GeocodingCacheEntry
+from postgres.session import get_background_session
 
 # ---------------------------------------------------------------------------
 # Nominatim geocoding (mirrors ingestion/scripts/geocoding.py but standalone)
@@ -27,26 +28,44 @@ NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "InvestigationConsole/1.0"
 _last_request_time = 0.0
 
-# Persistent cache shared with the ingestion geocoder
-_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "ingestion" / "data"
-_CACHE_FILE = _CACHE_DIR / "geocoding_cache.json"
+def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
+    with get_background_session() as db:
+        entry = db.get(GeocodingCacheEntry, ("nominatim", cache_key))
+        if not entry:
+            return False, None
+        if entry.status == "failed":
+            return True, None
+        return True, {
+            "latitude": entry.latitude,
+            "longitude": entry.longitude,
+            "formatted_address": entry.formatted_address,
+            "confidence": entry.confidence,
+        }
 
 
-def _load_geocode_cache() -> Dict:
-    if _CACHE_FILE.exists():
-        try:
-            return json.load(open(_CACHE_FILE, "r", encoding="utf-8"))
-        except Exception:
-            pass
-    return {}
-
-
-def _save_geocode_cache(cache: Dict):
-    _CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        json.dump(cache, open(_CACHE_FILE, "w", encoding="utf-8"), indent=2)
-    except Exception as e:
-        print(f"[GeoRescan] Cache save error: {e}")
+def _save_geocode_cache(cache_key: str, original_query: str, result: Optional[Dict]) -> None:
+    with get_background_session() as db:
+        if result:
+            entry = GeocodingCacheEntry(
+                provider="nominatim",
+                normalized_query=cache_key,
+                original_query=original_query,
+                status="success",
+                latitude=result.get("latitude"),
+                longitude=result.get("longitude"),
+                formatted_address=result.get("formatted_address"),
+                confidence=result.get("confidence"),
+                raw_response=result,
+            )
+        else:
+            entry = GeocodingCacheEntry(
+                provider="nominatim",
+                normalized_query=cache_key,
+                original_query=original_query,
+                status="failed",
+                raw_response={},
+            )
+        db.merge(entry)
 
 
 def _rate_limit():
@@ -63,9 +82,9 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
         return None
     normalized = location.lower().strip()
     cache_key = hashlib.md5(normalized.encode("utf-8")).hexdigest()
-    cache = _load_geocode_cache()
-    if cache_key in cache:
-        return cache[cache_key]  # may be None (previously failed)
+    cached, cached_result = _get_cached_geocode(cache_key)
+    if cached:
+        return cached_result
 
     _rate_limit()
     encoded = quote(location.strip())
@@ -75,8 +94,7 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         if not data:
-            cache[cache_key] = None
-            _save_geocode_cache(cache)
+            _save_geocode_cache(cache_key, location, None)
             return None
         r = data[0]
         importance = float(r.get("importance", 0))
@@ -87,13 +105,11 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
             "formatted_address": r.get("display_name", location),
             "confidence": confidence,
         }
-        cache[cache_key] = result
-        _save_geocode_cache(cache)
+        _save_geocode_cache(cache_key, location, result)
         return result
     except Exception as e:
         print(f"[GeoRescan] Geocode error for '{location}': {e}")
-        cache[cache_key] = None
-        _save_geocode_cache(cache)
+        _save_geocode_cache(cache_key, location, None)
         return None
 
 

@@ -18,16 +18,13 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
-from services.evidence_service import evidence_service
-from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
-from services.evidence_log_storage import evidence_log_storage
 from services.wiretap_tracking import list_processed_wiretaps, is_wiretap_processed, mark_wiretap_processed
 from services.wiretap_service import check_wiretap_suitable, process_wiretap_folder_async
 from services.background_task_storage import background_task_storage, TaskStatus
 from services.evidence_processing_service import process_db_files
 from services.neo4j_service import neo4j_service
-from services.case_storage import case_storage
 from services.cypher_generator import generate_cypher_from_graph
+from services.evidence_db_storage import EvidenceDBStorage
 from services import evidence_engine_client
 from .auth import get_current_user
 from routers.users import get_current_db_user
@@ -40,6 +37,7 @@ from config import BASE_DIR, USE_EVIDENCE_ENGINE
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+EVIDENCE_ROOT_DIR = BASE_DIR / "ingestion" / "data"
 
 
 # Hard limit on file IDs per single processing request.
@@ -47,6 +45,66 @@ logger = logging.getLogger(__name__)
 MAX_BATCH_SIZE = 50
 
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
+
+
+def _evidence_record_from_db(record) -> dict:
+    return {
+        "id": str(record.id),
+        "case_id": str(record.case_id),
+        "original_filename": record.original_filename,
+        "stored_path": record.stored_path or "",
+        "size": record.size,
+        "sha256": record.sha256,
+        "status": record.status,
+        "duplicate_of": str(record.duplicate_of_id) if record.duplicate_of_id else None,
+        "created_at": record.created_at.isoformat() if record.created_at else "",
+        "processed_at": record.processed_at.isoformat() if record.processed_at else None,
+        "last_error": record.last_error,
+        "engine_job_id": record.engine_job_id,
+        "summary": record.summary,
+        "entity_count": record.entity_count,
+        "relationship_count": record.relationship_count,
+        "processing_stale": record.processing_stale,
+    }
+
+
+def _uuid_or_none(value: Optional[str]) -> Optional[UUID]:
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def add_evidence_log(
+    *,
+    case_id: str,
+    evidence_id: Optional[str],
+    filename: Optional[str],
+    level: str,
+    message: str,
+    progress_current: Optional[int] = None,
+    progress_total: Optional[int] = None,
+) -> None:
+    from postgres.session import get_background_session
+
+    extra = {}
+    if progress_current is not None:
+        extra["progress_current"] = progress_current
+    if progress_total is not None:
+        extra["progress_total"] = progress_total
+
+    with get_background_session() as log_db:
+        EvidenceDBStorage.add_log(
+            log_db,
+            case_id=UUID(case_id),
+            evidence_file_id=_uuid_or_none(evidence_id),
+            filename=filename,
+            level=level,
+            message=message,
+            extra=extra,
+        )
 
 
 class EvidenceRecord(BaseModel):
@@ -130,35 +188,11 @@ async def list_evidence(
         status_filter: Optional status filter
             ('unprocessed', 'processing', 'processed', 'duplicate', 'failed').
     """
-    from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
-
     try:
         if not case_id:
             return {"files": []}
         db_files = EvidenceDBStorage.list_files(db, case_id=UUID(case_id), status=status_filter)
-        files = []
-        for f in db_files:
-            files.append({
-                "id": str(f.id),
-                "case_id": str(f.case_id),
-                "original_filename": f.original_filename,
-                "stored_path": f.stored_path or "",
-                "size": f.size,
-                "sha256": f.sha256,
-                "status": f.status,
-                "duplicate_of": str(f.duplicate_of_id) if f.duplicate_of_id else None,
-                "created_at": f.created_at.isoformat() if f.created_at else "",
-                "processed_at": f.processed_at.isoformat() if f.processed_at else None,
-                "last_error": f.last_error,
-                "engine_job_id": f.engine_job_id,
-                "summary": f.summary,
-                "entity_count": f.entity_count,
-                "relationship_count": f.relationship_count,
-                "processing_stale": f.processing_stale,
-            })
-
-        return {"files": files}
+        return {"files": [_evidence_record_from_db(f) for f in db_files]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -262,15 +296,18 @@ async def sync_filesystem(
 @router.get("/duplicates/{sha256}", response_model=EvidenceListResponse)
 async def find_duplicates(
     sha256: str,
-    user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
 ):
     """
     Find all files with the same SHA256 hash (duplicates).
     """
     try:
-        files = evidence_service.find_duplicates(sha256)
-        # Filter by owner to only show user's files
-        files = [f for f in files if f.get("owner") == user["username"]]
+        files = [
+            _evidence_record_from_db(f)
+            for f in EvidenceDBStorage.find_all_by_hash(db, sha256)
+            if f.owner == current_user.email
+        ]
         return {"files": files}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -310,72 +347,10 @@ async def upload_evidence(
                 folder_id=folder_id, db=db, created_by_id=current_user.id,
             )
 
-        # --- Legacy path (deprecated): store locally, process separately ---
-        logger.warning("USE_EVIDENCE_ENGINE=false: using deprecated legacy upload path")
-        # Check if this is a folder upload or should be background task
-        is_folder_upload = is_folder and is_folder.lower() == 'true'
-        use_background = is_folder_upload or len(files) > 5
-
-        if use_background:
-            uploads = []
-            for index, uf in enumerate(files):
-                content = await uf.read()
-                filename = uf.filename or ""
-
-                relative_path = None
-                if '/' in filename or '\\' in filename:
-                    relative_path = filename.replace('\\', '/')
-                    path_parts = relative_path.split('/')
-                    original_filename = path_parts[-1] if path_parts else filename
-                else:
-                    original_filename = filename
-
-                uploads.append(
-                    {
-                        "original_filename": original_filename,
-                        "content": content,
-                        "relative_path": relative_path,
-                    }
-                )
-
-            if is_folder_upload:
-                task_ids = evidence_service.upload_folders_background(
-                    case_id=case_id,
-                    files=uploads,
-                    owner=current_user.email,
-                )
-                return UploadResponse(
-                    task_id=task_ids[0] if task_ids else None,
-                    task_ids=task_ids,
-                    message=f"Uploading {len(task_ids)} folder(s) in background" if task_ids else "No folders to upload",
-                )
-            else:
-                task_id = evidence_service.upload_files_background(
-                    case_id=case_id,
-                    files=uploads,
-                    owner=current_user.email,
-                )
-                return UploadResponse(
-                    task_id=task_id,
-                    message=f"Uploading {len(files)} file(s) in background",
-                )
-        else:
-            uploads = []
-            for uf in files:
-                content = await uf.read()
-                uploads.append(
-                    {
-                        "original_filename": uf.filename,
-                        "content": content,
-                    }
-                )
-
-            records = evidence_service.add_uploaded_files(
-                case_id=case_id,
-                uploads=uploads,
-                owner=current_user.email,
-            )
-            return UploadResponse(files=records)
+        return await _upload_via_engine(
+            case_id, files, current_user.email,
+            folder_id=folder_id, db=db, created_by_id=current_user.id,
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -493,8 +468,12 @@ async def process_evidence_background(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        # Separate engine-managed files from legacy files
-        db_backed_ids, legacy_ids = _split_db_backed_legacy(request.file_ids, db)
+        db_backed_ids, missing_ids = _split_db_backed_legacy(request.file_ids, db)
+        if missing_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"{len(missing_ids)} file id(s) were not found in Postgres evidence storage",
+            )
 
         messages = []
         job_ids = []
@@ -512,22 +491,6 @@ async def process_evidence_background(
             job_ids = engine_result.get("job_ids", [])
             if engine_result.get("message"):
                 messages.append(engine_result["message"])
-
-        if legacy_ids:
-            task_id = evidence_service.process_files_background(
-                evidence_ids=legacy_ids,
-                case_id=request.case_id,
-                owner=current_user.email,
-                profile=request.profile,
-                max_workers=request.max_workers,
-                image_provider=request.image_provider,
-            )
-            messages.append(f"Processing {len(legacy_ids)} legacy file(s) in background")
-            return {
-                "task_id": task_id,
-                "job_ids": job_ids or None,
-                "message": "; ".join(messages) if messages else "No files to process",
-            }
 
         return {
             "task_id": None,
@@ -563,7 +526,12 @@ async def process_evidence(
             except (CaseNotFound, CaseAccessDenied) as e:
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
-        db_backed_ids, legacy_ids = _split_db_backed_legacy(request.file_ids, db)
+        db_backed_ids, missing_ids = _split_db_backed_legacy(request.file_ids, db)
+        if missing_ids:
+            raise HTTPException(
+                status_code=404,
+                detail=f"{len(missing_ids)} file id(s) were not found in Postgres evidence storage",
+            )
 
         processed = 0
         skipped = 0
@@ -582,18 +550,6 @@ async def process_evidence(
             processed += engine_result.get("file_count", 0)
             skipped += engine_result.get("skipped_count", 0)
 
-        if legacy_ids:
-            summary = await run_in_threadpool(
-                evidence_service.process_files,
-                legacy_ids,
-                request.case_id,
-                current_user.email,
-                request.profile,
-            )
-            processed += summary.get("processed", 0)
-            skipped += summary.get("skipped", 0)
-            errors += summary.get("errors", 0)
-
         return ProcessResponse(processed=processed, skipped=skipped, errors=errors)
     except ImportError as e:
         raise HTTPException(
@@ -605,10 +561,7 @@ async def process_evidence(
 
 
 def _split_db_backed_legacy(file_ids: List[str], db: Session) -> tuple:
-    """Split file IDs into DB-backed evidence files and legacy-only IDs."""
-    from services.evidence_db_storage import EvidenceDBStorage
-    from uuid import UUID
-
+    """Split file IDs into Postgres evidence files and missing IDs."""
     db_backed_ids = []
     legacy_ids = []
     for fid in file_ids:
@@ -900,8 +853,6 @@ async def process_wiretap_folders(
                 """Create a background task function with proper closure."""
                 async def process_single_wiretap_folder_background():
                     """Background task function to process a single wiretap folder."""
-                    from services.evidence_log_storage import evidence_log_storage
-                    
                     # Full validation happens here in the background
                     full_path = case_data_dir / fp
                     try:
@@ -910,7 +861,7 @@ async def process_wiretap_folders(
                         case_resolved = case_data_dir.resolve()
                         resolved.relative_to(case_resolved)
                     except (ValueError, OSError) as e:
-                        evidence_log_storage.add_log(
+                        add_evidence_log(
                             case_id=request.case_id,
                             evidence_id=None,
                             filename=None,
@@ -926,7 +877,7 @@ async def process_wiretap_folders(
                         return
                     
                     if not full_path.exists():
-                        evidence_log_storage.add_log(
+                        add_evidence_log(
                             case_id=request.case_id,
                             evidence_id=None,
                             filename=None,
@@ -942,7 +893,7 @@ async def process_wiretap_folders(
                         return
                     
                     if not full_path.is_dir():
-                        evidence_log_storage.add_log(
+                        add_evidence_log(
                             case_id=request.case_id,
                             evidence_id=None,
                             filename=None,
@@ -967,7 +918,7 @@ async def process_wiretap_folders(
                     
                     try:
                         def log_callback(message: str):
-                            evidence_log_storage.add_log(
+                            add_evidence_log(
                                 case_id=request.case_id,
                                 evidence_id=None,
                                 filename=None,
@@ -992,48 +943,17 @@ async def process_wiretap_folders(
                             
                             background_task_storage.update_task(
                                 tid,
-                                progress_completed=1,
-                                status=TaskStatus.COMPLETED.value,
-                                completed_at=datetime.now().isoformat()
+                            progress_completed=1,
+                            status=TaskStatus.COMPLETED.value,
+                            completed_at=datetime.now().isoformat()
+                        )
+                            add_evidence_log(
+                                case_id=request.case_id,
+                                evidence_id=None,
+                                filename=None,
+                                level="info",
+                                message=f"Wiretap folder processed: {fp}",
                             )
-                            
-                            # Save case version after successful processing
-                            try:
-                                # Look up case name (fallback to case_id if not found)
-                                case = case_storage.get_case(request.case_id)
-                                case_name = case["name"] if case and case.get("name") else request.case_id
-                                
-                                # Save as a new version on this case
-                                # Note: Cypher queries are no longer stored - graph data persists in Neo4j
-                                case_result = case_storage.save_case_version(
-                                    case_id=request.case_id,
-                                    case_name=case_name,
-                                    snapshots=[],
-                                    save_notes=f"Auto-save after processing wiretap folder: {fp}",
-                                    owner=user_email,
-                                )
-                                
-                                evidence_log_storage.add_log(
-                                    case_id=request.case_id,
-                                    evidence_id=None,
-                                    filename=None,
-                                    level="info",
-                                    message=(
-                                        "Saved new case version after wiretap processing: "
-                                        f"case_id={case_result.get('case_id')}, "
-                                        f"version={case_result.get('version')}."
-                                    ),
-                                )
-                            except Exception as e:
-                                # Do not fail wiretap processing if case saving fails; just log
-                                print(f"Warning: failed to attach graph Cypher to case {request.case_id}: {e}")
-                                evidence_log_storage.add_log(
-                                    case_id=request.case_id,
-                                    evidence_id=None,
-                                    filename=None,
-                                    level="error",
-                                    message=f"Failed to save case version after wiretap processing: {e}",
-                                )
                         else:
                             # Include output in error message for debugging
                             error_msg = result.get("error", "Unknown error")
@@ -1045,7 +965,7 @@ async def process_wiretap_folders(
                                 error_msg = f"{error_msg}\n\nScript output:\n{last_lines}"
                             
                             # Log the full error to evidence logs
-                            evidence_log_storage.add_log(
+                            add_evidence_log(
                                 case_id=request.case_id,
                                 evidence_id=None,
                                 filename=None,
@@ -1116,37 +1036,27 @@ async def delete_evidence_file(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
 
         # 1. Get the evidence record from Postgres
-        from services.evidence_db_storage import EvidenceDBStorage
-        from uuid import UUID
-
         db_record = None
         try:
             db_record = EvidenceDBStorage.get(db, UUID(evidence_id))
         except (ValueError, AttributeError):
             db_record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
 
-        # Fallback to legacy JSON storage during migration
-        legacy_record = None
         if not db_record:
-            legacy_record = evidence_storage.get(evidence_id)
-            if not legacy_record:
-                raise HTTPException(status_code=404, detail="Evidence file not found")
-            if legacy_record.get("case_id") != case_id:
-                raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
-        elif str(db_record.case_id) != case_id:
+            raise HTTPException(status_code=404, detail="Evidence file not found")
+        if str(db_record.case_id) != case_id:
             raise HTTPException(status_code=403, detail="Evidence file does not belong to this case")
 
         # Check if file is currently being processed
-        record = db_record or legacy_record
-        if db_record and db_record.status == "processing":
+        if db_record.status == "processing":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Cannot delete file while it is being processed. Wait for processing to complete."
             )
 
-        filename = db_record.original_filename if db_record else legacy_record.get("original_filename", "")
-        stored_path = db_record.stored_path if db_record else legacy_record.get("stored_path")
-        engine_job_id = db_record.engine_job_id if db_record else legacy_record.get("engine_job_id")
+        filename = db_record.original_filename
+        stored_path = db_record.stored_path
+        engine_job_id = db_record.engine_job_id
         result_info = {
             "evidence_id": evidence_id,
             "filename": filename,
@@ -1230,13 +1140,8 @@ async def delete_evidence_file(
                 logger.warning("Failed to delete file from evidence engine: %s", e)
 
         # 6. Delete evidence record from Postgres
-        if db_record:
-            EvidenceDBStorage.delete_record(db, db_record.id)
-            db.commit()
-
-        # Legacy cleanup (remove once JSON storage is fully deprecated)
-        if legacy_record:
-            evidence_storage.delete_record(evidence_id)
+        EvidenceDBStorage.delete_record(db, db_record.id)
+        db.commit()
 
         return result_info
 
@@ -1257,8 +1162,6 @@ async def get_evidence_file(
 
     All files are served from the backend's local disk (EVIDENCE_ROOT_DIR).
     """
-    from services.evidence_db_storage import EvidenceDBStorage
-
     try:
         # Look up by UUID or legacy ID
         record = None
@@ -1269,32 +1172,7 @@ async def get_evidence_file(
             record = EvidenceDBStorage.get_by_legacy_id(db, evidence_id)
 
         if not record:
-            # Fallback to legacy JSON storage during migration
-            legacy_rec = evidence_storage.get(evidence_id)
-            if not legacy_rec:
-                raise HTTPException(status_code=404, detail="Evidence not found")
-            # Serve legacy file via old path
-            stored_path = legacy_rec.get("stored_path", "")
-            filename = legacy_rec.get("original_filename", "file")
-            if not stored_path or not Path(stored_path).exists():
-                # Try engine proxy as last resort for old engine-managed files
-                engine_job_id = legacy_rec.get("engine_job_id")
-                if engine_job_id:
-                    resp = await evidence_engine_client.download_file(
-                        legacy_rec.get("case_id", ""), engine_job_id
-                    )
-                    media_type = resp.headers.get("content-type", "application/octet-stream")
-                    return Response(
-                        content=resp.content,
-                        media_type=media_type,
-                        headers={"Content-Disposition": f'inline; filename="{filename}"'},
-                    )
-                raise HTTPException(status_code=404, detail="File not found on disk")
-            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-            return FileResponse(
-                path=stored_path, filename=filename, media_type=content_type,
-                headers={"Content-Disposition": f'inline; filename="{filename}"'},
-            )
+            raise HTTPException(status_code=404, detail="Evidence not found")
 
         # Primary path: serve from backend disk
         filename = record.original_filename or "file"
@@ -1965,7 +1843,7 @@ async def test_folder_profile(
             from folder_ingestion import ingest_folder_with_profile
             
             def log_callback(message: str):
-                evidence_log_storage.add_log(
+                add_evidence_log(
                     case_id=request.case_id,
                     evidence_id=None,
                     filename=None,
