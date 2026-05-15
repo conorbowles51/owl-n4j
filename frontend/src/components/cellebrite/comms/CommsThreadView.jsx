@@ -62,8 +62,19 @@ export default function CommsThreadView({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    // Pass the anchor key when we have one so the server can centre the
+    // window on the selected message. Without this, long chats (1k+
+    // messages) return their oldest slice and the clicked message
+    // isn't in it — the scroll-to-message lookup then misses and we
+    // fall through to scroll-to-bottom.
+    const anchorKey = firstMatch?.anchor_key || firstMatch?.message_id || null;
     cellebriteCommsAPI
-      .getThreadDetail(caseId, selectedThread.thread_id, selectedThread.thread_type, { limit: 500 })
+      .getThreadDetail(
+        caseId,
+        selectedThread.thread_id,
+        selectedThread.thread_type,
+        { limit: 500, anchorKey },
+      )
       .then((data) => {
         if (!cancelled) {
           setDetail(data);
@@ -78,17 +89,24 @@ export default function CommsThreadView({
         }
       });
     return () => { cancelled = true; };
-  }, [caseId, selectedThread]);
+  }, [caseId, selectedThread, firstMatch?.anchor_key, firstMatch?.message_id]);
 
   // Auto-scroll on load.
   //   - If the parent passed `firstMatch`, jump to that message and
   //     briefly flash a ring around it so the user sees what matched.
   //   - Otherwise default to scroll-to-bottom (newest message).
+  //
+  // Some apps (notably WhatsApp) don't carry a source-system message id,
+  // so we expose both `data-message-id` (source id) and `data-message-key`
+  // (Neo4j key, always present) on each bubble and match against either.
+  // That lets callers send whichever identifier they have without the
+  // overview falling through to scroll-to-bottom.
   useEffect(() => {
     if (!scrollRef.current || !detail?.items?.length) return;
     if (firstMatch?.message_id) {
+      const esc = cssEscape(firstMatch.message_id);
       const el = scrollRef.current.querySelector(
-        `[data-message-id="${cssEscape(firstMatch.message_id)}"]`,
+        `[data-message-id="${esc}"], [data-message-key="${esc}"]`,
       );
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -303,16 +321,18 @@ export default function CommsThreadView({
           const item = row.item;
           // Wrap each item in a div tagged with data-message-id so the
           // scroll-to-match effect can locate it. The inline child
-          // components stay agnostic of scrolling.
+          // components stay agnostic of scrolling. `key` is passed
+          // directly to JSX, not spread, per React's key-in-spread rule.
+          const rowKey = item.id || idx;
           const wrapperProps = {
-            key: item.id || idx,
             'data-message-id': item.id || '',
+            'data-message-key': item.key || '',
             className: 'transition-shadow rounded',
           };
           const isSelected = selectedItemId != null && (item.id === selectedItemId);
           if (item.type === 'call') {
             return (
-              <div {...wrapperProps}>
+              <div key={rowKey} {...wrapperProps}>
                 <CommsCallRow
                   item={item}
                   caseId={caseId}
@@ -324,7 +344,7 @@ export default function CommsThreadView({
           }
           if (item.type === 'email') {
             return (
-              <div {...wrapperProps}>
+              <div key={rowKey} {...wrapperProps}>
                 <CommsEmailCard
                   item={item}
                   caseId={caseId}
@@ -336,7 +356,7 @@ export default function CommsThreadView({
           }
           // message
           return (
-            <div {...wrapperProps}>
+            <div key={rowKey} {...wrapperProps}>
               <CommsMessageBubble
                 item={item}
                 palette={palette}

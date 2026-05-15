@@ -120,8 +120,13 @@ export default function OverviewMessagesView({ caseId, report, onBack }) {
         thread_type: 'chat',
         report_key: report?.report_key,
         // Anchor the in-rail scroll to the clicked message and seed the
-        // bubble highlight ring.
+        // bubble highlight ring. `message_id` matches the bubble's DOM
+        // data-attr; `anchor_key` is the Neo4j key, which the server
+        // uses to centre the loaded window — needed for long chats
+        // (1k+ messages, common for WhatsApp) where the default
+        // oldest-first slice wouldn't include the clicked message.
         message_id: row.id || row.node_key,
+        anchor_key: row.node_key || row.key,
         label: row.thread_name || `${row.source_app || ''} conversation`.trim(),
       },
       source: 'overview.messages',

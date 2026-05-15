@@ -356,6 +356,11 @@ async def get_comms_thread_detail(
     thread_type: str = Query(..., description="chat, calls, or emails"),
     limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
+    anchor_key: Optional[str] = Query(
+        None,
+        description="Optional Neo4j key of a message inside the thread; "
+                    "when set, the window is centred on it (chat threads only).",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -369,6 +374,7 @@ async def get_comms_thread_detail(
         thread_type=thread_type,
         limit=limit,
         offset=offset,
+        anchor_key=anchor_key,
     )
     _resolve_attachments(case_id, result.get("items", []))
     return result

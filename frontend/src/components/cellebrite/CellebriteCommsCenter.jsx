@@ -210,8 +210,12 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       payload: {
         // Mirror the projected fields the EventBody renderer expects
         // (it was originally written for the events-tab payload shape).
+        // `node_key` must be the Neo4j node's `key` property — the rail's
+        // /events/detail/{key} endpoint matches on that, not on `id`
+        // (which is the source-system id). Fall back to `item.id` only
+        // when older payloads don't carry `key` yet.
         ...item,
-        node_key: item.id,
+        node_key: item.key || item.id,
         event_type: item.type,
         label:
           item.type === 'email'

@@ -6770,15 +6770,39 @@ class Neo4jService:
         thread_type: str,
         limit: int = 500,
         offset: int = 0,
+        anchor_key: Optional[str] = None,
     ) -> dict:
         """
         Get chronological items (messages/calls/emails) for a thread with sender
         attribution and attachment file IDs.
+
+        When `anchor_key` is given, the effective offset is computed so the
+        returned window is centred on that anchor message. This lets a
+        caller (e.g. "click a message in Overview Messages → open the
+        whole conversation, scrolled to that bubble") land on the right
+        spot even for threads with thousands of items, where the default
+        oldest-first slice wouldn't include the anchor.
         """
         items: list = []
 
         with self._driver.session() as session:
             if thread_type == "chat":
+                # Anchor windowing — find the anchor's position in the
+                # chat (chronological rank by timestamp ASC) and shift the
+                # offset so the window straddles it. Falls back silently
+                # to the caller-supplied offset if the anchor isn't found.
+                if anchor_key:
+                    shifted = self._anchor_window_offset(
+                        session,
+                        thread_type="chat",
+                        case_id=case_id,
+                        thread_id=thread_id,
+                        anchor_key=anchor_key,
+                        limit=limit,
+                    )
+                    if shifted is not None:
+                        offset = shifted
+
                 # Real chat thread — load parent + messages
                 result = session.run(
                     """
@@ -6814,6 +6838,11 @@ class Neo4jService:
                     sender = dict(r["sender"]) if r["sender"] else None
                     items.append({
                         "id": msg.get("id"),
+                        # Expose the node `key` separately so the rail's
+                        # /events/detail/{key} lookup matches the right node.
+                        # Communication.id is the source-system id; only
+                        # `key` matches the detail endpoint's WHERE clause.
+                        "key": msg.get("key"),
                         "type": "message",
                         "timestamp": msg.get("timestamp"),
                         "date": msg.get("date"),
@@ -6920,6 +6949,7 @@ class Neo4jService:
                         dst = dict(r["dst"]) if r["dst"] else None
                         items.append({
                             "id": c.get("id"),
+                            "key": c.get("key"),
                             "type": "call",
                             "timestamp": c.get("timestamp"),
                             "date": c.get("date"),
@@ -6968,6 +6998,7 @@ class Neo4jService:
                         dst = dict(r["dst"]) if r["dst"] else None
                         items.append({
                             "id": e.get("id"),
+                            "key": e.get("key"),
                             "type": "email",
                             "timestamp": e.get("timestamp"),
                             "date": e.get("date"),
@@ -7023,6 +7054,51 @@ class Neo4jService:
 
             else:
                 return {"thread": None, "items": [], "total": 0}
+
+    def _anchor_window_offset(
+        self,
+        session,
+        thread_type: str,
+        case_id: str,
+        thread_id: str,
+        anchor_key: str,
+        limit: int,
+    ) -> Optional[int]:
+        """
+        Find a SKIP offset that centres a `limit`-sized window on the
+        anchor message inside a thread. Returns None when the anchor
+        can't be located (caller falls back to its original offset).
+
+        Currently used for chat threads only — calls/emails threads are
+        pair-bounded and rarely large enough to need windowing.
+        """
+        if thread_type != "chat":
+            return None
+        # One round-trip to learn how many sibling messages come BEFORE
+        # the anchor in timestamp ASC order. Counting on the database
+        # side keeps the response payload tiny.
+        rec = session.run(
+            """
+            MATCH (anchor:Communication {case_id: $case_id, key: $anchor_key})
+                  -[:PART_OF]->(chat:Communication {case_id: $case_id, key: $thread_id})
+            WHERE anchor.body IS NOT NULL
+            WITH anchor.timestamp AS ts, anchor.key AS aks
+            MATCH (m:Communication)-[:PART_OF]->(:Communication {case_id: $case_id, key: $thread_id})
+            WHERE m.body IS NOT NULL
+              AND (m.timestamp < ts OR (m.timestamp = ts AND m.key < aks))
+            RETURN count(m) AS before
+            """,
+            case_id=case_id,
+            thread_id=thread_id,
+            anchor_key=anchor_key,
+        ).single()
+        if not rec:
+            return None
+        before = int(rec["before"])
+        # Place the anchor a bit above the centre so the user sees the
+        # message they clicked plus more context after it (i.e. the next
+        # part of the conversation).
+        return max(0, before - max(1, limit // 3))
 
     def get_cellebrite_comms_between(
         self,

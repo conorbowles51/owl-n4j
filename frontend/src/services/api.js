@@ -2711,10 +2711,14 @@ export const cellebriteCommsAPI = {
   /**
    * Get chronological detail for a single thread (messages + calls + emails items).
    */
-  getThreadDetail: (caseId, threadId, threadType, { limit = 500, offset = 0 } = {}) => {
+  getThreadDetail: (caseId, threadId, threadType, { limit = 500, offset = 0, anchorKey = null } = {}) => {
     const params = new URLSearchParams({ case_id: caseId, thread_type: threadType });
     params.append('limit', String(limit));
     params.append('offset', String(offset));
+    // Anchor key shifts the server-side window so it straddles the
+    // selected message — without this the default oldest-first slice
+    // misses any anchor that lives past the limit in a long chat.
+    if (anchorKey) params.append('anchor_key', anchorKey);
     return fetchAPI(
       `/cellebrite/comms/threads/${encodeURIComponent(threadId)}?${params.toString()}`
     );

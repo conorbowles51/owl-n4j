@@ -51,13 +51,18 @@ export default function ThreadAccordion({ selection }) {
     : null;
 
   // The "scroll to this message" anchor. CommsThreadView reads
-  // `firstMatch.message_id` so we adapt the rail's flatter shape.
-  const firstMatch = payload?.message_id ? { message_id: payload.message_id } : null;
+  // `firstMatch.message_id` (for the DOM scroll lookup) and
+  // `firstMatch.anchor_key` (the Neo4j key the server uses to centre
+  // the loaded window). We forward both so long chats still place the
+  // clicked message inside the loaded slice.
+  const firstMatch = (payload?.message_id || payload?.anchor_key)
+    ? { message_id: payload.message_id, anchor_key: payload.anchor_key }
+    : null;
 
   // Re-key the inner view whenever the thread OR the anchor changes so
   // its scroll-to effect runs again — the user clicked a fresh source
   // row and expects the rail to jump to the new message.
-  const viewKey = `${payload?.thread_id || 'none'}::${payload?.message_id || 'top'}`;
+  const viewKey = `${payload?.thread_id || 'none'}::${payload?.anchor_key || payload?.message_id || 'top'}`;
 
   // Track which message inside the thread is "active" — drives the
   // bubble highlight ring. Seed from the anchor so the just-clicked
