@@ -1,7 +1,7 @@
 """add cellebrite evidence metadata columns
 
 Revision ID: 20260515_cellebrite_evidence
-Revises: 20260515_runtime_state
+Revises: 20260515_snapshot_logs
 Create Date: 2026-05-15
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 
 revision: str = "20260515_cellebrite_evidence"
-down_revision: Union[str, None] = "20260515_runtime_state"
+down_revision: Union[str, None] = "20260515_snapshot_logs"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
