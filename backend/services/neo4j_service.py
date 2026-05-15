@@ -10,5 +10,5 @@ existing imports continue to work:
 """
 
 # Re-export the facade and helpers so existing imports keep working
-from services.neo4j import neo4j_service  # noqa: F401
+from services.neo4j import neo4j_service, resolve_file_parents  # noqa: F401
 from services.neo4j.driver import parse_json_field, safe_float  # noqa: F401
