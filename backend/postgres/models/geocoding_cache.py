@@ -1,10 +1,13 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String, Text, func
+from sqlalchemy import DateTime, Float, JSON, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from postgres.base import Base
+
+
+JSON_DOCUMENT = JSONB().with_variant(JSON(), "sqlite")
 
 
 class GeocodingCacheEntry(Base):
@@ -18,7 +21,7 @@ class GeocodingCacheEntry(Base):
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     formatted_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    raw_response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    raw_response: Mapped[dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -19,22 +19,32 @@ type RawNode = Record<string, unknown>
 type RawEdge = Record<string, unknown>
 type RawGraphData = { nodes: RawNode[]; links: RawEdge[] }
 
+function asString(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value
+  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  return fallback
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined
+}
+
 function toGraphData(raw: RawGraphData): GraphData {
   return {
     nodes: (raw.nodes ?? []).map((n: RawNode) => ({
-      key: n.key,
-      label: n.name || n.label || n.key,
-      type: (n.type || "").toLowerCase(),
-      confidence: n.confidence,
-      mentioned: n.mentioned,
+      key: asString(n.key),
+      label: asString(n.name ?? n.label ?? n.key),
+      type: asString(n.type).toLowerCase(),
+      confidence: asNumber(n.confidence),
+      mentioned: typeof n.mentioned === "boolean" ? n.mentioned : undefined,
       aliases: Array.isArray(n.aliases) ? (n.aliases as string[]) : [],
-      properties: n.properties ?? {},
+      properties: n.properties && typeof n.properties === "object" ? n.properties as Record<string, unknown> : {},
     })),
     edges: (raw.links ?? []).map((e: RawEdge) => ({
-      source: e.source,
-      target: e.target,
-      type: e.type || e.relationship || "",
-      weight: e.weight,
+      source: asString(e.source),
+      target: asString(e.target),
+      type: asString(e.type ?? e.relationship),
+      weight: asNumber(e.weight),
     })),
   }
 }

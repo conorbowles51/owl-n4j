@@ -74,6 +74,7 @@ class CaseResponse(BaseModel):
     owner_name: str | None = None  # Display name of case owner
     user_role: str | None = None  # 'owner', 'editor', 'viewer', 'admin_access'
     is_owner: bool = False  # True ONLY if user is actual owner
+    archived: bool = False
     # Deadline enrichment
     next_deadline_date: date | None = None
     next_deadline_name: str | None = None
@@ -143,6 +144,7 @@ def create_new_case(
 @router.get("", response_model=CaseListResponse)
 def list_cases(
     view_mode: str = Query("my_cases", description="'my_cases' or 'all_cases' (super admins only)"),
+    include_archived: bool = Query(False, description="Include archived cases"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -164,6 +166,12 @@ def list_cases(
     include_all = view_mode == "all_cases" and user_is_super_admin
 
     case_tuples = list_cases_for_user(db=db, user=current_user, include_all=include_all)
+    if not include_archived:
+        case_tuples = [
+            (case, membership, owner)
+            for case, membership, owner in case_tuples
+            if not getattr(case, "archived", False)
+        ]
 
     # Batch-fetch next deadlines for all cases
     case_ids = [case.id for case, _, _ in case_tuples]
@@ -190,6 +198,7 @@ def list_cases(
             owner_name=owner.name if owner else None,
             user_role=user_role,
             is_owner=is_actual_owner,
+            archived=case.archived,
             next_deadline_date=deadline_info[0] if deadline_info else None,
             next_deadline_name=deadline_info[1] if deadline_info else None,
         )
@@ -243,6 +252,7 @@ def get_case(
         owner_name=owner.name if owner else None,
         user_role=get_user_role_for_case(membership, user_is_super_admin),
         is_owner=is_actual_owner,
+        archived=case.archived,
         next_deadline_date=deadline_info[0] if deadline_info else None,
         next_deadline_name=deadline_info[1] if deadline_info else None,
     )
@@ -279,6 +289,60 @@ def update_existing_case(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access denied - case.edit permission required",
         )
+
+
+@router.patch("/{case_id}/archive")
+def archive_case(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Archive a case so it is hidden from the default case list."""
+    try:
+        case, _ = check_case_access(
+            db=db,
+            case_id=case_id,
+            user=current_user,
+            required_permission=("case", "delete"),
+        )
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied - case.delete permission required",
+        )
+
+    case.archived = True
+    db.commit()
+    return {"message": "Case archived", "case_id": str(case_id)}
+
+
+@router.patch("/{case_id}/unarchive")
+def unarchive_case(
+    case_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Unarchive a case so it appears in the default case list again."""
+    try:
+        case, _ = check_case_access(
+            db=db,
+            case_id=case_id,
+            user=current_user,
+            required_permission=("case", "delete"),
+        )
+    except CaseNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Case not found")
+    except CaseAccessDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied - case.delete permission required",
+        )
+
+    case.archived = False
+    db.commit()
+    return {"message": "Case unarchived", "case_id": str(case_id)}
 
 
 @router.get("/{case_id}/processing-profile", response_model=CaseProcessingProfileResponse)

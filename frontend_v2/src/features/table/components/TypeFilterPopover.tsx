@@ -34,7 +34,6 @@ export function TypeFilterPopover({
     .filter(([type]) => type.toLowerCase().includes(search.toLowerCase()))
 
   const allTypes = Array.from(typeCounts.keys())
-  const isAllSelected = selectedTypes.size === 0 || selectedTypes.size === allTypes.length
   const activeCount = selectedTypes.size > 0 && selectedTypes.size < allTypes.length
     ? selectedTypes.size
     : null

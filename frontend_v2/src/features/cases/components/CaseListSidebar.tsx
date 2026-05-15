@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { Plus, Search, FolderOpen } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import {
   Select,
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/select"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { EmptyState } from "@/components/ui/empty-state"
-import { useCases } from "../hooks/use-cases"
+import { useArchiveCase, useCases, useUnarchiveCase } from "../hooks/use-cases"
 import { useCaseManagementStore } from "../case-management.store"
 import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { CaseListItem } from "./CaseListItem"
@@ -25,6 +26,7 @@ interface CaseListSidebarProps {
 export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
   const [search, setSearch] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
   const { selectedCaseId, setSelectedCaseId, viewMode, setViewMode, sortBy, setSortBy } =
     useCaseManagementStore()
   const user = useAuthStore((s) => s.user)
@@ -32,8 +34,11 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
     user?.role === "super_admin" || user?.global_role === "super_admin"
 
   const { data: cases, isLoading } = useCases(
-    isSuperAdmin ? viewMode : undefined
+    isSuperAdmin ? viewMode : undefined,
+    showArchived
   )
+  const archiveCase = useArchiveCase()
+  const unarchiveCase = useUnarchiveCase()
 
   const filtered = useMemo(() => {
     let list = cases?.filter(
@@ -115,6 +120,13 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
             <SelectItem value="next_deadline">Next Deadline</SelectItem>
           </SelectContent>
         </Select>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox
+            checked={showArchived}
+            onCheckedChange={(checked) => setShowArchived(Boolean(checked))}
+          />
+          Archived
+        </label>
       </div>
 
       {/* Case list */}
@@ -143,6 +155,17 @@ export function CaseListSidebar({ onDeleteCase }: CaseListSidebarProps) {
                 onDelete={
                   c.is_owner || isSuperAdmin
                     ? () => onDeleteCase(c)
+                    : undefined
+                }
+                onArchiveToggle={
+                  c.is_owner || isSuperAdmin
+                    ? () => {
+                        if (c.archived) {
+                          unarchiveCase.mutate(c.id)
+                        } else {
+                          archiveCase.mutate(c.id)
+                        }
+                      }
                     : undefined
                 }
               />

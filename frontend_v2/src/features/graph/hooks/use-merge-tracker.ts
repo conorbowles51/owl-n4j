@@ -25,7 +25,10 @@ export function useMergeTracker({ onCompleted, onPartial }: UseMergeTrackerOptio
   const mergeJobPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const dialogOpenRef = useRef(false)
   const callbacksRef = useRef({ onCompleted, onPartial })
-  callbacksRef.current = { onCompleted, onPartial }
+
+  useEffect(() => {
+    callbacksRef.current = { onCompleted, onPartial }
+  }, [onCompleted, onPartial])
 
   const stopTracking = useCallback(() => {
     wsRef.current?.close()

@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import ForeignKey, JSON, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
+
+
+JSON_DOCUMENT = JSONB().with_variant(JSON(), "sqlite")
 
 
 class ProcessingProfile(Base, TimestampMixin):
@@ -17,8 +20,11 @@ class ProcessingProfile(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     context_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    mandatory_instructions: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
-    special_entity_types: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
+    mandatory_instructions: Mapped[list] = mapped_column(JSON_DOCUMENT, server_default="[]", nullable=False)
+    special_entity_types: Mapped[list] = mapped_column(JSON_DOCUMENT, server_default="[]", nullable=False)
+    chat_config: Mapped[dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
+    llm_config: Mapped[dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
+    folder_processing: Mapped[dict | None] = mapped_column(JSON_DOCUMENT, nullable=True)
 
 
 class CaseProcessingConfig(Base, TimestampMixin):
@@ -37,8 +43,8 @@ class CaseProcessingConfig(Base, TimestampMixin):
     )
     source_profile_name_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
     context_instructions: Mapped[str | None] = mapped_column(Text, nullable=True)
-    mandatory_instructions: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
-    special_entity_types: Mapped[list] = mapped_column(JSONB, server_default="[]", nullable=False)
+    mandatory_instructions: Mapped[list] = mapped_column(JSON_DOCUMENT, server_default="[]", nullable=False)
+    special_entity_types: Mapped[list] = mapped_column(JSON_DOCUMENT, server_default="[]", nullable=False)
 
     case = relationship("Case", foreign_keys=[case_id])
     source_profile = relationship("ProcessingProfile", foreign_keys=[source_profile_id])

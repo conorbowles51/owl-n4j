@@ -4,12 +4,18 @@ Financial Router - endpoints for financial analysis and transaction visualizatio
 
 from datetime import datetime
 from typing import List, Optional
+from uuid import UUID
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from postgres.models.user import User
+from postgres.session import get_db
+from routers.users import get_current_db_user
 from services import neo4j_service
+from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
 
 router = APIRouter(prefix="/api/financial", tags=["financial"])
@@ -184,6 +190,11 @@ class CreateCategoryRequest(BaseModel):
     name: str
     color: str
     case_id: str
+
+
+class AutoExtractFromToRequest(BaseModel):
+    case_id: str
+    dry_run: bool = True
 
 
 @router.get("")
@@ -403,6 +414,41 @@ async def create_category(body: CreateCategoryRequest):
         if not result.get("success"):
             raise HTTPException(status_code=500, detail=result.get("error", "Failed to create category"))
         return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/auto-extract-from-to")
+async def auto_extract_from_to(
+    body: AutoExtractFromToRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Propose or apply sender/beneficiary/category extraction for financial records.
+
+    With dry_run=true, returns proposals only. With dry_run=false, applies the
+    proposed from/to/category updates to Neo4j.
+    """
+    try:
+        required_permission = ("case", "view") if body.dry_run else ("case", "edit")
+        check_case_access(db, UUID(body.case_id), current_user, required_permission=required_permission)
+
+        from services.from_to_extraction_service import extract_from_to_for_case
+
+        result = extract_from_to_for_case(case_id=body.case_id, dry_run=body.dry_run)
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("message", "Extraction failed"))
+        return result
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid case_id")
+    except CaseNotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except CaseAccessDenied:
+        detail = "Access denied - case.edit permission required" if not body.dry_run else "Access denied - case.view permission required"
+        raise HTTPException(status_code=403, detail=detail)
     except HTTPException:
         raise
     except Exception as e:

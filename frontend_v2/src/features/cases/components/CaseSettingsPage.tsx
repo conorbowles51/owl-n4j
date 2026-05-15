@@ -10,7 +10,7 @@ export function CaseSettingsPage() {
     <div className="p-6">
       <PageHeader
         title="Case Settings"
-        description={caseData?.name ?? "Loading..."}
+        description={caseData?.title ?? "Loading..."}
       />
       <div className="mt-6 text-sm text-muted-foreground">
         Case settings — member management, metadata editing, version management,

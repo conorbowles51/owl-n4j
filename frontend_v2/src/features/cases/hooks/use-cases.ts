@@ -2,10 +2,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { casesAPI } from "../api"
 import type { CaseListViewMode } from "../api"
 
-export function useCases(viewMode?: CaseListViewMode) {
+export function useCases(viewMode?: CaseListViewMode, includeArchived = false) {
   return useQuery({
-    queryKey: ["cases", viewMode ?? "default"],
-    queryFn: () => casesAPI.list(viewMode),
+    queryKey: ["cases", viewMode ?? "default", includeArchived],
+    queryFn: () => casesAPI.list(viewMode, includeArchived),
   })
 }
 
@@ -31,6 +31,26 @@ export function useDeleteCase() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: casesAPI.delete,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cases"] })
+    },
+  })
+}
+
+export function useArchiveCase() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: casesAPI.archive,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cases"] })
+    },
+  })
+}
+
+export function useUnarchiveCase() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: casesAPI.unarchive,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cases"] })
     },

@@ -12,8 +12,10 @@ import {
   ClipboardList,
   Settings,
   Smartphone,
+  UserRoundSearch,
   Users,
   Sliders,
+  ShieldCheck,
   ChevronLeft,
   ChevronRight,
   type LucideIcon,
@@ -36,6 +38,7 @@ interface NavItem {
 
 const mainNav: NavItem[] = [
   { label: "Cases", icon: FolderOpen, to: "/cases" },
+  { label: "Triage", icon: ShieldCheck, to: "/triage" },
 ]
 
 function getCaseNav(caseId: string): NavItem[] {
@@ -46,7 +49,8 @@ function getCaseNav(caseId: string): NavItem[] {
     { label: "Table", icon: TableProperties, to: `/cases/${caseId}/table`, shortcut: "4" },
     { label: "Financial", icon: DollarSign, to: `/cases/${caseId}/financial`, shortcut: "5" },
     { label: "Cellebrite", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
-    { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "7" },
+    { label: "Profiles", icon: UserRoundSearch, to: `/cases/${caseId}/profiles`, shortcut: "7" },
+    { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
     { label: "Chat", icon: MessageSquare, to: `/cases/${caseId}/chat` },
     { label: "Workspace", icon: Briefcase, to: `/cases/${caseId}/workspace` },
     { label: "Reports", icon: ClipboardList, to: `/cases/${caseId}/reports` },

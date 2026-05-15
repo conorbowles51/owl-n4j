@@ -39,7 +39,7 @@ export function GraphPage() {
   const { id: caseId } = useParams()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const graphRef = useRef<ForceGraphMethods>()
+  const graphRef = useRef<ForceGraphMethods | undefined>(undefined)
 
   /* ---- Data fetching ---- */
   const { data: graphData, isLoading } = useGraphData(caseId)

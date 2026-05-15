@@ -28,6 +28,8 @@ async def get_timeline(
         ...,
         description="REQUIRED: Filter to events in this case"
     ),
+    limit: int = Query(500, ge=1, le=2000, description="Maximum events to return"),
+    cursor: Optional[str] = Query(None, description="Opaque cursor from a previous response"),
 ):
     """
     Get timeline events sorted chronologically for a specific case.
@@ -40,17 +42,16 @@ async def get_timeline(
     if types:
         event_types = [t.strip() for t in types.split(",") if t.strip()]
     
-    events = neo4j_service.get_timeline_events(
+    page = neo4j_service.get_timeline_page(
         event_types=event_types,
         start_date=start_date,
         end_date=end_date,
         case_id=case_id,
+        limit=limit,
+        cursor=cursor,
     )
-    
-    return {
-        "events": events,
-        "total": len(events),
-    }
+
+    return page
 
 
 @router.get("/types")

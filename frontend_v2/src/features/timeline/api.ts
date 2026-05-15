@@ -20,6 +20,13 @@ export interface TimelineEvent {
   connections: TimelineConnection[]
 }
 
+export interface TimelineResponse {
+  events: TimelineEvent[]
+  count: number
+  total: number
+  next_cursor?: string | null
+}
+
 /** Color palette for event types — visually distinct, works on both light/dark */
 export const EVENT_TYPE_COLORS: Record<string, string> = {
   Transaction: "#F59E0B",
@@ -57,14 +64,16 @@ export const timelineAPI = {
     types?: string[]
     startDate?: string
     endDate?: string
+    limit?: number
+    cursor?: string
   }) => {
     const qs = new URLSearchParams({ case_id: params.caseId })
     if (params.types?.length) qs.set("types", params.types.join(","))
     if (params.startDate) qs.set("start_date", params.startDate)
     if (params.endDate) qs.set("end_date", params.endDate)
-    return fetchAPI<{ events: TimelineEvent[]; total: number }>(
-      `/api/timeline?${qs}`
-    )
+    if (params.limit) qs.set("limit", String(params.limit))
+    if (params.cursor) qs.set("cursor", params.cursor)
+    return fetchAPI<TimelineResponse>(`/api/timeline?${qs}`)
   },
 
   getEventTypes: async () => {

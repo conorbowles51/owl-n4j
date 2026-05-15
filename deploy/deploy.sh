@@ -41,8 +41,8 @@ set +a
 
 API_PORT="${API_PORT:-8002}"
 HEALTH_URL="http://127.0.0.1:${API_PORT}/health"
-HEALTH_RETRIES=20
-HEALTH_DELAY=3
+HEALTH_RETRIES=30
+HEALTH_DELAY=5
 
 mkdir -p "${LOG_DIR}"
 exec > >(tee -a "${LOG_FILE}") 2>&1

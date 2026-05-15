@@ -29,7 +29,8 @@ interface ChatInputProps {
     message: string,
     model?: string,
     provider?: string,
-    scope?: ChatScope
+    scope?: ChatScope,
+    viewContext?: Record<string, unknown>
   ) => void
   isLoading: boolean
   contextNodes: ContextNode[]
@@ -82,9 +83,30 @@ export function ChatInput({
   const handleSend = useCallback(() => {
     const trimmed = input.trim()
     if (!trimmed || isLoading) return
-    onSend(trimmed, selectedModelId, selectedProvider, scope)
+    const viewContext = {
+      view: "Chat",
+      label: scope === "selection" ? "Selected entities" : "Case overview",
+      selections: {
+        entities: contextNodes.map((node) => ({
+          key: node.key,
+          label: node.label,
+          type: node.type,
+        })),
+        evidence: contextDocument || undefined,
+      },
+    }
+    onSend(trimmed, selectedModelId, selectedProvider, scope, viewContext)
     setInput("")
-  }, [input, isLoading, onSend, scope, selectedModelId, selectedProvider])
+  }, [
+    contextDocument,
+    contextNodes,
+    input,
+    isLoading,
+    onSend,
+    scope,
+    selectedModelId,
+    selectedProvider,
+  ])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {

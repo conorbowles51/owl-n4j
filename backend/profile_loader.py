@@ -1,49 +1,137 @@
 """
 Profile configuration loader.
 
-Loads domain-specific prompts and settings from JSON profiles.
+Runtime profile configuration is sourced from Postgres processing profiles and
+environment defaults. The backend no longer reads profiles/*.json at startup.
 """
 
-import json
+from __future__ import annotations
+
+import copy
 import os
-from pathlib import Path
-from typing import Dict, Any
+from typing import Any
 
-# Get profile from environment variable, default to 'generic'
+
 PROFILE_NAME = os.getenv("PROFILE", "generic")
-PROFILES_DIR = Path(__file__).parent.parent / "profiles"
 
 
-def load_profile(profile_name: str | None = None) -> dict[str, Any]:
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        print(f"Warning: Invalid {name}={raw!r}; using {default}")
+        return default
+
+
+DEFAULT_PROFILE: dict[str, Any] = {
+    "name": "generic",
+    "description": "General purpose knowledge extraction",
+    "case_type": "General Analysis",
+    "ingestion": {
+        "system_context": os.getenv(
+            "INGESTION_SYSTEM_CONTEXT",
+            (
+                "You are an expert analyst extracting entities and relationships from "
+                "documents. Focus on identifying key people, organizations, locations, "
+                "events, dates, and their connections. Capture relevant details that "
+                "establish relationships between entities. Be thorough but precise."
+            ),
+        ),
+        "special_entity_types": [],
+        "mandatory_instructions": [],
+        "temperature": _env_float("INGESTION_TEMPERATURE", 1.0),
+    },
+    "chat": {
+        "system_context": os.getenv(
+            "CHAT_SYSTEM_CONTEXT",
+            "You are an AI assistant helping to analyze and understand documents.",
+        ),
+        "analysis_guidance": os.getenv(
+            "CHAT_ANALYSIS_GUIDANCE",
+            "Provide clear explanations and highlight important connections.",
+        ),
+        "temperature": _env_float("CHAT_TEMPERATURE", 1.0),
+    },
+    "llm_config": None,
+    "folder_processing": None,
+}
+
+
+def _load_postgres_profile(profile_name: str):
+    try:
+        from sqlalchemy import select
+
+        from postgres.models.processing_profile import ProcessingProfile
+        from postgres.session import get_background_session
+
+        with get_background_session() as db:
+            return db.scalars(
+                select(ProcessingProfile).where(ProcessingProfile.name == profile_name)
+            ).first()
+    except Exception:
+        return None
+
+
+def load_profile(profile_name: str | None = None, *, allow_postgres: bool = True) -> dict[str, Any]:
     """
     Load a profile configuration by name.
-    
-    Args:
-        profile_name: Profile name (without .json). Defaults to 'generic'.
-    
-    Returns:
-        Profile configuration dictionary.
+
+    Falls back to environment defaults if Postgres is unavailable or the named
+    processing profile does not exist.
     """
-    name = profile_name or "generic"
-    
-    
-    profile_path = PROFILES_DIR / f"{name}.json"
-    
-    if not profile_path.exists():
-        profile_path = PROFILES_DIR / "generic.json"
-        name = "generic"
-    
-    with open(profile_path, "r", encoding="utf-8") as f:
-        profile = json.load(f)
-    
+    name = profile_name or PROFILE_NAME or "generic"
+    profile = copy.deepcopy(DEFAULT_PROFILE)
+    profile["name"] = name
+
+    db_profile = _load_postgres_profile(name) if allow_postgres else None
+    if db_profile is None and allow_postgres and name != "generic":
+        db_profile = _load_postgres_profile("generic")
+
+    if db_profile is not None:
+        profile["name"] = db_profile.name
+        profile["description"] = db_profile.description or profile["description"]
+        if db_profile.context_instructions:
+            profile["ingestion"]["system_context"] = db_profile.context_instructions
+        profile["ingestion"]["mandatory_instructions"] = list(db_profile.mandatory_instructions or [])
+        profile["ingestion"]["special_entity_types"] = list(db_profile.special_entity_types or [])
+        if db_profile.chat_config:
+            profile["chat"].update(dict(db_profile.chat_config))
+        if db_profile.llm_config:
+            profile["llm_config"] = dict(db_profile.llm_config)
+        if db_profile.folder_processing:
+            profile["folder_processing"] = dict(db_profile.folder_processing)
+
     return profile
 
 
-def get_ingestion_config(profile_name: str | None = None) -> dict[str, Any]:
+def get_ingestion_config(profile_name: str | None = None, *, allow_postgres: bool = True) -> dict[str, Any]:
     """Get the ingestion configuration section from a profile."""
-    return load_profile(profile_name).get("ingestion", {})
+    return load_profile(profile_name, allow_postgres=allow_postgres).get("ingestion", {})
 
 
-def get_chat_config(profile_name: str | None = None) -> dict[str, Any]:
+def get_chat_config(profile_name: str | None = None, *, allow_postgres: bool = True) -> dict[str, Any]:
     """Get the chat configuration section from a profile."""
-    return load_profile(profile_name).get("chat", {})
+    return load_profile(profile_name, allow_postgres=allow_postgres).get("chat", {})
+
+
+def get_llm_config(
+    profile_name: str | None = None,
+    *,
+    force_reload: bool = False,
+    allow_postgres: bool = True,
+) -> dict[str, Any] | None:
+    """Get the optional LLM override configuration from a profile."""
+    _ = force_reload
+    return load_profile(profile_name, allow_postgres=allow_postgres).get("llm_config")
+
+
+def get_folder_processing_config(
+    profile_name: str | None = None,
+    *,
+    allow_postgres: bool = True,
+) -> dict[str, Any] | None:
+    """Get the optional folder-processing configuration from a profile."""
+    return load_profile(profile_name, allow_postgres=allow_postgres).get("folder_processing")

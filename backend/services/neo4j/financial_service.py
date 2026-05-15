@@ -440,12 +440,12 @@ class FinancialService:
             set_clauses = []
             params = {"key": node_key, "case_id": case_id}
 
-            if from_key is not None:
+            if from_key is not None or from_name is not None:
                 set_clauses.append("n.from_entity_key = $from_key")
                 set_clauses.append("n.from_entity_name = $from_name")
                 params["from_key"] = from_key
                 params["from_name"] = from_name
-            if to_key is not None:
+            if to_key is not None or to_name is not None:
                 set_clauses.append("n.to_entity_key = $to_key")
                 set_clauses.append("n.to_entity_name = $to_name")
                 params["to_key"] = to_key

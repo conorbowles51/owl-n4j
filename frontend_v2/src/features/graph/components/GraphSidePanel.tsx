@@ -184,7 +184,7 @@ export function GraphSidePanelContent({
             {toolOverlay === "similar" && (
               <SimilarEntitiesView
                 caseId={caseId}
-                graphData={graphData}
+                graphData={graphData ?? { nodes: [], edges: [] }}
                 onRefresh={onRefreshGraph}
               />
             )}

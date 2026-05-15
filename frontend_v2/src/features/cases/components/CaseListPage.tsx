@@ -19,7 +19,7 @@ export function CaseListPage() {
 
   const filtered = cases?.filter(
     (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.title.toLowerCase().includes(search.toLowerCase()) ||
       c.description?.toLowerCase().includes(search.toLowerCase())
   )
 
@@ -101,10 +101,10 @@ export function CaseListPage() {
             {filtered.map((c) => (
               <CaseCard
                 key={c.id}
-                name={c.name}
+                title={c.title}
                 description={c.description}
-                status={c.status}
-                memberCount={c.member_count}
+                userRole={c.user_role}
+                ownerName={c.owner_name}
                 lastUpdated={c.updated_at}
                 onClick={() => navigate(`/cases/${c.id}/graph`)}
               />

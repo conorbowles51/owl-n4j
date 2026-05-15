@@ -1,4 +1,5 @@
-import { CalendarClock, Trash2 } from "lucide-react"
+import { Archive, ArchiveRestore, CalendarClock, Trash2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RoleBadge } from "./RoleBadge"
 import { cn } from "@/lib/cn"
@@ -9,6 +10,7 @@ interface CaseListItemProps {
   isSelected: boolean
   onSelect: () => void
   onDelete?: () => void
+  onArchiveToggle?: () => void
 }
 
 export function CaseListItem({
@@ -16,6 +18,7 @@ export function CaseListItem({
   isSelected,
   onSelect,
   onDelete,
+  onArchiveToggle,
 }: CaseListItemProps) {
   return (
     <button
@@ -32,6 +35,7 @@ export function CaseListItem({
           <p className="truncate text-sm font-medium text-foreground">
             {caseData.title}
           </p>
+          {caseData.archived && <Badge variant="slate">Archived</Badge>}
         </div>
         <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
           {caseData.owner_name && <span>{caseData.owner_name}</span>}
@@ -55,6 +59,24 @@ export function CaseListItem({
 
       <div className="flex shrink-0 items-center gap-1.5">
         <RoleBadge role={caseData.user_role} />
+        {onArchiveToggle && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="size-6 opacity-0 group-hover:opacity-100"
+            title={caseData.archived ? "Unarchive case" : "Archive case"}
+            onClick={(e) => {
+              e.stopPropagation()
+              onArchiveToggle()
+            }}
+          >
+            {caseData.archived ? (
+              <ArchiveRestore className="size-3" />
+            ) : (
+              <Archive className="size-3" />
+            )}
+          </Button>
+        )}
         {onDelete && (
           <Button
             variant="ghost"

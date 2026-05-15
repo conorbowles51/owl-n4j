@@ -13,47 +13,47 @@ type Story = StoryObj<typeof meta>
 
 export const Active: Story = {
   args: {
-    name: "Operation Falcon",
-    status: "active",
-    memberCount: 4,
-    lastUpdated: "2 hours ago",
+    title: "Operation Falcon",
+    userRole: "owner",
+    ownerName: "Avery Stone",
+    lastUpdated: new Date().toISOString(),
   },
 }
 
 export const Archived: Story = {
   args: {
-    name: "Case #2021-0042",
-    status: "archived",
-    memberCount: 2,
-    lastUpdated: "3 months ago",
+    title: "Case #2021-0042",
+    userRole: "viewer",
+    ownerName: "Neil Byrne",
+    lastUpdated: new Date().toISOString(),
   },
 }
 
 export const Closed: Story = {
   args: {
-    name: "Investigation Delta",
-    status: "closed",
-    memberCount: 6,
-    lastUpdated: "1 year ago",
+    title: "Investigation Delta",
+    userRole: "editor",
+    ownerName: "Mara Chen",
+    lastUpdated: new Date().toISOString(),
   },
 }
 
 export const WithDescription: Story = {
   args: {
-    name: "Operation Falcon",
+    title: "Operation Falcon",
     description: "Cross-border financial fraud investigation involving multiple shell companies.",
-    status: "active",
-    memberCount: 4,
-    lastUpdated: "2 hours ago",
+    userRole: "owner",
+    ownerName: "Avery Stone",
+    lastUpdated: new Date().toISOString(),
   },
 }
 
 export const Clickable: Story = {
   args: {
-    name: "Operation Falcon",
-    status: "active",
-    memberCount: 4,
-    lastUpdated: "2 hours ago",
+    title: "Operation Falcon",
+    userRole: "owner",
+    ownerName: "Avery Stone",
+    lastUpdated: new Date().toISOString(),
     onClick: fn(),
   },
 }

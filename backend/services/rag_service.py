@@ -851,6 +851,7 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
         cypher_context: Optional[str] = None,
         question: str = "",
         model_context_window: Optional[int] = None,
+        view_context_block: str = "",
     ) -> str:
         """
         Build a structured context string with multiple sections:
@@ -872,6 +873,11 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
               f"(model context window: {model_context_window or 'unknown'})")
         total_chars = 0
         sections = []
+
+        if view_context_block:
+            capped_view_context = view_context_block[: min(8000, MAX_CONTEXT_CHARS // 10)]
+            total_chars += len(capped_view_context)
+            sections.append(capped_view_context)
 
         # Section 1: Relevant Text Passages
         if chunk_results:
@@ -1013,6 +1019,69 @@ RELATIONSHIP PROPERTIES: (relationships have no custom properties, only use type
             print(f"[RAG] WARNING: Context truncated from {len(context)} to {MAX_CONTEXT_CHARS} chars")
 
         return context
+
+    @staticmethod
+    def _format_view_context(view_context: Optional[Dict[str, Any]]) -> str:
+        """Format compact UI state so answers can respect the user's current view."""
+        if not isinstance(view_context, dict) or not view_context:
+            return ""
+
+        def clean(value: Any, max_length: int = 500) -> str:
+            text = str(value)
+            if len(text) > max_length:
+                return text[:max_length] + "..."
+            return text
+
+        lines = ["=== CURRENT VIEW CONTEXT ==="]
+
+        label = view_context.get("label") or view_context.get("view") or view_context.get("mode")
+        if label:
+            lines.append(f"View: {clean(label, 160)}")
+
+        description = view_context.get("description") or view_context.get("summary")
+        if description:
+            lines.append(f"Summary: {clean(description, 1000)}")
+
+        filters = view_context.get("filters")
+        if isinstance(filters, dict) and filters:
+            lines.append("Active filters:")
+            for key, value in list(filters.items())[:20]:
+                if value in (None, "", [], {}):
+                    continue
+                lines.append(f"- {clean(key, 80)}: {clean(value)}")
+        elif isinstance(filters, list) and filters:
+            lines.append("Active filters:")
+            for item in filters[:20]:
+                lines.append(f"- {clean(item)}")
+
+        selections = view_context.get("selections") or view_context.get("selected")
+        if isinstance(selections, dict) and selections:
+            lines.append("Selected items:")
+            for key, value in list(selections.items())[:20]:
+                if value in (None, "", [], {}):
+                    continue
+                lines.append(f"- {clean(key, 80)}: {clean(value)}")
+        elif isinstance(selections, list) and selections:
+            lines.append("Selected items:")
+            for item in selections[:20]:
+                lines.append(f"- {clean(item)}")
+
+        metrics = view_context.get("metrics")
+        if isinstance(metrics, dict) and metrics:
+            lines.append("Visible metrics:")
+            for key, value in list(metrics.items())[:20]:
+                if value in (None, "", [], {}):
+                    continue
+                lines.append(f"- {clean(key, 80)}: {clean(value)}")
+
+        visible_items = view_context.get("visible_items") or view_context.get("rows")
+        if isinstance(visible_items, list) and visible_items:
+            lines.append("Visible items:")
+            for item in visible_items[:15]:
+                lines.append(f"- {clean(item)}")
+
+        text = "\n".join(lines) if len(lines) > 1 else ""
+        return text[:8000] + "\n[View context truncated]" if len(text) > 8000 else text
 
     # =====================
     # NEW: Re-ranking
@@ -1577,6 +1646,7 @@ Only include candidates with score >= 5."""
         case_id: Optional[str] = None,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         llm_context: Any = None,
+        view_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Answer a question using hybrid retrieval:
@@ -1609,6 +1679,7 @@ Only include candidates with score >= 5."""
             "question": question,
             "selected_keys": selected_keys,
             "case_id": case_id,
+            "view_context": None,
             "question_type": None,
             "chunk_search": None,
             "entity_search": None,
@@ -1637,6 +1708,8 @@ Only include candidates with score >= 5."""
         context_mode = "hybrid"
         context_description = ""
         cypher_context = None
+        view_context_block = self._format_view_context(view_context)
+        debug_log["view_context"] = view_context_block[:2000] if view_context_block else None
 
         # ── Stage 0: Classify question type ──────────────────────────────
         t0 = time.time()
@@ -1921,6 +1994,7 @@ Only include candidates with score >= 5."""
             chunk_results, entity_results, graph_context, cypher_context,
             question=question,
             model_context_window=model_ctx_window,
+            view_context_block=view_context_block,
         )
 
         # Build context description
@@ -1936,6 +2010,8 @@ Only include candidates with score >= 5."""
         if cypher_context:
             parts.append("Cypher query results")
         context_description = "Hybrid retrieval: " + ", ".join(parts) if parts else "No relevant context found"
+        if view_context_block:
+            context_description += " with current view context"
 
         debug_log["context_mode"] = context_mode
         debug_log["context_preview"] = context[:1000] + "..." if len(context) > 1000 else context
@@ -1949,6 +2025,8 @@ Only include candidates with score >= 5."""
             context_sections.append("GRAPH CONNECTIONS")
         if cypher_context:
             context_sections.append("CYPHER RESULTS")
+        if view_context_block:
+            context_sections.insert(0, "CURRENT VIEW CONTEXT")
 
         _add_stage(
             "Context Building", 6, t6,

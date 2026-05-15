@@ -109,7 +109,7 @@ export function EntityComparisonDialog({
           )}
           {pair && onMerge && (
             <Button
-              variant="default"
+              variant="primary"
               onClick={() => {
                 onMerge(pair)
                 onOpenChange(false)

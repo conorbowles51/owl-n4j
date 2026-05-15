@@ -22,12 +22,31 @@ interface UseTimelineDataResult {
 export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineDataResult {
   const eventsQuery = useQuery({
     queryKey: ["timeline", caseId],
-    queryFn: () => timelineAPI.getEvents({ caseId: caseId! }),
+    queryFn: async () => {
+      const events: TimelineEvent[] = []
+      let cursor: string | undefined
+      let total = 0
+      let pageCount = 0
+
+      do {
+        const page = await timelineAPI.getEvents({
+          caseId: caseId!,
+          limit: 2000,
+          cursor,
+        })
+        events.push(...page.events)
+        total = page.total
+        cursor = page.next_cursor ?? undefined
+        pageCount += 1
+      } while (cursor && pageCount < 100)
+
+      return { events, count: events.length, total, next_cursor: cursor }
+    },
     enabled: !!caseId,
   })
 
-  const rawEvents = eventsQuery.data?.events ?? []
   const events = useMemo(() => {
+    const rawEvents = eventsQuery.data?.events ?? []
     const valid = rawEvents.filter((e) => isValidDate(e.date))
     if (valid.length < rawEvents.length) {
       console.warn(
@@ -35,7 +54,7 @@ export function useTimelineData({ caseId }: UseTimelineDataParams): UseTimelineD
       )
     }
     return valid
-  }, [rawEvents])
+  }, [eventsQuery.data?.events])
 
   const eventTypes = useMemo(() => {
     const counts: Record<string, number> = {}

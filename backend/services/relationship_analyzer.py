@@ -10,14 +10,21 @@ import json
 from pathlib import Path
 import sys
 
-# Add ingestion scripts to path for imports
+try:
+    from profile_loader import get_ingestion_config
+except ImportError:
+    def get_ingestion_config():
+        return {}
+
+# Add ingestion scripts to path for the LLM client only. Keep it behind the
+# backend path so ingestion/scripts/profile_loader.py cannot shadow the
+# Postgres-backed backend profile loader.
 INGESTION_SCRIPTS_PATH = Path(__file__).parent.parent.parent / "ingestion" / "scripts"
 if str(INGESTION_SCRIPTS_PATH) not in sys.path:
-    sys.path.insert(0, str(INGESTION_SCRIPTS_PATH))
+    sys.path.append(str(INGESTION_SCRIPTS_PATH))
 
 try:
     from llm_client import call_llm, parse_json_response
-    from profile_loader import get_ingestion_config
     _llm_available = True
 except ImportError as e:
     print(f"Warning: Could not import LLM client: {e}")
@@ -27,8 +34,6 @@ except ImportError as e:
         return '{"relationships": []}'
     def parse_json_response(response):
         return {"relationships": []}
-    def get_ingestion_config():
-        return {}
 
 
 def analyze_node_relationships(

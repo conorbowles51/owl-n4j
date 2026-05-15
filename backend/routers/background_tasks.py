@@ -15,6 +15,11 @@ from routers.auth import get_current_user
 router = APIRouter(prefix="/api/background-tasks", tags=["background-tasks"])
 
 
+def _current_user_owners(user: dict) -> set[str]:
+    owners = {str(value) for value in [user.get("username"), user.get("email")] if value}
+    return owners
+
+
 class TaskResponse(BaseModel):
     """Task response model."""
     id: str
@@ -58,15 +63,25 @@ async def list_tasks(
     Returns:
         List of tasks
     """
-    # Default to current user's tasks if owner not specified
-    filter_owner = owner if owner is not None else user["username"]
+    # Default to current user's tasks if owner not specified. Some newer
+    # workers record email while older ones recorded username, so merge both.
+    owners = [owner] if owner is not None else sorted(_current_user_owners(user))
+    seen = {}
+    for task_owner in owners:
+        tasks = background_task_storage.list_tasks(
+            owner=task_owner,
+            case_id=case_id,
+            status=status,
+            limit=limit,
+        )
+        for task in tasks:
+            seen[task["id"]] = task
 
-    tasks = background_task_storage.list_tasks(
-        owner=filter_owner,
-        case_id=case_id,
-        status=status,
-        limit=limit,
-    )
+    tasks = sorted(
+        seen.values(),
+        key=lambda task: task.get("created_at") or "",
+        reverse=True,
+    )[:limit]
 
     return TasksListResponse(
         tasks=[TaskResponse(**task) for task in tasks]
@@ -92,7 +107,7 @@ async def get_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Only allow owner to view their own tasks
-    if task.get("owner") != user["username"]:
+    if task.get("owner") not in _current_user_owners(user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     return TaskResponse(**task)
@@ -117,7 +132,7 @@ async def delete_task(
         raise HTTPException(status_code=404, detail="Task not found")
 
     # Only allow owner to delete their own tasks
-    if task.get("owner") != user["username"]:
+    if task.get("owner") not in _current_user_owners(user):
         raise HTTPException(status_code=403, detail="Access denied")
 
     deleted = background_task_storage.delete_task(task_id)

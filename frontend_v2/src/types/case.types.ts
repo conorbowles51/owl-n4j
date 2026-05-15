@@ -1,3 +1,5 @@
+export type CaseRole = "owner" | "editor" | "viewer" | "admin_access"
+
 export interface Case {
   id: string
   title: string
@@ -7,8 +9,9 @@ export interface Case {
   created_at: string
   updated_at: string
   owner_name: string | null
-  user_role: string
+  user_role: CaseRole
   is_owner: boolean
+  archived: boolean
   next_deadline_date: string | null
   next_deadline_name: string | null
 }
@@ -34,6 +37,7 @@ export interface CaseMember {
   user_name: string
   user_email: string
   preset: "owner" | "editor" | "viewer"
+  role?: "owner" | "editor" | "viewer"
   permissions: Record<string, unknown>
   joined_at?: string
 }

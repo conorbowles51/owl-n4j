@@ -57,7 +57,6 @@ export function TablePage() {
 
   const setSearchTerm = useTableStore((s) => s.setSearchTerm)
   const toggleType = useTableStore((s) => s.toggleType)
-  const selectAllTypes = useTableStore((s) => s.selectAllTypes)
   const clearTypes = useTableStore((s) => s.clearTypes)
   const toggleSort = useTableStore((s) => s.toggleSort)
   const setPageSize = useTableStore((s) => s.setPageSize)
@@ -85,8 +84,8 @@ export function TablePage() {
   const containerRef = useRef<HTMLDivElement>(null)
 
   // Data
-  const nodes = graphData?.nodes ?? []
-  const edges = graphData?.edges ?? []
+  const nodes = useMemo(() => graphData?.nodes ?? [], [graphData?.nodes])
+  const edges = useMemo(() => graphData?.edges ?? [], [graphData?.edges])
 
   // Relationship exploration
   const {
@@ -157,7 +156,13 @@ export function TablePage() {
     // Inject relationship column when exploring (after "type")
     if (isExploring) {
       const typeIdx = cols.findIndex((c) => c.key === "type")
-      const relCol = { key: "_relationship", label: "Relationship", sortable: true }
+      const relCol = {
+        key: "_relationship",
+        label: "Relationship",
+        fixed: false,
+        sortable: true,
+        defaultVisible: true,
+      }
       cols.splice(typeIdx >= 0 ? typeIdx + 1 : 2, 0, relCol)
     }
 
@@ -221,7 +226,7 @@ export function TablePage() {
 
   // Grid row shift+click range
   const handleGridCheckRange = useCallback(
-    (startKey: string, _endKey: string) => {
+    (startKey: string) => {
       handleCheckRange(startKey)
     },
     [handleCheckRange]

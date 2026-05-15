@@ -53,6 +53,7 @@ class ChatRequest(BaseModel):
     model: str = "gpt-5-mini"
     confidence_threshold: Optional[float] = None
     persist: bool = True
+    view_context: Optional[Dict[str, Any]] = None
 
 
 class ChatSource(BaseModel):
@@ -193,6 +194,7 @@ async def chat(
                 "model": llm.model_id,
                 "persist": request.persist,
                 "conversation_id": str(conversation.id) if conversation else None,
+                "view_context": request.view_context,
             },
             as_json=True,
         )
@@ -206,6 +208,7 @@ async def chat(
                 "scope": request.scope,
                 "selected_entity_keys": selected_entity_keys,
                 "case_id": str(request.case_id),
+                "view_context": request.view_context,
             },
             user=current_user.email,
             success=True,
@@ -221,6 +224,7 @@ async def chat(
                 "scope": request.scope,
                 "selected_entity_keys": selected_entity_keys,
                 "conversation_id": str(conversation.id) if conversation else None,
+                "view_context": request.view_context,
             },
         ):
             result = rag_service.answer_question(
@@ -230,6 +234,7 @@ async def chat(
                 case_id=str(request.case_id),
                 conversation_history=conversation_history or None,
                 llm_context=llm,
+                view_context=request.view_context,
             )
 
         cost_record = None
@@ -251,6 +256,7 @@ async def chat(
                     "scope": request.scope,
                     "selected_entity_keys": selected_entity_keys,
                     "conversation_id": str(conversation.id) if conversation else None,
+                    "view_context": request.view_context,
                 },
             )
 
@@ -263,6 +269,7 @@ async def chat(
                     "scope": request.scope,
                     "selected_entity_keys": selected_entity_keys,
                     "conversation_id": str(conversation.id),
+                    "view_context": request.view_context,
                 },
             )
             _, assistant_message = append_conversation_turn(

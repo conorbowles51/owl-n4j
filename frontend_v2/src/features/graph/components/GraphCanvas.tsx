@@ -13,7 +13,7 @@ import type { GraphData } from "@/types/graph.types"
 /*  Types for react-force-graph-2d                                     */
 /* ------------------------------------------------------------------ */
 
-interface FGNode extends NodeObject {
+interface FGNode {
   id: string
   key: string
   label: string
@@ -24,10 +24,15 @@ interface FGNode extends NodeObject {
   _degree?: number
 }
 
-interface FGLink extends LinkObject {
+interface FGLink {
+  source: string
+  target: string
   type: string
   weight?: number
 }
+
+type ForceNode = NodeObject<FGNode>
+type ForceLink = LinkObject<FGNode, FGLink>
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
@@ -45,7 +50,7 @@ interface GraphCanvasProps {
 
 export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const internalRef = useRef<ForceGraphMethods<FGNode, FGLink>>()
+  const internalRef = useRef<ForceGraphMethods<FGNode, FGLink> | undefined>(undefined)
   const fgRef = externalRef ?? internalRef
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const hasZoomedToFit = useRef(false)
@@ -107,7 +112,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       }
     }
 
-    const nodes: FGNode[] = visibleNodes.map((n) => {
+    const nodes: ForceNode[] = visibleNodes.map((n) => {
       const isPinned = pinnedNodeKeys.has(n.key)
       return {
         id: n.key,
@@ -124,7 +129,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       }
     })
 
-    const links: FGLink[] = data.edges
+    const links: ForceLink[] = data.edges
       .filter((e) => visibleKeys.has(e.source) && visibleKeys.has(e.target))
       .map((e) => ({
         source: e.source,
@@ -165,7 +170,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Node color logic ---- */
   const getColor = useCallback(
-    (node: FGNode): string => {
+    (node: ForceNode): string => {
       if (communityMap?.has(node.key)) {
         const cid = communityMap.get(node.key)!
         return communityColors[cid % communityColors.length]
@@ -177,7 +182,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
-    (node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+    (node: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const x = node.x ?? 0
       const y = node.y ?? 0
 
@@ -311,17 +316,17 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Custom link renderer with LOD tiers ---- */
   const paintLink = useCallback(
-    (link: FGLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
-      const src = link.source as FGNode
-      const tgt = link.target as FGNode
+    (link: ForceLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const src = link.source as ForceNode
+      const tgt = link.target as ForceNode
       if (!src?.x || !tgt?.x) return
 
       /* LOD: skip links entirely at very low zoom */
       if (globalScale < 0.3) return
 
       const isOnPath =
-        highlightedPaths?.has((src as FGNode).key) &&
-        highlightedPaths?.has((tgt as FGNode).key)
+        highlightedPaths?.has(src.key) &&
+        highlightedPaths?.has(tgt.key)
 
       const baseWidth = Math.max(0.5, (link.weight ?? 1) * 0.8)
       const width = baseWidth / Math.sqrt(globalScale)
@@ -351,7 +356,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         return
       }
 
-      const tgtSz = 4 + Math.min(((tgt as FGNode)._degree ?? 0) * 0.8, 12)
+      const tgtSz = 4 + Math.min((tgt._degree ?? 0) * 0.8, 12)
       const arrowLen = 4 / globalScale
       const endX = tgt.x - (dx / len) * (tgtSz + 1)
       const endY = tgt.y! - (dy / len) * (tgtSz + 1)
@@ -402,7 +407,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Click handlers ---- */
   const handleNodeClick = useCallback(
-    (node: FGNode, event: MouseEvent) => {
+    (node: ForceNode, event: MouseEvent) => {
       if (event.ctrlKey || event.metaKey || event.shiftKey) {
         addToSelection(node.key)
       } else {
@@ -420,7 +425,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   }, [selectNodes])
 
   const handleNodeRightClick = useCallback(
-    (node: FGNode, event: MouseEvent) => {
+    (node: ForceNode, event: MouseEvent) => {
       event.preventDefault()
       if (!selectedNodeKeys.has(node.key)) {
         addToSelection(node.key)
@@ -436,7 +441,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   )
 
   const handleNodeHover = useCallback(
-    (node: FGNode | null) => setHoveredNode(node?.key ?? null),
+    (node: ForceNode | null) => setHoveredNode(node?.key ?? null),
     []
   )
 
@@ -534,7 +539,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
   /* ---- Node drag to pin ---- */
   const handleNodeDragEnd = useCallback(
-    (node: FGNode) => {
+    (node: ForceNode) => {
       node.fx = node.x
       node.fy = node.y
       useGraphStore.getState().pinNode(node.key)
@@ -557,7 +562,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         height={dimensions.height}
         backgroundColor={canvasColors.background}
         nodeCanvasObject={paintNode}
-        nodePointerAreaPaint={(node: FGNode, color, ctx) => {
+        nodePointerAreaPaint={(node: ForceNode, color, ctx) => {
           const sz = 4 + Math.min((node._degree ?? 0) * 0.8, 12)
           ctx.beginPath()
           ctx.arc(node.x ?? 0, node.y ?? 0, sz + 3, 0, 2 * Math.PI)

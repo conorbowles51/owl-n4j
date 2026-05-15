@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, String, Text, Integer
+from sqlalchemy import ForeignKey, JSON, String, Text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from postgres.base import Base
 from postgres.models.mixins import TimestampMixin
+
+
+JSON_DOCUMENT = JSONB().with_variant(JSON(), "sqlite")
 
 
 class WorkspaceContext(Base, TimestampMixin):
@@ -27,7 +30,7 @@ class WorkspaceContext(Base, TimestampMixin):
         unique=True,
         index=True,
     )
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspaceWitness(Base, TimestampMixin):
@@ -45,7 +48,7 @@ class WorkspaceWitness(Base, TimestampMixin):
         index=True,
     )
     witness_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspaceTheory(Base, TimestampMixin):
@@ -63,7 +66,7 @@ class WorkspaceTheory(Base, TimestampMixin):
         index=True,
     )
     theory_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspaceTask(Base, TimestampMixin):
@@ -81,7 +84,7 @@ class WorkspaceTask(Base, TimestampMixin):
         index=True,
     )
     task_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspaceNote(Base, TimestampMixin):
@@ -99,7 +102,7 @@ class WorkspaceNote(Base, TimestampMixin):
         index=True,
     )
     note_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspaceFinding(Base, TimestampMixin):
@@ -117,7 +120,7 @@ class WorkspaceFinding(Base, TimestampMixin):
         index=True,
     )
     finding_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspacePinnedItem(Base, TimestampMixin):
@@ -138,7 +141,7 @@ class WorkspacePinnedItem(Base, TimestampMixin):
     item_type: Mapped[str] = mapped_column(String(64), nullable=False)
     item_id: Mapped[str] = mapped_column(String(255), nullable=False)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)
 
 
 class WorkspaceDeadlineConfig(Base, TimestampMixin):
@@ -156,4 +159,4 @@ class WorkspaceDeadlineConfig(Base, TimestampMixin):
         unique=True,
         index=True,
     )
-    data: Mapped[dict] = mapped_column(JSONB, server_default="{}", nullable=False)
+    data: Mapped[dict] = mapped_column(JSON_DOCUMENT, server_default="{}", nullable=False)

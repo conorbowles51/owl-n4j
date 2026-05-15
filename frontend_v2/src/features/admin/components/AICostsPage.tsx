@@ -35,13 +35,14 @@ import {
   TableRow,
 } from "@/components/ui/table"
 
-function chartCurrency(value: number) {
+function chartCurrency(value: number | string | undefined) {
+  const numericValue = Number(value ?? 0)
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(value)
+  }).format(Number.isFinite(numericValue) ? numericValue : 0)
 }
 
 export function AICostsPage() {
@@ -291,7 +292,7 @@ export function AICostsPage() {
                     <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                     <XAxis dataKey="bucket_date" tick={{ fontSize: 12 }} />
                     <YAxis tickFormatter={chartCurrency} tick={{ fontSize: 12 }} />
-                    <RechartsTooltip formatter={(value: number) => chartCurrency(value)} />
+                    <RechartsTooltip formatter={(value) => chartCurrency(value as number | string | undefined)} />
                     <Area
                       type="monotone"
                       dataKey="ingestion_cost_usd"
@@ -332,7 +333,7 @@ export function AICostsPage() {
                       height={60}
                     />
                     <YAxis tickFormatter={chartCurrency} tick={{ fontSize: 12 }} />
-                    <RechartsTooltip formatter={(value: number) => chartCurrency(value)} />
+                    <RechartsTooltip formatter={(value) => chartCurrency(value as number | string | undefined)} />
                     <Bar dataKey="cost_usd" fill="#111827" radius={[6, 6, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

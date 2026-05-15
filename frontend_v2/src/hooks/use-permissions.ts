@@ -21,7 +21,7 @@ export function usePermissions(
   const isSuperAdmin = user?.role === "admin"
 
   return useMemo(() => {
-    const role = membership?.role
+    const role = membership?.role ?? membership?.preset
     const isOwner = role === "owner"
     const canEdit = isOwner || role === "editor" || isSuperAdmin
     return {
@@ -32,5 +32,5 @@ export function usePermissions(
       isOwner,
       isSuperAdmin,
     }
-  }, [membership?.role, isSuperAdmin])
+  }, [membership?.role, membership?.preset, isSuperAdmin])
 }

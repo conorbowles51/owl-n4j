@@ -65,4 +65,25 @@ describe("chatAPI.ask", () => {
     const body = JSON.parse(options?.body as string)
     expect(body.persist).toBe(false)
   })
+
+  it("sends compact view context when provided", async () => {
+    mockChatResponse()
+
+    await chatAPI.ask({
+      question: "What am I looking at?",
+      case_id: "case-1",
+      scope: "case_overview",
+      view_context: {
+        view: "Financial",
+        filters: { category: "Transfer" },
+      },
+    })
+
+    const [, options] = vi.mocked(globalThis.fetch).mock.calls[0]
+    const body = JSON.parse(options?.body as string)
+    expect(body.view_context).toEqual({
+      view: "Financial",
+      filters: { category: "Transfer" },
+    })
+  })
 })

@@ -40,6 +40,11 @@ const CellebritePage = lazy(() =>
     default: m.CellebritePage,
   }))
 )
+const CaseProfilesPage = lazy(() =>
+  import("@/features/case-profiles/components/CaseProfilesPage").then((m) => ({
+    default: m.CaseProfilesPage,
+  }))
+)
 
 // Lazy-loaded feature pages
 const ChatPage = lazy(() =>
@@ -55,6 +60,11 @@ const WorkspacePage = lazy(() =>
 const ReportsPage = lazy(() =>
   import("@/features/reports/components/ReportsPage").then((m) => ({
     default: m.ReportsPage,
+  }))
+)
+const TriagePage = lazy(() =>
+  import("@/features/triage/components/TriagePage").then((m) => ({
+    default: m.TriagePage,
   }))
 )
 const CaseSettingsPage = lazy(() =>
@@ -125,6 +135,7 @@ export function AppRoutes() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/cases" replace />} />
           <Route path="/cases" element={<CaseManagementPage />} />
+          <Route path="/triage" element={<LazyPage><TriagePage /></LazyPage>} />
 
           {/* Case routes */}
           <Route path="/cases/:id" element={<CaseLayout />}>
@@ -135,6 +146,7 @@ export function AppRoutes() {
             <Route path="table" element={<LazyPage><TablePage /></LazyPage>} />
             <Route path="financial" element={<LazyPage><FinancialPage /></LazyPage>} />
             <Route path="cellebrite" element={<LazyPage><CellebritePage /></LazyPage>} />
+            <Route path="profiles" element={<LazyPage><CaseProfilesPage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />

@@ -19,8 +19,10 @@ function ResizablePanelGroup({
   )
 }
 
-function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />
+function ResizablePanel(props: ResizablePrimitive.PanelProps & { order?: number }) {
+  const { order: legacyOrder, ...panelProps } = props
+  void legacyOrder
+  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...panelProps} />
 }
 
 function ResizableHandle({

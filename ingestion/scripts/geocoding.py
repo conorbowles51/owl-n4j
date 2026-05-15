@@ -1,22 +1,19 @@
 """
 Geocoding module - converts location strings to coordinates.
 
-Uses Nominatim (OpenStreetMap) for geocoding with local caching
+Uses Nominatim (OpenStreetMap) for geocoding with the shared Postgres cache
 to avoid redundant API calls and respect rate limits.
 """
 
 import json
 import time
 import hashlib
-from pathlib import Path
+import sys
 from typing import Optional, Dict
 from urllib.parse import quote
 import urllib.request
 import urllib.error
-
-# Cache file location (relative to this script)
-CACHE_DIR = Path(__file__).parent.parent / "data"
-CACHE_FILE = CACHE_DIR / "geocoding_cache.json"
+from pathlib import Path
 
 # Nominatim configuration
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
@@ -52,35 +49,68 @@ def _get_cache_key(location: str) -> str:
     return hashlib.md5(location.encode('utf-8')).hexdigest()
 
 
-def _load_cache() -> Dict:
-    """
-    Load the geocoding cache from disk.
-    
-    Returns:
-        Dict mapping cache keys to geocoding results
-    """
-    if CACHE_FILE.exists():
-        try:
-            with open(CACHE_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Warning: Could not load geocoding cache: {e}")
-    return {}
+def _ensure_backend_path() -> None:
+    backend_dir = Path(__file__).resolve().parents[2] / "backend"
+    if str(backend_dir) not in sys.path:
+        sys.path.insert(0, str(backend_dir))
 
 
-def _save_cache(cache: Dict):
-    """
-    Save the geocoding cache to disk.
-    
-    Args:
-        cache: Dict mapping cache keys to geocoding results
-    """
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+def _get_cached_geocode(cache_key: str) -> tuple[bool, Optional[Dict]]:
+    """Load a cached geocode result from Postgres."""
     try:
-        with open(CACHE_FILE, 'w', encoding='utf-8') as f:
-            json.dump(cache, f, indent=2)
-    except IOError as e:
-        print(f"Warning: Could not save geocoding cache: {e}")
+        _ensure_backend_path()
+        from postgres.models.geocoding_cache import GeocodingCacheEntry
+        from postgres.session import get_background_session
+
+        with get_background_session() as db:
+            entry = db.get(GeocodingCacheEntry, ("nominatim", cache_key))
+            if entry is None:
+                return False, None
+            if entry.status == "failed":
+                return True, None
+            return True, {
+                "latitude": entry.latitude,
+                "longitude": entry.longitude,
+                "formatted_address": entry.formatted_address,
+                "confidence": entry.confidence,
+                "raw_response": entry.raw_response,
+            }
+    except Exception as e:
+        print(f"Warning: Could not read geocoding cache from Postgres: {e}")
+        return False, None
+
+
+def _save_cached_geocode(cache_key: str, original_query: str, result: Optional[Dict]) -> None:
+    """Save a geocode result to Postgres."""
+    try:
+        _ensure_backend_path()
+        from postgres.models.geocoding_cache import GeocodingCacheEntry
+        from postgres.session import get_background_session
+
+        with get_background_session() as db:
+            if result:
+                entry = GeocodingCacheEntry(
+                    provider="nominatim",
+                    normalized_query=cache_key,
+                    original_query=original_query,
+                    status="success",
+                    latitude=result.get("latitude"),
+                    longitude=result.get("longitude"),
+                    formatted_address=result.get("formatted_address"),
+                    confidence=result.get("confidence"),
+                    raw_response=result.get("raw_response") or result,
+                )
+            else:
+                entry = GeocodingCacheEntry(
+                    provider="nominatim",
+                    normalized_query=cache_key,
+                    original_query=original_query,
+                    status="failed",
+                    raw_response={},
+                )
+            db.merge(entry)
+    except Exception as e:
+        print(f"Warning: Could not save geocoding cache to Postgres: {e}")
 
 
 def _rate_limit():
@@ -191,23 +221,19 @@ def geocode_with_cache(location: str) -> Optional[Dict]:
     normalized = _normalize_location(location)
     cache_key = _get_cache_key(normalized)
     
-    # Check cache
-    cache = _load_cache()
-    if cache_key in cache:
-        cached = cache[cache_key]
-        # Check if this was a failed geocoding (stored as null/None)
-        if cached is None:
+    cached, cached_result = _get_cached_geocode(cache_key)
+    if cached:
+        if cached_result is None:
             print(f"  Cache hit (failed): '{location}'")
             return None
         print(f"  Cache hit: '{location}'")
-        return cached
+        return cached_result
     
     # Not in cache - geocode
     result = geocode_location(location)
     
-    # Store in cache (including None for failed lookups to avoid retrying)
-    cache[cache_key] = result
-    _save_cache(cache)
+    # Store in Postgres cache (including failed lookups to avoid retrying)
+    _save_cached_geocode(cache_key, location, result)
     
     return result
 

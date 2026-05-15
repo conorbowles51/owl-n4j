@@ -111,6 +111,7 @@ class Neo4jServiceFacade:
 
     # ── Timeline ───────────────────────────────────────────────────────
     get_timeline_events = staticmethod(timeline_service.get_timeline_events)
+    get_timeline_page = staticmethod(timeline_service.get_timeline_page)
 
     # ── Cellebrite analytics ───────────────────────────────────────────
     get_cellebrite_reports = staticmethod(cellebrite_service.get_cellebrite_reports)

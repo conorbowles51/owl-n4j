@@ -43,8 +43,9 @@ export function useSimilarEntities(caseId: string) {
           }),
         onTypeComplete: () => {},
         onComplete: (data) => {
-          const rawPairs = data.limited_results ?? []
-          const mapped: SimilarPair[] = rawPairs.map((p: Record<string, unknown>) => {
+          const rawPairs = Array.isArray(data.limited_results) ? data.limited_results : []
+          const mapped: SimilarPair[] = rawPairs.map((value) => {
+            const p = value as Record<string, unknown>
             const e1 = p.entity1 as Record<string, unknown> | undefined
             const e2 = p.entity2 as Record<string, unknown> | undefined
             return {

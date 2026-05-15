@@ -43,12 +43,12 @@ export function RecycleBinPanel({ caseId }: RecycleBinPanelProps) {
   const [confirmDeleteKey, setConfirmDeleteKey] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
 
-  const recycleQueryKey = ["graph", "recycle-bin", caseId]
+  const recycleQueryKey = useMemo(() => ["graph", "recycle-bin", caseId], [caseId])
   const { data, isLoading, error: loadError } = useQuery({
     queryKey: recycleQueryKey,
     queryFn: () => graphAPI.listRecycledEntities(caseId),
   })
-  const entities = data?.items ?? []
+  const entities = useMemo(() => data?.items ?? [], [data?.items])
 
   const refreshGraph = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["graph", caseId] })

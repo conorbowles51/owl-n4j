@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,7 +41,6 @@ export function MergeEntitiesDialog({
   onOpenChange,
   entities,
   caseId,
-  similarity,
   activeJob,
   onStartTracking,
   onClearJob,
@@ -50,13 +49,11 @@ export function MergeEntitiesDialog({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (open) {
-      setPreferredName("")
-      setSubmitting(false)
-      setError(null)
-    }
-  }, [open])
+  const resetLocalState = () => {
+    setPreferredName("")
+    setSubmitting(false)
+    setError(null)
+  }
 
   const handleMerge = async () => {
     if (entities.length < 2) return
@@ -94,6 +91,7 @@ export function MergeEntitiesDialog({
 
   const handleClose = () => {
     if (isTerminal) onClearJob()
+    resetLocalState()
     onOpenChange(false)
   }
 

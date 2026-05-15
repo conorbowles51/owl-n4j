@@ -6,7 +6,7 @@ DB-backed processing profile library used by cases as snapshot templates.
 
 from __future__ import annotations
 
-from typing import List
+from typing import Any, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -36,6 +36,9 @@ class ProcessingProfileSummary(BaseModel):
     context_instructions: str | None = None
     mandatory_instructions: list[str] = []
     special_entity_types: list[SpecialEntityType] = []
+    chat_config: dict[str, Any] | None = None
+    llm_config: dict[str, Any] | None = None
+    folder_processing: dict[str, Any] | None = None
 
 
 class ProcessingProfileCreate(BaseModel):
@@ -44,6 +47,9 @@ class ProcessingProfileCreate(BaseModel):
     context_instructions: str | None = None
     mandatory_instructions: list[str] = []
     special_entity_types: list[SpecialEntityType] = []
+    chat_config: dict[str, Any] | None = None
+    llm_config: dict[str, Any] | None = None
+    folder_processing: dict[str, Any] | None = None
 
 
 def _to_response(profile) -> ProcessingProfileSummary:
@@ -53,6 +59,9 @@ def _to_response(profile) -> ProcessingProfileSummary:
         context_instructions=profile.context_instructions,
         mandatory_instructions=normalize_instruction_list(profile.mandatory_instructions),
         special_entity_types=normalize_special_entity_types(profile.special_entity_types),
+        chat_config=profile.chat_config,
+        llm_config=profile.llm_config,
+        folder_processing=profile.folder_processing,
     )
 
 
@@ -87,6 +96,9 @@ async def create_or_update_profile(
         context_instructions=profile.context_instructions,
         mandatory_instructions=profile.mandatory_instructions,
         special_entity_types=[item.model_dump() for item in profile.special_entity_types],
+        chat_config=profile.chat_config,
+        llm_config=profile.llm_config,
+        folder_processing=profile.folder_processing,
     )
     db.commit()
     db.refresh(saved)

@@ -9,9 +9,6 @@ import {
   Eye,
   EyeOff,
   Shield,
-  Network,
-  Search,
-  Lock,
 } from "lucide-react"
 import { AnimatedGraphBackground } from "./AnimatedGraphBackground"
 
@@ -258,28 +255,6 @@ export function LoginPage() {
             Protected by enterprise-grade encryption
           </p>
         </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── Sub-components ── */
-
-function FeaturePill({
-  icon,
-  label,
-  description,
-}: {
-  icon: React.ReactNode
-  label: string
-  description: string
-}) {
-  return (
-    <div className="flex items-start gap-3 rounded-lg border border-slate-200 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-900/50 px-3.5 py-3">
-      <div className="mt-0.5 shrink-0">{icon}</div>
-      <div className="min-w-0">
-        <div className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</div>
-        <div className="text-[11px] text-slate-400 dark:text-slate-500">{description}</div>
       </div>
     </div>
   )

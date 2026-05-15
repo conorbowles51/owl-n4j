@@ -10,6 +10,14 @@ from postgres.models.processing_profile import ProcessingProfile, CaseProcessing
 from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
 from postgres.models.evidence import EvidenceFolder, EvidenceFile, IngestionLog
+from postgres.models.case_profile import (
+    CaseProfile,
+    CaseProfileAttribute,
+    CaseProfileEvidenceLink,
+    CaseProfileFindingLink,
+    CaseProfileGraphNodeLink,
+    CaseProfileNoteLink,
+)
 from postgres.models.graph_recycle_bin import GraphRecycleBinItem
 from postgres.models.runtime_state import (
     BackgroundTask,
@@ -38,6 +46,8 @@ __all__ = [
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
+    "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
+    "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",
     "BackgroundTask", "PresenceSession", "WiretapProcessedFolder",
     "LastGraphState", "SnapshotRecord", "SystemLog",
     "TriageCase", "TriageStage", "TriageTemplate", "TriageHashSet",

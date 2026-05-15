@@ -88,6 +88,9 @@ def save_processing_profile(
     context_instructions: str | None,
     mandatory_instructions: list[str] | None,
     special_entity_types: list[dict[str, str]] | None,
+    chat_config: dict[str, Any] | None = None,
+    llm_config: dict[str, Any] | None = None,
+    folder_processing: dict[str, Any] | None = None,
 ) -> ProcessingProfile:
     profile = get_processing_profile(db, name)
     if profile is None:
@@ -98,6 +101,9 @@ def save_processing_profile(
     profile.context_instructions = context_instructions
     profile.mandatory_instructions = normalize_instruction_list(mandatory_instructions)
     profile.special_entity_types = normalize_special_entity_types(special_entity_types)
+    profile.chat_config = chat_config or None
+    profile.llm_config = llm_config or None
+    profile.folder_processing = folder_processing or None
     db.flush()
     return profile
 

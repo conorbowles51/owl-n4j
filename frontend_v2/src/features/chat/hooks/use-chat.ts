@@ -61,7 +61,8 @@ export function useChat(caseId: string) {
       content: string,
       model?: string,
       provider?: string,
-      scope: ChatScope = "case_overview"
+      scope: ChatScope = "case_overview",
+      viewContext?: Record<string, unknown>
     ) => {
       const effectiveScope =
         scope === "selection" && selectedNodeKeys.size > 0
@@ -87,6 +88,7 @@ export function useChat(caseId: string) {
           conversation_id: savedConversationId.current || activeConversationId || undefined,
           scope: effectiveScope,
           selected_entity_keys: selectedKeys,
+          view_context: viewContext,
           persist: true,
           ...(model ? { model } : {}),
           ...(provider ? { provider } : {}),

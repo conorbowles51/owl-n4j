@@ -1,5 +1,6 @@
 from collections.abc import Generator
 from contextlib import contextmanager
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 
@@ -26,9 +27,14 @@ def _get_engine():
         elif db_url.startswith("postgres://") and "+psycopg" not in db_url:
             db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
         
+        connect_args = {}
+        if db_url.startswith("postgresql+psycopg://"):
+            connect_args["connect_timeout"] = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "2"))
+
         _engine = create_engine(
             db_url,
             pool_pre_ping=True,
+            connect_args=connect_args,
         )
     return _engine
 

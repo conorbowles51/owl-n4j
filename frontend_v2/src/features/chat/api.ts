@@ -16,6 +16,7 @@ export interface ChatRequest {
   conversation_id?: string
   scope: ChatScope
   selected_entity_keys?: string[]
+  view_context?: Record<string, unknown>
   model?: string
   provider?: string
   confidence_threshold?: number

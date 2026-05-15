@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, type KeyboardEvent } from "react"
+import { useLocation } from "react-router-dom"
 import { Send, Bot, MessageSquare, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -31,6 +32,7 @@ interface ChatSidePanelProps {
 }
 
 export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
+  const location = useLocation()
   const [models, setModels] = useState<LLMModel[]>([])
   const [selectedModelId, setSelectedModelId] = useState(DEFAULT_MODEL)
   const [selectedProvider, setSelectedProvider] = useState(DEFAULT_PROVIDER)
@@ -89,11 +91,21 @@ export function ChatSidePanel({ caseId }: ChatSidePanelProps) {
   const handleSend = () => {
     const trimmed = input.trim()
     if (!trimmed || isLoading) return
+    const viewContext = {
+      view: location.pathname.split("/").filter(Boolean).pop() ?? "case",
+      label: "Case side panel",
+      route: location.pathname,
+      scope: contextMode === "selection" ? "selection" : "case_overview",
+      selections: {
+        entity_keys: contextMode === "selection" ? Array.from(selectedNodeKeys) : [],
+      },
+    }
     void sendMessage(
       trimmed,
       selectedModelId,
       selectedProvider,
-      contextMode === "selection" ? "selection" : "case_overview"
+      contextMode === "selection" ? "selection" : "case_overview",
+      viewContext
     )
     setInput("")
   }

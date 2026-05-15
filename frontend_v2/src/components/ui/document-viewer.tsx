@@ -102,7 +102,7 @@ export function DocumentViewer({
   const pdfUrlWithPage = documentUrl && isPdf ? `${documentUrl}#page=${currentPage}` : null
 
   const handleOpenInNewTab = () => {
-    if (documentUrl) window.open(isPdf ? pdfUrlWithPage : documentUrl, "_blank")
+    if (documentUrl) window.open(isPdf && pdfUrlWithPage ? pdfUrlWithPage : documentUrl, "_blank")
   }
 
   const renderContent = () => {

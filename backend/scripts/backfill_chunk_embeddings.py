@@ -1,48 +1,133 @@
 """
-Backfill chunk embeddings for existing documents.
+Backfill chunk embeddings for evidence files stored in Postgres.
 
-This script generates chunk-level embeddings for documents that are already in Neo4j
-but don't have chunk embeddings in the ChromaDB chunks collection.
-
-It reads original files from disk, re-chunks them (pure text splitting, no LLM),
-and embeds each chunk. This is much cheaper than re-ingestion since no entity
-extraction is needed.
-
-Usage:
-    python backend/scripts/backfill_chunk_embeddings.py --dry-run
-    python backend/scripts/backfill_chunk_embeddings.py --case-id <case_id>
-    python backend/scripts/backfill_chunk_embeddings.py --skip-existing
+This script reads EvidenceFile rows, re-extracts text from their stored files,
+chunks the text, embeds each chunk, and writes chunk embeddings to ChromaDB.
+It does not read or write legacy JSON evidence storage.
 """
 
-import sys
-from pathlib import Path
-from typing import List, Dict, Optional
-import time
+from __future__ import annotations
 
-# Add project root to path
+import sys
+import time
+import uuid
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+from sqlalchemy import select
+
+
 project_root = Path(__file__).parent.parent.parent
 backend_dir = project_root / "backend"
 ingestion_dir = project_root / "ingestion" / "scripts"
 
-# Add backend directory FIRST so config imports resolve correctly
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-# Add ingestion scripts for chunking module
 if str(ingestion_dir) not in sys.path:
-    sys.path.insert(0, str(ingestion_dir))
+    sys.path.append(str(ingestion_dir))
 
-# Import services
+from postgres.models.evidence import EvidenceFile
+from postgres.session import get_background_session
+from routers.backfill import extract_text_from_file
+from services.embedding_service import embedding_service
 from services.neo4j_service import neo4j_service
 from services.vector_db_service import vector_db_service
-from services.embedding_service import embedding_service
-from services.evidence_storage import evidence_storage, EVIDENCE_ROOT_DIR
 
-# Import chunking
 from chunking import chunk_document
 
-# Import text extraction from backfill router
-from routers.backfill import extract_text_from_file, find_evidence_file
+
+def _log(log_callback, level: str, message: str) -> None:
+    print(f"[{level.upper()}] {message}")
+    if log_callback:
+        log_callback(level, message)
+
+
+def _coerce_uuid(value: str | None) -> uuid.UUID | None:
+    if not value:
+        return None
+    try:
+        return uuid.UUID(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_path(stored_path: str | None) -> Path | None:
+    if not stored_path:
+        return None
+
+    candidates = []
+    raw_path = Path(stored_path)
+    candidates.append(raw_path)
+    if not raw_path.is_absolute():
+        candidates.append(backend_dir / raw_path)
+        candidates.append(project_root / raw_path)
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def _load_evidence_files(case_id: str | None) -> list[EvidenceFile]:
+    case_uuid = _coerce_uuid(case_id)
+    with get_background_session() as db:
+        query = select(EvidenceFile).order_by(EvidenceFile.original_filename)
+        if case_uuid:
+            query = query.where(EvidenceFile.case_id == case_uuid)
+        return list(db.scalars(query).all())
+
+
+def _find_graph_document(file: EvidenceFile) -> dict[str, Any]:
+    params = {
+        "case_id": str(file.case_id),
+        "name": file.original_filename,
+        "file_id": str(file.id),
+        "legacy_id": file.legacy_id or "",
+    }
+    try:
+        rows = neo4j_service.run_cypher(
+            """
+            MATCH (d:Document {case_id: $case_id})
+            WHERE d.name = $name
+               OR d.id = $file_id
+               OR ($legacy_id <> '' AND d.id = $legacy_id)
+               OR d.vector_db_id = $file_id
+               OR ($legacy_id <> '' AND d.vector_db_id = $legacy_id)
+            RETURN d.id AS id,
+                   d.key AS key,
+                   d.name AS name,
+                   d.case_id AS case_id,
+                   COALESCE(d.vector_db_id, null) AS vector_db_id
+            ORDER BY CASE WHEN d.name = $name THEN 0 ELSE 1 END
+            LIMIT 1
+            """,
+            params,
+        )
+    except Exception:
+        rows = []
+
+    if rows:
+        return dict(rows[0])
+
+    return {
+        "id": file.legacy_id or str(file.id),
+        "key": "",
+        "name": file.original_filename,
+        "case_id": str(file.case_id),
+        "vector_db_id": None,
+    }
+
+
+def _set_vector_db_id(doc_id: str) -> None:
+    try:
+        neo4j_service.run_cypher(
+            "MATCH (d:Document {id: $doc_id}) SET d.vector_db_id = $doc_id",
+            {"doc_id": doc_id},
+        )
+    except Exception:
+        # Chunks are still useful even if the graph node is missing or offline.
+        pass
 
 
 def backfill_chunk_embeddings(
@@ -51,73 +136,33 @@ def backfill_chunk_embeddings(
     case_id: Optional[str] = None,
     batch_size: int = 10,
     log_callback=None,
-) -> Dict:
+) -> Dict[str, Any]:
     """
-    Generate chunk-level embeddings for existing documents.
-
-    Reads original files from disk, chunks them, embeds each chunk,
-    and stores in the ChromaDB chunks collection.
-
-    Args:
-        dry_run: If True, only report what would be done without making changes
-        skip_existing: If True, skip documents that already have chunk embeddings
-        case_id: Optional case_id to filter documents
-        batch_size: Number of documents to process before showing progress
-        log_callback: Optional callback for progress updates (level, message)
-
-    Returns:
-        Dictionary with statistics
+    Generate chunk-level embeddings from Postgres EvidenceFile rows.
     """
-    def log(level: str, message: str):
-        print(f"[{level.upper()}] {message}")
-        if log_callback:
-            log_callback(level, message)
-
-    log("info", "=" * 60)
-    log("info", "Backfilling Chunk Embeddings for Existing Documents")
-    log("info", "=" * 60)
+    _log(log_callback, "info", "=" * 60)
+    _log(log_callback, "info", "Backfilling chunk embeddings from Postgres evidence")
+    _log(log_callback, "info", "=" * 60)
 
     if embedding_service is None:
-        log("error", "Embedding service is not configured!")
-        log("error", "  Please set OPENAI_API_KEY or configure Ollama")
+        _log(log_callback, "error", "Embedding service is not configured")
         return {"status": "error", "reason": "embedding_service_not_configured"}
 
-    if dry_run:
-        log("info", "[DRY RUN MODE] - No changes will be made\n")
+    if vector_db_service is None:
+        _log(log_callback, "error", "Vector database service is not configured")
+        return {"status": "error", "reason": "vector_db_service_not_configured"}
 
-    # Query Neo4j for documents
-    log("info", "Querying Neo4j for documents...")
-    try:
-        if case_id:
-            cypher = """
-            MATCH (d:Document)
-            WHERE d.case_id = $case_id
-            RETURN d.id AS id, d.key AS key, d.name AS name,
-                   d.case_id AS case_id
-            ORDER BY d.name
-            """
-            documents = neo4j_service.run_cypher(cypher, {"case_id": case_id})
-        else:
-            cypher = """
-            MATCH (d:Document)
-            RETURN d.id AS id, d.key AS key, d.name AS name,
-                   d.case_id AS case_id
-            ORDER BY d.name
-            """
-            documents = neo4j_service.run_cypher(cypher)
+    if case_id and _coerce_uuid(case_id) is None:
+        _log(log_callback, "error", f"Invalid case_id: {case_id}")
+        return {"status": "error", "reason": "invalid_case_id"}
 
-        log("info", f"Found {len(documents)} documents in Neo4j")
-    except Exception as e:
-        log("error", f"Error querying Neo4j: {e}")
-        return {"status": "error", "reason": str(e)}
-
-    if not documents:
-        log("info", "No documents found in Neo4j")
+    files = _load_evidence_files(case_id)
+    if not files:
+        _log(log_callback, "info", "No evidence files found")
         return {"status": "complete", "stats": {"total": 0, "processed": 0}}
 
-    # Statistics
-    stats = {
-        "total": len(documents),
+    stats: dict[str, Any] = {
+        "total": len(files),
         "processed": 0,
         "skipped": 0,
         "failed": 0,
@@ -129,226 +174,158 @@ def backfill_chunk_embeddings(
         "file_not_found_names": [],
     }
 
-    log("info", f"\nProcessing {stats['total']} documents...")
-    log("info", "-" * 60)
+    if dry_run:
+        _log(log_callback, "info", "[DRY RUN MODE] - No changes will be made")
 
     start_time = time.time()
 
-    for i, doc in enumerate(documents, 1):
-        doc_id = doc.get("id")
-        doc_key = doc.get("key")
-        doc_name = doc.get("name")
-        doc_case_id = doc.get("case_id")
+    for index, file in enumerate(files, 1):
+        graph_doc = _find_graph_document(file)
+        doc_id = str(graph_doc.get("id") or file.legacy_id or file.id)
+        doc_key = str(graph_doc.get("key") or "")
+        doc_name = str(graph_doc.get("name") or file.original_filename)
+        doc_case_id = str(graph_doc.get("case_id") or file.case_id)
 
-        if not doc_id or not doc_name:
-            log("warning", f"[{i}/{stats['total']}] Skipping document with missing id/name")
-            stats["skipped"] += 1
-            continue
-
-        # Check if this document already has chunks
         if skip_existing:
             try:
-                existing_chunks = vector_db_service.chunk_collection.get(
-                    where={"doc_id": doc_id},
-                    include=[],
-                )
-                existing_count = len(existing_chunks.get("ids", [])) if existing_chunks else 0
-                if existing_count > 0:
-                    log("info", f"[{i}/{stats['total']}] {doc_name} - Already has {existing_count} chunks (skipping)")
+                existing_chunks = vector_db_service.chunk_collection.get(where={"doc_id": doc_id}, include=[])
+                if existing_chunks and existing_chunks.get("ids"):
+                    _log(
+                        log_callback,
+                        "info",
+                        f"[{index}/{stats['total']}] {doc_name} - already has chunks",
+                    )
                     stats["already_has_chunks"] += 1
                     continue
-            except Exception as e:
-                log("warning", f"Could not check existing chunks for {doc_name}: {e}")
+            except Exception as exc:
+                _log(log_callback, "warning", f"Could not check existing chunks for {doc_name}: {exc}")
 
-        log("info", f"\n[{i}/{stats['total']}] Processing: {doc_name}")
+        _log(log_callback, "info", f"[{index}/{stats['total']}] Processing {doc_name}")
 
-        # Find the original file on disk
-        file_path = find_evidence_file(doc_name)
-        if not file_path:
-            log("warning", f"  File not found on disk for: {doc_name}")
+        file_path = _resolve_path(file.stored_path)
+        if file_path is None:
+            _log(log_callback, "warning", f"File not found on disk for {doc_name}")
             stats["file_not_found"] += 1
             stats["file_not_found_names"].append(doc_name)
             continue
 
-        log("info", f"  Found file: {file_path}")
-
-        # Extract text from file
         try:
             text = extract_text_from_file(file_path)
             if not text or not text.strip():
-                log("warning", f"  Empty text extracted from {doc_name}")
-                stats["extraction_failed"] += 1
-                continue
-            log("info", f"  Extracted {len(text):,} characters")
-        except Exception as e:
-            log("error", f"  Text extraction failed for {doc_name}: {e}")
+                raise ValueError("text extraction returned no content")
+        except Exception as exc:
+            _log(log_callback, "error", f"Text extraction failed for {doc_name}: {exc}")
             stats["extraction_failed"] += 1
             continue
 
-        # Chunk the document
         try:
             chunks = chunk_document(text, doc_name)
             if not chunks:
-                log("warning", f"  No chunks produced for {doc_name}")
-                stats["extraction_failed"] += 1
-                continue
-            log("info", f"  Chunked into {len(chunks)} chunks")
-        except Exception as e:
-            log("error", f"  Chunking failed for {doc_name}: {e}")
+                raise ValueError("chunker returned no chunks")
+        except Exception as exc:
+            _log(log_callback, "error", f"Chunking failed for {doc_name}: {exc}")
             stats["extraction_failed"] += 1
             continue
 
         if dry_run:
-            log("info", f"  [DRY RUN] Would create {len(chunks)} chunk embeddings")
             stats["processed"] += 1
             stats["total_chunks_created"] += len(chunks)
+            _log(log_callback, "info", f"[DRY RUN] Would create {len(chunks)} chunks for {doc_name}")
             continue
 
-        # Embed and store each chunk
         chunks_stored = 0
-        for chunk_idx, chunk_data in enumerate(chunks):
-            chunk_text = chunk_data.get("text", "")
+        for chunk_index, chunk_data in enumerate(chunks):
+            chunk_text = str(chunk_data.get("text") or "")
             if not chunk_text.strip():
                 continue
 
-            chunk_id = f"{doc_id}_chunk_{chunk_idx}"
-
             try:
-                # Generate embedding
                 embedding = embedding_service.generate_embedding(chunk_text)
                 if not embedding:
-                    log("warning", f"  Chunk {chunk_idx}: empty embedding")
-                    continue
+                    raise ValueError("embedding service returned an empty vector")
+            except Exception as exc:
+                stats["embedding_failed"] += 1
+                _log(log_callback, "error", f"Embedding failed for {doc_name} chunk {chunk_index}: {exc}")
+                continue
 
-                # Build metadata
-                page_start = chunk_data.get("page_start")
-                page_end = chunk_data.get("page_end")
+            metadata = {
+                "doc_id": doc_id,
+                "doc_name": doc_name,
+                "doc_key": doc_key,
+                "case_id": doc_case_id,
+                "evidence_file_id": str(file.id),
+                "legacy_id": file.legacy_id or "",
+                "owner": file.owner or "",
+                "source_type": file.source_type or file_path.suffix.lower().lstrip(".") or "unknown",
+                "chunk_index": chunk_index,
+                "total_chunks": len(chunks),
+                "page_start": chunk_data.get("page_start", -1) or -1,
+                "page_end": chunk_data.get("page_end", -1) or -1,
+            }
 
-                metadata = {
-                    "doc_id": doc_id,
-                    "doc_name": doc_name,
-                    "doc_key": doc_key or "",
-                    "chunk_index": chunk_idx,
-                    "total_chunks": len(chunks),
-                    "page_start": page_start if page_start is not None else -1,
-                    "page_end": page_end if page_end is not None else -1,
-                }
-
-                if doc_case_id:
-                    metadata["case_id"] = doc_case_id
-
-                # Store in ChromaDB
+            try:
                 vector_db_service.add_chunk(
-                    chunk_id=chunk_id,
+                    chunk_id=f"{doc_id}_chunk_{chunk_index}",
                     text=chunk_text,
                     embedding=embedding,
                     metadata=metadata,
                 )
                 chunks_stored += 1
-
-            except Exception as e:
-                log("error", f"  Chunk {chunk_idx}: failed to embed/store: {e}")
+            except Exception as exc:
                 stats["embedding_failed"] += 1
+                _log(log_callback, "error", f"Failed storing {doc_name} chunk {chunk_index}: {exc}")
 
-        if chunks_stored > 0:
-            log("info", f"  Stored {chunks_stored}/{len(chunks)} chunk embeddings")
+        if chunks_stored:
+            _set_vector_db_id(doc_id)
             stats["processed"] += 1
             stats["total_chunks_created"] += chunks_stored
+            _log(log_callback, "info", f"Stored {chunks_stored}/{len(chunks)} chunks for {doc_name}")
         else:
-            log("error", f"  Failed to store any chunks for {doc_name}")
             stats["failed"] += 1
+            _log(log_callback, "error", f"No chunks stored for {doc_name}")
 
-        # Progress update
-        if i % batch_size == 0:
-            elapsed = time.time() - start_time
-            rate = i / elapsed if elapsed > 0 else 0
-            remaining = stats["total"] - i
+        if index % batch_size == 0:
+            elapsed = max(time.time() - start_time, 0.001)
+            rate = index / elapsed
+            remaining = stats["total"] - index
             eta = remaining / rate if rate > 0 else 0
-            log("info", f"\n  Progress: {i}/{stats['total']} ({i/stats['total']*100:.1f}%)")
-            log("info", f"  Rate: {rate:.1f} docs/sec, ETA: {eta:.0f} seconds")
+            _log(
+                log_callback,
+                "info",
+                f"Progress: {index}/{stats['total']} ({index / stats['total'] * 100:.1f}%), ETA {eta:.0f}s",
+            )
 
-    # Final summary
     elapsed = time.time() - start_time
-    log("info", "\n" + "=" * 60)
-    log("info", "Chunk Backfill Complete")
-    log("info", "=" * 60)
-    log("info", f"Total documents:       {stats['total']}")
-    log("info", f"Processed:             {stats['processed']}")
-    log("info", f"Already had chunks:    {stats['already_has_chunks']}")
-    log("info", f"Skipped:               {stats['skipped']}")
-    log("info", f"File not found:        {stats['file_not_found']}")
-    log("info", f"Extraction failed:     {stats['extraction_failed']}")
-    log("info", f"Embedding failed:      {stats['embedding_failed']}")
-    log("info", f"Failed:                {stats['failed']}")
-    log("info", f"Total chunks created:  {stats['total_chunks_created']}")
-    log("info", f"\nTime elapsed: {elapsed:.1f} seconds")
-    if stats['processed'] > 0:
-        log("info", f"Average time per document: {elapsed/stats['processed']:.2f} seconds")
+    _log(log_callback, "info", "=" * 60)
+    _log(
+        log_callback,
+        "info",
+        f"Chunk backfill complete: {stats['processed']} processed, "
+        f"{stats['already_has_chunks']} already had chunks, {stats['failed']} failed",
+    )
 
-    if stats["file_not_found_names"]:
-        log("info", f"\nFiles not found ({len(stats['file_not_found_names'])}):")
-        for name in stats["file_not_found_names"][:20]:
-            log("info", f"  - {name}")
-        if len(stats["file_not_found_names"]) > 20:
-            log("info", f"  ... and {len(stats['file_not_found_names']) - 20} more")
-
-    return {
-        "status": "complete",
-        "stats": stats,
-        "elapsed_seconds": elapsed,
-    }
+    return {"status": "complete", "stats": stats, "elapsed_seconds": elapsed}
 
 
-def main():
-    """Main entry point."""
+def main() -> None:
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Backfill chunk embeddings for existing documents"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Run without making changes (dry run mode)"
-    )
-    parser.add_argument(
-        "--skip-existing",
-        action="store_true",
-        default=True,
-        help="Skip documents that already have chunk embeddings (default: True)"
-    )
-    parser.add_argument(
-        "--no-skip-existing",
-        action="store_false",
-        dest="skip_existing",
-        help="Re-process documents that already have chunk embeddings"
-    )
-    parser.add_argument(
-        "--case-id",
-        type=str,
-        default=None,
-        help="Only process documents for this case_id"
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=10,
-        help="Number of documents to process before showing progress (default: 10)"
-    )
+    parser = argparse.ArgumentParser(description="Backfill chunk embeddings from Postgres evidence")
+    parser.add_argument("--dry-run", action="store_true", help="Run without making changes")
+    parser.add_argument("--skip-existing", action="store_true", default=True)
+    parser.add_argument("--no-skip-existing", action="store_false", dest="skip_existing")
+    parser.add_argument("--case-id", type=str, default=None, help="Only process this case UUID")
+    parser.add_argument("--batch-size", type=int, default=10)
 
     args = parser.parse_args()
-
     result = backfill_chunk_embeddings(
         dry_run=args.dry_run,
         skip_existing=args.skip_existing,
         case_id=args.case_id,
         batch_size=args.batch_size,
     )
-
     if result.get("status") == "error":
         sys.exit(1)
-
-    sys.exit(0)
 
 
 if __name__ == "__main__":

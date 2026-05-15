@@ -24,7 +24,7 @@ from utils.prompt_trace import log_section
 
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
-config = get_chat_config()
+config = get_chat_config(allow_postgres=False)
 system_context = config.get("system_context", "You are an AI assistant.")
 analysis_guidance = config.get("analysis_guidance", "Provide clear and helpful answers.")
 
@@ -33,6 +33,9 @@ class LLMExecutionContext:
     def __init__(self, provider: str, model_id: str):
         self.provider = provider
         self.model_id = model_id
+        runtime_config = get_chat_config()
+        self.system_context = runtime_config.get("system_context", system_context)
+        self.analysis_guidance = runtime_config.get("analysis_guidance", analysis_guidance)
         self.last_prompt: str | None = None
         self.last_raw_response: str | None = None
         self.last_usage: dict[str, Any] | None = None
@@ -69,7 +72,7 @@ class LLMExecutionContext:
         payload: Dict[str, Any] = {
             "model": self.model_id,
             "messages": [
-                {"role": "system", "content": system_context},
+                {"role": "system", "content": self.system_context},
                 {"role": "user", "content": prompt},
             ],
             "stream": False,
@@ -119,7 +122,7 @@ class LLMExecutionContext:
         kwargs: Dict[str, Any] = {
             "model": self.model_id,
             "messages": [
-                {"role": "system", "content": system_context},
+                {"role": "system", "content": self.system_context},
                 {"role": "user", "content": prompt},
             ],
             "timeout": timeout,
@@ -191,7 +194,7 @@ Return ONLY valid JSON:
             return "hybrid"
 
     def generate_cypher(self, question: str, schema_info: str) -> Optional[str]:
-        prompt = f"""{system_context}. You are also a Neo4j Cypher expert.
+        prompt = f"""{self.system_context}. You are also a Neo4j Cypher expert.
 Given the following graph schema and AVAILABLE ENTITIES:
 {schema_info}
 
@@ -249,7 +252,7 @@ Return ONLY valid JSON with this structure:
                     + "\n"
                 )
 
-        prompt = f"""{system_context}
+        prompt = f"""{self.system_context}
 
 You have access to the following investigation context:
 
@@ -259,7 +262,7 @@ Based on this investigation context, please answer the question:
 "{question}"
 
 Guidelines:
-- {analysis_guidance}
+- {self.analysis_guidance}
 - Format your response using markdown (use **bold** for emphasis, bullet points with -)
 - Do NOT use tables - use bullet points or numbered lists instead for structured data
 - CITE SOURCES: When referencing specific facts, create a clickable markdown link using the format [document name, p.N](doc://document_filename.pdf/N) where N is the page number. For example: [Financial Report, p.3](doc://Financial_Report.pdf/3). Use the exact filename from the passage headers above (e.g., "USA-ET-000021.pdf"). If no page number is available, use page 1.

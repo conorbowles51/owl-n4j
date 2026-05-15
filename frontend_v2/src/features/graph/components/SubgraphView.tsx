@@ -15,7 +15,7 @@ interface SubgraphViewProps {
 }
 
 export function SubgraphView({ graphData }: SubgraphViewProps) {
-  const sgRef = useRef<ForceGraphMethods>()
+  const sgRef = useRef<ForceGraphMethods | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 300, height: 300 })
   const [analysisCollapsed, setAnalysisCollapsed] = useState(true)
@@ -68,9 +68,9 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
   )
 
   const handleNodeClick = useCallback(
-    (node: { key?: string }) => {
+    (node: NodeObject) => {
       if (node?.key) {
-        selectNodes([node.key])
+        selectNodes([String(node.key)])
       }
     },
     [selectNodes]
