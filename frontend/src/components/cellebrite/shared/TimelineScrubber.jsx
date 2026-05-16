@@ -77,8 +77,20 @@ export default function TimelineScrubber({
   const safeMaxTs = hasRange ? maxTs : 1;
 
   // Effective window — defaults to full range when null.
-  const effectiveStart = windowStart instanceof Date ? windowStart.getTime() : safeMinTs;
-  const effectiveEnd = windowEnd instanceof Date ? windowEnd.getTime() : safeMaxTs;
+  const propStart = windowStart instanceof Date ? windowStart.getTime() : safeMinTs;
+  const propEnd = windowEnd instanceof Date ? windowEnd.getTime() : safeMaxTs;
+
+  // Drag preview — while the user is mid-drag we render handles against
+  // this local state instead of firing onWindowChange on every pointer
+  // move. The parent's window prop (and the downstream API fetches) only
+  // update once on pointerup. Without this, each pointermove event
+  // (dozens/sec) re-triggered the comms/threads + comms/envelope
+  // useEffects, saturating Chrome's 6-per-origin connection cap and
+  // stalling new requests at the TCP layer.
+  const [dragPreview, setDragPreview] = useState(null); // {start, end} ms or null
+
+  const effectiveStart = dragPreview ? dragPreview.start : propStart;
+  const effectiveEnd = dragPreview ? dragPreview.end : propEnd;
   const isFullWindow = effectiveStart <= safeMinTs && effectiveEnd >= safeMaxTs;
 
   // ------------------------------------------------------------------
@@ -136,25 +148,35 @@ export default function TimelineScrubber({
       if (which === 'start') {
         const ts = xToTs(px);
         const clamped = Math.min(ts, effectiveEnd - bucketSizeMs);
-        onWindowChange?.(new Date(Math.max(safeMinTs, clamped)), new Date(effectiveEnd));
+        setDragPreview({ start: Math.max(safeMinTs, clamped), end: effectiveEnd });
       } else if (which === 'end') {
         const ts = xToTs(px);
         const clamped = Math.max(ts, effectiveStart + bucketSizeMs);
-        onWindowChange?.(new Date(effectiveStart), new Date(Math.min(safeMaxTs, clamped)));
+        setDragPreview({ start: effectiveStart, end: Math.min(safeMaxTs, clamped) });
       } else if (which === 'window') {
         const newStartPx = Math.max(0, px - dragOffsetRef.current);
         const windowPx = endX - startX;
         const newEndPx = Math.min(rect.width, newStartPx + windowPx);
         const newStartTs = xToTs(newEndPx - windowPx);
         const newEndTs = xToTs(newEndPx);
-        onWindowChange?.(new Date(newStartTs), new Date(newEndTs));
+        setDragPreview({ start: newStartTs, end: newEndTs });
       }
     },
-    [bucketSizeMs, effectiveEnd, effectiveStart, endX, safeMaxTs, safeMinTs, onWindowChange, startX, xToTs],
+    [bucketSizeMs, effectiveEnd, effectiveStart, endX, safeMaxTs, safeMinTs, startX, xToTs],
   );
   const onPointerUp = useCallback(() => {
+    if (!dragRef.current) return;
     dragRef.current = null;
-  }, []);
+    // Commit the previewed window to the parent — single onWindowChange
+    // per drag gesture, instead of one per pointermove event. The
+    // functional setState lets us read the latest preview without
+    // adding it as a dependency (which would re-bind window listeners
+    // on every drag frame).
+    setDragPreview((prev) => {
+      if (prev) onWindowChange?.(new Date(prev.start), new Date(prev.end));
+      return null;
+    });
+  }, [onWindowChange]);
   useEffect(() => {
     if (!hasRange) return;
     window.addEventListener('pointermove', onPointerMove);

@@ -341,6 +341,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   useEffect(() => {
     if (!caseId) return;
     if (!reportsReady) return;
+    const controller = new AbortController();
     let cancelled = false;
     setThreadsLoading(true);
     setThreadsProgress(0);
@@ -357,6 +358,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       startDate: startDate || null,
       endDate: endDate || null,
       limit: 300,
+      signal: controller.signal,
     };
 
     // Friendly labels for the active set, in stable order.
@@ -386,7 +388,11 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           if (cancelled) return;
           aggregated.push(...(data.threads || []));
           totalSum += Number(data.total || 0);
-        } catch {
+        } catch (err) {
+          // Caller-initiated abort = this effect was superseded; the new
+          // run owns state from here on, so don't fall through to the
+          // setThreads/setThreadsLoading writes below.
+          if (err?.name === 'AbortError' || cancelled) return;
           // One stage failing shouldn't blank the whole tab — just
           // skip its rows and keep going.
         }
@@ -407,7 +413,10 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       setThreadsStage('');
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady]);
 
   // Envelope fetch — runs in parallel with the threads load so the
@@ -421,6 +430,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   useEffect(() => {
     if (!caseId) return;
     if (!reportsReady) return;
+    const controller = new AbortController();
     let cancelled = false;
     setEnvelopeLoading(true);
     cellebriteCommsAPI.getEnvelope(caseId, {
@@ -431,17 +441,21 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
       endDate: endDate || null,
+      signal: controller.signal,
     }).then(env => {
       if (cancelled) return;
       setEnvelope(env || null);
       setEnvelopeLoading(false);
-    }).catch(() => {
-      if (cancelled) return;
+    }).catch((err) => {
+      if (cancelled || err?.name === 'AbortError') return;
       // Don't blank an existing envelope on transient errors — the bar
       // would briefly collapse to "no data" and confuse the user.
       setEnvelopeLoading(false);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
   }, [caseId, selectedReportKeys, fromKeys, toKeys, activeTypes, activeApps, startDate, endDate, reportsReady]);
 
   // Cellebrite sometimes ingests the same logical conversation twice

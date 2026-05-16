@@ -48,15 +48,32 @@ async function fetchAPI(endpoint, options = {}) {
   const timeout = options.timeout || (endpoint.includes('/auth/login') ? 10000 : endpoint.includes('/auth/me') ? 30000 : 300000);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
+
+  // If the caller passed their own AbortSignal (e.g. a useEffect cleanup
+  // aborts superseded requests), link it to our internal controller so
+  // the fetch is actually cancelled at the network layer. Without this
+  // the caller's signal would be silently dropped by the spread below.
+  const callerSignal = options.signal;
+  let onCallerAbort = null;
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      clearTimeout(timeoutId);
+      const ae = new DOMException('Aborted', 'AbortError');
+      throw ae;
+    }
+    onCallerAbort = () => controller.abort();
+    callerSignal.addEventListener('abort', onCallerAbort);
+  }
+
   try {
     const response = await fetch(url, {
       ...config,
       signal: controller.signal,
     });
-    
+
     clearTimeout(timeoutId);
-    
+    if (callerSignal && onCallerAbort) callerSignal.removeEventListener('abort', onCallerAbort);
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
       // Handle FastAPI validation errors (422) - they have a specific format
@@ -95,6 +112,14 @@ async function fetchAPI(endpoint, options = {}) {
     return response.json();
   } catch (err) {
     clearTimeout(timeoutId);
+    if (callerSignal && onCallerAbort) callerSignal.removeEventListener('abort', onCallerAbort);
+    // Caller-initiated abort — propagate as a real AbortError so call
+    // sites can distinguish a "we cancelled this on purpose" from a
+    // genuine network/timeout failure (and skip user-facing error toasts).
+    if (callerSignal?.aborted) {
+      const ae = new DOMException('Aborted', 'AbortError');
+      throw ae;
+    }
     if (err.name === 'AbortError') {
       throw new Error(`Request timed out after ${timeout}ms. Please check that the backend server is running on port 8000 and try again.`);
     }
@@ -2693,6 +2718,7 @@ export const cellebriteCommsAPI = {
     search = null,
     limit = 200,
     offset = 0,
+    signal = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
@@ -2705,7 +2731,7 @@ export const cellebriteCommsAPI = {
     if (search) params.append('search', search);
     params.append('limit', String(limit));
     params.append('offset', String(offset));
-    return fetchAPI(`/cellebrite/comms/threads?${params.toString()}`);
+    return fetchAPI(`/cellebrite/comms/threads?${params.toString()}`, signal ? { signal } : undefined);
   },
 
   /**
@@ -2789,6 +2815,7 @@ export const cellebriteCommsAPI = {
     sourceApps = null,
     startDate = null,
     endDate = null,
+    signal = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
@@ -2798,7 +2825,7 @@ export const cellebriteCommsAPI = {
     if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
-    return fetchAPI(`/cellebrite/comms/envelope?${params.toString()}`);
+    return fetchAPI(`/cellebrite/comms/envelope?${params.toString()}`, signal ? { signal } : undefined);
   },
 
   searchMessages: (caseId, { q, reportKeys = null, limit = 200 } = {}) => {
