@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronDown, BarChart3, Smartphone } from 'lucide-react';
+import { ChevronDown, BarChart3, Smartphone, X, Calendar } from 'lucide-react';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import TimelineScrubber from '../shared/TimelineScrubber';
 import CommsTypeFilter from './CommsTypeFilter';
@@ -137,6 +137,42 @@ export default function CommsCompactToolbar({
             a popover; users use these constantly) */}
         <CommsTypeFilter active={activeTypes} onChange={onTypesChange} />
 
+        {/* Applied-date chips — render BEFORE the scrubber handle so
+            they're the closest thing to it visually. Once you set a
+            date window the scrubber's envelope-driven bounds collapse
+            to that window (envelope refetches with the date filter
+            applied), so the handle can't drag back outside it. These
+            chips are the escape hatch — click × on either to drop
+            that side, or "Clear" to remove both. */}
+        {windowActive && (
+          <div className="inline-flex items-center gap-1">
+            {windowStart && (
+              <DateChip
+                label="From"
+                date={windowStart}
+                onClear={() => onWindowChange(null, windowEnd)}
+                title="Remove start-date filter"
+              />
+            )}
+            {windowEnd && (
+              <DateChip
+                label="Until"
+                date={windowEnd}
+                onClear={() => onWindowChange(windowStart, null)}
+                title="Remove end-date filter"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => onWindowChange(null, null)}
+              className="text-[10px] text-light-500 hover:text-red-700 px-1"
+              title="Clear both date bounds"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Scrubber handle */}
         <button
           type="button"
@@ -177,5 +213,43 @@ export default function CommsCompactToolbar({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Tiny applied-date chip. "From: Jun 12, 2024 ×" / "Until: Aug 3, 2024 ×".
+ * The × clears just that side; "Clear" in the parent clears both.
+ *
+ * Compact local date format (no time component) — the user picks date
+ * boundaries, not timestamps, so the chip stays terse.
+ */
+function DateChip({ label, date, onClear, title }) {
+  const display = date instanceof Date && !Number.isNaN(date.getTime())
+    ? date.toLocaleDateString(undefined, {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+      })
+    : '—';
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-cyan-300 bg-cyan-50 text-cyan-900 text-[11px]"
+      title={title}
+    >
+      <Calendar className="w-3 h-3 opacity-70" />
+      <span className="text-[9px] uppercase tracking-wide opacity-70">
+        {label}
+      </span>
+      <span className="font-medium tabular-nums">{display}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        className="flex-shrink-0 ml-0.5 p-0.5 rounded hover:opacity-70"
+        title={title}
+        aria-label={title}
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </span>
   );
 }
