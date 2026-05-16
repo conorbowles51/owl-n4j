@@ -224,8 +224,16 @@ export default function CommsThreadView({
     : undefined;
 
   return (
+    // h-full (not flex-1) — the parent ResizableSplit pane wrapper is
+    // `flex-1 min-h-0 overflow-hidden` and NOT a flex container, so
+    // flex-1 on this child does nothing. h-full inherits the pane's
+    // height (which itself comes from align-items:stretch in the
+    // flex-row ResizableSplit container) so the inner flex column
+    // gets a bounded height — the body's overflow-y-auto then
+    // engages and the chat scrolls. Without this fix the body sized
+    // to its own content, leaving long threads non-scrollable.
     <div
-      className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-light-50 to-light-100"
+      className="h-full flex flex-col min-h-0 bg-gradient-to-b from-light-50 to-light-100"
       style={stripeStyle}
     >
       {/* Header */}
