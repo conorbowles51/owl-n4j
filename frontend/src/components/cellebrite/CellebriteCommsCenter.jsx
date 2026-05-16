@@ -51,48 +51,58 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // only. Effect: a single 'any' chip = "every comm involving this
   // person" without forcing the user to pick a direction.
   const [participants, setParticipants] = useState([]);
+
+  // Participants picker mode. 'split' = legacy From/To AND semantics
+  // (matches the old behaviour exactly). 'any' = direction-agnostic
+  // involvement: every participant goes into a single OR bucket
+  // (`participant_keys`), so "Filter Comms by this contact" returns
+  // every comm involving them rather than only self-msgs.
+  // Per-case localStorage so the user's choice persists across visits.
+  const participantsModeKey = `cb.comms.participantsMode.${caseId || 'unknown'}`;
+  const [participantsMode, setParticipantsMode] = useState(() => {
+    if (typeof window === 'undefined') return 'split';
+    try {
+      const stored = window.localStorage.getItem(participantsModeKey);
+      return stored === 'any' ? 'any' : 'split';
+    } catch { return 'split'; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(participantsModeKey, participantsMode); }
+    catch { /* ignore */ }
+  }, [participantsMode, participantsModeKey]);
+
+  // Split mode: derive From / To Sets the legacy way. In Any mode we
+  // do NOT populate these — instead we hand the union to the backend
+  // via `participant_keys` (OR/involvement). This is the structural fix
+  // for the "Filter Comms by one contact returns nothing" bug, which
+  // was caused by Split-mode AND semantics requiring sender == recipient
+  // when both From and To were seeded with the same key.
   const fromKeys = useMemo(() => {
+    if (participantsMode === 'any') return new Set();
     const out = new Set();
     for (const p of participants) {
       if (p.role === 'from' || p.role === 'any') out.add(p.key);
     }
     return out;
-  }, [participants]);
+  }, [participants, participantsMode]);
   const toKeys = useMemo(() => {
+    if (participantsMode === 'any') return new Set();
     const out = new Set();
     for (const p of participants) {
       if (p.role === 'to' || p.role === 'any') out.add(p.key);
     }
     return out;
-  }, [participants]);
-  // Tiny shims so the cross-tab "Filter Comms" intent listener (which
-  // expects setFromKeys / setToKeys callable) keeps working without
-  // change — when a Filter Comms click slams in a list of person_keys
-  // we round-trip them through the new participants model as 'any'.
-  const setFromKeys = useCallback((nextSet) => {
-    const keys = nextSet instanceof Set ? [...nextSet] : (nextSet || []);
-    setParticipants((prev) => {
-      // For each key, ensure a participant exists; flip its role to
-      // 'any' so it's effective in both directions (matches the
-      // pre-K1 behaviour where seeding both From and To = panoramic).
-      const byKey = new Map(prev.map(p => [p.key, p]));
-      for (const k of keys) {
-        const existing = byKey.get(k);
-        if (existing) {
-          byKey.set(k, { ...existing, role: 'any' });
-        } else {
-          byKey.set(k, { key: k, name: k, role: 'any' });
-        }
-      }
-      return [...byKey.values()];
-    });
-  }, []);
-  const setToKeys = useCallback((nextSet) => {
-    // Same effect — every Filter Comms intent winds up with 'any'
-    // chips. Kept as a separate function so the existing call sites
-    // don't have to change.
-    setFromKeys(nextSet);
-  }, [setFromKeys]);
+  }, [participants, participantsMode]);
+  // Any mode: union of every selected participant key — backend OR
+  // semantics. Empty Set in Split mode so the API client omits the
+  // param entirely.
+  const participantKeys = useMemo(() => {
+    if (participantsMode !== 'any') return new Set();
+    const out = new Set();
+    for (const p of participants) out.add(p.key);
+    return out;
+  }, [participants, participantsMode]);
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
   const [activeApps, setActiveApps] = useState(new Set()); // empty = all apps
   // Scrubber-driven coarse window (Date | null). Maps to startDate/endDate
@@ -210,9 +220,26 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     lastFilterIntentRef.current = selection.id;
     const personKeys = selection.payload?.person_keys || [];
     if (personKeys.length === 0) return;
-    const ks = new Set(personKeys);
-    setFromKeys(ks);
-    setToKeys(new Set(ks));
+    // Force Any-direction mode whenever a Filter Comms intent fires.
+    // The intent's natural meaning is "show me every comm involving
+    // these people" — Split mode (AND semantics) silently returned
+    // nothing when the same key was seeded in both From and To, which
+    // was the root cause of the empty-feed regression on contact
+    // filters. Any mode routes the keys through `participant_keys`
+    // (OR semantics) so the result matches user expectation.
+    setParticipantsMode('any');
+    setParticipants((prev) => {
+      const byKey = new Map(prev.map(p => [p.key, p]));
+      for (const k of personKeys) {
+        const existing = byKey.get(k);
+        if (existing) {
+          byKey.set(k, { ...existing, role: 'any' });
+        } else {
+          byKey.set(k, { key: k, name: k, role: 'any' });
+        }
+      }
+      return [...byKey.values()];
+    });
   }, [selection]);
 
   const handleItemSelect = useCallback((item) => {
@@ -354,6 +381,11 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       reportKeys: reportKeysArr,
       fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
       toKeys: toKeys.size > 0 ? [...toKeys] : null,
+      // In Any mode `participantKeys` is populated and from/to are
+      // empty Sets. Backend OR-combines participant_keys with from/to
+      // when both are present; in our case only one channel is ever
+      // active at a time per the participantsMode toggle.
+      participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
       endDate: endDate || null,
@@ -417,7 +449,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady]);
 
   // Envelope fetch — runs in parallel with the threads load so the
   // scrubber bounds + density bars + status bar's true total can paint
@@ -437,6 +469,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       reportKeys: selectedReportKeys.size > 0 ? [...selectedReportKeys] : null,
       fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
       toKeys: toKeys.size > 0 ? [...toKeys] : null,
+      participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
       types: activeTypes.size > 0 ? [...activeTypes] : null,
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
@@ -456,7 +489,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, activeTypes, activeApps, startDate, endDate, reportsReady]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady]);
 
   // Cellebrite sometimes ingests the same logical conversation twice
   // — e.g. once as a Chat node and once as a Conversation node, or once
@@ -673,6 +706,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       caseId={caseId}
       fromKeys={fromKeys}
       toKeys={toKeys}
+      participantKeys={participantKeys}
       reportKeys={selectedReportKeys}
       types={activeTypes}
       sourceApps={activeApps}
@@ -754,6 +788,8 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         entities={entities}
         participants={participants}
         onParticipantsChange={setParticipants}
+        mode={participantsMode}
+        onModeChange={setParticipantsMode}
       />
 
       {/* Phase K2: Compact toolbar combining search + type pills +
@@ -882,7 +918,7 @@ function ModeToggleButton({
  * off in the mode bar.
  */
 function CrossTypeTimelineFlyover({
-  caseId, fromKeys, toKeys, reportKeys, types, sourceApps,
+  caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps,
   startDate, endDate, onItemSelect, onClose,
 }) {
   // Esc to dismiss.
@@ -1006,6 +1042,7 @@ function CrossTypeTimelineFlyover({
           caseId={caseId}
           fromKeys={fromKeys}
           toKeys={toKeys}
+          participantKeys={participantKeys}
           reportKeys={reportKeys}
           types={types}
           sourceApps={sourceApps}

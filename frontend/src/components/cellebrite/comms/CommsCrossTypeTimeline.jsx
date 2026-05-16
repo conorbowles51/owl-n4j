@@ -19,6 +19,11 @@ export default function CommsCrossTypeTimeline({
   caseId,
   fromKeys,
   toKeys,
+  // Direction-agnostic involvement filter. When non-empty, takes
+  // priority over from/to (which the parent leaves empty in Any
+  // mode). Routes through the backend's `participant_keys` OR
+  // semantics — see CellebriteCommsCenter for context.
+  participantKeys = new Set(),
   reportKeys,
   types,
   sourceApps,
@@ -47,7 +52,8 @@ export default function CommsCrossTypeTimeline({
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportH, setViewportH] = useState(0);
 
-  const hasEntitySelection = fromKeys.size > 0 || toKeys.size > 0;
+  const hasEntitySelection =
+    fromKeys.size > 0 || toKeys.size > 0 || participantKeys.size > 0;
 
   // Show per-row phone chip only when the case has more than one phone
   // — chip would just add noise on a single-phone case.
@@ -67,6 +73,7 @@ export default function CommsCrossTypeTimeline({
     cellebriteCommsAPI.getBetween(caseId, {
       fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
       toKeys: toKeys.size > 0 ? [...toKeys] : null,
+      participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
       types: [...types],
       reportKeys: reportKeys.size > 0 ? [...reportKeys] : null,
       sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
@@ -88,7 +95,7 @@ export default function CommsCrossTypeTimeline({
       }
     });
     return () => { cancelled = true; };
-  }, [caseId, fromKeys, toKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode]);
+  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode]);
 
   // Apply sort=type client-side (the backend doesn't bucket by type).
   // For asc/desc the backend already returns the correct order.

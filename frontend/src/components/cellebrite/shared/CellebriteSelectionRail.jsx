@@ -56,13 +56,16 @@ export default function CellebriteSelectionRail({ caseId }) {
 
   return (
     <>
-      {/* Dim backdrop — click anywhere outside the panel dismisses.
-          Translucent so the user keeps visual context of what's
-          underneath; full opacity would feel modal which the rail is
-          intentionally not. */}
+      {/* Dim backdrop — purely visual.
+          `pointer-events-none` so the user can still scroll / click
+          through to the page underneath while the flyout is open.
+          The original click-outside-to-dismiss caused two real
+          regressions: (1) a chat thread couldn't be scrolled while a
+          message was selected because the backdrop ate the wheel
+          events; (2) any click on the page was a surprise dismiss.
+          Esc + the X button cover the dismiss case. */}
       <div
-        className="fixed inset-0 bg-black/10 z-30"
-        onClick={clearSelection}
+        className="fixed inset-0 bg-black/10 z-30 pointer-events-none"
         aria-hidden="true"
       />
 
