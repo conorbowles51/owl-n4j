@@ -91,6 +91,36 @@ else
 fi
 
 # ============================================================
+# Step 1b: Normalize ownership
+# ============================================================
+# Root-context tool runs (e.g. Claude Code as root) can leave files in the
+# repo owned by root, which then breaks `git stash` as ${DEPLOY_USER} below.
+# Re-chown anything misowned. Two exclusions:
+#   - postgres/data: bind-mounted into owl-pg; postgres there runs as UID 999
+#     and needs to keep ownership of its own data files.
+#   - heavy install dirs (node_modules, venv): skipped for speed.
+step "Normalizing repo ownership"
+
+if [ "$(id -u)" -eq 0 ]; then
+    PG_DATA="${PROJECT_DIR}/postgres/data"
+    find "$PROJECT_DIR" \
+        -path "$PG_DATA" -prune -o \
+        -path "${PROJECT_DIR}/node_modules" -prune -o \
+        -path "${PROJECT_DIR}/frontend/node_modules" -prune -o \
+        -path "${PROJECT_DIR}/venv" -prune -o \
+        -path "${PROJECT_DIR}/.venv" -prune -o \
+        -path "${LOG_DIR}" -prune -o \
+        ! -user "${DEPLOY_USER}" \
+        -exec chown -h "${DEPLOY_USER}:${DEPLOY_USER}" {} + 2>/dev/null || true
+    if [ -d "$PG_DATA" ] && [ "$(stat -c '%u' "$PG_DATA")" != "999" ]; then
+        chown -R 999:999 "$PG_DATA"
+    fi
+    success "Ownership normalized"
+else
+    warn "Not running as root - skipping ownership normalization"
+fi
+
+# ============================================================
 # Step 2: Record current state for rollback
 # ============================================================
 step "Recording current state"
