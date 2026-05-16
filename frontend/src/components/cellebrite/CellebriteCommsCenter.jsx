@@ -717,6 +717,18 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     />
   ) : null;
 
+  // When the selection rail is open it covers the rightmost 480px
+  // of the viewport. On smaller screens that lands on top of the
+  // chat pane, eating both wheel events and clicks for any content
+  // that sits beneath it. Apply matching right padding to the
+  // thread-split wrapper so the chat is guaranteed an uncovered
+  // surface even with the rail visible. min(480px, 90vw) mirrors
+  // the rail panel's `w-[480px] max-w-[90vw]`.
+  const railOpen = !!selection;
+  const layoutShiftStyle = railOpen
+    ? { paddingRight: 'min(480px, 90vw)' }
+    : undefined;
+
   // ---------------- Read mode: max-feed layout ----------------
   // No filter chrome, no bottom timeline, no scrubber. Just the
   // thread split filling the screen + a thin search bar + the mode
@@ -745,7 +757,10 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
             Filter chrome hidden — switch to Browse to refine
           </span>
         </div>
-        <div className="flex-1 min-h-0">
+        <div
+          className="flex-1 min-h-0 transition-[padding] duration-150"
+          style={layoutShiftStyle}
+        >
           {threadSplit}
         </div>
         {timelineFlyover}
@@ -824,7 +839,10 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           panel. Mounted at the root so it overlays without eating
           layout cost when off. Toggle from the Timeline button in
           the mode bar. */}
-      <div className="flex-1 min-h-0">
+      <div
+        className="flex-1 min-h-0 transition-[padding] duration-150"
+        style={layoutShiftStyle}
+      >
         {threadSplit}
       </div>
       {timelineFlyover}

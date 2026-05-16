@@ -56,18 +56,12 @@ export default function CellebriteSelectionRail({ caseId }) {
 
   return (
     <>
-      {/* Dim backdrop — purely visual.
-          `pointer-events-none` so the user can still scroll / click
-          through to the page underneath while the flyout is open.
-          The original click-outside-to-dismiss caused two real
-          regressions: (1) a chat thread couldn't be scrolled while a
-          message was selected because the backdrop ate the wheel
-          events; (2) any click on the page was a surprise dismiss.
-          Esc + the X button cover the dismiss case. */}
-      <div
-        className="fixed inset-0 bg-black/10 z-30 pointer-events-none"
-        aria-hidden="true"
-      />
+      {/* No backdrop. The previous dim overlay sat above the page
+          and — even with pointer-events-none — visually obscured the
+          underlying content. Callers that need the rail to coexist
+          with a still-usable main view (e.g. Comms Center) shift
+          their own layout to make room for the panel; nothing else
+          needs dimming. */}
 
       {/* Slide-in panel */}
       <aside
