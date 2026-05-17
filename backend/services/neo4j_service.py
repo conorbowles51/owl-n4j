@@ -8381,7 +8381,66 @@ class Neo4jService:
                     "confidence_score": n.get("confidence_score"),
                     "device_report_key": n.get("cellebrite_report_key"),
                 })
-        return {"items": items, "total": len(items)}
+
+        # Per-phone × source-app breakdown — answers the user's
+        # "which phones are responsible for which apps making location
+        # hits" question without a second round trip. Computed in Python
+        # over the (already small) `items` list. If the caller is
+        # rendering the rail and the slice was capped at `limit`, the
+        # breakdown reflects ONLY the visible window — we surface
+        # `truncated=true` so the UI can warn the user.
+        from collections import defaultdict
+        by_phone: Dict[str, dict] = {}
+        for it in items:
+            rk = it.get("device_report_key") or "_unknown"
+            entry = by_phone.get(rk)
+            if entry is None:
+                entry = {
+                    "device_report_key": rk if rk != "_unknown" else None,
+                    "count": 0,
+                    "first_seen": None,
+                    "last_seen": None,
+                    "apps": defaultdict(int),
+                }
+                by_phone[rk] = entry
+            entry["count"] += 1
+            ts = it.get("timestamp")
+            if ts:
+                if entry["first_seen"] is None or ts < entry["first_seen"]:
+                    entry["first_seen"] = ts
+                if entry["last_seen"] is None or ts > entry["last_seen"]:
+                    entry["last_seen"] = ts
+            app = it.get("source_app")
+            if app:
+                entry["apps"][app] += 1
+
+        per_phone = []
+        for entry in by_phone.values():
+            apps_sorted = sorted(
+                entry["apps"].items(), key=lambda kv: (-kv[1], kv[0])
+            )
+            per_phone.append({
+                "device_report_key": entry["device_report_key"],
+                "count": entry["count"],
+                "first_seen": entry["first_seen"],
+                "last_seen": entry["last_seen"],
+                # [{app, count}] — frontend renders top-N as small chips.
+                "apps": [{"app": a, "count": c} for a, c in apps_sorted],
+            })
+        # Heaviest contributor first so the rail shows the dominant
+        # phone at the top.
+        per_phone.sort(key=lambda p: (-p["count"], p["device_report_key"] or ""))
+
+        return {
+            "items": items,
+            "total": len(items),
+            "per_phone": per_phone,
+            # `truncated` lets the UI tell the user "this tile had
+            # more rows than we fetched — counts below are based on
+            # the visible window only". The caller can re-request
+            # with a higher limit to drill in further.
+            "truncated": len(items) >= int(limit),
+        }
 
     def get_cellebrite_location_visitors(
         self,

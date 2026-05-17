@@ -1,23 +1,35 @@
-import React from 'react';
-import { MapPin } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { MapPin, Layers } from 'lucide-react';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { formatTs } from '../events/eventUtils';
 
 /**
- * Compact table of locations rendered under the map. Single click
- * publishes selection to the universal rail (same handler the map
- * uses). Stays slim — the rail and the map together cover the
- * detail/visualisation needs, this just gives investigators a
- * scrollable list keyed by time/source app.
+ * Compact table of locations rendered under the map.
  *
- * Virtualisation is intentionally not used here yet — the parent
- * caps the load at 5000 rows and renders the table inside a fixed
- * 256px container, so the DOM cost is bounded by the visible area.
- * If a Locations tab usage exceeds this, swap the body for a
- * windowed list later.
+ * Three view modes via the `viewMode` prop:
+ *
+ *   - 'rows'   — one row per Location node (default; raw mode source
+ *                of truth)
+ *   - 'tiles'  — one row per aggregated tile (used when the map is
+ *                in tiles mode; surfaces tile-level fields like top
+ *                apps + count instead of leaving Source-app blank)
+ *   - 'byPhoneDay' — one row per (phone × day × source app),
+ *                aggregated client-side from the raw rows. Answers
+ *                "what was actually happening here, when, who was
+ *                involved" without making investigators read 5000
+ *                individual GPS pings.
+ *
+ * Click any row → publishes selection to the universal rail. For
+ * aggregated modes (tiles / byPhoneDay) the click opens the most
+ * recent / centroid row inside that bucket.
  */
-export default function LocationsTable({ locations = [], selectedId = null, onRowClick }) {
+export default function LocationsTable({
+  locations = [],
+  selectedId = null,
+  onRowClick,
+  viewMode = 'rows',
+}) {
   const phoneCtx = usePhoneReports();
   const showPhoneChip = !!phoneCtx?.hasMultiple;
 
@@ -29,6 +41,23 @@ export default function LocationsTable({ locations = [], selectedId = null, onRo
     );
   }
 
+  if (viewMode === 'tiles') {
+    return (
+      <TilesTable locations={locations} selectedId={selectedId} onRowClick={onRowClick} />
+    );
+  }
+  if (viewMode === 'byPhoneDay') {
+    return (
+      <ByPhoneDayTable
+        locations={locations}
+        selectedId={selectedId}
+        onRowClick={onRowClick}
+        showPhoneChip={showPhoneChip}
+      />
+    );
+  }
+
+  // viewMode === 'rows' (default)
   return (
     <div className="h-full overflow-y-auto">
       <table className="w-full text-xs">
@@ -81,11 +110,6 @@ export default function LocationsTable({ locations = [], selectedId = null, onRo
                 )}
                 <td className="px-3 py-1 truncate max-w-[280px] text-light-700">
                   {loc.address || loc.place_name || '—'}
-                  {/* Tiny source-attribution badge so investigators can
-                      tell at a glance whether the address is the
-                      device's own or inferred via reverse-geocode.
-                      Cellebrite-provided rows get no badge (the
-                      default presumption); inferred rows are flagged. */}
                   {loc.geocode_source && loc.geocode_source !== 'cellebrite' && loc.geocode_source !== 'none' && (
                     <span
                       className="ml-1.5 text-[9px] uppercase tracking-wide bg-light-100 text-light-600 px-1 py-px rounded"
@@ -99,6 +123,186 @@ export default function LocationsTable({ locations = [], selectedId = null, onRo
                       {[loc.admin1, loc.country].filter(Boolean).join(', ')}
                     </span>
                   )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * Tile-view rows. Each row is one aggregated tile carrying its count
+ * and top apps. Was previously rendered through the generic 'rows'
+ * table which left Source-app blank — this is the dedicated view
+ * that surfaces the tile-level fields instead.
+ */
+function TilesTable({ locations, selectedId, onRowClick }) {
+  return (
+    <div className="h-full overflow-y-auto">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-light-50 border-b border-light-200 z-10">
+          <tr className="text-left text-light-500">
+            <th className="px-3 py-1.5 font-medium">Tile</th>
+            <th className="px-3 py-1.5 font-medium">Hits</th>
+            <th className="px-3 py-1.5 font-medium">Top apps</th>
+            <th className="px-3 py-1.5 font-medium">Lat / Lon (centroid)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {locations.map((loc) => {
+            const id = loc.id || loc.node_key;
+            const sel = id != null && id === selectedId;
+            const tile = loc._tile || {};
+            const topApps = tile.top_apps || [];
+            return (
+              <tr
+                key={id || `${loc.latitude},${loc.longitude}`}
+                onClick={() => onRowClick?.(loc)}
+                className={`border-b border-light-100 cursor-pointer ${
+                  sel ? 'bg-emerald-50/60 ring-1 ring-emerald-300/60' : 'hover:bg-light-50'
+                }`}
+              >
+                <td className="px-3 py-1 truncate max-w-[180px]">
+                  <span className="inline-flex items-center gap-1">
+                    <Layers className="w-2.5 h-2.5 text-cyan-600" />
+                    {loc.label || 'Tile'}
+                  </span>
+                </td>
+                <td className="px-3 py-1 tabular-nums whitespace-nowrap font-medium">
+                  {(tile.count || 0).toLocaleString()}
+                </td>
+                <td className="px-3 py-1 truncate max-w-[280px] text-light-700">
+                  {topApps.length > 0 ? topApps.join(', ') : <span className="text-light-400">—</span>}
+                </td>
+                <td className="px-3 py-1 font-mono whitespace-nowrap text-[11px]">
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="w-2.5 h-2.5 text-cyan-600" />
+                    {Number(loc.latitude).toFixed(4)}, {Number(loc.longitude).toFixed(4)}
+                  </span>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * By-phone-by-day pivot. Aggregates raw rows into (phone × day ×
+ * source_app) buckets so the user can read the table as "what device
+ * was where on which day, and which app reported it" rather than as
+ * thousands of individual fixes.
+ *
+ * Row click picks the LATEST raw row from the bucket so the rail /
+ * map fly-to still resolves to a real Location node.
+ */
+function ByPhoneDayTable({ locations, selectedId, onRowClick, showPhoneChip }) {
+  const rows = useMemo(() => {
+    const buckets = new Map();
+    for (const loc of locations) {
+      if (loc.latitude == null || loc.longitude == null) continue;
+      const day = (loc.timestamp || '').slice(0, 10) || '—';
+      const phone = loc.device_report_key || '_unknown';
+      const app = loc.source_app || '—';
+      const key = `${phone}|${day}|${app}`;
+      let b = buckets.get(key);
+      if (!b) {
+        b = {
+          key,
+          phone,
+          day,
+          app,
+          count: 0,
+          first: null,
+          last: null,
+          latSum: 0,
+          lonSum: 0,
+          sampleRow: loc,
+        };
+        buckets.set(key, b);
+      }
+      b.count += 1;
+      b.latSum += loc.latitude;
+      b.lonSum += loc.longitude;
+      if (!b.first || (loc.timestamp || '') < b.first) b.first = loc.timestamp;
+      if (!b.last || (loc.timestamp || '') > b.last) {
+        b.last = loc.timestamp;
+        b.sampleRow = loc; // latest row wins for click target
+      }
+    }
+    const out = [...buckets.values()].map((b) => ({
+      ...b,
+      lat: b.latSum / b.count,
+      lon: b.lonSum / b.count,
+    }));
+    out.sort((a, b) => (b.last || '').localeCompare(a.last || ''));
+    return out;
+  }, [locations]);
+
+  if (rows.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-xs text-light-500">
+        Nothing to group by phone × day under the current filters.
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <table className="w-full text-xs">
+        <thead className="sticky top-0 bg-light-50 border-b border-light-200 z-10">
+          <tr className="text-left text-light-500">
+            <th className="px-3 py-1.5 font-medium">Day</th>
+            {showPhoneChip && <th className="px-3 py-1.5 font-medium">Device</th>}
+            <th className="px-3 py-1.5 font-medium">Source app</th>
+            <th className="px-3 py-1.5 font-medium">Hits</th>
+            <th className="px-3 py-1.5 font-medium">First → Last</th>
+            <th className="px-3 py-1.5 font-medium">Centroid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const id = r.sampleRow.id || r.sampleRow.node_key;
+            const sel = id != null && id === selectedId;
+            return (
+              <tr
+                key={r.key}
+                onClick={() => onRowClick?.(r.sampleRow)}
+                className={`border-b border-light-100 cursor-pointer ${
+                  sel ? 'bg-emerald-50/60 ring-1 ring-emerald-300/60' : 'hover:bg-light-50'
+                }`}
+              >
+                <td className="px-3 py-1 tabular-nums whitespace-nowrap">{r.day}</td>
+                {showPhoneChip && (
+                  <td className="px-3 py-1 whitespace-nowrap">
+                    {r.phone && r.phone !== '_unknown' ? (
+                      <PhoneIdentityChip reportKey={r.phone} variant="dense" />
+                    ) : (
+                      <span className="text-light-400">—</span>
+                    )}
+                  </td>
+                )}
+                <td className="px-3 py-1 truncate max-w-[160px]">{r.app}</td>
+                <td className="px-3 py-1 tabular-nums whitespace-nowrap font-medium">
+                  {r.count.toLocaleString()}
+                </td>
+                <td className="px-3 py-1 tabular-nums whitespace-nowrap text-light-600">
+                  {r.first && r.last
+                    ? r.first === r.last
+                      ? formatTs(r.first)
+                      : `${formatTs(r.first)} → ${formatTs(r.last)}`
+                    : '—'}
+                </td>
+                <td className="px-3 py-1 font-mono whitespace-nowrap text-[11px]">
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="w-2.5 h-2.5 text-cyan-600" />
+                    {r.lat.toFixed(4)}, {r.lon.toFixed(4)}
+                  </span>
                 </td>
               </tr>
             );

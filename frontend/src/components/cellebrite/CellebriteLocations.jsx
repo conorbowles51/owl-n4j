@@ -55,6 +55,16 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // is gated behind a button so users can drill in when they want
   // street-level detail. The choice is per-session, not persisted.
   const [renderMode, setRenderMode] = useState('tiles');
+  // Table view-mode toggle. The MAP renderMode controls aggregation
+  // on the map; this controls how the TABLE underneath presents the
+  // same data so investigators can swap perspective without re-
+  // fetching. Three options:
+  //   'auto'        → mirrors renderMode (rows in raw mode, tiles in tile mode)
+  //   'rows'        → force one row per Location node
+  //   'byPhoneDay'  → pivot raw rows into (phone × day × source app)
+  //                   buckets — the "what was actually happening here"
+  //                   perspective the user asked for.
+  const [tableView, setTableView] = useState('auto');
   // Trajectory mode: time-ordered polyline through visible points.
   // Only meaningful in raw mode (tile centroids aren't a path);
   // toggling it on while in tiles mode auto-switches to raw.
@@ -364,9 +374,27 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         </button>
         <span className="ml-2 text-light-400 truncate">
           {renderMode === 'tiles'
-            ? 'Click a tile for the rows it contains.'
-            : 'Capped at 5,000 points — narrow with date/search.'}
+            ? 'Click a tile for the rows it contains. Cluster numbers = nearby tiles grouped at this zoom — zoom in to split them.'
+            : 'Capped at 5,000 points — narrow with date/search. Cluster numbers = overlapping points at this zoom.'}
         </span>
+
+        {/* Table-perspective toggle — sits in its own group on the
+            right so it doesn't crowd the map controls. "Auto" mirrors
+            the map's renderMode (most familiar); "Phone × day"
+            pivots raw rows into the "what happened here, when,
+            who was involved" view the user asked for. */}
+        <div className="ml-auto inline-flex items-center gap-1 border-l border-light-300 pl-2">
+          <span className="text-light-500">Table:</span>
+          <TableViewButton current={tableView} mode="auto" onClick={setTableView}>
+            Auto
+          </TableViewButton>
+          <TableViewButton current={tableView} mode="rows" onClick={setTableView}>
+            Rows
+          </TableViewButton>
+          <TableViewButton current={tableView} mode="byPhoneDay" onClick={setTableView}>
+            Phone × day
+          </TableViewButton>
+        </div>
       </div>
 
       {/* Search bar — always visible. Tiles mode does substring match
@@ -440,14 +468,35 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
             />
           </div>
         )}
-        second={(
-          <LocationsTable
-            locations={renderMode === 'raw' ? mapEvents : tileMarkers}
-            selectedId={selectedId}
-            onRowClick={handleSelect}
-            reports={reports}
-          />
-        )}
+        second={(() => {
+          // Resolve the effective table view: 'auto' mirrors the
+          // map's renderMode (tiles → tiles, raw → rows). Manual
+          // 'rows' / 'byPhoneDay' overrides the auto behaviour BUT
+          // requires raw rows to be loaded — if the map is in tile
+          // mode and the user picks 'byPhoneDay' we fall back to the
+          // tile table with a hint, since the per-phone pivot can't
+          // be computed from server-aggregated tiles.
+          let resolved;
+          if (tableView === 'auto') {
+            resolved = renderMode === 'raw' ? 'rows' : 'tiles';
+          } else if (tableView === 'byPhoneDay' && renderMode === 'tiles') {
+            // Tile centroids have no source_app or per-row timestamp,
+            // so the pivot would be empty. Surface the issue.
+            resolved = 'tiles';
+          } else {
+            resolved = tableView;
+          }
+          const tableRows = resolved === 'tiles' ? tileMarkers : mapEvents;
+          return (
+            <LocationsTable
+              locations={tableRows}
+              selectedId={selectedId}
+              onRowClick={handleSelect}
+              reports={reports}
+              viewMode={resolved}
+            />
+          );
+        })()}
       />
     </div>
   );
@@ -468,6 +517,28 @@ function ModeButton({ current, mode, onClick, children }) {
       className={`px-2 py-0.5 rounded transition-colors ${
         active
           ? 'bg-emerald-100 text-emerald-800'
+          : 'text-light-600 hover:bg-light-100'
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Small pill button used by the Table perspective group. Styled
+ * with a cooler accent than ModeButton (which is for map render
+ * mode) so the two control groups read as separate concerns.
+ */
+function TableViewButton({ current, mode, onClick, children }) {
+  const active = current === mode;
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(mode)}
+      className={`px-2 py-0.5 rounded transition-colors ${
+        active
+          ? 'bg-owl-blue-100 text-owl-blue-800'
           : 'text-light-600 hover:bg-light-100'
       }`}
     >

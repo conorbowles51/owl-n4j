@@ -1,16 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { MapPin, Loader2 } from 'lucide-react';
+import { MapPin, Loader2, Smartphone } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../../../services/api';
 import { useCellebriteSelection } from '../CellebriteSelectionContext';
 import { formatTs } from '../../events/eventUtils';
+import PhoneIdentityChip from '../PhoneIdentityChip';
 
 /**
- * Rail accordion for a clicked tile in the Locations tab. Fetches the
- * raw rows inside the tile via /cellebrite/locations/in-tile, then
- * renders them as a paginated list. Clicking a row inside this list
- * republishes the selection as type 'location' so the rail re-renders
- * via EventAccordion — the user gets a one-click drill-in path
- * without leaving the rail.
+ * Rail accordion for a clicked tile in the Locations tab.
+ *
+ * Renders three layered views of the same tile so the investigator
+ * can answer the user's "what was actually happening here, when, who
+ * was involved" question without leaving the rail:
+ *
+ *   1. Tile summary — total count, lat/lon centroid, top apps
+ *   2. Per-phone breakdown — one row per device that contributed,
+ *      with its visit count, first/last seen and the apps it used
+ *      while inside this tile. Sourced from the new `per_phone`
+ *      array on the /locations/in-tile response.
+ *   3. Raw rows — every Location node inside the tile (paginated,
+ *      capped at 200). Clicking one re-publishes as a `location`
+ *      selection so the rail re-renders via EventAccordion.
+ *
+ * The per-phone block is the new thing — previously the rail showed
+ * only "top apps" as a single line, hiding the device→app correlation
+ * the user actually needed.
  */
 export default function LocationTileAccordion({ selection }) {
   const payload = selection?.payload || {};
@@ -20,6 +33,8 @@ export default function LocationTileAccordion({ selection }) {
   const cellDeg = payload.cell_deg;
 
   const [items, setItems] = useState([]);
+  const [perPhone, setPerPhone] = useState([]);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -43,6 +58,8 @@ export default function LocationTileAccordion({ selection }) {
       .then((res) => {
         if (cancelled) return;
         setItems(res?.items || []);
+        setPerPhone(res?.per_phone || []);
+        setTruncated(!!res?.truncated);
         setLoading(false);
       })
       .catch((e) => {
@@ -86,10 +103,15 @@ export default function LocationTileAccordion({ selection }) {
         )}
       </div>
 
-      {/* Tile contents */}
+      {/* Per-phone breakdown — new */}
+      {perPhone.length > 0 && (
+        <PerPhoneBreakdown rows={perPhone} truncated={truncated} />
+      )}
+
+      {/* Raw rows */}
       <div>
         <div className="text-[10px] uppercase tracking-wide text-light-500 mb-1">
-          {loading ? 'Loading…' : `Tile contents (${items.length})`}
+          {loading ? 'Loading…' : `Tile contents (${items.length}${truncated ? '+' : ''})`}
         </div>
         {loading && items.length === 0 ? (
           <div className="flex items-center justify-center py-4 text-xs text-light-500">
@@ -121,11 +143,19 @@ export default function LocationTileAccordion({ selection }) {
                   <span className="font-medium text-owl-blue-900 truncate">
                     {it.label || it.location_type || 'Location'}
                   </span>
-                  {it.timestamp && (
-                    <span className="text-light-500 tabular-nums whitespace-nowrap">
-                      {formatTs(it.timestamp)}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {it.device_report_key && (
+                      <PhoneIdentityChip
+                        reportKey={it.device_report_key}
+                        variant="dense"
+                      />
+                    )}
+                    {it.timestamp && (
+                      <span className="text-light-500 tabular-nums whitespace-nowrap">
+                        {formatTs(it.timestamp)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div className="text-light-500 mt-0.5">
                   {it.source_app && <span>{it.source_app}</span>}
@@ -152,6 +182,81 @@ export default function LocationTileAccordion({ selection }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Per-phone × per-app breakdown for one tile.
+ *
+ * Direct answer to the user's "the flyout doesn't really show what
+ * phones are responsible for what apps making location hits"
+ * complaint. One row per device, sorted by contribution descending;
+ * the apps that phone used while inside this tile render as tiny
+ * count chips so the device→app correlation is visible at a glance.
+ *
+ * Truncated when the underlying /locations/in-tile fetch hit its
+ * row cap — surfaced as a warning so the user knows the counts are
+ * a lower bound, not the full picture.
+ */
+function PerPhoneBreakdown({ rows, truncated }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-light-500 mb-1 flex items-center gap-1.5">
+        <Smartphone className="w-3 h-3" />
+        Per phone
+        {truncated && (
+          <span className="text-amber-700 normal-case tracking-normal">
+            (counts based on first {rows.reduce((s, r) => s + r.count, 0)} rows — tile has more)
+          </span>
+        )}
+      </div>
+      <ul className="space-y-1.5">
+        {rows.map((r) => (
+          <li
+            key={r.device_report_key || '_unknown'}
+            className="border border-light-100 rounded px-2 py-1.5 text-[11px]"
+          >
+            <div className="flex items-center gap-2">
+              {r.device_report_key ? (
+                <PhoneIdentityChip reportKey={r.device_report_key} variant="dense" />
+              ) : (
+                <span className="text-light-400 italic">Unknown device</span>
+              )}
+              <span className="text-light-700 font-medium tabular-nums">
+                {r.count.toLocaleString()} hit{r.count === 1 ? '' : 's'}
+              </span>
+              {r.last_seen && (
+                <span className="ml-auto text-light-500 tabular-nums whitespace-nowrap">
+                  last {formatTs(r.last_seen)}
+                </span>
+              )}
+            </div>
+            {r.apps && r.apps.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {r.apps.slice(0, 8).map((a) => (
+                  <span
+                    key={a.app}
+                    className="inline-flex items-center gap-1 px-1.5 py-px rounded-full bg-light-100 text-light-700 text-[10px]"
+                    title={`${a.count} hits via ${a.app}`}
+                  >
+                    {a.app}
+                    <span className="text-light-500 tabular-nums">{a.count}</span>
+                  </span>
+                ))}
+                {r.apps.length > 8 && (
+                  <span className="text-[10px] text-light-500">+{r.apps.length - 8} more</span>
+                )}
+              </div>
+            )}
+            {r.first_seen && r.last_seen && r.first_seen !== r.last_seen && (
+              <div className="text-[10px] text-light-500 mt-0.5">
+                {formatTs(r.first_seen)} → {formatTs(r.last_seen)}
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
