@@ -57,7 +57,10 @@ export default function LocationsTable({
     );
   }
 
-  // viewMode === 'rows' (default)
+  // viewMode === 'rows' (default). Wider column set so investigators
+  // can see accuracy / confidence / place at a glance instead of
+  // having to open every row in the rail. Address column also splits
+  // out admin / country as their own pieces of context.
   return (
     <div className="h-full overflow-y-auto">
       <table className="w-full text-xs">
@@ -67,8 +70,12 @@ export default function LocationsTable({
             <th className="px-3 py-1.5 font-medium">Type</th>
             <th className="px-3 py-1.5 font-medium">Source app</th>
             <th className="px-3 py-1.5 font-medium">Lat / Lon</th>
+            <th className="px-3 py-1.5 font-medium" title="GPS accuracy in metres">±m</th>
+            <th className="px-3 py-1.5 font-medium" title="Cellebrite carving confidence">Conf.</th>
             {showPhoneChip && <th className="px-3 py-1.5 font-medium">Device</th>}
-            <th className="px-3 py-1.5 font-medium">Address</th>
+            <th className="px-3 py-1.5 font-medium">Place</th>
+            <th className="px-3 py-1.5 font-medium">Region</th>
+            <th className="px-3 py-1.5 font-medium">Country</th>
           </tr>
         </thead>
         <tbody>
@@ -86,7 +93,7 @@ export default function LocationsTable({
                 <td className="px-3 py-1 tabular-nums whitespace-nowrap">
                   {loc.timestamp ? formatTs(loc.timestamp) : '—'}
                 </td>
-                <td className="px-3 py-1 truncate max-w-[180px]">
+                <td className="px-3 py-1 truncate max-w-[160px]">
                   {loc.location_type || loc.label || '—'}
                 </td>
                 <td className="px-3 py-1 truncate max-w-[140px]">
@@ -98,6 +105,16 @@ export default function LocationsTable({
                     {Number(loc.latitude).toFixed(4)}, {Number(loc.longitude).toFixed(4)}
                   </span>
                 </td>
+                <td className="px-3 py-1 tabular-nums whitespace-nowrap text-light-600">
+                  {loc.accuracy_meters != null
+                    ? Math.round(loc.accuracy_meters).toLocaleString()
+                    : <span className="text-light-400">—</span>}
+                </td>
+                <td className="px-3 py-1 whitespace-nowrap text-light-600">
+                  {loc.confidence_score != null
+                    ? String(loc.confidence_score)
+                    : <span className="text-light-400">—</span>}
+                </td>
                 {showPhoneChip && (
                   <td className="px-3 py-1 whitespace-nowrap">
                     {loc.device_report_key ? (
@@ -108,8 +125,8 @@ export default function LocationsTable({
                     ) : '—'}
                   </td>
                 )}
-                <td className="px-3 py-1 truncate max-w-[280px] text-light-700">
-                  {loc.address || loc.place_name || '—'}
+                <td className="px-3 py-1 truncate max-w-[260px] text-light-700">
+                  {loc.address || loc.place_name || <span className="text-light-400">—</span>}
                   {loc.geocode_source && loc.geocode_source !== 'cellebrite' && loc.geocode_source !== 'none' && (
                     <span
                       className="ml-1.5 text-[9px] uppercase tracking-wide bg-light-100 text-light-600 px-1 py-px rounded"
@@ -118,11 +135,12 @@ export default function LocationsTable({
                       via {loc.geocode_source}
                     </span>
                   )}
-                  {(loc.country || loc.admin1) && !loc.address && (
-                    <span className="ml-1 text-light-500 text-[10px]">
-                      {[loc.admin1, loc.country].filter(Boolean).join(', ')}
-                    </span>
-                  )}
+                </td>
+                <td className="px-3 py-1 truncate max-w-[140px] text-light-600">
+                  {loc.admin1 || <span className="text-light-400">—</span>}
+                </td>
+                <td className="px-3 py-1 truncate max-w-[120px] text-light-600">
+                  {loc.country || <span className="text-light-400">—</span>}
                 </td>
               </tr>
             );

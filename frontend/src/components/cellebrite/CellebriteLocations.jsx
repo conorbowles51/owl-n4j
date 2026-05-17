@@ -247,6 +247,56 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
     return out;
   }, [trajectoryOn, renderMode, locations, deviceColorOf]);
 
+  // Search typeahead — pulls suggestions out of the actual loaded
+  // data so the user can `Tab` through real values instead of
+  // having to remember the exact spelling / casing / punctuation.
+  // We cap each operator at its top-N most-frequent values so a
+  // very busy case (e.g. 50 apps) doesn't flood the dropdown.
+  const searchSuggestions = useMemo(() => {
+    const tally = (rows, field) => {
+      const m = new Map();
+      for (const r of rows) {
+        const v = r?.[field];
+        if (!v) continue;
+        m.set(v, (m.get(v) || 0) + 1);
+      }
+      return [...m.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 50);
+    };
+    const apps = tally(locations, 'source_app');
+    const types = tally(locations, 'location_type');
+    const countries = tally(locations, 'country');
+    const admin1s = tally(locations, 'admin1');
+    const placeNames = tally(locations, 'place_name');
+    // Devices: pull from the case's report list so suggestions show
+    // up even before any data row matches (e.g. typing `phone:` on
+    // an empty search). Hint = device model / owner.
+    const devs = (reports || []).map((r) => ({
+      operator: 'phone',
+      value: r.short_label || r.report_key,
+      hint: [r.device_model, r.phone_owner_name].filter(Boolean).join(' · '),
+    }));
+    const out = [];
+    for (const [v, n] of apps) {
+      out.push({ operator: 'app', value: v, hint: `${n.toLocaleString()} hits` });
+    }
+    for (const [v, n] of types) {
+      out.push({ operator: 'type', value: v, hint: `${n.toLocaleString()} hits` });
+    }
+    for (const [v, n] of placeNames) {
+      out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits` });
+    }
+    for (const [v, n] of admin1s) {
+      out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits · region` });
+    }
+    for (const [v, n] of countries) {
+      out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits · country` });
+    }
+    out.push(...devs);
+    return out;
+  }, [locations, reports]);
+
   // The actual flyToId we hand the map is the bare id (the
   // ::timestamp suffix is just our re-trigger signal).
   const flyToIdForMap = flyToId ? flyToId.split('::')[0] : null;
@@ -404,11 +454,15 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         <CellebriteSearchInput
           value={searchQuery}
           onChange={setSearchQuery}
-          placeholder="Search — try place:london, near:38.97,-76.91,5km, app:WhatsApp, after:2024-01-01"
+          placeholder="Search — Tab for suggestions (try place:london, near:38.97,-76.91,5km, app:WhatsApp, after:2024-01-01)"
           matchCount={renderMode === 'raw' ? mapEvents.length : tileMarkers.length}
           totalCount={renderMode === 'raw' ? locations.length : tileMarkers.length}
           itemNoun={renderMode === 'raw' ? 'location' : 'tile'}
           focusOnSlash
+          suggestions={searchSuggestions}
+          suggestionOperators={[
+            'type', 'app', 'place', 'phone', 'near', 'after', 'before',
+          ]}
         />
       </div>
 

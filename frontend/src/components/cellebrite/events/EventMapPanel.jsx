@@ -122,6 +122,81 @@ function FlyToCoord({ flyToCoord, zoom = 14 }) {
 }
 
 /**
+ * Direction indicators along a trajectory polyline.
+ *
+ * Samples ~maxArrows evenly-spaced points along the line, computes
+ * the local bearing from each point to the next, and renders a tiny
+ * arrow div-icon rotated to face that direction. Sampling means we
+ * don't pay a Marker cost per location point (which would be
+ * thousands on a busy device) — 12 arrows is plenty to read
+ * direction at any zoom.
+ *
+ * The arrow is drawn with a fat white stroke under a coloured fill
+ * so it stays legible against both the line itself and the basemap.
+ */
+function DirectionArrows({ positions, color, maxArrows = 12 }) {
+  const arrows = useMemo(() => {
+    const n = positions.length;
+    if (n < 2) return [];
+    // Stride large enough to pick `maxArrows` segments out of (n-1)
+    // available. At least 1.
+    const stride = Math.max(1, Math.floor((n - 1) / maxArrows));
+    const out = [];
+    for (let i = 0; i < n - 1; i += stride) {
+      const a = positions[i];
+      const b = positions[i + 1];
+      if (!a || !b) continue;
+      const lat = (a[0] + b[0]) / 2;
+      const lon = (a[1] + b[1]) / 2;
+      const bearing = computeBearing(a[0], a[1], b[0], b[1]);
+      out.push({ lat, lon, bearing, key: `${i}` });
+      if (out.length >= maxArrows) break;
+    }
+    return out;
+  }, [positions, maxArrows]);
+
+  if (arrows.length === 0) return null;
+  return arrows.map((ar) => (
+    <Marker
+      key={ar.key}
+      position={[ar.lat, ar.lon]}
+      // The svg is rotated to the bearing; bearing 0 = north, 90 = east.
+      icon={L.divIcon({
+        className: 'cellebrite-trajectory-arrow',
+        html: `<svg width="18" height="18" viewBox="-9 -9 18 18" style="transform: rotate(${ar.bearing}deg); transform-origin: center;">
+          <path d="M0,-6 L4,4 L0,2 L-4,4 Z" fill="${color}" stroke="#ffffff" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>`,
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+      })}
+      // Don't intercept clicks — keep the marker visual-only so users
+      // can still click through to underlying points.
+      interactive={false}
+      keyboard={false}
+    />
+  ));
+}
+
+/**
+ * Initial bearing from (lat1, lon1) to (lat2, lon2) in degrees from
+ * north. Standard forward-azimuth formula on a sphere.
+ */
+function computeBearing(lat1, lon1, lat2, lon2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const toDeg = (r) => (r * 180) / Math.PI;
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x =
+    Math.cos(φ1) * Math.sin(φ2) -
+    Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  let θ = Math.atan2(y, x);
+  θ = toDeg(θ);
+  return (θ + 360) % 360;
+}
+
+/**
  * Tells Leaflet to recompute its container size whenever the parent
  * tab becomes visible again, OR when fresh data lands. Without this
  * the map renders at zero size when the events tab was inactive
@@ -290,7 +365,14 @@ export default function EventMapPanel({
             polyline disappears behind the clustered marker icons on
             dense Locations cases (the user complaint about trajectory
             "not working"). Halo weight 6 / opacity 0.9 + line weight 4
-            gives clear contrast at any zoom. */}
+            gives clear contrast at any zoom.
+
+            Direction arrows are sampled along the past polyline (~12
+            per track regardless of point count) so the eye can read
+            which way the device was moving without the user having
+            to follow timestamps. Skipped for the future segment —
+            it's the "not yet" half during playback and shouldn't
+            advertise direction. */}
         {splitTracks.map((t) => {
           const color = t.color_hint || deviceColorOf?.(t.device_report_key) || '#2563eb';
           return (
@@ -309,6 +391,7 @@ export default function EventMapPanel({
                     weight={4}
                     opacity={1.0}
                   />
+                  <DirectionArrows positions={t.past} color={color} maxArrows={12} />
                 </>
               )}
               {t.future.length > 1 && (

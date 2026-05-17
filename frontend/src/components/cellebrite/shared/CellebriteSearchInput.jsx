@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, HelpCircle } from 'lucide-react';
 
 /**
@@ -10,10 +10,21 @@ import { Search, X, HelpCircle } from 'lucide-react';
  *     time, and on hover of the (?) icon.
  *   - ESC clears the input.
  *   - Optional `/` global shortcut focuses the input (set focusOnSlash).
+ *   - Optional typeahead: when `suggestions` is provided the input pops
+ *     a dropdown with operator + value completions. Lets users find
+ *     real values from the data instead of guessing exact strings
+ *     (case/space/punctuation sensitive otherwise).
  *
  * Match-count display ("123 of 4,567 events") sits inline with the input
  * so investigators can see the impact of every keystroke without having
  * to look elsewhere on the page.
+ *
+ * Suggestion shape:
+ *   { operator: string,      // e.g. 'type', 'app', 'place' (the bit before ':')
+ *     value:    string,      // e.g. 'WhatsApp', 'london'
+ *     label?:   string,      // override what's shown in the dropdown
+ *     hint?:    string }     // small grey suffix (e.g. "12 hits")
+ * Quoting is applied automatically when the value contains a space.
  *
  * Props:
  *   value, onChange       — controlled value
@@ -22,6 +33,11 @@ import { Search, X, HelpCircle } from 'lucide-react';
  *   itemNoun              — singular noun for the counter ("event", "thread", "message")
  *   focusOnSlash          — when true, "/" anywhere on the page focuses the input
  *   compact               — smaller paddings + smaller text for in-thread use
+ *   suggestions           — array of { operator, value, label?, hint? }
+ *   suggestionOperators   — optional list of operator names to advertise
+ *                           when the cursor is at the start of a token
+ *                           (e.g. ['type', 'app', 'place', 'after']).
+ *                           Defaults to a sane Cellebrite set.
  */
 export default function CellebriteSearchInput({
   value,
@@ -32,10 +48,16 @@ export default function CellebriteSearchInput({
   itemNoun = 'item',
   focusOnSlash = false,
   compact = false,
+  suggestions = null,
+  suggestionOperators = null,
 }) {
   const inputRef = useRef(null);
+  const dropdownRef = useRef(null);
   const [hintOpen, setHintOpen] = useState(false);
   const [hasOperatorHintBeenShown, setHasOperatorHintBeenShown] = useState(false);
+  const [caret, setCaret] = useState(0);
+  const [focused, setFocused] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(0);
 
   // Auto-pop the operator hint the first time the user types ':' so they
   // know operators exist. After it's been shown once it stays accessible
@@ -65,11 +87,135 @@ export default function CellebriteSearchInput({
     return () => window.removeEventListener('keydown', onKey);
   }, [focusOnSlash]);
 
-  const onKeyDown = (e) => {
-    if (e.key === 'Escape' && value) {
-      e.preventDefault();
-      onChange('');
+  // Compute the active typeahead candidates from the current caret token.
+  // The token is the text since the last whitespace up to the caret. If
+  // it contains a ':' we treat the prefix as the operator and complete
+  // VALUES; otherwise we offer OPERATOR completions.
+  const typeaheadEnabled = Array.isArray(suggestions) || Array.isArray(suggestionOperators);
+  const ops = suggestionOperators || DEFAULT_OPERATORS;
+  const { tokenStart, tokenEnd, opPrefix, valuePrefix, mode } = useMemo(() => {
+    if (!typeaheadEnabled || !focused) {
+      return { tokenStart: 0, tokenEnd: 0, opPrefix: '', valuePrefix: '', mode: 'off' };
     }
+    const text = value || '';
+    const c = Math.min(Math.max(caret, 0), text.length);
+    // Walk back to the nearest whitespace (treating quoted runs as part
+    // of the token — once the user opens a quote we don't suggest until
+    // they close it).
+    let s = c;
+    while (s > 0 && !/\s/.test(text[s - 1])) s -= 1;
+    const tok = text.slice(s, c);
+    if (!tok) return { tokenStart: s, tokenEnd: c, opPrefix: '', valuePrefix: '', mode: 'operator' };
+    const colon = tok.indexOf(':');
+    if (colon < 0) {
+      return { tokenStart: s, tokenEnd: c, opPrefix: tok, valuePrefix: '', mode: 'operator' };
+    }
+    const op = tok.slice(0, colon).toLowerCase();
+    const val = tok.slice(colon + 1);
+    return { tokenStart: s, tokenEnd: c, opPrefix: op, valuePrefix: val, mode: 'value' };
+  }, [value, caret, focused, typeaheadEnabled]);
+
+  const items = useMemo(() => {
+    if (!typeaheadEnabled || !focused) return [];
+    if (mode === 'operator') {
+      const needle = opPrefix.toLowerCase();
+      const opList = ops
+        .filter((o) => !needle || o.toLowerCase().startsWith(needle))
+        .slice(0, 12)
+        .map((o) => ({
+          operator: o,
+          value: '',
+          label: `${o}:`,
+          hint: 'operator',
+          _kind: 'operator',
+        }));
+      return opList;
+    }
+    // mode === 'value'
+    const list = Array.isArray(suggestions) ? suggestions : [];
+    const needle = valuePrefix.toLowerCase().replace(/^"+|"+$/g, '');
+    const scoped = list.filter((s) => s.operator === opPrefix);
+    const ranked = scoped
+      .filter((s) => !needle || (s.value || '').toLowerCase().includes(needle))
+      .slice(0, 20)
+      .map((s) => ({ ...s, _kind: 'value' }));
+    return ranked;
+  }, [typeaheadEnabled, focused, mode, opPrefix, valuePrefix, suggestions, ops]);
+
+  // Reset highlighted item whenever the suggestion list shape changes.
+  useEffect(() => {
+    setActiveIdx(0);
+  }, [items.length, mode, opPrefix]);
+
+  const popoverOpen = focused && typeaheadEnabled && items.length > 0;
+
+  const insertSuggestion = (s) => {
+    const text = value || '';
+    let inserted;
+    if (s._kind === 'operator') {
+      inserted = `${s.operator}:`;
+    } else {
+      // Quote values that contain whitespace so the parser sees them
+      // as one token.
+      const needsQuote = /\s/.test(s.value);
+      const v = needsQuote ? `"${s.value}"` : s.value;
+      inserted = `${opPrefix}:${v} `;
+    }
+    const before = text.slice(0, tokenStart);
+    const after = text.slice(tokenEnd);
+    const next = before + inserted + after;
+    onChange(next);
+    // Move the caret to just after the inserted chunk on the next tick
+    // so React has re-rendered the input value.
+    const nextCaret = (before + inserted).length;
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (el) {
+        el.focus();
+        try { el.setSelectionRange(nextCaret, nextCaret); } catch { /* ignore */ }
+        setCaret(nextCaret);
+      }
+    });
+  };
+
+  const onKeyDown = (e) => {
+    if (popoverOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveIdx((i) => Math.min(items.length - 1, i + 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveIdx((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        const pick = items[activeIdx];
+        if (pick) {
+          e.preventDefault();
+          insertSuggestion(pick);
+          return;
+        }
+      }
+    }
+    if (e.key === 'Escape') {
+      if (popoverOpen) {
+        e.preventDefault();
+        // Just close the popover; another Esc clears the input.
+        inputRef.current?.blur();
+        return;
+      }
+      if (value) {
+        e.preventDefault();
+        onChange('');
+      }
+    }
+  };
+
+  const syncCaret = () => {
+    const el = inputRef.current;
+    if (el) setCaret(el.selectionStart ?? (value || '').length);
   };
 
   const showCount = Number.isFinite(matchCount) && Number.isFinite(totalCount) && totalCount > 0;
@@ -85,8 +231,15 @@ export default function CellebriteSearchInput({
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => { onChange(e.target.value); syncCaret(); }}
           onKeyDown={onKeyDown}
+          onKeyUp={syncCaret}
+          onClick={syncCaret}
+          onSelect={syncCaret}
+          onFocus={() => { setFocused(true); syncCaret(); }}
+          // Defer blur close so a mousedown on a suggestion still
+          // resolves before the popover disappears.
+          onBlur={() => { setTimeout(() => setFocused(false), 120); }}
           placeholder={placeholder}
           className={`flex-1 min-w-0 bg-transparent border-0 outline-none px-2 ${compact ? 'py-1' : 'py-1.5'} text-light-900 placeholder:text-light-400`}
         />
@@ -121,6 +274,49 @@ export default function CellebriteSearchInput({
         </button>
       </div>
 
+      {/* Typeahead suggestions popover. Anchored to the input. */}
+      {popoverOpen && (
+        <div
+          ref={dropdownRef}
+          className="absolute left-0 right-0 mt-1 z-40 bg-white border border-light-300 rounded-md shadow-lg max-h-[280px] overflow-y-auto"
+        >
+          <div className="px-2 py-1 text-[10px] uppercase tracking-wide text-light-500 border-b border-light-100 sticky top-0 bg-white">
+            {mode === 'operator'
+              ? 'Operators (Tab / Enter to insert)'
+              : `Suggestions for ${opPrefix}:`}
+          </div>
+          <ul>
+            {items.map((s, i) => {
+              const active = i === activeIdx;
+              const label = s.label || (s._kind === 'operator' ? `${s.operator}:` : s.value);
+              return (
+                <li
+                  key={`${s.operator}:${s.value}:${i}`}
+                  // mousedown — fires before blur, so the click registers
+                  // even though the input loses focus next.
+                  onMouseDown={(e) => { e.preventDefault(); insertSuggestion(s); }}
+                  onMouseEnter={() => setActiveIdx(i)}
+                  className={`px-2 py-1 cursor-pointer flex items-center gap-2 text-xs ${
+                    active ? 'bg-owl-blue-50 text-owl-blue-900' : 'hover:bg-light-50 text-light-800'
+                  }`}
+                >
+                  <span className="truncate">
+                    <code className="bg-light-100 px-1 rounded mr-1 text-[11px]">
+                      {label}
+                    </code>
+                  </span>
+                  {s.hint && (
+                    <span className="ml-auto text-[10px] text-light-500 whitespace-nowrap">
+                      {s.hint}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
       {hintOpen && (
         <div className="absolute right-0 mt-1 z-30 w-[360px] bg-white border border-light-300 rounded-md shadow-lg p-3 text-xs text-light-700">
           <div className="font-semibold text-owl-blue-900 mb-1.5">Search operators</div>
@@ -150,3 +346,8 @@ export default function CellebriteSearchInput({
     </div>
   );
 }
+
+const DEFAULT_OPERATORS = [
+  'type', 'app', 'from', 'to', 'phone', 'place', 'near',
+  'before', 'after',
+];
