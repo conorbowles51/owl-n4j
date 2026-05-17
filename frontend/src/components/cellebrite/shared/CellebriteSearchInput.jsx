@@ -176,7 +176,12 @@ export default function CellebriteSearchInput({
     setActiveIdx(0);
   }, [items.length, mode, opPrefix]);
 
-  const popoverOpen = focused && typeaheadEnabled && items.length > 0;
+  // Show the typeahead popover whenever the input is focused AND
+  // typeahead is enabled. Even with zero matches we render the
+  // panel with a "no matches" hint so the user knows the
+  // autocomplete is alive and pulling from real data — previously
+  // the popover just vanished, which read as "broken".
+  const popoverOpen = focused && typeaheadEnabled;
 
   const insertSuggestion = (s) => {
     const text = value || '';
@@ -294,7 +299,10 @@ export default function CellebriteSearchInput({
         <button
           type="button"
           onClick={() => setHintOpen((v) => !v)}
-          onMouseEnter={() => setHintOpen(true)}
+          // Hover-open the help only when the input is NOT focused —
+          // otherwise the help popover competes with the typeahead
+          // and the user can't see their own suggestions.
+          onMouseEnter={() => { if (!focused) setHintOpen(true); }}
           onMouseLeave={() => setHintOpen(false)}
           className="px-2 text-light-400 hover:text-owl-blue-600 border-l border-light-200"
           title="Search operators"
@@ -314,35 +322,43 @@ export default function CellebriteSearchInput({
               ? 'Operators (Tab / Enter to insert)'
               : `Suggestions for ${opPrefix}:`}
           </div>
-          <ul>
-            {items.map((s, i) => {
-              const active = i === activeIdx;
-              const label = s.label || (s._kind === 'operator' ? `${s.operator}:` : s.value);
-              return (
-                <li
-                  key={`${s.operator}:${s.value}:${i}`}
-                  // mousedown — fires before blur, so the click registers
-                  // even though the input loses focus next.
-                  onMouseDown={(e) => { e.preventDefault(); insertSuggestion(s); }}
-                  onMouseEnter={() => setActiveIdx(i)}
-                  className={`px-2 py-1 cursor-pointer flex items-center gap-2 text-xs ${
-                    active ? 'bg-owl-blue-50 text-owl-blue-900' : 'hover:bg-light-50 text-light-800'
-                  }`}
-                >
-                  <span className="truncate">
-                    <code className="bg-light-100 px-1 rounded mr-1 text-[11px]">
-                      {label}
-                    </code>
-                  </span>
-                  {s.hint && (
-                    <span className="ml-auto text-[10px] text-light-500 whitespace-nowrap">
-                      {s.hint}
+          {items.length === 0 ? (
+            <div className="px-2 py-2 text-[11px] text-light-500 italic">
+              {mode === 'value'
+                ? `No ${opPrefix} values found in the loaded data${valuePrefix ? ` matching "${valuePrefix}"` : ''}. You can still type one manually.`
+                : 'No matching operators.'}
+            </div>
+          ) : (
+            <ul>
+              {items.map((s, i) => {
+                const active = i === activeIdx;
+                const label = s.label || (s._kind === 'operator' ? `${s.operator}:` : s.value);
+                return (
+                  <li
+                    key={`${s.operator}:${s.value}:${i}`}
+                    // mousedown — fires before blur, so the click registers
+                    // even though the input loses focus next.
+                    onMouseDown={(e) => { e.preventDefault(); insertSuggestion(s); }}
+                    onMouseEnter={() => setActiveIdx(i)}
+                    className={`px-2 py-1 cursor-pointer flex items-center gap-2 text-xs ${
+                      active ? 'bg-owl-blue-50 text-owl-blue-900' : 'hover:bg-light-50 text-light-800'
+                    }`}
+                  >
+                    <span className="truncate">
+                      <code className="bg-light-100 px-1 rounded mr-1 text-[11px]">
+                        {label}
+                      </code>
                     </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                    {s.hint && (
+                      <span className="ml-auto text-[10px] text-light-500 whitespace-nowrap">
+                        {s.hint}
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
 
