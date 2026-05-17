@@ -5,7 +5,14 @@ import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
-const ROW_HEIGHT = 28; // px — keep in sync with TimelineRow padding+text
+// Two-line row layout (per user feedback):
+//   line 1: [phone] [time] [type icon] [app] [body preview]
+//   line 2: [sender → recipient] [type meta e.g. "missed 0:12"]
+// Phone chip is leftmost so the user can scan the device column at a
+// glance; sender→recipient sits on its own line so it's never truncated
+// out by a long body. Height bumped so the windowed renderer math
+// stays accurate.
+const ROW_HEIGHT = 46;
 
 /**
  * Bottom panel showing a chronological cross-type feed of all comms matching
@@ -266,41 +273,52 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
       : 'text-owl-blue-600';
   const from = item.sender?.name || '?';
   const to = (item.recipients && item.recipients[0]?.name) || '?';
+  const extraTo = (item.recipients?.length || 0) > 1
+    ? ` +${item.recipients.length - 1}`
+    : '';
   const body = item.type === 'email' ? (item.subject || '') : (item.body || '');
   const typeLabel =
-    item.type === 'call' ? `${item.call_type || 'call'} ${item.duration || ''}`.trim() : '';
+    item.type === 'call' ? `${item.call_type || 'call'} ${item.duration || ''}`.trim()
+    : item.type === 'email' ? 'email'
+    : 'message';
 
+  // Two-line layout. Phone chip on the FAR LEFT (user feedback: easier
+  // to scan device column). Sender → recipient lives on line 2 so a
+  // long body never elbows it off-screen.
   return (
     <button
       onClick={onClick}
       style={{ height: ROW_HEIGHT }}
-      className="w-full text-left flex items-center gap-2 px-4 border-b border-light-100 hover:bg-light-50"
+      className="w-full text-left flex flex-col justify-center gap-0.5 px-4 border-b border-light-100 hover:bg-light-50"
     >
-      <Icon className={`w-3 h-3 flex-shrink-0 ${color}`} />
-      <span className="text-[10px] text-light-500 w-32 flex-shrink-0 tabular-nums">
-        {formatShortTime(item.timestamp)}
-      </span>
-      {showPhoneChip && item.report_key && (
-        <PhoneIdentityChip
-          reportKey={item.report_key}
-          variant="dense"
-          className="flex-shrink-0"
-        />
-      )}
-      <span className="text-xs flex-shrink-0" title={item.source_app}>
-        {appIconEmoji(item.source_app || item.type)}
-      </span>
-      <span className="text-xs text-light-900 font-medium truncate max-w-[140px]" title={from}>
-        {from}
-      </span>
-      <span className="text-light-400 flex-shrink-0">→</span>
-      <span className="text-xs text-light-900 font-medium truncate max-w-[140px]" title={to}>
-        {to}
-      </span>
-      <span className="flex-1 text-xs text-light-600 truncate">{previewBody(body, 100)}</span>
-      {typeLabel && (
-        <span className="text-[10px] text-light-500 italic flex-shrink-0">{typeLabel}</span>
-      )}
+      <div className="flex items-center gap-2 min-w-0">
+        {showPhoneChip && item.report_key ? (
+          <PhoneIdentityChip
+            reportKey={item.report_key}
+            variant="dense"
+            className="flex-shrink-0"
+          />
+        ) : null}
+        <Icon className={`w-3 h-3 flex-shrink-0 ${color}`} />
+        <span className="text-[10px] text-light-500 w-28 flex-shrink-0 tabular-nums">
+          {formatShortTime(item.timestamp)}
+        </span>
+        <span className="text-xs flex-shrink-0" title={item.source_app}>
+          {appIconEmoji(item.source_app || item.type)}
+        </span>
+        <span className="flex-1 text-xs text-light-700 truncate">
+          {previewBody(body, 120) || <span className="italic text-light-400">(no preview)</span>}
+        </span>
+      </div>
+      <div className="flex items-center gap-1 min-w-0 pl-[18px]">
+        <span className="text-[10px] text-light-500 truncate" title={`${from} → ${to}${extraTo} (${typeLabel})`}>
+          <span className="text-light-700 font-medium">{from}</span>
+          <span className="mx-1 text-light-400">→</span>
+          <span className="text-light-700 font-medium">{to}{extraTo}</span>
+          <span className="mx-1 text-light-400">·</span>
+          <span className="italic">{typeLabel}</span>
+        </span>
+      </div>
     </button>
   );
 }

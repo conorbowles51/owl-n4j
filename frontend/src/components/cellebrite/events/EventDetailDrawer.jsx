@@ -109,6 +109,16 @@ export function EventBody({ event, detail }) {
   const lon = detail.longitude ?? detail.nearest_location_lon;
   const geoDirect = detail.latitude != null && detail.longitude != null;
 
+  // Phone identity chip shown above the comms anchor renderings so the
+  // user always knows WHICH phone the selected message / call / email
+  // came from. Only renders for multi-phone cases — single-phone cases
+  // don't need the disambiguation and the chip would be noise.
+  const PhoneChip = () => {
+    return (
+      <_PhoneChipForDetail event={event} detail={detail} />
+    );
+  };
+
   const GeoBlock = () => {
     if (lat == null || lon == null) return null;
     return (
@@ -155,6 +165,7 @@ export function EventBody({ event, detail }) {
       };
       return (
         <div className="p-3 space-y-3">
+          <PhoneChip />
           <GeoBlock />
           <div className="border border-light-200 rounded">
             <CommsCallRow item={item} />
@@ -178,6 +189,7 @@ export function EventBody({ event, detail }) {
       };
       return (
         <div className="p-3 space-y-3">
+          <PhoneChip />
           <GeoBlock />
           <CommsMessageBubble item={item} showSenderName />
           <RawProps detail={detail} />
@@ -200,6 +212,7 @@ export function EventBody({ event, detail }) {
       };
       return (
         <div className="p-3 space-y-3">
+          <PhoneChip />
           <GeoBlock />
           <div className="border border-light-200 rounded">
             <CommsEmailCard item={item} defaultExpanded />
@@ -213,7 +226,9 @@ export function EventBody({ event, detail }) {
     case 'wifi':
       return (
         <div className="p-3 space-y-3">
+          <PlaceHeader event={event} detail={detail} type={event.event_type} />
           <GeoBlock />
+          {event.event_type === 'wifi' && <WifiNetworkBlock detail={detail} />}
           <RawProps detail={detail} />
         </div>
       );
@@ -272,13 +287,28 @@ export function EventBody({ event, detail }) {
 }
 
 function RawProps({ detail }) {
-  // Show selected raw properties (not every property) for forensic traceability
+  // Show selected raw properties (not every property) for forensic traceability.
+  // Includes the report key so investigators always see WHICH phone the
+  // record came from even when the case has only one device — the
+  // PhoneIdentityChip is suppressed on single-phone cases, so without
+  // this key the source phone would be invisible.
   const keys = [
     'cellebrite_id',
     'cellebrite_report_key',
     'source_app',
     'deleted_state',
     'location_source',
+    'geocode_source',
+    'geocode_accuracy',
+    'place_name',
+    'address',
+    'admin1',
+    'country',
+    'country_code',
+    'ssid',
+    'bssid',
+    'channel',
+    'security',
     'nearest_location_key',
     'nearest_location_delta_s',
   ];
@@ -302,5 +332,130 @@ function RawProps({ detail }) {
         </tbody>
       </table>
     </details>
+  );
+}
+
+/**
+ * Compact "from this phone" chip rendered above comms anchors in the
+ * rail. Only shows when the case has more than one phone — single-
+ * phone cases don't need device disambiguation.
+ */
+function _PhoneChipForDetail({ event, detail }) {
+  const phoneCtx = usePhoneReports();
+  const showPhoneChip = !!phoneCtx?.hasMultiple;
+  const reportKey = detail.cellebrite_report_key || event.device_report_key || event.report_key;
+  if (!showPhoneChip || !reportKey) return null;
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-light-500">
+        From
+      </span>
+      <PhoneIdentityChip reportKey={reportKey} showIcon />
+    </div>
+  );
+}
+
+/**
+ * Header block for location / wifi / cell_tower selections in the rail.
+ *
+ * Surfaces what the user complained was missing:
+ *   - which phone the row came from (PhoneIdentityChip),
+ *   - the place / address as a prominent heading instead of being
+ *     buried at the end of the row,
+ *   - reverse-geocode attribution so the user can tell at a glance
+ *     whether the address came from the device or was inferred.
+ *
+ * Falls back gracefully — if no address / place_name exists we show
+ * the location_type or "Location" so the header still anchors the
+ * card. The phone chip only renders when the case has more than one
+ * phone (single-phone cases don't need device disambiguation).
+ */
+function PlaceHeader({ event, detail, type }) {
+  const phoneCtx = usePhoneReports();
+  const showPhoneChip = !!phoneCtx?.hasMultiple;
+  const reportKey = detail.cellebrite_report_key || event.device_report_key;
+  const place = detail.place_name || event.place_name;
+  const address = detail.address || event.address;
+  const country = detail.country || event.country;
+  const admin1 = detail.admin1 || event.admin1;
+  const geo = detail.geocode_source || event.geocode_source;
+  const title = address || place || detail.location_type || event.location_type
+    || (type === 'wifi' ? (detail.ssid || event.ssid || 'Wi-Fi network')
+        : type === 'cell_tower' ? (detail.cell_id || 'Cell tower')
+        : 'Location');
+  const subtitle = !address && (admin1 || country)
+    ? [admin1, country].filter(Boolean).join(', ')
+    : null;
+  return (
+    <div className="flex items-start gap-2 p-2 bg-light-50 rounded border border-light-200">
+      <MapPin className="w-4 h-4 text-cyan-600 mt-0.5 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-owl-blue-900 break-words">
+          {title}
+        </div>
+        {subtitle && (
+          <div className="text-[11px] text-light-600 mt-0.5">{subtitle}</div>
+        )}
+        {place && place !== title && (
+          <div className="text-[11px] text-light-500 mt-0.5">{place}</div>
+        )}
+        {geo && geo !== 'cellebrite' && geo !== 'none' && (
+          <span
+            className="inline-block mt-1 text-[9px] uppercase tracking-wide bg-light-100 text-light-600 px-1 py-px rounded"
+            title={`Reverse-geocoded via ${geo}${detail.geocode_accuracy ? ` (${detail.geocode_accuracy})` : ''}`}
+          >
+            via {geo}
+          </span>
+        )}
+      </div>
+      {showPhoneChip && reportKey && (
+        <PhoneIdentityChip reportKey={reportKey} showIcon className="flex-shrink-0" />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Network-info block for WiFi selections. Surfaces BSSID / SSID /
+ * channel / security so investigators can trace the connection and
+ * (where they care) cross-reference against a known-network db.
+ *
+ * Best-effort field plucking — Cellebrite reports vary in how they
+ * label these; we render whichever subset is present rather than
+ * forcing a fixed schema.
+ */
+function WifiNetworkBlock({ detail }) {
+  const ssid = detail.ssid || detail.wifi_ssid || detail.network_name;
+  const bssid = detail.bssid || detail.wifi_bssid || detail.mac_address;
+  const channel = detail.channel || detail.wifi_channel;
+  const security = detail.security || detail.wifi_security || detail.encryption;
+  const freq = detail.frequency || detail.wifi_frequency;
+  const signal = detail.signal_strength || detail.rssi;
+  const rows = [];
+  if (ssid) rows.push(['SSID', ssid]);
+  if (bssid) rows.push(['BSSID', bssid]);
+  if (channel) rows.push(['Channel', String(channel)]);
+  if (freq) rows.push(['Frequency', String(freq)]);
+  if (security) rows.push(['Security', security]);
+  if (signal != null) rows.push(['Signal', String(signal)]);
+  if (rows.length === 0) return null;
+  return (
+    <div className="text-xs">
+      <div className="text-[10px] uppercase tracking-wide text-light-500 mb-1">
+        Network
+      </div>
+      <table className="w-full text-[11px] border-collapse">
+        <tbody>
+          {rows.map(([k, v]) => (
+            <tr key={k} className="border-b border-light-100">
+              <td className="pr-2 py-1 text-light-500 font-medium align-top whitespace-nowrap">
+                {k}
+              </td>
+              <td className="py-1 text-light-800 break-all font-mono">{v}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

@@ -6168,7 +6168,7 @@ class Neo4jService:
                        emails_sent AS email_count,
                        device_keys
                 ORDER BY calls_made + calls_received + messages_sent + emails_sent DESC
-                LIMIT 500
+                LIMIT 2000
                 """,
                 case_id=case_id,
             )
@@ -6187,17 +6187,39 @@ class Neo4jService:
                 }
                 contacts.append(contact)
 
-            # Find contacts appearing on multiple devices
+            # Find contacts appearing on multiple devices.
+            #
+            # Cellebrite ingestion mints a SEPARATE Person per phone even
+            # when it's the same human, so grouping by `p.key` would
+            # always give one device per row (no shared contacts ever
+            # found) — that's why the UI used to read "Shared Contacts 0"
+            # even on cases with obvious overlap. Group by canonical
+            # phone number instead; fall back to a case-insensitive
+            # name match when phone is missing.
             result = session.run(
                 """
                 MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
-                WITH p, p.cellebrite_report_key AS rk
+                WITH p,
+                     p.cellebrite_report_key AS rk,
+                     coalesce(p.phone, '') AS phone_raw,
+                     coalesce(p.name, '') AS name_raw
                 WHERE rk IS NOT NULL
-                WITH p.key AS person_key, p.name AS name, p.phone AS phone,
-                     collect(DISTINCT rk) AS device_keys
+                  AND (phone_raw <> '' OR name_raw <> '')
+                WITH p, rk,
+                     CASE
+                       WHEN phone_raw <> '' THEN 'p:' + phone_raw
+                       ELSE 'n:' + toLower(name_raw)
+                     END AS bucket
+                WITH bucket,
+                     collect(DISTINCT rk) AS device_keys,
+                     collect(DISTINCT p.name)[0] AS name,
+                     collect(DISTINCT p.phone)[0] AS phone,
+                     collect(DISTINCT p.key) AS person_keys
                 WHERE size(device_keys) > 1
-                RETURN person_key, name, phone, device_keys
+                RETURN person_keys[0] AS person_key,
+                       name, phone, device_keys, person_keys
                 ORDER BY size(device_keys) DESC, name
+                LIMIT 500
                 """,
                 case_id=case_id,
             )
@@ -6208,6 +6230,9 @@ class Neo4jService:
                     "name": record["name"] or record["person_key"],
                     "phone": record["phone"] or "",
                     "devices": list(record["device_keys"]),
+                    # Full per-device Person keys so the UI can drill
+                    # into each device's specific record from the row.
+                    "person_keys": list(record["person_keys"]),
                 })
 
         return {"contacts": contacts, "shared_contacts": shared_contacts}
