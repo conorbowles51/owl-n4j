@@ -1161,13 +1161,26 @@ async def contacts_unified(
     rk_list = None
     if report_keys:
         rk_list = [k.strip() for k in report_keys.split(",") if k.strip()]
-    return neo4j_service.get_unified_contacts(
-        case_id=case_id,
-        report_keys=rk_list,
-        search=search,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        return neo4j_service.get_unified_contacts(
+            case_id=case_id,
+            report_keys=rk_list,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as e:
+        # Surface the real Cypher/driver error rather than letting it
+        # fall through as a plain 500 — the user otherwise sees
+        # "Failed to load unified contacts" with no hint of what
+        # went wrong. We also dump the traceback to the server log
+        # for triage.
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unified contacts query failed: {type(e).__name__}: {e}",
+        ) from e
 
 
 @router.get("/overview/calls")
