@@ -2965,6 +2965,21 @@ export const cellebriteEventsAPI = {
   },
 
   /**
+   * Devices that visited a given (lat, lon) within `radiusM` metres.
+   * Used by the location rail to show "this place was visited by N
+   * devices" instead of just the one selected row's device.
+   */
+  getLocationVisitors: (caseId, { lat, lon, radiusM = 150 } = {}) => {
+    const params = new URLSearchParams({
+      case_id: caseId,
+      lat: String(lat),
+      lon: String(lon),
+      radius_m: String(radiusM),
+    });
+    return fetchAPI(`/cellebrite/locations/visitors?${params.toString()}`);
+  },
+
+  /**
    * Per-device polyline tracks.
    */
   getTracks: (caseId, {

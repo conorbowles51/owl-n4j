@@ -102,7 +102,7 @@ export default function EventAccordion({ selection }) {
   }
   return (
     <div className="space-y-3">
-      <EventBody event={event} detail={detail} />
+      <EventBody event={event} detail={detail} caseId={caseId} />
       {isCommsAnchor && (
         <RelatedSections
           related={related}

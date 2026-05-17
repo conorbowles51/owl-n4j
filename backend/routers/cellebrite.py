@@ -705,6 +705,31 @@ async def get_location_tiles(
     )
 
 
+@router.get("/locations/visitors")
+async def get_location_visitors(
+    case_id: str = Query(...),
+    lat: float = Query(...),
+    lon: float = Query(...),
+    radius_m: float = Query(150.0, gt=0, le=5000,
+                            description="Search radius in metres around (lat, lon)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Devices that have a Location row within `radius_m` of (lat, lon).
+    Used by the location rail's "Devices that visited this place"
+    section so investigators can see whether a place was visited by
+    one phone or several without leaving the rail.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_location_visitors(
+        case_id=case_id,
+        lat=lat,
+        lon=lon,
+        radius_m=radius_m,
+    )
+
+
 @router.get("/locations/in-tile")
 async def get_locations_in_tile(
     case_id: str = Query(...),

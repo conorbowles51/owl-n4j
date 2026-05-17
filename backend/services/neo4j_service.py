@@ -8370,6 +8370,95 @@ class Neo4jService:
                 })
         return {"items": items, "total": len(items)}
 
+    def get_cellebrite_location_visitors(
+        self,
+        case_id: str,
+        lat: float,
+        lon: float,
+        radius_m: float = 150.0,
+        limit_per_device: int = 5,
+    ) -> dict:
+        """
+        Devices that have ever placed a Location node within `radius_m`
+        of (lat, lon).
+
+        Powers the "all devices that visited this place" rail section
+        the user asked for after seeing the per-row location flyout.
+        Bounds the candidate set with a cheap bounding box first
+        (latitude / longitude prefilter) and then refines with the
+        haversine distance — Neo4j has no native great-circle helper
+        so the math runs in Cypher via straight trig.
+
+        Returns one row per device_report_key with:
+          - device_report_key
+          - visit_count: total Location rows within radius
+          - first_seen / last_seen: timestamp bounds
+          - sample_keys: up to `limit_per_device` node keys for drill-in
+        """
+        if lat is None or lon is None:
+            return {"visitors": []}
+
+        # Latitude is ~111_111 m per degree; longitude shrinks by
+        # cos(lat). Build a square bounding box that comfortably
+        # encloses the haversine circle so the cypher prefilter is
+        # cheap. Slight overshoot is fine — the haversine step trims
+        # the corners.
+        import math
+        deg_per_m = 1.0 / 111_111.0
+        cos_lat = math.cos(math.radians(lat)) or 1e-9
+        d_lat = radius_m * deg_per_m
+        d_lon = (radius_m * deg_per_m) / cos_lat
+
+        params = {
+            "case_id": case_id,
+            "lat_lo": lat - d_lat,
+            "lat_hi": lat + d_lat,
+            "lon_lo": lon - d_lon,
+            "lon_hi": lon + d_lon,
+            "lat": float(lat),
+            "lon": float(lon),
+            "radius_m": float(radius_m),
+            "limit_per_device": int(limit_per_device),
+        }
+
+        # Haversine in Cypher. Earth radius = 6_371_000 m. The
+        # WITH-trick lets us reuse intermediate cosines without
+        # re-computing them per row.
+        cypher = """
+            MATCH (n:Location {case_id: $case_id, source_type: 'cellebrite'})
+            WHERE n.latitude  >= $lat_lo AND n.latitude  <= $lat_hi
+              AND n.longitude >= $lon_lo AND n.longitude <= $lon_hi
+              AND n.cellebrite_report_key IS NOT NULL
+            WITH n,
+                 radians(n.latitude - $lat) AS dLat,
+                 radians(n.longitude - $lon) AS dLon,
+                 radians(n.latitude) AS lat1,
+                 radians($lat) AS lat2
+            WITH n,
+                 sin(dLat/2)*sin(dLat/2)
+                   + cos(lat1)*cos(lat2)*sin(dLon/2)*sin(dLon/2) AS a
+            WITH n, 2 * 6371000.0 * asin(sqrt(a)) AS d_m
+            WHERE d_m <= $radius_m
+            WITH n.cellebrite_report_key AS rk,
+                 count(n) AS visit_count,
+                 min(n.timestamp) AS first_seen,
+                 max(n.timestamp) AS last_seen,
+                 collect(n.key)[..$limit_per_device] AS sample_keys
+            RETURN rk, visit_count, first_seen, last_seen, sample_keys
+            ORDER BY visit_count DESC
+        """
+        visitors = []
+        with self._driver.session() as session:
+            for r in session.run(cypher, **params):
+                visitors.append({
+                    "device_report_key": r["rk"],
+                    "visit_count": int(r["visit_count"] or 0),
+                    "first_seen": r["first_seen"],
+                    "last_seen": r["last_seen"],
+                    "sample_keys": list(r["sample_keys"] or []),
+                })
+        return {"visitors": visitors, "radius_m": radius_m, "center": {"lat": lat, "lon": lon}}
+
     def get_cellebrite_event_tracks(
         self,
         case_id: str,

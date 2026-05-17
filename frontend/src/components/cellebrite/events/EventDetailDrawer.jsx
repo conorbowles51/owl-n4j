@@ -104,7 +104,10 @@ export default function EventDetailDrawer({ caseId, event, onClose }) {
 
 // Exported so the universal CellebriteSelectionRail can reuse the same
 // projection logic instead of duplicating the type-by-type rendering.
-export function EventBody({ event, detail }) {
+// caseId is optional — only the VisitorsBlock currently needs it (so
+// it can fetch /locations/visitors). Other branches keep working with
+// the legacy two-arg shape.
+export function EventBody({ event, detail, caseId = null }) {
   const lat = detail.latitude ?? detail.nearest_location_lat;
   const lon = detail.longitude ?? detail.nearest_location_lon;
   const geoDirect = detail.latitude != null && detail.longitude != null;
@@ -229,6 +232,7 @@ export function EventBody({ event, detail }) {
           <PlaceHeader event={event} detail={detail} type={event.event_type} />
           <GeoBlock />
           {event.event_type === 'wifi' && <WifiNetworkBlock detail={detail} />}
+          <VisitorsBlock caseId={caseId} lat={lat} lon={lon} />
           <RawProps detail={detail} />
         </div>
       );
@@ -471,6 +475,99 @@ function WifiNetworkBlock({ detail }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/**
+ * "Devices that visited this place" — rail section for location /
+ * cell_tower / wifi selections that have a lat / lon. Hits
+ * /cellebrite/locations/visitors with a 150m radius and renders one
+ * row per device with visit count + first/last seen.
+ *
+ * Defaults to a 150m radius — tight enough to mean "the same place"
+ * for a building / address, wide enough to absorb the typical GPS
+ * noise on phone fixes. Rendered only when there's at least one
+ * visitor (always at least the source phone for a location row).
+ *
+ * Quietly does nothing on cases without a caseId or coords — the
+ * rail flyout shows the rest of the body instead of an empty
+ * "Devices" block.
+ */
+function VisitorsBlock({ caseId, lat, lon }) {
+  const phoneCtx = usePhoneReports();
+  const [visitors, setVisitors] = useState(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    if (!caseId || lat == null || lon == null) {
+      setVisitors(null);
+      return undefined;
+    }
+    let cancelled = false;
+    setLoading(true);
+    cellebriteEventsAPI
+      .getLocationVisitors(caseId, { lat, lon, radiusM: 150 })
+      .then((res) => {
+        if (!cancelled) {
+          setVisitors(res?.visitors || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setVisitors([]);
+          setLoading(false);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [caseId, lat, lon]);
+  if (!caseId || lat == null || lon == null) return null;
+  if (loading && !visitors) {
+    return (
+      <div className="text-[11px] text-light-500 italic">
+        Checking for other devices…
+      </div>
+    );
+  }
+  if (!visitors || visitors.length === 0) return null;
+  const labelFor = (rk) => {
+    const id = phoneCtx?.getIdentityByKey?.(rk);
+    return id?.label || id?.deviceModel || rk;
+  };
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-light-500 mb-1 flex items-center gap-1.5">
+        <Smartphone className="w-3 h-3" />
+        Devices that visited this place
+        <span className="text-light-400 normal-case tracking-normal">
+          (~150m)
+        </span>
+      </div>
+      <ul className="space-y-1">
+        {visitors.map((v) => (
+          <li
+            key={v.device_report_key}
+            className="flex items-center gap-2 text-[11px] border border-light-100 rounded px-2 py-1 bg-white"
+          >
+            <PhoneIdentityChip
+              reportKey={v.device_report_key}
+              variant="dense"
+              className="flex-shrink-0"
+            />
+            <span className="truncate flex-1 text-light-800" title={v.device_report_key}>
+              {labelFor(v.device_report_key)}
+            </span>
+            <span className="text-light-700 font-medium tabular-nums">
+              {v.visit_count.toLocaleString()} visit{v.visit_count === 1 ? '' : 's'}
+            </span>
+            {v.last_seen && (
+              <span className="text-light-500 tabular-nums whitespace-nowrap">
+                last {formatTs(v.last_seen)}
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
