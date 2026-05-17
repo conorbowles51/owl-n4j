@@ -99,20 +99,49 @@ export default function CellebriteSearchInput({
     }
     const text = value || '';
     const c = Math.min(Math.max(caret, 0), text.length);
-    // Walk back to the nearest whitespace (treating quoted runs as part
-    // of the token — once the user opens a quote we don't suggest until
-    // they close it).
+
+    // Walk back to the nearest whitespace to find the current token.
     let s = c;
     while (s > 0 && !/\s/.test(text[s - 1])) s -= 1;
     const tok = text.slice(s, c);
-    if (!tok) return { tokenStart: s, tokenEnd: c, opPrefix: '', valuePrefix: '', mode: 'operator' };
-    const colon = tok.indexOf(':');
-    if (colon < 0) {
-      return { tokenStart: s, tokenEnd: c, opPrefix: tok, valuePrefix: '', mode: 'operator' };
+
+    // Case 1: current token contains a `:` — split it cleanly.
+    const colonInTok = tok.indexOf(':');
+    if (colonInTok >= 0) {
+      const op = tok.slice(0, colonInTok).toLowerCase();
+      const val = tok.slice(colonInTok + 1);
+      return { tokenStart: s, tokenEnd: c, opPrefix: op, valuePrefix: val, mode: 'value' };
     }
-    const op = tok.slice(0, colon).toLowerCase();
-    const val = tok.slice(colon + 1);
-    return { tokenStart: s, tokenEnd: c, opPrefix: op, valuePrefix: val, mode: 'value' };
+
+    // Case 2: user typed `type: L` — i.e. there's whitespace between
+    // the operator's `:` and what they're typing now. Walk back from
+    // the current token's start across whitespace and see if the
+    // PREVIOUS token ends in `:`. If so, the user is still picking a
+    // value for that operator; we keep value-completion alive and
+    // expand the replacement range to cover the space so a pick
+    // doesn't leave the `:` orphaned.
+    let p = s;
+    while (p > 0 && /\s/.test(text[p - 1])) p -= 1;
+    let prevStart = p;
+    while (prevStart > 0 && !/\s/.test(text[prevStart - 1])) prevStart -= 1;
+    const prevTok = text.slice(prevStart, p);
+    if (prevTok && prevTok.endsWith(':')) {
+      const op = prevTok.slice(0, -1).toLowerCase();
+      return {
+        // Replacement range covers the operator, the gap, AND the
+        // partial value — picking a suggestion produces a clean
+        // `operator:value ` regardless of where the spaces were.
+        tokenStart: prevStart,
+        tokenEnd: c,
+        opPrefix: op,
+        valuePrefix: tok,
+        mode: 'value',
+      };
+    }
+
+    // Case 3: bare token, no operator context — offer operator
+    // completions matched against whatever's typed.
+    return { tokenStart: s, tokenEnd: c, opPrefix: tok, valuePrefix: '', mode: 'operator' };
   }, [value, caret, focused, typeaheadEnabled]);
 
   const items = useMemo(() => {

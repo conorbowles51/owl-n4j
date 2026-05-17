@@ -124,33 +124,73 @@ function FlyToCoord({ flyToCoord, zoom = 14 }) {
 /**
  * Direction indicators along a trajectory polyline.
  *
- * Samples ~maxArrows evenly-spaced points along the line, computes
- * the local bearing from each point to the next, and renders a tiny
- * arrow div-icon rotated to face that direction. Sampling means we
- * don't pay a Marker cost per location point (which would be
- * thousands on a busy device) — 12 arrows is plenty to read
- * direction at any zoom.
+ * Sampling is by GEODESIC DISTANCE along the line, not by point
+ * index. That distinction matters because real trajectories cluster
+ * thousands of points around one or two "hot" nodes (home, office)
+ * with a few long segments stretching out to the rest of the world.
+ * Index-based sampling stacked every arrow on top of the hot node;
+ * distance-based sampling spreads them evenly along the whole route
+ * regardless of point density.
+ *
+ * We accumulate cumulative haversine distance across the polyline
+ * once, then drop an arrow at evenly-spaced fractional positions
+ * (capped at maxArrows). For very long intercontinental tracks the
+ * cap kicks in and the spacing widens; for short walks each segment
+ * still gets a couple of arrows.
  *
  * The arrow is drawn with a fat white stroke under a coloured fill
  * so it stays legible against both the line itself and the basemap.
  */
-function DirectionArrows({ positions, color, maxArrows = 12 }) {
+function DirectionArrows({ positions, color, maxArrows = 16 }) {
   const arrows = useMemo(() => {
     const n = positions.length;
     if (n < 2) return [];
-    // Stride large enough to pick `maxArrows` segments out of (n-1)
-    // available. At least 1.
-    const stride = Math.max(1, Math.floor((n - 1) / maxArrows));
-    const out = [];
-    for (let i = 0; i < n - 1; i += stride) {
+
+    // Per-segment distance + cumulative total in one pass.
+    const segDist = new Array(n - 1);
+    let total = 0;
+    for (let i = 0; i < n - 1; i += 1) {
       const a = positions[i];
       const b = positions[i + 1];
-      if (!a || !b) continue;
-      const lat = (a[0] + b[0]) / 2;
-      const lon = (a[1] + b[1]) / 2;
+      const d = haversineMeters(a[0], a[1], b[0], b[1]);
+      segDist[i] = d;
+      total += d;
+    }
+    if (total <= 0) return [];
+
+    // Target one arrow per ~50 km of track, but always between 3 and
+    // maxArrows. The 50 km figure is a sweet spot: dense enough for
+    // a city walk to get a few arrows, sparse enough that a 10 000 km
+    // intercontinental track doesn't drown in markers.
+    const targetCount = Math.min(maxArrows, Math.max(3, Math.round(total / 50000)));
+    const step = total / targetCount;
+    const out = [];
+
+    // Walk the cumulative distance and place arrows at midpoints of
+    // each step (so neither end of the line has an arrow stacked on
+    // its terminal marker).
+    let segIdx = 0;
+    let segStartCum = 0;
+    for (let k = 0; k < targetCount; k += 1) {
+      const target = step * (k + 0.5);
+      while (
+        segIdx < segDist.length - 1
+        && segStartCum + segDist[segIdx] < target
+      ) {
+        segStartCum += segDist[segIdx];
+        segIdx += 1;
+      }
+      const segLen = segDist[segIdx] || 0;
+      if (segLen <= 0) continue;
+      const t = Math.max(0, Math.min(1, (target - segStartCum) / segLen));
+      const a = positions[segIdx];
+      const b = positions[segIdx + 1];
+      // Linear lat/lon interpolation — visually identical to a
+      // great-circle interpolation at trajectory segment lengths.
+      const lat = a[0] + (b[0] - a[0]) * t;
+      const lon = a[1] + (b[1] - a[1]) * t;
       const bearing = computeBearing(a[0], a[1], b[0], b[1]);
-      out.push({ lat, lon, bearing, key: `${i}` });
-      if (out.length >= maxArrows) break;
+      out.push({ lat, lon, bearing, key: `${k}` });
     }
     return out;
   }, [positions, maxArrows]);
@@ -175,6 +215,22 @@ function DirectionArrows({ positions, color, maxArrows = 12 }) {
       keyboard={false}
     />
   ));
+}
+
+/**
+ * Great-circle distance in metres between two (lat, lon) points.
+ * Used by DirectionArrows to space markers along the line by real
+ * distance rather than by polyline-vertex index.
+ */
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dφ = toRad(lat2 - lat1);
+  const dλ = toRad(lon2 - lon1);
+  const φ1 = toRad(lat1);
+  const φ2 = toRad(lat2);
+  const a = Math.sin(dφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
 }
 
 /**
