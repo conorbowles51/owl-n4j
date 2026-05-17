@@ -246,8 +246,31 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // type 'location_tile' routes to LocationTileAccordion (which fetches
   // the rows inside that bucket so the user can drill into the cluster
   // without zooming in).
-  const { selectEntity } = useCellebriteSelection();
+  const { selectEntity, selection } = useCellebriteSelection();
   const [selectedId, setSelectedId] = useState(null);
+  // Rail-driven map recentering. When the user drills into a tile
+  // through the rail (LocationTileAccordion -> click a row inside),
+  // the selection becomes a `location` whose lat/lon isn't in the
+  // map's `events` array (the map is still showing tile centroids).
+  // We watch the selection and push lat/lon directly into the map
+  // via flyToCoord — bypasses the events lookup. The tick bump
+  // re-fires the effect on identical-coord re-selections.
+  const [flyToCoord, setFlyToCoord] = useState(null);
+  const lastFlyKeyRef = useRef(null);
+  useEffect(() => {
+    if (!selection) return;
+    const t = selection.type;
+    if (t !== 'location' && t !== 'location_tile') return;
+    const p = selection.payload || {};
+    const lat = p.latitude ?? p.lat;
+    const lon = p.longitude ?? p.lon;
+    if (lat == null || lon == null) return;
+    // De-dupe: same selection id shouldn't re-fly on every render.
+    const key = `${selection.id}|${lat}|${lon}`;
+    if (lastFlyKeyRef.current === key) return;
+    lastFlyKeyRef.current = key;
+    setFlyToCoord({ lat: Number(lat), lon: Number(lon), tick: Date.now() });
+  }, [selection]);
 
   const handleSelect = useCallback((row) => {
     if (!row) {
@@ -409,6 +432,7 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
               isPlaying={false}
               selectedEventId={selectedId}
               flyToId={flyToIdForMap}
+              flyToCoord={flyToCoord}
               onEventClick={handleSelect}
               intersectionMatches={[]}
               deviceColorOf={deviceColorOf}

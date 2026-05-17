@@ -93,6 +93,35 @@ function FlyToSelected({ events, flyToId, zoom = 14 }) {
 }
 
 /**
+ * Direct-coordinate flyTo — bypasses the events lookup. Used when
+ * the caller drives map recentering from a source that doesn't have
+ * its target row in the current `events` array (e.g. the rail
+ * flyout drilling into a tile's contents while the map itself only
+ * has the parent tile centroids loaded).
+ *
+ * The shape is `{ lat, lon, tick }`. `tick` is a monotonic counter
+ * the caller bumps every time it wants the effect to re-fire even
+ * when lat/lon are identical to the last call — same pattern as the
+ * id::timestamp scheme used by FlyToSelected's caller.
+ */
+function FlyToCoord({ flyToCoord, zoom = 14 }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!flyToCoord || flyToCoord.lat == null || flyToCoord.lon == null) return;
+    try {
+      map.flyTo([flyToCoord.lat, flyToCoord.lon], Math.max(map.getZoom(), zoom), {
+        duration: 0.6,
+      });
+    } catch {
+      // ignore — Leaflet throws if the map isn't ready yet
+    }
+    // tick is the re-trigger signal; intentionally in deps so a fresh
+    // click on the same row re-flies even when coords are unchanged.
+  }, [flyToCoord?.lat, flyToCoord?.lon, flyToCoord?.tick, map, zoom]);
+  return null;
+}
+
+/**
  * Tells Leaflet to recompute its container size whenever the parent
  * tab becomes visible again, OR when fresh data lands. Without this
  * the map renders at zero size when the events tab was inactive
@@ -132,6 +161,11 @@ export default function EventMapPanel({
   // fly-to-only, or both. Used by Overview Locations where clicking a
   // row should pan the map.
   flyToId = null,
+  // Direct-coordinate flyTo — used by callers that drive recentering
+  // from a source where the target row isn't in the `events` array
+  // (e.g. tile rail drill-in). Shape: { lat, lon, tick }. tick is a
+  // monotonic re-trigger signal — bump it to refly to the same point.
+  flyToCoord = null,
   intersectionMatches = [],
   deviceColorOf,
   // True when the parent tab is the active one. The map needs to
@@ -247,6 +281,7 @@ export default function EventMapPanel({
           dataKey={`${events.length}:${tracks.length}`}
         />
         <FlyToSelected events={events} flyToId={flyToId} />
+        <FlyToCoord flyToCoord={flyToCoord} />
 
 
         {/* Device tracks */}
