@@ -9,6 +9,11 @@ import CommsContactDrawer from './comms/CommsContactDrawer';
 export default function CellebriteCommunicationView({ caseId }) {
   const [data, setData] = useState({ contacts: [], shared_contacts: [] });
   const [loading, setLoading] = useState(true);
+  // Track the real error so the user can see WHY the view is empty —
+  // previously the .catch silently set data to empty and the UI just
+  // showed "no contacts", which the user (correctly) reported as
+  // "unknown error / nothing loads".
+  const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('call_count');
   const [sortDir, setSortDir] = useState('desc');
@@ -26,11 +31,18 @@ export default function CellebriteCommunicationView({ caseId }) {
     cellebriteAPI.getCommunicationNetwork(caseId).then(result => {
       if (!cancelled) {
         setData(result || { contacts: [], shared_contacts: [] });
+        setError(null);
         setLoading(false);
       }
-    }).catch(() => {
+    }).catch((e) => {
       if (!cancelled) {
         setData({ contacts: [], shared_contacts: [] });
+        // Log the failure to the console too — at least the original
+        // network reason is reachable from devtools rather than lost.
+        // Surface the real message in-UI so investigators can paste
+        // it into a bug report.
+        console.error('[CellebriteCommunicationView] failed', e);
+        setError(e?.message || String(e) || 'Failed to load contacts');
         setLoading(false);
       }
     });
@@ -69,6 +81,20 @@ export default function CellebriteCommunicationView({ caseId }) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-light-400" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-6 text-sm text-red-700 gap-2">
+        <div className="font-semibold">Couldn't load contacts</div>
+        <div className="text-xs text-red-600 max-w-md text-center break-words">
+          {error}
+        </div>
+        <div className="text-xs text-light-500">
+          See the browser console for the full failure.
+        </div>
       </div>
     );
   }

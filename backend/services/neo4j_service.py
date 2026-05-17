@@ -6196,6 +6196,15 @@ class Neo4jService:
             # even on cases with obvious overlap. Group by canonical
             # phone number instead; fall back to a case-insensitive
             # name match when phone is missing.
+            #
+            # Neo4j-5 safety notes:
+            #   - Use head(collect(...)) rather than collect(...)[0] —
+            #     subscripting an aggregation directly trips a parser
+            #     change in 5.x and surfaces as a generic "unknown
+            #     error" on the frontend.
+            #   - Avoid carrying `p` into the bucket WITH (the
+            #     aggregation needs only the bucket + per-bucket
+            #     accumulators).
             result = session.run(
                 """
                 MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
@@ -6205,20 +6214,24 @@ class Neo4jService:
                      coalesce(p.name, '') AS name_raw
                 WHERE rk IS NOT NULL
                   AND (phone_raw <> '' OR name_raw <> '')
-                WITH p, rk,
+                WITH p, rk, phone_raw, name_raw,
                      CASE
                        WHEN phone_raw <> '' THEN 'p:' + phone_raw
                        ELSE 'n:' + toLower(name_raw)
                      END AS bucket
                 WITH bucket,
                      collect(DISTINCT rk) AS device_keys,
-                     collect(DISTINCT p.name)[0] AS name,
-                     collect(DISTINCT p.phone)[0] AS phone,
+                     collect(DISTINCT p.name) AS names,
+                     collect(DISTINCT p.phone) AS phones,
                      collect(DISTINCT p.key) AS person_keys
                 WHERE size(device_keys) > 1
-                RETURN person_keys[0] AS person_key,
-                       name, phone, device_keys, person_keys
-                ORDER BY size(device_keys) DESC, name
+                RETURN
+                    head(person_keys) AS person_key,
+                    head(names) AS name,
+                    head(phones) AS phone,
+                    device_keys,
+                    person_keys
+                ORDER BY size(device_keys) DESC, head(names)
                 LIMIT 500
                 """,
                 case_id=case_id,

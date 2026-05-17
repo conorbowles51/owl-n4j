@@ -215,8 +215,17 @@ async def get_communication_network(
 ):
     """Get communication network analysis (contact frequency, shared contacts)."""
     _require_case_access(case_id, current_user, db)
-    result = neo4j_service.get_cellebrite_communication_network(case_id)
-    return result
+    try:
+        return neo4j_service.get_cellebrite_communication_network(case_id)
+    except Exception as e:
+        # Surface the real driver/Cypher error to the client instead of
+        # bubbling a 500 with no detail. The frontend reports the
+        # message verbatim, so the investigator gets a clue instead of
+        # an opaque "unknown error".
+        raise HTTPException(
+            status_code=500,
+            detail=f"Communication network query failed: {type(e).__name__}: {e}",
+        ) from e
 
 
 # -------------------------------------------------------------------
