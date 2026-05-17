@@ -363,7 +363,14 @@ export default function CellebriteSearchInput({
       )}
 
       {hintOpen && (
-        <div className="absolute right-0 mt-1 z-30 w-[360px] bg-white border border-light-300 rounded-md shadow-lg p-3 text-xs text-light-700">
+        // Anchored ABOVE the input so it doesn't cover the timeline /
+        // scrubber that lives immediately below this toolbar. z-50
+        // puts it above the Leaflet map (Leaflet panes use z-200..700
+        // inside their own stacking context, so we still need a high
+        // app-level z plus pointer-events: none on the wrapper
+        // to be safe — but since this is positioned relative to a
+        // non-Leaflet ancestor, plain z-50 wins.).
+        <div className="absolute right-0 bottom-full mb-1 z-50 w-[360px] bg-white border border-light-300 rounded-md shadow-lg p-3 text-xs text-light-700">
           <div className="font-semibold text-owl-blue-900 mb-1.5">Search operators</div>
           <ul className="space-y-1">
             <li><code className="bg-light-100 px-1 rounded">type:call</code> — by event/thread type</li>
