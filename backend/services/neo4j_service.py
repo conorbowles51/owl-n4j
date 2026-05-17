@@ -10291,6 +10291,12 @@ def _project_event(node, event_type: str) -> Optional[dict]:
         "reason": n.get("reason"),
         "battery": n.get("battery"),
         "app_name": n.get("app_name"),
+        # Location-specific subtype (Visited / Searched / WhatsApp / ...).
+        # Needed by the frontend Locations table column AND by the
+        # client-side `type:` search operator — without it the row
+        # arrives with location_type=undefined and `type:Visited`
+        # filters every row out even when the suggestion was real.
+        "location_type": n.get("location_type"),
     }
 
 
