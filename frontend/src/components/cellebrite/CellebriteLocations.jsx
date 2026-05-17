@@ -294,12 +294,17 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // (tiles mode auto-switched above), build one synth track per
   // device sorted chronologically. The map's existing track renderer
   // draws cyan-ish polylines through them.
+  //
+  // Built from `mapEvents` (the post-search-filter view) — NOT the
+  // raw `locations` — so an active `type:`/`app:`/`place:` filter
+  // also prunes the polyline. Without this, the lines would still
+  // stretch across the world via filtered-out points.
   const trajectoryTracks = useMemo(() => {
     if (!trajectoryOn || renderMode !== 'raw') return [];
     // Group by device so each phone gets its own polyline coloured
     // by its identity — matches the Events Center / Overview pattern.
     const byDevice = new Map();
-    for (const loc of locations) {
+    for (const loc of mapEvents) {
       if (loc.latitude == null || loc.longitude == null || !loc.timestamp) continue;
       const rk = loc.device_report_key || 'unknown';
       if (!byDevice.has(rk)) byDevice.set(rk, []);
@@ -320,7 +325,7 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       });
     }
     return out;
-  }, [trajectoryOn, renderMode, locations, deviceColorOf]);
+  }, [trajectoryOn, renderMode, mapEvents, deviceColorOf]);
 
   // Search typeahead — pulls suggestions out of the actual loaded
   // data so the user can `Tab` through real values instead of
