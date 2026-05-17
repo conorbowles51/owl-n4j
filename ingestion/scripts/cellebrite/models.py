@@ -76,6 +76,16 @@ class TaggedFile:
     deleted: str = "Intact"
     extraction_id: str = ""
     tags: Optional[str] = None  # e.g., "Image", "Audio", "Archives"
+    # EXIF / Cellebrite-parsed file timestamps. Cellebrite emits these
+    # as metadata <item> children of <file> when present (typically for
+    # images / videos / audio). Stored on the evidence record so the
+    # Files tab can filter by date taken / has-geotag without re-
+    # parsing the original bytes.
+    creation_time: Optional[str] = None  # ISO 8601 — when the file was created on the device
+    modify_time: Optional[str] = None    # ISO 8601 — last modification
+    capture_time: Optional[str] = None   # ISO 8601 — EXIF DateTimeOriginal (camera capture)
+    latitude: Optional[float] = None     # Decimal degrees
+    longitude: Optional[float] = None    # Decimal degrees
 
 
 @dataclass

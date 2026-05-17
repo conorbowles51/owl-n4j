@@ -200,7 +200,11 @@ class CellebriteFileLinker:
                 "size": tf.size or 0,
             }
 
-            # We'll create the record with extra metadata below
+            # We'll create the record with extra metadata below.
+            # EXIF / geotag fields are forwarded straight from the
+            # TaggedFile parse so the registration step (which builds
+            # the persisted evidence record) can store them without
+            # re-reading the source XML.
             files_to_register.append({
                 "file_info": file_info,
                 "file_id": file_id,
@@ -208,6 +212,11 @@ class CellebriteFileLinker:
                 "sha256": sha256,
                 "model_id": file_to_model.get(file_id),
                 "resolved_path": resolved_path,
+                "capture_time": tf.capture_time,
+                "creation_time": tf.creation_time,
+                "modify_time": tf.modify_time,
+                "latitude": tf.latitude,
+                "longitude": tf.longitude,
             })
 
         if not files_to_register:
@@ -287,6 +296,26 @@ class CellebriteFileLinker:
                     "cellebrite_model_id": model_id,
                     "cellebrite_category": category,
                     "source_type": "cellebrite",
+                    # File timestamps parsed out of <taggedFiles> metadata.
+                    # `capture_time` is EXIF DateTimeOriginal (camera moment);
+                    # creation/modify are filesystem-level. None of these
+                    # are guaranteed to be present — older reports often
+                    # omit them entirely. Filter UI reads `capture_time`
+                    # first, falling back to `creation_time` for the
+                    # "Date taken" column.
+                    "capture_time": item.get("capture_time"),
+                    "creation_time": item.get("creation_time"),
+                    "modify_time": item.get("modify_time"),
+                    # Per-file geotag (when Cellebrite parsed EXIF GPS).
+                    # `has_geotag` is the cheap boolean the API uses for
+                    # the "has location" filter — avoids materialising
+                    # both lat/lon just to check existence.
+                    "latitude": item.get("latitude"),
+                    "longitude": item.get("longitude"),
+                    "has_geotag": (
+                        item.get("latitude") is not None
+                        and item.get("longitude") is not None
+                    ),
                 }
 
                 evidence_storage._records[evidence_id] = record

@@ -871,6 +871,14 @@ async def get_cellebrite_files(
     entity_id: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="Substring match on filename"),
     only_relevant: bool = Query(False),
+    # EXIF / geotag filters. `capture_after` / `capture_before` are
+    # YYYY-MM-DD bounds on the file's EXIF capture time (falling back
+    # to creation_time if capture_time is absent). `has_geotag=true`
+    # keeps only files with a parsed lat/lon. All nullable so old
+    # callers keep working.
+    capture_after: Optional[str] = Query(None, description="YYYY-MM-DD lower bound on capture/creation time"),
+    capture_before: Optional[str] = Query(None, description="YYYY-MM-DD upper bound on capture/creation time"),
+    has_geotag: Optional[bool] = Query(None, description="True = only geotagged; False = only non-geotagged"),
     limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -893,6 +901,27 @@ async def get_cellebrite_files(
         files = [f for f in files if entity_id in (f.get("linked_entity_ids") or [])]
     if only_relevant:
         files = [f for f in files if f.get("is_relevant")]
+
+    # Geotag filter — cheap boolean exists on every record (false when
+    # ingestion didn't find one or older records pre-fix). None means
+    # "no filter".
+    if has_geotag is True:
+        files = [f for f in files if f.get("has_geotag")]
+    elif has_geotag is False:
+        files = [f for f in files if not f.get("has_geotag")]
+
+    # Capture-time window. Falls back to creation_time when capture
+    # time is absent (older reports / non-image files). Compares as
+    # 10-char prefixes so any ISO 8601 input matches whether or not it
+    # has a time / timezone suffix.
+    if capture_after or capture_before:
+        def _ts_prefix(rec):
+            t = rec.get("capture_time") or rec.get("creation_time")
+            return t[:10] if t else None
+        if capture_after:
+            files = [f for f in files if (_ts_prefix(f) or "") >= capture_after]
+        if capture_before:
+            files = [f for f in files if (_ts_prefix(f) or "9999-12-31") <= capture_before]
 
     # Resolve parents in one batched call so we can filter by parent_label / source_app
     model_ids = sorted({f.get("cellebrite_model_id") for f in files if f.get("cellebrite_model_id")})

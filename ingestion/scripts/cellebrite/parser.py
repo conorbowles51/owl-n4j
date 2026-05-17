@@ -397,19 +397,54 @@ class CellebriteXMLParser:
                     extraction_id=elem.get("extractionId", ""),
                 )
 
-                # Extract Local Path, hashes, tags from nested metadata
+                # Extract Local Path, hashes, tags, EXIF-ish timestamps
+                # and geotag from nested metadata. Cellebrite emits all
+                # of these as <item name="X">value</item> children of
+                # <metadata>. Names vary across report versions — we
+                # match the most common ones for each concept.
                 for meta_section in elem.findall(_ns("metadata")):
                     for item in meta_section.findall(_ns("item")):
                         item_name = item.get("name", "")
                         item_text = (item.text or "").strip()
+                        if not item_text:
+                            continue
                         if item_name == "Local Path":
                             tf.local_path = item_text
                         elif item_name == "MD5":
-                            tf.md5 = item_text if item_text else None
+                            tf.md5 = item_text
                         elif item_name == "SHA256":
-                            tf.sha256 = item_text if item_text else None
+                            tf.sha256 = item_text
                         elif item_name == "Tags":
-                            tf.tags = item_text if item_text else None
+                            tf.tags = item_text
+                        # Timestamps — Cellebrite uses a small zoo of
+                        # names depending on the source app and OS.
+                        elif item_name in ("Creation time", "CreationTime", "Created"):
+                            tf.creation_time = item_text
+                        elif item_name in ("Modify Time", "ModifyTime", "Modified"):
+                            tf.modify_time = item_text
+                        # EXIF DateTimeOriginal (camera capture) — preferred
+                        # for image search since it's the moment of capture,
+                        # not the file write.
+                        elif item_name in (
+                            "Capture Time", "CaptureTime", "DateTimeOriginal",
+                            "Date Taken", "Photo Taken",
+                        ):
+                            tf.capture_time = item_text
+                        # Geotag — parsed lazily because Cellebrite sometimes
+                        # emits these as decimal strings and sometimes as
+                        # "N 51° 30' 26.4\"" sexagesimal. We accept anything
+                        # that parses cleanly as float; sexagesimal forms
+                        # fall through (no false positives).
+                        elif item_name in ("Latitude", "GPS Latitude", "GpsLatitude"):
+                            try:
+                                tf.latitude = float(item_text)
+                            except ValueError:
+                                pass
+                        elif item_name in ("Longitude", "GPS Longitude", "GpsLongitude"):
+                            try:
+                                tf.longitude = float(item_text)
+                            except ValueError:
+                                pass
 
                 if tf.local_path:  # Only include files with a local path
                     tagged_files.append(tf)

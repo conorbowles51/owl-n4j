@@ -3108,6 +3108,13 @@ export const cellebriteFilesAPI = {
     entityId = null,
     search = null,
     onlyRelevant = false,
+    // EXIF / geotag filters. captureAfter/Before are YYYY-MM-DD strings;
+    // hasGeotag is tri-state (null = no filter, true / false explicit).
+    // Server applies these against capture_time (EXIF DateTimeOriginal)
+    // and falls back to creation_time when capture_time is absent.
+    captureAfter = null,
+    captureBefore = null,
+    hasGeotag = null,
     limit = 500,
     offset = 0,
   } = {}) => {
@@ -3121,6 +3128,10 @@ export const cellebriteFilesAPI = {
     if (entityId) params.append('entity_id', entityId);
     if (search) params.append('search', search);
     if (onlyRelevant) params.append('only_relevant', 'true');
+    if (captureAfter) params.append('capture_after', captureAfter);
+    if (captureBefore) params.append('capture_before', captureBefore);
+    if (hasGeotag === true) params.append('has_geotag', 'true');
+    else if (hasGeotag === false) params.append('has_geotag', 'false');
     params.append('limit', String(limit));
     params.append('offset', String(offset));
     return fetchAPI(`/cellebrite/files?${params.toString()}`);

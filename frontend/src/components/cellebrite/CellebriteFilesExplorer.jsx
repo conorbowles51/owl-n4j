@@ -39,6 +39,14 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [onlyRelevant, setOnlyRelevant] = useState(false);
+  // EXIF date + has-geotag filters (Cellebrite TaggedFile metadata).
+  // `null` = no filter; date strings are YYYY-MM-DD. `hasGeotag` is
+  // tri-state (null / true / false) for show-all / only-geotagged /
+  // only-non-geotagged. All three are nullable so the server omits
+  // the param when no filter is set.
+  const [captureAfter, setCaptureAfter] = useState('');
+  const [captureBefore, setCaptureBefore] = useState('');
+  const [hasGeotag, setHasGeotag] = useState(null);
   const [layout, setLayout] = useState('grid');
 
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -141,6 +149,9 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
         devicePath: filter.device_path || null,
         search: debouncedSearch || null,
         onlyRelevant,
+        captureAfter: captureAfter || null,
+        captureBefore: captureBefore || null,
+        hasGeotag,
         limit: 500,
       })
       .then((data) => {
@@ -153,7 +164,7 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
         setFilesTotal(0);
         setFilesLoading(false);
       });
-  }, [caseId, reportKeysArr, activeNode, debouncedSearch, onlyRelevant]);
+  }, [caseId, reportKeysArr, activeNode, debouncedSearch, onlyRelevant, captureAfter, captureBefore, hasGeotag]);
 
   useEffect(() => {
     loadFiles();
@@ -220,6 +231,65 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
           />
           Only relevant
         </label>
+
+        {/* EXIF date range — capture time first, falls back to
+            creation time on the backend. Inputs use the browser-
+            native date picker; empty string = no bound. */}
+        <div className="flex items-center gap-1 text-xs text-light-700">
+          <span className="text-light-500">Taken</span>
+          <input
+            type="date"
+            value={captureAfter}
+            onChange={(e) => setCaptureAfter(e.target.value)}
+            className="px-1 py-0.5 border border-light-300 rounded text-xs"
+            title="Show files captured on or after this date"
+          />
+          <span className="text-light-400">–</span>
+          <input
+            type="date"
+            value={captureBefore}
+            onChange={(e) => setCaptureBefore(e.target.value)}
+            className="px-1 py-0.5 border border-light-300 rounded text-xs"
+            title="Show files captured on or before this date"
+          />
+          {(captureAfter || captureBefore) && (
+            <button
+              type="button"
+              onClick={() => { setCaptureAfter(''); setCaptureBefore(''); }}
+              className="text-[10px] text-light-500 hover:text-red-700 px-1"
+              title="Clear date range"
+            >
+              ×
+            </button>
+          )}
+        </div>
+
+        {/* Tri-state geotag pill — All / Geotagged / No geotag.
+            Cycles on click; visual state mirrors active filter. */}
+        <button
+          type="button"
+          onClick={() => {
+            // null → true → false → null
+            setHasGeotag((v) => (v === null ? true : v === true ? false : null));
+          }}
+          className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 border rounded transition-colors ${
+            hasGeotag === true
+              ? 'bg-cyan-50 border-cyan-300 text-cyan-800'
+              : hasGeotag === false
+                ? 'bg-light-100 border-light-300 text-light-600 line-through'
+                : 'bg-white border-light-300 text-light-700 hover:bg-light-100'
+          }`}
+          title={
+            hasGeotag === true
+              ? 'Showing only geotagged files (click for non-geotagged only)'
+              : hasGeotag === false
+                ? 'Showing only non-geotagged files (click to clear filter)'
+                : 'Click to filter to geotagged files only'
+          }
+        >
+          {hasGeotag === true ? 'Geotagged' : hasGeotag === false ? 'No geotag' : 'Any geotag'}
+        </button>
+
         <div className="flex-1" />
         {filesLoading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
         <span className="text-xs text-light-500">
