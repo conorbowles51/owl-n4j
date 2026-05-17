@@ -284,28 +284,45 @@ export default function EventMapPanel({
         <FlyToCoord flyToCoord={flyToCoord} />
 
 
-        {/* Device tracks */}
-        {splitTracks.map((t) => (
-          <React.Fragment key={t.device_report_key}>
-            {t.past.length > 1 && (
-              <Polyline
-                positions={t.past}
-                color={t.color_hint || deviceColorOf?.(t.device_report_key) || '#2563eb'}
-                weight={3}
-                opacity={0.85}
-              />
-            )}
-            {t.future.length > 1 && (
-              <Polyline
-                positions={t.future}
-                color={t.color_hint || deviceColorOf?.(t.device_report_key) || '#2563eb'}
-                weight={2}
-                opacity={0.25}
-                dashArray="4,6"
-              />
-            )}
-          </React.Fragment>
-        ))}
+        {/* Device tracks. Each track is drawn TWICE: a fat white halo
+            first, then the coloured line on top. This is the classic
+            Google-Maps-style "directions" treatment — without it the
+            polyline disappears behind the clustered marker icons on
+            dense Locations cases (the user complaint about trajectory
+            "not working"). Halo weight 6 / opacity 0.9 + line weight 4
+            gives clear contrast at any zoom. */}
+        {splitTracks.map((t) => {
+          const color = t.color_hint || deviceColorOf?.(t.device_report_key) || '#2563eb';
+          return (
+            <React.Fragment key={t.device_report_key}>
+              {t.past.length > 1 && (
+                <>
+                  <Polyline
+                    positions={t.past}
+                    color="#ffffff"
+                    weight={6}
+                    opacity={0.9}
+                  />
+                  <Polyline
+                    positions={t.past}
+                    color={color}
+                    weight={4}
+                    opacity={1.0}
+                  />
+                </>
+              )}
+              {t.future.length > 1 && (
+                <Polyline
+                  positions={t.future}
+                  color={color}
+                  weight={2}
+                  opacity={0.25}
+                  dashArray="4,6"
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
 
         {/* Event markers, clustered */}
         <MarkerClusterGroup disableClusteringAtZoom={15} chunkedLoading>
