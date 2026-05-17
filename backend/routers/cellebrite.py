@@ -714,6 +714,25 @@ async def get_location_tiles(
     )
 
 
+@router.get("/locations/suggestion-values")
+async def get_location_suggestion_values(
+    case_id: str = Query(...),
+    report_keys: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Distinct values per searchable Location field for the search
+    typeahead. Returns canonical sets covering the whole case so the
+    dropdown surfaces values the 500-row sample would miss.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_location_suggestion_values(
+        case_id=case_id,
+        report_keys=_csv_param(report_keys),
+    )
+
+
 @router.get("/locations/visitors")
 async def get_location_visitors(
     case_id: str = Query(...),

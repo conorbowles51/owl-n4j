@@ -61,6 +61,13 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // values regardless. We keep this fetch tiny + filter-independent so
   // a user typing `type:` always sees real suggestions.
   const [suggestionsSample, setSuggestionsSample] = useState([]);
+  // Canonical distinct value sets per field, fetched once per case+phones.
+  // Shape: { location_type: [{value, count}], source_app: [...], ... }.
+  // These are the PRIMARY source of search suggestions — they cover the
+  // whole case rather than a 500-row sample, so `type:`, `app:`, `place:`
+  // dropdowns show every value the data actually has, not just the
+  // values that happened to appear in the first 500 rows.
+  const [suggestionValues, setSuggestionValues] = useState(null);
   // Table view-mode toggle. The MAP renderMode controls aggregation
   // on the map; this controls how the TABLE underneath presents the
   // same data so investigators can swap perspective without re-
@@ -130,6 +137,36 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       .catch(() => {
         if (cancelled) return;
         setSuggestionsSample([]);
+      });
+    return () => { cancelled = true; };
+  }, [caseId, reportsReady, selectedReportKeys]);
+
+  // Canonical distinct value sets fetched from a dedicated backend
+  // aggregation — covers the WHOLE case, not just the 500-row sample.
+  // This is the primary source for the search typeahead: typing
+  // `type:` shows every location_type Cellebrite emitted, sorted by
+  // frequency, even if those values don't appear in the first 500
+  // sample rows. Cheap because each field is one indexed Cypher
+  // aggregation. Refetches when the phone selection changes so the
+  // counts reflect the active scope.
+  useEffect(() => {
+    if (!caseId || !reportsReady) return undefined;
+    if (selectedReportKeys.size === 0) {
+      setSuggestionValues(null);
+      return undefined;
+    }
+    let cancelled = false;
+    cellebriteEventsAPI
+      .getLocationSuggestionValues(caseId, {
+        reportKeys: [...selectedReportKeys],
+      })
+      .then((res) => {
+        if (cancelled) return;
+        setSuggestionValues(res || null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSuggestionValues(null);
       });
     return () => { cancelled = true; };
   }, [caseId, reportsReady, selectedReportKeys]);
@@ -295,6 +332,50 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // at its top-N most-frequent values so a very busy case (e.g.
   // 50 apps) doesn't flood the dropdown.
   const searchSuggestions = useMemo(() => {
+    // Per-operator value sets, deduped by lowercase value so the
+    // backend canonical set (primary) doesn't get duplicated by the
+    // sample-derived rows (fallback). Counts come from the backend
+    // when available; otherwise from the sample tally.
+    const buckets = {
+      app: new Map(),
+      type: new Map(),
+      place: new Map(),
+    };
+
+    const add = (op, value, hint, sortKey) => {
+      if (!value) return;
+      const m = buckets[op];
+      if (!m) return;
+      const k = value.toLowerCase();
+      if (!m.has(k)) {
+        m.set(k, { operator: op, value, hint, _sort: sortKey });
+      }
+    };
+
+    // 1) Primary: canonical distinct values from the dedicated
+    //    backend aggregation (covers the whole case).
+    if (suggestionValues) {
+      for (const r of suggestionValues.source_app || []) {
+        add('app', r.value, `${r.count.toLocaleString()} hits`, -r.count);
+      }
+      for (const r of suggestionValues.location_type || []) {
+        add('type', r.value, `${r.count.toLocaleString()} hits`, -r.count);
+      }
+      for (const r of suggestionValues.place_name || []) {
+        add('place', r.value, `${r.count.toLocaleString()} hits`, -r.count);
+      }
+      for (const r of suggestionValues.admin1 || []) {
+        add('place', r.value, `${r.count.toLocaleString()} hits · region`, -r.count);
+      }
+      for (const r of suggestionValues.country || []) {
+        add('place', r.value, `${r.count.toLocaleString()} hits · country`, -r.count);
+      }
+    }
+
+    // 2) Fallback: tally from the loaded rows + sample. Only adds
+    //    values not already covered by the canonical set, so the
+    //    list stays clean while still working before the canonical
+    //    fetch returns.
     const allRows = [...(locations || []), ...(suggestionsSample || [])];
     const tally = (rows, field) => {
       const m = new Map();
@@ -303,47 +384,42 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         if (!v) continue;
         m.set(v, (m.get(v) || 0) + 1);
       }
-      return [...m.entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 50);
+      return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 50);
     };
-    const apps = tally(allRows, 'source_app');
-    const types = tally(allRows, 'location_type');
-    const countries = tally(allRows, 'country');
-    const admin1s = tally(allRows, 'admin1');
-    const placeNames = tally(allRows, 'place_name');
-    // Devices: pull from the case's report list so suggestions show
-    // up even before any data row matches (e.g. typing `phone:` on
-    // an empty search). Hint = device model / owner.
+    for (const [v, n] of tally(allRows, 'source_app')) {
+      add('app', v, `${n.toLocaleString()} hits`, -n);
+    }
+    for (const [v, n] of tally(allRows, 'location_type')) {
+      add('type', v, `${n.toLocaleString()} hits`, -n);
+    }
+    for (const [v, n] of tally(allRows, 'place_name')) {
+      add('place', v, `${n.toLocaleString()} hits`, -n);
+    }
+    for (const [v, n] of tally(allRows, 'admin1')) {
+      add('place', v, `${n.toLocaleString()} hits · region`, -n);
+    }
+    for (const [v, n] of tally(allRows, 'country')) {
+      add('place', v, `${n.toLocaleString()} hits · country`, -n);
+    }
+
+    // Devices: from the case's report list. No counts needed —
+    // these are always present + valid.
     const devs = (reports || []).map((r) => ({
       operator: 'phone',
       value: r.short_label || r.report_key,
       hint: [r.device_model, r.phone_owner_name].filter(Boolean).join(' · '),
     }));
+
     const out = [];
-    for (const [v, n] of apps) {
-      out.push({ operator: 'app', value: v, hint: `${n.toLocaleString()} hits` });
-    }
-    for (const [v, n] of types) {
-      out.push({ operator: 'type', value: v, hint: `${n.toLocaleString()} hits` });
-    }
-    for (const [v, n] of placeNames) {
-      out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits` });
-    }
-    for (const [v, n] of admin1s) {
-      out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits · region` });
-    }
-    for (const [v, n] of countries) {
-      out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits · country` });
+    for (const op of ['type', 'app', 'place']) {
+      const sorted = [...buckets[op].values()].sort((a, b) => a._sort - b._sort);
+      for (const s of sorted) {
+        out.push({ operator: s.operator, value: s.value, hint: s.hint });
+      }
     }
     out.push(...devs);
-    // No synthetic fallback values here on purpose. Suggesting strings
-    // that aren't in the data (e.g. the generic "Visited" guess) led
-    // to the user picking one and getting "No locations match" —
-    // worse than no suggestion at all. The sample fetch covers the
-    // empty-data window; suggestions stay grounded in real values.
     return out;
-  }, [locations, suggestionsSample, reports]);
+  }, [locations, suggestionsSample, suggestionValues, reports]);
 
   // The actual flyToId we hand the map is the bare id (the
   // ::timestamp suffix is just our re-trigger signal).

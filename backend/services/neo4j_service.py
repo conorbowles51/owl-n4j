@@ -8179,6 +8179,63 @@ class Neo4jService:
                 })
         return out
 
+    def get_cellebrite_location_suggestion_values(
+        self,
+        case_id: str,
+        report_keys: Optional[List[str]] = None,
+        per_field_limit: int = 100,
+    ) -> dict:
+        """
+        Distinct values per searchable field for the Locations search
+        typeahead.
+
+        Returns canonical value sets covering the WHOLE case (not a
+        500-row sample), so the dropdown surfaces every location_type
+        / source_app / country / admin1 in the data, plus the top-N
+        place_names by frequency. Each value carries a count so the
+        UI can sort by relevance and show "12 hits" hints.
+
+        Independent per-field queries keep the response cheap and
+        isolate failures — a missing field doesn't kill the others.
+        """
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "per_field_limit": int(per_field_limit),
+        }
+        rk_filter = ""
+        if report_keys:
+            rk_filter = " AND n.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        def _distinct(field: str) -> List[dict]:
+            cypher = f"""
+                MATCH (n:Location {{case_id: $case_id, source_type: 'cellebrite'}})
+                WHERE n.{field} IS NOT NULL AND n.{field} <> ''
+                  {rk_filter}
+                RETURN n.{field} AS value, count(*) AS n
+                ORDER BY n DESC
+                LIMIT $per_field_limit
+            """
+            try:
+                with self._driver.session() as session:
+                    rows = list(session.run(cypher, params))
+                return [
+                    {"value": r["value"], "count": int(r["n"] or 0)}
+                    for r in rows
+                ]
+            except Exception:
+                # Per-field failures don't take down the whole
+                # suggestion set — the dropdown gracefully degrades.
+                return []
+
+        return {
+            "location_type": _distinct("location_type"),
+            "source_app": _distinct("source_app"),
+            "country": _distinct("country"),
+            "admin1": _distinct("admin1"),
+            "place_name": _distinct("place_name"),
+        }
+
     def get_cellebrite_location_tiles(
         self,
         case_id: str,

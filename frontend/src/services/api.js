@@ -2965,6 +2965,18 @@ export const cellebriteEventsAPI = {
   },
 
   /**
+   * Distinct value sets per searchable Location field for the search
+   * typeahead. Returns one array per field (location_type, source_app,
+   * country, admin1, place_name), each element {value, count}, sorted
+   * by frequency. Covers the whole case rather than a 500-row sample.
+   */
+  getLocationSuggestionValues: (caseId, { reportKeys = null } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    return fetchAPI(`/cellebrite/locations/suggestion-values?${params.toString()}`);
+  },
+
+  /**
    * Devices that visited a given (lat, lon) within `radiusM` metres.
    * Used by the location rail to show "this place was visited by N
    * devices" instead of just the one selected row's device.
