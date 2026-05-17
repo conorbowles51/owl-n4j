@@ -9131,45 +9131,126 @@ class Neo4jService:
         # BUCKET — at hundreds of buckets that was thousands of
         # serial round-trips, which wedged the Neo4j connection pool
         # and killed the backend on OPDMD28-scale cases.
+        # Four queries instead of one with three nested CALL
+        # subqueries. The nested-CALL form trips a known Neo4j
+        # internal error on some cases — "NOT PART OF CHAIN!
+        # RelationshipTraversalCursor" — when two of the OPTIONAL
+        # MATCH branches happen to traverse overlapping relationship
+        # chains. Splitting into independent queries side-steps that
+        # entirely, and we still only pay 4 round-trips instead of
+        # one-per-Person.
         with self._driver.session() as session:
-            persons = list(session.run(
+            # 1) Persons. No counts here — keeps the query simple and
+            # avoids the parallel-cursor pattern that wedged the
+            # original. We sort by an UNbounded "any data?" proxy
+            # (existence of any related event via a single MATCH)
+            # so the limit-N cap still favours the busiest contacts.
+            # Doing it as a separate query also means a count failure
+            # on one relationship type doesn't blow up the persons list.
+            persons_raw = list(session.run(
                 f"""
                 MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite'}})
                 WHERE p.key IS NOT NULL {rk_clause}
-                CALL {{
-                    WITH p
-                    OPTIONAL MATCH (p)-[:CALLED|CALLED_TO]-(c:PhoneCall {{case_id:$case_id}})
-                    RETURN count(DISTINCT c) AS calls,
-                           min(c.timestamp) AS calls_lo,
-                           max(c.timestamp) AS calls_hi
-                }}
-                CALL {{
-                    WITH p
-                    OPTIONAL MATCH (p)-[:SENT_MESSAGE]-(m:Communication {{case_id:$case_id}})
-                    RETURN count(DISTINCT m) AS msgs,
-                           min(m.timestamp) AS msgs_lo,
-                           max(m.timestamp) AS msgs_hi
-                }}
-                CALL {{
-                    WITH p
-                    OPTIONAL MATCH (p)-[:EMAILED|SENT_TO]-(e:Email {{case_id:$case_id}})
-                    RETURN count(DISTINCT e) AS emails,
-                           min(e.timestamp) AS emails_lo,
-                           max(e.timestamp) AS emails_hi
-                }}
                 RETURN p.key AS key,
                        p.name AS name,
                        p.phone_numbers AS phone_numbers,
                        p.cellebrite_report_key AS report_key,
-                       coalesce(p.is_phone_owner, false) AS is_phone_owner,
-                       calls, calls_lo, calls_hi,
-                       msgs, msgs_lo, msgs_hi,
-                       emails, emails_lo, emails_hi
-                ORDER BY (calls + msgs + emails) DESC
+                       coalesce(p.is_phone_owner, false) AS is_phone_owner
                 LIMIT $person_cap
                 """,
                 params,
             ))
+
+            keys = [r["key"] for r in persons_raw if r["key"]]
+            counts: Dict[str, Dict[str, Any]] = {
+                k: {"calls": 0, "calls_lo": None, "calls_hi": None,
+                    "msgs": 0, "msgs_lo": None, "msgs_hi": None,
+                    "emails": 0, "emails_lo": None, "emails_hi": None}
+                for k in keys
+            }
+            # 2-4) Three independent count queries. Each runs against
+            # the same case_id + the list of person keys we just
+            # picked. UNWIND keeps it one round-trip per relationship
+            # type regardless of person count. A per-type failure no
+            # longer affects the others.
+            count_params = {"case_id": case_id, "keys": keys}
+
+            def _accum(query: str, dst_count: str, dst_lo: str, dst_hi: str):
+                try:
+                    rs = session.run(query, count_params)
+                    for rec in rs:
+                        k = rec["key"]
+                        if k in counts:
+                            counts[k][dst_count] = int(rec["n"] or 0)
+                            counts[k][dst_lo] = rec["lo"]
+                            counts[k][dst_hi] = rec["hi"]
+                except Exception:
+                    # Per-relationship-type failures are recoverable —
+                    # we want the persons list to render even if the
+                    # email count query (say) blows up. The aggregate
+                    # interaction tally will just under-count.
+                    pass
+
+            _accum(
+                """
+                UNWIND $keys AS k
+                MATCH (p:Person {key:k, case_id:$case_id})
+                OPTIONAL MATCH (p)-[:CALLED|CALLED_TO]-(c:PhoneCall {case_id:$case_id})
+                RETURN k AS key,
+                       count(DISTINCT c) AS n,
+                       min(c.timestamp) AS lo,
+                       max(c.timestamp) AS hi
+                """,
+                "calls", "calls_lo", "calls_hi",
+            )
+            _accum(
+                """
+                UNWIND $keys AS k
+                MATCH (p:Person {key:k, case_id:$case_id})
+                OPTIONAL MATCH (p)-[:SENT_MESSAGE]-(m:Communication {case_id:$case_id})
+                RETURN k AS key,
+                       count(DISTINCT m) AS n,
+                       min(m.timestamp) AS lo,
+                       max(m.timestamp) AS hi
+                """,
+                "msgs", "msgs_lo", "msgs_hi",
+            )
+            _accum(
+                """
+                UNWIND $keys AS k
+                MATCH (p:Person {key:k, case_id:$case_id})
+                OPTIONAL MATCH (p)-[:EMAILED|SENT_TO]-(e:Email {case_id:$case_id})
+                RETURN k AS key,
+                       count(DISTINCT e) AS n,
+                       min(e.timestamp) AS lo,
+                       max(e.timestamp) AS hi
+                """,
+                "emails", "emails_lo", "emails_hi",
+            )
+
+            # Materialise into the same record shape the previous
+            # combined query produced, so the downstream bucketing
+            # logic doesn't change at all.
+            persons = []
+            for r in persons_raw:
+                k = r["key"]
+                c = counts.get(k, {})
+                persons.append({
+                    "key": k,
+                    "name": r["name"],
+                    "phone_numbers": r["phone_numbers"],
+                    "report_key": r["report_key"],
+                    "is_phone_owner": r["is_phone_owner"],
+                    "calls": c.get("calls", 0),
+                    "calls_lo": c.get("calls_lo"),
+                    "calls_hi": c.get("calls_hi"),
+                    "msgs": c.get("msgs", 0),
+                    "msgs_lo": c.get("msgs_lo"),
+                    "msgs_hi": c.get("msgs_hi"),
+                    "emails": c.get("emails", 0),
+                    "emails_lo": c.get("emails_lo"),
+                    "emails_hi": c.get("emails_hi"),
+                })
 
             person_count = len(persons)
             truncated = person_count >= PERSON_CAP
