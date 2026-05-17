@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, X, HelpCircle } from 'lucide-react';
 
 /**
@@ -53,7 +54,12 @@ export default function CellebriteSearchInput({
 }) {
   const inputRef = useRef(null);
   const dropdownRef = useRef(null);
+  const helpButtonRef = useRef(null);
   const [hintOpen, setHintOpen] = useState(false);
+  // Viewport coords for the help popover, recomputed each time it
+  // opens. Lives in state so the portal-rendered popover re-renders
+  // when the trigger moves (window resize, scroll, etc.).
+  const [hintAnchor, setHintAnchor] = useState({ top: 0, left: 0 });
   const [hasOperatorHintBeenShown, setHasOperatorHintBeenShown] = useState(false);
   const [caret, setCaret] = useState(0);
   const [focused, setFocused] = useState(false);
@@ -71,6 +77,42 @@ export default function CellebriteSearchInput({
       return () => clearTimeout(t);
     }
   }, [value, hasOperatorHintBeenShown]);
+
+  // Position the help popover in viewport coordinates whenever it
+  // opens or the page reflows. Rendered via Portal to escape every
+  // ancestor stacking context + overflow:hidden clipping — the header
+  // tab strip / phone selector above this toolbar was clipping the
+  // popover when it was a plain `absolute` child.
+  useEffect(() => {
+    if (!hintOpen) return undefined;
+    const compute = () => {
+      const btn = helpButtonRef.current;
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const POPOVER_W = 360;
+      // Prefer below the button; if not enough space, flip above.
+      const POPOVER_H_EST = 260;
+      const below = r.bottom + 6;
+      const above = r.top - POPOVER_H_EST - 6;
+      const top = (below + POPOVER_H_EST) > window.innerHeight && above > 0
+        ? above
+        : below;
+      // Right-align with the button, but clamp inside the viewport.
+      let left = r.right - POPOVER_W;
+      if (left < 8) left = 8;
+      if (left + POPOVER_W > window.innerWidth - 8) {
+        left = window.innerWidth - POPOVER_W - 8;
+      }
+      setHintAnchor({ top, left });
+    };
+    compute();
+    window.addEventListener('resize', compute);
+    window.addEventListener('scroll', compute, true);
+    return () => {
+      window.removeEventListener('resize', compute);
+      window.removeEventListener('scroll', compute, true);
+    };
+  }, [hintOpen]);
 
   // "/" anywhere focuses the search input, but only when no other text
   // input is focused (so it doesn't hijack typing in chat etc.).
@@ -298,6 +340,7 @@ export default function CellebriteSearchInput({
         )}
         <button
           type="button"
+          ref={helpButtonRef}
           onClick={() => setHintOpen((v) => !v)}
           // Hover-open the help only when the input is NOT focused —
           // otherwise the help popover competes with the typeahead
@@ -362,15 +405,15 @@ export default function CellebriteSearchInput({
         </div>
       )}
 
-      {hintOpen && (
-        // Anchored ABOVE the input so it doesn't cover the timeline /
-        // scrubber that lives immediately below this toolbar. z-50
-        // puts it above the Leaflet map (Leaflet panes use z-200..700
-        // inside their own stacking context, so we still need a high
-        // app-level z plus pointer-events: none on the wrapper
-        // to be safe — but since this is positioned relative to a
-        // non-Leaflet ancestor, plain z-50 wins.).
-        <div className="absolute right-0 bottom-full mb-1 z-50 w-[360px] bg-white border border-light-300 rounded-md shadow-lg p-3 text-xs text-light-700">
+      {hintOpen && typeof document !== 'undefined' && createPortal(
+        // Portal to <body> with position:fixed so the popover escapes
+        // any ancestor with overflow:hidden / transform / etc. (header
+        // tab strip and phone-selector chrome were clipping it
+        // otherwise). Coords from helpButtonRef.getBoundingClientRect().
+        <div
+          style={{ top: hintAnchor.top, left: hintAnchor.left }}
+          className="fixed z-[9999] w-[360px] bg-white border border-light-300 rounded-md shadow-lg p-3 text-xs text-light-700"
+        >
           <div className="font-semibold text-owl-blue-900 mb-1.5">Search operators</div>
           <ul className="space-y-1">
             <li><code className="bg-light-100 px-1 rounded">type:call</code> — by event/thread type</li>
@@ -393,7 +436,8 @@ export default function CellebriteSearchInput({
           <div className="mt-2 text-[10px] text-light-500">
             Combine freely: <code>type:message from:Sender app:WhatsApp -ringing</code>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
