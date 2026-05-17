@@ -55,6 +55,12 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // is gated behind a button so users can drill in when they want
   // street-level detail. The choice is per-session, not persisted.
   const [renderMode, setRenderMode] = useState('tiles');
+  // Small sample of raw location rows used SOLELY to build search
+  // typeahead suggestions. The main load is gated on renderMode (tiles
+  // by default = no raw rows fetched), but the search needs distinct
+  // values regardless. We keep this fetch tiny + filter-independent so
+  // a user typing `type:` always sees real suggestions.
+  const [suggestionsSample, setSuggestionsSample] = useState([]);
   // Table view-mode toggle. The MAP renderMode controls aggregation
   // on the map; this controls how the TABLE underneath presents the
   // same data so investigators can swap perspective without re-
@@ -95,6 +101,38 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       setRenderMode('raw');
     }
   }, [searchQuery, renderMode]);
+
+  // One-shot small fetch of raw location rows for the search typeahead.
+  // The main fetch is filter-dependent and (in tile mode) returns
+  // aggregated centroids with no location_type / source_app per row,
+  // so we wouldn't have anything to suggest from. This separate fetch
+  // is filter-independent and small (500 rows) — enough to seed the
+  // dropdown with real distinct values for type / app / place /
+  // admin1 / country.
+  useEffect(() => {
+    if (!caseId || !reportsReady) return undefined;
+    if (selectedReportKeys.size === 0) {
+      setSuggestionsSample([]);
+      return undefined;
+    }
+    let cancelled = false;
+    cellebriteEventsAPI
+      .getEvents(caseId, {
+        reportKeys: [...selectedReportKeys],
+        eventTypes: ['location'],
+        onlyGeolocated: false,
+        limit: 500,
+      })
+      .then((res) => {
+        if (cancelled) return;
+        setSuggestionsSample(res?.events || []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSuggestionsSample([]);
+      });
+    return () => { cancelled = true; };
+  }, [caseId, reportsReady, selectedReportKeys]);
 
   // Fetch locations across the selected phones. Tiles mode hits the
   // cheap aggregation endpoint; raw mode pulls the individual points.
@@ -250,9 +288,14 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // Search typeahead — pulls suggestions out of the actual loaded
   // data so the user can `Tab` through real values instead of
   // having to remember the exact spelling / casing / punctuation.
-  // We cap each operator at its top-N most-frequent values so a
-  // very busy case (e.g. 50 apps) doesn't flood the dropdown.
+  //
+  // We union the LIVE rows (which may be empty in tiles mode) with
+  // the small `suggestionsSample` fetch so the dropdown works
+  // regardless of which map mode is active. Each operator is capped
+  // at its top-N most-frequent values so a very busy case (e.g.
+  // 50 apps) doesn't flood the dropdown.
   const searchSuggestions = useMemo(() => {
+    const allRows = [...(locations || []), ...(suggestionsSample || [])];
     const tally = (rows, field) => {
       const m = new Map();
       for (const r of rows) {
@@ -264,11 +307,11 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         .sort((a, b) => b[1] - a[1])
         .slice(0, 50);
     };
-    const apps = tally(locations, 'source_app');
-    const types = tally(locations, 'location_type');
-    const countries = tally(locations, 'country');
-    const admin1s = tally(locations, 'admin1');
-    const placeNames = tally(locations, 'place_name');
+    const apps = tally(allRows, 'source_app');
+    const types = tally(allRows, 'location_type');
+    const countries = tally(allRows, 'country');
+    const admin1s = tally(allRows, 'admin1');
+    const placeNames = tally(allRows, 'place_name');
     // Devices: pull from the case's report list so suggestions show
     // up even before any data row matches (e.g. typing `phone:` on
     // an empty search). Hint = device model / owner.
@@ -294,8 +337,20 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits · country` });
     }
     out.push(...devs);
+    // Synthetic fallbacks so the dropdown is never empty even on
+    // edge cases where the sample fetch hasn't returned yet or the
+    // case has no location_type data at all. These are the common
+    // Cellebrite location_type values; they'll deduplicate naturally
+    // when the real data also contains them (we don't try to filter
+    // dupes here — the search input's filter step handles it cheaply).
+    const seenTypes = new Set(types.map(([v]) => v.toLowerCase()));
+    for (const v of ['Visited', 'Unknown', 'Saved', 'Recent', 'Native Locations']) {
+      if (!seenTypes.has(v.toLowerCase())) {
+        out.push({ operator: 'type', value: v, hint: 'common' });
+      }
+    }
     return out;
-  }, [locations, reports]);
+  }, [locations, suggestionsSample, reports]);
 
   // The actual flyToId we hand the map is the bare id (the
   // ::timestamp suffix is just our re-trigger signal).
