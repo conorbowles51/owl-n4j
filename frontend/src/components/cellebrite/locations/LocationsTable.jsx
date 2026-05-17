@@ -29,6 +29,18 @@ export default function LocationsTable({
   selectedId = null,
   onRowClick,
   viewMode = 'rows',
+  // Playback props. When playheadTime is non-null, each row in the
+  // 'rows' view picks up one of three visual states based on its
+  // timestamp relative to the playhead:
+  //   future  → opacity-30 (hasn't happened yet)
+  //   trail   → left-edge ring in playback colour (in the trail window)
+  //   past    → unchanged
+  // Rows are NEVER removed — the user keeps their reading-position
+  // even as the playhead moves. Aggregate views (tiles / byPhoneDay)
+  // ignore these props since they don't have a single timestamp per
+  // row.
+  playheadTime = null,
+  trailWindowMs = 30 * 60 * 1000,
 }) {
   const phoneCtx = usePhoneReports();
   const showPhoneChip = !!phoneCtx?.hasMultiple;
@@ -82,11 +94,28 @@ export default function LocationsTable({
           {locations.map((loc) => {
             const id = loc.id || loc.node_key;
             const sel = id != null && id === selectedId;
+            // Playback state — only meaningful when both the playhead
+            // is active AND the row carries a timestamp.
+            let playState = null;
+            if (playheadTime && loc.timestamp) {
+              const t = new Date(loc.timestamp).getTime();
+              if (isFinite(t)) {
+                const head = playheadTime.getTime();
+                if (t > head) playState = 'future';
+                else if (t >= head - trailWindowMs) playState = 'trail';
+                else playState = 'past';
+              }
+            }
+            const playClass = playState === 'future'
+              ? 'opacity-30'
+              : playState === 'trail'
+                ? 'border-l-4 border-l-owl-blue-500'
+                : '';
             return (
               <tr
                 key={id || `${loc.latitude},${loc.longitude},${loc.timestamp}`}
                 onClick={() => onRowClick?.(loc)}
-                className={`border-b border-light-100 cursor-pointer ${
+                className={`border-b border-light-100 cursor-pointer ${playClass} ${
                   sel ? 'bg-emerald-50/60 ring-1 ring-emerald-300/60' : 'hover:bg-light-50'
                 }`}
               >

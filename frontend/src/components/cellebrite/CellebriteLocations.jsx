@@ -8,6 +8,8 @@ import EventMapPanel from './events/EventMapPanel';
 import TimelineScrubber from './shared/TimelineScrubber';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import LocationsTable from './locations/LocationsTable';
+import PlaybackBar from './locations/PlaybackBar';
+import { Play as PlayIcon } from 'lucide-react';
 import ResizableSplit from './shared/ResizableSplit';
 import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
@@ -86,10 +88,39 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
   // effect re-fires even when the user clicks the same row twice
   // after panning the map manually.
   const [flyToId, setFlyToId] = useState(null);
+
+  // --- Playback state ---
+  // playheadTime null = playback inactive (no trail; default render).
+  // Enabling playback auto-switches to raw mode (tile centroids have
+  // no per-row timestamp to drive a trail).
+  const [playheadTime, setPlayheadTime] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  // Speed persisted per case so an investigator's preferred scrub rate
+  // sticks across visits.
+  const PLAYBACK_SPEED_KEY = caseId ? `cb.locations.playback.speed.${caseId}` : null;
+  const [playbackSpeed, setPlaybackSpeed] = useState(() => {
+    if (!PLAYBACK_SPEED_KEY || typeof window === 'undefined') return 16;
+    const v = parseFloat(window.localStorage.getItem(PLAYBACK_SPEED_KEY));
+    return isFinite(v) && v > 0 ? v : 16;
+  });
+  useEffect(() => {
+    if (!PLAYBACK_SPEED_KEY || typeof window === 'undefined') return;
+    window.localStorage.setItem(PLAYBACK_SPEED_KEY, String(playbackSpeed));
+  }, [PLAYBACK_SPEED_KEY, playbackSpeed]);
+  const TRAIL_WINDOW_MS = 30 * 60 * 1000;
   // Coarse zoom we feed to the tiles endpoint. Reader-style approach:
   // a single coarse view for the whole case; finer-grained drilldowns
   // come from clicking a tile (G3) rather than from map zoom-tracking.
   const TILE_ZOOM = 6;
+
+  // Playback also requires per-point timestamps — tile centroids
+  // don't have them. Auto-flip to raw mode whenever a playhead is
+  // active, same posture as the trajectory toggle below.
+  useEffect(() => {
+    if (playheadTime != null && renderMode === 'tiles') {
+      setRenderMode('raw');
+    }
+  }, [playheadTime, renderMode]);
 
   // Trajectory needs individual points, not aggregated tiles. When
   // the user enables trajectory while in tiles mode, slip into raw
@@ -262,6 +293,42 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
     if (!searchQuery) return locations;
     return locations.filter((loc) => matchItem(loc, parsedQuery, 'event', reports).matches);
   }, [renderMode, tileMarkers, locations, searchQuery, parsedQuery, reports]);
+
+  // Playback envelope: min/max timestamp across the FILTERED set so
+  // the playhead only sweeps through what the active filter allows.
+  // Single linear pass — cheap on the ~5K cap we use for raw mode.
+  const playbackEnvelope = useMemo(() => {
+    if (renderMode !== 'raw') return { minTime: null, maxTime: null };
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const ev of mapEvents) {
+      if (!ev.timestamp) continue;
+      const t = new Date(ev.timestamp).getTime();
+      if (!isFinite(t)) continue;
+      if (t < lo) lo = t;
+      if (t > hi) hi = t;
+    }
+    if (lo === Infinity || hi === -Infinity) return { minTime: null, maxTime: null };
+    return { minTime: new Date(lo), maxTime: new Date(hi) };
+  }, [mapEvents, renderMode]);
+
+  // Re-anchor the playhead when the envelope shifts under it (e.g.
+  // user changes filters mid-playback) — keep it within bounds so a
+  // dot never floats off the rail. Don't re-anchor while playing or
+  // the user's scrub gesture would compete with this effect.
+  useEffect(() => {
+    if (playheadTime == null) return;
+    const { minTime, maxTime } = playbackEnvelope;
+    if (minTime == null || maxTime == null) {
+      // Envelope evaporated (filter narrowed to zero) — exit playback
+      // rather than leaving a stale playhead.
+      setPlayheadTime(null);
+      setIsPlaying(false);
+      return;
+    }
+    if (playheadTime < minTime) setPlayheadTime(minTime);
+    else if (playheadTime > maxTime) setPlayheadTime(maxTime);
+  }, [playbackEnvelope, playheadTime]);
 
   // Status bar — choose the count source per mode.
   const totalCount = renderMode === 'tiles'
@@ -551,6 +618,42 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
           <Route className="w-3 h-3" />
           {trajectoryOn ? 'Trajectory ON' : 'Show trajectory'}
         </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (playheadTime == null) {
+              // Enter playback: jump to the start of the filtered
+              // envelope so the user can see the first row light up
+              // immediately. Force raw mode through the existing
+              // auto-switch effect.
+              const { minTime } = playbackEnvelope;
+              if (minTime) {
+                setPlayheadTime(minTime);
+              } else if (renderMode === 'tiles') {
+                // No envelope yet because we're still in tiles — flip
+                // mode; the envelope effect will kick in next render
+                // and a follow-up click can start the playhead.
+                setRenderMode('raw');
+              }
+            } else {
+              setPlayheadTime(null);
+              setIsPlaying(false);
+            }
+          }}
+          className={`ml-2 flex items-center gap-1 px-2 py-0.5 rounded border transition-colors ${
+            playheadTime != null
+              ? 'bg-owl-blue-100 border-owl-blue-300 text-owl-blue-800'
+              : 'bg-white border-light-300 text-light-700 hover:bg-light-100'
+          }`}
+          title={
+            playheadTime != null
+              ? 'Exit playback (Esc)'
+              : 'Scrub through the filtered points in time. Space = play/pause, ←/→ = step, Home/End = jump.'
+          }
+        >
+          <PlayIcon className="w-3 h-3" />
+          {playheadTime != null ? 'Playback ON' : 'Playback'}
+        </button>
         <span className="ml-2 text-light-400 truncate">
           {renderMode === 'tiles'
             ? 'Click a tile for the rows it contains. Cluster numbers = nearby tiles grouped at this zoom — zoom in to split them.'
@@ -604,6 +707,24 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         />
       )}
 
+      {playheadTime != null && (
+        <PlaybackBar
+          playheadTime={playheadTime}
+          minTime={playbackEnvelope.minTime}
+          maxTime={playbackEnvelope.maxTime}
+          isPlaying={isPlaying}
+          speed={playbackSpeed}
+          trailWindowMs={TRAIL_WINDOW_MS}
+          onPlayheadChange={setPlayheadTime}
+          onPlayToggle={setIsPlaying}
+          onSpeedChange={setPlaybackSpeed}
+          onExit={() => {
+            setPlayheadTime(null);
+            setIsPlaying(false);
+          }}
+        />
+      )}
+
       {/* Map / table split. Map gets the larger share — table scrolls
           underneath. Reader's Device Locations view uses the same
           horizontal banner-then-table layout.
@@ -638,9 +759,14 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
                   ? trajectoryTracks
                   : (renderMode === 'raw' ? tracks : [])
               }
-              playheadTime={null}
-              trailWindowMs={30 * 60 * 1000}
-              isPlaying={false}
+              playheadTime={playheadTime}
+              trailWindowMs={TRAIL_WINDOW_MS}
+              // Map-side gate: when true AND playheadTime is set, the
+              // map filters its markers down to the trail window. We
+              // want the trail effect WHENEVER a playhead is active
+              // (paused or playing) so the user can inspect a still
+              // scene at a chosen moment, not just during animation.
+              isPlaying={playheadTime != null}
               selectedEventId={selectedId}
               flyToId={flyToIdForMap}
               flyToCoord={flyToCoord}
@@ -677,6 +803,8 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
               onRowClick={handleSelect}
               reports={reports}
               viewMode={resolved}
+              playheadTime={playheadTime}
+              trailWindowMs={TRAIL_WINDOW_MS}
             />
           );
         })()}
