@@ -128,10 +128,12 @@ def save_snapshots(snapshots: Dict):
 
 class SnapshotStorage:
     """Service for managing snapshot storage."""
-    
+
     def __init__(self):
-        self._snapshots = load_snapshots()
-    
+        self._snapshots: Dict = {}
+        self._mtime: float = -1.0
+        self.reload()
+
     def get_all(self) -> Dict:
         """Get all snapshots."""
         # Reload from disk to ensure we have the latest data
@@ -510,18 +512,22 @@ class SnapshotStorage:
         return False
     
     def reload(self):
-        """Reload snapshots from disk."""
+        """Reload snapshots from disk only if the file has changed since last load.
+
+        mtime-based cache: every `save_snapshots` writes atomically (tmp+rename),
+        which bumps mtime on the target file. Other workers (or this one between
+        writes) detect the bump and re-read; otherwise the in-memory copy is
+        authoritative. This is what eliminates the per-request disk reload.
+        """
+        try:
+            current_mtime = STORAGE_FILE.stat().st_mtime if STORAGE_FILE.exists() else 0.0
+        except OSError:
+            current_mtime = 0.0
+        if current_mtime == self._mtime:
+            return
         self._snapshots = load_snapshots()
-        # Log what was loaded
-        print(f"[RELOAD] Loaded {len(self._snapshots)} snapshots from disk")
-        for snap_id, snap_data in self._snapshots.items():
-            has_subgraph = 'subgraph' in snap_data
-            if has_subgraph:
-                nodes = snap_data['subgraph'].get('nodes', [])
-                nodes_count = len(nodes) if isinstance(nodes, list) else 0
-                print(f"[RELOAD] Snapshot {snap_id}: has_subgraph={has_subgraph}, nodes={nodes_count}")
-            else:
-                print(f"[RELOAD] Snapshot {snap_id}: has_subgraph={has_subgraph}, keys={list(snap_data.keys())[:5]}")
+        self._mtime = current_mtime
+        print(f"[RELOAD] Loaded {len(self._snapshots)} snapshots from disk (mtime={current_mtime})")
 
 
 # Singleton instance

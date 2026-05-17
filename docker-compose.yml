@@ -9,9 +9,9 @@ services:
       - "7687:7687"   # Bolt (drivers)
     environment:
       - NEO4J_AUTH=neo4j/testpassword
-      - NEO4J_server_memory_pagecache_size=1G
-      - NEO4J_server_memory_heap_initial__size=1G
-      - NEO4J_server_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=2G
+      - NEO4J_server_memory_heap_initial__size=4G
+      - NEO4J_server_memory_heap_max__size=4G
 
       # Enable APOC plugin (Neo4j official Docker way)
       - NEO4J_PLUGINS=["apoc"]
@@ -19,6 +19,10 @@ services:
       # Allow APOC procedures (incl. refactor.mergeNodes)
       - NEO4J_dbms_security_procedures_unrestricted=apoc.*
       - NEO4J_dbms_security_procedures_allowlist=apoc.*
+
+      # Kill any tx that exceeds 25s — frees workers stuck on hung Cypher
+      # before client gives up. Bulk ingest uses small batched txns, unaffected.
+      - NEO4J_db_transaction_timeout=25s
 
     volumes:
       - ./neo4j/data:/data
