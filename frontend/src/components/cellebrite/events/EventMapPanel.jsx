@@ -195,7 +195,7 @@ export default function EventMapPanel({
 
   if (!hasPoints) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-light-50 text-light-500 text-sm p-6 text-center">
+      <div className="h-full w-full flex flex-col items-center justify-center bg-light-50 text-light-500 text-sm p-6 text-center">
         <div className="mb-2 font-medium">No geolocated events in the current selection.</div>
         <div className="text-xs text-light-400">
           Switch to <span className="font-medium text-owl-blue-700">Table</span> view to browse all filtered events, including ones without location data.
@@ -209,7 +209,15 @@ export default function EventMapPanel({
   const showLowGeoHint = events.length > 20 && geolocatedCount < events.length * 0.3;
 
   return (
-    <div className="flex-1 relative min-h-0">
+    // h-full (not flex-1) — every caller wraps this in a sized
+    // container (ResizableSplit pane, fixed-height div, etc.) that
+    // is NOT a flex container. flex-1 on this root therefore
+    // collapses to content height (0 with no children), which makes
+    // the MapContainer's height:100% resolve to 0 → blank map. The
+    // bug was load-bearing for the Locations tab; same parent shape
+    // also bites the rail flyout and any other surface that mounts
+    // the map without an explicit flex column wrapper.
+    <div className="h-full w-full relative min-h-0">
       <style>{`
         @keyframes pulse-ring {
           0% { transform: scale(1); }
