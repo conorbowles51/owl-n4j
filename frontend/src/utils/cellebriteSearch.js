@@ -276,8 +276,16 @@ export function buildHaystack(item, kind, reports = []) {
     fields.to = fields.from; // threads don't distinguish from/to
     parts.push(participantTexts);
   } else {
-    // event / message
-    fields.type = (item.event_type || item.type || '').toString().toLowerCase();
+    // event / message. `fields.type` is what the `type:` operator
+    // matches against. We deliberately concatenate MULTIPLE type-ish
+    // fields with spaces so `type:visited` (the human-meaningful
+    // subtype on Location nodes) works alongside `type:location`
+    // (the top-level event discriminator). Previously fields.type
+    // was just the discriminator, so the autocomplete-suggested
+    // location_type values silently filtered everything out.
+    const eventTypeStr = (item.event_type || item.type || '').toString().toLowerCase();
+    const locationTypeStr = (item.location_type || '').toString().toLowerCase();
+    fields.type = [eventTypeStr, locationTypeStr].filter(Boolean).join(' ');
     fields.app = (item.source_app || '').toString().toLowerCase();
     fields.from = partyToText(item.sender).toLowerCase();
     const recipients = Array.isArray(item.recipients)

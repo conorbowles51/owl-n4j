@@ -337,18 +337,11 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       out.push({ operator: 'place', value: v, hint: `${n.toLocaleString()} hits · country` });
     }
     out.push(...devs);
-    // Synthetic fallbacks so the dropdown is never empty even on
-    // edge cases where the sample fetch hasn't returned yet or the
-    // case has no location_type data at all. These are the common
-    // Cellebrite location_type values; they'll deduplicate naturally
-    // when the real data also contains them (we don't try to filter
-    // dupes here — the search input's filter step handles it cheaply).
-    const seenTypes = new Set(types.map(([v]) => v.toLowerCase()));
-    for (const v of ['Visited', 'Unknown', 'Saved', 'Recent', 'Native Locations']) {
-      if (!seenTypes.has(v.toLowerCase())) {
-        out.push({ operator: 'type', value: v, hint: 'common' });
-      }
-    }
+    // No synthetic fallback values here on purpose. Suggesting strings
+    // that aren't in the data (e.g. the generic "Visited" guess) led
+    // to the user picking one and getting "No locations match" —
+    // worse than no suggestion at all. The sample fetch covers the
+    // empty-data window; suggestions stay grounded in real values.
     return out;
   }, [locations, suggestionsSample, reports]);
 
