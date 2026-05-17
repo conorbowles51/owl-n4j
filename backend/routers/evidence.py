@@ -209,7 +209,7 @@ def _cellebrite_root_prefixes(case_id: str) -> List[str]:
 
 
 @router.get("", response_model=EvidenceListResponse)
-async def list_evidence(
+def list_evidence(
     case_id: Optional[str] = None,
     status: Optional[str] = None,
     include_cellebrite_artifacts: bool = False,
@@ -408,7 +408,7 @@ async def sync_filesystem(
 
 
 @router.get("/duplicates/{sha256}", response_model=EvidenceListResponse)
-async def find_duplicates(
+def find_duplicates(
     sha256: str,
     user: dict = Depends(get_current_user),
 ):
@@ -721,7 +721,7 @@ async def upload_evidence(
 
 
 @router.post("/process/background")
-async def process_evidence_background(
+def process_evidence_background(
     request: ProcessRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -808,7 +808,7 @@ async def process_evidence(
 
 
 @router.get("/logs", response_model=EvidenceLogListResponse)
-async def get_evidence_logs(
+def get_evidence_logs(
     case_id: Optional[str] = None,
     limit: int = 200,
     current_user: User = Depends(get_current_db_user),
@@ -835,7 +835,7 @@ async def get_evidence_logs(
 
 
 @router.get("/wiretap/check")
-async def check_wiretap_folder(
+def check_wiretap_folder(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
     current_user: User = Depends(get_current_db_user),
@@ -1139,7 +1139,7 @@ async def process_wiretap_folders(
 
 
 @router.get("/cellebrite/check")
-async def check_cellebrite_folder(
+def check_cellebrite_folder(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
     current_user: User = Depends(get_current_db_user),
@@ -1192,7 +1192,7 @@ class CellebriteProcessResponse(BaseModel):
 
 
 @router.post("/cellebrite/process", response_model=CellebriteProcessResponse)
-async def process_cellebrite_folder(
+def process_cellebrite_folder(
     request: CellebriteProcessRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_db_user),
@@ -1295,7 +1295,7 @@ async def process_cellebrite_folder(
 
 
 @router.delete("/{evidence_id}")
-async def delete_evidence_file(
+def delete_evidence_file(
     evidence_id: str,
     case_id: str = Query(..., description="Case ID for scoping"),
     delete_exclusive_entities: bool = Query(True, description="Also delete entities only mentioned in this file"),
@@ -1429,7 +1429,7 @@ async def delete_evidence_file(
 
 
 @router.get("/{evidence_id}/file")
-async def get_evidence_file(
+def get_evidence_file(
     evidence_id: str,
     user: dict = Depends(get_current_user),
 ):
@@ -1606,7 +1606,7 @@ async def get_video_frames(
 
 
 @router.get("/{evidence_id}/frames/{filename}")
-async def get_video_frame_image(
+def get_video_frame_image(
     evidence_id: str,
     filename: str,
     user: dict = Depends(get_current_user),
@@ -1628,7 +1628,7 @@ class SetRelevanceRequest(BaseModel):
 
 
 @router.put("/relevance")
-async def set_evidence_relevance(
+def set_evidence_relevance(
     body: SetRelevanceRequest,
     user: dict = Depends(get_current_user),
 ):
@@ -1640,7 +1640,7 @@ async def set_evidence_relevance(
 
 
 @router.put("/relevance/from-theory")
-async def set_relevance_from_theory(
+def set_relevance_from_theory(
     case_id: str = Query(..., description="Case ID"),
     theory_id: str = Query(..., description="Theory ID"),
     user: dict = Depends(get_current_user),
@@ -1691,7 +1691,7 @@ async def set_relevance_from_theory(
 
 
 @router.get("/wiretap/processed")
-async def list_wiretap_processed(
+def list_wiretap_processed(
     case_id: Optional[str] = Query(None, description="Case ID to filter by (optional)"),
     user: dict = Depends(get_current_user),
 ):
@@ -1711,7 +1711,7 @@ async def list_wiretap_processed(
 
 
 @router.get("/by-filename/{filename}")
-async def get_evidence_by_filename(
+def get_evidence_by_filename(
     filename: str,
     case_id: Optional[str] = None,
     user: dict = Depends(get_current_user),
@@ -1755,7 +1755,7 @@ async def get_evidence_by_filename(
 
 
 @router.get("/summary/{filename}")
-async def get_document_summary(
+def get_document_summary(
     filename: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
@@ -1778,7 +1778,7 @@ async def get_document_summary(
 
 
 @router.get("/folder-summary/{folder_name}")
-async def get_folder_summary(
+def get_folder_summary(
     folder_name: str,
     case_id: str = Query(..., description="Case ID"),
     user: dict = Depends(get_current_user),
@@ -1806,7 +1806,7 @@ async def get_folder_summary(
 
 
 @router.get("/transcription-translation")
-async def get_transcription_translation(
+def get_transcription_translation(
     case_id: str = Query(..., description="Case ID"),
     folder_name: str = Query(..., description="Wiretap folder name (e.g. 00000128)"),
     user: dict = Depends(get_current_user),
@@ -1853,7 +1853,7 @@ class FolderProfileTestRequest(BaseModel):
 
 
 @router.get("/folder/files", response_model=FolderFilesResponse)
-async def list_folder_files(
+def list_folder_files(
     case_id: str = Query(..., description="Case ID"),
     folder_path: str = Query(..., description="Relative folder path from case data directory"),
     current_user: User = Depends(get_current_db_user),
@@ -2062,7 +2062,7 @@ Respond with valid JSON only, matching this structure:
 
 
 @router.post("/folder/profile/test")
-async def test_folder_profile(
+def test_folder_profile(
     request: FolderProfileTestRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_db_user),
@@ -2212,7 +2212,7 @@ def _verify_case_for(case_id: str, current_user, db) -> None:
 
 
 @router.post("/tags/add")
-async def add_evidence_tags(
+def add_evidence_tags(
     body: TagsAddRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -2224,7 +2224,7 @@ async def add_evidence_tags(
 
 
 @router.post("/tags/remove")
-async def remove_evidence_tags(
+def remove_evidence_tags(
     body: TagsRemoveRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -2236,7 +2236,7 @@ async def remove_evidence_tags(
 
 
 @router.post("/tags/set")
-async def set_evidence_tags(
+def set_evidence_tags(
     body: TagsSetRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -2250,7 +2250,7 @@ async def set_evidence_tags(
 
 
 @router.get("/tags")
-async def get_case_tags(
+def get_case_tags(
     case_id: str = Query(...),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -2261,7 +2261,7 @@ async def get_case_tags(
 
 
 @router.post("/entity-links/add")
-async def add_entity_links(
+def add_entity_links(
     body: EntityLinkRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -2273,7 +2273,7 @@ async def add_entity_links(
 
 
 @router.post("/entity-links/remove")
-async def remove_entity_links(
+def remove_entity_links(
     body: EntityLinkRequest,
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
@@ -2285,7 +2285,7 @@ async def remove_entity_links(
 
 
 @router.get("/by-entity")
-async def list_evidence_by_entity(
+def list_evidence_by_entity(
     case_id: str = Query(...),
     entity_id: str = Query(...),
     current_user: User = Depends(get_current_db_user),
