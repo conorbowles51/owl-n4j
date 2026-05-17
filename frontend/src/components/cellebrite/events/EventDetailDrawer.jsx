@@ -236,19 +236,26 @@ export function EventBody({ event, detail }) {
     case 'device_event':
       return (
         <div className="p-3 space-y-3">
-          <div className="text-sm">
-            <span className="font-medium">State:</span> {detail.state || '—'}
+          <PhoneChip />
+          {/* Single semantic line so the user reads "Connected ·
+              Charging · battery 79%" in one glance instead of three
+              separate label/value rows. */}
+          <div className="text-sm flex flex-wrap items-baseline gap-1.5 p-2 bg-light-50 rounded border border-light-200">
+            <span className="font-semibold text-owl-blue-900">
+              {detail.state || event.label || event.event_type}
+            </span>
+            {detail.reason && (
+              <span className="text-light-600">· {detail.reason}</span>
+            )}
+            {detail.battery != null && (
+              <span className="text-light-600">· battery {detail.battery}%</span>
+            )}
+            {detail.source_app && (
+              <span className="ml-auto text-[10px] uppercase tracking-wide text-light-500">
+                {detail.source_app}
+              </span>
+            )}
           </div>
-          {detail.reason && (
-            <div className="text-sm">
-              <span className="font-medium">Reason:</span> {detail.reason}
-            </div>
-          )}
-          {detail.battery != null && (
-            <div className="text-sm">
-              <span className="font-medium">Battery:</span> {detail.battery}
-            </div>
-          )}
           <RawProps detail={detail} />
         </div>
       );
@@ -309,6 +316,14 @@ function RawProps({ detail }) {
     'bssid',
     'channel',
     'security',
+    // Device-event semantics — the writer separates these out of the
+    // raw label so the user can see WHY/HOW the event exists
+    // (Connected/Disconnected, Charging/Wifi, battery level, the
+    // discriminator that decides which row this is).
+    'state',
+    'reason',
+    'battery',
+    'event_type',
     'nearest_location_key',
     'nearest_location_delta_s',
   ];

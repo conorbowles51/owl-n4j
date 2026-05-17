@@ -9912,12 +9912,44 @@ def _project_event(node, event_type: str) -> Optional[dict]:
     direct_geo = n.get("latitude") is not None and n.get("longitude") is not None
     loc_source = "direct" if direct_geo else ("nearest" if is_geo else "none")
 
-    label = n.get("name") or event_type.title()
+    # For DeviceEvent nodes the writer builds a label like "Power
+    # (Connected)" / "Unlock event" — prefer that over the generic
+    # `event_type.title()` fallback so the row text actually says
+    # what happened. Comms types (which don't carry a useful node-
+    # level label) fall through to the type name.
+    label = n.get("label") or n.get("name") or event_type.title()
+    # Compose a meaningful per-row summary for device events from
+    # whichever semantic fields exist. Without this the row only had
+    # the bare label + source_app — the "blank line for device
+    # events" complaint from the user. The writer separately stores
+    # `state` (Connected / Disconnected / Unlock / …), `reason`
+    # (Charging / Wifi / …), and `battery` (level %).
+    summary = (n.get("body") or n.get("summary") or "").strip()
+    if not summary and event_type in (
+        "device_event", "power", "unlock", "lock", "user", "device"
+    ):
+        parts = []
+        state_val = n.get("state")
+        reason_val = n.get("reason")
+        battery_val = n.get("battery")
+        if state_val:
+            parts.append(str(state_val))
+        if reason_val and (
+            not state_val or str(reason_val).strip().lower() != str(state_val).strip().lower()
+        ):
+            parts.append(str(reason_val))
+        if battery_val is not None:
+            parts.append(f"battery {battery_val}%")
+        if parts:
+            summary = " · ".join(parts)
+    if not summary:
+        summary = n.get("name") or ""
+    summary = summary[:200]
     return {
         "id": n.get("id") or n.get("key"),
         "node_key": n.get("key"),
         "label": label,
-        "summary": (n.get("body") or n.get("summary") or n.get("name") or "")[:200],
+        "summary": summary,
         "timestamp": n.get("timestamp"),
         "latitude": lat,
         "longitude": lon,
@@ -9954,6 +9986,11 @@ def _project_event(node, event_type: str) -> Optional[dict]:
         "geocode_accuracy": n.get("geocode_accuracy"),
         "attachment_count": int(n.get("attachment_count") or 0),
         "state": n.get("state"),
+        # Device-event extras so the row carries the actual semantics
+        # the user wants to see at a glance (reason + battery level).
+        # Comms rows leave these null — frontend ignores nulls.
+        "reason": n.get("reason"),
+        "battery": n.get("battery"),
         "app_name": n.get("app_name"),
     }
 
