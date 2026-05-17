@@ -840,11 +840,20 @@ class CellebriteNeo4jWriter:
 
         loc_key = f"loc-{model.model_id[:12]}"
 
-        props = self._base_props(model, loc_key, f"Location ({loc_type or source or 'Unknown'})")
+        # Always populate location_type so the table column + `type:`
+        # search suggestions agree. Without this fallback, rows whose
+        # Cellebrite XML omits PositionType get an empty location_type
+        # and the table falls through to the `name` — producing
+        # visual variants the suggestion endpoint can't match against.
+        # Name is the bare type token (no "Location (...)" wrapper)
+        # so node names + the table column read identically.
+        effective_type = loc_type or source or "Unknown"
+
+        props = self._base_props(model, loc_key, effective_type)
         props.update({
             "latitude": lat,
             "longitude": lon,
-            "location_type": loc_type,
+            "location_type": effective_type,
             "source_app": source,
         })
         if accuracy_meters is not None:
