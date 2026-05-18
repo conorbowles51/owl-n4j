@@ -4,7 +4,6 @@ import {
   Activity,
   CheckCircle2,
   Clock,
-  FileText,
   Filter,
   FolderTree,
   GitBranch,
@@ -31,14 +30,12 @@ import { Input } from "@/components/ui/input"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { cn } from "@/lib/cn"
 import {
-  useCheckCellebriteFolder,
   useCellebriteCommunicationNetwork,
   useCellebriteCrossPhoneGraph,
   useCellebriteFiles,
   useCellebriteFilesTree,
   useCellebriteReports,
   useCellebriteTimeline,
-  useCommsBetween,
   useCommsEnvelope,
   useCommsSourceApps,
   useCommsThreads,
@@ -50,12 +47,9 @@ import {
   useEvents,
   useLocationTiles,
   useMessageSearch,
-  useOverviewRows,
   usePatchCellebriteReport,
-  useProcessCellebriteFolder,
   useRunIntersections,
   useThreadDetail,
-  useUnifiedContacts,
 } from "../hooks/use-cellebrite"
 import type {
   CellebriteRecord,
@@ -65,11 +59,28 @@ import type {
   FileTreeNode,
   GraphLink,
   GraphNode,
-  OverviewKind,
   PhoneReport,
   RailSelection,
   TimelineItem,
 } from "../types"
+import { OverviewTab } from "./overview/OverviewTab"
+import { UnifiedContactsTab } from "./unified/UnifiedContactsTab"
+import { UnifiedContactDetail } from "./unified/UnifiedContactDetail"
+import { SmallEmpty } from "./shared/SmallEmpty"
+import {
+  compactDate,
+  compactNumber,
+  isRecord,
+  itemKey,
+  readList,
+  readNumber,
+  readText,
+  reportKey,
+  reportTitle,
+  selectedReportParams,
+  truncate,
+} from "./shared/cellebrite-format"
+import type { CommsSeed } from "./shared/cellebrite-types"
 
 type TabDef = {
   key: CellebriteTabKey
@@ -99,111 +110,7 @@ const TABS: TabDef[] = [
   { key: "graph", label: "Graph & Intersections", icon: Network },
 ]
 
-const OVERVIEW_KINDS: { kind: OverviewKind; label: string }[] = [
-  { kind: "contacts", label: "Contacts" },
-  { kind: "messages", label: "Messages" },
-  { kind: "calls", label: "Calls" },
-  { kind: "locations", label: "Locations" },
-  { kind: "emails", label: "Emails" },
-]
-
 const INTERSECTION_METHODS = ["spatial", "cell_tower", "wifi", "comm_hub", "convoy"]
-
-function isRecord(value: unknown): value is CellebriteRecord {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function asText(value: unknown, fallback = ""): string {
-  if (value === null || value === undefined) return fallback
-  if (typeof value === "string") return value || fallback
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
-  if (Array.isArray(value)) return value.map((item) => asText(item)).filter(Boolean).join(", ")
-  if (isRecord(value)) {
-    const label = readText(value, ["display_name", "name", "label", "title", "key", "id"])
-    return label || fallback
-  }
-  return fallback
-}
-
-function readText(row: CellebriteRecord | null | undefined, keys: string[], fallback = ""): string {
-  if (!row) return fallback
-  for (const key of keys) {
-    const text = asText(row[key])
-    if (text) return text
-  }
-  return fallback
-}
-
-function readNumber(row: CellebriteRecord | null | undefined, keys: string[], fallback = 0): number {
-  if (!row) return fallback
-  for (const key of keys) {
-    const value = row[key]
-    if (typeof value === "number" && Number.isFinite(value)) return value
-    if (typeof value === "string" && value.trim() !== "") {
-      const parsed = Number(value)
-      if (Number.isFinite(parsed)) return parsed
-    }
-  }
-  return fallback
-}
-
-function readList(row: CellebriteRecord | null | undefined, keys: string[]): string[] {
-  if (!row) return []
-  for (const key of keys) {
-    const value = row[key]
-    if (Array.isArray(value)) {
-      return value.map((item) => asText(item)).filter(Boolean)
-    }
-    const text = asText(value)
-    if (text) return [text]
-  }
-  return []
-}
-
-function compactDate(value: unknown): string {
-  const text = asText(value)
-  if (!text) return "-"
-  const date = new Date(text)
-  if (Number.isNaN(date.getTime())) return text
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
-function compactNumber(value: number | undefined | null): string {
-  return new Intl.NumberFormat().format(value ?? 0)
-}
-
-function truncate(value: string, length = 120): string {
-  return value.length > length ? `${value.slice(0, length - 1)}...` : value
-}
-
-function reportKey(report: PhoneReport): string {
-  return report.report_key
-}
-
-function reportTitle(report: PhoneReport): string {
-  return (
-    report.device_name_override ||
-    report.device_name ||
-    report.device_model ||
-    report.phone_owner_name ||
-    report.owner_name ||
-    report.report_key
-  )
-}
-
-function itemKey(row: CellebriteRecord, fallback: string): string {
-  return readText(row, ["key", "node_key", "id", "message_id", "thread_id", "file_id"], fallback)
-}
-
-function selectedReportParams(keys: string[]): string[] | null {
-  return keys.length > 0 ? keys : null
-}
 
 export function CellebritePage() {
   const { id: caseId } = useParams()
@@ -215,6 +122,7 @@ export function CellebritePage() {
     endDate: "",
   })
   const [selection, setSelection] = useState<RailSelection | null>(null)
+  const [commsSeed, setCommsSeed] = useState<CommsSeed | null>(null)
 
   const reportsQuery = useCellebriteReports(caseId)
   const reports = useMemo(() => reportsQuery.data?.reports ?? [], [reportsQuery.data?.reports])
@@ -229,7 +137,6 @@ export function CellebritePage() {
     [activeReportKeys, reports]
   )
   const reportKeys = selectedReportParams(activeReportKeys)
-  const primaryReportKey = activeReportKeys[0] ?? reports[0]?.report_key
 
   if (!caseId) {
     return (
@@ -332,13 +239,12 @@ export function CellebritePage() {
       </header>
 
       {reports.length === 0 ? (
-        <div className="grid flex-1 grid-cols-[minmax(0,1fr)_360px] overflow-hidden">
+        <div className="flex flex-1 items-center justify-center overflow-hidden">
           <EmptyState
             icon={Smartphone}
             title="No phone reports"
-            description="Run a Cellebrite ingest to populate this workspace."
+            description="No Cellebrite reports have been imported for this case."
           />
-          <IngestPanel caseId={caseId} />
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 grid-cols-[280px_minmax(0,1fr)_360px] overflow-hidden">
@@ -354,10 +260,19 @@ export function CellebritePage() {
               <OverviewTab
                 active={activeTab === "overview"}
                 caseId={caseId}
-                reportKey={primaryReportKey}
                 query={query}
                 reports={selectedReports}
                 onSelect={setSelection}
+                onFilterComms={(seed) => {
+                  const seedReportKeys = seed.reportKeys?.length
+                    ? seed.reportKeys
+                    : seed.reportKey
+                      ? [seed.reportKey]
+                      : []
+                  if (seedReportKeys.length) setSelectedKeys(seedReportKeys)
+                  setCommsSeed(seed)
+                  setActiveTab("comms")
+                }}
               />
             )}
             {activeTab === "unified" && (
@@ -365,8 +280,19 @@ export function CellebritePage() {
                 active={activeTab === "unified"}
                 caseId={caseId}
                 reportKeys={reportKeys}
+                reports={selectedReports}
                 query={query}
                 onSelect={setSelection}
+                onFilterComms={(seed) => {
+                  const seedReportKeys = seed.reportKeys?.length
+                    ? seed.reportKeys
+                    : seed.reportKey
+                      ? [seed.reportKey]
+                      : []
+                  if (seedReportKeys.length) setSelectedKeys(seedReportKeys)
+                  setCommsSeed(seed)
+                  setActiveTab("comms")
+                }}
               />
             )}
             {activeTab === "comms" && (
@@ -376,6 +302,7 @@ export function CellebritePage() {
                 reportKeys={reportKeys}
                 query={query}
                 dateFilters={dateFilters}
+                seed={commsSeed}
                 onSelect={setSelection}
               />
             )}
@@ -422,7 +349,8 @@ export function CellebritePage() {
           <SelectionPanel
             selection={selection}
             onClear={() => setSelection(null)}
-            fallback={<IngestPanel caseId={caseId} />}
+            reports={reports}
+            fallback={<DetailFallback />}
           />
         </div>
       )}
@@ -576,228 +504,13 @@ function MiniStat({ label, value }: { label: string; value: number }) {
   )
 }
 
-function OverviewTab({
-  active,
-  caseId,
-  reportKey,
-  query,
-  reports,
-  onSelect,
-}: {
-  active: boolean
-  caseId: string
-  reportKey: string | undefined
-  query: string
-  reports: PhoneReport[]
-  onSelect: (selection: RailSelection) => void
-}) {
-  const [kind, setKind] = useState<OverviewKind>("contacts")
-  const rowsQuery = useOverviewRows(kind, caseId, reportKey, { search: query, limit: 200 }, active)
-  const rows = rowsForOverview(kind, rowsQuery.data)
-  const totals = rowsQuery.data?.total ?? rows.length
-
-  const statRows = OVERVIEW_KINDS.map((item) => ({
-    ...item,
-    active: item.kind === kind,
-  }))
-
-  return (
-    <section className="flex h-full min-h-0 flex-col">
-      <div className="grid shrink-0 grid-cols-5 gap-2 border-b border-border p-3">
-        {statRows.map((item) => (
-          <button
-            key={item.kind}
-            type="button"
-            onClick={() => setKind(item.kind)}
-            className={cn(
-              "rounded-md border px-3 py-2 text-left transition-colors",
-              item.active ? "border-amber-400 bg-amber-50 dark:bg-amber-950/20" : "border-border bg-card"
-            )}
-          >
-            <div className="text-[11px] font-medium text-muted-foreground">{item.label}</div>
-            <div className="mt-1 text-lg font-semibold">
-              {item.active ? compactNumber(totals) : "-"}
-            </div>
-          </button>
-        ))}
-      </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] overflow-hidden">
-        <RecordsPane
-          title={OVERVIEW_KINDS.find((item) => item.kind === kind)?.label ?? "Rows"}
-          loading={rowsQuery.isLoading}
-          rows={rows}
-          columns={overviewColumns(kind)}
-          emptyLabel="No rows"
-          onSelect={(row) =>
-            onSelect({
-              id: itemKey(row, `${kind}-${rows.indexOf(row)}`),
-              kind: kind === "contacts" ? "contact" : "event",
-              title: readText(row, ["display_name", "name", "label", "summary", "subject"], kind),
-              payload: row,
-            })
-          }
-        />
-        <div className="border-l border-border bg-muted/20 p-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Selected Devices
-          </h2>
-          <div className="mt-2 space-y-2">
-            {reports.map((report) => (
-              <div key={report.report_key} className="rounded-md border border-border bg-card p-2">
-                <div className="truncate text-sm font-semibold">{reportTitle(report)}</div>
-                <div className="mt-1 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
-                  <span>Owner</span>
-                  <span className="truncate text-right text-foreground">
-                    {report.phone_owner_name || report.owner_name || "-"}
-                  </span>
-                  <span>Evidence</span>
-                  <span className="truncate text-right text-foreground">{report.evidence_number || "-"}</span>
-                  <span>Extracted</span>
-                  <span className="truncate text-right text-foreground">
-                    {compactDate(report.extraction_date)}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function rowsForOverview(kind: OverviewKind, data: CellebriteRecord | undefined): CellebriteRecord[] {
-  if (!data) return []
-  const value = data.rows ?? data[kind]
-  return Array.isArray(value) ? value.filter(isRecord) : []
-}
-
-function overviewColumns(kind: OverviewKind): Column[] {
-  if (kind === "contacts") {
-    return [
-      { id: "name", label: "Name", get: (row) => readText(row, ["display_name", "name", "label", "contact_name"], "-") },
-      { id: "phone", label: "Phone", get: (row) => readText(row, ["phone", "phone_number", "identifier"], "-") },
-      { id: "messages", label: "Messages", className: "text-right", get: (row) => compactNumber(readNumber(row, ["message_count", "messages"])) },
-      { id: "calls", label: "Calls", className: "text-right", get: (row) => compactNumber(readNumber(row, ["call_count", "calls"])) },
-    ]
-  }
-  if (kind === "locations") {
-    return [
-      { id: "time", label: "Time", get: (row) => compactDate(row.timestamp ?? row.datetime ?? row.time) },
-      { id: "label", label: "Label", get: (row) => readText(row, ["label", "name", "address", "summary"], "-") },
-      { id: "lat", label: "Lat", get: (row) => readText(row, ["latitude", "lat"], "-") },
-      { id: "lng", label: "Lng", get: (row) => readText(row, ["longitude", "lng"], "-") },
-    ]
-  }
-  return [
-    { id: "time", label: "Time", get: (row) => compactDate(row.timestamp ?? row.datetime ?? row.time) },
-    { id: "from", label: "From", get: (row) => readText(row, ["sender_name", "sender", "from", "caller"], "-") },
-    { id: "to", label: "To", get: (row) => readText(row, ["recipient_name", "recipient", "to", "callee"], "-") },
-    { id: "summary", label: "Summary", get: (row) => truncate(readText(row, ["body", "subject", "summary", "label"], "-"), 90) },
-  ]
-}
-
-function UnifiedContactsTab({
-  active,
-  caseId,
-  reportKeys,
-  query,
-  onSelect,
-}: {
-  active: boolean
-  caseId: string
-  reportKeys: string[] | null
-  query: string
-  onSelect: (selection: RailSelection) => void
-}) {
-  const contactsQuery = useUnifiedContacts(
-    caseId,
-    { reportKeys, search: query, limit: 500 },
-    active
-  )
-  const contacts = useMemo(
-    () => contactsQuery.data?.contacts ?? contactsQuery.data?.rows ?? [],
-    [contactsQuery.data?.contacts, contactsQuery.data?.rows]
-  )
-  const [selectedContactKey, setSelectedContactKey] = useState<string | null>(null)
-  const selectedContact = useMemo(
-    () =>
-      contacts.find((contact) => itemKey(contact, "contact") === selectedContactKey) ??
-      contacts[0] ??
-      null,
-    [contacts, selectedContactKey]
-  )
-  const participantKeys = readList(selectedContact, ["participant_keys", "entity_keys"])
-  const feedQuery = useCommsBetween(
-    caseId,
-    { reportKeys, participantKeys, limit: 300, sort: "desc" },
-    active && participantKeys.length > 0
-  )
-
-  return (
-    <section className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_420px] overflow-hidden">
-      <RecordsPane
-        title="Unified Contacts"
-        loading={contactsQuery.isLoading}
-        rows={contacts}
-        emptyLabel="No contacts"
-        columns={[
-          { id: "name", label: "Name", get: (row) => readText(row, ["display_name", "name", "canonical_phone"], "-") },
-          { id: "aliases", label: "Aliases", get: (row) => truncate(readList(row, ["aliases"]).join(", "), 80) || "-" },
-          { id: "reports", label: "Devices", className: "text-right", get: (row) => compactNumber(readList(row, ["report_keys"]).length) },
-          { id: "messages", label: "Msgs", className: "text-right", get: (row) => compactNumber(readNumber(row, ["message_count"])) },
-          { id: "calls", label: "Calls", className: "text-right", get: (row) => compactNumber(readNumber(row, ["call_count"])) },
-        ]}
-        selectedId={selectedContact ? itemKey(selectedContact, "") : undefined}
-        onSelect={(row) => {
-          setSelectedContactKey(itemKey(row, "contact"))
-          onSelect({
-            id: itemKey(row, "contact"),
-            kind: "contact",
-            title: readText(row, ["display_name", "name", "canonical_phone"], "Contact"),
-            payload: row,
-          })
-        }}
-      />
-      <DetailColumn title={selectedContact ? readText(selectedContact, ["display_name", "name", "canonical_phone"], "Contact") : "Contact"}>
-        <KeyValueGrid
-          rows={[
-            ["Canonical", readText(selectedContact, ["canonical_phone", "phone"], "-")],
-            ["Aliases", readList(selectedContact, ["aliases"]).join(", ") || "-"],
-            ["Reports", readList(selectedContact, ["report_keys"]).join(", ") || "-"],
-            ["Messages", compactNumber(readNumber(selectedContact, ["message_count"]))],
-            ["Calls", compactNumber(readNumber(selectedContact, ["call_count"]))],
-          ]}
-        />
-        <div className="mt-4">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Contact Feed
-          </h3>
-          <EventList
-            items={feedQuery.data?.items ?? []}
-            loading={feedQuery.isLoading}
-            emptyLabel="No communication feed"
-            onSelect={(item) =>
-              onSelect({
-                id: itemKey(item, "message"),
-                kind: "message",
-                title: readText(item, ["subject", "body", "summary", "label"], "Message"),
-                payload: item,
-              })
-            }
-          />
-        </div>
-      </DetailColumn>
-    </section>
-  )
-}
-
 function CommsTab({
   active,
   caseId,
   reportKeys,
   query,
   dateFilters,
+  seed,
   onSelect,
 }: {
   active: boolean
@@ -805,12 +518,18 @@ function CommsTab({
   reportKeys: string[] | null
   query: string
   dateFilters: DateFilters
+  seed: CommsSeed | null
   onSelect: (selection: RailSelection) => void
 }) {
   const [selectedThreadKey, setSelectedThreadKey] = useState<string | null>(null)
-  const [type, setType] = useState<"all" | "message" | "call" | "email">("all")
+  const [type, setType] = useState<"all" | "message" | "call" | "email">(seed?.type ?? "all")
   const [sourceApp, setSourceApp] = useState("")
-  const [participant, setParticipant] = useState("")
+  const [participant, setParticipant] = useState(seed?.participantKeys.join(", ") ?? "")
+  const participantKeys = useMemo(
+    () => participant.split(",").map((value) => value.trim()).filter(Boolean),
+    [participant]
+  )
+
   const params = {
     reportKeys,
     startDate: dateFilters.startDate || null,
@@ -818,7 +537,7 @@ function CommsTab({
     search: query || null,
     sourceApps: sourceApp ? [sourceApp] : null,
     types: type === "all" ? null : [type],
-    participantKeys: participant ? [participant] : null,
+    participantKeys: participantKeys.length ? participantKeys : null,
     limit: 200,
   }
   const threadsQuery = useCommsThreads(caseId, params, active)
@@ -861,9 +580,12 @@ function CommsTab({
         <Input
           value={participant}
           onChange={(event) => setParticipant(event.target.value)}
-          placeholder="Participant key"
+          placeholder="Participant key(s)"
           className="h-8 w-56"
         />
+        {seed && participantKeys.length > 0 && (
+          <Badge variant="amber">Filtered from Overview: {seed.label}</Badge>
+        )}
         <Badge variant="slate" className="ml-auto">
           {compactNumber(envelopeQuery.data?.total)} records
         </Badge>
@@ -1458,10 +1180,12 @@ function DetailColumn({
 function SelectionPanel({
   selection,
   onClear,
+  reports,
   fallback,
 }: {
   selection: RailSelection | null
   onClear: () => void
+  reports: PhoneReport[]
   fallback: ReactNode
 }) {
   if (!selection) return <aside className="min-h-0 overflow-y-auto border-l border-border bg-muted/20">{fallback}</aside>
@@ -1476,9 +1200,21 @@ function SelectionPanel({
         </Button>
       </div>
       <div className="p-3">
-        <JsonBlock value={selection.payload} />
+        {selection.kind === "contact_unified" ? (
+          <UnifiedContactDetail contact={selection.payload} reports={reports} />
+        ) : (
+          <JsonBlock value={selection.payload} />
+        )}
       </div>
     </aside>
+  )
+}
+
+function DetailFallback() {
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <SmallEmpty label="Select a record to inspect details" />
+    </div>
   )
 }
 
@@ -1516,72 +1252,6 @@ function EventList({
           </div>
         </button>
       ))}
-    </div>
-  )
-}
-
-function IngestPanel({ caseId }: { caseId: string }) {
-  const [folderPath, setFolderPath] = useState("")
-  const [force, setForce] = useState(false)
-  const check = useCheckCellebriteFolder(caseId)
-  const process = useProcessCellebriteFolder(caseId)
-
-  return (
-    <div className="p-3">
-      <div className="rounded-md border border-border bg-card p-3">
-        <div className="flex items-center gap-2">
-          <FileText className="size-4 text-amber-500" />
-          <h2 className="text-sm font-semibold">Ingest Report Folder</h2>
-        </div>
-        <Input
-          value={folderPath}
-          onChange={(event) => setFolderPath(event.target.value)}
-          placeholder="C:\\Evidence\\UFED\\Report"
-          className="mt-3 h-8"
-        />
-        <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />
-          Replace duplicate report
-        </label>
-        <div className="mt-3 flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!folderPath || check.isPending}
-            onClick={() => check.mutate(folderPath, { onError: (error) => toast.error(error.message) })}
-          >
-            {check.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Search className="size-3.5" />}
-            Check
-          </Button>
-          <Button
-            size="sm"
-            disabled={!folderPath || process.isPending}
-            onClick={() =>
-              process.mutate(
-                { folderPath, force, replaceExisting: force },
-                {
-                  onSuccess: () => toast.success("Cellebrite processing started"),
-                  onError: (error) => toast.error(error.message),
-                }
-              )
-            }
-          >
-            {process.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
-            Process
-          </Button>
-        </div>
-        {check.data && (
-          <div className="mt-3 rounded-md border border-border bg-muted/40 p-2 text-xs">
-            <div className="font-semibold">{readText(check.data, ["message"], "Check complete")}</div>
-            <div className="mt-1 text-muted-foreground">{readText(check.data, ["report_key", "xml_file"], "")}</div>
-          </div>
-        )}
-        {process.data && (
-          <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 p-2 text-xs text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-300">
-            {readText(process.data, ["message"], "Processing started")}
-          </div>
-        )}
-      </div>
     </div>
   )
 }
@@ -1632,19 +1302,6 @@ function MetricGrid({ metrics }: { metrics: [string, string][] }) {
         </div>
       ))}
     </div>
-  )
-}
-
-function KeyValueGrid({ rows }: { rows: [string, string][] }) {
-  return (
-    <dl className="grid grid-cols-[100px_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-      {rows.map(([label, value]) => (
-        <div key={label} className="contents">
-          <dt className="text-muted-foreground">{label}</dt>
-          <dd className="truncate font-medium text-foreground">{value}</dd>
-        </div>
-      ))}
-    </dl>
   )
 }
 
@@ -1758,14 +1415,6 @@ function InlineLoading() {
     <div className="flex items-center gap-2 rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
       <Loader2 className="size-3.5 animate-spin" />
       Loading
-    </div>
-  )
-}
-
-function SmallEmpty({ label }: { label: string }) {
-  return (
-    <div className="flex h-full min-h-32 items-center justify-center rounded-md p-6 text-center text-sm text-muted-foreground">
-      {label}
     </div>
   )
 }

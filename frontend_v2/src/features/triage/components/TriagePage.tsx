@@ -131,6 +131,9 @@ const CATEGORIES = [
   "other",
 ]
 
+const TRIAGE_INGEST_DISABLED_MESSAGE =
+  "Triage ingest is paused until it is routed through the evidence engine."
+
 function invalidateTriage(queryClient: ReturnType<typeof useQueryClient>, caseId?: string) {
   queryClient.invalidateQueries({ queryKey: ["triage-cases"] })
   if (caseId) {
@@ -748,7 +751,12 @@ function TriageWorkbench({
           <span>{(caseData.scan_stats?.total_files ?? 0).toLocaleString()} files</span>
           <span>{formatBytes(caseData.scan_stats?.total_size)}</span>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setIngestOpen(true)}>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled
+          title={TRIAGE_INGEST_DISABLED_MESSAGE}
+        >
           <FolderInput className="size-3.5" />
           Ingest
         </Button>

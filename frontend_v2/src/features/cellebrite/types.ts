@@ -345,7 +345,7 @@ export interface CommsFilterParams extends ReportScopedParams, DateRangeParams, 
 
 export interface RailSelection {
   id: string
-  kind: "thread" | "event" | "tile" | "contact" | "file" | "message" | "report"
+  kind: "thread" | "event" | "tile" | "contact" | "contact_unified" | "file" | "message" | "report"
   title: string
   payload: CellebriteRecord
 }
