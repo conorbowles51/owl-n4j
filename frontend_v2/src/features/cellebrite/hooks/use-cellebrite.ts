@@ -73,6 +73,8 @@ export function useDeleteCellebriteReport(caseId: string) {
     mutationFn: (reportKey: string) => cellebriteAPI.deleteReport(caseId, reportKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: cellebriteKeys.all })
+      queryClient.invalidateQueries({ queryKey: ["background-tasks", caseId] })
+      queryClient.invalidateQueries({ queryKey: ["background-tasks"] })
     },
   })
 }
@@ -406,6 +408,7 @@ export function useProcessCellebriteFolder(caseId: string) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: cellebriteKeys.all })
+      queryClient.invalidateQueries({ queryKey: ["evidence-jobs", caseId] })
     },
   })
 }

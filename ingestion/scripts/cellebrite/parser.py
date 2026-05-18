@@ -397,19 +397,45 @@ class CellebriteXMLParser:
                     extraction_id=elem.get("extractionId", ""),
                 )
 
-                # Extract Local Path, hashes, tags from nested metadata
+                # Extract Local Path, hashes, tags, EXIF-ish timestamps and
+                # geotags from nested metadata. Cellebrite varies item names
+                # across report versions, so match the common aliases.
                 for meta_section in elem.findall(_ns("metadata")):
                     for item in meta_section.findall(_ns("item")):
                         item_name = item.get("name", "")
                         item_text = (item.text or "").strip()
+                        if not item_text:
+                            continue
                         if item_name == "Local Path":
                             tf.local_path = item_text
                         elif item_name == "MD5":
-                            tf.md5 = item_text if item_text else None
+                            tf.md5 = item_text
                         elif item_name == "SHA256":
-                            tf.sha256 = item_text if item_text else None
+                            tf.sha256 = item_text
                         elif item_name == "Tags":
-                            tf.tags = item_text if item_text else None
+                            tf.tags = item_text
+                        elif item_name in ("Creation time", "CreationTime", "Created"):
+                            tf.creation_time = item_text
+                        elif item_name in ("Modify Time", "ModifyTime", "Modified"):
+                            tf.modify_time = item_text
+                        elif item_name in (
+                            "Capture Time",
+                            "CaptureTime",
+                            "DateTimeOriginal",
+                            "Date Taken",
+                            "Photo Taken",
+                        ):
+                            tf.capture_time = item_text
+                        elif item_name in ("Latitude", "GPS Latitude", "GpsLatitude"):
+                            try:
+                                tf.latitude = float(item_text)
+                            except ValueError:
+                                pass
+                        elif item_name in ("Longitude", "GPS Longitude", "GpsLongitude"):
+                            try:
+                                tf.longitude = float(item_text)
+                            except ValueError:
+                                pass
 
                 if tf.local_path:  # Only include files with a local path
                     tagged_files.append(tf)

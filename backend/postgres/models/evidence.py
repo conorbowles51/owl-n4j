@@ -9,6 +9,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Float,
     Index,
     Integer,
     String,
@@ -164,6 +165,12 @@ class EvidenceFile(Base, TimestampMixin):
     cellebrite_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cellebrite_model_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cellebrite_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    capture_time: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    creation_time: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    modify_time: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    has_geotag: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     tags: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
     linked_entity_ids: Mapped[list] = mapped_column(_jsonb_column(), server_default="[]", nullable=False)
     metadata_: Mapped[dict] = mapped_column("metadata", _jsonb_column(), server_default="{}", nullable=False)

@@ -16,6 +16,15 @@ export interface UploadResponse {
   message?: string
 }
 
+const EVIDENCE_UPLOAD_TIMEOUT_MS = 60 * 60 * 1000
+
+export interface EvidenceUploadOptions {
+  isFolder?: boolean
+  isArchive?: boolean
+  replaceExisting?: boolean
+  folderId?: string
+}
+
 export const evidenceAPI = {
   list: async (caseId: string, status?: string) => {
     const qs = new URLSearchParams({ case_id: caseId })
@@ -24,15 +33,34 @@ export const evidenceAPI = {
     return res.files
   },
 
-  upload: (caseId: string, files: File[], isFolder = false, folderId?: string) => {
+  upload: (
+    caseId: string,
+    files: File[],
+    optionsOrIsFolder: EvidenceUploadOptions | boolean = {},
+    folderId?: string
+  ) => {
+    const options =
+      typeof optionsOrIsFolder === "boolean"
+        ? { isFolder: optionsOrIsFolder, folderId }
+        : optionsOrIsFolder
+    const isFolderUpload = options.isFolder || options.isArchive
     const formData = new FormData()
     formData.append("case_id", caseId)
-    if (isFolder) formData.append("is_folder", "true")
-    if (folderId) formData.append("folder_id", folderId)
-    files.forEach((f) => formData.append("files", f))
+    if (isFolderUpload) formData.append("is_folder", "true")
+    if (options.isArchive) formData.append("is_archive", "true")
+    if (options.replaceExisting) formData.append("replace_existing", "true")
+    if (options.folderId) formData.append("folder_id", options.folderId)
+    files.forEach((file) => {
+      const multipartFilename =
+        isFolderUpload && !options.isArchive
+          ? file.webkitRelativePath || file.name
+          : file.name
+      formData.append("files", file, multipartFilename)
+    })
     return fetchAPI<UploadResponse>("/api/evidence/upload", {
       method: "POST",
       body: formData,
+      timeout: EVIDENCE_UPLOAD_TIMEOUT_MS,
     })
   },
 

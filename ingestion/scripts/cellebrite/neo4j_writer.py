@@ -840,11 +840,15 @@ class CellebriteNeo4jWriter:
 
         loc_key = f"loc-{model.model_id[:12]}"
 
-        props = self._base_props(model, loc_key, f"Location ({loc_type or source or 'Unknown'})")
+        # Keep Location.name and location_type aligned so the table, search
+        # suggestions, and graph labels do not drift when PositionType is absent.
+        effective_type = loc_type or source or "Unknown"
+
+        props = self._base_props(model, loc_key, effective_type)
         props.update({
             "latitude": lat,
             "longitude": lon,
-            "location_type": loc_type,
+            "location_type": effective_type,
             "source_app": source,
         })
         if accuracy_meters is not None:

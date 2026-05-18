@@ -7,6 +7,7 @@ from app.config import settings
 from app.dependencies import async_session
 from app.jobs.janitor import reap_stale_jobs
 from app.pipeline.batch_orchestrator import run_batch_pipeline
+from app.pipeline.cellebrite_ingestion import run_cellebrite_pipeline
 from app.pipeline.merge_orchestrator import run_merge_pipeline
 from app.pipeline.orchestrator import run_pipeline
 
@@ -38,8 +39,16 @@ async def process_merge(ctx: dict, job_id: str, case_id: str) -> None:
     logger.info("Completed merge job %s", job_id)
 
 
+async def process_cellebrite(ctx: dict, job_id: str, case_id: str) -> None:
+    """Process a staged Cellebrite UFED report folder."""
+    logger.info("Processing Cellebrite job %s for case %s", job_id, case_id)
+    async with async_session() as db:
+        await run_cellebrite_pipeline(job_id, db)
+    logger.info("Completed Cellebrite job %s", job_id)
+
+
 class WorkerSettings:
-    functions = [process_file, process_batch, process_merge]
+    functions = [process_file, process_batch, process_merge, process_cellebrite]
     cron_jobs = [
         # Stale-job janitor: every 5 minutes, mark any non-terminal job whose
         # updated_at hasn't moved in JANITOR_STALE_THRESHOLD_SECONDS (default 2h)

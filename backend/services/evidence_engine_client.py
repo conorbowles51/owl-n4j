@@ -101,6 +101,38 @@ async def upload_files_batch(
     return response.json()
 
 
+async def create_cellebrite_job(
+    case_id: str,
+    *,
+    folder_path: str,
+    report_name: str | None = None,
+    report_key: str | None = None,
+    owner: str | None = None,
+    force: bool = False,
+    requested_by_user_id: str | None = None,
+) -> Dict[str, Any]:
+    """
+    Create a real evidence-engine job for a staged Cellebrite report folder.
+
+    folder_path is relative to ingestion/data/{case_id}; the evidence-engine
+    worker resolves it under its mounted CELLEBRITE_DATA_ROOT.
+    """
+    client = _get_client()
+    response = await client.post(
+        f"/cases/{case_id}/cellebrite/jobs",
+        json={
+            "folder_path": folder_path,
+            "report_name": report_name,
+            "report_key": report_key,
+            "owner": owner,
+            "force": force,
+            "requested_by_user_id": requested_by_user_id,
+        },
+    )
+    response.raise_for_status()
+    return response.json()
+
+
 async def get_job(job_id: str) -> Dict[str, Any]:
     """Get the status of a processing job."""
     client = _get_client()

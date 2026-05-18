@@ -44,7 +44,7 @@ def _require_case_access(case_id: str, user: User, db: Session):
 
 
 @router.get("/reports")
-async def get_reports(
+def get_reports(
     case_id: str = Query(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -56,7 +56,7 @@ async def get_reports(
 
 
 @router.get("/geocoder/status")
-async def get_geocoder_status(
+def get_geocoder_status(
     current_user: User = Depends(get_current_db_user),
 ):
     """
@@ -86,7 +86,7 @@ def _require_case_evidence_access(case_id: str, user: User, db: Session):
 
 
 @router.delete("/reports/{report_key}")
-async def delete_phone_report(
+def delete_phone_report(
     report_key: str,
     case_id: str = Query(...),
     db: Session = Depends(get_db),
@@ -131,7 +131,7 @@ class PhoneReportUpdateRequest(BaseModel):
 
 
 @router.patch("/reports/{report_key}")
-async def patch_phone_report(
+def patch_phone_report(
     report_key: str,
     body: PhoneReportUpdateRequest,
     case_id: str = Query(...),
@@ -159,7 +159,7 @@ async def patch_phone_report(
 
 
 @router.get("/cross-phone-graph")
-async def get_cross_phone_graph(
+def get_cross_phone_graph(
     case_id: str = Query(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -171,7 +171,7 @@ async def get_cross_phone_graph(
 
 
 @router.get("/timeline")
-async def get_timeline(
+def get_timeline(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None, description="Comma-separated report keys to filter"),
     start_date: Optional[str] = Query(None),
@@ -201,7 +201,7 @@ async def get_timeline(
 
 
 @router.get("/communication-network")
-async def get_communication_network(
+def get_communication_network(
     case_id: str = Query(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
@@ -270,7 +270,7 @@ def _resolve_attachments(db: Session, case_id: str, items: List[dict]) -> None:
 
 
 @router.get("/comms/entities")
-async def get_comms_entities(
+def get_comms_entities(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None, description="Comma-separated report keys"),
     with_counts: bool = Query(
@@ -297,7 +297,7 @@ async def get_comms_entities(
 
 
 @router.get("/comms/source-apps")
-async def get_comms_source_apps(
+def get_comms_source_apps(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -313,7 +313,7 @@ async def get_comms_source_apps(
 
 
 @router.get("/comms/threads")
-async def get_comms_threads(
+def get_comms_threads(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     from_keys: Optional[str] = Query(None, description="Comma-separated Person keys in From"),
@@ -356,7 +356,7 @@ async def get_comms_threads(
 
 
 @router.get("/comms/threads/{thread_id:path}")
-async def get_comms_thread_detail(
+def get_comms_thread_detail(
     thread_id: str,
     case_id: str = Query(...),
     thread_type: str = Query(..., description="chat, calls, or emails"),
@@ -387,7 +387,7 @@ async def get_comms_thread_detail(
 
 
 @router.get("/comms/between")
-async def get_comms_between(
+def get_comms_between(
     case_id: str = Query(...),
     from_keys: Optional[str] = Query(None),
     to_keys: Optional[str] = Query(None),
@@ -441,7 +441,7 @@ async def get_comms_between(
 
 
 @router.get("/comms/envelope")
-async def get_comms_envelope(
+def get_comms_envelope(
     case_id: str = Query(...),
     from_keys: Optional[str] = Query(None),
     to_keys: Optional[str] = Query(None),
@@ -483,7 +483,7 @@ async def get_comms_envelope(
 
 
 @router.get("/comms/messages/search")
-async def search_comms_messages(
+def search_comms_messages(
     case_id: str = Query(...),
     q: str = Query(..., min_length=1, description="Search term (matched against message body, subject, call notes)"),
     report_keys: Optional[str] = Query(None, description="Comma-separated report keys"),
@@ -512,7 +512,7 @@ async def search_comms_messages(
 
 
 @router.get("/comms/attachment/{file_id}")
-async def resolve_comms_attachment(
+def resolve_comms_attachment(
     file_id: str,
     case_id: str = Query(...),
     db: Session = Depends(get_db),
@@ -540,7 +540,7 @@ async def resolve_comms_attachment(
 
 
 @router.get("/events")
-async def get_events(
+def get_events(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     event_types: Optional[str] = Query(None),
@@ -623,7 +623,7 @@ def _parse_near_param(raw: Optional[str]) -> Optional[Tuple[float, float, float]
 
 
 @router.get("/events/types")
-async def get_event_types(
+def get_event_types(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -639,7 +639,7 @@ async def get_event_types(
 
 
 @router.get("/events/tracks")
-async def get_event_tracks(
+def get_event_tracks(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
@@ -660,7 +660,7 @@ async def get_event_tracks(
 
 
 @router.get("/locations/tiles")
-async def get_location_tiles(
+def get_location_tiles(
     case_id: str = Query(...),
     zoom: int = Query(6, ge=0, le=14),
     report_keys: Optional[str] = Query(None),
@@ -703,7 +703,7 @@ async def get_location_tiles(
 
 
 @router.get("/locations/in-tile")
-async def get_locations_in_tile(
+def get_locations_in_tile(
     case_id: str = Query(...),
     cell_x: int = Query(...),
     cell_y: int = Query(...),
@@ -734,7 +734,7 @@ async def get_locations_in_tile(
 
 
 @router.get("/events/detail/{node_key}")
-async def get_event_detail(
+def get_event_detail(
     node_key: str,
     case_id: str = Query(...),
     db: Session = Depends(get_db),
@@ -768,7 +768,7 @@ async def get_event_detail(
 
 
 @router.get("/events/{node_key}/related")
-async def get_event_related(
+def get_event_related(
     node_key: str,
     case_id: str = Query(..., description="Case ID the event belongs to"),
     window_h: int = Query(24, ge=1, le=168, description="Hours either side of the anchor for the cross-channel pair window"),
@@ -810,7 +810,7 @@ class IntersectionRunRequest(BaseModel):
 
 
 @router.post("/intersections/run")
-async def run_intersections(
+def run_intersections(
     req: IntersectionRunRequest,
     case_id: str = Query(...),
     db: Session = Depends(get_db),
@@ -857,7 +857,7 @@ def _guess_device_path_segments(path: str) -> List[str]:
 
 
 @router.get("/files")
-async def get_cellebrite_files(
+def get_cellebrite_files(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     category: Optional[str] = Query(None, description="Image | Audio | Video | Text"),
@@ -868,6 +868,9 @@ async def get_cellebrite_files(
     entity_id: Optional[str] = Query(None),
     search: Optional[str] = Query(None, description="Substring match on filename"),
     only_relevant: bool = Query(False),
+    capture_after: Optional[str] = Query(None, description="YYYY-MM-DD lower bound on capture/creation time"),
+    capture_before: Optional[str] = Query(None, description="YYYY-MM-DD upper bound on capture/creation time"),
+    has_geotag: Optional[bool] = Query(None, description="True = only geotagged; False = only non-geotagged"),
     limit: int = Query(500, ge=1, le=5000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -890,6 +893,19 @@ async def get_cellebrite_files(
         files = [f for f in files if entity_id in (f.get("linked_entity_ids") or [])]
     if only_relevant:
         files = [f for f in files if f.get("is_relevant")]
+    if has_geotag is True:
+        files = [f for f in files if f.get("has_geotag")]
+    elif has_geotag is False:
+        files = [f for f in files if not f.get("has_geotag")]
+    if capture_after or capture_before:
+        def _ts_prefix(rec):
+            ts = rec.get("capture_time") or rec.get("creation_time")
+            return ts[:10] if ts else None
+
+        if capture_after:
+            files = [f for f in files if (_ts_prefix(f) or "") >= capture_after]
+        if capture_before:
+            files = [f for f in files if (_ts_prefix(f) or "9999-12-31") <= capture_before]
 
     # Resolve parents in one batched call so we can filter by parent_label / source_app
     model_ids = sorted({f.get("cellebrite_model_id") for f in files if f.get("cellebrite_model_id")})
@@ -928,7 +944,7 @@ async def get_cellebrite_files(
 
 
 @router.get("/files/tree")
-async def get_cellebrite_files_tree(
+def get_cellebrite_files_tree(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     group_by: str = Query(
@@ -1048,7 +1064,7 @@ async def get_cellebrite_files_tree(
 
 
 @router.get("/overview/contacts")
-async def overview_contacts(
+def overview_contacts(
     case_id: str = Query(...),
     report_key: str = Query(...),
     search: Optional[str] = Query(None),
@@ -1065,7 +1081,7 @@ async def overview_contacts(
 
 
 @router.get("/contacts/unified")
-async def contacts_unified(
+def contacts_unified(
     case_id: str = Query(..., description="Case ID"),
     report_keys: Optional[str] = Query(
         None,
@@ -1105,7 +1121,7 @@ async def contacts_unified(
 
 
 @router.get("/overview/calls")
-async def overview_calls(
+def overview_calls(
     case_id: str = Query(...),
     report_key: str = Query(...),
     search: Optional[str] = Query(None),
@@ -1122,7 +1138,7 @@ async def overview_calls(
 
 
 @router.get("/overview/messages")
-async def overview_messages(
+def overview_messages(
     case_id: str = Query(...),
     report_key: str = Query(...),
     search: Optional[str] = Query(None),
@@ -1139,7 +1155,7 @@ async def overview_messages(
 
 
 @router.get("/overview/locations")
-async def overview_locations(
+def overview_locations(
     case_id: str = Query(...),
     report_key: str = Query(...),
     search: Optional[str] = Query(None),
@@ -1162,7 +1178,7 @@ async def overview_locations(
 
 
 @router.get("/overview/emails")
-async def overview_emails(
+def overview_emails(
     case_id: str = Query(...),
     report_key: str = Query(...),
     search: Optional[str] = Query(None),
@@ -1179,7 +1195,7 @@ async def overview_emails(
 
 
 @router.get("/overview/contact/{contact_key}")
-async def overview_contact_detail(
+def overview_contact_detail(
     contact_key: str,
     case_id: str = Query(...),
     report_key: str = Query(...),
@@ -1202,7 +1218,7 @@ async def overview_contact_detail(
 
 
 @router.get("/comms/contact-feed/{contact_key}")
-async def comms_contact_feed(
+def comms_contact_feed(
     contact_key: str,
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),

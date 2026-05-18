@@ -202,7 +202,7 @@ class CellebriteFileLinker:
                 "size": tf.size or 0,
             }
 
-            # We'll create the record with extra metadata below
+            # We'll create the record with extra metadata below.
             files_to_register.append({
                 "file_info": file_info,
                 "file_id": file_id,
@@ -210,6 +210,11 @@ class CellebriteFileLinker:
                 "sha256": sha256,
                 "model_id": file_to_model.get(file_id),
                 "resolved_path": resolved_path,
+                "capture_time": tf.capture_time,
+                "creation_time": tf.creation_time,
+                "modify_time": tf.modify_time,
+                "latitude": tf.latitude,
+                "longitude": tf.longitude,
             })
 
         if not files_to_register:
@@ -256,6 +261,15 @@ class CellebriteFileLinker:
                 "cellebrite_file_id": item["file_id"],
                 "cellebrite_model_id": item.get("model_id"),
                 "cellebrite_category": item["category"],
+                "capture_time": item.get("capture_time"),
+                "creation_time": item.get("creation_time"),
+                "modify_time": item.get("modify_time"),
+                "latitude": item.get("latitude"),
+                "longitude": item.get("longitude"),
+                "has_geotag": (
+                    item.get("latitude") is not None
+                    and item.get("longitude") is not None
+                ),
             })
 
         return [

@@ -71,6 +71,7 @@ export interface BackgroundTask {
   error?: string | null
   metadata?: Record<string, unknown>
   created_at: string
+  updated_at?: string | null
   started_at?: string | null
   completed_at?: string | null
 }
@@ -243,6 +244,7 @@ export interface EvidenceJob {
   id: string
   case_id: string
   batch_id: string | null
+  job_type?: string
   evidence_file_id?: string | null
   file_name: string
   status: PipelineStage

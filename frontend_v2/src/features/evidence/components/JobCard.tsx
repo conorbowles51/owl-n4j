@@ -78,6 +78,10 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
 
   const stageLabel = STAGE_LABELS[job.status] ?? job.status
   const stageColor = STAGE_COLORS[job.status] ?? STAGE_COLORS.pending
+  const displayName =
+    job.job_type === "cellebrite_ingestion"
+      ? `Cellebrite: ${job.file_name || "Phone report"}`
+      : job.file_name
 
   return (
     <div
@@ -90,7 +94,7 @@ export function JobCard({ job, onRetry, onClear, retrying = false, clearing = fa
       {/* Top row: filename + stage badge */}
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm font-medium text-foreground">
-          {job.file_name}
+          {displayName}
         </span>
         <Badge
           variant="secondary"

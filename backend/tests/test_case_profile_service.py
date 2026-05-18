@@ -25,6 +25,8 @@ from postgres.models.workspace import WorkspaceFinding, WorkspaceNote
 
 def _load_case_profile_service():
     """Load the service with permission checks stubbed to avoid heavy services package imports."""
+    previous_services = sys.modules.get("services")
+    previous_case_service = sys.modules.get("services.case_service")
     services_pkg = types.ModuleType("services")
     services_pkg.__path__ = []
     case_service = types.ModuleType("services.case_service")
@@ -45,16 +47,26 @@ def _load_case_profile_service():
     case_service.CaseNotFound = CaseNotFound
     case_service.check_case_access = check_case_access
     case_service.get_case_if_allowed = get_case_if_allowed
-    sys.modules.setdefault("services", services_pkg)
+    sys.modules["services"] = previous_services or services_pkg
     sys.modules["services.case_service"] = case_service
 
-    path = Path(__file__).resolve().parents[1] / "services" / "case_profile_service.py"
-    spec = importlib.util.spec_from_file_location("case_profile_service_under_test", path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
-    sys.modules["case_profile_service_under_test"] = module
-    spec.loader.exec_module(module)
-    return module
+    try:
+        path = Path(__file__).resolve().parents[1] / "services" / "case_profile_service.py"
+        spec = importlib.util.spec_from_file_location("case_profile_service_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        sys.modules["case_profile_service_under_test"] = module
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        if previous_case_service is None:
+            sys.modules.pop("services.case_service", None)
+        else:
+            sys.modules["services.case_service"] = previous_case_service
+        if previous_services is None:
+            sys.modules.pop("services", None)
+        else:
+            sys.modules["services"] = previous_services
 
 
 case_profile_service = _load_case_profile_service()

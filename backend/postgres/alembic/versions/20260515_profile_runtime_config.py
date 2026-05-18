@@ -78,13 +78,29 @@ def _migrate_filesystem_runtime_profile_config() -> None:
             CAST(:folder_processing AS jsonb)
         )
         ON CONFLICT (name) DO UPDATE SET
-            description = EXCLUDED.description,
-            context_instructions = EXCLUDED.context_instructions,
-            mandatory_instructions = EXCLUDED.mandatory_instructions,
-            special_entity_types = EXCLUDED.special_entity_types,
-            chat_config = EXCLUDED.chat_config,
-            llm_config = EXCLUDED.llm_config,
-            folder_processing = EXCLUDED.folder_processing
+            description = COALESCE(processing_profiles.description, EXCLUDED.description),
+            context_instructions = COALESCE(
+                processing_profiles.context_instructions,
+                EXCLUDED.context_instructions
+            ),
+            mandatory_instructions = CASE
+                WHEN processing_profiles.mandatory_instructions IS NULL
+                    OR processing_profiles.mandatory_instructions = '[]'::jsonb
+                THEN EXCLUDED.mandatory_instructions
+                ELSE processing_profiles.mandatory_instructions
+            END,
+            special_entity_types = CASE
+                WHEN processing_profiles.special_entity_types IS NULL
+                    OR processing_profiles.special_entity_types = '[]'::jsonb
+                THEN EXCLUDED.special_entity_types
+                ELSE processing_profiles.special_entity_types
+            END,
+            chat_config = COALESCE(processing_profiles.chat_config, EXCLUDED.chat_config),
+            llm_config = COALESCE(processing_profiles.llm_config, EXCLUDED.llm_config),
+            folder_processing = COALESCE(
+                processing_profiles.folder_processing,
+                EXCLUDED.folder_processing
+            )
         """
     )
 

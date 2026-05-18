@@ -1,9 +1,12 @@
-import { useRef } from "react"
+import { useRef, useState, type ChangeEvent, type InputHTMLAttributes } from "react"
 import {
   Search,
   X,
   FolderPlus,
   Upload,
+  FolderUp,
+  FileArchive,
+  ChevronDown,
   Play,
   Trash2,
   Activity,
@@ -18,6 +21,14 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select"
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+} from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { useEvidenceStore } from "../evidence.store"
 import { useUIStore } from "@/stores/ui.store"
@@ -32,6 +43,8 @@ interface FileListToolbarProps {
   onCreateFolder: () => void
   onDeleteFiles: () => void
 }
+
+type UploadMode = "files" | "folder" | "archive"
 
 export function FileListToolbar({
   caseId,
@@ -53,6 +66,9 @@ export function FileListToolbar({
   const panelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
+  const archiveInputRef = useRef<HTMLInputElement>(null)
+  const [replaceCellebriteReport, setReplaceCellebriteReport] = useState(false)
   const uploadMutation = useUploadToFolder(caseId)
   const { data: jobs } = useJobs(caseId)
   const activeCount = jobs?.filter(
@@ -72,22 +88,56 @@ export function FileListToolbar({
 
   const selectionCount = selectedFileIds.size
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+  const handleUploadSelection = (selectedFiles: FileList | null, mode: UploadMode) => {
+    const files = Array.from(selectedFiles ?? [])
+    if (files.length === 0) return
+
+    const uploadFiles = mode === "archive" ? files.slice(0, 1) : files
+    const archive = uploadFiles[0]
+    if (mode === "archive" && !archive.name.toLowerCase().endsWith(".zip")) {
+      toast.error("Choose a .zip archive")
+      return
+    }
 
     uploadMutation.mutate(
-      { files: Array.from(files), folderId: currentFolderId },
       {
-        onSuccess: () => toast.success(`Uploaded ${files.length} file${files.length !== 1 ? "s" : ""}`),
+        files: uploadFiles,
+        folderId: currentFolderId,
+        isFolder: mode === "folder" || mode === "archive",
+        isArchive: mode === "archive",
+        replaceExisting: mode === "archive" ? replaceCellebriteReport : false,
+      },
+      {
+        onSuccess: (result) => {
+          if (result.task_id || result.task_ids?.length || result.job_ids?.length) {
+            openSidebarTo("processing")
+          }
+          const fallback =
+            mode === "archive"
+              ? `Uploaded archive ${archive.name}`
+              : mode === "folder"
+                ? `Uploaded folder with ${uploadFiles.length} file${uploadFiles.length !== 1 ? "s" : ""}`
+                : `Uploaded ${uploadFiles.length} file${uploadFiles.length !== 1 ? "s" : ""}`
+          toast.success(result.message || fallback)
+        },
         onError: (err) => toast.error(err.message),
       }
     )
+  }
 
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ""
-    }
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    handleUploadSelection(e.currentTarget.files, "files")
+    e.currentTarget.value = ""
+  }
+
+  const handleFolderChange = (e: ChangeEvent<HTMLInputElement>) => {
+    handleUploadSelection(e.currentTarget.files, "folder")
+    e.currentTarget.value = ""
+  }
+
+  const handleArchiveChange = (e: ChangeEvent<HTMLInputElement>) => {
+    handleUploadSelection(e.currentTarget.files, "archive")
+    e.currentTarget.value = ""
   }
 
   const handleProcess = () => {
@@ -178,26 +228,85 @@ export function FileListToolbar({
         <TooltipContent>Create a new folder</TooltipContent>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 text-xs"
-            onClick={() => fileInputRef.current?.click()}
+      <DropdownMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 text-xs"
+                disabled={uploadMutation.isPending}
+              >
+                <Upload className="size-3.5" />
+                {uploadMutation.isPending ? "Uploading..." : "Upload"}
+                <ChevronDown className="size-3" />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>Upload files, folders, or Cellebrite ZIP archives</TooltipContent>
+        </Tooltip>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              fileInputRef.current?.click()
+            }}
           >
             <Upload className="size-3.5" />
-            Upload
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>Upload files to this folder</TooltipContent>
-      </Tooltip>
+            Files
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              folderInputRef.current?.click()
+            }}
+          >
+            <FolderUp className="size-3.5" />
+            Folder
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault()
+              archiveInputRef.current?.click()
+            }}
+          >
+            <FileArchive className="size-3.5" />
+            Cellebrite ZIP
+          </DropdownMenuItem>
+          <DropdownMenuCheckboxItem
+            checked={replaceCellebriteReport}
+            onCheckedChange={(checked) => setReplaceCellebriteReport(Boolean(checked))}
+          >
+            Replace duplicate report
+          </DropdownMenuCheckboxItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <input
         ref={fileInputRef}
         type="file"
         multiple
         className="hidden"
+        disabled={uploadMutation.isPending}
         onChange={handleFileChange}
+      />
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        disabled={uploadMutation.isPending}
+        onChange={handleFolderChange}
+        {...({ webkitdirectory: "", directory: "" } as InputHTMLAttributes<HTMLInputElement>)}
+      />
+      <input
+        ref={archiveInputRef}
+        type="file"
+        accept=".zip,application/zip,application/x-zip-compressed"
+        className="hidden"
+        disabled={uploadMutation.isPending}
+        onChange={handleArchiveChange}
       />
 
       <Tooltip>

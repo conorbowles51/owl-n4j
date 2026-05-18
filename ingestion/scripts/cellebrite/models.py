@@ -76,6 +76,14 @@ class TaggedFile:
     deleted: str = "Intact"
     extraction_id: str = ""
     tags: Optional[str] = None  # e.g., "Image", "Audio", "Archives"
+    # EXIF / Cellebrite-parsed file metadata. Stored on Postgres evidence
+    # records so the Files tab can filter by date taken / geotag without
+    # re-parsing the original report.
+    creation_time: Optional[str] = None
+    modify_time: Optional[str] = None
+    capture_time: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 @dataclass

@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     # Storage
     storage_path: str = "/data/files"
+    cellebrite_data_root: str = "ingestion/data"
 
     # Image processing
     image_provider: str = "tesseract"  # "tesseract" or "openai"

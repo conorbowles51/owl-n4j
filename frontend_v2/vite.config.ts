@@ -7,6 +7,7 @@ import { generateBuildName } from "./build-name.js"
 const buildInfo = generateBuildName()
 const frontendPort = Number(process.env.FRONTEND_PORT || "5174")
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || "http://0.0.0.0:8002"
+const apiProxyTimeout = Number(process.env.VITE_API_PROXY_TIMEOUT_MS || "3600000")
 console.log(`\n  🦉 Build: ${buildInfo.full}\n`)
 
 export default defineConfig({
@@ -28,6 +29,8 @@ export default defineConfig({
         target: apiProxyTarget,
         changeOrigin: true,
         ws: true,
+        timeout: apiProxyTimeout,
+        proxyTimeout: apiProxyTimeout,
       },
     },
   },

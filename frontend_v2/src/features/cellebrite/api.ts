@@ -354,6 +354,9 @@ export const cellebriteFilesAPI = {
         entityId?: string | null
         search?: string | null
         onlyRelevant?: boolean
+        captureAfter?: string | null
+        captureBefore?: string | null
+        hasGeotag?: boolean | null
       } = {}
   ) => {
     const params = baseCaseParams(caseId, opts.reportKeys)
@@ -365,6 +368,11 @@ export const cellebriteFilesAPI = {
     if (opts.entityId) params.set("entity_id", opts.entityId)
     if (opts.search) params.set("search", opts.search)
     if (opts.onlyRelevant) params.set("only_relevant", "true")
+    if (opts.captureAfter) params.set("capture_after", opts.captureAfter)
+    if (opts.captureBefore) params.set("capture_before", opts.captureBefore)
+    if (opts.hasGeotag !== undefined && opts.hasGeotag !== null) {
+      params.set("has_geotag", String(opts.hasGeotag))
+    }
     appendPaging(params, opts, { limit: 500, offset: 0 })
     return fetchAPI<FilesResponse>(`/api/cellebrite/files?${params}`)
   },
@@ -390,7 +398,13 @@ export const evidenceCellebriteAPI = {
     folderPath: string,
     opts: { force?: boolean; replaceExisting?: boolean } = {}
   ) =>
-    fetchAPI<{ success: boolean; message: string; task_id?: string | null }>(
+    fetchAPI<{
+      success: boolean
+      message: string
+      task_id?: string | null
+      job_id?: string | null
+      job_ids?: string[] | null
+    }>(
       "/api/evidence/cellebrite/process",
       {
         method: "POST",

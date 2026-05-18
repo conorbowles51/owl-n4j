@@ -2,6 +2,19 @@ import { create } from "zustand"
 import { useUIStore } from "@/stores/ui.store"
 
 type StatusFilter = "all" | "unprocessed" | "processing" | "processed" | "failed" | "stale"
+export type UploadActivityStatus = "running" | "completed" | "failed"
+
+export interface UploadActivity {
+  id: string
+  caseId: string
+  name: string
+  detail?: string
+  status: UploadActivityStatus
+  createdAt: string
+  updatedAt: string
+  message?: string
+  error?: string
+}
 
 interface EvidenceState {
   // Navigation
@@ -46,6 +59,17 @@ interface EvidenceState {
   dragId: string | null
   setDrag: (type: "file" | "folder" | "external" | null, id: string | null) => void
   clearDrag: () => void
+
+  // Local upload activity
+  uploadActivities: UploadActivity[]
+  addUploadActivity: (
+    activity: Omit<UploadActivity, "createdAt" | "updatedAt">
+  ) => void
+  updateUploadActivity: (
+    id: string,
+    patch: Partial<Omit<UploadActivity, "id" | "caseId" | "createdAt">>
+  ) => void
+  clearTerminalUploadActivities: (caseId?: string) => void
 
   // Case tracking
   _currentCaseId: string | null
@@ -122,6 +146,36 @@ export const useEvidenceStore = create<EvidenceState>((set) => ({
   dragId: null,
   setDrag: (type, id) => set({ dragType: type, dragId: id }),
   clearDrag: () => set({ dragType: null, dragId: null }),
+
+  uploadActivities: [],
+  addUploadActivity: (activity) => {
+    const now = new Date().toISOString()
+    set((s) => ({
+      uploadActivities: [
+        {
+          ...activity,
+          createdAt: now,
+          updatedAt: now,
+        },
+        ...s.uploadActivities,
+      ].slice(0, 30),
+    }))
+  },
+  updateUploadActivity: (id, patch) =>
+    set((s) => ({
+      uploadActivities: s.uploadActivities.map((activity) =>
+        activity.id === id
+          ? { ...activity, ...patch, updatedAt: new Date().toISOString() }
+          : activity
+      ),
+    })),
+  clearTerminalUploadActivities: (caseId) =>
+    set((s) => ({
+      uploadActivities: s.uploadActivities.filter((activity) => {
+        if (caseId && activity.caseId !== caseId) return true
+        return activity.status === "running"
+      }),
+    })),
 
   _currentCaseId: null,
   resetForCase: (caseId) =>
