@@ -134,3 +134,43 @@ async def delete_task(
 
     return {"message": "Task deleted", "task_id": task_id}
 
+
+@router.post("/{task_id}/mark-failed")
+async def mark_task_failed(
+    task_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Mark an active task as failed.
+
+    Intended for stalled tasks whose worker thread died (e.g. backend
+    restart while a long upload was in flight) — the task is still
+    persisted as `running` but no longer making progress. Flipping it
+    to `failed` lets the UI stop showing it as active.
+    """
+    from datetime import datetime
+
+    task = background_task_storage.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.get("owner") != user["username"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    if task.get("status") not in (TaskStatus.RUNNING.value, TaskStatus.PENDING.value):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Task is not active (status: {task.get('status')})",
+        )
+
+    last_heartbeat = (
+        task.get("updated_at") or task.get("started_at") or task.get("created_at") or "unknown"
+    )
+    background_task_storage.update_task(
+        task_id,
+        status=TaskStatus.FAILED.value,
+        error=f"Marked failed manually — last heartbeat at {last_heartbeat}",
+        completed_at=datetime.now().isoformat(),
+    )
+
+    return {"message": "Task marked as failed", "task_id": task_id}

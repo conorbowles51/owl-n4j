@@ -2026,6 +2026,16 @@ export const backgroundTasksAPI = {
     fetchAPI(`/background-tasks/${encodeURIComponent(taskId)}`, {
       method: 'DELETE',
     }),
+
+  /**
+   * Mark an active task as failed. Used for stalled tasks whose worker
+   * thread died (e.g. backend restart) — flipping to `failed` clears it
+   * from the active list in the UI.
+   */
+  markFailed: (taskId) =>
+    fetchAPI(`/background-tasks/${encodeURIComponent(taskId)}/mark-failed`, {
+      method: 'POST',
+    }),
 };
 
 /**

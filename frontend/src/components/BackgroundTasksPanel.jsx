@@ -4,6 +4,7 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Clock,
   Trash2,
   RefreshCw,
@@ -14,6 +15,33 @@ import {
   UploadCloud,
 } from 'lucide-react';
 import { backgroundTasksAPI } from '../services/api';
+
+// A running task that hasn't heartbeated in this long is considered stalled.
+// File-upload threads update their task on each file moved out of staging,
+// so 5 min without a heartbeat means the worker thread is gone.
+const STALL_MS = 5 * 60 * 1000;
+
+const getHeartbeatAge = (task) => {
+  const ts = task.updated_at || task.started_at || task.created_at;
+  if (!ts) return null;
+  const t = new Date(ts).getTime();
+  if (Number.isNaN(t)) return null;
+  return Date.now() - t;
+};
+
+const isStalled = (task) => {
+  if (task.status !== 'running' && task.status !== 'pending') return false;
+  const age = getHeartbeatAge(task);
+  return age !== null && age > STALL_MS;
+};
+
+const formatAge = (ms) => {
+  if (ms == null) return 'unknown';
+  if (ms < 60_000) return `${Math.max(1, Math.round(ms / 1000))}s ago`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h ago`;
+  return `${Math.round(ms / 86_400_000)}d ago`;
+};
 
 /**
  * BackgroundTasksPanel Component
@@ -75,6 +103,17 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
     }
   };
 
+  const handleMarkFailed = async (taskId, e) => {
+    e.stopPropagation();
+    try {
+      await backgroundTasksAPI.markFailed(taskId);
+      await loadTasks();
+    } catch (err) {
+      console.error('Failed to mark task as failed:', err);
+      alert(`Failed to mark task as failed: ${err.message}`);
+    }
+  };
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'running':
@@ -124,8 +163,14 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
 
   if (!isOpen) return null;
 
-  // Filter to show active tasks first (running, pending), then recent completed/failed
-  const activeTasks = tasks.filter((t) => t.status === 'running' || t.status === 'pending');
+  // Split the running/pending bucket into actively-heartbeating vs stalled
+  // so dead worker threads don't masquerade as live ones.
+  const liveTasks = tasks.filter(
+    (t) => (t.status === 'running' || t.status === 'pending') && !isStalled(t)
+  );
+  const stalledTasks = tasks.filter(
+    (t) => (t.status === 'running' || t.status === 'pending') && isStalled(t)
+  );
   const completedTasks = tasks.filter(
     (t) => t.status === 'completed' || t.status === 'failed' || t.status === 'cancelled'
   );
@@ -178,14 +223,14 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
             </div>
           ) : (
             <div className="space-y-4">
-              {/* Active Tasks */}
-              {activeTasks.length > 0 && (
+              {/* Active Tasks (heartbeating within STALL_MS) */}
+              {liveTasks.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-owl-blue-900 mb-3">
-                    Active Tasks ({activeTasks.length})
+                    Active Tasks ({liveTasks.length})
                   </h3>
                   <div className="space-y-3">
-                    {activeTasks.map((task) => (
+                    {liveTasks.map((task) => (
                       <TaskCard
                         key={task.id}
                         task={task}
@@ -194,6 +239,35 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
                         formatDate={formatDate}
                         getProgressPercent={getProgressPercent}
                         onDelete={handleDeleteTask}
+                        onMarkFailed={handleMarkFailed}
+                        onViewCase={onViewCase}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Stalled Tasks — running/pending but no heartbeat for >STALL_MS */}
+              {stalledTasks.length > 0 && (
+                <div className={liveTasks.length > 0 ? 'mt-6' : ''}>
+                  <h3 className="text-sm font-semibold text-amber-700 mb-1">
+                    Stalled Tasks ({stalledTasks.length})
+                  </h3>
+                  <p className="text-xs text-light-600 mb-3">
+                    These tasks haven't reported progress for over {Math.round(STALL_MS / 60_000)} minutes.
+                    Their worker thread likely died (e.g. backend restart). Mark them failed to clear.
+                  </p>
+                  <div className="space-y-3">
+                    {stalledTasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        getStatusIcon={getStatusIcon}
+                        getStatusColor={getStatusColor}
+                        formatDate={formatDate}
+                        getProgressPercent={getProgressPercent}
+                        onDelete={handleDeleteTask}
+                        onMarkFailed={handleMarkFailed}
                         onViewCase={onViewCase}
                       />
                     ))}
@@ -203,7 +277,7 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
 
               {/* Completed Tasks */}
               {completedTasks.length > 0 && (
-                <div className={activeTasks.length > 0 ? 'mt-6' : ''}>
+                <div className={liveTasks.length > 0 || stalledTasks.length > 0 ? 'mt-6' : ''}>
                   <h3 className="text-sm font-semibold text-owl-blue-900 mb-3">
                     Recent Tasks ({completedTasks.length})
                   </h3>
@@ -217,6 +291,7 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
                         formatDate={formatDate}
                         getProgressPercent={getProgressPercent}
                         onDelete={handleDeleteTask}
+                        onMarkFailed={handleMarkFailed}
                         onViewCase={onViewCase}
                       />
                     ))}
@@ -234,14 +309,21 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
 /**
  * TaskCard Component - displays individual task information
  */
-function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgressPercent, onDelete, onViewCase }) {
+function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgressPercent, onDelete, onMarkFailed, onViewCase }) {
   const [expanded, setExpanded] = useState(task.status === 'running');
 
   const progressPercent = getProgressPercent(task);
   const { progress } = task;
-  
-  // Determine task icon based on task type
+  const stalled = isStalled(task);
+  const heartbeatAge = getHeartbeatAge(task);
+  const isActive = task.status === 'running' || task.status === 'pending';
+
+  // Determine task icon based on task type. Stalled tasks always get the
+  // warning icon regardless of task type — that's the whole signal.
   const getTaskIcon = () => {
+    if (stalled) {
+      return <AlertTriangle className="w-4 h-4 text-amber-600" />;
+    }
     if (task.task_type === 'file_upload') {
       return <UploadCloud className="w-4 h-4 text-owl-blue-600" />;
     }
@@ -251,8 +333,11 @@ function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgress
     return getStatusIcon(task.status);
   };
 
+  const statusLabel = stalled ? 'STALLED' : task.status.toUpperCase();
+  const statusColorClass = stalled ? 'text-amber-700' : getStatusColor(task.status);
+
   return (
-    <div className="bg-light-50 rounded-lg border border-light-200 p-4">
+    <div className={`rounded-lg border p-4 ${stalled ? 'bg-amber-50 border-amber-200' : 'bg-light-50 border-light-200'}`}>
       {/* Task Header */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -260,12 +345,20 @@ function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgress
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h4 className="font-medium text-owl-blue-900 truncate">{task.task_name}</h4>
-              <span className={`text-xs font-medium ${getStatusColor(task.status)}`}>
-                {task.status.toUpperCase()}
+              <span className={`text-xs font-medium ${statusColorClass}`}>
+                {statusLabel}
               </span>
             </div>
             <div className="text-xs text-light-600">
               Started: {formatDate(task.started_at || task.created_at)}
+              {isActive && heartbeatAge != null && (
+                <>
+                  {' • '}
+                  <span className={stalled ? 'text-amber-700 font-medium' : ''}>
+                    Heartbeat: {formatAge(heartbeatAge)}
+                  </span>
+                </>
+              )}
               {task.completed_at && ` • Completed: ${formatDate(task.completed_at)}`}
             </div>
           </div>
@@ -278,6 +371,18 @@ function TaskCard({ task, getStatusIcon, getStatusColor, formatDate, getProgress
           <Trash2 className="w-4 h-4 text-red-500" />
         </button>
       </div>
+
+      {/* Mark Failed action — only on stalled tasks */}
+      {stalled && onMarkFailed && (
+        <div className="mb-3">
+          <button
+            onClick={(e) => onMarkFailed(task.id, e)}
+            className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-800 border border-amber-300 rounded text-xs font-medium transition-colors"
+          >
+            Mark failed
+          </button>
+        </div>
+      )}
 
       {/* Progress Bar */}
       {(task.status === 'running' || task.status === 'pending') && progress && progress.total > 0 && (
