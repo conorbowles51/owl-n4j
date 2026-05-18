@@ -387,6 +387,51 @@ export const cellebriteFilesAPI = {
   },
 }
 
+export type EvidenceTagCount = {
+  tag: string
+  count: number
+}
+
+export const evidenceTagsAPI = {
+  addTags: (caseId: string, evidenceIds: string[], tags: string[]) =>
+    fetchAPI<{ updated: number; tags: string[] }>("/api/evidence/tags/add", {
+      method: "POST",
+      body: { case_id: caseId, evidence_ids: evidenceIds, tags },
+    }),
+
+  removeTags: (caseId: string, evidenceIds: string[], tags: string[]) =>
+    fetchAPI<{ updated: number; tags: string[] }>("/api/evidence/tags/remove", {
+      method: "POST",
+      body: { case_id: caseId, evidence_ids: evidenceIds, tags },
+    }),
+
+  setTags: (caseId: string, evidenceId: string, tags: string[]) =>
+    fetchAPI<{ ok: boolean; tags: string[] }>("/api/evidence/tags/set", {
+      method: "POST",
+      body: { case_id: caseId, evidence_id: evidenceId, tags },
+    }),
+
+  getCaseTags: (caseId: string) =>
+    fetchAPI<{ tags: EvidenceTagCount[] }>(`/api/evidence/tags?case_id=${encodeURIComponent(caseId)}`),
+
+  linkEntities: (caseId: string, evidenceIds: string[], entityIds: string[]) =>
+    fetchAPI<{ updated: number; entity_ids: string[] }>("/api/evidence/entity-links/add", {
+      method: "POST",
+      body: { case_id: caseId, evidence_ids: evidenceIds, entity_ids: entityIds },
+    }),
+
+  unlinkEntities: (caseId: string, evidenceIds: string[], entityIds: string[]) =>
+    fetchAPI<{ updated: number; entity_ids: string[] }>("/api/evidence/entity-links/remove", {
+      method: "POST",
+      body: { case_id: caseId, evidence_ids: evidenceIds, entity_ids: entityIds },
+    }),
+
+  listByEntity: (caseId: string, entityId: string) =>
+    fetchAPI<{ files: CellebriteRecord[]; total: number }>(
+      `/api/evidence/by-entity?case_id=${encodeURIComponent(caseId)}&entity_id=${encodeURIComponent(entityId)}`
+    ),
+}
+
 export const evidenceCellebriteAPI = {
   checkFolder: (caseId: string, folderPath: string) => {
     const params = new URLSearchParams({ case_id: caseId, folder_path: folderPath })

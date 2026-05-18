@@ -1915,6 +1915,52 @@ class SetRelevanceRequest(BaseModel):
     is_relevant: bool
 
 
+class TagsAddRequest(BaseModel):
+    case_id: str
+    evidence_ids: List[str]
+    tags: List[str]
+
+
+class TagsRemoveRequest(BaseModel):
+    case_id: str
+    evidence_ids: List[str]
+    tags: List[str]
+
+
+class TagsSetRequest(BaseModel):
+    case_id: str
+    evidence_id: str
+    tags: List[str]
+
+
+class EntityLinkRequest(BaseModel):
+    case_id: str
+    evidence_ids: List[str]
+    entity_ids: List[str]
+
+
+def _verify_evidence_case_access(
+    case_id: str,
+    current_user: User,
+    db: Session,
+    required_permission: tuple[str, str] = ("evidence", "upload"),
+) -> UUID:
+    from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
+
+    try:
+        case_uuid = UUID(case_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid case_id") from exc
+
+    try:
+        check_case_access(db, case_uuid, current_user, required_permission=required_permission)
+    except CaseNotFound:
+        raise HTTPException(status_code=404, detail="Case not found")
+    except CaseAccessDenied as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return case_uuid
+
+
 @router.put("/relevance")
 async def set_evidence_relevance(
     body: SetRelevanceRequest,
@@ -2004,6 +2050,97 @@ async def set_relevance_from_theory(
             db.commit()
 
     return {"updated": updated, "theory_id": theory_id, "evidence_ids_marked": list(evidence_ids)}
+
+
+@router.post("/tags/add")
+def add_evidence_tags(
+    body: TagsAddRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Add tags to one or more evidence records."""
+    _verify_evidence_case_access(body.case_id, current_user, db)
+    updated = EvidenceDBStorage.add_tags(db, body.evidence_ids, body.tags)
+    db.commit()
+    return {"updated": updated, "tags": body.tags}
+
+
+@router.post("/tags/remove")
+def remove_evidence_tags(
+    body: TagsRemoveRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Remove tags from one or more evidence records."""
+    _verify_evidence_case_access(body.case_id, current_user, db)
+    updated = EvidenceDBStorage.remove_tags(db, body.evidence_ids, body.tags)
+    db.commit()
+    return {"updated": updated, "tags": body.tags}
+
+
+@router.post("/tags/set")
+def set_evidence_tags(
+    body: TagsSetRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Replace the tag list on a single evidence record."""
+    _verify_evidence_case_access(body.case_id, current_user, db)
+    ok = EvidenceDBStorage.set_tags(db, body.evidence_id, body.tags)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    db.commit()
+    return {"ok": True, "tags": sorted(set(body.tags or []))}
+
+
+@router.get("/tags")
+def get_case_tags(
+    case_id: str = Query(...),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Return the case's evidence tag cloud."""
+    case_uuid = _verify_evidence_case_access(case_id, current_user, db, ("case", "view"))
+    return {"tags": EvidenceDBStorage.get_tag_counts(db, case_uuid)}
+
+
+@router.post("/entity-links/add")
+def add_entity_links(
+    body: EntityLinkRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Link evidence records to case/entity profile IDs."""
+    _verify_evidence_case_access(body.case_id, current_user, db)
+    updated = EvidenceDBStorage.link_entities(db, body.evidence_ids, body.entity_ids)
+    db.commit()
+    return {"updated": updated, "entity_ids": body.entity_ids}
+
+
+@router.post("/entity-links/remove")
+def remove_entity_links(
+    body: EntityLinkRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Unlink evidence records from case/entity profile IDs."""
+    _verify_evidence_case_access(body.case_id, current_user, db)
+    updated = EvidenceDBStorage.unlink_entities(db, body.evidence_ids, body.entity_ids)
+    db.commit()
+    return {"updated": updated, "entity_ids": body.entity_ids}
+
+
+@router.get("/by-entity")
+def list_evidence_by_entity(
+    case_id: str = Query(...),
+    entity_id: str = Query(...),
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Return evidence records in a case linked to a case/entity profile."""
+    case_uuid = _verify_evidence_case_access(case_id, current_user, db, ("case", "view"))
+    files = EvidenceDBStorage.list_by_entity(db, case_uuid, entity_id)
+    return {"files": files, "total": len(files)}
 
 
 @router.get("/wiretap/processed")

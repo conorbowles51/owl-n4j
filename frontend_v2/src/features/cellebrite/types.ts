@@ -213,17 +213,22 @@ export interface EventsResponse extends CellebriteRecord {
 }
 
 export interface LocationTile extends CellebriteRecord {
+  tile_id?: string
   cell_x?: number
   cell_y?: number
   cell_deg?: number
   count?: number
+  top_apps?: string[]
   latitude?: number
   longitude?: number
   lat?: number
   lng?: number
+  lon?: number
 }
 
 export interface LocationTilesResponse extends CellebriteRecord {
+  zoom?: number
+  cell_deg?: number
   tiles: LocationTile[]
   total?: number
 }
@@ -247,6 +252,7 @@ export interface EventTracksResponse extends CellebriteRecord {
 }
 
 export interface LocationsInTileResponse extends CellebriteRecord {
+  items?: TimelineItem[]
   locations?: TimelineItem[]
   rows?: TimelineItem[]
   total?: number
