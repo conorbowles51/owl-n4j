@@ -12,7 +12,7 @@ processed results can be linked back to the parent Neo4j entity.
 
 import hashlib
 import uuid as uuid_mod
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional, Callable, Set
 
 from .models import TaggedFile, ParsedModel
@@ -35,6 +35,18 @@ MEDIA_CATEGORIES = {
 def _normalise_path(windows_path: str) -> str:
     """Convert Windows backslash path to forward slashes."""
     return windows_path.replace("\\", "/")
+
+
+def _export_parent_path(local_path: str) -> str:
+    """Return the Cellebrite export parent path, excluding the filename."""
+    normalised = _normalise_path(local_path).lstrip("/")
+    parts = [
+        part for part in PurePosixPath(normalised).parts
+        if part not in ("", ".", "..")
+    ]
+    if len(parts) <= 1:
+        return ""
+    return str(PurePosixPath(*parts[:-1])).replace("\\", "/")
 
 
 def _detect_category(local_path: str) -> Optional[str]:
@@ -149,6 +161,7 @@ class CellebriteFileLinker:
         owner: Optional[str] = None,
         model_file_map: Optional[Dict[str, List[str]]] = None,
         created_by_id=None,
+        evidence_root_folder_id=None,
     ) -> int:
         """
         Register media files as evidence records for Tier 2 LLM processing.
@@ -158,6 +171,7 @@ class CellebriteFileLinker:
             owner: Username for ownership attribution
             model_file_map: Optional mapping of model_id -> [file_id, ...] from jump_targets
             created_by_id: Optional UUID of the user who started ingestion
+            evidence_root_folder_id: EvidenceFolder ID for the Cellebrite report root
 
         Returns:
             Number of evidence records created
@@ -210,6 +224,7 @@ class CellebriteFileLinker:
                 "sha256": sha256,
                 "model_id": file_to_model.get(file_id),
                 "resolved_path": resolved_path,
+                "export_parent_path": _export_parent_path(tf.local_path),
                 "capture_time": tf.capture_time,
                 "creation_time": tf.creation_time,
                 "modify_time": tf.modify_time,
@@ -224,10 +239,18 @@ class CellebriteFileLinker:
         # Register in batches to avoid holding the lock too long
         batch_size = 500
         total_created = 0
+        folder_cache: Dict[str, Optional[uuid_mod.UUID]] = {}
 
         for i in range(0, len(files_to_register), batch_size):
             batch = files_to_register[i:i + batch_size]
-            records = self._register_batch(batch, db_session, owner, created_by_id)
+            records = self._register_batch(
+                batch,
+                db_session,
+                owner,
+                created_by_id,
+                evidence_root_folder_id,
+                folder_cache,
+            )
             total_created += len(records)
 
             if (i + batch_size) % 2000 == 0 or i + batch_size >= len(files_to_register):
@@ -244,15 +267,45 @@ class CellebriteFileLinker:
         db_session,
         owner: Optional[str],
         created_by_id=None,
+        evidence_root_folder_id=None,
+        folder_cache: Optional[Dict[str, Optional[uuid_mod.UUID]]] = None,
     ) -> List[dict]:
         """Register a batch of files as evidence records."""
         from services.evidence_db_storage import EvidenceDBStorage
 
-        files_data = []
+        root_folder_uuid = (
+            evidence_root_folder_id
+            if isinstance(evidence_root_folder_id, uuid_mod.UUID)
+            else uuid_mod.UUID(str(evidence_root_folder_id))
+            if evidence_root_folder_id
+            else None
+        )
+        folder_cache = folder_cache if folder_cache is not None else {}
+        files_by_folder: Dict[Optional[uuid_mod.UUID], List[dict]] = {}
+
+        def _folder_id_for(export_parent_path: str) -> Optional[uuid_mod.UUID]:
+            if root_folder_uuid is None:
+                return None
+            cache_key = export_parent_path or "."
+            if cache_key in folder_cache:
+                return folder_cache[cache_key]
+            if export_parent_path:
+                folder = EvidenceDBStorage.get_or_create_folder_path(
+                    db_session,
+                    uuid_mod.UUID(self.case_id),
+                    export_parent_path,
+                    created_by_id=created_by_id,
+                    parent_id=root_folder_uuid,
+                )
+                folder_cache[cache_key] = folder.id
+            else:
+                folder_cache[cache_key] = root_folder_uuid
+            return folder_cache[cache_key]
 
         for item in batch:
             resolved_path = item["resolved_path"]
-            files_data.append({
+            folder_id = _folder_id_for(item.get("export_parent_path") or "")
+            files_by_folder.setdefault(folder_id, []).append({
                 "original_filename": resolved_path.name,
                 "stored_path": str(resolved_path),
                 "size": item["file_info"]["size"],
@@ -272,16 +325,18 @@ class CellebriteFileLinker:
                 ),
             })
 
-        return [
-            EvidenceDBStorage._file_to_dict(record)
-            for record in EvidenceDBStorage.add_cellebrite_files(
+        records = []
+        for folder_id, files_data in files_by_folder.items():
+            records.extend(EvidenceDBStorage.add_cellebrite_files(
                 db_session,
                 case_id=uuid_mod.UUID(self.case_id),
                 files_data=files_data,
                 owner=owner,
+                folder_id=folder_id,
                 created_by_id=created_by_id,
-            )
-        ]
+            ))
+
+        return [EvidenceDBStorage._file_to_dict(record) for record in records]
 
     def build_model_file_map(self, models: List[ParsedModel]) -> Dict[str, List[str]]:
         """

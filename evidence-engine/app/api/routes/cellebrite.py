@@ -15,6 +15,7 @@ router = APIRouter()
 
 class CellebriteJobRequest(BaseModel):
     folder_path: str
+    evidence_folder_id: uuid.UUID | None = None
     report_name: str | None = None
     report_key: str | None = None
     owner: str | None = None
@@ -70,9 +71,11 @@ async def create_cellebrite_job(
         job_type="cellebrite_ingestion",
         file_name=body.report_name or Path(relative_path).name,
         file_path=str(full_path),
+        source_folder_id=str(body.evidence_folder_id) if body.evidence_folder_id else None,
         requested_by_user_id=body.requested_by_user_id,
         merge_payload={
             "folder_path": relative_path,
+            "evidence_folder_id": str(body.evidence_folder_id) if body.evidence_folder_id else None,
             "report_name": body.report_name,
             "report_key": body.report_key,
             "owner": body.owner,

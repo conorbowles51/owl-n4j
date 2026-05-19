@@ -378,6 +378,7 @@ async def _enqueue_cellebrite_engine_job(
     *,
     case_id: str,
     folder_path: str,
+    evidence_folder_id: Optional[UUID] = None,
     current_user: User,
     force: bool,
     fail_on_duplicate: bool,
@@ -416,6 +417,7 @@ async def _enqueue_cellebrite_engine_job(
     job = await evidence_engine_client.create_cellebrite_job(
         case_id,
         folder_path=folder_path,
+        evidence_folder_id=str(evidence_folder_id) if evidence_folder_id else None,
         report_name=detection.get("report_name") or full_folder_path.name,
         report_key=detection.get("report_key"),
         owner=current_user.email,
@@ -872,16 +874,19 @@ async def upload_evidence(
                 records = []
 
             if cellebrite_roots:
+                report_folder_ids: Dict[str, Optional[UUID]] = {}
                 for root in cellebrite_roots:
                     root_parts = [part for part in PurePosixPath(root).parts if part]
                     if root_parts:
-                        _get_or_create_folder_chain(
+                        report_folder_ids[root] = _get_or_create_folder_chain(
                             db,
                             case_id=case_uuid,
                             parts=root_parts,
                             parent_id=folder_uuid,
                             created_by_id=current_user.id,
                         )
+                    else:
+                        report_folder_ids[root] = folder_uuid
 
             db.commit()
 
@@ -894,6 +899,7 @@ async def upload_evidence(
                     job, _detection = await _enqueue_cellebrite_engine_job(
                         case_id=case_id,
                         folder_path=report_folder,
+                        evidence_folder_id=report_folder_ids.get(root),
                         current_user=current_user,
                         force=replace_existing,
                         fail_on_duplicate=False,
@@ -1571,9 +1577,21 @@ async def process_cellebrite_folder(
             raise HTTPException(status_code=403, detail="Path outside case directory")
 
         force = bool(request.force or request.replace_existing)
+        evidence_folder_id = _get_or_create_folder_chain(
+            db,
+            case_id=case_uuid,
+            parts=[
+                part
+                for part in PurePosixPath(request.folder_path).parts
+                if part not in ("", ".", "..")
+            ],
+            created_by_id=current_user.id,
+        )
+        db.commit()
         job, detection = await _enqueue_cellebrite_engine_job(
             case_id=request.case_id,
             folder_path=request.folder_path,
+            evidence_folder_id=evidence_folder_id,
             current_user=current_user,
             force=force,
             fail_on_duplicate=True,

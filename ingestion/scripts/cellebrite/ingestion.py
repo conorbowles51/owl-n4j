@@ -130,6 +130,7 @@ def ingest_cellebrite_report(
     owner: Optional[str] = None,
     evidence_db=None,
     created_by_id=None,
+    evidence_root_folder_id=None,
 ) -> dict:
     """
     Ingest a complete Cellebrite UFED report into the Neo4j graph.
@@ -142,6 +143,7 @@ def ingest_cellebrite_report(
         owner: Username for evidence record ownership
         evidence_db: SQLAlchemy session for Postgres evidence file registration
         created_by_id: Optional UUID of the user who started ingestion
+        evidence_root_folder_id: Optional EvidenceFolder ID for the report root
 
     Returns:
         Dict with ingestion statistics and status
@@ -302,6 +304,7 @@ def ingest_cellebrite_report(
             owner=owner,
             model_file_map=model_file_map,
             created_by_id=created_by_id,
+            evidence_root_folder_id=evidence_root_folder_id,
         )
     else:
         _log("Step 9/9: Skipping media registration (no Postgres session)")

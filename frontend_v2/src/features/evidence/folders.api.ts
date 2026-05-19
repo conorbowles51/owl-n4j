@@ -6,6 +6,14 @@ import type {
   EffectiveProfile,
 } from "@/types/evidence.types"
 
+export interface FolderContentsParams {
+  limit?: number
+  offset?: number
+  search?: string
+  status?: string
+  type?: string
+}
+
 export const foldersAPI = {
   getTree: async (caseId: string) => {
     const res = await fetchAPI<{ tree: FolderTreeNode[] }>(
@@ -14,10 +22,21 @@ export const foldersAPI = {
     return res.tree
   },
 
-  getContents: (caseId: string, folderId: string | null) =>
-    fetchAPI<FolderContentsResponse>(
-      `/api/evidence-folders/${folderId || "root"}/contents?case_id=${caseId}`
-    ),
+  getContents: (
+    caseId: string,
+    folderId: string | null,
+    params: FolderContentsParams = {}
+  ) => {
+    const qs = new URLSearchParams({ case_id: caseId })
+    if (params.limit) qs.set("limit", String(params.limit))
+    if (params.offset) qs.set("offset", String(params.offset))
+    if (params.search) qs.set("search", params.search)
+    if (params.status && params.status !== "all") qs.set("status", params.status)
+    if (params.type) qs.set("type", params.type)
+    return fetchAPI<FolderContentsResponse>(
+      `/api/evidence-folders/${folderId || "root"}/contents?${qs}`
+    )
+  },
 
   create: (caseId: string, name: string, parentId?: string | null) =>
     fetchAPI<{ id: string; name: string; parent_id: string | null }>(

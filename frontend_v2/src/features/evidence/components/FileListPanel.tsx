@@ -9,20 +9,20 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import { Upload, Play } from "lucide-react"
+import { Upload, Play, ChevronLeft, ChevronRight } from "lucide-react"
 import { useFolderContents } from "../hooks/use-folder-contents"
 import { useEvidenceStore } from "../evidence.store"
 import { evidenceAPI } from "../api"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { getFileTypeCategory } from "../utils/file-types"
-import { getDisplayStatus } from "../utils/display-status"
 import { FolderBreadcrumbs } from "./FolderBreadcrumbs"
 import { FileListToolbar } from "./FileListToolbar"
 import { FileRow } from "./FileRow"
 import { FolderRow } from "./FolderRow"
 import { InlineDropZone } from "./InlineDropZone"
 import type { EvidenceFile } from "@/types/evidence.types"
+
+const FILE_PAGE_SIZE = 250
 
 interface FileListPanelProps {
   caseId: string
@@ -48,7 +48,32 @@ export function FileListPanel({
     typeFilter,
   } = useEvidenceStore()
 
-  const { data: contents, isLoading } = useFolderContents(caseId, currentFolderId)
+  const pagingKey = [
+    currentFolderId ?? "root",
+    searchTerm,
+    statusFilter,
+    typeFilter,
+  ].join("\u001f")
+  const [filePaging, setFilePaging] = useState({ key: "", page: 0 })
+  const filePage = filePaging.key === pagingKey ? filePaging.page : 0
+  const setFilePageForCurrentView = useCallback(
+    (nextPage: number | ((page: number) => number)) => {
+      setFilePaging((current) => {
+        const currentPage = current.key === pagingKey ? current.page : 0
+        const resolvedPage =
+          typeof nextPage === "function" ? nextPage(currentPage) : nextPage
+        return { key: pagingKey, page: Math.max(0, resolvedPage) }
+      })
+    },
+    [pagingKey]
+  )
+  const { data: contents, isLoading } = useFolderContents(caseId, currentFolderId, {
+    limit: FILE_PAGE_SIZE,
+    offset: filePage * FILE_PAGE_SIZE,
+    search: searchTerm || undefined,
+    status: statusFilter !== "all" ? statusFilter : undefined,
+    type: typeFilter || undefined,
+  })
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDraggingExternal, setIsDraggingExternal] = useState(false)
 
@@ -78,26 +103,14 @@ export function FileListPanel({
     )
   }
 
-  // Filter files based on search/filters
-  const filteredFiles = contents?.files?.filter((f) => {
-    if (
-      searchTerm &&
-      !f.original_filename.toLowerCase().includes(searchTerm.toLowerCase())
-    ) {
-      return false
-    }
-    if (statusFilter !== "all" && getDisplayStatus(f) !== statusFilter) return false
-    if (typeFilter && getFileTypeCategory(f.original_filename) !== typeFilter) return false
-    return true
-  })
-
-  // Filter folders based on search
-  const filteredFolders = contents?.folders?.filter((f) => {
-    if (searchTerm && !f.name.toLowerCase().includes(searchTerm.toLowerCase())) {
-      return false
-    }
-    return true
-  })
+  const filteredFiles = contents?.files ?? []
+  const filteredFolders = contents?.folders ?? []
+  const fileTotal = contents?.file_total ?? 0
+  const pageCount = Math.max(1, Math.ceil(fileTotal / FILE_PAGE_SIZE))
+  const canPageBack = filePage > 0
+  const canPageForward = filePage < pageCount - 1
+  const pageStart = fileTotal === 0 ? 0 : filePage * FILE_PAGE_SIZE + 1
+  const pageEnd = Math.min((filePage + 1) * FILE_PAGE_SIZE, fileTotal)
 
   const allFileIds = filteredFiles?.map((f) => f.id) ?? []
   const allSelected = allFileIds.length > 0 && selectedFileIds.size === allFileIds.length
@@ -222,14 +235,14 @@ export function FileListPanel({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredFolders?.map((folder) => (
+              {filteredFolders.map((folder) => (
                 <FolderRow
                   key={folder.id}
                   folder={folder}
                   onNavigate={handleFolderNavigate}
                 />
               ))}
-              {filteredFiles?.map((file) => (
+              {filteredFiles.map((file) => (
                 <FileRow
                   key={file.id}
                   file={file}
@@ -241,6 +254,41 @@ export function FileListPanel({
           </Table>
         )}
       </div>
+
+      {fileTotal > FILE_PAGE_SIZE && (
+        <div className="flex items-center justify-between border-t border-border px-4 py-1.5 text-xs text-muted-foreground">
+          <span>
+            Showing {pageStart}-{pageEnd} of {fileTotal.toLocaleString()} files
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canPageBack}
+              onClick={() => {
+                setFilePageForCurrentView((page) => Math.max(0, page - 1))
+                clearSelection()
+              }}
+            >
+              <ChevronLeft className="size-3.5" />
+            </Button>
+            <span className="mx-2 tabular-nums">
+              {filePage + 1} / {pageCount}
+            </span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={!canPageForward}
+              onClick={() => {
+                setFilePageForCurrentView((page) => Math.min(pageCount - 1, page + 1))
+                clearSelection()
+              }}
+            >
+              <ChevronRight className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Floating selection action bar */}
       {selectedFileIds.size > 0 && (

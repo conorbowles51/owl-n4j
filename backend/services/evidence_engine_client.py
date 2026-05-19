@@ -105,6 +105,7 @@ async def create_cellebrite_job(
     case_id: str,
     *,
     folder_path: str,
+    evidence_folder_id: str | None = None,
     report_name: str | None = None,
     report_key: str | None = None,
     owner: str | None = None,
@@ -122,6 +123,7 @@ async def create_cellebrite_job(
         f"/cases/{case_id}/cellebrite/jobs",
         json={
             "folder_path": folder_path,
+            "evidence_folder_id": evidence_folder_id,
             "report_name": report_name,
             "report_key": report_key,
             "owner": owner,

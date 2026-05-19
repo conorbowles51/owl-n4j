@@ -107,6 +107,7 @@ def _run_cellebrite_ingestion_sync(
     owner: str | None,
     force: bool,
     created_by_id: str | None,
+    evidence_folder_id: str | None,
     log_callback,
 ) -> dict[str, Any]:
     _ensure_cellebrite_imports()
@@ -117,6 +118,7 @@ def _run_cellebrite_ingestion_sync(
 
     case_uuid = UUID(case_id)
     created_by_uuid = UUID(created_by_id) if created_by_id else None
+    evidence_folder_uuid = UUID(evidence_folder_id) if evidence_folder_id else None
 
     def _log(message: str) -> None:
         log_callback(message)
@@ -174,6 +176,7 @@ def _run_cellebrite_ingestion_sync(
             owner=owner,
             evidence_db=db,
             created_by_id=created_by_uuid,
+            evidence_root_folder_id=evidence_folder_uuid,
         )
 
 
@@ -210,6 +213,7 @@ async def run_cellebrite_pipeline(job_id: str, db: AsyncSession) -> None:
             owner=payload.get("owner"),
             force=bool(payload.get("force")),
             created_by_id=payload.get("requested_by_user_id"),
+            evidence_folder_id=payload.get("evidence_folder_id") or job.source_folder_id,
             log_callback=log_from_thread,
         )
     )

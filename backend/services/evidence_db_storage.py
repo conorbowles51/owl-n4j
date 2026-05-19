@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from sqlalchemy import func, select, and_
+from sqlalchemy import func, select, and_, or_
 from sqlalchemy.orm import Session
 
 from postgres.models.evidence import EvidenceFile, EvidenceFolder, IngestionLog
@@ -41,6 +41,35 @@ def _clean_string_list(values: Iterable[Any] | None) -> List[str]:
         if item:
             cleaned.append(item)
     return sorted(set(cleaned))
+
+
+_FILE_TYPE_EXTENSIONS: Dict[str, set[str]] = {
+    "Image": {"jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "tiff", "tif", "ico"},
+    "Document": {
+        "pdf", "doc", "docx", "txt", "rtf", "odt", "xls", "xlsx", "ppt", "pptx",
+        "html", "htm", "md", "eml", "msg",
+    },
+    "Audio": {"mp3", "wav", "ogg", "flac", "aac", "wma", "m4a", "opus"},
+    "Video": {"mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "m4v"},
+    "Data": {"csv", "json", "xml", "tsv", "sql", "db", "sqlite", "parquet"},
+}
+
+
+def _file_type_condition(category: str):
+    category = (category or "").strip()
+    if not category:
+        return None
+
+    filename = func.lower(EvidenceFile.original_filename)
+    if category == "Other":
+        known_exts = sorted({ext for exts in _FILE_TYPE_EXTENSIONS.values() for ext in exts})
+        known = or_(*(filename.like(f"%.{ext}") for ext in known_exts))
+        return ~known
+
+    exts = _FILE_TYPE_EXTENSIONS.get(category)
+    if not exts:
+        return None
+    return or_(*(filename.like(f"%.{ext}") for ext in sorted(exts)))
 
 
 # ---------------------------------------------------------------------------
@@ -158,21 +187,34 @@ class EvidenceDBStorage:
         case_id: uuid.UUID,
         relative_path: str,
         created_by_id: Optional[uuid.UUID] = None,
+        parent_id: Optional[uuid.UUID] = None,
     ) -> EvidenceFolder:
         """
         Given a path like "wiretaps/batch-01/subfolder", create the chain of
-        folders if they don't exist and return the deepest one.
+        folders if they don't exist and return the deepest one. When parent_id
+        is provided, the path is created under that existing folder.
         """
-        parts = PurePosixPath(relative_path).parts
-        parent_id: Optional[uuid.UUID] = None
+        parts = [
+            part for part in PurePosixPath(relative_path).parts
+            if part not in ("", ".", "..")
+        ]
+        current_parent: Optional[uuid.UUID] = parent_id
         current_folder: Optional[EvidenceFolder] = None
+
+        if not parts and parent_id is not None:
+            folder = db.get(EvidenceFolder, parent_id)
+            if folder is None or folder.case_id != case_id:
+                raise ValueError(f"Parent folder {parent_id} not found for case {case_id}")
+            return folder
 
         for part in parts:
             existing = db.scalars(
                 select(EvidenceFolder).where(
                     EvidenceFolder.case_id == case_id,
                     EvidenceFolder.name == part,
-                    EvidenceFolder.parent_id == parent_id if parent_id else EvidenceFolder.parent_id.is_(None),
+                    EvidenceFolder.parent_id == current_parent
+                    if current_parent
+                    else EvidenceFolder.parent_id.is_(None),
                 )
             ).first()
 
@@ -182,13 +224,13 @@ class EvidenceDBStorage:
                 current_folder = EvidenceFolder(
                     case_id=case_id,
                     name=part,
-                    parent_id=parent_id,
+                    parent_id=current_parent,
                     created_by_id=created_by_id,
                 )
                 db.add(current_folder)
                 db.flush()
 
-            parent_id = current_folder.id
+            current_parent = current_folder.id
 
         if current_folder is None:
             raise ValueError(f"Empty relative_path: {relative_path}")
@@ -220,6 +262,12 @@ class EvidenceDBStorage:
         db: Session,
         case_id: uuid.UUID,
         folder_id: Optional[uuid.UUID] = None,
+        *,
+        limit: int = 250,
+        offset: int = 0,
+        search: Optional[str] = None,
+        status: Optional[str] = None,
+        type_category: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Return folders + files at a given level, plus file/subfolder counts."""
         if folder_id:
@@ -229,18 +277,51 @@ class EvidenceDBStorage:
             folder_cond = EvidenceFolder.parent_id.is_(None)
             file_cond = EvidenceFile.folder_id.is_(None)
 
+        folder_conditions = [
+            EvidenceFolder.case_id == case_id,
+            folder_cond,
+        ]
+        file_conditions = [
+            EvidenceFile.case_id == case_id,
+            file_cond,
+        ]
+
+        if search:
+            search_l = f"%{search.strip().lower()}%"
+            folder_conditions.append(func.lower(EvidenceFolder.name).like(search_l))
+            file_conditions.append(func.lower(EvidenceFile.original_filename).like(search_l))
+
+        if status and status != "all":
+            if status == "stale":
+                file_conditions.extend([
+                    EvidenceFile.status == "processed",
+                    EvidenceFile.processing_stale.is_(True),
+                ])
+            else:
+                file_conditions.append(EvidenceFile.status == status)
+                if status == "processed":
+                    file_conditions.append(EvidenceFile.processing_stale.is_(False))
+
+        type_condition = _file_type_condition(type_category or "")
+        if type_condition is not None:
+            file_conditions.append(type_condition)
+
         folders = list(db.scalars(
-            select(EvidenceFolder).where(
-                EvidenceFolder.case_id == case_id,
-                folder_cond,
-            ).order_by(EvidenceFolder.name)
+            select(EvidenceFolder).where(*folder_conditions).order_by(EvidenceFolder.name)
         ).all())
 
+        safe_limit = max(1, min(int(limit or 250), 1000))
+        safe_offset = max(0, int(offset or 0))
+        total_files = db.scalar(
+            select(func.count()).select_from(EvidenceFile).where(*file_conditions)
+        ) or 0
+
         files = list(db.scalars(
-            select(EvidenceFile).where(
-                EvidenceFile.case_id == case_id,
-                file_cond,
-            ).order_by(EvidenceFile.original_filename)
+            select(EvidenceFile)
+            .where(*file_conditions)
+            .order_by(EvidenceFile.original_filename)
+            .offset(safe_offset)
+            .limit(safe_limit)
         ).all())
 
         # Enrich folders with counts
@@ -267,7 +348,13 @@ class EvidenceDBStorage:
 
         file_dicts = [EvidenceDBStorage._file_to_dict(ef) for ef in files]
 
-        return {"folders": folder_dicts, "files": file_dicts}
+        return {
+            "folders": folder_dicts,
+            "files": file_dicts,
+            "file_total": total_files,
+            "file_limit": safe_limit,
+            "file_offset": safe_offset,
+        }
 
     @staticmethod
     def get(db: Session, file_id: uuid.UUID) -> Optional[EvidenceFile]:

@@ -117,6 +117,11 @@ async def get_folder_tree(
 async def get_folder_contents(
     folder_id: str,
     case_id: str = Query(..., description="Case ID"),
+    limit: int = Query(250, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    type_category: Optional[str] = Query(None, alias="type"),
     current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
@@ -125,7 +130,16 @@ async def get_folder_contents(
         _check_case_access(db, case_id, current_user)
 
         fid = None if folder_id == "root" else uuid.UUID(folder_id)
-        contents = EvidenceDBStorage.list_contents(db, uuid.UUID(case_id), fid)
+        contents = EvidenceDBStorage.list_contents(
+            db,
+            uuid.UUID(case_id),
+            fid,
+            limit=limit,
+            offset=offset,
+            search=search,
+            status=status_filter,
+            type_category=type_category,
+        )
 
         # Build breadcrumbs
         breadcrumbs: List[Dict[str, str]] = []
@@ -151,6 +165,9 @@ async def get_folder_contents(
             "breadcrumbs": breadcrumbs,
             "folders": contents["folders"],
             "files": contents["files"],
+            "file_total": contents["file_total"],
+            "file_limit": contents["file_limit"],
+            "file_offset": contents["file_offset"],
         }
     except HTTPException:
         raise

@@ -162,9 +162,14 @@ class EvidenceCellebriteRouteTests(unittest.TestCase):
 
             with SessionLocal() as db:
                 self.assertEqual(db.query(EvidenceFile).count(), 0)
+                folder = db.query(EvidenceFolder).one()
                 self.assertEqual(
-                    [folder.name for folder in db.query(EvidenceFolder).all()],
+                    [folder.name],
                     ["PhoneReport"],
+                )
+                self.assertEqual(
+                    create_job.await_args.kwargs["evidence_folder_id"],
+                    str(folder.id),
                 )
 
             Base.metadata.drop_all(

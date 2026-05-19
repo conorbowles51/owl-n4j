@@ -162,6 +162,9 @@ export interface FolderContentsResponse {
   breadcrumbs: { id: string; name: string }[]
   folders: EvidenceFolder[]
   files: EvidenceFileRecord[]
+  file_total: number
+  file_limit: number
+  file_offset: number
 }
 
 export interface EvidenceFileRecord {
