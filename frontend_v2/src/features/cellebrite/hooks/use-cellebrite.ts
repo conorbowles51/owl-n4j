@@ -34,7 +34,15 @@ export const cellebriteKeys = {
     reportKey: string | undefined,
     kind: OverviewKind,
     params: unknown
-  ) => [...cellebriteKeys.all, "overview", kind, caseId, reportKey, params] as const,
+  ) =>
+    [
+      ...cellebriteKeys.all,
+      "overview",
+      kind,
+      caseId,
+      reportKey,
+      params,
+    ] as const,
   files: (caseId: string | undefined, name: string, params: unknown) =>
     [...cellebriteKeys.all, "files", name, caseId, params] as const,
 }
@@ -62,7 +70,9 @@ export function usePatchCellebriteReport(caseId: string) {
         device_name_override: deviceNameOverride,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: cellebriteKeys.reports(caseId) })
+      queryClient.invalidateQueries({
+        queryKey: cellebriteKeys.reports(caseId),
+      })
     },
   })
 }
@@ -70,7 +80,8 @@ export function usePatchCellebriteReport(caseId: string) {
 export function useDeleteCellebriteReport(caseId: string) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (reportKey: string) => cellebriteAPI.deleteReport(caseId, reportKey),
+    mutationFn: (reportKey: string) =>
+      cellebriteAPI.deleteReport(caseId, reportKey),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: cellebriteKeys.all })
       queryClient.invalidateQueries({ queryKey: ["background-tasks", caseId] })
@@ -92,7 +103,10 @@ export function useCellebriteTimeline(
   })
 }
 
-export function useCellebriteCrossPhoneGraph(caseId: string | undefined, enabled = true) {
+export function useCellebriteCrossPhoneGraph(
+  caseId: string | undefined,
+  enabled = true
+) {
   return useQuery({
     queryKey: cellebriteKeys.graph(caseId),
     queryFn: () => cellebriteAPI.getCrossPhoneGraph(caseId!),
@@ -118,8 +132,12 @@ export function useCommsEntities(
   withCounts = false
 ) {
   return useQuery({
-    queryKey: cellebriteKeys.comms(caseId, "entities", { reportKeys, withCounts }),
-    queryFn: () => cellebriteCommsAPI.getEntities(caseId!, reportKeys, { withCounts }),
+    queryKey: cellebriteKeys.comms(caseId, "entities", {
+      reportKeys,
+      withCounts,
+    }),
+    queryFn: () =>
+      cellebriteCommsAPI.getEntities(caseId!, reportKeys, { withCounts }),
     enabled: !!caseId && enabled,
   })
 }
@@ -188,6 +206,23 @@ export function useCommsEnvelope(
     queryKey: cellebriteKeys.comms(caseId, "envelope", params),
     queryFn: () => cellebriteCommsAPI.getEnvelope(caseId!, params),
     enabled: !!caseId && enabled,
+  })
+}
+
+export function useContactCommsFeed(
+  caseId: string | undefined,
+  contactKey: string | undefined,
+  params: ReportScopedParams & PagedParams & { types?: string[] | null },
+  enabled = true
+) {
+  return useQuery({
+    queryKey: cellebriteKeys.comms(caseId, "contact-feed", {
+      contactKey,
+      params,
+    }),
+    queryFn: () =>
+      cellebriteCommsAPI.getContactFeed(caseId!, contactKey!, params),
+    enabled: !!caseId && !!contactKey && enabled,
   })
 }
 
@@ -338,7 +373,8 @@ export function useOverviewRows(
 ) {
   return useQuery({
     queryKey: cellebriteKeys.overview(caseId, reportKey, kind, params),
-    queryFn: () => cellebriteOverviewAPI.getRows(kind, caseId!, reportKey!, params),
+    queryFn: () =>
+      cellebriteOverviewAPI.getRows(kind, caseId!, reportKey!, params),
     enabled: !!caseId && !!reportKey && enabled,
   })
 }

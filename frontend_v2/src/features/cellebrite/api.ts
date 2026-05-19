@@ -8,6 +8,7 @@ import type {
   CommsSourceApp,
   CommsThreadsResponse,
   CommunicationNetworkResponse,
+  ContactFeedResponse,
   CrossPhoneGraphResponse,
   DateRangeParams,
   DeleteReportResponse,
@@ -33,7 +34,11 @@ import type {
   UnifiedContactsResponse,
 } from "./types"
 
-function appendCsv(params: URLSearchParams, name: string, values?: string[] | null) {
+function appendCsv(
+  params: URLSearchParams,
+  name: string,
+  values?: string[] | null
+) {
   if (values?.length) params.set(name, values.join(","))
 }
 
@@ -42,7 +47,11 @@ function appendDateRange(params: URLSearchParams, opts: DateRangeParams) {
   if (opts.endDate) params.set("end_date", opts.endDate)
 }
 
-function appendPaging(params: URLSearchParams, opts: PagedParams, defaults: Required<PagedParams>) {
+function appendPaging(
+  params: URLSearchParams,
+  opts: PagedParams,
+  defaults: Required<PagedParams>
+) {
   params.set("limit", String(opts.limit ?? defaults.limit))
   params.set("offset", String(opts.offset ?? defaults.offset))
 }
@@ -66,7 +75,11 @@ function commsParams(caseId: string, opts: CommsFilterParams = {}) {
   return params
 }
 
-function overviewParams(caseId: string, reportKey: string, opts: PagedParams & { search?: string | null }) {
+function overviewParams(
+  caseId: string,
+  reportKey: string,
+  opts: PagedParams & { search?: string | null }
+) {
   const params = new URLSearchParams({ case_id: caseId, report_key: reportKey })
   if (opts.search) params.set("search", opts.search)
   appendPaging(params, opts, { limit: 500, offset: 0 })
@@ -75,7 +88,9 @@ function overviewParams(caseId: string, reportKey: string, opts: PagedParams & {
 
 export const cellebriteAPI = {
   getReports: (caseId: string) =>
-    fetchAPI<PhoneReportsResponse>(`/api/cellebrite/reports?case_id=${encodeURIComponent(caseId)}`),
+    fetchAPI<PhoneReportsResponse>(
+      `/api/cellebrite/reports?case_id=${encodeURIComponent(caseId)}`
+    ),
 
   deleteReport: (caseId: string, reportKey: string) =>
     fetchAPI<DeleteReportResponse>(
@@ -139,7 +154,9 @@ export const cellebriteCommsAPI = {
   getThreads: (caseId: string, opts: CommsFilterParams = {}) => {
     const params = commsParams(caseId, opts)
     appendPaging(params, opts, { limit: 200, offset: 0 })
-    return fetchAPI<CommsThreadsResponse>(`/api/cellebrite/comms/threads?${params}`)
+    return fetchAPI<CommsThreadsResponse>(
+      `/api/cellebrite/comms/threads?${params}`
+    )
   },
 
   getThreadDetail: (
@@ -148,7 +165,10 @@ export const cellebriteCommsAPI = {
     threadType: string,
     opts: PagedParams & { anchorKey?: string | null } = {}
   ) => {
-    const params = new URLSearchParams({ case_id: caseId, thread_type: threadType })
+    const params = new URLSearchParams({
+      case_id: caseId,
+      thread_type: threadType,
+    })
     appendPaging(params, opts, { limit: 500, offset: 0 })
     if (opts.anchorKey) params.set("anchor_key", opts.anchorKey)
     return fetchAPI<ThreadDetailResponse>(
@@ -162,7 +182,9 @@ export const cellebriteCommsAPI = {
     if (opts.cursor) params.set("cursor", opts.cursor)
     else params.set("offset", String(opts.offset ?? 0))
     if (opts.sort) params.set("sort", opts.sort)
-    return fetchAPI<CommsBetweenResponse>(`/api/cellebrite/comms/between?${params}`)
+    return fetchAPI<CommsBetweenResponse>(
+      `/api/cellebrite/comms/between?${params}`
+    )
   },
 
   getEnvelope: (caseId: string, opts: CommsFilterParams = {}) =>
@@ -195,7 +217,7 @@ export const cellebriteCommsAPI = {
     const params = baseCaseParams(caseId, opts.reportKeys)
     appendCsv(params, "types", opts.types)
     appendPaging(params, opts, { limit: 1000, offset: 0 })
-    return fetchAPI<CommsBetweenResponse>(
+    return fetchAPI<ContactFeedResponse>(
       `/api/cellebrite/comms/contact-feed/${encodeURIComponent(contactKey)}?${params}`
     )
   },
@@ -231,13 +253,18 @@ export const cellebriteEventsAPI = {
   getLocationTiles: (
     caseId: string,
     opts: ReportScopedParams &
-      DateRangeParams & { zoom?: number; bbox?: [number, number, number, number] | null } = {}
+      DateRangeParams & {
+        zoom?: number
+        bbox?: [number, number, number, number] | null
+      } = {}
   ) => {
     const params = baseCaseParams(caseId, opts.reportKeys)
     params.set("zoom", String(opts.zoom ?? 6))
     appendDateRange(params, opts)
     if (opts.bbox) params.set("bbox", opts.bbox.join(","))
-    return fetchAPI<LocationTilesResponse>(`/api/cellebrite/locations/tiles?${params}`)
+    return fetchAPI<LocationTilesResponse>(
+      `/api/cellebrite/locations/tiles?${params}`
+    )
   },
 
   getLocationsInTile: (
@@ -268,7 +295,9 @@ export const cellebriteEventsAPI = {
     const params = baseCaseParams(caseId, opts.reportKeys)
     appendDateRange(params, opts)
     params.set("simplify", opts.simplify === false ? "false" : "true")
-    return fetchAPI<EventTracksResponse>(`/api/cellebrite/events/tracks?${params}`)
+    return fetchAPI<EventTracksResponse>(
+      `/api/cellebrite/events/tracks?${params}`
+    )
   },
 
   getEventDetail: (caseId: string, nodeKey: string) =>
@@ -334,7 +363,10 @@ export const cellebriteOverviewAPI = {
     ),
 
   getContactDetail: (caseId: string, reportKey: string, contactKey: string) => {
-    const params = new URLSearchParams({ case_id: caseId, report_key: reportKey })
+    const params = new URLSearchParams({
+      case_id: caseId,
+      report_key: reportKey,
+    })
     return fetchAPI<CellebriteRecord>(
       `/api/cellebrite/overview/contact/${encodeURIComponent(contactKey)}?${params}`
     )
@@ -379,7 +411,9 @@ export const cellebriteFilesAPI = {
 
   tree: (
     caseId: string,
-    opts: ReportScopedParams & { groupBy?: "category" | "parent" | "app" | "path" } = {}
+    opts: ReportScopedParams & {
+      groupBy?: "category" | "parent" | "app" | "path"
+    } = {}
   ) => {
     const params = baseCaseParams(caseId, opts.reportKeys)
     params.set("group_by", opts.groupBy ?? "category")
@@ -412,19 +446,39 @@ export const evidenceTagsAPI = {
     }),
 
   getCaseTags: (caseId: string) =>
-    fetchAPI<{ tags: EvidenceTagCount[] }>(`/api/evidence/tags?case_id=${encodeURIComponent(caseId)}`),
+    fetchAPI<{ tags: EvidenceTagCount[] }>(
+      `/api/evidence/tags?case_id=${encodeURIComponent(caseId)}`
+    ),
 
   linkEntities: (caseId: string, evidenceIds: string[], entityIds: string[]) =>
-    fetchAPI<{ updated: number; entity_ids: string[] }>("/api/evidence/entity-links/add", {
-      method: "POST",
-      body: { case_id: caseId, evidence_ids: evidenceIds, entity_ids: entityIds },
-    }),
+    fetchAPI<{ updated: number; entity_ids: string[] }>(
+      "/api/evidence/entity-links/add",
+      {
+        method: "POST",
+        body: {
+          case_id: caseId,
+          evidence_ids: evidenceIds,
+          entity_ids: entityIds,
+        },
+      }
+    ),
 
-  unlinkEntities: (caseId: string, evidenceIds: string[], entityIds: string[]) =>
-    fetchAPI<{ updated: number; entity_ids: string[] }>("/api/evidence/entity-links/remove", {
-      method: "POST",
-      body: { case_id: caseId, evidence_ids: evidenceIds, entity_ids: entityIds },
-    }),
+  unlinkEntities: (
+    caseId: string,
+    evidenceIds: string[],
+    entityIds: string[]
+  ) =>
+    fetchAPI<{ updated: number; entity_ids: string[] }>(
+      "/api/evidence/entity-links/remove",
+      {
+        method: "POST",
+        body: {
+          case_id: caseId,
+          evidence_ids: evidenceIds,
+          entity_ids: entityIds,
+        },
+      }
+    ),
 
   listByEntity: (caseId: string, entityId: string) =>
     fetchAPI<{ files: CellebriteRecord[]; total: number }>(
@@ -434,8 +488,13 @@ export const evidenceTagsAPI = {
 
 export const evidenceCellebriteAPI = {
   checkFolder: (caseId: string, folderPath: string) => {
-    const params = new URLSearchParams({ case_id: caseId, folder_path: folderPath })
-    return fetchAPI<CellebriteRecord>(`/api/evidence/cellebrite/check?${params}`)
+    const params = new URLSearchParams({
+      case_id: caseId,
+      folder_path: folderPath,
+    })
+    return fetchAPI<CellebriteRecord>(
+      `/api/evidence/cellebrite/check?${params}`
+    )
   },
 
   processFolder: (
@@ -449,18 +508,15 @@ export const evidenceCellebriteAPI = {
       task_id?: string | null
       job_id?: string | null
       job_ids?: string[] | null
-    }>(
-      "/api/evidence/cellebrite/process",
-      {
-        method: "POST",
-        body: {
-          case_id: caseId,
-          folder_path: folderPath,
-          force: opts.force,
-          replace_existing: opts.replaceExisting,
-        },
-      }
-    ),
+    }>("/api/evidence/cellebrite/process", {
+      method: "POST",
+      body: {
+        case_id: caseId,
+        folder_path: folderPath,
+        force: opts.force,
+        replace_existing: opts.replaceExisting,
+      },
+    }),
 }
 
 export function normaliseTracks(data: EventTracksResponse): EventTrack[] {

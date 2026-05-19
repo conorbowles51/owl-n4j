@@ -15,6 +15,7 @@ import {
   Smartphone,
   Trash2,
   UserRound,
+  Users,
   X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -30,11 +31,7 @@ import {
   useDeleteCellebriteReport,
   usePatchCellebriteReport,
 } from "../hooks/use-cellebrite"
-import type {
-  CellebriteTabKey,
-  PhoneReport,
-  RailSelection,
-} from "../types"
+import type { CellebriteTabKey, PhoneReport, RailSelection } from "../types"
 import { CommsTab } from "./comms/CommsTab"
 import { EventsTab } from "./events/EventsTab"
 import { FilesTab } from "./files/FilesTab"
@@ -55,6 +52,7 @@ import {
   selectedReportParams,
 } from "./shared/cellebrite-format"
 import type { CommsSeed } from "./shared/cellebrite-types"
+import { CommunicationsTab } from "./communications/CommunicationsTab"
 
 type TabDef = {
   key: CellebriteTabKey
@@ -69,13 +67,14 @@ type DateFilters = {
 
 const TABS: TabDef[] = [
   { key: "overview", label: "Overview", icon: Smartphone },
-  { key: "unified", label: "Unified Contacts", icon: UserRound },
-  { key: "comms", label: "Comms", icon: MessageSquare },
+  { key: "comms", label: "Comms Center", icon: MessageSquare },
   { key: "locations", label: "Locations", icon: Globe },
   { key: "events", label: "Location & Events", icon: MapPin },
-  { key: "timeline", label: "Timeline", icon: Clock },
   { key: "files", label: "Files", icon: FolderTree },
-  { key: "graph", label: "Graph & Intersections", icon: Network },
+  { key: "graph", label: "Cross-Phone Graph", icon: Network },
+  { key: "timeline", label: "Timeline", icon: Clock },
+  { key: "communications", label: "Communications", icon: Users },
+  { key: "unified", label: "Unified Contacts", icon: UserRound },
 ]
 
 export function CellebritePage() {
@@ -91,15 +90,22 @@ export function CellebritePage() {
   const [commsSeed, setCommsSeed] = useState<CommsSeed | null>(null)
 
   const reportsQuery = useCellebriteReports(caseId)
-  const reports = useMemo(() => reportsQuery.data?.reports ?? [], [reportsQuery.data?.reports])
-  const allReportKeys = useMemo(() => reports.map(reportKey).filter(Boolean), [reports])
+  const reports = useMemo(
+    () => reportsQuery.data?.reports ?? [],
+    [reportsQuery.data?.reports]
+  )
+  const allReportKeys = useMemo(
+    () => reports.map(reportKey).filter(Boolean),
+    [reports]
+  )
   const activeReportKeys = useMemo(() => {
     const kept = selectedKeys.filter((key) => allReportKeys.includes(key))
     return kept.length > 0 ? kept : allReportKeys
   }, [allReportKeys, selectedKeys])
 
   const selectedReports = useMemo(
-    () => reports.filter((report) => activeReportKeys.includes(reportKey(report))),
+    () =>
+      reports.filter((report) => activeReportKeys.includes(reportKey(report))),
     [activeReportKeys, reports]
   )
   const reportKeys = selectedReportParams(activeReportKeys)
@@ -131,7 +137,9 @@ export function CellebritePage() {
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-sm font-semibold text-foreground">Cellebrite Phone Viewer</h1>
+              <h1 className="text-sm font-semibold text-foreground">
+                Cellebrite Phone Viewer
+              </h1>
               <Badge variant={reports.length ? "success" : "slate"}>
                 {reports.length} report{reports.length === 1 ? "" : "s"}
               </Badge>
@@ -143,7 +151,11 @@ export function CellebritePage() {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => reportsQuery.refetch()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => reportsQuery.refetch()}
+            >
               <RefreshCw className="size-3.5" />
               Refresh
             </Button>
@@ -163,12 +175,16 @@ export function CellebritePage() {
           <DateInput
             label="Start"
             value={dateFilters.startDate}
-            onChange={(startDate) => setDateFilters((current) => ({ ...current, startDate }))}
+            onChange={(startDate) =>
+              setDateFilters((current) => ({ ...current, startDate }))
+            }
           />
           <DateInput
             label="End"
             value={dateFilters.endDate}
-            onChange={(endDate) => setDateFilters((current) => ({ ...current, endDate }))}
+            onChange={(endDate) =>
+              setDateFilters((current) => ({ ...current, endDate }))
+            }
           />
           {(query || dateFilters.startDate || dateFilters.endDate) && (
             <Button
@@ -326,6 +342,16 @@ export function CellebritePage() {
                 onSelect={setSelection}
               />
             )}
+            {activeTab === "communications" && (
+              <CommunicationsTab
+                active={activeTab === "communications"}
+                caseId={caseId}
+                reportKeys={reportKeys}
+                reports={selectedReports}
+                query={query}
+                onSelect={setSelection}
+              />
+            )}
           </main>
 
           <SelectionPanel
@@ -377,7 +403,8 @@ function ReportRail({
 }) {
   const patchReport = usePatchCellebriteReport(caseId)
   const deleteReport = useDeleteCellebriteReport(caseId)
-  const allSelected = reports.length > 0 && selectedKeys.length === reports.length
+  const allSelected =
+    reports.length > 0 && selectedKeys.length === reports.length
 
   const toggleReport = (key: string) => {
     if (selectedKeys.includes(key)) {
@@ -418,7 +445,13 @@ function ReportRail({
           variant="ghost"
           size="sm"
           className="ml-auto h-7 text-xs"
-          onClick={() => onSelectedKeysChange(allSelected ? [reports[0]?.report_key].filter(Boolean) : reports.map(reportKey))}
+          onClick={() =>
+            onSelectedKeysChange(
+              allSelected
+                ? [reports[0]?.report_key].filter(Boolean)
+                : reports.map(reportKey)
+            )
+          }
         >
           {allSelected ? "One" : "All"}
         </Button>
@@ -434,7 +467,9 @@ function ReportRail({
                 key={key}
                 className={cn(
                   "rounded-md border bg-card p-2 transition-colors",
-                  checked ? "border-amber-400" : "border-border hover:border-slate-300"
+                  checked
+                    ? "border-amber-400"
+                    : "border-border hover:border-slate-300"
                 )}
               >
                 <button
@@ -445,28 +480,56 @@ function ReportRail({
                   <span
                     className={cn(
                       "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded border",
-                      checked ? "border-amber-500 bg-amber-500 text-white" : "border-border"
+                      checked
+                        ? "border-amber-500 bg-amber-500 text-white"
+                        : "border-border"
                     )}
                   >
                     {checked && <CheckCircle2 className="size-3" />}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold">{reportTitle(report)}</span>
+                    <span className="block truncate text-sm font-semibold">
+                      {reportTitle(report)}
+                    </span>
                     <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-                      {report.phone_number || report.imei || report.evidence_number || key}
+                      {report.phone_number ||
+                        report.imei ||
+                        report.evidence_number ||
+                        key}
                     </span>
                   </span>
                 </button>
                 <div className="mt-2 grid grid-cols-3 gap-1 text-[10px] text-muted-foreground">
-                  <MiniStat label="Nodes" value={readNumber(stats, ["nodes", "node_count", "total_nodes"])} />
-                  <MiniStat label="Msgs" value={readNumber(stats, ["messages", "message_count"])} />
-                  <MiniStat label="Calls" value={readNumber(stats, ["calls", "call_count"])} />
+                  <MiniStat
+                    label="Nodes"
+                    value={readNumber(stats, [
+                      "nodes",
+                      "node_count",
+                      "total_nodes",
+                    ])}
+                  />
+                  <MiniStat
+                    label="Msgs"
+                    value={readNumber(stats, ["messages", "message_count"])}
+                  />
+                  <MiniStat
+                    label="Calls"
+                    value={readNumber(stats, ["calls", "call_count"])}
+                  />
                 </div>
                 <div className="mt-2 flex items-center gap-1">
-                  <Button variant="ghost" size="icon-sm" onClick={() => renameReport(report)}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => renameReport(report)}
+                  >
                     <Pencil className="size-3.5" />
                   </Button>
-                  <Button variant="ghost" size="icon-sm" onClick={() => removeReport(report)}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => removeReport(report)}
+                  >
                     <Trash2 className="size-3.5" />
                   </Button>
                 </div>
@@ -482,7 +545,9 @@ function ReportRail({
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded border border-border bg-muted/30 px-1.5 py-1">
-      <div className="font-semibold text-foreground">{compactNumber(value)}</div>
+      <div className="font-semibold text-foreground">
+        {compactNumber(value)}
+      </div>
       <div>{label}</div>
     </div>
   )
@@ -503,12 +568,19 @@ function SelectionPanel({
   reports: PhoneReport[]
   fallback: ReactNode
 }) {
-  if (!selection) return <aside className="min-h-0 overflow-y-auto border-l border-border bg-muted/20">{fallback}</aside>
+  if (!selection)
+    return (
+      <aside className="min-h-0 overflow-y-auto border-l border-border bg-muted/20">
+        {fallback}
+      </aside>
+    )
 
   return (
     <aside className="min-h-0 overflow-y-auto border-l border-border bg-muted/20">
       <div className="flex h-11 items-center gap-2 border-b border-border bg-card px-3">
-        <span className="min-w-0 flex-1 truncate text-xs font-semibold">{selection.title}</span>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold">
+          {selection.title}
+        </span>
         <Badge variant="outline">{selection.kind}</Badge>
         <Button variant="ghost" size="icon-sm" onClick={onClear}>
           <X className="size-3.5" />
@@ -524,9 +596,16 @@ function SelectionPanel({
             reports={reports}
             onSelectLocation={(location) =>
               onSelect({
-                id: String(location.id ?? location.node_key ?? location.key ?? "location"),
+                id: String(
+                  location.id ?? location.node_key ?? location.key ?? "location"
+                ),
                 kind: "event",
-                title: String(location.label ?? location.location_type ?? location.address ?? "Location"),
+                title: String(
+                  location.label ??
+                    location.location_type ??
+                    location.address ??
+                    "Location"
+                ),
                 payload: { ...location, event_type: "location" },
               })
             }

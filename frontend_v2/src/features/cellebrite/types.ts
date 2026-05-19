@@ -4,6 +4,7 @@ export type CellebriteTabKey =
   | "overview"
   | "comms"
   | "unified"
+  | "communications"
   | "locations"
   | "events"
   | "files"
@@ -175,6 +176,16 @@ export interface CommsBetweenResponse extends CellebriteRecord {
   cursor?: string | null
 }
 
+export interface ContactFeedResponse extends CommsBetweenResponse {
+  contact?:
+    | (CommsParty & {
+        phone_numbers?: string[]
+        is_phone_owner?: boolean
+        all_identifiers?: string[]
+      })
+    | null
+}
+
 export interface CommsEnvelopeResponse extends CellebriteRecord {
   total?: number
   type_counts?: Record<string, number>
@@ -286,7 +297,12 @@ export interface UnifiedContactsResponse extends CellebriteRecord {
   offset?: number
 }
 
-export type OverviewKind = "contacts" | "calls" | "messages" | "locations" | "emails"
+export type OverviewKind =
+  | "contacts"
+  | "calls"
+  | "messages"
+  | "locations"
+  | "emails"
 
 export interface OverviewResponse extends CellebriteRecord {
   rows?: CellebriteRecord[]
@@ -337,7 +353,8 @@ export interface DateRangeParams {
   endDate?: string | null
 }
 
-export interface CommsFilterParams extends ReportScopedParams, DateRangeParams, PagedParams {
+export interface CommsFilterParams
+  extends ReportScopedParams, DateRangeParams, PagedParams {
   fromKeys?: string[] | null
   toKeys?: string[] | null
   participantKeys?: string[] | null
@@ -351,7 +368,15 @@ export interface CommsFilterParams extends ReportScopedParams, DateRangeParams, 
 
 export interface RailSelection {
   id: string
-  kind: "thread" | "event" | "tile" | "contact" | "contact_unified" | "file" | "message" | "report"
+  kind:
+    | "thread"
+    | "event"
+    | "tile"
+    | "contact"
+    | "contact_unified"
+    | "file"
+    | "message"
+    | "report"
   title: string
   payload: CellebriteRecord
 }
