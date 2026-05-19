@@ -203,10 +203,14 @@ export interface SearchMessagesResponse extends CellebriteRecord {
 
 export interface Attachment extends CellebriteRecord {
   file_id?: string
-  evidence_id?: string
+  evidence_id?: string | null
   filename?: string
-  category?: string
+  original_filename?: string | null
+  category?: string | null
   mime_type?: string
+  missing?: boolean
+  size?: number
+  sha256?: string | null
   url?: string
 }
 

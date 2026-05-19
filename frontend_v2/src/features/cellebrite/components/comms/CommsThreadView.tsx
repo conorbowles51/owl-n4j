@@ -2,10 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import {
   ChevronDown,
   ChevronRight,
-  File,
   Mail,
   MessageSquare,
-  Paperclip,
   Phone,
   PhoneIncoming,
   PhoneMissed,
@@ -18,12 +16,14 @@ import {
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/cn"
 
-import type { Attachment, CommsItem, CommsParty, CommsThread, ThreadDetailResponse } from "../../types"
-import { compactNumber, readText } from "../shared/cellebrite-format"
+import type { CommsItem, CommsParty, CommsThread, ThreadDetailResponse } from "../../types"
+import { compactNumber, readNumber, readText } from "../shared/cellebrite-format"
 import { SmallEmpty } from "../shared/SmallEmpty"
+import { CommsAttachments } from "./CommsAttachment"
 import {
   dateSeparator,
   durationText,
@@ -65,6 +65,7 @@ export function CommsThreadView({
   selectedItemId,
   reportsByKey,
   externalSearch,
+  onLoadAllItems,
   onItemSelect,
 }: {
   caseId: string
@@ -74,12 +75,14 @@ export function CommsThreadView({
   selectedItemId: string | null
   reportsByKey: Map<string, string>
   externalSearch: string
+  onLoadAllItems?: () => void
   onItemSelect: (item: CommsItem) => void
 }) {
   const [search, setSearch] = useState(externalSearch)
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const scrollRef = useRef<HTMLDivElement | null>(null)
+  const lastAutoScrolledThreadRef = useRef<string | null>(null)
 
   const items = useMemo(() => detail?.items ?? detail?.messages ?? [], [detail?.items, detail?.messages])
   const participants = useMemo(
@@ -109,9 +112,16 @@ export function CommsThreadView({
   }, [endDate, items, search, startDate])
 
   useEffect(() => {
+    const key = thread ? `${thread.thread_type}:${thread.thread_id}` : null
+    if (!key) {
+      lastAutoScrolledThreadRef.current = null
+      return
+    }
     if (!scrollRef.current || loading || filteredItems.length === 0) return
+    if (externalSearch || lastAutoScrolledThreadRef.current === key) return
+    lastAutoScrolledThreadRef.current = key
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight
-  }, [thread?.thread_id, loading, filteredItems.length])
+  }, [externalSearch, thread, loading, filteredItems.length])
 
   if (!thread) {
     return (
@@ -123,16 +133,21 @@ export function CommsThreadView({
 
   const title = participantNames(participants) || thread.name || thread.thread_id
   const report = reportLabel(thread.report_key ?? thread.device_report_key, reportsByKey)
+  const totalItems = readNumber(detail, ["total"], readNumber(thread, ["item_count", "message_count"], items.length))
+  const hiddenItemCount = Math.max(0, totalItems - items.length)
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-muted/10">
+    <div className="flex h-full min-h-0 w-full flex-col bg-muted/10">
       <div className="shrink-0 border-b border-border bg-card px-4 py-2">
         <div className="flex items-center gap-2">
           <ThreadIcon thread={thread} />
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold">{title}</div>
             <div className="truncate text-[11px] text-muted-foreground">
-              {sourceAppLabel(thread)} · {compactNumber(detail?.total ?? items.length)} items
+              {sourceAppLabel(thread)} -{" "}
+              {hiddenItemCount > 0
+                ? `${compactNumber(items.length)} of ${compactNumber(totalItems)} items loaded`
+                : `${compactNumber(totalItems)} items`}
             </div>
           </div>
           {report && (
@@ -204,6 +219,18 @@ export function CommsThreadView({
           <Badge variant="slate" className="shrink-0">
             {compactNumber(filteredItems.length)} shown
           </Badge>
+          {hiddenItemCount > 0 && onLoadAllItems && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onLoadAllItems}
+              disabled={loading}
+              className="h-8"
+            >
+              Load all {compactNumber(totalItems)}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -414,7 +441,7 @@ function MessageBubble({
             ) : (
               <div className="text-sm italic text-muted-foreground">(empty message)</div>
             )}
-            <Attachments attachments={item.attachments ?? []} />
+            <CommsAttachments attachments={item.attachments ?? []} />
           </div>
           <div className={cn("mt-0.5 px-1 text-[10px] text-muted-foreground", owner && "text-right")}>
             {shortDate(item.timestamp)}
@@ -466,7 +493,7 @@ function CallRow({
           {readText(item, ["duration"]) ? ` · ${durationText(readText(item, ["duration"]))}` : ""}
           {sourceAppLabel(item) !== "Unknown" ? ` · ${sourceAppLabel(item)}` : ""}
         </div>
-        <Attachments attachments={item.attachments ?? []} />
+        <CommsAttachments attachments={item.attachments ?? []} />
       </div>
     </button>
   )
@@ -524,49 +551,9 @@ function EmailCard({
               {body || "(empty email body)"}
             </pre>
           )}
-          <Attachments attachments={item.attachments ?? []} />
+          <CommsAttachments attachments={item.attachments ?? []} />
         </div>
       )}
-    </div>
-  )
-}
-
-function Attachments({ attachments }: { attachments: Attachment[] }) {
-  if (attachments.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {attachments.map((attachment, index) => {
-        const label = readText(attachment, ["filename", "original_filename", "name", "file_id"], `Attachment ${index + 1}`)
-        const url = readText(attachment, ["url"])
-        const content = (
-          <>
-            <Paperclip className="size-3" />
-            <span className="max-w-[160px] truncate">{label}</span>
-          </>
-        )
-        if (url) {
-          return (
-            <a
-              key={`${label}-${index}`}
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-            >
-              {content}
-            </a>
-          )
-        }
-        return (
-          <span
-            key={`${label}-${index}`}
-            className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground"
-          >
-            <File className="size-3" />
-            <span className="max-w-[160px] truncate">{label}</span>
-          </span>
-        )
-      })}
     </div>
   )
 }

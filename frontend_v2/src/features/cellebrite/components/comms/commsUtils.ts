@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   CellebriteRecord,
   CommsItem,
   CommsParty,
@@ -21,6 +22,13 @@ export type CommsViewMode = "browse" | "read"
 export type CommsParticipantMode = "split" | "any"
 
 export const ALL_COMMS_TYPES: CommsType[] = ["message", "call", "email"]
+
+export type AttachmentKind = "image" | "audio" | "video" | "doc" | "other"
+
+const IMAGE_EXT = /\.(jpg|jpeg|png|gif|bmp|webp|heic|heif|tif|tiff)$/i
+const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|opus|wav|amr|3gp|flac)$/i
+const VIDEO_EXT = /\.(mp4|avi|mov|mkv|webm|3gp|wmv|flv)$/i
+const DOC_EXT = /\.(pdf|txt|html?|xml|json|csv|rtf|docx?|md)$/i
 
 const TYPE_TO_THREAD: Record<CommsType, string> = {
   message: "chat",
@@ -53,6 +61,38 @@ export function threadKey(thread: Pick<CommsThread, "thread_id" | "thread_type">
 
 export function itemId(item: CommsItem, fallback = "item"): string {
   return readText(item, ["key", "node_key", "id", "message_id"], fallback)
+}
+
+export function attachmentName(attachment: Attachment | null | undefined, fallback = "attachment"): string {
+  return readText(attachment, ["filename", "original_filename", "name", "file_id"], fallback)
+}
+
+export function attachmentKind(attachment: Attachment | null | undefined): AttachmentKind {
+  if (!attachment) return "other"
+  const category = readText(attachment, ["category", "cellebrite_category", "type"]).toLowerCase()
+  const mimeType = readText(attachment, ["mime_type", "content_type", "mime"]).toLowerCase()
+  const name = attachmentName(attachment, "").toLowerCase()
+
+  if (category.includes("image") || mimeType.startsWith("image/") || IMAGE_EXT.test(name)) return "image"
+  if (category.includes("audio") || mimeType.startsWith("audio/") || AUDIO_EXT.test(name)) return "audio"
+  if (category.includes("video") || mimeType.startsWith("video/") || VIDEO_EXT.test(name)) return "video"
+  if (category.includes("text") || category.includes("document") || mimeType.startsWith("text/") || DOC_EXT.test(name)) {
+    return "doc"
+  }
+  return "other"
+}
+
+export function attachmentUrl(attachment: Attachment | null | undefined): string {
+  if (!attachment) return ""
+  const explicitUrl = readText(attachment, ["url", "download_url", "file_url", "href"])
+  if (explicitUrl) return explicitUrl
+  const evidenceId = readText(attachment, ["evidence_id", "evidenceId", "evidence_uuid"])
+  return evidenceId ? `/api/evidence/${encodeURIComponent(evidenceId)}/file` : ""
+}
+
+export function videoThumbUrl(attachment: Attachment | null | undefined): string {
+  const evidenceId = readText(attachment, ["evidence_id", "evidenceId", "evidence_uuid"])
+  return evidenceId ? `/api/evidence/${encodeURIComponent(evidenceId)}/frames/frame_0001.jpg` : ""
 }
 
 export function reportLabelMap(reports: PhoneReport[]): Map<string, string> {
@@ -270,4 +310,3 @@ export function dedupeThreads(threads: CommsThread[]): CommsThread[] {
   })
   return [...byGroup.values()]
 }
-

@@ -360,7 +360,7 @@ def get_comms_thread_detail(
     thread_id: str,
     case_id: str = Query(...),
     thread_type: str = Query(..., description="chat, calls, or emails"),
-    limit: int = Query(500, ge=1, le=2000),
+    limit: int = Query(500, ge=1, le=500000),
     offset: int = Query(0, ge=0),
     anchor_key: Optional[str] = Query(
         None,

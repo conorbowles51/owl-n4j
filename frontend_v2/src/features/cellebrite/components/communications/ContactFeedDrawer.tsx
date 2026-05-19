@@ -2,10 +2,8 @@ import { useEffect, useMemo, useState } from "react"
 import {
   ChevronDown,
   ChevronRight,
-  File,
   Mail,
   MessageSquare,
-  Paperclip,
   Phone,
   PhoneIncoming,
   PhoneMissed,
@@ -23,7 +21,6 @@ import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { cn } from "@/lib/cn"
 
 import type {
-  Attachment,
   CellebriteRecord,
   CommsItem,
   CommsParty,
@@ -52,6 +49,7 @@ import {
   sourceAppLabel,
   typeLabel,
 } from "../comms/commsUtils"
+import { CommsAttachments } from "../comms/CommsAttachment"
 import {
   contactDevices,
   contactKey as getContactKey,
@@ -506,7 +504,7 @@ function MessageBubble({
                 (empty message)
               </div>
             )}
-            <Attachments attachments={item.attachments ?? []} />
+            <CommsAttachments attachments={item.attachments ?? []} />
           </div>
           <div
             className={cn(
@@ -609,7 +607,7 @@ function CallRow({
             ? ` / ${sourceAppLabel(item)}`
             : ""}
         </div>
-        <Attachments attachments={item.attachments ?? []} />
+        <CommsAttachments attachments={item.attachments ?? []} />
       </div>
     </button>
   )
@@ -696,53 +694,9 @@ function EmailCard({
               {body || "(empty email body)"}
             </pre>
           )}
-          <Attachments attachments={item.attachments ?? []} />
+          <CommsAttachments attachments={item.attachments ?? []} />
         </div>
       )}
-    </div>
-  )
-}
-
-function Attachments({ attachments }: { attachments: Attachment[] }) {
-  if (attachments.length === 0) return null
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {attachments.map((attachment, index) => {
-        const label = readText(
-          attachment,
-          ["filename", "original_filename", "name", "file_id"],
-          `Attachment ${index + 1}`
-        )
-        const url = readText(attachment, ["url"])
-        const content = (
-          <>
-            <Paperclip className="size-3" />
-            <span className="max-w-[160px] truncate">{label}</span>
-          </>
-        )
-        if (url) {
-          return (
-            <a
-              key={`${label}-${index}`}
-              href={url}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
-            >
-              {content}
-            </a>
-          )
-        }
-        return (
-          <span
-            key={`${label}-${index}`}
-            className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground"
-          >
-            <File className="size-3" />
-            <span className="max-w-[160px] truncate">{label}</span>
-          </span>
-        )
-      })}
     </div>
   )
 }

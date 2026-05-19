@@ -40,6 +40,9 @@ import {
   type ParticipantFilter,
 } from "./commsUtils"
 
+const DEFAULT_THREAD_DETAIL_LIMIT = 500
+const MAX_THREAD_DETAIL_LIMIT = 500000
+
 export function CommsTab({
   active,
   caseId,
@@ -77,6 +80,7 @@ export function CommsTab({
   const [timelineOpen, setTimelineOpen] = useStoredBoolean(`cb.comms.timelineFlyover.${caseId}`, false)
   const [selectedThreadKey, setSelectedThreadKey] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [threadItemLimit, setThreadItemLimit] = useState(DEFAULT_THREAD_DETAIL_LIMIT)
   const seedId = seed?.id
   const seedKeys = useMemo(() => seed?.participantKeys ?? [], [seed?.participantKeys])
   const seedType = seed?.type ?? "all"
@@ -218,16 +222,34 @@ export function CommsTab({
     if (!selectedThread) return null
     return (deepSearchQuery.data?.matches ?? []).find((match) => match.thread_id === selectedThread.thread_id) ?? null
   }, [deepSearchQuery.data?.matches, selectedThread])
+  const firstSearchMatchId = firstSearchMatch ? itemId(firstSearchMatch, "") : null
+
+  useEffect(() => {
+    setThreadItemLimit(DEFAULT_THREAD_DETAIL_LIMIT)
+  }, [firstSearchMatchId, selectedThreadKey])
 
   const threadDetailQuery = useThreadDetail(
     caseId,
     selectedThread,
     {
-      limit: 500,
-      anchorKey: firstSearchMatch ? itemId(firstSearchMatch, "") : null,
+      limit: threadItemLimit,
+      anchorKey: threadItemLimit === DEFAULT_THREAD_DETAIL_LIMIT ? firstSearchMatchId : null,
     },
     active && !!selectedThread
   )
+  const loadedThreadItemCount =
+    (threadDetailQuery.data?.items ?? threadDetailQuery.data?.messages ?? []).length
+  const totalThreadItemCount =
+    typeof threadDetailQuery.data?.total === "number"
+      ? threadDetailQuery.data.total
+      : Number(selectedThread?.item_count ?? selectedThread?.message_count ?? loadedThreadItemCount)
+  const loadAllThreadItems = useCallback(() => {
+    const nextLimit = Math.max(
+      DEFAULT_THREAD_DETAIL_LIMIT,
+      Math.min(MAX_THREAD_DETAIL_LIMIT, totalThreadItemCount)
+    )
+    setThreadItemLimit(nextLimit)
+  }, [totalThreadItemCount])
 
   const reportsByKey = useMemo(() => reportLabelMap(reports), [reports])
 
@@ -258,21 +280,23 @@ export function CommsTab({
 
   const threadBody = (
     <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)] overflow-hidden">
-      <aside className="min-h-0 border-r border-border bg-card">
+      <aside className="flex min-h-0 flex-col overflow-hidden border-r border-border bg-card">
         <PaneHeader
           title="Threads"
           count={filteredThreads.length}
           loading={threadsQuery.isLoading || deepSearchQuery.isLoading}
         />
-        <CommsThreadList
-          threads={filteredThreads}
-          loading={threadsQuery.isLoading || entitiesQuery.isLoading}
-          selectedThreadKey={selectedThreadKey}
-          reportsByKey={reportsByKey}
-          onSelect={selectThread}
-        />
+        <div className="min-h-0 flex-1">
+          <CommsThreadList
+            threads={filteredThreads}
+            loading={threadsQuery.isLoading || entitiesQuery.isLoading}
+            selectedThreadKey={selectedThreadKey}
+            reportsByKey={reportsByKey}
+            onSelect={selectThread}
+          />
+        </div>
       </aside>
-      <main className="min-w-0">
+      <main className="flex min-h-0 min-w-0 overflow-hidden">
         <CommsThreadView
           key={`${selectedThreadKey ?? "none"}:${firstSearchMatch ? search : ""}`}
           caseId={caseId}
@@ -282,6 +306,7 @@ export function CommsTab({
           selectedItemId={selectedItemId}
           reportsByKey={reportsByKey}
           externalSearch={firstSearchMatch ? search : ""}
+          onLoadAllItems={totalThreadItemCount > loadedThreadItemCount ? loadAllThreadItems : undefined}
           onItemSelect={selectItem}
         />
       </main>

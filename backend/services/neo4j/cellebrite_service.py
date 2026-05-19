@@ -1546,6 +1546,38 @@ class CellebriteNeo4jService:
                             } if dst else None,
                         })
 
+                if thread_type == "calls":
+                    total_r = session.run(
+                        """
+                        MATCH (a:Person {case_id: $case_id, key: $key_a})
+                        MATCH (b:Person {case_id: $case_id, key: $key_b})
+                        MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
+                        WHERE c.cellebrite_report_key = $report_key
+                          AND ((src = a AND dst = b) OR (src = b AND dst = a))
+                        RETURN count(c) AS n
+                        """,
+                        case_id=case_id,
+                        key_a=key_a,
+                        key_b=key_b,
+                        report_key=report_key,
+                    ).single()
+                else:
+                    total_r = session.run(
+                        """
+                        MATCH (a:Person {case_id: $case_id, key: $key_a})
+                        MATCH (b:Person {case_id: $case_id, key: $key_b})
+                        MATCH (src:Person)-[:EMAILED]->(e:Email)-[:SENT_TO]->(dst:Person)
+                        WHERE e.cellebrite_report_key = $report_key
+                          AND ((src = a AND dst = b) OR (src = b AND dst = a))
+                        RETURN count(e) AS n
+                        """,
+                        case_id=case_id,
+                        key_a=key_a,
+                        key_b=key_b,
+                        report_key=report_key,
+                    ).single()
+                total = int(total_r["n"]) if total_r else len(items)
+
                 # Name lookup for thread metadata
                 a_r = session.run(
                     "MATCH (p:Person {case_id: $case_id, key: $key}) RETURN p LIMIT 1",
@@ -1573,7 +1605,7 @@ class CellebriteNeo4jService:
                         "report_key": report_key,
                     },
                     "items": items,
-                    "total": len(items),
+                    "total": total,
                 }
 
             else:
