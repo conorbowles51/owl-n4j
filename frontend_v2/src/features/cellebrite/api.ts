@@ -20,7 +20,9 @@ import type {
   FileTreeResponse,
   FilesResponse,
   IntersectionRunResponse,
+  LocationSuggestionValuesResponse,
   LocationTilesResponse,
+  LocationVisitorsResponse,
   LocationsInTileResponse,
   OverviewKind,
   OverviewResponse,
@@ -264,6 +266,31 @@ export const cellebriteEventsAPI = {
     if (opts.bbox) params.set("bbox", opts.bbox.join(","))
     return fetchAPI<LocationTilesResponse>(
       `/api/cellebrite/locations/tiles?${params}`
+    )
+  },
+
+  getLocationSuggestionValues: (
+    caseId: string,
+    opts: ReportScopedParams = {}
+  ) => {
+    const params = baseCaseParams(caseId, opts.reportKeys)
+    return fetchAPI<LocationSuggestionValuesResponse>(
+      `/api/cellebrite/locations/suggestion-values?${params}`
+    )
+  },
+
+  getLocationVisitors: (
+    caseId: string,
+    opts: { lat: number; lon: number; radiusM?: number }
+  ) => {
+    const params = new URLSearchParams({
+      case_id: caseId,
+      lat: String(opts.lat),
+      lon: String(opts.lon),
+      radius_m: String(opts.radiusM ?? 150),
+    })
+    return fetchAPI<LocationVisitorsResponse>(
+      `/api/cellebrite/locations/visitors?${params}`
     )
   },
 

@@ -244,6 +244,19 @@ export interface LocationTilesResponse extends CellebriteRecord {
   total?: number
 }
 
+export interface LocationSuggestionValue extends CellebriteRecord {
+  value: string
+  count: number
+}
+
+export interface LocationSuggestionValuesResponse extends CellebriteRecord {
+  location_type?: LocationSuggestionValue[]
+  source_app?: LocationSuggestionValue[]
+  country?: LocationSuggestionValue[]
+  admin1?: LocationSuggestionValue[]
+  place_name?: LocationSuggestionValue[]
+}
+
 export interface TrackPoint extends CellebriteRecord {
   latitude?: number
   longitude?: number
@@ -266,7 +279,31 @@ export interface LocationsInTileResponse extends CellebriteRecord {
   items?: TimelineItem[]
   locations?: TimelineItem[]
   rows?: TimelineItem[]
+  per_phone?: LocationTilePhoneBreakdown[]
   total?: number
+  truncated?: boolean
+}
+
+export interface LocationTilePhoneBreakdown extends CellebriteRecord {
+  device_report_key?: string | null
+  count: number
+  first_seen?: string | null
+  last_seen?: string | null
+  apps?: Array<{ app: string; count: number }>
+}
+
+export interface LocationVisitor extends CellebriteRecord {
+  device_report_key: string
+  visit_count: number
+  first_seen?: string | null
+  last_seen?: string | null
+  sample_keys?: string[]
+}
+
+export interface LocationVisitorsResponse extends CellebriteRecord {
+  visitors: LocationVisitor[]
+  radius_m?: number
+  center?: { lat: number; lon: number }
 }
 
 export interface EventRelatedResponse extends CellebriteRecord {

@@ -33,6 +33,7 @@ import {
 } from "../hooks/use-cellebrite"
 import type { CellebriteTabKey, PhoneReport, RailSelection } from "../types"
 import { CommsTab } from "./comms/CommsTab"
+import { EventSelectionDetail } from "./events/EventSelectionDetail"
 import { EventsTab } from "./events/EventsTab"
 import { FilesTab } from "./files/FilesTab"
 import { GraphTab } from "./graph/GraphTab"
@@ -68,18 +69,26 @@ type DateFilters = {
 const TABS: TabDef[] = [
   { key: "overview", label: "Overview", icon: Smartphone },
   { key: "comms", label: "Comms Center", icon: MessageSquare },
+  { key: "unified", label: "Contacts (unified)", icon: UserRound },
   { key: "locations", label: "Locations", icon: Globe },
   { key: "events", label: "Location & Events", icon: MapPin },
   { key: "files", label: "Files", icon: FolderTree },
   { key: "graph", label: "Cross-Phone Graph", icon: Network },
   { key: "timeline", label: "Timeline", icon: Clock },
   { key: "communications", label: "Communications", icon: Users },
-  { key: "unified", label: "Unified Contacts", icon: UserRound },
 ]
 
 export function CellebritePage() {
   const { id: caseId } = useParams()
-  const [activeTab, setActiveTab] = useState<CellebriteTabKey>("overview")
+  const [tabState, setTabState] = useState<{
+    caseId: string | null
+    activeTab: CellebriteTabKey
+    mountedTabs: Set<CellebriteTabKey>
+  }>(() => ({
+    caseId: null,
+    activeTab: "overview",
+    mountedTabs: new Set<CellebriteTabKey>(["overview"]),
+  }))
   const [selectedKeys, setSelectedKeys] = useState<string[]>([])
   const [query, setQuery] = useState("")
   const [dateFilters, setDateFilters] = useState<DateFilters>({
@@ -109,6 +118,27 @@ export function CellebritePage() {
     [activeReportKeys, reports]
   )
   const reportKeys = selectedReportParams(activeReportKeys)
+  const activeTab = tabState.caseId === caseId ? tabState.activeTab : "overview"
+  const mountedTabs =
+    tabState.caseId === caseId
+      ? tabState.mountedTabs
+      : new Set<CellebriteTabKey>(["overview"])
+
+  const activateTab = (key: CellebriteTabKey) => {
+    setTabState((current) => {
+      const currentMounted =
+        current.caseId === caseId
+          ? current.mountedTabs
+          : new Set<CellebriteTabKey>(["overview"])
+      const next = new Set(currentMounted)
+      next.add(key)
+      return {
+        caseId: caseId ?? null,
+        activeTab: key,
+        mountedTabs: next,
+      }
+    })
+  }
 
   if (!caseId) {
     return (
@@ -205,7 +235,7 @@ export function CellebritePage() {
             <button
               key={key}
               type="button"
-              onClick={() => setActiveTab(key)}
+              onClick={() => activateTab(key)}
               className={cn(
                 "flex h-10 shrink-0 items-center gap-1.5 border-b-2 px-3 text-xs font-semibold transition-colors",
                 activeTab === key
@@ -237,120 +267,138 @@ export function CellebritePage() {
             caseId={caseId}
           />
 
-          <main className="min-w-0 overflow-hidden">
-            {activeTab === "overview" && (
-              <OverviewTab
-                active={activeTab === "overview"}
-                caseId={caseId}
-                query={query}
-                reports={selectedReports}
-                onSelect={setSelection}
-                onFilterComms={(seed) => {
-                  const seedReportKeys = seed.reportKeys?.length
-                    ? seed.reportKeys
-                    : seed.reportKey
-                      ? [seed.reportKey]
-                      : []
-                  if (seedReportKeys.length) setSelectedKeys(seedReportKeys)
-                  setCommsSeed(seed)
-                  setActiveTab("comms")
-                }}
-              />
+          <main className="relative min-w-0 overflow-hidden">
+            {mountedTabs.has("overview") && (
+              <TabPane active={activeTab === "overview"}>
+                <OverviewTab
+                  active={activeTab === "overview"}
+                  caseId={caseId}
+                  query={query}
+                  reports={selectedReports}
+                  onSelect={setSelection}
+                  onFilterComms={(seed) => {
+                    const seedReportKeys = seed.reportKeys?.length
+                      ? seed.reportKeys
+                      : seed.reportKey
+                        ? [seed.reportKey]
+                        : []
+                    if (seedReportKeys.length) setSelectedKeys(seedReportKeys)
+                    setCommsSeed(seed)
+                    activateTab("comms")
+                  }}
+                />
+              </TabPane>
             )}
-            {activeTab === "unified" && (
-              <UnifiedContactsTab
-                active={activeTab === "unified"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                onSelect={setSelection}
-                onFilterComms={(seed) => {
-                  const seedReportKeys = seed.reportKeys?.length
-                    ? seed.reportKeys
-                    : seed.reportKey
-                      ? [seed.reportKey]
-                      : []
-                  if (seedReportKeys.length) setSelectedKeys(seedReportKeys)
-                  setCommsSeed(seed)
-                  setActiveTab("comms")
-                }}
-              />
+            {mountedTabs.has("unified") && (
+              <TabPane active={activeTab === "unified"}>
+                <UnifiedContactsTab
+                  active={activeTab === "unified"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  onSelect={setSelection}
+                  onFilterComms={(seed) => {
+                    const seedReportKeys = seed.reportKeys?.length
+                      ? seed.reportKeys
+                      : seed.reportKey
+                        ? [seed.reportKey]
+                        : []
+                    if (seedReportKeys.length) setSelectedKeys(seedReportKeys)
+                    setCommsSeed(seed)
+                    activateTab("comms")
+                  }}
+                />
+              </TabPane>
             )}
-            {activeTab === "comms" && (
-              <CommsTab
-                active={activeTab === "comms"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                dateFilters={dateFilters}
-                seed={commsSeed}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("comms") && (
+              <TabPane active={activeTab === "comms"}>
+                <CommsTab
+                  active={activeTab === "comms"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  dateFilters={dateFilters}
+                  seed={commsSeed}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
-            {activeTab === "events" && (
-              <EventsTab
-                active={activeTab === "events"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                dateFilters={dateFilters}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("events") && (
+              <TabPane active={activeTab === "events"}>
+                <EventsTab
+                  active={activeTab === "events"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  dateFilters={dateFilters}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
-            {activeTab === "locations" && (
-              <LocationsTab
-                active={activeTab === "locations"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                dateFilters={dateFilters}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("locations") && (
+              <TabPane active={activeTab === "locations"}>
+                <LocationsTab
+                  active={activeTab === "locations"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  dateFilters={dateFilters}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
-            {activeTab === "timeline" && (
-              <TimelineTab
-                active={activeTab === "timeline"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                dateFilters={dateFilters}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("timeline") && (
+              <TabPane active={activeTab === "timeline"}>
+                <TimelineTab
+                  active={activeTab === "timeline"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  dateFilters={dateFilters}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
-            {activeTab === "files" && (
-              <FilesTab
-                active={activeTab === "files"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("files") && (
+              <TabPane active={activeTab === "files"}>
+                <FilesTab
+                  active={activeTab === "files"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
-            {activeTab === "graph" && (
-              <GraphTab
-                active={activeTab === "graph"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                dateFilters={dateFilters}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("graph") && (
+              <TabPane active={activeTab === "graph"}>
+                <GraphTab
+                  active={activeTab === "graph"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  dateFilters={dateFilters}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
-            {activeTab === "communications" && (
-              <CommunicationsTab
-                active={activeTab === "communications"}
-                caseId={caseId}
-                reportKeys={reportKeys}
-                reports={selectedReports}
-                query={query}
-                onSelect={setSelection}
-              />
+            {mountedTabs.has("communications") && (
+              <TabPane active={activeTab === "communications"}>
+                <CommunicationsTab
+                  active={activeTab === "communications"}
+                  caseId={caseId}
+                  reportKeys={reportKeys}
+                  reports={selectedReports}
+                  query={query}
+                  onSelect={setSelection}
+                />
+              </TabPane>
             )}
           </main>
 
@@ -364,6 +412,23 @@ export function CellebritePage() {
           />
         </div>
       )}
+    </div>
+  )
+}
+
+function TabPane({
+  active,
+  children,
+}: {
+  active: boolean
+  children: ReactNode
+}) {
+  return (
+    <div
+      className="absolute inset-0"
+      style={{ display: active ? "block" : "none" }}
+    >
+      {children}
     </div>
   )
 }
@@ -589,6 +654,13 @@ function SelectionPanel({
       <div className="p-3">
         {selection.kind === "contact_unified" ? (
           <UnifiedContactDetail contact={selection.payload} reports={reports} />
+        ) : selection.kind === "event" ? (
+          <EventSelectionDetail
+            caseId={caseId}
+            selection={selection}
+            reports={reports}
+            renderRaw={(value) => <JsonBlock value={value} />}
+          />
         ) : selection.kind === "tile" ? (
           <LocationTileDetail
             caseId={caseId}

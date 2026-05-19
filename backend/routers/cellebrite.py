@@ -702,6 +702,45 @@ def get_location_tiles(
     )
 
 
+@router.get("/locations/suggestion-values")
+def get_location_suggestion_values(
+    case_id: str = Query(...),
+    report_keys: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Distinct values per searchable Location field for the search
+    typeahead. Returned values cover the full active report scope.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_location_suggestion_values(
+        case_id=case_id,
+        report_keys=_csv_param(report_keys),
+    )
+
+
+@router.get("/locations/visitors")
+def get_location_visitors(
+    case_id: str = Query(...),
+    lat: float = Query(...),
+    lon: float = Query(...),
+    radius_m: float = Query(150.0, gt=0, le=5000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Devices that have a Location row near the selected place.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_location_visitors(
+        case_id=case_id,
+        lat=lat,
+        lon=lon,
+        radius_m=radius_m,
+    )
+
+
 @router.get("/locations/in-tile")
 def get_locations_in_tile(
     case_id: str = Query(...),

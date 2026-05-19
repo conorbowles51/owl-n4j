@@ -1,11 +1,29 @@
-import type { CellebriteRecord, LocationTile, PhoneReport, TimelineItem } from "../../types"
+import type {
+  CellebriteRecord,
+  LocationTile,
+  PhoneReport,
+  TimelineItem,
+} from "../../types"
 import { readList, readNumber, readText } from "../shared/cellebrite-format"
-import { eventKey, eventLabel, locationOf, reportLabel } from "../events/eventUtils"
+import {
+  eventKey,
+  eventLabel,
+  locationOf,
+  reportLabel,
+} from "../events/eventUtils"
 
 export type LocationRenderMode = "tiles" | "raw"
+export type LocationTableView = "auto" | "rows" | "byPhoneDay"
 
-export function tileToLocationEvent(tile: LocationTile, cellDeg: number): TimelineItem {
-  const key = readText(tile, ["tile_id"], `tile-${readNumber(tile, ["cell_y"])}-${readNumber(tile, ["cell_x"])}`)
+export function tileToLocationEvent(
+  tile: LocationTile,
+  cellDeg: number
+): TimelineItem {
+  const key = readText(
+    tile,
+    ["tile_id"],
+    `tile-${readNumber(tile, ["cell_y"])}-${readNumber(tile, ["cell_x"])}`
+  )
   const count = readNumber(tile, ["count"], 0)
   const apps = readList(tile, ["top_apps"])
   return {
@@ -25,32 +43,60 @@ export function tileToLocationEvent(tile: LocationTile, cellDeg: number): Timeli
   }
 }
 
-export function locationSearchText(row: TimelineItem | CellebriteRecord, reports: PhoneReport[]): string {
-  const labels = new Map(reports.map((report) => [report.report_key, report.device_name_override || report.device_name || report.report_key]))
+export function locationSearchText(
+  row: TimelineItem | CellebriteRecord,
+  reports: PhoneReport[]
+): string {
+  const labels = new Map(
+    reports.map((report) => [
+      report.report_key,
+      report.device_name_override || report.device_name || report.report_key,
+    ])
+  )
   const loc = locationOf(row)
   return [
     eventLabel(row),
-    readText(row, ["location_type", "source_app", "app", "address", "place_name", "country", "admin1", "admin2"]),
+    readText(row, [
+      "location_type",
+      "source_app",
+      "app",
+      "address",
+      "place_name",
+      "country",
+      "admin1",
+      "admin2",
+    ]),
     readList(row, ["top_apps"]).join(" "),
     reportLabel(row, labels),
     loc ? `${loc.latitude},${loc.longitude}` : "",
   ].join(" ")
 }
 
-export function locationId(row: TimelineItem | CellebriteRecord, fallback = "location"): string {
+export function locationId(
+  row: TimelineItem | CellebriteRecord,
+  fallback = "location"
+): string {
   return eventKey(row, fallback)
 }
 
 export function locationTitle(row: TimelineItem | CellebriteRecord): string {
-  return readText(row, ["label", "location_type", "address", "place_name"], "Location")
+  return readText(
+    row,
+    ["label", "location_type", "address", "place_name"],
+    "Location"
+  )
 }
 
-export function locationCoordinateLabel(row: TimelineItem | CellebriteRecord): string {
+export function locationCoordinateLabel(
+  row: TimelineItem | CellebriteRecord
+): string {
   const loc = locationOf(row)
   if (!loc) return "-"
   return `${loc.latitude.toFixed(4)}, ${loc.longitude.toFixed(4)}`
 }
 
 export function tileCellDeg(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : 0
 }

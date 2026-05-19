@@ -284,6 +284,31 @@ export function useLocationTiles(
   })
 }
 
+export function useLocationSuggestionValues(
+  caseId: string | undefined,
+  params: ReportScopedParams,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: cellebriteKeys.events(caseId, "location-suggestions", params),
+    queryFn: () =>
+      cellebriteEventsAPI.getLocationSuggestionValues(caseId!, params),
+    enabled: !!caseId && enabled,
+  })
+}
+
+export function useLocationVisitors(
+  caseId: string | undefined,
+  params: { lat: number; lon: number; radiusM?: number } | null,
+  enabled = true
+) {
+  return useQuery({
+    queryKey: cellebriteKeys.events(caseId, "location-visitors", params),
+    queryFn: () => cellebriteEventsAPI.getLocationVisitors(caseId!, params!),
+    enabled: !!caseId && !!params && enabled,
+  })
+}
+
 export function useLocationsInTile(
   caseId: string | undefined,
   params:

@@ -2650,6 +2650,57 @@ class CellebriteNeo4jService:
                 })
         return out
 
+    def get_cellebrite_location_suggestion_values(
+        self,
+        case_id: str,
+        report_keys: Optional[List[str]] = None,
+        per_field_limit: int = 100,
+    ) -> dict:
+        """
+        Distinct values per searchable Location field for the search
+        typeahead. This covers the full active case/report scope instead
+        of only the first page of raw rows.
+        """
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "per_field_limit": int(per_field_limit),
+        }
+        rk_filter = ""
+        if report_keys:
+            rk_filter = " AND n.cellebrite_report_key IN $report_keys"
+            params["report_keys"] = list(report_keys)
+
+        def _distinct(field: str) -> List[dict]:
+            cypher = f"""
+                MATCH (n:Location {{case_id: $case_id, source_type: 'cellebrite'}})
+                WHERE n.{field} IS NOT NULL AND n.{field} <> ''
+                  {rk_filter}
+                RETURN n.{field} AS value, count(*) AS n
+                ORDER BY n DESC
+                LIMIT $per_field_limit
+            """
+            try:
+                with self._driver.session() as session:
+                    rows = list(session.run(cypher, **params))
+                return [
+                    {"value": row["value"], "count": int(row["n"] or 0)}
+                    for row in rows
+                ]
+            except Exception:
+                logger.exception(
+                    "Failed loading Cellebrite location suggestions for field %s",
+                    field,
+                )
+                return []
+
+        return {
+            "location_type": _distinct("location_type"),
+            "source_app": _distinct("source_app"),
+            "country": _distinct("country"),
+            "admin1": _distinct("admin1"),
+            "place_name": _distinct("place_name"),
+        }
+
     def get_cellebrite_location_tiles(
         self,
         case_id: str,
@@ -2852,7 +2903,120 @@ class CellebriteNeo4jService:
                     "confidence_score": n.get("confidence_score"),
                     "device_report_key": n.get("cellebrite_report_key"),
                 })
-        return {"items": items, "total": len(items)}
+
+        from collections import defaultdict
+
+        by_phone: Dict[str, dict] = {}
+        for item in items:
+            report_key = item.get("device_report_key") or "_unknown"
+            entry = by_phone.get(report_key)
+            if entry is None:
+                entry = {
+                    "device_report_key": report_key if report_key != "_unknown" else None,
+                    "count": 0,
+                    "first_seen": None,
+                    "last_seen": None,
+                    "apps": defaultdict(int),
+                }
+                by_phone[report_key] = entry
+
+            entry["count"] += 1
+            timestamp = item.get("timestamp")
+            if timestamp:
+                if entry["first_seen"] is None or timestamp < entry["first_seen"]:
+                    entry["first_seen"] = timestamp
+                if entry["last_seen"] is None or timestamp > entry["last_seen"]:
+                    entry["last_seen"] = timestamp
+            app = item.get("source_app")
+            if app:
+                entry["apps"][app] += 1
+
+        per_phone = []
+        for entry in by_phone.values():
+            apps_sorted = sorted(entry["apps"].items(), key=lambda pair: (-pair[1], pair[0]))
+            per_phone.append({
+                "device_report_key": entry["device_report_key"],
+                "count": entry["count"],
+                "first_seen": entry["first_seen"],
+                "last_seen": entry["last_seen"],
+                "apps": [{"app": app, "count": count} for app, count in apps_sorted],
+            })
+        per_phone.sort(key=lambda row: (-row["count"], row["device_report_key"] or ""))
+
+        return {
+            "items": items,
+            "total": len(items),
+            "per_phone": per_phone,
+            "truncated": len(items) >= int(limit),
+        }
+
+    def get_cellebrite_location_visitors(
+        self,
+        case_id: str,
+        lat: float,
+        lon: float,
+        radius_m: float = 150.0,
+        limit_per_device: int = 5,
+    ) -> dict:
+        """Devices that have Location rows near a selected place."""
+        if lat is None or lon is None:
+            return {"visitors": []}
+
+        deg_per_m = 1.0 / 111_111.0
+        cos_lat = math.cos(math.radians(lat)) or 1e-9
+        d_lat = radius_m * deg_per_m
+        d_lon = (radius_m * deg_per_m) / cos_lat
+
+        params = {
+            "case_id": case_id,
+            "lat_lo": lat - d_lat,
+            "lat_hi": lat + d_lat,
+            "lon_lo": lon - d_lon,
+            "lon_hi": lon + d_lon,
+            "lat": float(lat),
+            "lon": float(lon),
+            "radius_m": float(radius_m),
+            "limit_per_device": int(limit_per_device),
+        }
+
+        cypher = """
+            MATCH (n:Location {case_id: $case_id, source_type: 'cellebrite'})
+            WHERE n.latitude  >= $lat_lo AND n.latitude  <= $lat_hi
+              AND n.longitude >= $lon_lo AND n.longitude <= $lon_hi
+              AND n.cellebrite_report_key IS NOT NULL
+            WITH n,
+                 radians(n.latitude - $lat) AS dLat,
+                 radians(n.longitude - $lon) AS dLon,
+                 radians(n.latitude) AS lat1,
+                 radians($lat) AS lat2
+            WITH n,
+                 sin(dLat/2)*sin(dLat/2)
+                   + cos(lat1)*cos(lat2)*sin(dLon/2)*sin(dLon/2) AS a
+            WITH n, 2 * 6371000.0 * asin(sqrt(a)) AS d_m
+            WHERE d_m <= $radius_m
+            WITH n.cellebrite_report_key AS rk,
+                 count(n) AS visit_count,
+                 min(n.timestamp) AS first_seen,
+                 max(n.timestamp) AS last_seen,
+                 collect(n.key)[..$limit_per_device] AS sample_keys
+            RETURN rk, visit_count, first_seen, last_seen, sample_keys
+            ORDER BY visit_count DESC
+        """
+        visitors = []
+        with self._driver.session() as session:
+            for row in session.run(cypher, **params):
+                visitors.append({
+                    "device_report_key": row["rk"],
+                    "visit_count": int(row["visit_count"] or 0),
+                    "first_seen": row["first_seen"],
+                    "last_seen": row["last_seen"],
+                    "sample_keys": list(row["sample_keys"] or []),
+                })
+        return {
+            "visitors": visitors,
+            "radius_m": radius_m,
+            "center": {"lat": lat, "lon": lon},
+        }
 
     def get_cellebrite_event_tracks(
         self,
