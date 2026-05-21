@@ -1,10 +1,14 @@
 import { useRef, useMemo, useState, useEffect, useCallback } from "react"
-import ForceGraph2D, { type ForceGraphMethods, type NodeObject } from "react-force-graph-2d"
+import ForceGraph2D, {
+  type ForceGraphMethods,
+  type LinkObject,
+  type NodeObject,
+} from "react-force-graph-2d"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Trash2, ChevronDown, ChevronRight } from "lucide-react"
 import { useGraphStore } from "@/stores/graph.store"
-import { getNodeColor } from "@/lib/theme"
+import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { SubgraphAnalysisPanel } from "./SubgraphAnalysisPanel"
 import { useTheme } from "@/lib/theme-provider"
 import type { GraphData } from "@/types/graph.types"
@@ -14,20 +18,38 @@ interface SubgraphViewProps {
   graphData: GraphData
 }
 
+interface SpotlightNode {
+  id: string
+  key: string
+  label: string
+  type: string
+}
+
+interface SpotlightLink {
+  source: string
+  target: string
+  type: string
+}
+
+type ForceNode = NodeObject<SpotlightNode>
+type ForceLink = LinkObject<SpotlightNode, SpotlightLink>
+
 export function SubgraphView({ graphData }: SubgraphViewProps) {
-  const sgRef = useRef<ForceGraphMethods | undefined>(undefined)
+  const sgRef = useRef<ForceGraphMethods<SpotlightNode, SpotlightLink> | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 300, height: 300 })
   const [analysisCollapsed, setAnalysisCollapsed] = useState(true)
   const { theme } = useTheme()
 
-  const { subgraphNodeKeys, clearSubgraph, selectNodes } =
+  const { subgraphNodeKeys, clearSubgraph, selectNodes, showRelationshipLabels } =
     useGraphStore()
 
   const isDark =
     theme === "dark" ||
     (theme === "system" &&
       window.matchMedia("(prefers-color-scheme: dark)").matches)
+
+  const canvasColors = getCanvasColors(isDark)
 
   /* ---- Resize observer for dynamic sizing ---- */
   useEffect(() => {
@@ -51,24 +73,25 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
   }, [graphData, subgraphNodeKeys])
 
   const fgData = useMemo(
-    () => ({
-      nodes: subgraphData.nodes.map((n) => ({
+    () => {
+      const nodes: ForceNode[] = subgraphData.nodes.map((n) => ({
         id: n.key,
         key: n.key,
         label: n.label,
         type: n.type,
-      })),
-      links: subgraphData.edges.map((e) => ({
+      }))
+      const links: ForceLink[] = subgraphData.edges.map((e) => ({
         source: e.source,
         target: e.target,
         type: e.type,
-      })),
-    }),
+      }))
+      return { nodes, links }
+    },
     [subgraphData]
   )
 
   const handleNodeClick = useCallback(
-    (node: NodeObject) => {
+    (node: ForceNode) => {
       if (node?.key) {
         selectNodes([String(node.key)])
       }
@@ -107,12 +130,12 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
       {/* Force graph — fills available space */}
       <div ref={containerRef} className="flex-1 min-h-0">
         <ForceGraph2D
-          ref={sgRef as React.RefObject<ForceGraphMethods>}
+          ref={sgRef as React.RefObject<ForceGraphMethods<SpotlightNode, SpotlightLink>>}
           graphData={fgData}
           width={dimensions.width}
           height={dimensions.height}
           backgroundColor={isDark ? "#0B0F1A" : "#F8FAFC"}
-          nodeCanvasObject={(node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          nodeCanvasObject={(node: ForceNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const x = node.x ?? 0
             const y = node.y ?? 0
             const sz = 5
@@ -133,6 +156,34 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
           onNodeClick={handleNodeClick}
           linkColor={() => isDark ? "#2D3A4F" : "#CBD5E1"}
           linkDirectionalArrowLength={3}
+          linkCanvasObjectMode={() => (showRelationshipLabels ? "after" : undefined)}
+          linkCanvasObject={(link: ForceLink, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            if (!showRelationshipLabels || !link.type) return
+            const src = link.source as unknown as ForceNode
+            const tgt = link.target as unknown as ForceNode
+            if (src.x == null || src.y == null || tgt.x == null || tgt.y == null) return
+            const midX = (src.x + tgt.x) / 2
+            const midY = (src.y + tgt.y) / 2
+            const fontSize = Math.max(8 / globalScale, 1.5)
+            ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+            ctx.textAlign = "center"
+            ctx.textBaseline = "middle"
+
+            const text = link.type
+            const metrics = ctx.measureText(text)
+            const pad = 2 / globalScale
+            ctx.fillStyle = canvasColors.labelBg
+            ctx.fillRect(
+              midX - metrics.width / 2 - pad,
+              midY - fontSize / 2 - pad,
+              metrics.width + pad * 2,
+              fontSize + pad * 2
+            )
+            ctx.fillStyle = canvasColors.labelText
+            ctx.globalAlpha = 0.8
+            ctx.fillText(text, midX, midY)
+            ctx.globalAlpha = 1.0
+          }}
           cooldownTime={2000}
           d3AlphaDecay={0.03}
         />
