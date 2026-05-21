@@ -24,14 +24,7 @@ interface GraphAnalysisPanelProps {
 }
 
 export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
-  const {
-    selectedNodeKeys,
-    setCommunityMap,
-    setAnalysisHighlight,
-    setHighlightedPaths,
-    clearSubgraph,
-    addToSubgraph,
-  } = useGraphStore()
+  const { selectedNodeKeys, clearSubgraph, addToSubgraph } = useGraphStore()
 
   const showInSpotlight = (keys: string[]) => {
     clearSubgraph()
@@ -51,9 +44,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
     pageRank.mutate({}, {
       onSuccess: (data) => {
         setPrResults(data.results)
-        const keys = data.results.map((r) => r.key)
-        setAnalysisHighlight(new Set(keys.slice(0, 10)))
-        showInSpotlight(keys)
+        showInSpotlight(data.results.map((r) => r.key))
       },
     })
   }
@@ -62,15 +53,10 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
     louvain.mutate({}, {
       onSuccess: (data) => {
         setCommunities(data.communities)
-        const map = new Map<string, number>()
         const keys: string[] = []
         for (const c of data.communities) {
-          for (const n of c.nodes) {
-            map.set(n.key, c.community_id)
-            keys.push(n.key)
-          }
+          for (const n of c.nodes) keys.push(n.key)
         }
-        setCommunityMap(map)
         showInSpotlight(keys)
       },
     })
@@ -80,9 +66,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
     betweenness.mutate({}, {
       onSuccess: (data) => {
         setBtResults(data.results)
-        const keys = data.results.map((r) => r.key)
-        setAnalysisHighlight(new Set(keys.slice(0, 10)))
-        showInSpotlight(keys)
+        showInSpotlight(data.results.map((r) => r.key))
       },
     })
   }
@@ -96,26 +80,14 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
         for (const p of data.paths) {
           for (const nk of p.nodes) pathNodes.add(nk)
         }
-        setHighlightedPaths(pathNodes)
         showInSpotlight(Array.from(pathNodes))
       },
     })
   }
 
-  const clearOverlays = () => {
-    setCommunityMap(null)
-    setAnalysisHighlight(null)
-    setHighlightedPaths(null)
-  }
-
   return (
     <div className="space-y-3 p-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Graph Analysis</h3>
-        <Button variant="ghost" size="sm" className="text-[10px]" onClick={clearOverlays}>
-          Clear Overlays
-        </Button>
-      </div>
+      <h3 className="text-sm font-semibold">Graph Analysis</h3>
 
       {/* PageRank */}
       <div className="rounded-lg border p-3">
@@ -227,7 +199,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
         )}
         {shortestPaths.data && (
           <p className="text-xs text-muted-foreground">
-            Found {shortestPaths.data.paths.length} path(s) highlighted on graph
+            Found {shortestPaths.data.paths.length} path(s) — shown in spotlight
           </p>
         )}
       </div>
