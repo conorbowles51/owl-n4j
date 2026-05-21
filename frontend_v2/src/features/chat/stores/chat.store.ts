@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import type {
+  ChatListScope,
   ConversationSummary,
   ChatMessageData,
   ResultGraph,
@@ -14,6 +15,8 @@ interface ChatStore {
   activeCaseId: string | null
   conversations: ConversationSummary[]
   activeConversationId: string | null
+  activeConversationOwnerId: string | null
+  listScope: ChatListScope
   messages: ChatMessageData[]
 
   // Result graph
@@ -30,6 +33,8 @@ interface ChatStore {
   setActiveCaseId: (id: string | null) => void
   setConversations: (conversations: ConversationSummary[]) => void
   setActiveConversation: (id: string | null) => void
+  setActiveConversationOwnerId: (id: string | null) => void
+  setListScope: (scope: ChatListScope) => void
   setMessages: (messages: ChatMessageData[]) => void
   addMessage: (msg: ChatMessageData) => void
   clearMessages: () => void
@@ -87,6 +92,8 @@ export const useChatStore = create<ChatStore>((set) => ({
   activeCaseId: null,
   conversations: [],
   activeConversationId: null,
+  activeConversationOwnerId: null,
+  listScope: "mine",
   messages: [],
   resultGraphMode: "cumulative",
   cumulativeGraph: EMPTY_GRAPH,
@@ -99,6 +106,8 @@ export const useChatStore = create<ChatStore>((set) => ({
   setActiveCaseId: (id) => set({ activeCaseId: id }),
   setConversations: (conversations) => set({ conversations }),
   setActiveConversation: (id) => set({ activeConversationId: id }),
+  setActiveConversationOwnerId: (id) => set({ activeConversationOwnerId: id }),
+  setListScope: (scope) => set({ listScope: scope }),
   setMessages: (messages) => set({ messages }),
   addMessage: (msg) =>
     set((state) => ({ messages: [...state.messages, msg] })),

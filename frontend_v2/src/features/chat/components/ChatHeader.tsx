@@ -8,7 +8,8 @@ interface ChatHeaderProps {
 
 export function ChatHeader({ caseId }: ChatHeaderProps) {
   const activeId = useChatStore((s) => s.activeConversationId)
-  const { data: conversations = [] } = useConversations(caseId)
+  const listScope = useChatStore((s) => s.listScope)
+  const { data: conversations = [] } = useConversations(caseId, listScope)
 
   const activeConversation = conversations.find((c) => c.id === activeId)
 

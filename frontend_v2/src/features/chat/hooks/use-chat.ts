@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { chatAPI, chatHistoryAPI } from "../api"
 import { useChatStore } from "../stores/chat.store"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useGraphStore } from "@/stores/graph.store"
 import { CONVERSATIONS_KEY } from "./use-conversations"
 import type { ChatMessageData, ChatScope } from "../types"
@@ -22,6 +23,10 @@ export function useChat(caseId: string) {
   const activeConversationId = useChatStore((s) => s.activeConversationId)
   const setActiveCaseId = useChatStore((s) => s.setActiveCaseId)
   const setActiveConversation = useChatStore((s) => s.setActiveConversation)
+  const setActiveConversationOwnerId = useChatStore(
+    (s) => s.setActiveConversationOwnerId
+  )
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null)
 
   const refreshSuggestions = useCallback(
     async (scope: ChatScope = "case_overview") => {
@@ -43,6 +48,7 @@ export function useChat(caseId: string) {
       clearMessages()
       savedConversationId.current = null
       setActiveConversation(null)
+      setActiveConversationOwnerId(null)
       setActiveCaseId(caseId)
     }
     setSuggestions([])
@@ -54,6 +60,7 @@ export function useChat(caseId: string) {
     refreshSuggestions,
     setActiveCaseId,
     setActiveConversation,
+    setActiveConversationOwnerId,
   ])
 
   const sendMessage = useCallback(
@@ -112,6 +119,7 @@ export function useChat(caseId: string) {
         if (response.conversation_id) {
           savedConversationId.current = response.conversation_id
           setActiveConversation(response.conversation_id)
+          setActiveConversationOwnerId(currentUserId)
         }
 
         setSuggestions(response.suggestions.map((item) => item.question))
@@ -135,9 +143,11 @@ export function useChat(caseId: string) {
       addMessage,
       appendResultGraph,
       caseId,
+      currentUserId,
       queryClient,
       selectedNodeKeys,
       setActiveConversation,
+      setActiveConversationOwnerId,
     ]
   )
 
@@ -147,6 +157,7 @@ export function useChat(caseId: string) {
         const conv = await chatHistoryAPI.get(id)
         setMessages(conv.messages)
         setActiveConversation(id)
+        setActiveConversationOwnerId(conv.owner_user_id)
         savedConversationId.current = id
 
         const store = useChatStore.getState()
@@ -162,15 +173,26 @@ export function useChat(caseId: string) {
         // Ignore load failures.
       }
     },
-    [refreshSuggestions, setMessages, setActiveConversation]
+    [
+      refreshSuggestions,
+      setMessages,
+      setActiveConversation,
+      setActiveConversationOwnerId,
+    ]
   )
 
   const startNewConversation = useCallback(() => {
     clearMessages()
     savedConversationId.current = null
     setActiveConversation(null)
+    setActiveConversationOwnerId(null)
     void refreshSuggestions("case_overview")
-  }, [clearMessages, refreshSuggestions, setActiveConversation])
+  }, [
+    clearMessages,
+    refreshSuggestions,
+    setActiveConversation,
+    setActiveConversationOwnerId,
+  ])
 
   return {
     messages,

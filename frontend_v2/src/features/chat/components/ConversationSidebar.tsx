@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/cn"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 import { useChatStore } from "../stores/chat.store"
 import {
   useConversations,
@@ -32,6 +33,14 @@ import {
   useUpdateConversation,
 } from "../hooks/use-conversations"
 import type { ConversationSummary } from "../types"
+
+function ownerLabel(summary: ConversationSummary): string {
+  if (summary.owner) {
+    const local = summary.owner.split("@")[0]
+    return local || summary.owner
+  }
+  return summary.owner_user_id.slice(0, 6)
+}
 
 interface ConversationSidebarProps {
   caseId: string
@@ -54,8 +63,11 @@ export function ConversationSidebar({
   const isOpen = useChatStore((s) => s.conversationPanelOpen)
   const setOpen = useChatStore((s) => s.setConversationPanelOpen)
   const activeId = useChatStore((s) => s.activeConversationId)
+  const listScope = useChatStore((s) => s.listScope)
+  const setListScope = useChatStore((s) => s.setListScope)
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null)
 
-  const { data: conversations = [] } = useConversations(caseId)
+  const { data: conversations = [] } = useConversations(caseId, listScope)
   const deleteMutation = useDeleteConversation()
   const updateMutation = useUpdateConversation()
 
@@ -139,6 +151,37 @@ export function ConversationSidebar({
         </Button>
       </div>
 
+      {/* Scope toggle */}
+      <div className="px-2 pt-2">
+        <div className="flex rounded-md border border-border bg-muted/50 p-0.5">
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded px-2 py-1 text-[11px] font-medium transition-colors",
+              listScope === "mine"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setListScope("mine")}
+          >
+            Mine
+          </button>
+          <button
+            type="button"
+            className={cn(
+              "flex-1 rounded px-2 py-1 text-[11px] font-medium transition-colors",
+              listScope === "case"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setListScope("case")}
+            title="Show chats from any collaborator on this case"
+          >
+            All in case
+          </button>
+        </div>
+      </div>
+
       {/* New chat button */}
       <div className="p-2">
         <Button
@@ -176,58 +219,75 @@ export function ConversationSidebar({
           </div>
         ) : (
           <div className="p-1">
-            {filteredConversations.map((conv) => (
-              <ContextMenu key={conv.id}>
-                <ContextMenuTrigger asChild>
-                  <button
-                    onClick={() => onSelectConversation(conv.id)}
-                    className={cn(
-                      "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
-                      activeId === conv.id
-                        ? "bg-amber-500/10 text-foreground"
-                        : "hover:bg-muted text-foreground/80"
-                    )}
-                  >
-                    <MessageSquare
+            {filteredConversations.map((conv) => {
+              const isOwn =
+                !!currentUserId && conv.owner_user_id === currentUserId
+              return (
+                <ContextMenu key={conv.id}>
+                  <ContextMenuTrigger asChild>
+                    <button
+                      onClick={() => onSelectConversation(conv.id)}
                       className={cn(
-                        "mt-0.5 size-3.5 shrink-0",
+                        "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
                         activeId === conv.id
-                          ? "text-amber-500"
-                          : "text-muted-foreground"
+                          ? "bg-amber-500/10 text-foreground"
+                          : "hover:bg-muted text-foreground/80"
                       )}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium">
-                        {conv.name}
-                      </p>
-                      <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <span>{conv.message_count} msgs</span>
-                        <span>&middot;</span>
-                        <span>{formatTime(conv.last_message_at)}</span>
+                    >
+                      <MessageSquare
+                        className={cn(
+                          "mt-0.5 size-3.5 shrink-0",
+                          activeId === conv.id
+                            ? "text-amber-500"
+                            : "text-muted-foreground"
+                        )}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-medium">
+                          {conv.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                          <span>{conv.message_count} msgs</span>
+                          <span>&middot;</span>
+                          <span>{formatTime(conv.last_message_at)}</span>
+                          {listScope === "case" && !isOwn && (
+                            <>
+                              <span>&middot;</span>
+                              <span
+                                className="truncate text-[10px] text-amber-600 dark:text-amber-400"
+                                title={conv.owner ?? conv.owner_user_id}
+                              >
+                                {ownerLabel(conv)}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                </ContextMenuTrigger>
-                <ContextMenuContent>
-                  <ContextMenuItem
-                    onClick={() => {
-                      setRenameValue(conv.name)
-                      setRenameDialog(conv)
-                    }}
-                  >
-                    <Pencil className="mr-2 size-3.5" />
-                    Rename
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={() => setDeleteConfirm(conv.id)}
-                    className="text-destructive"
-                  >
-                    <Trash2 className="mr-2 size-3.5" />
-                    Delete
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
-            ))}
+                    </button>
+                  </ContextMenuTrigger>
+                  {isOwn && (
+                    <ContextMenuContent>
+                      <ContextMenuItem
+                        onClick={() => {
+                          setRenameValue(conv.name)
+                          setRenameDialog(conv)
+                        }}
+                      >
+                        <Pencil className="mr-2 size-3.5" />
+                        Rename
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => setDeleteConfirm(conv.id)}
+                        className="text-destructive"
+                      >
+                        <Trash2 className="mr-2 size-3.5" />
+                        Delete
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  )}
+                </ContextMenu>
+              )
+            })}
           </div>
         )}
       </ScrollArea>

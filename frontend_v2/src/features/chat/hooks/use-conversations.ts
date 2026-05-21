@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { chatHistoryAPI } from "../api"
-import type { CreateChatHistory } from "../types"
+import type { ChatListScope, CreateChatHistory } from "../types"
 
 export const CONVERSATIONS_KEY = ["chat-history"]
 
-export function useConversations(caseId?: string) {
+export function useConversations(
+  caseId?: string,
+  scope: ChatListScope = "mine"
+) {
   return useQuery({
-    queryKey: [...CONVERSATIONS_KEY, caseId ?? "all"],
-    queryFn: () => chatHistoryAPI.list(caseId),
+    queryKey: [...CONVERSATIONS_KEY, caseId ?? "all", scope],
+    queryFn: () => chatHistoryAPI.list({ caseId, scope }),
   })
 }
 

@@ -1,6 +1,7 @@
 import { fetchAPI } from "@/lib/api-client"
 import type {
   ChatCost,
+  ChatListScope,
   ChatModelInfo,
   ChatProvenance,
   ChatScope,
@@ -90,6 +91,7 @@ interface ChatHistorySummaryResponse {
   created_at: string
   updated_at: string
   last_message_at: string
+  owner?: string | null
   owner_user_id: string
   case_id: string
   message_count: number
@@ -114,19 +116,22 @@ function toConversation(r: ChatHistoryResponse): Conversation {
 }
 
 export const chatHistoryAPI = {
-  list: (caseId?: string) => {
-    const qs = caseId ? `?case_id=${encodeURIComponent(caseId)}` : ""
+  list: (params?: { caseId?: string; scope?: ChatListScope }) => {
+    const search = new URLSearchParams()
+    if (params?.caseId) search.set("case_id", params.caseId)
+    if (params?.scope) search.set("scope", params.scope)
+    const qs = search.toString() ? `?${search.toString()}` : ""
     return fetchAPI<ChatHistorySummaryResponse[]>(
       `/api/chat-history${qs}`
     ).then((res) =>
       res.map((item) => ({
         id: item.id,
         name: item.name,
-        messages: [],
         timestamp: item.timestamp,
         created_at: item.created_at,
         updated_at: item.updated_at,
         last_message_at: item.last_message_at,
+        owner: item.owner ?? null,
         owner_user_id: item.owner_user_id,
         case_id: item.case_id,
         message_count: item.message_count,
