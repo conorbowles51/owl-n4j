@@ -11,11 +11,24 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
+from config import AUTH_TOKEN_EXPIRE_MINUTES
 from postgres.session import get_db
 from services.auth_service import auth_service
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
+
+_COOKIE_MAX_AGE = AUTH_TOKEN_EXPIRE_MINUTES * 60
+
+
+def _set_access_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=_COOKIE_MAX_AGE,
+    )
 
 
 class LoginRequest(BaseModel):
@@ -78,12 +91,7 @@ async def login(request: LoginRequest, response: Response, db: Session = Depends
 
         # Use email as the subject in the token
         token = auth_service["create_access_token"]({"sub": user.email})
-        response.set_cookie(
-            key="access_token",
-            value=token,
-            httponly=True,
-            samesite="lax",
-        )
+        _set_access_cookie(response, token)
 
         return TokenResponse(access_token=token, username=user.email, name=user.name, role=user.global_role.value)
     except HTTPException:
@@ -102,7 +110,12 @@ def logout(response: Response):
 
 
 @router.get("/me", response_model=MeResponse)
-def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+def me(
+    response: Response,
+    user: dict = Depends(get_current_user),
+    token: str | None = Depends(_extract_token),
+    db: Session = Depends(get_db),
+):
     from postgres.models.user import User
 
     email = user["username"]
@@ -110,6 +123,11 @@ def me(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
 
     if not db_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+
+    # Refresh the access_token cookie so browser-loaded resources
+    # (iframe, img, audio, video) carry auth — they can't send Bearer headers.
+    if token:
+        _set_access_cookie(response, token)
 
     return MeResponse(email=db_user.email, name=db_user.name, username=db_user.email, role=db_user.global_role.value)
 

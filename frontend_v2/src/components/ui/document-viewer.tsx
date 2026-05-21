@@ -76,7 +76,10 @@ export function DocumentViewer({
 
     if (documentUrl && fileType === "text") {
       const id = ++fetchIdRef.current
-      fetch(documentUrl)
+      const token = localStorage.getItem("authToken")
+      const headers: Record<string, string> = {}
+      if (token) headers["Authorization"] = `Bearer ${token}`
+      fetch(documentUrl, { headers, credentials: "include" })
         .then((res) => {
           if (!res.ok) throw new Error("Failed to load")
           return res.text()
