@@ -1,10 +1,11 @@
 import { useRef, useCallback, useEffect, useState } from "react"
-import { useParams } from "react-router-dom"
+import { useNavigate, useParams } from "react-router-dom"
 import {
   PanelRightClose,
   PanelRightOpen,
   Network,
   Maximize2,
+  Crosshair,
 } from "lucide-react"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/cn"
 import { getNodeColor, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
 import { graphAPI } from "@/features/graph/api"
+import { useGraphStore } from "@/stores/graph.store"
 import { useChatStore } from "../stores/chat.store"
 import { useResultGraph } from "../hooks/use-result-graph"
 import { ResultNodeDetail } from "./ResultNodeDetail"
@@ -37,6 +39,7 @@ interface FGLink {
 
 export function ResultGraphPanel() {
   const { id: caseId } = useParams()
+  const navigate = useNavigate()
   const graphRef = useRef<
     ForceGraphMethods<NodeObject<FGNode>, LinkObject<FGNode, FGLink>> | undefined
   >(undefined)
@@ -55,6 +58,10 @@ export function ResultGraphPanel() {
   const isOpen = useChatStore((s) => s.resultGraphPanelOpen)
   const setOpen = useChatStore((s) => s.setResultGraphPanelOpen)
   const appendResultGraph = useChatStore((s) => s.appendResultGraph)
+
+  const clearSubgraph = useGraphStore((s) => s.clearSubgraph)
+  const addToSubgraph = useGraphStore((s) => s.addToSubgraph)
+  const selectNodes = useGraphStore((s) => s.selectNodes)
 
   const {
     mode,
@@ -144,6 +151,16 @@ export function ResultGraphPanel() {
   const handleZoomToFit = useCallback(() => {
     graphRef.current?.zoomToFit(400, 40)
   }, [])
+
+  const handleSendToSpotlight = useCallback(() => {
+    if (!caseId) return
+    const keys = displayGraph.nodes.map((n) => n.key)
+    if (keys.length === 0) return
+    clearSubgraph()
+    addToSubgraph(keys)
+    selectNodes(keys)
+    navigate(`/cases/${caseId}/graph`)
+  }, [caseId, displayGraph, clearSubgraph, addToSubgraph, selectNodes, navigate])
 
   // Node paint function
   const paintNode = useCallback(
@@ -253,6 +270,15 @@ export function ResultGraphPanel() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={handleSendToSpotlight}
+            disabled={isEmpty}
+            title="Send to spotlight in main graph"
+          >
+            <Crosshair className="size-3.5" />
+          </Button>
           <Button
             variant="ghost"
             size="icon-sm"
