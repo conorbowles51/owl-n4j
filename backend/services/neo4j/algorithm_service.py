@@ -17,9 +17,12 @@ class AlgorithmService:
 
     def get_shortest_paths_subgraph(self, node_keys: List[str], max_depth: int = 10, case_id: str = None) -> Dict[str, List]:
         """
-        Find shortest paths between all pairs of selected nodes and return as subgraph.
+        Find shortest paths between all pairs of selected nodes.
 
-        For multiple nodes, finds shortest paths between all pairs and combines them.
+        For each pair of selected nodes, runs Cypher shortestPath and emits one
+        path object per pair (skipped if no path exists). Caller receives a flat
+        list of paths; the frontend uses these to populate the Spotlight subgraph
+        and to display a path count.
 
         Args:
             node_keys: List of node keys to find paths between
@@ -27,24 +30,18 @@ class AlgorithmService:
             case_id: REQUIRED - Filter to only include nodes/relationships belonging to this case
 
         Returns:
-            Dict with 'nodes' and 'links' arrays containing all nodes and relationships
-            from the shortest paths connecting the selected nodes
+            Dict with 'paths', each entry being {nodes: [keys], edges: [edge ids], length: int}
         """
         if len(node_keys) < 2:
-            return {"nodes": [], "links": []}
+            return {"paths": []}
+
+        paths: List[Dict[str, Any]] = []
 
         with driver.session() as session:
-            # Find shortest paths between all pairs
-            all_nodes = set()
-            all_links = []
-            seen_links = set()
-
-            # Generate all pairs
             for i in range(len(node_keys)):
                 for j in range(i + 1, len(node_keys)):
                     key1, key2 = node_keys[i], node_keys[j]
 
-                    # Find shortest path between this pair - filter by case_id
                     # Note: Neo4j doesn't support parameters in variable-length patterns,
                     # so we use string formatting for max_depth (validated as int)
                     result = session.run(
@@ -64,64 +61,30 @@ class AlgorithmService:
 
                     for record in result:
                         path = record["path"]
-                        if path:
-                            # Extract nodes from path
-                            for node in path.nodes:
-                                node_key = node.get("key")
-                                if node_key:
-                                    all_nodes.add(node_key)
+                        if not path:
+                            continue
 
-                            # Extract relationships from path
-                            for rel in path.relationships:
-                                source_key = rel.start_node.get("key")
-                                target_key = rel.end_node.get("key")
-                                rel_type = rel.type
+                        path_node_keys: List[str] = []
+                        for node in path.nodes:
+                            nk = node.get("key")
+                            if nk:
+                                path_node_keys.append(nk)
 
-                                if source_key and target_key:
-                                    link_key = f"{source_key}-{target_key}-{rel_type}"
-                                    if link_key not in seen_links:
-                                        seen_links.add(link_key)
-                                        all_links.append({
-                                            "source": source_key,
-                                            "target": target_key,
-                                            "type": rel_type,
-                                            "properties": dict(rel)
-                                        })
+                        path_edges: List[str] = []
+                        for rel in path.relationships:
+                            src = rel.start_node.get("key")
+                            tgt = rel.end_node.get("key")
+                            if src and tgt:
+                                path_edges.append(f"{src}-{tgt}-{rel.type}")
 
-            # Get full node details for all nodes in paths - filter by case_id
-            if not all_nodes:
-                return {"nodes": [], "links": []}
+                        if path_node_keys:
+                            paths.append({
+                                "nodes": path_node_keys,
+                                "edges": path_edges,
+                                "length": len(path_edges),
+                            })
 
-            nodes_query = """
-                MATCH (n)
-                WHERE n.key IN $keys AND n.case_id = $case_id
-                  AND NONE(label IN labels(n) WHERE label IN ['RecycleBin', 'RecycleBinItem'])
-                  AND coalesce(properties(n)['system_node'], false) <> true
-                RETURN
-                    id(n) AS neo4j_id,
-                    n.id AS id,
-                    n.key AS key,
-                    n.name AS name,
-                    labels(n)[0] AS type,
-                    n.summary AS summary,
-                    n.notes AS notes,
-                    properties(n) AS properties
-            """
-
-            nodes_result = session.run(nodes_query, keys=list(all_nodes), case_id=case_id)
-            nodes = []
-            for record in nodes_result:
-                nodes.append({
-                    "id": record["id"],
-                    "key": record["key"],
-                    "name": record["name"],
-                    "type": record["type"],
-                    "summary": record["summary"],
-                    "notes": record["notes"],
-                    "properties": record["properties"] or {}
-                })
-
-            return {"nodes": nodes, "links": all_links}
+        return {"paths": paths}
 
     def get_pagerank_subgraph(
         self,
@@ -167,7 +130,7 @@ class AlgorithmService:
                 focus_keys = [record["key"] for record in result if record["key"]]
 
                 if not focus_keys:
-                    return {"nodes": [], "links": [], "scores": {}}
+                    return {"results": []}
 
                 # Get all nodes and relationships in the focused subgraph
                 nodes_query = """
@@ -228,23 +191,17 @@ class AlgorithmService:
                 """
                 nodes_result = session.run(nodes_query, case_id=case_id)
                 links_result = session.run(links_query, case_id=case_id)
-                focus_keys = None
 
             # Collect all nodes and links
             all_nodes = {}
-            all_links = []
 
             for record in nodes_result:
                 key = record["key"]
                 if key:
                     all_nodes[key] = {
-                        "id": record["id"],
                         "key": key,
                         "name": record["name"],
                         "type": record["type"],
-                        "summary": record["summary"],
-                        "notes": record["notes"],
-                        "properties": record["properties"] or {}
                     }
 
             # Build adjacency list for PageRank calculation
@@ -258,17 +215,11 @@ class AlgorithmService:
                     if target not in adjacency[source]:
                         adjacency[source].append(target)
                     out_degree[source] += 1
-                    all_links.append({
-                        "source": source,
-                        "target": target,
-                        "type": record["type"],
-                        "properties": record["properties"] or {}
-                    })
 
             # Step 2: Calculate PageRank
             N = len(all_nodes)
             if N == 0:
-                return {"nodes": [], "links": [], "scores": {}}
+                return {"results": []}
 
             # Initialize PageRank scores
             pr = {key: 1.0 / N for key in all_nodes.keys()}
@@ -289,30 +240,19 @@ class AlgorithmService:
 
                 pr = new_pr
 
-            # Step 3: Sort nodes by PageRank score and get top N
-            sorted_nodes = sorted(pr.items(), key=lambda x: x[1], reverse=True)
-            top_node_keys = [key for key, score in sorted_nodes[:top_n]]
-
-            # Step 4: Build subgraph with top nodes and their connections
-            top_nodes = [all_nodes[key] for key in top_node_keys if key in all_nodes]
-
-            # Include links between top nodes
-            top_links = [
-                link for link in all_links
-                if link["source"] in top_node_keys and link["target"] in top_node_keys
-            ]
-
-            # Add PageRank scores to nodes
-            for node in top_nodes:
-                node["pagerank_score"] = pr.get(node["key"], 0.0)
-
-            # Sort nodes by PageRank score
-            top_nodes.sort(key=lambda x: x.get("pagerank_score", 0.0), reverse=True)
+            # Step 3: Sort nodes by PageRank score and emit the top N as results
+            sorted_keys = [k for k, _ in sorted(pr.items(), key=lambda x: x[1], reverse=True)[:top_n]]
 
             return {
-                "nodes": top_nodes,
-                "links": top_links,
-                "scores": {key: pr[key] for key in top_node_keys if key in pr}
+                "results": [
+                    {
+                        "key": k,
+                        "name": all_nodes[k]["name"],
+                        "type": all_nodes[k]["type"],
+                        "score": pr[k],
+                    }
+                    for k in sorted_keys if k in all_nodes
+                ]
             }
 
     def _run_louvain(
@@ -437,7 +377,7 @@ class AlgorithmService:
                 focus_keys = [record["key"] for record in result if record["key"]]
 
                 if not focus_keys:
-                    return {"nodes": [], "links": [], "communities": {}}
+                    return {"communities": []}
 
                 # Get all nodes and relationships in the focused subgraph
                 nodes_query = """
@@ -499,21 +439,16 @@ class AlgorithmService:
                 nodes_result = session.run(nodes_query, case_id=case_id)
                 links_result = session.run(links_query, case_id=case_id)
 
-            # Collect all nodes and links
+            # Collect all nodes
             all_nodes = {}
-            all_links = []
 
             for record in nodes_result:
                 key = record["key"]
                 if key:
                     all_nodes[key] = {
-                        "id": record["id"],
                         "key": key,
                         "name": record["name"],
                         "type": record["type"],
-                        "summary": record["summary"],
-                        "notes": record["notes"],
-                        "properties": record["properties"] or {}
                     }
 
             # Build adjacency list and degree information
@@ -532,15 +467,9 @@ class AlgorithmService:
                     degree[source] += 1
                     degree[target] += 1
                     total_edges += 1
-                    all_links.append({
-                        "source": source,
-                        "target": target,
-                        "type": record["type"],
-                        "properties": record["properties"] or {}
-                    })
 
             if len(all_nodes) == 0:
-                return {"nodes": [], "links": [], "communities": {}}
+                return {"communities": []}
 
             # Step 2: Run Louvain via shared helper
             final_communities = self._run_louvain(
@@ -548,28 +477,20 @@ class AlgorithmService:
                 resolution=resolution, max_iterations=max_iterations,
             )
 
-            # Add community_id to nodes
-            result_nodes = []
-            for key, node_data in all_nodes.items():
-                node_data_copy = node_data.copy()
-                node_data_copy["community_id"] = final_communities[key]
-                result_nodes.append(node_data_copy)
+            # Group nodes by community_id
+            groups: Dict[int, List[Dict[str, Any]]] = {}
+            for key, comm_id in final_communities.items():
+                groups.setdefault(comm_id, []).append(all_nodes[key])
 
-            # Count nodes per community
-            community_counts = {}
-            for comm_id in final_communities.values():
-                community_counts[comm_id] = community_counts.get(comm_id, 0) + 1
-
-            # Sort nodes by community for better visualization
-            result_nodes.sort(key=lambda x: (x["community_id"], x.get("name", "")))
+            # Sort nodes within each community by name for stable output
+            for nodes in groups.values():
+                nodes.sort(key=lambda n: n.get("name") or "")
 
             return {
-                "nodes": result_nodes,
-                "links": all_links,
-                "communities": {
-                    comm_id: {"id": comm_id, "size": count}
-                    for comm_id, count in community_counts.items()
-                }
+                "communities": [
+                    {"community_id": cid, "size": len(nodes), "nodes": nodes}
+                    for cid, nodes in sorted(groups.items())
+                ]
             }
 
     def get_betweenness_centrality(
@@ -619,7 +540,7 @@ class AlgorithmService:
                 focus_keys = [record["key"] for record in result if record["key"]]
 
                 if not focus_keys:
-                    return {"nodes": [], "links": [], "scores": {}}
+                    return {"results": []}
 
                 # Get all nodes and relationships in the focused subgraph
                 nodes_query = """
@@ -681,21 +602,16 @@ class AlgorithmService:
                 nodes_result = session.run(nodes_query, case_id=case_id)
                 links_result = session.run(links_query, case_id=case_id)
 
-            # Collect all nodes and links
+            # Collect all nodes
             all_nodes = {}
-            all_links = []
 
             for record in nodes_result:
                 key = record["key"]
                 if key:
                     all_nodes[key] = {
-                        "id": record["id"],
                         "key": key,
                         "name": record["name"],
                         "type": record["type"],
-                        "summary": record["summary"],
-                        "notes": record["notes"],
-                        "properties": record["properties"] or {}
                     }
 
             # Build adjacency list (undirected)
@@ -708,15 +624,9 @@ class AlgorithmService:
                         adjacency[source].append(target)
                     if source not in adjacency[target]:
                         adjacency[target].append(source)
-                    all_links.append({
-                        "source": source,
-                        "target": target,
-                        "type": record["type"],
-                        "properties": record["properties"] or {}
-                    })
 
             if len(all_nodes) == 0:
-                return {"nodes": [], "links": [], "scores": {}}
+                return {"results": []}
 
             # Step 2: Calculate Betweenness Centrality using Brandes' algorithm
             # Initialize betweenness scores
@@ -761,30 +671,19 @@ class AlgorithmService:
                 if normalization > 0:
                     betweenness = {k: v / normalization for k, v in betweenness.items()}
 
-            # Step 3: Get top N nodes by betweenness
-            sorted_nodes = sorted(betweenness.items(), key=lambda x: x[1], reverse=True)
-            top_node_keys = [key for key, score in sorted_nodes[:top_n]]
-
-            # Build result with top nodes
-            top_nodes = []
-            for key in top_node_keys:
-                node_data = all_nodes[key].copy()
-                node_data["betweenness_centrality"] = betweenness[key]
-                top_nodes.append(node_data)
-
-            # Include links between top nodes
-            top_links = [
-                link for link in all_links
-                if link["source"] in top_node_keys and link["target"] in top_node_keys
-            ]
-
-            # Sort nodes by betweenness score
-            top_nodes.sort(key=lambda x: x.get("betweenness_centrality", 0.0), reverse=True)
+            # Step 3: Get top N nodes by betweenness and emit as results
+            sorted_keys = [k for k, _ in sorted(betweenness.items(), key=lambda x: x[1], reverse=True)[:top_n]]
 
             return {
-                "nodes": top_nodes,
-                "links": top_links,
-                "scores": {key: betweenness[key] for key in top_node_keys if key in betweenness}
+                "results": [
+                    {
+                        "key": k,
+                        "name": all_nodes[k]["name"],
+                        "type": all_nodes[k]["type"],
+                        "score": betweenness[k],
+                    }
+                    for k in sorted_keys if k in all_nodes
+                ]
             }
 
 
