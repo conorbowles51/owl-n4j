@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 from uuid import UUID
 
 from sqlalchemy import func
@@ -82,17 +82,56 @@ def list_conversations_for_user(
     db: Session,
     user: User,
     case_id: UUID | None = None,
+    scope: Literal["mine", "case"] = "mine",
 ) -> list[ChatConversation]:
+    if scope == "case" and case_id is None:
+        raise ValueError("case_id is required when scope='case'")
+
     query = (
         db.query(ChatConversation)
         .options(joinedload(ChatConversation.messages), joinedload(ChatConversation.owner))
-        .filter(ChatConversation.owner_user_id == user.id)
         .order_by(ChatConversation.last_message_at.desc(), ChatConversation.created_at.desc())
     )
+    if scope == "mine":
+        query = query.filter(ChatConversation.owner_user_id == user.id)
     if case_id:
         require_case_access(db, user, case_id)
         query = query.filter(ChatConversation.case_id == case_id)
     return query.all()
+
+
+def get_conversation_for_case_reader(
+    db: Session,
+    conversation_id: UUID,
+    user: User,
+    case_id: UUID | None = None,
+) -> ChatConversation:
+    """Load a conversation for read-only access by any user with case access.
+
+    Unlike get_conversation_for_user, this does not enforce that the user is the
+    owner. Authorization is delegated to require_case_access on the conversation's
+    case_id. Callers that need to mutate the conversation (rename, delete, append
+    messages) must still use get_conversation_for_user.
+    """
+    conversation = (
+        db.query(ChatConversation)
+        .options(
+            joinedload(ChatConversation.owner),
+            joinedload(ChatConversation.messages).joinedload(ChatMessage.cost_record),
+            joinedload(ChatConversation.messages).joinedload(ChatMessage.case_revision),
+        )
+        .filter(ChatConversation.id == conversation_id)
+        .first()
+    )
+    if not conversation:
+        raise CaseNotFound(f"Conversation {conversation_id} not found")
+
+    require_case_access(db, user, conversation.case_id)
+
+    if case_id and conversation.case_id != case_id:
+        raise CaseAccessDenied(f"Conversation {conversation_id} does not belong to case {case_id}")
+
+    return conversation
 
 
 def get_conversation_for_user(
@@ -348,6 +387,7 @@ def build_conversation_summary_payload(conversation: ChatConversation) -> dict[s
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat(),
         "last_message_at": conversation.last_message_at.isoformat(),
+        "owner": conversation.owner.email if conversation.owner else None,
         "owner_user_id": str(conversation.owner_user_id),
         "case_id": str(conversation.case_id),
         "message_count": len(conversation.messages),

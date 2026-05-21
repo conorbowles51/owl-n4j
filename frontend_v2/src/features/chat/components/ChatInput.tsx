@@ -36,6 +36,7 @@ interface ChatInputProps {
   contextNodes: ContextNode[]
   contextDocument?: string | null
   suggestions: string[]
+  isReadOnly?: boolean
 }
 
 const DEFAULT_MODEL = "gpt-5-mini"
@@ -47,6 +48,7 @@ export function ChatInput({
   contextNodes,
   contextDocument,
   suggestions,
+  isReadOnly = false,
 }: ChatInputProps) {
   const [input, setInput] = useState("")
   const [models, setModels] = useState<LLMModel[]>([])
@@ -113,6 +115,14 @@ export function ChatInput({
       e.preventDefault()
       handleSend()
     }
+  }
+
+  if (isReadOnly) {
+    return (
+      <div className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground">
+        Read-only — this chat is owned by another user.
+      </div>
+    )
   }
 
   return (

@@ -18,6 +18,7 @@ import { evidenceAPI } from "@/features/evidence/api"
 import { useChat } from "../hooks/use-chat"
 import { useChatContext } from "../hooks/use-chat-context"
 import { useChatStore } from "../stores/chat.store"
+import { useAuthStore } from "@/features/auth/hooks/use-auth"
 
 export function ChatPage() {
   const { id: caseId } = useParams()
@@ -29,6 +30,12 @@ export function ChatPage() {
   const chat = useChat(caseId!)
   const context = useChatContext(caseId!)
   const resultGraphPanelOpen = useChatStore((s) => s.resultGraphPanelOpen)
+  const activeOwnerId = useChatStore((s) => s.activeConversationOwnerId)
+  const currentUserId = useAuthStore((s) => s.user?.id ?? null)
+  const isReadOnly =
+    !!activeOwnerId &&
+    !!currentUserId &&
+    activeOwnerId !== currentUserId
 
   const openDocument = async (filename: string, page?: number) => {
     try {
@@ -93,6 +100,7 @@ export function ChatPage() {
               contextNodes={context.selectedNodes}
               contextDocument={context.scopedDocument}
               suggestions={chat.suggestions}
+              isReadOnly={isReadOnly}
             />
           </div>
         </ResizablePanel>

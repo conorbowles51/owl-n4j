@@ -6,7 +6,7 @@ Postgres-backed saved conversations.
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -23,6 +23,7 @@ from services.chat_db_service import (
     create_case_revision,
     create_conversation,
     delete_conversation,
+    get_conversation_for_case_reader,
     get_conversation_for_user,
     list_conversations_for_user,
     rename_conversation,
@@ -69,6 +70,7 @@ class ChatHistorySummary(BaseModel):
     created_at: str
     updated_at: str
     last_message_at: str
+    owner: Optional[str] = None
     owner_user_id: str
     case_id: str
     message_count: int
@@ -115,10 +117,21 @@ async def create_chat_history(
 @router.get("", response_model=List[ChatHistorySummary])
 async def list_chat_histories(
     case_id: Optional[UUID] = Query(None),
+    scope: Literal["mine", "case"] = Query("mine"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    conversations = list_conversations_for_user(db, current_user, case_id=case_id)
+    if scope == "case" and case_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="case_id is required when scope='case'",
+        )
+    try:
+        conversations = list_conversations_for_user(
+            db, current_user, case_id=case_id, scope=scope
+        )
+    except (CaseAccessDenied, CaseNotFound) as exc:
+        raise HTTPException(status_code=404, detail="Case not found") from exc
     return [_to_summary(conversation) for conversation in conversations]
 
 
@@ -161,7 +174,7 @@ async def get_chat_history(
     current_user: User = Depends(get_current_db_user),
 ):
     try:
-        conversation = get_conversation_for_user(db, chat_id, current_user)
+        conversation = get_conversation_for_case_reader(db, chat_id, current_user)
     except (CaseNotFound, CaseAccessDenied) as exc:
         raise HTTPException(status_code=404, detail="Chat history not found") from exc
     return _to_response(conversation)

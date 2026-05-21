@@ -29,6 +29,8 @@ export interface ChatProvenance {
   snapshot_id?: string | null
 }
 
+export type ChatListScope = "mine" | "case"
+
 export interface ConversationSummary {
   id: string
   name: string
@@ -36,6 +38,7 @@ export interface ConversationSummary {
   created_at: string
   updated_at: string
   last_message_at: string
+  owner?: string | null
   owner_user_id: string
   case_id: string
   message_count: number
