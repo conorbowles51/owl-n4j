@@ -29,7 +29,14 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
     setCommunityMap,
     setAnalysisHighlight,
     setHighlightedPaths,
+    clearSubgraph,
+    addToSubgraph,
   } = useGraphStore()
+
+  const showInSpotlight = (keys: string[]) => {
+    clearSubgraph()
+    if (keys.length > 0) addToSubgraph(keys)
+  }
 
   const pageRank = usePageRank(caseId)
   const louvain = useLouvainCommunities(caseId)
@@ -44,7 +51,9 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
     pageRank.mutate({}, {
       onSuccess: (data) => {
         setPrResults(data.results)
-        setAnalysisHighlight(new Set(data.results.slice(0, 10).map((r) => r.key)))
+        const keys = data.results.map((r) => r.key)
+        setAnalysisHighlight(new Set(keys.slice(0, 10)))
+        showInSpotlight(keys)
       },
     })
   }
@@ -54,10 +63,15 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
       onSuccess: (data) => {
         setCommunities(data.communities)
         const map = new Map<string, number>()
+        const keys: string[] = []
         for (const c of data.communities) {
-          for (const n of c.nodes) map.set(n.key, c.community_id)
+          for (const n of c.nodes) {
+            map.set(n.key, c.community_id)
+            keys.push(n.key)
+          }
         }
         setCommunityMap(map)
+        showInSpotlight(keys)
       },
     })
   }
@@ -66,7 +80,9 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
     betweenness.mutate({}, {
       onSuccess: (data) => {
         setBtResults(data.results)
-        setAnalysisHighlight(new Set(data.results.slice(0, 10).map((r) => r.key)))
+        const keys = data.results.map((r) => r.key)
+        setAnalysisHighlight(new Set(keys.slice(0, 10)))
+        showInSpotlight(keys)
       },
     })
   }
@@ -81,6 +97,7 @@ export function GraphAnalysisPanel({ caseId }: GraphAnalysisPanelProps) {
           for (const nk of p.nodes) pathNodes.add(nk)
         }
         setHighlightedPaths(pathNodes)
+        showInSpotlight(Array.from(pathNodes))
       },
     })
   }

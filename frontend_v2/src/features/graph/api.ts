@@ -288,7 +288,7 @@ export const graphAPI = {
     topN = 20,
     normalized = true
   ) =>
-    fetchAPI<{ results: BetweennessResult[] }>("/api/graph/betweenness", {
+    fetchAPI<{ results: BetweennessResult[] }>("/api/graph/betweenness-centrality", {
       method: "POST",
       body: {
         case_id: caseId,
