@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Trash2, ChevronDown, ChevronRight } from "lucide-react"
 import { useGraphStore } from "@/stores/graph.store"
-import { getNodeColor } from "@/lib/theme"
+import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { SubgraphAnalysisPanel } from "./SubgraphAnalysisPanel"
 import { useTheme } from "@/lib/theme-provider"
 import type { GraphData } from "@/types/graph.types"
@@ -21,13 +21,15 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
   const [analysisCollapsed, setAnalysisCollapsed] = useState(true)
   const { theme } = useTheme()
 
-  const { subgraphNodeKeys, clearSubgraph, selectNodes } =
+  const { subgraphNodeKeys, clearSubgraph, selectNodes, showRelationshipLabels } =
     useGraphStore()
 
   const isDark =
     theme === "dark" ||
     (theme === "system" &&
       window.matchMedia("(prefers-color-scheme: dark)").matches)
+
+  const canvasColors = getCanvasColors(isDark)
 
   /* ---- Resize observer for dynamic sizing ---- */
   useEffect(() => {
@@ -133,6 +135,43 @@ export function SubgraphView({ graphData }: SubgraphViewProps) {
           onNodeClick={handleNodeClick}
           linkColor={() => isDark ? "#2D3A4F" : "#CBD5E1"}
           linkDirectionalArrowLength={3}
+          linkCanvasObjectMode={() => (showRelationshipLabels ? "after" : undefined)}
+          linkCanvasObject={(link: { source: NodeObject; target: NodeObject; type?: string }, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            if (!showRelationshipLabels || !link.type) return
+            const src = link.source
+            const tgt = link.target
+            if (
+              typeof src !== "object" ||
+              typeof tgt !== "object" ||
+              src.x == null ||
+              src.y == null ||
+              tgt.x == null ||
+              tgt.y == null
+            ) {
+              return
+            }
+            const midX = (src.x + tgt.x) / 2
+            const midY = (src.y + tgt.y) / 2
+            const fontSize = Math.max(8 / globalScale, 1.5)
+            ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
+            ctx.textAlign = "center"
+            ctx.textBaseline = "middle"
+
+            const text = link.type
+            const metrics = ctx.measureText(text)
+            const pad = 2 / globalScale
+            ctx.fillStyle = canvasColors.labelBg
+            ctx.fillRect(
+              midX - metrics.width / 2 - pad,
+              midY - fontSize / 2 - pad,
+              metrics.width + pad * 2,
+              fontSize + pad * 2
+            )
+            ctx.fillStyle = canvasColors.labelText
+            ctx.globalAlpha = 0.8
+            ctx.fillText(text, midX, midY)
+            ctx.globalAlpha = 1.0
+          }}
           cooldownTime={2000}
           d3AlphaDecay={0.03}
         />
