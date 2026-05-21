@@ -58,13 +58,6 @@ export function getNodeColor(type: string): string {
   return palette[Math.abs(hash) % palette.length]
 }
 
-/** Community detection color palette */
-export const communityColors = [
-  "#ef4444", "#3b82f6", "#22c55e", "#f59e0b",
-  "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16",
-  "#f97316", "#a855f7", "#14b8a6", "#eab308",
-]
-
 export const statusColors = {
   success: { bg: "#DCFCE7", text: "#15803D", dot: "#22C55E" },
   danger: { bg: "#FEE2E2", text: "#B91C1C", dot: "#EF4444" },

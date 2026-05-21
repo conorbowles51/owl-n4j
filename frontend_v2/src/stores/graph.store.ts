@@ -48,15 +48,6 @@ interface GraphStore {
   /* Context menu */
   contextMenu: ContextMenuState
 
-  /* Community overlay from analysis */
-  communityMap: Map<string, number> | null
-
-  /* Highlighted paths from shortest-path analysis */
-  highlightedPaths: Set<string> | null
-
-  /* Analysis results highlight (pagerank/betweenness top-N node keys) */
-  analysisHighlight: Set<string> | null
-
   /* Actions: selection */
   selectNodes: (keys: string[]) => void
   addToSelection: (key: string) => void
@@ -97,12 +88,6 @@ interface GraphStore {
   /* Actions: context menu */
   openContextMenu: (state: ContextMenuData) => void
   closeContextMenu: () => void
-
-  /* Actions: analysis overlays */
-  setCommunityMap: (map: Map<string, number> | null) => void
-  setHighlightedPaths: (paths: Set<string> | null) => void
-  setAnalysisHighlight: (keys: Set<string> | null) => void
-
 }
 
 export const useGraphStore = create<GraphStore>((set) => ({
@@ -127,10 +112,6 @@ export const useGraphStore = create<GraphStore>((set) => ({
   spotlightVisible: true,
 
   contextMenu: null,
-
-  communityMap: null,
-  highlightedPaths: null,
-  analysisHighlight: null,
 
   /* Selection */
   selectNodes: (keys) => set({ selectedNodeKeys: new Set(keys) }),
@@ -225,10 +206,4 @@ export const useGraphStore = create<GraphStore>((set) => ({
   /* Context menu */
   openContextMenu: (state) => set({ contextMenu: state }),
   closeContextMenu: () => set({ contextMenu: null }),
-
-  /* Analysis overlays */
-  setCommunityMap: (map) => set({ communityMap: map }),
-  setHighlightedPaths: (paths) => set({ highlightedPaths: paths }),
-  setAnalysisHighlight: (keys) => set({ analysisHighlight: keys }),
-
 }))

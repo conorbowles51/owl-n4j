@@ -5,7 +5,7 @@ import ForceGraph2D, {
   type LinkObject,
 } from "react-force-graph-2d"
 import { useGraphStore } from "@/stores/graph.store"
-import { getNodeColor, communityColors, getCanvasColors } from "@/lib/theme"
+import { getNodeColor, getCanvasColors } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
 import type { GraphData } from "@/types/graph.types"
 
@@ -60,9 +60,6 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
     chargeStrength,
     centerStrength,
     showRelationshipLabels,
-    communityMap,
-    highlightedPaths,
-    analysisHighlight,
     selectionMode,
     openContextMenu,
   } = useGraphStore()
@@ -163,18 +160,6 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fgData.nodes.length])
 
-  /* ---- Node color logic ---- */
-  const getColor = useCallback(
-    (node: FGNode): string => {
-      if (communityMap?.has(node.key)) {
-        const cid = communityMap.get(node.key)!
-        return communityColors[cid % communityColors.length]
-      }
-      return getNodeColor(node.type)
-    },
-    [communityMap]
-  )
-
   /* ---- Custom node renderer with LOD tiers ---- */
   const paintNode = useCallback(
     (node: FGNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -184,8 +169,6 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       /* ---- Node rendering with LOD ---- */
       const isSelected = selectedNodeKeys.has(node.key)
       const isHovered = hoveredNode === node.key
-      const isHighlighted = analysisHighlight?.has(node.key) ?? false
-      const isOnPath = highlightedPaths?.has(node.key) ?? false
 
       // Size by degree, scaled by confidence
       const baseSz = 4 + Math.min((node._degree ?? 0) * 0.8, 12)
@@ -194,7 +177,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       // Opacity based on mentioned flag
       const alpha = node.mentioned === false ? 0.45 : 1.0
-      const color = getColor(node)
+      const color = getNodeColor(node.type)
       ctx.globalAlpha = alpha
 
       /* LOD: Dots tier (globalScale < 0.3) — circle only */
@@ -219,14 +202,6 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       /* LOD: Compact tier (globalScale 0.3–1.0) — circle + selective labels */
       if (globalScale < 1.0) {
-        // Glow for highlighted nodes
-        if (isHighlighted || isOnPath) {
-          ctx.beginPath()
-          ctx.arc(x, y, sz + 4, 0, 2 * Math.PI)
-          ctx.fillStyle = isOnPath ? "rgba(59,130,246,0.25)" : "rgba(245,158,11,0.25)"
-          ctx.fill()
-        }
-
         // Selection ring
         if (isSelected) {
           ctx.beginPath()
@@ -259,14 +234,6 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       }
 
       /* LOD: Full tier (globalScale >= 1.0) — everything */
-
-      // Glow for highlighted nodes
-      if (isHighlighted || isOnPath) {
-        ctx.beginPath()
-        ctx.arc(x, y, sz + 4, 0, 2 * Math.PI)
-        ctx.fillStyle = isOnPath ? "rgba(59,130,246,0.25)" : "rgba(245,158,11,0.25)"
-        ctx.fill()
-      }
 
       // Selection ring
       if (isSelected) {
@@ -306,7 +273,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       ctx.globalAlpha = 1.0
     },
-    [selectedNodeKeys, hoveredNode, getColor, analysisHighlight, highlightedPaths, canvasColors]
+    [selectedNodeKeys, hoveredNode, canvasColors]
   )
 
   /* ---- Custom link renderer with LOD tiers ---- */
@@ -319,19 +286,15 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
       /* LOD: skip links entirely at very low zoom */
       if (globalScale < 0.3) return
 
-      const isOnPath =
-        highlightedPaths?.has((src as FGNode).key) &&
-        highlightedPaths?.has((tgt as FGNode).key)
-
       const baseWidth = Math.max(0.5, (link.weight ?? 1) * 0.8)
       const width = baseWidth / Math.sqrt(globalScale)
 
       ctx.beginPath()
       ctx.moveTo(src.x, src.y!)
       ctx.lineTo(tgt.x, tgt.y!)
-      ctx.strokeStyle = isOnPath ? "#3B82F6" : canvasColors.linkColor
-      ctx.lineWidth = isOnPath ? width * 2 : width
-      ctx.globalAlpha = isOnPath ? 0.9 : 0.4
+      ctx.strokeStyle = canvasColors.linkColor
+      ctx.lineWidth = width
+      ctx.globalAlpha = 0.4
       ctx.stroke()
 
       /* LOD: Thin lines only (globalScale 0.3–0.6) — no arrows, no labels */
@@ -368,7 +331,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
         endY - arrowLen * Math.sin(angle + 0.4)
       )
       ctx.closePath()
-      ctx.fillStyle = isOnPath ? "#3B82F6" : canvasColors.linkColor
+      ctx.fillStyle = canvasColors.linkColor
       ctx.fill()
 
       // Relationship label
@@ -397,7 +360,7 @@ export function GraphCanvas({ data, graphRef: externalRef }: GraphCanvasProps) {
 
       ctx.globalAlpha = 1.0
     },
-    [showRelationshipLabels, highlightedPaths, canvasColors]
+    [showRelationshipLabels, canvasColors]
   )
 
   /* ---- Click handlers ---- */
