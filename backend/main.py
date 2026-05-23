@@ -66,10 +66,15 @@ async def lifespan(app: FastAPI):
     # legitimate retries. Threshold = 5 min of no heartbeat (the
     # ingest heartbeats every ~2s during the write loop).
     try:
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from services.background_task_storage import background_task_storage, TaskStatus
+        from services._timeutil import utcnow, utcnow_iso, parse_iso_utc
 
-        now = datetime.now()
+        # Aware UTC now + tolerant parser: task timestamps may be offset-aware
+        # (new rows via utcnow_iso) or naive (legacy rows). parse_iso_utc
+        # coerces both to aware UTC so this subtraction never raises the
+        # "can't subtract offset-naive and offset-aware datetimes" TypeError.
+        now = utcnow()
         stale_threshold = timedelta(minutes=5)
         rescued = 0
         for status_filter in (TaskStatus.RUNNING.value, TaskStatus.PENDING.value):
@@ -78,17 +83,14 @@ async def lifespan(app: FastAPI):
                     continue
                 ts = (t.get("updated_at") or t.get("started_at")
                       or t.get("created_at"))
-                try:
-                    ts_dt = datetime.fromisoformat(ts) if ts else None
-                except (ValueError, TypeError):
-                    ts_dt = None
+                ts_dt = parse_iso_utc(ts)
                 # If we can't read the timestamp, treat as stale —
                 # safer than leaving an undead task blocking retries.
                 if ts_dt is None or (now - ts_dt) > stale_threshold:
                     background_task_storage.update_task(
                         t["id"],
                         status=TaskStatus.FAILED.value,
-                        completed_at=now.isoformat(),
+                        completed_at=utcnow_iso(),
                         error=("process died mid-ingest (backend restarted) — "
                                "last heartbeat was "
                                f"{(now - ts_dt) if ts_dt else 'unknown'} ago"),

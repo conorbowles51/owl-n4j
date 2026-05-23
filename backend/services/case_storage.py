@@ -11,6 +11,8 @@ from typing import Dict, Optional, List
 from datetime import datetime
 import uuid
 
+from services._json_file_lock import save_json_atomic
+
 # Storage file location
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STORAGE_DIR = BASE_DIR / "data"
@@ -50,15 +52,12 @@ def load_cases() -> Dict:
 def save_cases(cases: Dict):
     """Save cases to the JSON file."""
     ensure_storage_dir()
-    
+
     try:
-        # Create a temporary file first, then rename for atomic writes
-        temp_file = STORAGE_FILE.with_suffix('.tmp')
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(cases, f, indent=2, ensure_ascii=False)
-        
-        # Atomic rename
-        temp_file.replace(STORAGE_FILE)
+        # Locked, unique-temp atomic write — serialises across uvicorn
+        # workers and avoids the shared-`.tmp` rename race. See
+        # _json_file_lock.
+        save_json_atomic(STORAGE_FILE, cases)
     except IOError as e:
         print(f"Error saving cases: {e}")
         raise

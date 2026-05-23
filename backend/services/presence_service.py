@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 from threading import Lock
 import uuid
 
+from services._json_file_lock import save_json_atomic
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STORAGE_DIR = BASE_DIR / "data"
 WORKSPACE_SESSIONS_FILE = STORAGE_DIR / "workspace_sessions.json"
@@ -37,11 +39,11 @@ def load_sessions() -> Dict:
 def save_sessions(sessions: Dict):
     """Save workspace sessions to JSON file."""
     ensure_storage_dir()
-    temp_file = WORKSPACE_SESSIONS_FILE.with_suffix('.tmp')
+    # Locked, unique-temp atomic write (see _json_file_lock). Presence is
+    # the highest-write-frequency JSON store, so it was the most likely to
+    # hit the shared-`.tmp` rename race next.
     try:
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(sessions, f, indent=2, ensure_ascii=False, default=str)
-        temp_file.replace(WORKSPACE_SESSIONS_FILE)
+        save_json_atomic(WORKSPACE_SESSIONS_FILE, sessions, default=str)
     except IOError as e:
         print(f"Error saving workspace sessions: {e}")
         raise

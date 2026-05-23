@@ -13,6 +13,7 @@ from datetime import datetime
 from services.snapshot_chunk_storage import (
     chunk_data, save_chunk, load_chunk, delete_chunks, reassemble_chunks
 )
+from services._json_file_lock import save_json_atomic
 
 # Storage file location
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -57,10 +58,6 @@ def save_snapshots(snapshots: Dict):
         # Instead of serializing the entire dictionary at once (which can corrupt nested data),
         # verify each snapshot has its nested structures before saving
         # We'll still serialize the whole dict for saving, but we've already validated each snapshot individually
-        # Create a temporary file first, then rename for atomic writes
-        temp_file = STORAGE_FILE.with_suffix('.tmp')
-        print(f"[SAVE_SNAPSHOTS] Writing to temp file: {temp_file}")
-        
         # Before writing, verify each snapshot's data structure
         for snap_id, snap_data in snapshots.items():
             if 'subgraph' in snap_data:
@@ -92,12 +89,10 @@ def save_snapshots(snapshots: Dict):
             import traceback
             traceback.print_exc()
         
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(snapshots, f, indent=2, ensure_ascii=False)
-        
-        # Atomic rename
-        print(f"[SAVE_SNAPSHOTS] Renaming temp file to {STORAGE_FILE}")
-        temp_file.replace(STORAGE_FILE)
+        # Locked, unique-temp atomic write — serialises across uvicorn
+        # workers and avoids the shared-`.tmp` rename race. See
+        # services._json_file_lock.
+        save_json_atomic(STORAGE_FILE, snapshots)
         print(f"[SAVE_SNAPSHOTS] Successfully saved snapshots to disk")
         
         # Verify what was actually written

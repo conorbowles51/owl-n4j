@@ -7,6 +7,7 @@ Stores background task information so the frontend can monitor progress.
 from __future__ import annotations
 
 import json
+import os
 import uuid
 import fcntl
 from contextlib import contextmanager
@@ -17,6 +18,7 @@ from enum import Enum
 from threading import RLock
 
 from config import BASE_DIR
+from services._timeutil import utcnow_iso
 
 
 TASK_DIR = BASE_DIR / "data"
@@ -119,6 +121,12 @@ class BackgroundTaskStorage:
         with self._lock:
             _ensure_dir()
             with open(LOCK_FILE, "a") as lf:
+                # See evidence_storage._file_locked — defends against a sudo'd
+                # script re-creating the lock with restrictive root ownership.
+                try:
+                    os.chmod(LOCK_FILE, 0o666)
+                except OSError:
+                    pass
                 fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
                 try:
                     fresh = _load_tasks()
@@ -167,7 +175,7 @@ class BackgroundTaskStorage:
             Task dict with id, status, etc.
         """
         task_id = str(uuid.uuid4())
-        timestamp = datetime.now().isoformat()
+        timestamp = utcnow_iso()
         task = {
             "id": task_id,
             "task_type": task_type,
@@ -289,7 +297,7 @@ class BackgroundTaskStorage:
                 updated = True
 
             if updated:
-                task["updated_at"] = datetime.now().isoformat()
+                task["updated_at"] = utcnow_iso()
             return task
 
     def list_tasks(

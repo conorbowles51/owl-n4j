@@ -5,6 +5,7 @@ Handles persistent storage of uploaded evidence files and their processing statu
 """
 
 import json
+import os
 import hashlib
 import fcntl
 from contextlib import contextmanager
@@ -14,6 +15,7 @@ from datetime import datetime
 from threading import RLock
 
 from config import BASE_DIR
+from services._timeutil import utcnow_iso
 
 
 # BASE_DIR in config.py already points to the project root (e.g. /.../owl-n4j)
@@ -117,6 +119,14 @@ class EvidenceStorage:
         with self._lock:
             ensure_dirs()
             with open(LOCK_FILE, "a") as lf:
+                # Keep the lock file world-writable so a root-owned re-create
+                # (e.g., a sudo'd maintenance script) cannot lock out the
+                # backend user. chmod only succeeds for owner or root; if the
+                # current process owns the file every call refreshes mode 666.
+                try:
+                    os.chmod(LOCK_FILE, 0o666)
+                except OSError:
+                    pass
                 fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
                 try:
                     fresh = _load_evidence()
@@ -250,7 +260,7 @@ class EvidenceStorage:
         """
         created_records: List[dict] = []
         with self._file_locked() as records:
-            now = datetime.now().isoformat()
+            now = utcnow_iso()
             for file_info in files:
                 original_filename = file_info["original_filename"]
                 stored_path: Path = file_info["stored_path"]
@@ -356,7 +366,7 @@ class EvidenceStorage:
     ) -> None:
         """Mark selected evidence as processed or failed."""
         with self._file_locked() as records:
-            now = datetime.now().isoformat()
+            now = utcnow_iso()
             for evid in evidence_ids:
                 rec = records.get(evid)
                 if not rec:

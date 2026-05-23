@@ -13,6 +13,7 @@ from typing import Optional, Dict
 from datetime import datetime
 
 from config import BASE_DIR
+from services._json_file_lock import save_json_atomic
 
 
 DATA_DIR = BASE_DIR / "data"
@@ -36,10 +37,9 @@ def _load_last_graph() -> Optional[Dict]:
 
 def _save_last_graph(data: Dict) -> None:
   _ensure_dir()
-  tmp = STORAGE_FILE.with_suffix(".tmp")
-  with open(tmp, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2, ensure_ascii=False)
-  tmp.replace(STORAGE_FILE)
+  # Locked, unique-temp atomic write — serialises across uvicorn workers
+  # and avoids the shared-`.tmp` rename race. See _json_file_lock.
+  save_json_atomic(STORAGE_FILE, data)
 
 
 class LastGraphStorage:

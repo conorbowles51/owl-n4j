@@ -15,6 +15,8 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import uuid
 
+from services._json_file_lock import save_json_atomic
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STORAGE_DIR = BASE_DIR / "data"
 
@@ -49,13 +51,16 @@ def load_json_file(file_path: Path, default: Any = None) -> Any:
 
 
 def save_json_file(file_path: Path, data: Any):
-    """Save data to JSON file atomically."""
+    """Save data to JSON file atomically.
+
+    Single write choke point for all workspace stores (contexts, witnesses,
+    theories, tasks, deadlines, notes, findings, pinned items). Locked +
+    unique-temp atomic write serialises across uvicorn workers and avoids
+    the shared-`.tmp` rename race. See services._json_file_lock.
+    """
     ensure_storage_dir()
-    temp_file = file_path.with_suffix('.tmp')
     try:
-        with open(temp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-        temp_file.replace(file_path)
+        save_json_atomic(file_path, data, default=str)
     except IOError as e:
         print(f"Error saving {file_path}: {e}")
         raise

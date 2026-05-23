@@ -10,6 +10,7 @@ from typing import Dict, Set, Optional, List
 from datetime import datetime
 
 from config import BASE_DIR
+from services._json_file_lock import save_json_atomic
 
 
 DATA_DIR = BASE_DIR / "data"
@@ -32,10 +33,8 @@ def _load_tracking() -> Dict[str, dict]:
 def _save_tracking(tracking: Dict[str, dict]) -> None:
     """Persist wiretap tracking data to JSON file."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = TRACKING_FILE.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(tracking, f, indent=2, ensure_ascii=False)
-    tmp.replace(TRACKING_FILE)
+    # Locked, unique-temp atomic write (see _json_file_lock).
+    save_json_atomic(TRACKING_FILE, tracking)
 
 
 def mark_wiretap_processed(case_id: str, folder_path: str) -> None:

@@ -16,6 +16,7 @@ from threading import RLock
 from typing import Dict, List, Optional
 
 from config import BASE_DIR
+from services._json_file_lock import save_json_atomic
 
 logger = __import__("logging").getLogger(__name__)
 
@@ -37,10 +38,8 @@ def _load() -> List[Dict]:
 
 def _save(templates: List[Dict]) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = TEMPLATES_FILE.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(templates, f, indent=2, ensure_ascii=False)
-    tmp.replace(TEMPLATES_FILE)
+    # Locked, unique-temp atomic write (see services._json_file_lock).
+    save_json_atomic(TEMPLATES_FILE, templates)
 
 
 class TemplateService:

@@ -15,6 +15,7 @@ from datetime import datetime
 from threading import RLock
 
 from config import BASE_DIR
+from services._json_file_lock import save_json_atomic
 
 
 DATA_DIR = BASE_DIR / "data"
@@ -39,10 +40,8 @@ def _load_cases() -> List[Dict]:
 
 def _save_cases(cases: List[Dict]) -> None:
     _ensure_dir()
-    tmp = STORAGE_FILE.with_suffix(".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cases, f, indent=2, ensure_ascii=False)
-    tmp.replace(STORAGE_FILE)
+    # Locked, unique-temp atomic write (see services._json_file_lock).
+    save_json_atomic(STORAGE_FILE, cases)
 
 
 class TriageStorage:
