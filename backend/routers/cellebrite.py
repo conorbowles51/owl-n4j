@@ -208,8 +208,13 @@ def get_communication_network(
 ):
     """Get communication network analysis (contact frequency, shared contacts)."""
     _require_case_access(case_id, current_user, db)
-    result = neo4j_service.get_cellebrite_communication_network(case_id)
-    return result
+    try:
+        return neo4j_service.get_cellebrite_communication_network(case_id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Communication network query failed: {type(e).__name__}: {e}",
+        ) from e
 
 
 # -------------------------------------------------------------------
@@ -360,7 +365,7 @@ def get_comms_thread_detail(
     thread_id: str,
     case_id: str = Query(...),
     thread_type: str = Query(..., description="chat, calls, or emails"),
-    limit: int = Query(500, ge=1, le=500000),
+    limit: int = Query(500, ge=1, le=2000),
     offset: int = Query(0, ge=0),
     anchor_key: Optional[str] = Query(
         None,
@@ -1150,13 +1155,22 @@ def contacts_unified(
     rk_list = None
     if report_keys:
         rk_list = [k.strip() for k in report_keys.split(",") if k.strip()]
-    return neo4j_service.get_unified_contacts(
-        case_id=case_id,
-        report_keys=rk_list,
-        search=search,
-        limit=limit,
-        offset=offset,
-    )
+    try:
+        return neo4j_service.get_unified_contacts(
+            case_id=case_id,
+            report_keys=rk_list,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unified contacts query failed: {type(e).__name__}: {e}",
+        ) from e
 
 
 @router.get("/overview/calls")
