@@ -134,17 +134,19 @@ SUPPORTED_MODEL_TYPES = {
     "FileDownload",
     # Phase 7 — per-app network usage (data-consumption timeline)
     "NetworkUsage",
+    # Phase 8 — keyboard-learned dictionary words. Initially skipped as
+    # "autocomplete noise", but an audit of C5's 6,539 entries found real
+    # investigative values: a typed email (salguerojuan840@gmail.com), a
+    # fragment of the owner's own phone number, probable money amounts
+    # (100mil/13mil/14mil), a possible DOB (08011971), names, and fragments
+    # of typed phrases. The word + frequency reveals what the owner typed
+    # most. 6.5k tiny nodes/phone is negligible. Keep them.
+    "DictionaryWord",
 }
 
 # Model types we intentionally skip (too granular / low investigative value).
-# DictionaryWord: per-language autocomplete dictionary entries. Cellebrite
-# exports thousands of these and they aren't actionable for an investigator
-# — keeping them out of SUPPORTED_MODEL_TYPES (which has the same effect)
-# would also make reconciliation flag them as "not_supported", a misleading
-# label since the omission is deliberate.
-SKIPPED_MODEL_TYPES = {
-    "DictionaryWord",
-}
+# (Currently empty — every type seen in our reports now has a handler.)
+SKIPPED_MODEL_TYPES: set = set()
 
 
 def _strip_ns(tag: str) -> str:

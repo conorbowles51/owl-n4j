@@ -228,6 +228,7 @@ class CellebriteNeo4jWriter:
         self.installed_apps_created = 0
         self.file_downloads_created = 0
         self.network_usage_created = 0
+        self.dictionary_words_created = 0
         self.nodes_total = 0
         self.relationships_total = 0
 
@@ -801,6 +802,7 @@ class CellebriteNeo4jWriter:
             "InstalledApplication": self._write_installed_application,
             "FileDownload": self._write_file_download,
             "NetworkUsage": self._write_network_usage,
+            "DictionaryWord": self._write_dictionary_word,
             # Explicit ignores (parser emits them, writer silently skips)
             "KeyValueModel": self._noop,
             "Party": self._noop,
@@ -2296,6 +2298,44 @@ class CellebriteNeo4jWriter:
 
         self.network_usage_created += 1
 
+    def _write_dictionary_word(self, model: ParsedModel):
+        """DictionaryWord -> DictionaryWord node.
+
+        A word the device keyboard (e.g. SwiftKey) learned from the owner's
+        typing, with how often it was typed (Frequency). Looks like
+        autocomplete noise in bulk, but an audit found real values among
+        them: typed email addresses, phone-number fragments, money amounts,
+        names, and phrase fragments — none of which appear anywhere else in
+        the extraction. The owner TYPED these, so they attach to the owner.
+        """
+        word = model.get_field("Word")
+        if not word:
+            return
+        # Drop keyboard artifacts: empty/whitespace or a single non-word
+        # character (e.g. "^", ".", ","). Anything with a letter or digit,
+        # or any multi-char token, is kept — that's where the values live.
+        stripped = word.strip()
+        if not stripped or (len(stripped) == 1 and not stripped.isalnum()):
+            return
+
+        frequency = _safe_int(model.get_field("Frequency"))
+        source = model.get_field("Source")
+
+        key = f"dword-{model.model_id[:12]}"
+        props = self._base_props(model, key, word[:100])
+        props.update({
+            "word": word,
+            "frequency": frequency,
+            "source_app": source,
+        })
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("DictionaryWord", key, props)
+
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "TYPED")
+
+        self.dictionary_words_created += 1
+
     # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
@@ -2323,6 +2363,7 @@ class CellebriteNeo4jWriter:
             "installed_apps_created": self.installed_apps_created,
             "file_downloads_created": self.file_downloads_created,
             "network_usage_created": self.network_usage_created,
+            "dictionary_words_created": self.dictionary_words_created,
             "total_nodes": self.nodes_total,
             "total_relationships": self.relationships_total,
             "phone_owner": self._phone_owner_key,

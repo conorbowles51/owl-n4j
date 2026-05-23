@@ -53,6 +53,7 @@ _RECONCILE_MAP: dict = {
     "InstalledApplication": {"stats": ["installed_apps_created"],   "nested": False},
     "FileDownload":         {"stats": ["file_downloads_created"],   "nested": False},
     "NetworkUsage":         {"stats": ["network_usage_created"],    "nested": False},
+    "DictionaryWord":       {"stats": ["dictionary_words_created"], "nested": False},
 }
 
 
@@ -507,6 +508,7 @@ def ingest_cellebrite_report(
         f"  Installed apps: {stats['installed_apps_created']}\n"
         f"  Downloads: {stats['file_downloads_created']}\n"
         f"  Network usage: {stats['network_usage_created']}\n"
+        f"  Dictionary words: {stats['dictionary_words_created']}\n"
         f"  Total nodes: {stats['total_nodes']}\n"
         f"  Total relationships: {stats['total_relationships']}\n"
         f"  Media files registered: {media_registered}\n"
