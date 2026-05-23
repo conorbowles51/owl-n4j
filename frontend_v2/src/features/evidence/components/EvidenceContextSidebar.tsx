@@ -32,6 +32,7 @@ import { StatusIndicator, type ProcessingStatus } from "@/components/ui/status-i
 import { DocumentViewer } from "@/components/ui/document-viewer"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/cn"
+import { downloadProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 import { useEvidenceStore } from "../evidence.store"
 import { useUIStore } from "@/stores/ui.store"
 import { useJobs } from "../hooks/use-jobs"
@@ -45,6 +46,7 @@ import { useFileEntities, useFileRelationships } from "../hooks/use-file-entitie
 import { getDisplayStatus } from "../utils/display-status"
 import type { FileEntity, FileRelationship } from "../hooks/use-file-entities"
 import type { EvidenceFileRecord } from "@/types/evidence.types"
+import { toast } from "sonner"
 
 // --- Shared helpers ---
 
@@ -135,6 +137,12 @@ function SmartThumbnail({
   onOpenViewer: () => void
 }) {
   const mediaType = getMediaType(file.original_filename)
+  const {
+    objectUrl,
+    loading,
+    error,
+  } = useProtectedObjectUrl(fileUrl, Boolean(mediaType && fileUrl))
+
   if (!mediaType) return null
 
   return (
@@ -144,12 +152,22 @@ function SmartThumbnail({
           onClick={onOpenViewer}
           className="group relative w-full"
         >
-          <img
-            src={fileUrl}
-            alt={file.original_filename}
-            className="w-full max-h-[200px] object-contain bg-muted/30"
-            loading="lazy"
-          />
+          {loading ? (
+            <div className="flex h-32 items-center justify-center bg-muted/30 text-xs text-muted-foreground">
+              Loading preview...
+            </div>
+          ) : error || !objectUrl ? (
+            <div className="flex h-32 items-center justify-center bg-muted/30 text-xs text-muted-foreground">
+              Preview unavailable
+            </div>
+          ) : (
+            <img
+              src={objectUrl}
+              alt={file.original_filename}
+              className="w-full max-h-[200px] object-contain bg-muted/30"
+              loading="lazy"
+            />
+          )}
           <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
             <Eye className="size-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
@@ -161,7 +179,7 @@ function SmartThumbnail({
           <Music className="size-8 text-muted-foreground" />
           <audio
             controls
-            src={fileUrl}
+            src={objectUrl ?? undefined}
             className="w-full"
             preload="metadata"
           />
@@ -172,7 +190,7 @@ function SmartThumbnail({
         <div className="bg-black">
           <video
             controls
-            src={fileUrl}
+            src={objectUrl ?? undefined}
             className="w-full max-h-[200px]"
             preload="metadata"
           />
@@ -337,6 +355,12 @@ function DetailsPanelContent({
     processMutation.mutate({ fileIds: [file.id] })
   }
 
+  const handleDownload = () => {
+    void downloadProtectedFile(fileUrl, file.original_filename).catch((err: unknown) => {
+      toast.error(err instanceof Error ? err.message : "Download failed")
+    })
+  }
+
   return (
     <>
       <ScrollArea className="h-full">
@@ -376,11 +400,9 @@ function DetailsPanelContent({
               <Eye className="size-3.5" />
               Open File
             </Button>
-            <a href={fileUrl} download target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" size="icon-sm" title="Download">
-                <Download className="size-3.5" />
-              </Button>
-            </a>
+            <Button variant="ghost" size="icon-sm" title="Download" onClick={handleDownload}>
+              <Download className="size-3.5" />
+            </Button>
           </div>
 
           {/* Smart thumbnail */}

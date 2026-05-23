@@ -16,6 +16,7 @@ import {
   Music,
   Loader2,
 } from "lucide-react"
+import { openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 
 const IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".webp", ".tiff", ".tif"]
 const AUDIO_EXTS = [".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma"]
@@ -65,6 +66,12 @@ export function DocumentViewer({
   const fileType = getFileType(documentName)
   const IconComp = FILE_ICONS[fileType] ?? FileText
   const isPdf = fileType === "pdf"
+  const shouldFetchBlob = open && Boolean(documentUrl) && fileType !== "text"
+  const {
+    objectUrl: protectedUrl,
+    loading: protectedLoading,
+    error: protectedError,
+  } = useProtectedObjectUrl(documentUrl, shouldFetchBlob)
 
   // Reset and fetch when dialog opens
   useEffect(() => {
@@ -96,16 +103,28 @@ export function DocumentViewer({
             setLoading(false)
           }
         })
-    } else if (documentUrl && (fileType === "image" || fileType === "audio" || fileType === "video")) {
-      setLoading(false)
+    } else if (documentUrl && fileType !== "text") {
+      setLoading(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, documentUrl, fileType])
 
-  const pdfUrlWithPage = documentUrl && isPdf ? `${documentUrl}#page=${currentPage}` : null
+  useEffect(() => {
+    if (!open || fileType === "text") return
+    if (protectedError) {
+      setError("Failed to load document")
+      setLoading(false)
+      return
+    }
+    setLoading(protectedLoading || !protectedUrl)
+  }, [fileType, open, protectedError, protectedLoading, protectedUrl])
+
+  const displayUrl = fileType === "text" ? documentUrl : protectedUrl
+  const pdfUrlWithPage = displayUrl && isPdf ? `${displayUrl}#page=${currentPage}` : null
 
   const handleOpenInNewTab = () => {
-    if (documentUrl) window.open(isPdf && pdfUrlWithPage ? pdfUrlWithPage : documentUrl, "_blank")
+    if (!documentUrl) return
+    void openProtectedFile(documentUrl).catch(() => setError("Failed to open document"))
   }
 
   const renderContent = () => {
@@ -124,13 +143,15 @@ export function DocumentViewer({
       case "image":
         return (
           <div className="flex h-full items-center justify-center bg-muted/50 p-4 overflow-auto">
-            <img
-              src={documentUrl}
-              alt={documentName}
-              className="max-w-full max-h-full object-contain rounded shadow-lg"
-              onLoad={() => setLoading(false)}
-              onError={() => { setLoading(false); setError("Failed to load image") }}
-            />
+            {displayUrl ? (
+              <img
+                src={displayUrl}
+                alt={documentName}
+                className="max-w-full max-h-full object-contain rounded shadow-lg"
+                onLoad={() => setLoading(false)}
+                onError={() => { setLoading(false); setError("Failed to load image") }}
+              />
+            ) : null}
           </div>
         )
 
@@ -142,7 +163,7 @@ export function DocumentViewer({
               <p className="text-sm font-medium">{documentName}</p>
               <audio
                 controls
-                src={documentUrl}
+                src={displayUrl ?? undefined}
                 className="w-full max-w-md"
                 onCanPlay={() => setLoading(false)}
                 onError={() => { setLoading(false); setError("Failed to load audio") }}
@@ -157,7 +178,7 @@ export function DocumentViewer({
           <div className="flex h-full items-center justify-center bg-black p-4">
             <video
               controls
-              src={documentUrl}
+              src={displayUrl ?? undefined}
               className="max-w-full max-h-full rounded"
               onCanPlay={() => setLoading(false)}
               onError={() => { setLoading(false); setError("Failed to load video") }}
@@ -181,7 +202,7 @@ export function DocumentViewer({
         return (
           <iframe
             ref={iframeRef}
-            src={pdfUrlWithPage!}
+            src={pdfUrlWithPage ?? undefined}
             className="h-full w-full border-0"
             onLoad={() => setLoading(false)}
             onError={() => { setLoading(false); setError("Failed to load document") }}
@@ -193,7 +214,7 @@ export function DocumentViewer({
         return (
           <iframe
             ref={iframeRef}
-            src={documentUrl}
+            src={displayUrl ?? undefined}
             className="h-full w-full border-0"
             onLoad={() => setLoading(false)}
             onError={() => { setLoading(false); setError("Failed to load document") }}

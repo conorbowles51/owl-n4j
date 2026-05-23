@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import type { LucideIcon } from "lucide-react"
 import { CheckCircle2, Tag, User } from "lucide-react"
 
 import { cn } from "@/lib/cn"
+import { useProtectedObjectUrl } from "@/lib/protected-file"
 
 import type { PhoneReport } from "../../types"
 import { readText } from "../shared/cellebrite-format"
@@ -41,6 +42,8 @@ export function FileThumbnail({
   onOpen: () => void
 }) {
   const [imageFailed, setImageFailed] = useState(false)
+  const [shouldLoadThumbnail, setShouldLoadThumbnail] = useState(false)
+  const itemRef = useRef<HTMLButtonElement | null>(null)
   const id = fileId(file)
   const name = fileName(file)
   const category = fileCategory(file)
@@ -51,12 +54,37 @@ export function FileThumbnail({
   const reportColor = colorByKey.get(reportKey) ?? "#64748b"
   const url = id ? evidenceUrl(id) : ""
   const thumbnailUrl = category === "Image" ? url : category === "Video" ? videoFrameUrl(id) : ""
+  useEffect(() => {
+    if (!thumbnailUrl || shouldLoadThumbnail) return
+
+    const node = itemRef.current
+    if (!node || typeof IntersectionObserver === "undefined") return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return
+        setShouldLoadThumbnail(true)
+        observer.disconnect()
+      },
+      { rootMargin: "300px" }
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [shouldLoadThumbnail, thumbnailUrl])
+
+  const {
+    objectUrl: protectedThumbnailUrl,
+    error: thumbnailError,
+  } = useProtectedObjectUrl(thumbnailUrl, Boolean(thumbnailUrl) && shouldLoadThumbnail && !imageFailed)
   const badges = fileBadges(file)
   const showPhoneChip = reports.length > 1 && reportKey
+  const previewUrl = protectedThumbnailUrl ?? ""
+  const previewFailed = imageFailed || Boolean(thumbnailError)
 
   if (layout === "list") {
     return (
       <button
+        ref={itemRef}
         type="button"
         onClick={onOpen}
         className={cn(
@@ -75,7 +103,7 @@ export function FileThumbnail({
           onClick={(event) => event.stopPropagation()}
           className="size-3 shrink-0 accent-amber-500"
         />
-        <PreviewBox thumbnailUrl={thumbnailUrl} name={name} icon={Icon} color={color} imageFailed={imageFailed} onImageFailed={() => setImageFailed(true)} />
+        <PreviewBox thumbnailUrl={previewUrl} name={name} icon={Icon} color={color} imageFailed={previewFailed} onImageFailed={() => setImageFailed(true)} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium text-foreground">{name}</span>
           <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -102,6 +130,7 @@ export function FileThumbnail({
 
   return (
     <button
+      ref={itemRef}
       type="button"
       onClick={onOpen}
       title={name}
@@ -111,8 +140,8 @@ export function FileThumbnail({
       )}
     >
       <div className="absolute inset-0 flex items-center justify-center bg-muted">
-        {thumbnailUrl && !imageFailed ? (
-          <img src={thumbnailUrl} alt={name} className="size-full object-cover" loading="lazy" onError={() => setImageFailed(true)} />
+        {previewUrl && !previewFailed ? (
+          <img src={previewUrl} alt={name} className="size-full object-cover" loading="lazy" onError={() => setImageFailed(true)} />
         ) : (
           <Icon className="size-8" style={{ color }} />
         )}

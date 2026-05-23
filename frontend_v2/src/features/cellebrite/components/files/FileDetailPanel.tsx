@@ -4,6 +4,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { evidenceAPI } from "@/features/evidence/api"
 import { workspaceAPI } from "@/features/workspace/api"
+import { downloadProtectedFile, openProtectedFile, useProtectedObjectUrl } from "@/lib/protected-file"
 
 import type { CellebriteRecord } from "../../types"
 import { compactDate, readList, readText } from "../shared/cellebrite-format"
@@ -129,14 +130,16 @@ export function FileDetailPanel({
             />
             <ActionButton icon={Pin} label="Pin" onClick={() => void run(() => workspaceAPI.pinItem(caseId, "evidence", id), "Pinned file")} />
             <ActionButton icon={Sparkles} label="Process" onClick={() => void run(() => evidenceAPI.processBackground(caseId, [id]), "Started AI processing")} />
-            <a
-              href={evidenceUrl(id)}
-              download={fileName(file)}
-              className="inline-flex h-8 items-center justify-center gap-1 rounded-md border border-border px-2 text-xs hover:bg-muted"
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 justify-start gap-1 px-2 text-xs"
+              onClick={() => void run(() => downloadProtectedFile(evidenceUrl(id), fileName(file)), "Download started")}
             >
               <Download className="size-3.5" />
               Download
-            </a>
+            </Button>
           </div>
         </div>
       </div>
@@ -148,22 +151,40 @@ function FilePreview({ file }: { file: CellebriteFileRecord }) {
   const id = fileId(file)
   const category = fileCategory(file)
   const url = evidenceUrl(id)
+  const shouldLoadPreview = ["Image", "Audio", "Video"].includes(category)
+  const { objectUrl, loading, error } = useProtectedObjectUrl(url, shouldLoadPreview)
+
+  if (shouldLoadPreview && loading) {
+    return <div className="flex h-32 items-center justify-center rounded-md border border-border bg-muted text-xs text-muted-foreground">Loading preview...</div>
+  }
+
+  if (shouldLoadPreview && (error || !objectUrl)) {
+    return <div className="flex h-32 items-center justify-center rounded-md border border-border bg-muted text-xs text-muted-foreground">Preview unavailable</div>
+  }
 
   if (category === "Image") {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="flex max-h-80 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-        <img src={url} alt={fileName(file)} className="max-h-80 w-full object-contain" />
-      </a>
+      <button
+        type="button"
+        onClick={() => void openProtectedFile(url)}
+        className="flex max-h-80 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted"
+      >
+        <img src={objectUrl ?? undefined} alt={fileName(file)} className="max-h-80 w-full object-contain" />
+      </button>
     )
   }
-  if (category === "Audio") return <audio src={url} controls preload="metadata" className="w-full" />
-  if (category === "Video") return <video src={url} controls preload="metadata" className="max-h-80 w-full bg-black" />
+  if (category === "Audio") return <audio src={objectUrl ?? undefined} controls preload="metadata" className="w-full" />
+  if (category === "Video") return <video src={objectUrl ?? undefined} controls preload="metadata" className="max-h-80 w-full bg-black" />
   if (category === "Text") {
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-md border border-border px-2 py-2 text-xs hover:bg-muted">
+      <button
+        type="button"
+        onClick={() => void openProtectedFile(url)}
+        className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-2 text-left text-xs hover:bg-muted"
+      >
         <FileText className="size-4 text-muted-foreground" />
         <span className="truncate">Open text preview</span>
-      </a>
+      </button>
     )
   }
   return <div className="text-xs text-muted-foreground">No preview for this file type.</div>

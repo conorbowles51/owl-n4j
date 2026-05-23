@@ -65,6 +65,29 @@ MAX_BATCH_SIZE = 50
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
 
 
+def _resolve_stored_path(stored_path: str | None) -> Optional[Path]:
+    """Resolve DB stored_path across host and Docker evidence-engine layouts."""
+    if not stored_path:
+        return None
+
+    direct = Path(stored_path)
+    if direct.exists():
+        return direct
+
+    normalised = str(stored_path).replace("\\", "/")
+    markers = ("ingestion/data/", "/ingestion/data/")
+    for marker in markers:
+        marker_index = normalised.find(marker)
+        if marker_index == -1:
+            continue
+        relative = normalised[marker_index + len(marker):].lstrip("/")
+        candidate = EVIDENCE_ROOT_DIR / PurePosixPath(relative)
+        if candidate.exists():
+            return candidate
+
+    return direct
+
+
 def _evidence_record_from_db(record) -> dict:
     return {
         "id": str(record.id),
@@ -1730,7 +1753,7 @@ async def delete_evidence_file(
 
         # 4. Delete physical file from backend disk
         if stored_path:
-            file_path = Path(stored_path)
+            file_path = _resolve_stored_path(stored_path) or Path(stored_path)
             if file_path.exists():
                 try:
                     file_path.unlink()
@@ -1784,12 +1807,13 @@ async def get_evidence_file(
         filename = record.original_filename or "file"
         stored_path = record.stored_path
 
-        if not stored_path or not Path(stored_path).exists():
+        file_path = _resolve_stored_path(stored_path)
+        if not file_path or not file_path.exists():
             raise HTTPException(status_code=404, detail="File not found on disk")
 
         content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
         return FileResponse(
-            path=stored_path,
+            path=file_path,
             filename=filename,
             media_type=content_type,
             headers={"Content-Disposition": f'inline; filename="{filename}"'},
@@ -1876,7 +1900,7 @@ async def get_video_frames(
     if not stored_path:
         raise HTTPException(status_code=404, detail="File path not found")
 
-    video_path = Path(stored_path)
+    video_path = _resolve_stored_path(stored_path) or Path(stored_path)
     if not video_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found on disk")
 

@@ -18,6 +18,7 @@ from postgres.models.user import User
 from routers.evidence import (
     _extract_archive_to_staging,
     _find_cellebrite_report_roots,
+    _resolve_stored_path,
     get_current_db_user,
     get_db,
     router,
@@ -56,6 +57,18 @@ class EvidenceCellebriteRouteTests(unittest.TestCase):
                 {"PhoneReport/PhoneReport.xml", "PhoneReport/files/Text/note.txt"},
             )
             self.assertEqual(_find_cellebrite_report_roots(extract_dir), ["PhoneReport"])
+
+    def test_stored_path_resolves_container_evidence_root_to_host_root(self):
+        with TemporaryDirectory() as tmp:
+            evidence_root = Path(tmp) / "ingestion" / "data"
+            stored_file = evidence_root / "case-id" / "Report" / "files" / "Image" / "photo.png"
+            stored_file.parent.mkdir(parents=True)
+            stored_file.write_bytes(b"image")
+
+            with patch("routers.evidence.EVIDENCE_ROOT_DIR", evidence_root):
+                resolved = _resolve_stored_path("/ingestion/data/case-id/Report/files/Image/photo.png")
+
+            self.assertEqual(resolved, stored_file)
 
     def test_cellebrite_archive_upload_unpacks_without_generic_evidence_rows(self):
         marker = "http://pa.cellebrite.com/report/2.0"
