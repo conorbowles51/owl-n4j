@@ -1182,6 +1182,12 @@ class CellebriteProcessRequest(BaseModel):
     # would collide (same key / IMEI / evidence_number). The frontend
     # sets this only after the user confirms in a duplicate dialog.
     force: bool = False
+    # Investigator-supplied device-owner identity. Required when the
+    # report carries no extractable phone number (the check endpoint
+    # returns empty phone_numbers and the UI prompts for one); optional
+    # otherwise, where it's added as an extra owner alias. See the
+    # cellebrite-phone-number-required rule.
+    device_identifier: Optional[str] = None
 
 
 class CellebriteProcessResponse(BaseModel):
@@ -1229,6 +1235,28 @@ def process_cellebrite_folder(
             raise HTTPException(
                 status_code=400,
                 detail=detection.get("message", "Not a valid Cellebrite report"),
+            )
+
+        # Precondition: a device with no extractable phone number needs an
+        # investigator-supplied identifier, else the PhoneReport has no
+        # owning identity (see cellebrite-phone-number-required). The check
+        # endpoint already surfaces phone_numbers so the UI can prompt;
+        # this 422 is the server-side guard for direct/forced callers.
+        detected_numbers = detection.get("phone_numbers") or []
+        supplied_identifier = (request.device_identifier or "").strip()
+        if not detected_numbers and not supplied_identifier:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "reason": "missing_device_identifier",
+                    "message": (
+                        "This device has no phone number in the Cellebrite "
+                        "report. Supply a device identifier to attribute its "
+                        "data (conversations, calls, etc.)."
+                    ),
+                    "device_model": detection.get("device_model"),
+                    "report_name": detection.get("report_name"),
+                },
             )
 
         # Block duplicate ingests unless the user explicitly opts in
@@ -1310,6 +1338,7 @@ def process_cellebrite_folder(
         user_email = current_user.email
 
         force_flag = request.force
+        device_identifier = supplied_identifier or None
 
         def run_cellebrite_background():
             process_cellebrite_report(
@@ -1318,6 +1347,7 @@ def process_cellebrite_folder(
                 task_id=task_id,
                 owner=user_email,
                 force=force_flag,
+                device_identifier=device_identifier,
             )
 
         import threading

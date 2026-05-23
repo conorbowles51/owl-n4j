@@ -52,6 +52,7 @@ _RECONCILE_MAP: dict = {
     "User":                 {"stats": ["users_created"],            "nested": False},
     "InstalledApplication": {"stats": ["installed_apps_created"],   "nested": False},
     "FileDownload":         {"stats": ["file_downloads_created"],   "nested": False},
+    "NetworkUsage":         {"stats": ["network_usage_created"],    "nested": False},
 }
 
 
@@ -136,6 +137,7 @@ def ingest_cellebrite_report(
     owner: Optional[str] = None,
     evidence_storage=None,
     progress_callback: Optional[Callable[[dict], None]] = None,
+    device_identifier: Optional[str] = None,
 ) -> dict:
     """
     Ingest a complete Cellebrite UFED report into the Neo4j graph.
@@ -154,6 +156,13 @@ def ingest_cellebrite_report(
             keep the UI live during the multi-hour ingest. Pre-2026-05-23
             the task showed `running` with 0/0 progress for the entire
             run — users couldn't tell if it was working.
+        device_identifier: Investigator-supplied identity for the device
+            owner. Required when the report carries NO extractable phone
+            number (otherwise the PhoneReport has no owning identity and
+            investigative views collapse — see the cellebrite-phone-number-
+            required rule). When the report DOES have a phone number this is
+            optional and, if given, is added as an extra owner alias without
+            erasing the detected number(s).
 
     Returns:
         Dict with ingestion statistics and status
@@ -195,6 +204,49 @@ def ingest_cellebrite_report(
 
     parser = CellebriteXMLParser(xml_path, log_callback=log_callback)
     report = parser.parse_header()
+
+    # ------------------------------------------------------------------
+    # Precondition: every PhoneReport needs an owning device identity.
+    # When the report has NO extractable phone number, the investigator
+    # must supply a manual identifier (collected up-front in the UI) —
+    # otherwise communications/contacts can't be attributed to an owner
+    # and the investigative views are useless. See the
+    # cellebrite-phone-number-required rule. parse_header() has already
+    # populated device_info.msisdn, so this check is cheap (no full
+    # model parse needed).
+    #
+    # A supplied identifier is recorded as a synthetic MSISDN: it then
+    # flows through create_phone_report_node() (PhoneReport.phone_numbers)
+    # and create_phone_owner() (the owner Person node + every owner edge)
+    # exactly as a real number would. We also flag it so the UI can show
+    # it's investigator-supplied rather than extracted.
+    manual_identifier = (device_identifier or "").strip()
+    report.device_info.identifier_is_manual = False
+    if not report.device_info.msisdn:
+        if not manual_identifier:
+            _log(
+                "ERROR: report has no extractable phone number and no manual "
+                "device identifier was supplied — refusing to ingest a "
+                "PhoneReport with no owning identity."
+            )
+            return {
+                "status": "error",
+                "reason": "missing_device_identifier",
+                "message": (
+                    "This device has no phone number in the Cellebrite report. "
+                    "Supply a device identifier to attribute its data."
+                ),
+                "file": str(report_dir),
+            }
+        report.device_info.msisdn = [manual_identifier]
+        report.device_info.identifier_is_manual = True
+        _log(f"Using investigator-supplied device identifier: {manual_identifier}")
+    elif manual_identifier and manual_identifier not in report.device_info.msisdn:
+        # Number(s) detected AND an override given: keep the real numbers,
+        # add the investigator's alias as an additional identity.
+        report.device_info.msisdn = list(report.device_info.msisdn) + [manual_identifier]
+        report.device_info.identifier_is_manual = True
+        _log(f"Added investigator-supplied owner alias: {manual_identifier}")
 
     # Generate unique report key
     report_key = (
@@ -454,6 +506,7 @@ def ingest_cellebrite_report(
         f"  Device users: {stats['users_created']}\n"
         f"  Installed apps: {stats['installed_apps_created']}\n"
         f"  Downloads: {stats['file_downloads_created']}\n"
+        f"  Network usage: {stats['network_usage_created']}\n"
         f"  Total nodes: {stats['total_nodes']}\n"
         f"  Total relationships: {stats['total_relationships']}\n"
         f"  Media files registered: {media_registered}\n"

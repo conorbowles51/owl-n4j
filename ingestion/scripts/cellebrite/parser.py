@@ -132,6 +132,8 @@ SUPPORTED_MODEL_TYPES = {
     # Phase 6 — device inventory & file provenance
     "InstalledApplication",
     "FileDownload",
+    # Phase 7 — per-app network usage (data-consumption timeline)
+    "NetworkUsage",
 }
 
 # Model types we intentionally skip (too granular / low investigative value).
@@ -141,7 +143,6 @@ SUPPORTED_MODEL_TYPES = {
 # would also make reconciliation flag them as "not_supported", a misleading
 # label since the omission is deliberate.
 SKIPPED_MODEL_TYPES = {
-    "NetworkUsage",
     "DictionaryWord",
 }
 

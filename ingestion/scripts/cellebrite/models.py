@@ -51,6 +51,11 @@ class DeviceInfo:
     # accessories, paired devices). Kept for diagnostics — not the
     # canonical IMEI of the phone.
     accessory_imeis: List[str] = field(default_factory=list)
+    # True when the device owner's identity in `msisdn` includes an
+    # investigator-supplied identifier (set by the ingestion precondition
+    # when the report had no extractable phone number, or when an override
+    # alias was provided). Lets the UI badge the identity as manual.
+    identifier_is_manual: bool = False
 
 
 @dataclass

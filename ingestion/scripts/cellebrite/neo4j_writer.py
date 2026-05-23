@@ -227,6 +227,7 @@ class CellebriteNeo4jWriter:
         self.users_created = 0
         self.installed_apps_created = 0
         self.file_downloads_created = 0
+        self.network_usage_created = 0
         self.nodes_total = 0
         self.relationships_total = 0
 
@@ -554,6 +555,17 @@ class CellebriteNeo4jWriter:
 
     def create_phone_owner(self) -> Optional[str]:
         """Create the phone owner Person node from collected identity info."""
+        # When an investigator-supplied identifier is in play (report had no
+        # extractable number, or an override alias was added), make sure it
+        # is part of the owner identity even if the models already yielded a
+        # phone-owner party — otherwise the manual identifier would land on
+        # the PhoneReport but not on the owner Person node, so it wouldn't
+        # show in conversations. See cellebrite-phone-number-required rule.
+        if getattr(self.report.device_info, "identifier_is_manual", False):
+            for ident in self.report.device_info.msisdn:
+                if ident:
+                    self._phone_owner_identifiers.add(ident)
+
         if not self._phone_owner_names and not self._phone_owner_identifiers:
             # Fallback: use device MSISDN
             if self.report.device_info.msisdn:
@@ -687,6 +699,11 @@ class CellebriteNeo4jWriter:
             "accessory_imeis": accessory_imeis,
             "os_type": di.os_type,
             "phone_numbers": di.msisdn,
+            # True when phone_numbers contains an investigator-supplied
+            # identifier (report had no extractable number, or an override
+            # alias was added). UI badges this so a manual identity isn't
+            # mistaken for an extracted MSISDN.
+            "device_identifier_manual": getattr(di, "identifier_is_manual", False),
         }
 
         # Remove None values
@@ -783,6 +800,7 @@ class CellebriteNeo4jWriter:
             "User": self._write_user,
             "InstalledApplication": self._write_installed_application,
             "FileDownload": self._write_file_download,
+            "NetworkUsage": self._write_network_usage,
             # Explicit ignores (parser emits them, writer silently skips)
             "KeyValueModel": self._noop,
             "Party": self._noop,
@@ -1344,8 +1362,15 @@ class CellebriteNeo4jWriter:
     def _write_searched_item(self, model: ParsedModel):
         """SearchedItem -> SearchedItem node."""
         value = model.get_field("Value")
-        timestamp = model.get_field("TimeStamp")
+        # SearchedItem timestamps can land on LastVisited/Date as well as
+        # TimeStamp; the hardcoded-TimeStamp pattern is exactly what the
+        # 2026-05-23 audit flagged for dropping events. Use the alias path.
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp", "Date", "LastVisited"))
         source = model.get_field("Source")
+        # Origin = which app/surface the search was issued from (browser
+        # vs in-app search). Sparse in our data (~3 non-empty) but the
+        # audit flagged it as unread — capture it when present.
+        origin = model.get_field("Origin")
 
         if not value:
             return
@@ -1356,12 +1381,14 @@ class CellebriteNeo4jWriter:
         props.update({
             "query": value,
             "source_app": source,
+            "origin": origin,
         })
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
             props["timestamp"] = timestamp
 
+        props = {k: v for k, v in props.items() if v is not None}
         self._create_node("SearchedItem", key, props)
 
         if self._phone_owner_key:
@@ -1583,8 +1610,12 @@ class CellebriteNeo4jWriter:
         """WebBookmark -> WebBookmark node."""
         url = model.get_field("Url")
         title = model.get_field("Title")
-        timestamp = model.get_field("TimeStamp")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp", "Date", "LastVisited"))
         source = model.get_field("Source")
+        # Path = the bookmark's folder location within the browser's
+        # bookmark tree (e.g. "Bookmarks Bar/Work"). Empty in our current
+        # data but flagged unread by the 2026-05-23 audit; capture when set.
+        path = model.get_field("Path")
 
         if not url and not title:
             return
@@ -1595,6 +1626,7 @@ class CellebriteNeo4jWriter:
         props.update({
             "url": url,
             "source_app": source,
+            "bookmark_path": path,
         })
         if timestamp:
             props["date"] = timestamp[:10]
@@ -2190,6 +2222,80 @@ class CellebriteNeo4jWriter:
 
         self.file_downloads_created += 1
 
+    def _write_network_usage(self, model: ParsedModel):
+        """NetworkUsage -> NetworkUsage node.
+
+        Per-app / per-network data-consumption record over a time window.
+        Cellebrite emits one per (app, network, window): bytes sent/received,
+        the window (DateStarted → DateEnded), connection type (Cellular /
+        WiFi), roaming flag, and foreground/background usage mode. Useful
+        timeline data — "this app moved 43 MB over cellular at 18:00 on the
+        24th" — and was SKIPPED before 2026-05-23. The owning app/UID lands
+        in the AdditionalInfo KeyValueModel children.
+        """
+        source = model.get_field("Source")
+        ssid = model.get_field("SSId") or model.get_field("SSID")
+        date_started = model.get_field("DateStarted")
+        date_ended = model.get_field("DateEnded")
+        bytes_received = _safe_int(model.get_field("NumberOfBytesReceived"))
+        bytes_sent = _safe_int(model.get_field("NumberOfBytesSent"))
+        is_roaming = model.get_field("IsRoaming")
+        usage_mode = model.get_field("UsageMode")
+        connection_type = model.get_field("NetworkConnectionType")
+        timestamp = self._extract_timestamp(
+            model, prefer=("DateStarted", "StartTime", "TimeStamp"),
+        )
+
+        # AdditionalInfo carries Key=Value pairs (UID, package name, app
+        # bundle id). Fold the app/package identity onto the node so the
+        # usage can be attributed to a specific app.
+        app_identifier = None
+        for kv in model.multi_model_fields.get("AdditionalInfo", []):
+            k = (kv.get_field("Key") or "").strip().lower()
+            v = kv.get_field("Value")
+            if not v:
+                continue
+            if k in ("package", "packagename", "bundleid", "app", "application", "name"):
+                app_identifier = v
+                break
+
+        # Skip entirely-empty rows (no bytes and no window) — nothing to show.
+        if bytes_received is None and bytes_sent is None and not date_started:
+            return
+
+        bytes_total = None
+        if bytes_received is not None or bytes_sent is not None:
+            bytes_total = (bytes_received or 0) + (bytes_sent or 0)
+
+        key = f"netusage-{model.model_id[:12]}"
+        label = app_identifier or ssid or connection_type or "Network Usage"
+
+        props = self._base_props(model, key, label[:100])
+        props.update({
+            "source_app": source,
+            "app_identifier": app_identifier,
+            "ssid": ssid,
+            "bytes_received": bytes_received,
+            "bytes_sent": bytes_sent,
+            "bytes_total": bytes_total,
+            "is_roaming": is_roaming == "True" if is_roaming else None,
+            "usage_mode": usage_mode,
+            "connection_type": connection_type,
+            "date_started": date_started,
+            "date_ended": date_ended,
+        })
+        if timestamp:
+            props["date"] = timestamp[:10]
+            props["timestamp"] = timestamp
+
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("NetworkUsage", key, props)
+
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "CONSUMED_DATA")
+
+        self.network_usage_created += 1
+
     # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
@@ -2216,6 +2322,7 @@ class CellebriteNeo4jWriter:
             "users_created": self.users_created,
             "installed_apps_created": self.installed_apps_created,
             "file_downloads_created": self.file_downloads_created,
+            "network_usage_created": self.network_usage_created,
             "total_nodes": self.nodes_total,
             "total_relationships": self.relationships_total,
             "phone_owner": self._phone_owner_key,

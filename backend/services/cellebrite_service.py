@@ -11,6 +11,7 @@ from typing import Dict, Optional, Callable
 from datetime import datetime
 
 from config import BASE_DIR
+from services._timeutil import utcnow_iso
 
 
 def _import_cellebrite():
@@ -151,6 +152,7 @@ def process_cellebrite_report(
     owner: Optional[str] = None,
     log_callback: Optional[Callable[[str], None]] = None,
     force: bool = False,
+    device_identifier: Optional[str] = None,
 ) -> Dict:
     """
     Process a Cellebrite UFED report folder (runs synchronously).
@@ -183,7 +185,7 @@ def process_cellebrite_report(
     background_task_storage.update_task(
         task_id,
         status=TaskStatus.RUNNING.value,
-        started_at=datetime.now().isoformat(),
+        started_at=utcnow_iso(),
     )
 
     # Create a log callback that writes to both the task log and any provided callback
@@ -208,7 +210,7 @@ def process_cellebrite_report(
             background_task_storage.update_task(
                 task_id,
                 status=TaskStatus.FAILED.value,
-                completed_at=datetime.now().isoformat(),
+                completed_at=utcnow_iso(),
                 error="duplicate_phone_report",
             )
             _log(
@@ -266,6 +268,7 @@ def process_cellebrite_report(
             owner=owner,
             evidence_storage=evidence_storage,
             progress_callback=_heartbeat,
+            device_identifier=device_identifier,
         )
 
         if result.get("status") == "success":
@@ -294,7 +297,7 @@ def process_cellebrite_report(
                 background_task_storage.update_task(
                     task_id,
                     status=TaskStatus.FAILED.value,
-                    completed_at=datetime.now().isoformat(),
+                    completed_at=utcnow_iso(),
                     error=err_msg,
                     progress_total=xml_total,
                     progress_completed=result.get("total_nodes", 0),
@@ -305,7 +308,7 @@ def process_cellebrite_report(
                 background_task_storage.update_task(
                     task_id,
                     status=TaskStatus.COMPLETED.value,
-                    completed_at=datetime.now().isoformat(),
+                    completed_at=utcnow_iso(),
                     progress_total=xml_total,
                     progress_completed=result.get("total_nodes", 0),
                     progress_failed=errors_total,
@@ -316,13 +319,16 @@ def process_cellebrite_report(
                     f"{errors_total} write errors"
                 )
         else:
+            # Prefer the human-readable `message` (e.g. the missing-
+            # identifier precondition) over the terse `reason` code.
+            fail_msg = result.get("message") or result.get("reason", "Unknown error")
             background_task_storage.update_task(
                 task_id,
                 status=TaskStatus.FAILED.value,
-                completed_at=datetime.now().isoformat(),
-                error=result.get("reason", "Unknown error"),
+                completed_at=utcnow_iso(),
+                error=fail_msg,
             )
-            _log(f"Cellebrite ingestion failed: {result.get('reason', 'Unknown error')}")
+            _log(f"Cellebrite ingestion failed: {fail_msg}")
 
         # Save case version after processing
         if result.get("status") == "success":
@@ -349,7 +355,7 @@ def process_cellebrite_report(
         background_task_storage.update_task(
             task_id,
             status=TaskStatus.FAILED.value,
-            completed_at=datetime.now().isoformat(),
+            completed_at=utcnow_iso(),
             error=error_msg,
         )
         return {"status": "error", "reason": str(e)}

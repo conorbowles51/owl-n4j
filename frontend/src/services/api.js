@@ -1671,6 +1671,9 @@ export const evidenceAPI = {
         case_id: caseId,
         folder_path: folderPath,
         force: !!opts.force,
+        // Investigator-supplied device-owner identity. Required when the
+        // report has no extractable phone number; optional otherwise.
+        device_identifier: opts.deviceIdentifier || null,
       }),
       timeout: 60000,
     }),

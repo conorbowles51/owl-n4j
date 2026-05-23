@@ -154,6 +154,10 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
   //   { folderPath, existing: {report_key, device_model, evidence_number, phone_owner_name},
   //     incoming:  {device_model, evidence_number, imei}, message }
   const [cellebriteDuplicate, setCellebriteDuplicate] = useState(null);
+  // Investigator-supplied device-owner identity. Required before ingest
+  // when the report has no extractable phone number (see
+  // cellebrite-phone-number-required); optional otherwise (extra alias).
+  const [deviceIdentifier, setDeviceIdentifier] = useState('');
   const [activeTasksByFolder, setActiveTasksByFolder] = useState({}); // Track active tasks for multiple folders: {folderPath: task}
   const [previewedFileId, setPreviewedFileId] = useState(null); // Track which file is being previewed
   const [selectedFolderProfile, setSelectedFolderProfile] = useState(null); // Selected profile for folder processing
@@ -1063,8 +1067,10 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                         {folderInfo.cellebriteInfo.device_model && (
                           <div><span className="font-medium">Device:</span> {folderInfo.cellebriteInfo.device_model}</div>
                         )}
-                        {folderInfo.cellebriteInfo.phone_numbers && (
-                          <div><span className="font-medium">Phone:</span> {folderInfo.cellebriteInfo.phone_numbers}</div>
+                        {(folderInfo.cellebriteInfo.phone_numbers || []).length > 0 ? (
+                          <div><span className="font-medium">Phone:</span> {(folderInfo.cellebriteInfo.phone_numbers || []).join(', ')}</div>
+                        ) : (
+                          <div className="text-amber-700"><span className="font-medium">Phone:</span> none detected</div>
                         )}
                         {folderInfo.cellebriteInfo.case_number && (
                           <div><span className="font-medium">Case #:</span> {folderInfo.cellebriteInfo.case_number}</div>
@@ -1075,11 +1081,51 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                       </div>
                     </div>
 
+                    {/* Device-owner identity. Required to ingest when the
+                        report has no extractable phone number; optional
+                        alias otherwise. */}
+                    {(() => {
+                      const hasPhone = (folderInfo.cellebriteInfo.phone_numbers || []).length > 0;
+                      const identifierRequired = !hasPhone;
+                      return (
+                        <div className="text-xs">
+                          <label className="block font-medium text-light-700 mb-1">
+                            Device identifier{identifierRequired
+                              ? <span className="text-red-600"> (required — no phone number detected)</span>
+                              : <span className="text-light-500"> (optional alias)</span>}
+                          </label>
+                          <input
+                            type="text"
+                            value={deviceIdentifier}
+                            onChange={(e) => setDeviceIdentifier(e.target.value)}
+                            disabled={cellebriteTask !== null}
+                            placeholder={identifierRequired
+                              ? 'e.g. owner name, alias, or known handle'
+                              : 'leave blank to use detected number'}
+                            className={`w-full px-2 py-1 rounded border text-xs ${
+                              identifierRequired && !deviceIdentifier.trim()
+                                ? 'border-red-300 bg-red-50'
+                                : 'border-light-300 bg-white'
+                            }`}
+                          />
+                          {identifierRequired && (
+                            <p className="text-amber-700 mt-1">
+                              This device has no phone number. The identifier you enter
+                              becomes its owner identity and shows throughout the data
+                              (conversations, calls, locations).
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <button
                       onClick={async () => {
                         try {
                           setCellebriteTask({ id: 'pending', status: 'pending', progress: 0, total: 0 });
-                          await evidenceAPI.processCellebriteFolder(caseId, folderInfo.path);
+                          await evidenceAPI.processCellebriteFolder(caseId, folderInfo.path, {
+                            deviceIdentifier: deviceIdentifier.trim() || undefined,
+                          });
                         } catch (err) {
                           // Server returns HTTP 409 with structured detail
                           // when this case already has a phone report that
@@ -1099,13 +1145,25 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                             });
                             return;
                           }
+                          // Server-side guard: device has no phone number and
+                          // no identifier was supplied. Shouldn't normally fire
+                          // (the button is disabled in that case) but surface it.
+                          if (detail && detail.reason === 'missing_device_identifier') {
+                            setCellebriteTask(null);
+                            alert(detail.message || 'A device identifier is required for this report.');
+                            return;
+                          }
                           console.error('Failed to start Cellebrite processing:', err);
                           setCellebriteTask(null);
                         }
                       }}
-                      disabled={cellebriteTask !== null}
+                      disabled={
+                        cellebriteTask !== null ||
+                        ((folderInfo.cellebriteInfo.phone_numbers || []).length === 0 && !deviceIdentifier.trim())
+                      }
                       className={`flex items-center gap-2 px-3 py-1.5 text-white text-xs rounded transition-colors ${
-                        cellebriteTask !== null
+                        cellebriteTask !== null ||
+                        ((folderInfo.cellebriteInfo.phone_numbers || []).length === 0 && !deviceIdentifier.trim())
                           ? 'bg-light-300 cursor-not-allowed'
                           : 'bg-emerald-600 hover:bg-emerald-700'
                       }`}
