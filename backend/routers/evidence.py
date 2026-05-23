@@ -1251,6 +1251,47 @@ def process_cellebrite_folder(
                 },
             )
 
+        # Advisory lock: refuse if a sibling cellebrite_ingestion task is
+        # already in-flight for the same (case_id, report_key). Catches the
+        # race where two POSTs (e.g. user double-click, browser retry on a
+        # stalled response, dialog re-confirmed) both pass the duplicate
+        # check because the first task hasn't written its PhoneReport node
+        # yet. `force=true` does NOT override this — running force-replace
+        # against an actively-writing task corrupts the partial state.
+        # Without this, case 43f1afb1's C5 ingested twice on 2026-05-23
+        # (04:11:08 → 409, 04:11:13 → 200 OK) leaving evidence.json with
+        # 188k duplicate rows from two parallel writers.
+        incoming_report_key = detection.get("report_key")
+        if incoming_report_key:
+            for status_filter in ("pending", "running"):
+                inflight = background_task_storage.list_tasks(
+                    case_id=request.case_id,
+                    status=status_filter,
+                    limit=100,
+                )
+                for t in inflight:
+                    if t.get("task_type") != "cellebrite_ingestion":
+                        continue
+                    md = t.get("metadata") or {}
+                    sibling_key = (
+                        f"cellebrite-{md.get('case_number') or 'unknown'}"
+                        f"-{md.get('evidence_number') or 'unknown'}"
+                    )
+                    if sibling_key == incoming_report_key:
+                        raise HTTPException(
+                            status_code=409,
+                            detail={
+                                "reason": "ingestion_in_progress",
+                                "message": (
+                                    f"A Cellebrite ingestion for this report is already "
+                                    f"{status_filter} (task {t['id'][:8]}). Wait for it "
+                                    f"to finish before re-ingesting."
+                                ),
+                                "existing_task_id": t.get("id"),
+                                "existing_status": status_filter,
+                            },
+                        )
+
         # Create background task
         task = background_task_storage.create_task(
             task_type="cellebrite_ingestion",

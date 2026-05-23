@@ -150,6 +150,76 @@ async def list_directory(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/list_recursive")
+def list_directory_recursive(
+    case_id: Optional[str] = None,
+    path: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Recursively list every file under a folder in one response.
+
+    Returns a flat list of file paths (relative to case root) so the frontend
+    doesn't have to make N HTTP round-trips for an N-directory tree. Existed
+    as `getFolderFilesRecursive` in the React layer doing one /list per
+    directory — that's ~414 sequential calls for a typical Cellebrite phone
+    folder, which the dev-mode Vite proxy is fragile under and the user's
+    browser was timing out partway through.
+
+    Only file paths are returned; directories are walked transparently.
+    """
+    if not case_id:
+        raise HTTPException(status_code=400, detail="case_id is required")
+
+    case_root = FILESYSTEM_ROOT / case_id
+
+    path_normalized = path.strip().strip('/') if path and path.strip() else ''
+    if path_normalized:
+        target_path = (case_root / path_normalized).resolve()
+        try:
+            target_path.relative_to(case_root.resolve())
+        except ValueError:
+            raise HTTPException(status_code=403, detail="Path outside case directory")
+    else:
+        target_path = case_root.resolve()
+
+    if not target_path.exists():
+        if path_normalized:
+            raise HTTPException(status_code=404, detail="Path not found")
+        return {"files": [], "current_path": "", "root_path": str(case_root), "count": 0}
+
+    if not target_path.is_dir():
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
+    files: List[str] = []
+    case_root_resolved = case_root.resolve()
+    # os.walk is C-implemented and ~100× faster than recursing via Path
+    # objects for trees this size.
+    import os
+    for dirpath, dirnames, filenames in os.walk(target_path):
+        # Skip hidden dirs in-place so os.walk doesn't descend into them
+        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+        for fn in filenames:
+            if fn.startswith('.'):
+                continue
+            full = Path(dirpath) / fn
+            try:
+                rel = full.resolve().relative_to(case_root_resolved)
+            except (OSError, ValueError):
+                continue
+            files.append(str(rel).replace('\\', '/'))
+
+    current_relative = target_path.relative_to(case_root)
+    current_path_str = str(current_relative).replace('\\', '/') if str(current_relative) != '.' else ''
+
+    return {
+        "files": files,
+        "current_path": current_path_str,
+        "root_path": str(case_root),
+        "count": len(files),
+    }
+
+
 @router.get("/read")
 async def read_file(
     case_id: str,

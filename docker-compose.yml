@@ -9,9 +9,14 @@ services:
       - "7687:7687"   # Bolt (drivers)
     environment:
       - NEO4J_AUTH=neo4j/testpassword
-      - NEO4J_server_memory_pagecache_size=2G
-      - NEO4J_server_memory_heap_initial__size=4G
-      - NEO4J_server_memory_heap_max__size=4G
+      - NEO4J_server_memory_pagecache_size=1G
+      - NEO4J_server_memory_heap_initial__size=8G
+      - NEO4J_server_memory_heap_max__size=8G
+
+      # Crash the JVM (and let Docker restart the container) on OOM instead of
+      # leaving a half-dead Neo4j that can corrupt the tx-log. The 2026-05-12
+      # C2 ingestion zombied the JVM and broke the log; this prevents that.
+      - NEO4J_server_jvm_additional=-XX:+ExitOnOutOfMemoryError
 
       # Enable APOC plugin (Neo4j official Docker way)
       - NEO4J_PLUGINS=["apoc"]

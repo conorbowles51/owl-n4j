@@ -86,8 +86,11 @@ export default function BackgroundTasksPanel({ isOpen, onClose, authUsername, on
   useEffect(() => {
     if (isOpen) {
       loadTasks();
-      // Poll for updates every 3 seconds while panel is open
-      const interval = setInterval(loadTasks, 3000);
+      // Poll every 10 seconds while panel is open (was 3s). FileInfoViewer
+      // already runs up to three /api/background-tasks polls; the original
+      // 3s cadence stacked to ~1.3 req/sec which contributed to client-side
+      // TCP timeouts on slower networks.
+      const interval = setInterval(loadTasks, 10000);
       return () => clearInterval(interval);
     }
   }, [isOpen, loadTasks]);

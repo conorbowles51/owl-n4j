@@ -1,0 +1,4427 @@
+{
+  "generated_at": "2026-05-23T13:18:21",
+  "reports": [
+    "/home/conorbowles51/app_v2/ingestion/data/43f1afb1-1d2b-4b3f-a832-19cd049c8a9e/220049582_06306946_C5_2022-12-15_Report/220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml",
+    "/home/conorbowles51/app_v2/ingestion/data/8f854aab-6bc2-4329-bea7-61b587ccba72/Cellebrite Report Sample Phone/220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+    "/home/conorbowles51/app_v2/ingestion/data/d83fe4a4-dd52-4760-9c43-ab0dee82f050/220029502_06310028_C9_2023-03-02_Report/220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml"
+  ],
+  "supported_types": [
+    "AppUsage",
+    "ApplicationUsage",
+    "Attachment",
+    "Autofill",
+    "CalendarEntry",
+    "Call",
+    "Cell",
+    "CellLocation",
+    "CellTower",
+    "Chat",
+    "Contact",
+    "ContactPhoto",
+    "DeviceEvent",
+    "Email",
+    "FileDownload",
+    "InstalledApplication",
+    "InstantMessage",
+    "KeyValueModel",
+    "Location",
+    "Party",
+    "Password",
+    "PoweringEvent",
+    "ProfilePicture",
+    "RecognizedDevice",
+    "SIMData",
+    "ScreenEvent",
+    "SearchedItem",
+    "User",
+    "UserAccount",
+    "UserEvent",
+    "VisitedPage",
+    "WebBookmark",
+    "WirelessNetwork"
+  ],
+  "skipped_types": [
+    "DictionaryWord",
+    "NetworkUsage"
+  ],
+  "dispatch": {
+    "Contact": "_write_contact",
+    "Call": "_write_call",
+    "Chat": "_write_chat",
+    "InstantMessage": "_write_instant_message",
+    "Email": "_write_email",
+    "Location": "_write_location",
+    "UserAccount": "_write_user_account",
+    "SearchedItem": "_write_searched_item",
+    "VisitedPage": "_write_visited_page",
+    "CalendarEntry": "_write_calendar_entry",
+    "WirelessNetwork": "_write_wireless_network",
+    "RecognizedDevice": "_write_recognized_device",
+    "Password": "_write_password",
+    "WebBookmark": "_write_web_bookmark",
+    "CellTower": "_write_cell_tower",
+    "Cell": "_write_cell_tower",
+    "CellLocation": "_write_cell_tower",
+    "PoweringEvent": "_write_device_event",
+    "PowerEvent": "_write_device_event",
+    "DeviceEvent": "_write_device_event",
+    "UserEvent": "_write_device_event",
+    "ScreenEvent": "_write_device_event",
+    "ApplicationUsage": "_write_app_session",
+    "AppUsage": "_write_app_session",
+    "Attachment": "_write_attachment",
+    "ContactPhoto": "_write_contact_photo",
+    "ProfilePicture": "_write_profile_picture",
+    "Autofill": "_write_autofill",
+    "SIMData": "_write_sim_data",
+    "User": "_write_user",
+    "InstalledApplication": "_write_installed_application",
+    "FileDownload": "_write_file_download",
+    "KeyValueModel": "_noop",
+    "Party": "_noop",
+    "UserDictionaryEntry": "_noop"
+  },
+  "ufedlib_types": [
+    "ActivitySensorData",
+    "ActivitySensorDataMeasurement",
+    "ActivitySensorDataSample",
+    "ApplicationUsage",
+    "AppsUsageLog",
+    "Attachment",
+    "Autofill",
+    "CalendarEntry",
+    "Call",
+    "CellTower",
+    "Chat",
+    "ChatActivity",
+    "Contact",
+    "ContactEntry",
+    "ContactPhoto",
+    "Cookie",
+    "Coordinate",
+    "CreditCard",
+    "DeviceConnectivity",
+    "DeviceEvent",
+    "DeviceInfoEntry",
+    "DictionaryWord",
+    "EMail",
+    "FileDownload",
+    "FileUpload",
+    "FinancialAccount",
+    "FinancialAsset",
+    "InstalledApplication",
+    "InstantMessage",
+    "Journey",
+    "KeyValueModel",
+    "Location",
+    "LogEntry",
+    "MailMessage",
+    "Map",
+    "MobileCard",
+    "NetworkUsage",
+    "Note",
+    "Notification",
+    "Organization",
+    "Party",
+    "Password",
+    "PoweringEvent",
+    "Price",
+    "PublicTransportationTicket",
+    "RecognizedDevice",
+    "Recording",
+    "SIMData",
+    "SearchedItem",
+    "SharedFile",
+    "SocialMediaActivity",
+    "StreetAddress",
+    "TransferOfFunds",
+    "User",
+    "UserAccount",
+    "VisitedPage",
+    "VoiceMail",
+    "WebBookmark",
+    "WirelessNetwork"
+  ],
+  "captured_tagged_file_items": [],
+  "aggregate": {
+    "models": {
+      "CalendarEntry": {
+        "count": 84,
+        "fields": {
+          "UserMapping": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "Source": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "Category": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "StartDate": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "EndDate": {
+            "total": 83,
+            "non_empty": 83
+          },
+          "Subject": {
+            "total": 80,
+            "non_empty": 80
+          },
+          "Details": {
+            "total": 79,
+            "non_empty": 79
+          },
+          "RepeatRule": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "RepeatUntil": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "Location": {
+            "total": 3,
+            "non_empty": 3
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Attendees|Party": 3
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Call": {
+        "count": 7896,
+        "fields": {
+          "UserMapping": {
+            "total": 7896,
+            "non_empty": 7766
+          },
+          "Source": {
+            "total": 7896,
+            "non_empty": 4665
+          },
+          "Direction": {
+            "total": 7896,
+            "non_empty": 7896
+          },
+          "Type": {
+            "total": 88,
+            "non_empty": 88
+          },
+          "Status": {
+            "total": 7896,
+            "non_empty": 7881
+          },
+          "TimeStamp": {
+            "total": 7896,
+            "non_empty": 7896
+          },
+          "Duration": {
+            "total": 6310,
+            "non_empty": 6310
+          },
+          "VideoCall": {
+            "total": 4626,
+            "non_empty": 4626
+          },
+          "Account": {
+            "total": 7896,
+            "non_empty": 4535
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Parties|Party": 12620
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Chat": {
+        "count": 995,
+        "fields": {
+          "UserMapping": {
+            "total": 995,
+            "non_empty": 380
+          },
+          "Source": {
+            "total": 995,
+            "non_empty": 995
+          },
+          "Id": {
+            "total": 984,
+            "non_empty": 984
+          },
+          "StartTime": {
+            "total": 995,
+            "non_empty": 929
+          },
+          "LastActivity": {
+            "total": 995,
+            "non_empty": 967
+          },
+          "Account": {
+            "total": 995,
+            "non_empty": 367
+          },
+          "Name": {
+            "total": 29,
+            "non_empty": 29
+          },
+          "Description": {
+            "total": 2,
+            "non_empty": 2
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Participants|Party": 2466,
+          "Messages|InstantMessage": 18531,
+          "Photos|ContactPhoto": 125,
+          "ActivityLog|ChatActivity": 34
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Contact": {
+        "count": 3364,
+        "fields": {
+          "UserMapping": {
+            "total": 3364,
+            "non_empty": 3274
+          },
+          "Source": {
+            "total": 3364,
+            "non_empty": 2365
+          },
+          "Name": {
+            "total": 3364,
+            "non_empty": 2469
+          },
+          "Group": {
+            "total": 3364,
+            "non_empty": 0
+          },
+          "Type": {
+            "total": 1546,
+            "non_empty": 1546
+          },
+          "Account": {
+            "total": 3364,
+            "non_empty": 2361
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Entries|PhoneNumber": 2913,
+          "Entries|UserID": 2307,
+          "Entries|ProfilePicture": 519,
+          "Addresses|StreetAddress": 67,
+          "AdditionalInfo|KeyValueModel": 1340,
+          "Photos|ContactPhoto": 822,
+          "Organizations|Organization": 2,
+          "Entries|WebAddress": 13,
+          "Entries|EmailAddress": 21
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "DeviceEvent": {
+        "count": 3,
+        "fields": {
+          "UserMapping": {
+            "total": 3,
+            "non_empty": 0
+          },
+          "StartTime": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "EventType": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "Value": {
+            "total": 3,
+            "non_empty": 3
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Additional_Info|KeyValueModel": 3
+        },
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "User": {
+        "count": 2,
+        "fields": {
+          "UserMapping": {
+            "total": 2,
+            "non_empty": 0
+          },
+          "Identifier": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "SerialNumber": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "Name": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "TimeLastLoggedIn": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "UserType": {
+            "total": 2,
+            "non_empty": 2
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "RecognizedDevice": {
+        "count": 6,
+        "fields": {
+          "UserMapping": {
+            "total": 6,
+            "non_empty": 6
+          },
+          "Source": {
+            "total": 6,
+            "non_empty": 6
+          },
+          "Name": {
+            "total": 5,
+            "non_empty": 5
+          },
+          "SerialNumber": {
+            "total": 5,
+            "non_empty": 0
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "DeviceIdentifiers|KeyValueModel": 6,
+          "AdditionalInfo|KeyValueModel": 5
+        },
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "FileDownload": {
+        "count": 1,
+        "fields": {
+          "UserMapping": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "Source": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "Url": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "TargetPath": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "StartTime": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "EndTime": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "LastAccessed": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "FileSize": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "BytesReceived": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "DownloadState": {
+            "total": 1,
+            "non_empty": 1
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "AdditionalInfo|KeyValueModel": 2
+        },
+        "reports": [
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Email": {
+        "count": 704,
+        "fields": {
+          "UserMapping": {
+            "total": 704,
+            "non_empty": 704
+          },
+          "Source": {
+            "total": 704,
+            "non_empty": 704
+          },
+          "Folder": {
+            "total": 704,
+            "non_empty": 703
+          },
+          "Status": {
+            "total": 652,
+            "non_empty": 652
+          },
+          "Subject": {
+            "total": 701,
+            "non_empty": 701
+          },
+          "Body": {
+            "total": 703,
+            "non_empty": 703
+          },
+          "TimeStamp": {
+            "total": 704,
+            "non_empty": 704
+          },
+          "Account": {
+            "total": 704,
+            "non_empty": 703
+          }
+        },
+        "children": {
+          "From|Party": 704
+        },
+        "multi_children": {
+          "To|Party": 704,
+          "Attachments|Attachment": 30,
+          "Cc|Party": 11
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "InstalledApplication": {
+        "count": 588,
+        "fields": {
+          "UserMapping": {
+            "total": 588,
+            "non_empty": 0
+          },
+          "Name": {
+            "total": 153,
+            "non_empty": 153
+          },
+          "Version": {
+            "total": 570,
+            "non_empty": 570
+          },
+          "Identifier": {
+            "total": 588,
+            "non_empty": 588
+          },
+          "PurchaseDate": {
+            "total": 588,
+            "non_empty": 134
+          },
+          "DecodingStatus": {
+            "total": 169,
+            "non_empty": 169
+          },
+          "OperationMode": {
+            "total": 585,
+            "non_empty": 585
+          },
+          "IsEmulatable": {
+            "total": 555,
+            "non_empty": 555
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Users|User": 3
+        },
+        "reports": [
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "InstantMessage": {
+        "count": 839,
+        "fields": {
+          "UserMapping": {
+            "total": 839,
+            "non_empty": 673
+          },
+          "Source": {
+            "total": 839,
+            "non_empty": 839
+          },
+          "Body": {
+            "total": 826,
+            "non_empty": 826
+          },
+          "TimeStamp": {
+            "total": 839,
+            "non_empty": 817
+          },
+          "DateDelivered": {
+            "total": 107,
+            "non_empty": 107
+          },
+          "Status": {
+            "total": 839,
+            "non_empty": 531
+          },
+          "Type": {
+            "total": 839,
+            "non_empty": 839
+          },
+          "Folder": {
+            "total": 839,
+            "non_empty": 144
+          },
+          "SourceApplication": {
+            "total": 839,
+            "non_empty": 839
+          },
+          "Identifier": {
+            "total": 702,
+            "non_empty": 673
+          }
+        },
+        "children": {
+          "From|Party": 817,
+          "Attachment|?": 839,
+          "From|?": 22
+        },
+        "multi_children": {
+          "To|Party": 817,
+          "Attachments|Attachment": 13
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Location": {
+        "count": 148,
+        "fields": {
+          "UserMapping": {
+            "total": 148,
+            "non_empty": 28
+          },
+          "Source": {
+            "total": 148,
+            "non_empty": 28
+          },
+          "TimeStamp": {
+            "total": 148,
+            "non_empty": 102
+          },
+          "Type": {
+            "total": 22,
+            "non_empty": 22
+          },
+          "Account": {
+            "total": 148,
+            "non_empty": 0
+          },
+          "Description": {
+            "total": 22,
+            "non_empty": 5
+          },
+          "Name": {
+            "total": 120,
+            "non_empty": 120
+          },
+          "Category": {
+            "total": 120,
+            "non_empty": 120
+          }
+        },
+        "children": {
+          "Position|Coordinate": 148,
+          "Address|StreetAddress": 6
+        },
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "UserAccount": {
+        "count": 87,
+        "fields": {
+          "UserMapping": {
+            "total": 87,
+            "non_empty": 68
+          },
+          "Source": {
+            "total": 64,
+            "non_empty": 64
+          },
+          "Name": {
+            "total": 87,
+            "non_empty": 32
+          },
+          "Username": {
+            "total": 69,
+            "non_empty": 69
+          },
+          "ServiceType": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "Password": {
+            "total": 9,
+            "non_empty": 9
+          },
+          "TimeCreated": {
+            "total": 5,
+            "non_empty": 5
+          },
+          "ServiceIdentifier": {
+            "total": 8,
+            "non_empty": 8
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "Entries|UserID": 21,
+          "Entries|EmailAddress": 3,
+          "Entries|ProfilePicture": 27,
+          "Entries|PhoneNumber": 16,
+          "AdditionalInfo|KeyValueModel": 4,
+          "Photos|ContactPhoto": 3
+        },
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "DictionaryWord": {
+        "count": 7180,
+        "fields": {
+          "UserMapping": {
+            "total": 7180,
+            "non_empty": 0
+          },
+          "Source": {
+            "total": 7180,
+            "non_empty": 2
+          },
+          "Word": {
+            "total": 7178,
+            "non_empty": 7178
+          },
+          "Frequency": {
+            "total": 7180,
+            "non_empty": 7180
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "WebBookmark": {
+        "count": 25,
+        "fields": {
+          "UserMapping": {
+            "total": 25,
+            "non_empty": 25
+          },
+          "Source": {
+            "total": 25,
+            "non_empty": 25
+          },
+          "Title": {
+            "total": 25,
+            "non_empty": 25
+          },
+          "Url": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "Path": {
+            "total": 25,
+            "non_empty": 0
+          },
+          "TimeStamp": {
+            "total": 10,
+            "non_empty": 10
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "VisitedPage": {
+        "count": 16807,
+        "fields": {
+          "UserMapping": {
+            "total": 16807,
+            "non_empty": 1450
+          },
+          "Source": {
+            "total": 16807,
+            "non_empty": 16807
+          },
+          "Title": {
+            "total": 16807,
+            "non_empty": 606
+          },
+          "Url": {
+            "total": 16807,
+            "non_empty": 16807
+          },
+          "LastVisited": {
+            "total": 16807,
+            "non_empty": 15995
+          },
+          "UrlCacheFile": {
+            "total": 16807,
+            "non_empty": 725
+          },
+          "VisitCount": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "CanRebuildCacheFile": {
+            "total": 725,
+            "non_empty": 725
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "WirelessNetwork": {
+        "count": 677,
+        "fields": {
+          "UserMapping": {
+            "total": 677,
+            "non_empty": 0
+          },
+          "Source": {
+            "total": 677,
+            "non_empty": 677
+          },
+          "BSSId": {
+            "total": 667,
+            "non_empty": 667
+          },
+          "LastConnection": {
+            "total": 677,
+            "non_empty": 5
+          },
+          "TimeStamp": {
+            "total": 672,
+            "non_empty": 672
+          },
+          "SSId": {
+            "total": 10,
+            "non_empty": 10
+          },
+          "SecurityMode": {
+            "total": 5,
+            "non_empty": 5
+          }
+        },
+        "children": {
+          "Position|Coordinate": 2
+        },
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "PoweringEvent": {
+        "count": 3,
+        "fields": {
+          "Element": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "TimeStamp": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "Event": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "Description": {
+            "total": 3,
+            "non_empty": 3
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml",
+          "220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Autofill": {
+        "count": 8,
+        "fields": {
+          "UserMapping": {
+            "total": 8,
+            "non_empty": 8
+          },
+          "Source": {
+            "total": 8,
+            "non_empty": 8
+          },
+          "Key": {
+            "total": 8,
+            "non_empty": 8
+          },
+          "Value": {
+            "total": 8,
+            "non_empty": 8
+          },
+          "TimeStamp": {
+            "total": 8,
+            "non_empty": 8
+          },
+          "LastUsedDate": {
+            "total": 8,
+            "non_empty": 8
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "NetworkUsage": {
+        "count": 5181,
+        "fields": {
+          "UserMapping": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "Source": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "SSId": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "DateStarted": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "DateEnded": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "NumberOfBytesReceived": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "NumberOfBytesSent": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "IsRoaming": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "UsageMode": {
+            "total": 5181,
+            "non_empty": 5181
+          },
+          "NetworkConnectionType": {
+            "total": 5181,
+            "non_empty": 5181
+          }
+        },
+        "children": {},
+        "multi_children": {
+          "AdditionalInfo|KeyValueModel": 39303
+        },
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "Password": {
+        "count": 561,
+        "fields": {
+          "UserMapping": {
+            "total": 561,
+            "non_empty": 556
+          },
+          "Account": {
+            "total": 561,
+            "non_empty": 557
+          },
+          "Data": {
+            "total": 457,
+            "non_empty": 457
+          },
+          "Label": {
+            "total": 557,
+            "non_empty": 557
+          },
+          "Type": {
+            "total": 561,
+            "non_empty": 561
+          },
+          "Source": {
+            "total": 557,
+            "non_empty": 557
+          },
+          "Service": {
+            "total": 552,
+            "non_empty": 552
+          },
+          "AccessGroup": {
+            "total": 548,
+            "non_empty": 548
+          },
+          "ServiceIdentifier": {
+            "total": 286,
+            "non_empty": 286
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "SearchedItem": {
+        "count": 32,
+        "fields": {
+          "UserMapping": {
+            "total": 32,
+            "non_empty": 18
+          },
+          "Source": {
+            "total": 32,
+            "non_empty": 32
+          },
+          "TimeStamp": {
+            "total": 32,
+            "non_empty": 15
+          },
+          "Value": {
+            "total": 32,
+            "non_empty": 32
+          },
+          "Origin": {
+            "total": 4,
+            "non_empty": 3
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml",
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml"
+        ]
+      },
+      "SIMData": {
+        "count": 9,
+        "fields": {
+          "UserMapping": {
+            "total": 9,
+            "non_empty": 0
+          },
+          "Name": {
+            "total": 9,
+            "non_empty": 9
+          },
+          "Value": {
+            "total": 9,
+            "non_empty": 9
+          },
+          "Category": {
+            "total": 9,
+            "non_empty": 9
+          }
+        },
+        "children": {},
+        "multi_children": {},
+        "reports": [
+          "220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml"
+        ]
+      }
+    },
+    "tagged_files": {
+      "File": {
+        "Local Path": {
+          "total": 165340,
+          "non_empty": 165340
+        },
+        "SHA256": {
+          "total": 165340,
+          "non_empty": 1579
+        },
+        "MD5": {
+          "total": 165340,
+          "non_empty": 165340
+        },
+        "Tags": {
+          "total": 165340,
+          "non_empty": 165340
+        }
+      },
+      "MetaData": {
+        "CoreFileSystemFileSystemNodeFileDataOffsetName": {
+          "total": 163761,
+          "non_empty": 163761
+        },
+        "CoreFileSystemFileSystemNodeCreationTime": {
+          "total": 165340,
+          "non_empty": 284
+        },
+        "CoreFileSystemFileSystemNodeModifyTime": {
+          "total": 165340,
+          "non_empty": 91380
+        },
+        "CoreFileSystemFileSystemNodeLastAccessTime": {
+          "total": 165340,
+          "non_empty": 21417
+        },
+        "CoreFileSystemFileSystemNodeDeletedTime": {
+          "total": 165340,
+          "non_empty": 0
+        },
+        "CoreFileSystemFileSystemNodeChangeTime": {
+          "total": 165340,
+          "non_empty": 0
+        },
+        "ReportTemplateFileSize": {
+          "total": 163762,
+          "non_empty": 163762
+        },
+        "CoreFileSystemFileSystemNodeFileChunks": {
+          "total": 163762,
+          "non_empty": 163762
+        },
+        "ExifEnumSoftware": {
+          "total": 1296,
+          "non_empty": 1296
+        },
+        "ExifEnumColorSpace": {
+          "total": 1011,
+          "non_empty": 1011
+        },
+        "ExifEnumArtist": {
+          "total": 16,
+          "non_empty": 15
+        },
+        "ExifEnumPixelXDimension": {
+          "total": 814,
+          "non_empty": 814
+        },
+        "ExifEnumPixelYDimension": {
+          "total": 814,
+          "non_empty": 814
+        },
+        "MetaDataPixelResolution": {
+          "total": 814,
+          "non_empty": 814
+        },
+        "ExifEnumGPSVersionID": {
+          "total": 83,
+          "non_empty": 83
+        },
+        "ExifEnumGPSLatitudeRef": {
+          "total": 122,
+          "non_empty": 122
+        },
+        "ExifEnumGPSLatitude": {
+          "total": 122,
+          "non_empty": 122
+        },
+        "ExifEnumGPSLongitudeRef": {
+          "total": 122,
+          "non_empty": 122
+        },
+        "ExifEnumGPSLongitude": {
+          "total": 122,
+          "non_empty": 122
+        },
+        "ExifEnumGPSAltitudeRef": {
+          "total": 107,
+          "non_empty": 107
+        },
+        "ExifEnumGPSAltitude": {
+          "total": 107,
+          "non_empty": 107
+        },
+        "ExifEnumGPSTimeStamp": {
+          "total": 107,
+          "non_empty": 107
+        },
+        "ExifEnumGPSDateStamp": {
+          "total": 107,
+          "non_empty": 107
+        },
+        "ExifEnumImageWidth": {
+          "total": 845,
+          "non_empty": 845
+        },
+        "ExifEnumImageLength": {
+          "total": 845,
+          "non_empty": 845
+        },
+        "ExifEnumMake": {
+          "total": 730,
+          "non_empty": 730
+        },
+        "ExifEnumModel": {
+          "total": 730,
+          "non_empty": 730
+        },
+        "ExifEnumOrientation": {
+          "total": 1382,
+          "non_empty": 1382
+        },
+        "ExifEnumXResolution": {
+          "total": 702,
+          "non_empty": 702
+        },
+        "ExifEnumYResolution": {
+          "total": 702,
+          "non_empty": 702
+        },
+        "ExifEnumResolutionUnit": {
+          "total": 702,
+          "non_empty": 702
+        },
+        "ExifEnumDateTime": {
+          "total": 936,
+          "non_empty": 936
+        },
+        "ExifEnumYCbCrPositioning": {
+          "total": 511,
+          "non_empty": 511
+        },
+        "ExifEnumExposureTime": {
+          "total": 707,
+          "non_empty": 707
+        },
+        "ExifEnumFNumber": {
+          "total": 633,
+          "non_empty": 633
+        },
+        "ExifEnumExposureProgram": {
+          "total": 490,
+          "non_empty": 490
+        },
+        "ExifEnumISOSpeedRatings": {
+          "total": 713,
+          "non_empty": 713
+        },
+        "ExifEnumExifVersion": {
+          "total": 639,
+          "non_empty": 639
+        },
+        "ExifEnumDateTimeOriginal": {
+          "total": 1027,
+          "non_empty": 1027
+        },
+        "ExifEnumDateTimeDigitized": {
+          "total": 656,
+          "non_empty": 656
+        },
+        "ExifEnumComponentsConfiguration": {
+          "total": 474,
+          "non_empty": 474
+        },
+        "ExifEnumShutterSpeedValue": {
+          "total": 498,
+          "non_empty": 498
+        },
+        "ExifEnumApertureValue": {
+          "total": 710,
+          "non_empty": 710
+        },
+        "ExifEnumBrightnessValue": {
+          "total": 473,
+          "non_empty": 473
+        },
+        "ExifEnumExposureBiasValue": {
+          "total": 443,
+          "non_empty": 443
+        },
+        "ExifEnumMaxApertureValue": {
+          "total": 443,
+          "non_empty": 443
+        },
+        "ExifEnumMeteringMode": {
+          "total": 622,
+          "non_empty": 622
+        },
+        "ExifEnumFlash": {
+          "total": 713,
+          "non_empty": 713
+        },
+        "ExifEnumFocalLength": {
+          "total": 713,
+          "non_empty": 713
+        },
+        "ExifEnumSubsecTime": {
+          "total": 439,
+          "non_empty": 439
+        },
+        "ExifEnumSubsecTimeOriginal": {
+          "total": 808,
+          "non_empty": 808
+        },
+        "ExifEnumSubsecTimeDigitized": {
+          "total": 450,
+          "non_empty": 450
+        },
+        "ExifEnumFlashpixVersion": {
+          "total": 406,
+          "non_empty": 406
+        },
+        "ExifEnumSceneType": {
+          "total": 320,
+          "non_empty": 320
+        },
+        "ExifEnumExposureMode": {
+          "total": 422,
+          "non_empty": 422
+        },
+        "ExifEnumWhiteBalance": {
+          "total": 693,
+          "non_empty": 693
+        },
+        "ExifEnumDigitalZoomRatio": {
+          "total": 282,
+          "non_empty": 282
+        },
+        "ExifEnumFocalLengthIn35mmFilm": {
+          "total": 497,
+          "non_empty": 497
+        },
+        "ExifEnumSceneCaptureType": {
+          "total": 489,
+          "non_empty": 489
+        },
+        "ExifEnumContrast": {
+          "total": 231,
+          "non_empty": 231
+        },
+        "ExifEnumSaturation": {
+          "total": 231,
+          "non_empty": 231
+        },
+        "ExifEnumSharpness": {
+          "total": 231,
+          "non_empty": 231
+        },
+        "ExifEnumImageUniqueID": {
+          "total": 407,
+          "non_empty": 339
+        },
+        "EXIFCameraMaker": {
+          "total": 730,
+          "non_empty": 730
+        },
+        "EXIFCameraModel": {
+          "total": 730,
+          "non_empty": 730
+        },
+        "EXIFCaptureTime": {
+          "total": 1307,
+          "non_empty": 1307
+        },
+        "MetaDataResolution": {
+          "total": 702,
+          "non_empty": 702
+        },
+        "EXIFOrientation": {
+          "total": 1382,
+          "non_empty": 1382
+        },
+        "MetaDataLatitudeAndLongitude": {
+          "total": 122,
+          "non_empty": 122
+        },
+        "ExifEnumLightSource": {
+          "total": 431,
+          "non_empty": 431
+        },
+        "ExifEnumYCbCrSubSampling": {
+          "total": 14,
+          "non_empty": 14
+        },
+        "ExifEnumBitsPerSample": {
+          "total": 79,
+          "non_empty": 79
+        },
+        "ExifEnumPhotometricInterpretation": {
+          "total": 81,
+          "non_empty": 81
+        },
+        "ExifEnumSamplesPerPixel": {
+          "total": 79,
+          "non_empty": 79
+        },
+        "ExifEnumSubjectArea": {
+          "total": 2,
+          "non_empty": 2
+        },
+        "ExifEnumSensingMethod": {
+          "total": 101,
+          "non_empty": 101
+        },
+        "ExifEnumGPSDOP": {
+          "total": 3,
+          "non_empty": 3
+        },
+        "ExifEnumFocalPlaneXResolution": {
+          "total": 5,
+          "non_empty": 5
+        },
+        "ExifEnumFocalPlaneYResolution": {
+          "total": 5,
+          "non_empty": 5
+        },
+        "ExifEnumFocalPlaneResolutionUnit": {
+          "total": 5,
+          "non_empty": 5
+        },
+        "ExifEnumCustomRendered": {
+          "total": 5,
+          "non_empty": 5
+        },
+        "ExifEnumWhitePoint": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "ExifEnumPrimaryChromaticities": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "ExifEnumYCbCrCoefficients": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "URL": {
+          "total": 15651,
+          "non_empty": 15651
+        },
+        "ExifEnumImageDescription": {
+          "total": 23,
+          "non_empty": 7
+        },
+        "ExifEnumCopyright": {
+          "total": 11,
+          "non_empty": 11
+        },
+        "Capture datetime": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "Width": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "Height": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "Duration": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "Uid": {
+          "total": 20821,
+          "non_empty": 20821
+        },
+        "Gid": {
+          "total": 20821,
+          "non_empty": 20821
+        },
+        "ExifEnumGPSProcessingMethod": {
+          "total": 23,
+          "non_empty": 23
+        },
+        "ExifEnumReferenceBlackWhite": {
+          "total": 8,
+          "non_empty": 8
+        },
+        "ExifEnumFileSource": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "ExifEnumGainControl": {
+          "total": 1,
+          "non_empty": 1
+        },
+        "ExifEnumSubjectDistanceRange": {
+          "total": 1,
+          "non_empty": 1
+        }
+      }
+    },
+    "access_info_timestamps": {
+      "ModifyTime": 91380,
+      "CreationTime": 284,
+      "AccessTime": 21417
+    },
+    "total_files": 165340,
+    "total_models": 45200
+  },
+  "per_report": {
+    "/home/conorbowles51/app_v2/ingestion/data/43f1afb1-1d2b-4b3f-a832-19cd049c8a9e/220049582_06306946_C5_2022-12-15_Report/220049582_06306946_C5_2022-12-15_Report_2025-03-19_Report.xml": {
+      "models": {
+        "CalendarEntry": {
+          "count": 3,
+          "fields": {
+            "UserMapping": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "Source": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "Category": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "StartDate": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "EndDate": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "Subject": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "Call": {
+          "count": 4848,
+          "fields": {
+            "UserMapping": {
+              "total": 4848,
+              "non_empty": 4783
+            },
+            "Source": {
+              "total": 4848,
+              "non_empty": 2848
+            },
+            "Direction": {
+              "total": 4848,
+              "non_empty": 4848
+            },
+            "Type": {
+              "total": 46,
+              "non_empty": 46
+            },
+            "Status": {
+              "total": 4848,
+              "non_empty": 4848
+            },
+            "TimeStamp": {
+              "total": 4848,
+              "non_empty": 4848
+            },
+            "Duration": {
+              "total": 4141,
+              "non_empty": 4141
+            },
+            "VideoCall": {
+              "total": 2830,
+              "non_empty": 2830
+            },
+            "Account": {
+              "total": 4848,
+              "non_empty": 2783
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Parties|Party": 7702
+          }
+        },
+        "Chat": {
+          "count": 578,
+          "fields": {
+            "UserMapping": {
+              "total": 578,
+              "non_empty": 94
+            },
+            "Source": {
+              "total": 578,
+              "non_empty": 578
+            },
+            "Id": {
+              "total": 568,
+              "non_empty": 568
+            },
+            "StartTime": {
+              "total": 578,
+              "non_empty": 563
+            },
+            "LastActivity": {
+              "total": 578,
+              "non_empty": 566
+            },
+            "Account": {
+              "total": 578,
+              "non_empty": 94
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Participants|Party": 1244,
+            "Messages|InstantMessage": 12411,
+            "Photos|ContactPhoto": 41
+          }
+        },
+        "Contact": {
+          "count": 1517,
+          "fields": {
+            "UserMapping": {
+              "total": 1517,
+              "non_empty": 1474
+            },
+            "Source": {
+              "total": 1517,
+              "non_empty": 784
+            },
+            "Name": {
+              "total": 1517,
+              "non_empty": 1498
+            },
+            "Group": {
+              "total": 1517,
+              "non_empty": 0
+            },
+            "Type": {
+              "total": 349,
+              "non_empty": 349
+            },
+            "Account": {
+              "total": 1517,
+              "non_empty": 784
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Entries|PhoneNumber": 2103,
+            "Entries|UserID": 533,
+            "Entries|ProfilePicture": 111,
+            "Addresses|StreetAddress": 55,
+            "AdditionalInfo|KeyValueModel": 437,
+            "Photos|ContactPhoto": 259,
+            "Organizations|Organization": 2,
+            "Entries|WebAddress": 5,
+            "Entries|EmailAddress": 6
+          }
+        },
+        "DeviceEvent": {
+          "count": 1,
+          "fields": {
+            "UserMapping": {
+              "total": 1,
+              "non_empty": 0
+            },
+            "StartTime": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "EventType": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Value": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Additional_Info|KeyValueModel": 1
+          }
+        },
+        "User": {
+          "count": 1,
+          "fields": {
+            "UserMapping": {
+              "total": 1,
+              "non_empty": 0
+            },
+            "Identifier": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "SerialNumber": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Name": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "TimeLastLoggedIn": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "UserType": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "RecognizedDevice": {
+          "count": 1,
+          "fields": {
+            "UserMapping": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Source": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "DeviceIdentifiers|KeyValueModel": 1
+          }
+        },
+        "FileDownload": {
+          "count": 1,
+          "fields": {
+            "UserMapping": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Source": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Url": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "TargetPath": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "StartTime": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "EndTime": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "LastAccessed": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "FileSize": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "BytesReceived": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "DownloadState": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "AdditionalInfo|KeyValueModel": 2
+          }
+        },
+        "Email": {
+          "count": 408,
+          "fields": {
+            "UserMapping": {
+              "total": 408,
+              "non_empty": 408
+            },
+            "Source": {
+              "total": 408,
+              "non_empty": 408
+            },
+            "Folder": {
+              "total": 408,
+              "non_empty": 408
+            },
+            "Status": {
+              "total": 360,
+              "non_empty": 360
+            },
+            "Subject": {
+              "total": 406,
+              "non_empty": 406
+            },
+            "Body": {
+              "total": 408,
+              "non_empty": 408
+            },
+            "TimeStamp": {
+              "total": 408,
+              "non_empty": 408
+            },
+            "Account": {
+              "total": 408,
+              "non_empty": 408
+            }
+          },
+          "children": {
+            "From|Party": 408
+          },
+          "multi_children": {
+            "To|Party": 409,
+            "Attachments|Attachment": 28,
+            "Cc|Party": 11
+          }
+        },
+        "InstalledApplication": {
+          "count": 588,
+          "fields": {
+            "UserMapping": {
+              "total": 588,
+              "non_empty": 0
+            },
+            "Name": {
+              "total": 153,
+              "non_empty": 153
+            },
+            "Version": {
+              "total": 570,
+              "non_empty": 570
+            },
+            "Identifier": {
+              "total": 588,
+              "non_empty": 588
+            },
+            "PurchaseDate": {
+              "total": 588,
+              "non_empty": 134
+            },
+            "DecodingStatus": {
+              "total": 169,
+              "non_empty": 169
+            },
+            "OperationMode": {
+              "total": 585,
+              "non_empty": 585
+            },
+            "IsEmulatable": {
+              "total": 555,
+              "non_empty": 555
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Users|User": 3
+          }
+        },
+        "InstantMessage": {
+          "count": 621,
+          "fields": {
+            "UserMapping": {
+              "total": 621,
+              "non_empty": 483
+            },
+            "Source": {
+              "total": 621,
+              "non_empty": 621
+            },
+            "Body": {
+              "total": 608,
+              "non_empty": 608
+            },
+            "TimeStamp": {
+              "total": 621,
+              "non_empty": 599
+            },
+            "DateDelivered": {
+              "total": 103,
+              "non_empty": 103
+            },
+            "Status": {
+              "total": 621,
+              "non_empty": 387
+            },
+            "Type": {
+              "total": 621,
+              "non_empty": 621
+            },
+            "Folder": {
+              "total": 621,
+              "non_empty": 116
+            },
+            "SourceApplication": {
+              "total": 621,
+              "non_empty": 621
+            },
+            "Identifier": {
+              "total": 484,
+              "non_empty": 483
+            }
+          },
+          "children": {
+            "From|Party": 599,
+            "Attachment|?": 621,
+            "From|?": 22
+          },
+          "multi_children": {
+            "To|Party": 599,
+            "Attachments|Attachment": 13
+          }
+        },
+        "Location": {
+          "count": 110,
+          "fields": {
+            "UserMapping": {
+              "total": 110,
+              "non_empty": 11
+            },
+            "Source": {
+              "total": 110,
+              "non_empty": 11
+            },
+            "TimeStamp": {
+              "total": 110,
+              "non_empty": 81
+            },
+            "Type": {
+              "total": 9,
+              "non_empty": 9
+            },
+            "Account": {
+              "total": 110,
+              "non_empty": 0
+            },
+            "Description": {
+              "total": 19,
+              "non_empty": 2
+            },
+            "Name": {
+              "total": 99,
+              "non_empty": 99
+            },
+            "Category": {
+              "total": 99,
+              "non_empty": 99
+            }
+          },
+          "children": {
+            "Position|Coordinate": 110,
+            "Address|StreetAddress": 2
+          },
+          "multi_children": {}
+        },
+        "UserAccount": {
+          "count": 39,
+          "fields": {
+            "UserMapping": {
+              "total": 39,
+              "non_empty": 31
+            },
+            "Source": {
+              "total": 31,
+              "non_empty": 31
+            },
+            "Name": {
+              "total": 39,
+              "non_empty": 15
+            },
+            "Username": {
+              "total": 30,
+              "non_empty": 30
+            },
+            "ServiceType": {
+              "total": 23,
+              "non_empty": 23
+            },
+            "Password": {
+              "total": 5,
+              "non_empty": 5
+            },
+            "TimeCreated": {
+              "total": 3,
+              "non_empty": 3
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Entries|UserID": 11,
+            "Entries|EmailAddress": 2,
+            "Entries|ProfilePicture": 11,
+            "Entries|PhoneNumber": 4,
+            "AdditionalInfo|KeyValueModel": 1
+          }
+        },
+        "DictionaryWord": {
+          "count": 6540,
+          "fields": {
+            "UserMapping": {
+              "total": 6540,
+              "non_empty": 0
+            },
+            "Source": {
+              "total": 6540,
+              "non_empty": 1
+            },
+            "Word": {
+              "total": 6539,
+              "non_empty": 6539
+            },
+            "Frequency": {
+              "total": 6540,
+              "non_empty": 6540
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "WebBookmark": {
+          "count": 14,
+          "fields": {
+            "UserMapping": {
+              "total": 14,
+              "non_empty": 14
+            },
+            "Source": {
+              "total": 14,
+              "non_empty": 14
+            },
+            "Title": {
+              "total": 14,
+              "non_empty": 14
+            },
+            "Url": {
+              "total": 12,
+              "non_empty": 12
+            },
+            "Path": {
+              "total": 14,
+              "non_empty": 0
+            },
+            "TimeStamp": {
+              "total": 10,
+              "non_empty": 10
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "VisitedPage": {
+          "count": 9658,
+          "fields": {
+            "UserMapping": {
+              "total": 9658,
+              "non_empty": 1084
+            },
+            "Source": {
+              "total": 9658,
+              "non_empty": 9658
+            },
+            "Title": {
+              "total": 9658,
+              "non_empty": 346
+            },
+            "Url": {
+              "total": 9658,
+              "non_empty": 9658
+            },
+            "LastVisited": {
+              "total": 9658,
+              "non_empty": 8948
+            },
+            "UrlCacheFile": {
+              "total": 9658,
+              "non_empty": 642
+            },
+            "VisitCount": {
+              "total": 67,
+              "non_empty": 67
+            },
+            "CanRebuildCacheFile": {
+              "total": 642,
+              "non_empty": 642
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "WirelessNetwork": {
+          "count": 667,
+          "fields": {
+            "UserMapping": {
+              "total": 667,
+              "non_empty": 0
+            },
+            "Source": {
+              "total": 667,
+              "non_empty": 667
+            },
+            "BSSId": {
+              "total": 667,
+              "non_empty": 667
+            },
+            "LastConnection": {
+              "total": 667,
+              "non_empty": 0
+            },
+            "TimeStamp": {
+              "total": 667,
+              "non_empty": 667
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "PoweringEvent": {
+          "count": 1,
+          "fields": {
+            "Element": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "TimeStamp": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Event": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Description": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        }
+      },
+      "tagged_files": {
+        "File": {
+          "Local Path": {
+            "total": 92761,
+            "non_empty": 92761
+          },
+          "SHA256": {
+            "total": 92761,
+            "non_empty": 1275
+          },
+          "MD5": {
+            "total": 92761,
+            "non_empty": 92761
+          },
+          "Tags": {
+            "total": 92761,
+            "non_empty": 92761
+          }
+        },
+        "MetaData": {
+          "CoreFileSystemFileSystemNodeFileDataOffsetName": {
+            "total": 91486,
+            "non_empty": 91486
+          },
+          "CoreFileSystemFileSystemNodeCreationTime": {
+            "total": 92761,
+            "non_empty": 270
+          },
+          "CoreFileSystemFileSystemNodeModifyTime": {
+            "total": 92761,
+            "non_empty": 59228
+          },
+          "CoreFileSystemFileSystemNodeLastAccessTime": {
+            "total": 92761,
+            "non_empty": 0
+          },
+          "CoreFileSystemFileSystemNodeDeletedTime": {
+            "total": 92761,
+            "non_empty": 0
+          },
+          "CoreFileSystemFileSystemNodeChangeTime": {
+            "total": 92761,
+            "non_empty": 0
+          },
+          "ReportTemplateFileSize": {
+            "total": 91487,
+            "non_empty": 91487
+          },
+          "CoreFileSystemFileSystemNodeFileChunks": {
+            "total": 91487,
+            "non_empty": 91487
+          },
+          "ExifEnumSoftware": {
+            "total": 1016,
+            "non_empty": 1016
+          },
+          "ExifEnumColorSpace": {
+            "total": 740,
+            "non_empty": 740
+          },
+          "ExifEnumArtist": {
+            "total": 9,
+            "non_empty": 9
+          },
+          "ExifEnumPixelXDimension": {
+            "total": 626,
+            "non_empty": 626
+          },
+          "ExifEnumPixelYDimension": {
+            "total": 626,
+            "non_empty": 626
+          },
+          "MetaDataPixelResolution": {
+            "total": 626,
+            "non_empty": 626
+          },
+          "ExifEnumGPSVersionID": {
+            "total": 83,
+            "non_empty": 83
+          },
+          "ExifEnumGPSLatitudeRef": {
+            "total": 99,
+            "non_empty": 99
+          },
+          "ExifEnumGPSLatitude": {
+            "total": 99,
+            "non_empty": 99
+          },
+          "ExifEnumGPSLongitudeRef": {
+            "total": 99,
+            "non_empty": 99
+          },
+          "ExifEnumGPSLongitude": {
+            "total": 99,
+            "non_empty": 99
+          },
+          "ExifEnumGPSAltitudeRef": {
+            "total": 107,
+            "non_empty": 107
+          },
+          "ExifEnumGPSAltitude": {
+            "total": 107,
+            "non_empty": 107
+          },
+          "ExifEnumGPSTimeStamp": {
+            "total": 107,
+            "non_empty": 107
+          },
+          "ExifEnumGPSDateStamp": {
+            "total": 107,
+            "non_empty": 107
+          },
+          "ExifEnumImageWidth": {
+            "total": 793,
+            "non_empty": 793
+          },
+          "ExifEnumImageLength": {
+            "total": 793,
+            "non_empty": 793
+          },
+          "ExifEnumMake": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "ExifEnumModel": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "ExifEnumOrientation": {
+            "total": 987,
+            "non_empty": 987
+          },
+          "ExifEnumXResolution": {
+            "total": 567,
+            "non_empty": 567
+          },
+          "ExifEnumYResolution": {
+            "total": 567,
+            "non_empty": 567
+          },
+          "ExifEnumResolutionUnit": {
+            "total": 567,
+            "non_empty": 567
+          },
+          "ExifEnumDateTime": {
+            "total": 573,
+            "non_empty": 573
+          },
+          "ExifEnumYCbCrPositioning": {
+            "total": 430,
+            "non_empty": 430
+          },
+          "ExifEnumExposureTime": {
+            "total": 423,
+            "non_empty": 423
+          },
+          "ExifEnumFNumber": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "ExifEnumExposureProgram": {
+            "total": 416,
+            "non_empty": 416
+          },
+          "ExifEnumISOSpeedRatings": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "ExifEnumExifVersion": {
+            "total": 504,
+            "non_empty": 504
+          },
+          "ExifEnumDateTimeOriginal": {
+            "total": 812,
+            "non_empty": 812
+          },
+          "ExifEnumDateTimeDigitized": {
+            "total": 449,
+            "non_empty": 449
+          },
+          "ExifEnumComponentsConfiguration": {
+            "total": 392,
+            "non_empty": 392
+          },
+          "ExifEnumShutterSpeedValue": {
+            "total": 424,
+            "non_empty": 424
+          },
+          "ExifEnumApertureValue": {
+            "total": 424,
+            "non_empty": 424
+          },
+          "ExifEnumBrightnessValue": {
+            "total": 401,
+            "non_empty": 401
+          },
+          "ExifEnumExposureBiasValue": {
+            "total": 424,
+            "non_empty": 424
+          },
+          "ExifEnumMaxApertureValue": {
+            "total": 426,
+            "non_empty": 426
+          },
+          "ExifEnumMeteringMode": {
+            "total": 416,
+            "non_empty": 416
+          },
+          "ExifEnumFlash": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "ExifEnumFocalLength": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "ExifEnumSubsecTime": {
+            "total": 366,
+            "non_empty": 366
+          },
+          "ExifEnumSubsecTimeOriginal": {
+            "total": 726,
+            "non_empty": 726
+          },
+          "ExifEnumSubsecTimeDigitized": {
+            "total": 376,
+            "non_empty": 376
+          },
+          "ExifEnumFlashpixVersion": {
+            "total": 324,
+            "non_empty": 324
+          },
+          "ExifEnumSceneType": {
+            "total": 263,
+            "non_empty": 263
+          },
+          "ExifEnumExposureMode": {
+            "total": 348,
+            "non_empty": 348
+          },
+          "ExifEnumWhiteBalance": {
+            "total": 407,
+            "non_empty": 407
+          },
+          "ExifEnumDigitalZoomRatio": {
+            "total": 266,
+            "non_empty": 266
+          },
+          "ExifEnumFocalLengthIn35mmFilm": {
+            "total": 424,
+            "non_empty": 424
+          },
+          "ExifEnumSceneCaptureType": {
+            "total": 416,
+            "non_empty": 416
+          },
+          "ExifEnumContrast": {
+            "total": 230,
+            "non_empty": 230
+          },
+          "ExifEnumSaturation": {
+            "total": 230,
+            "non_empty": 230
+          },
+          "ExifEnumSharpness": {
+            "total": 230,
+            "non_empty": 230
+          },
+          "ExifEnumImageUniqueID": {
+            "total": 406,
+            "non_empty": 338
+          },
+          "EXIFCameraMaker": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "EXIFCameraModel": {
+            "total": 427,
+            "non_empty": 427
+          },
+          "EXIFCaptureTime": {
+            "total": 936,
+            "non_empty": 936
+          },
+          "MetaDataResolution": {
+            "total": 567,
+            "non_empty": 567
+          },
+          "EXIFOrientation": {
+            "total": 987,
+            "non_empty": 987
+          },
+          "MetaDataLatitudeAndLongitude": {
+            "total": 99,
+            "non_empty": 99
+          },
+          "ExifEnumLightSource": {
+            "total": 406,
+            "non_empty": 406
+          },
+          "ExifEnumYCbCrSubSampling": {
+            "total": 6,
+            "non_empty": 6
+          },
+          "ExifEnumBitsPerSample": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "ExifEnumPhotometricInterpretation": {
+            "total": 52,
+            "non_empty": 52
+          },
+          "ExifEnumSamplesPerPixel": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "ExifEnumSubjectArea": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumSensingMethod": {
+            "total": 44,
+            "non_empty": 44
+          },
+          "ExifEnumGPSDOP": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "ExifEnumFocalPlaneXResolution": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "ExifEnumFocalPlaneYResolution": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "ExifEnumFocalPlaneResolutionUnit": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "ExifEnumCustomRendered": {
+            "total": 3,
+            "non_empty": 3
+          },
+          "ExifEnumWhitePoint": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumPrimaryChromaticities": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumYCbCrCoefficients": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "URL": {
+            "total": 8997,
+            "non_empty": 8997
+          },
+          "ExifEnumImageDescription": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumCopyright": {
+            "total": 5,
+            "non_empty": 5
+          },
+          "Capture datetime": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "Width": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "Height": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "Duration": {
+            "total": 1,
+            "non_empty": 1
+          }
+        }
+      },
+      "access_info_timestamps": {
+        "ModifyTime": 59228,
+        "CreationTime": 270
+      },
+      "total_files": 92761,
+      "total_models": 25596
+    },
+    "/home/conorbowles51/app_v2/ingestion/data/8f854aab-6bc2-4329-bea7-61b587ccba72/Cellebrite Report Sample Phone/220049582_06306208_C3_2022-12-12_Report_2025-03-19_Report.xml": {
+      "models": {
+        "Autofill": {
+          "count": 8,
+          "fields": {
+            "UserMapping": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "Source": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "Key": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "Value": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "TimeStamp": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "LastUsedDate": {
+              "total": 8,
+              "non_empty": 8
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "CalendarEntry": {
+          "count": 80,
+          "fields": {
+            "UserMapping": {
+              "total": 80,
+              "non_empty": 80
+            },
+            "Source": {
+              "total": 80,
+              "non_empty": 80
+            },
+            "Category": {
+              "total": 80,
+              "non_empty": 80
+            },
+            "Subject": {
+              "total": 79,
+              "non_empty": 79
+            },
+            "Details": {
+              "total": 79,
+              "non_empty": 79
+            },
+            "StartDate": {
+              "total": 80,
+              "non_empty": 80
+            },
+            "EndDate": {
+              "total": 79,
+              "non_empty": 79
+            },
+            "RepeatRule": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "RepeatUntil": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Location": {
+              "total": 3,
+              "non_empty": 3
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Attendees|Party": 3
+          }
+        },
+        "Call": {
+          "count": 1657,
+          "fields": {
+            "UserMapping": {
+              "total": 1657,
+              "non_empty": 1592
+            },
+            "Source": {
+              "total": 1657,
+              "non_empty": 795
+            },
+            "Direction": {
+              "total": 1657,
+              "non_empty": 1657
+            },
+            "Type": {
+              "total": 42,
+              "non_empty": 42
+            },
+            "Status": {
+              "total": 1657,
+              "non_empty": 1657
+            },
+            "TimeStamp": {
+              "total": 1657,
+              "non_empty": 1657
+            },
+            "Duration": {
+              "total": 1258,
+              "non_empty": 1258
+            },
+            "VideoCall": {
+              "total": 774,
+              "non_empty": 774
+            },
+            "Account": {
+              "total": 1657,
+              "non_empty": 730
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Parties|Party": 2500
+          }
+        },
+        "Chat": {
+          "count": 303,
+          "fields": {
+            "UserMapping": {
+              "total": 303,
+              "non_empty": 182
+            },
+            "Source": {
+              "total": 303,
+              "non_empty": 303
+            },
+            "Id": {
+              "total": 302,
+              "non_empty": 302
+            },
+            "StartTime": {
+              "total": 303,
+              "non_empty": 254
+            },
+            "LastActivity": {
+              "total": 303,
+              "non_empty": 289
+            },
+            "Account": {
+              "total": 303,
+              "non_empty": 169
+            },
+            "Name": {
+              "total": 23,
+              "non_empty": 23
+            },
+            "Description": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Participants|Party": 983,
+            "Messages|InstantMessage": 2716,
+            "Photos|ContactPhoto": 55,
+            "ActivityLog|ChatActivity": 34
+          }
+        },
+        "Contact": {
+          "count": 1612,
+          "fields": {
+            "UserMapping": {
+              "total": 1612,
+              "non_empty": 1568
+            },
+            "Source": {
+              "total": 1612,
+              "non_empty": 1419
+            },
+            "Name": {
+              "total": 1612,
+              "non_empty": 758
+            },
+            "Group": {
+              "total": 1612,
+              "non_empty": 0
+            },
+            "Type": {
+              "total": 1067,
+              "non_empty": 1067
+            },
+            "Account": {
+              "total": 1612,
+              "non_empty": 1418
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Entries|PhoneNumber": 610,
+            "Entries|UserID": 1619,
+            "Entries|ProfilePicture": 408,
+            "Photos|ContactPhoto": 497,
+            "Entries|WebAddress": 7,
+            "Addresses|StreetAddress": 11,
+            "AdditionalInfo|KeyValueModel": 861,
+            "Entries|EmailAddress": 15
+          }
+        },
+        "DeviceEvent": {
+          "count": 2,
+          "fields": {
+            "UserMapping": {
+              "total": 2,
+              "non_empty": 0
+            },
+            "StartTime": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "EventType": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Value": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Additional_Info|KeyValueModel": 2
+          }
+        },
+        "User": {
+          "count": 1,
+          "fields": {
+            "UserMapping": {
+              "total": 1,
+              "non_empty": 0
+            },
+            "Identifier": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "SerialNumber": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "TimeLastLoggedIn": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "UserType": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "RecognizedDevice": {
+          "count": 5,
+          "fields": {
+            "UserMapping": {
+              "total": 5,
+              "non_empty": 5
+            },
+            "Source": {
+              "total": 5,
+              "non_empty": 5
+            },
+            "Name": {
+              "total": 5,
+              "non_empty": 5
+            },
+            "SerialNumber": {
+              "total": 5,
+              "non_empty": 0
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "DeviceIdentifiers|KeyValueModel": 5,
+            "AdditionalInfo|KeyValueModel": 5
+          }
+        },
+        "Email": {
+          "count": 294,
+          "fields": {
+            "UserMapping": {
+              "total": 294,
+              "non_empty": 294
+            },
+            "Source": {
+              "total": 294,
+              "non_empty": 294
+            },
+            "Folder": {
+              "total": 294,
+              "non_empty": 293
+            },
+            "Status": {
+              "total": 292,
+              "non_empty": 292
+            },
+            "Subject": {
+              "total": 293,
+              "non_empty": 293
+            },
+            "Body": {
+              "total": 293,
+              "non_empty": 293
+            },
+            "TimeStamp": {
+              "total": 294,
+              "non_empty": 294
+            },
+            "Account": {
+              "total": 294,
+              "non_empty": 293
+            }
+          },
+          "children": {
+            "From|Party": 294
+          },
+          "multi_children": {
+            "To|Party": 293,
+            "Attachments|Attachment": 2
+          }
+        },
+        "InstantMessage": {
+          "count": 201,
+          "fields": {
+            "UserMapping": {
+              "total": 201,
+              "non_empty": 173
+            },
+            "Source": {
+              "total": 201,
+              "non_empty": 201
+            },
+            "Body": {
+              "total": 201,
+              "non_empty": 201
+            },
+            "Identifier": {
+              "total": 201,
+              "non_empty": 173
+            },
+            "TimeStamp": {
+              "total": 201,
+              "non_empty": 201
+            },
+            "Status": {
+              "total": 201,
+              "non_empty": 128
+            },
+            "Type": {
+              "total": 201,
+              "non_empty": 201
+            },
+            "Folder": {
+              "total": 201,
+              "non_empty": 28
+            },
+            "SourceApplication": {
+              "total": 201,
+              "non_empty": 201
+            },
+            "DateDelivered": {
+              "total": 4,
+              "non_empty": 4
+            }
+          },
+          "children": {
+            "From|Party": 201,
+            "Attachment|?": 201
+          },
+          "multi_children": {
+            "To|Party": 201
+          }
+        },
+        "Location": {
+          "count": 31,
+          "fields": {
+            "UserMapping": {
+              "total": 31,
+              "non_empty": 10
+            },
+            "Source": {
+              "total": 31,
+              "non_empty": 10
+            },
+            "TimeStamp": {
+              "total": 31,
+              "non_empty": 21
+            },
+            "Type": {
+              "total": 7,
+              "non_empty": 7
+            },
+            "Account": {
+              "total": 31,
+              "non_empty": 0
+            },
+            "Description": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "Name": {
+              "total": 21,
+              "non_empty": 21
+            },
+            "Category": {
+              "total": 21,
+              "non_empty": 21
+            }
+          },
+          "children": {
+            "Position|Coordinate": 31,
+            "Address|StreetAddress": 3
+          },
+          "multi_children": {}
+        },
+        "NetworkUsage": {
+          "count": 5181,
+          "fields": {
+            "UserMapping": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "Source": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "SSId": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "DateStarted": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "DateEnded": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "NumberOfBytesReceived": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "NumberOfBytesSent": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "IsRoaming": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "UsageMode": {
+              "total": 5181,
+              "non_empty": 5181
+            },
+            "NetworkConnectionType": {
+              "total": 5181,
+              "non_empty": 5181
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "AdditionalInfo|KeyValueModel": 39303
+          }
+        },
+        "Password": {
+          "count": 273,
+          "fields": {
+            "UserMapping": {
+              "total": 273,
+              "non_empty": 268
+            },
+            "Account": {
+              "total": 273,
+              "non_empty": 270
+            },
+            "Data": {
+              "total": 212,
+              "non_empty": 212
+            },
+            "Label": {
+              "total": 270,
+              "non_empty": 270
+            },
+            "Type": {
+              "total": 273,
+              "non_empty": 273
+            },
+            "Source": {
+              "total": 269,
+              "non_empty": 269
+            },
+            "Service": {
+              "total": 266,
+              "non_empty": 266
+            },
+            "AccessGroup": {
+              "total": 264,
+              "non_empty": 264
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "SearchedItem": {
+          "count": 19,
+          "fields": {
+            "UserMapping": {
+              "total": 19,
+              "non_empty": 10
+            },
+            "Source": {
+              "total": 19,
+              "non_empty": 19
+            },
+            "TimeStamp": {
+              "total": 19,
+              "non_empty": 10
+            },
+            "Value": {
+              "total": 19,
+              "non_empty": 19
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "SIMData": {
+          "count": 9,
+          "fields": {
+            "UserMapping": {
+              "total": 9,
+              "non_empty": 0
+            },
+            "Name": {
+              "total": 9,
+              "non_empty": 9
+            },
+            "Value": {
+              "total": 9,
+              "non_empty": 9
+            },
+            "Category": {
+              "total": 9,
+              "non_empty": 9
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "UserAccount": {
+          "count": 34,
+          "fields": {
+            "UserMapping": {
+              "total": 34,
+              "non_empty": 25
+            },
+            "Source": {
+              "total": 24,
+              "non_empty": 24
+            },
+            "Name": {
+              "total": 34,
+              "non_empty": 11
+            },
+            "Username": {
+              "total": 28,
+              "non_empty": 28
+            },
+            "ServiceType": {
+              "total": 20,
+              "non_empty": 20
+            },
+            "Password": {
+              "total": 3,
+              "non_empty": 3
+            },
+            "TimeCreated": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Entries|UserID": 8,
+            "Entries|ProfilePicture": 16,
+            "Entries|PhoneNumber": 10,
+            "Entries|EmailAddress": 1,
+            "AdditionalInfo|KeyValueModel": 2,
+            "Photos|ContactPhoto": 2
+          }
+        },
+        "WebBookmark": {
+          "count": 7,
+          "fields": {
+            "UserMapping": {
+              "total": 7,
+              "non_empty": 7
+            },
+            "Source": {
+              "total": 7,
+              "non_empty": 7
+            },
+            "Title": {
+              "total": 7,
+              "non_empty": 7
+            },
+            "Url": {
+              "total": 5,
+              "non_empty": 5
+            },
+            "Path": {
+              "total": 7,
+              "non_empty": 0
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "VisitedPage": {
+          "count": 6936,
+          "fields": {
+            "UserMapping": {
+              "total": 6936,
+              "non_empty": 164
+            },
+            "Source": {
+              "total": 6936,
+              "non_empty": 6936
+            },
+            "Title": {
+              "total": 6936,
+              "non_empty": 137
+            },
+            "Url": {
+              "total": 6936,
+              "non_empty": 6936
+            },
+            "LastVisited": {
+              "total": 6936,
+              "non_empty": 6910
+            },
+            "UrlCacheFile": {
+              "total": 6936,
+              "non_empty": 18
+            },
+            "VisitCount": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "CanRebuildCacheFile": {
+              "total": 18,
+              "non_empty": 18
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "WirelessNetwork": {
+          "count": 8,
+          "fields": {
+            "UserMapping": {
+              "total": 8,
+              "non_empty": 0
+            },
+            "Source": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "SSId": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "SecurityMode": {
+              "total": 5,
+              "non_empty": 5
+            },
+            "LastConnection": {
+              "total": 8,
+              "non_empty": 5
+            },
+            "TimeStamp": {
+              "total": 3,
+              "non_empty": 3
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "PoweringEvent": {
+          "count": 2,
+          "fields": {
+            "Element": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "TimeStamp": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Event": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Description": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        }
+      },
+      "tagged_files": {
+        "File": {
+          "Local Path": {
+            "total": 43043,
+            "non_empty": 43043
+          },
+          "SHA256": {
+            "total": 43043,
+            "non_empty": 224
+          },
+          "MD5": {
+            "total": 43043,
+            "non_empty": 43043
+          },
+          "Tags": {
+            "total": 43043,
+            "non_empty": 43043
+          }
+        },
+        "MetaData": {
+          "Uid": {
+            "total": 20821,
+            "non_empty": 20821
+          },
+          "Gid": {
+            "total": 20821,
+            "non_empty": 20821
+          },
+          "CoreFileSystemFileSystemNodeFileDataOffsetName": {
+            "total": 42819,
+            "non_empty": 42819
+          },
+          "CoreFileSystemFileSystemNodeCreationTime": {
+            "total": 43043,
+            "non_empty": 10
+          },
+          "CoreFileSystemFileSystemNodeModifyTime": {
+            "total": 43043,
+            "non_empty": 21423
+          },
+          "CoreFileSystemFileSystemNodeLastAccessTime": {
+            "total": 43043,
+            "non_empty": 21417
+          },
+          "CoreFileSystemFileSystemNodeDeletedTime": {
+            "total": 43043,
+            "non_empty": 0
+          },
+          "CoreFileSystemFileSystemNodeChangeTime": {
+            "total": 43043,
+            "non_empty": 0
+          },
+          "ReportTemplateFileSize": {
+            "total": 42819,
+            "non_empty": 42819
+          },
+          "CoreFileSystemFileSystemNodeFileChunks": {
+            "total": 42819,
+            "non_empty": 42819
+          },
+          "ExifEnumGPSLatitudeRef": {
+            "total": 23,
+            "non_empty": 23
+          },
+          "ExifEnumGPSLatitude": {
+            "total": 23,
+            "non_empty": 23
+          },
+          "ExifEnumGPSLongitudeRef": {
+            "total": 23,
+            "non_empty": 23
+          },
+          "ExifEnumGPSLongitude": {
+            "total": 23,
+            "non_empty": 23
+          },
+          "ExifEnumGPSProcessingMethod": {
+            "total": 23,
+            "non_empty": 23
+          },
+          "ExifEnumMake": {
+            "total": 152,
+            "non_empty": 152
+          },
+          "ExifEnumModel": {
+            "total": 152,
+            "non_empty": 152
+          },
+          "ExifEnumOrientation": {
+            "total": 195,
+            "non_empty": 195
+          },
+          "ExifEnumDateTime": {
+            "total": 181,
+            "non_empty": 181
+          },
+          "ExifEnumExposureTime": {
+            "total": 135,
+            "non_empty": 135
+          },
+          "ExifEnumISOSpeedRatings": {
+            "total": 135,
+            "non_empty": 135
+          },
+          "ExifEnumApertureValue": {
+            "total": 135,
+            "non_empty": 135
+          },
+          "ExifEnumFlash": {
+            "total": 135,
+            "non_empty": 135
+          },
+          "ExifEnumFocalLength": {
+            "total": 135,
+            "non_empty": 135
+          },
+          "ExifEnumWhiteBalance": {
+            "total": 135,
+            "non_empty": 135
+          },
+          "EXIFCameraMaker": {
+            "total": 152,
+            "non_empty": 152
+          },
+          "EXIFCameraModel": {
+            "total": 152,
+            "non_empty": 152
+          },
+          "EXIFCaptureTime": {
+            "total": 181,
+            "non_empty": 181
+          },
+          "EXIFOrientation": {
+            "total": 195,
+            "non_empty": 195
+          },
+          "MetaDataLatitudeAndLongitude": {
+            "total": 23,
+            "non_empty": 23
+          },
+          "ExifEnumSoftware": {
+            "total": 152,
+            "non_empty": 152
+          },
+          "ExifEnumExifVersion": {
+            "total": 96,
+            "non_empty": 96
+          },
+          "ExifEnumXResolution": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "ExifEnumYResolution": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "ExifEnumResolutionUnit": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "ExifEnumColorSpace": {
+            "total": 154,
+            "non_empty": 154
+          },
+          "ExifEnumPixelXDimension": {
+            "total": 110,
+            "non_empty": 110
+          },
+          "ExifEnumPixelYDimension": {
+            "total": 110,
+            "non_empty": 110
+          },
+          "MetaDataPixelResolution": {
+            "total": 110,
+            "non_empty": 110
+          },
+          "MetaDataResolution": {
+            "total": 84,
+            "non_empty": 84
+          },
+          "ExifEnumYCbCrPositioning": {
+            "total": 63,
+            "non_empty": 63
+          },
+          "ExifEnumFNumber": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumExposureProgram": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumDateTimeOriginal": {
+            "total": 56,
+            "non_empty": 56
+          },
+          "ExifEnumDateTimeDigitized": {
+            "total": 56,
+            "non_empty": 56
+          },
+          "ExifEnumComponentsConfiguration": {
+            "total": 63,
+            "non_empty": 63
+          },
+          "ExifEnumShutterSpeedValue": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumBrightnessValue": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumMeteringMode": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumSubsecTime": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumSubsecTimeOriginal": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumSubsecTimeDigitized": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumFlashpixVersion": {
+            "total": 63,
+            "non_empty": 63
+          },
+          "ExifEnumSensingMethod": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumSceneType": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumExposureMode": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumFocalLengthIn35mmFilm": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "ExifEnumSceneCaptureType": {
+            "total": 55,
+            "non_empty": 55
+          },
+          "URL": {
+            "total": 2584,
+            "non_empty": 2584
+          },
+          "ExifEnumImageWidth": {
+            "total": 16,
+            "non_empty": 16
+          },
+          "ExifEnumImageLength": {
+            "total": 16,
+            "non_empty": 16
+          },
+          "ExifEnumBitsPerSample": {
+            "total": 16,
+            "non_empty": 16
+          },
+          "ExifEnumPhotometricInterpretation": {
+            "total": 17,
+            "non_empty": 17
+          },
+          "ExifEnumSamplesPerPixel": {
+            "total": 16,
+            "non_empty": 16
+          },
+          "ExifEnumCopyright": {
+            "total": 5,
+            "non_empty": 5
+          },
+          "ExifEnumImageDescription": {
+            "total": 5,
+            "non_empty": 5
+          },
+          "ExifEnumArtist": {
+            "total": 3,
+            "non_empty": 2
+          },
+          "ExifEnumYCbCrSubSampling": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumReferenceBlackWhite": {
+            "total": 8,
+            "non_empty": 8
+          }
+        }
+      },
+      "access_info_timestamps": {
+        "ModifyTime": 21423,
+        "AccessTime": 21417,
+        "CreationTime": 10
+      },
+      "total_files": 43043,
+      "total_models": 16663
+    },
+    "/home/conorbowles51/app_v2/ingestion/data/d83fe4a4-dd52-4760-9c43-ab0dee82f050/220029502_06310028_C9_2023-03-02_Report/220029502_06310028_C9_2023-03-02_Report_2025-03-20_Report.xml": {
+      "models": {
+        "CalendarEntry": {
+          "count": 1,
+          "fields": {
+            "UserMapping": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Source": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "Category": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "StartDate": {
+              "total": 1,
+              "non_empty": 1
+            },
+            "EndDate": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "Call": {
+          "count": 1391,
+          "fields": {
+            "UserMapping": {
+              "total": 1391,
+              "non_empty": 1391
+            },
+            "Source": {
+              "total": 1391,
+              "non_empty": 1022
+            },
+            "Direction": {
+              "total": 1391,
+              "non_empty": 1391
+            },
+            "Status": {
+              "total": 1391,
+              "non_empty": 1376
+            },
+            "TimeStamp": {
+              "total": 1391,
+              "non_empty": 1391
+            },
+            "Duration": {
+              "total": 911,
+              "non_empty": 911
+            },
+            "VideoCall": {
+              "total": 1022,
+              "non_empty": 1022
+            },
+            "Account": {
+              "total": 1391,
+              "non_empty": 1022
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Parties|Party": 2418
+          }
+        },
+        "Chat": {
+          "count": 114,
+          "fields": {
+            "UserMapping": {
+              "total": 114,
+              "non_empty": 104
+            },
+            "Source": {
+              "total": 114,
+              "non_empty": 114
+            },
+            "Id": {
+              "total": 114,
+              "non_empty": 114
+            },
+            "StartTime": {
+              "total": 114,
+              "non_empty": 112
+            },
+            "LastActivity": {
+              "total": 114,
+              "non_empty": 112
+            },
+            "Account": {
+              "total": 114,
+              "non_empty": 104
+            },
+            "Name": {
+              "total": 6,
+              "non_empty": 6
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Participants|Party": 239,
+            "Messages|InstantMessage": 3404,
+            "Photos|ContactPhoto": 29
+          }
+        },
+        "Contact": {
+          "count": 235,
+          "fields": {
+            "UserMapping": {
+              "total": 235,
+              "non_empty": 232
+            },
+            "Source": {
+              "total": 235,
+              "non_empty": 162
+            },
+            "Name": {
+              "total": 235,
+              "non_empty": 213
+            },
+            "Group": {
+              "total": 235,
+              "non_empty": 0
+            },
+            "Type": {
+              "total": 130,
+              "non_empty": 130
+            },
+            "Account": {
+              "total": 235,
+              "non_empty": 159
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Entries|UserID": 155,
+            "Entries|PhoneNumber": 200,
+            "AdditionalInfo|KeyValueModel": 42,
+            "Photos|ContactPhoto": 66,
+            "Entries|WebAddress": 1,
+            "Addresses|StreetAddress": 1
+          }
+        },
+        "Email": {
+          "count": 2,
+          "fields": {
+            "UserMapping": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Source": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Folder": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Subject": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Body": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "TimeStamp": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "Account": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {
+            "From|Party": 2
+          },
+          "multi_children": {
+            "To|Party": 2
+          }
+        },
+        "InstantMessage": {
+          "count": 17,
+          "fields": {
+            "UserMapping": {
+              "total": 17,
+              "non_empty": 17
+            },
+            "Source": {
+              "total": 17,
+              "non_empty": 17
+            },
+            "Body": {
+              "total": 17,
+              "non_empty": 17
+            },
+            "Identifier": {
+              "total": 17,
+              "non_empty": 17
+            },
+            "TimeStamp": {
+              "total": 17,
+              "non_empty": 17
+            },
+            "Status": {
+              "total": 17,
+              "non_empty": 16
+            },
+            "Type": {
+              "total": 17,
+              "non_empty": 17
+            },
+            "Folder": {
+              "total": 17,
+              "non_empty": 0
+            },
+            "SourceApplication": {
+              "total": 17,
+              "non_empty": 17
+            }
+          },
+          "children": {
+            "From|Party": 17,
+            "Attachment|?": 17
+          },
+          "multi_children": {
+            "To|Party": 17
+          }
+        },
+        "Location": {
+          "count": 7,
+          "fields": {
+            "UserMapping": {
+              "total": 7,
+              "non_empty": 7
+            },
+            "Source": {
+              "total": 7,
+              "non_empty": 7
+            },
+            "TimeStamp": {
+              "total": 7,
+              "non_empty": 0
+            },
+            "Type": {
+              "total": 6,
+              "non_empty": 6
+            },
+            "Account": {
+              "total": 7,
+              "non_empty": 0
+            }
+          },
+          "children": {
+            "Position|Coordinate": 7,
+            "Address|StreetAddress": 1
+          },
+          "multi_children": {}
+        },
+        "Password": {
+          "count": 288,
+          "fields": {
+            "UserMapping": {
+              "total": 288,
+              "non_empty": 288
+            },
+            "Source": {
+              "total": 288,
+              "non_empty": 288
+            },
+            "Account": {
+              "total": 288,
+              "non_empty": 287
+            },
+            "Data": {
+              "total": 245,
+              "non_empty": 245
+            },
+            "Label": {
+              "total": 287,
+              "non_empty": 287
+            },
+            "Type": {
+              "total": 288,
+              "non_empty": 288
+            },
+            "ServiceIdentifier": {
+              "total": 286,
+              "non_empty": 286
+            },
+            "AccessGroup": {
+              "total": 284,
+              "non_empty": 284
+            },
+            "Service": {
+              "total": 286,
+              "non_empty": 286
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "SearchedItem": {
+          "count": 13,
+          "fields": {
+            "UserMapping": {
+              "total": 13,
+              "non_empty": 8
+            },
+            "Source": {
+              "total": 13,
+              "non_empty": 13
+            },
+            "TimeStamp": {
+              "total": 13,
+              "non_empty": 5
+            },
+            "Value": {
+              "total": 13,
+              "non_empty": 13
+            },
+            "Origin": {
+              "total": 4,
+              "non_empty": 3
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "UserAccount": {
+          "count": 14,
+          "fields": {
+            "UserMapping": {
+              "total": 14,
+              "non_empty": 12
+            },
+            "Source": {
+              "total": 9,
+              "non_empty": 9
+            },
+            "ServiceIdentifier": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "Name": {
+              "total": 14,
+              "non_empty": 6
+            },
+            "Username": {
+              "total": 11,
+              "non_empty": 11
+            },
+            "ServiceType": {
+              "total": 8,
+              "non_empty": 8
+            },
+            "Password": {
+              "total": 1,
+              "non_empty": 1
+            }
+          },
+          "children": {},
+          "multi_children": {
+            "Entries|UserID": 2,
+            "Entries|PhoneNumber": 2,
+            "Photos|ContactPhoto": 1,
+            "AdditionalInfo|KeyValueModel": 1
+          }
+        },
+        "DictionaryWord": {
+          "count": 640,
+          "fields": {
+            "UserMapping": {
+              "total": 640,
+              "non_empty": 0
+            },
+            "Source": {
+              "total": 640,
+              "non_empty": 1
+            },
+            "Word": {
+              "total": 639,
+              "non_empty": 639
+            },
+            "Frequency": {
+              "total": 640,
+              "non_empty": 640
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "WebBookmark": {
+          "count": 4,
+          "fields": {
+            "UserMapping": {
+              "total": 4,
+              "non_empty": 4
+            },
+            "Source": {
+              "total": 4,
+              "non_empty": 4
+            },
+            "Title": {
+              "total": 4,
+              "non_empty": 4
+            },
+            "Path": {
+              "total": 4,
+              "non_empty": 0
+            },
+            "Url": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "VisitedPage": {
+          "count": 213,
+          "fields": {
+            "UserMapping": {
+              "total": 213,
+              "non_empty": 202
+            },
+            "Source": {
+              "total": 213,
+              "non_empty": 213
+            },
+            "Title": {
+              "total": 213,
+              "non_empty": 123
+            },
+            "Url": {
+              "total": 213,
+              "non_empty": 213
+            },
+            "LastVisited": {
+              "total": 213,
+              "non_empty": 137
+            },
+            "UrlCacheFile": {
+              "total": 213,
+              "non_empty": 65
+            },
+            "VisitCount": {
+              "total": 9,
+              "non_empty": 9
+            },
+            "CanRebuildCacheFile": {
+              "total": 65,
+              "non_empty": 65
+            }
+          },
+          "children": {},
+          "multi_children": {}
+        },
+        "WirelessNetwork": {
+          "count": 2,
+          "fields": {
+            "UserMapping": {
+              "total": 2,
+              "non_empty": 0
+            },
+            "Source": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "SSId": {
+              "total": 2,
+              "non_empty": 2
+            },
+            "LastConnection": {
+              "total": 2,
+              "non_empty": 0
+            },
+            "TimeStamp": {
+              "total": 2,
+              "non_empty": 2
+            }
+          },
+          "children": {
+            "Position|Coordinate": 2
+          },
+          "multi_children": {}
+        }
+      },
+      "tagged_files": {
+        "File": {
+          "Local Path": {
+            "total": 29536,
+            "non_empty": 29536
+          },
+          "SHA256": {
+            "total": 29536,
+            "non_empty": 80
+          },
+          "MD5": {
+            "total": 29536,
+            "non_empty": 29536
+          },
+          "Tags": {
+            "total": 29536,
+            "non_empty": 29536
+          }
+        },
+        "MetaData": {
+          "CoreFileSystemFileSystemNodeFileDataOffsetName": {
+            "total": 29456,
+            "non_empty": 29456
+          },
+          "CoreFileSystemFileSystemNodeCreationTime": {
+            "total": 29536,
+            "non_empty": 4
+          },
+          "CoreFileSystemFileSystemNodeModifyTime": {
+            "total": 29536,
+            "non_empty": 10729
+          },
+          "CoreFileSystemFileSystemNodeLastAccessTime": {
+            "total": 29536,
+            "non_empty": 0
+          },
+          "CoreFileSystemFileSystemNodeDeletedTime": {
+            "total": 29536,
+            "non_empty": 0
+          },
+          "CoreFileSystemFileSystemNodeChangeTime": {
+            "total": 29536,
+            "non_empty": 0
+          },
+          "ReportTemplateFileSize": {
+            "total": 29456,
+            "non_empty": 29456
+          },
+          "CoreFileSystemFileSystemNodeFileChunks": {
+            "total": 29456,
+            "non_empty": 29456
+          },
+          "URL": {
+            "total": 4070,
+            "non_empty": 4070
+          },
+          "ExifEnumImageWidth": {
+            "total": 36,
+            "non_empty": 36
+          },
+          "ExifEnumImageLength": {
+            "total": 36,
+            "non_empty": 36
+          },
+          "ExifEnumOrientation": {
+            "total": 200,
+            "non_empty": 200
+          },
+          "ExifEnumSoftware": {
+            "total": 128,
+            "non_empty": 128
+          },
+          "ExifEnumDateTimeOriginal": {
+            "total": 159,
+            "non_empty": 159
+          },
+          "ExifEnumLightSource": {
+            "total": 25,
+            "non_empty": 25
+          },
+          "ExifEnumSubsecTimeOriginal": {
+            "total": 27,
+            "non_empty": 27
+          },
+          "EXIFCaptureTime": {
+            "total": 190,
+            "non_empty": 190
+          },
+          "EXIFOrientation": {
+            "total": 200,
+            "non_empty": 200
+          },
+          "ExifEnumExifVersion": {
+            "total": 39,
+            "non_empty": 39
+          },
+          "ExifEnumYCbCrSubSampling": {
+            "total": 7,
+            "non_empty": 7
+          },
+          "ExifEnumPixelXDimension": {
+            "total": 78,
+            "non_empty": 78
+          },
+          "ExifEnumPixelYDimension": {
+            "total": 78,
+            "non_empty": 78
+          },
+          "MetaDataPixelResolution": {
+            "total": 78,
+            "non_empty": 78
+          },
+          "ExifEnumColorSpace": {
+            "total": 117,
+            "non_empty": 117
+          },
+          "ExifEnumImageDescription": {
+            "total": 16,
+            "non_empty": 0
+          },
+          "ExifEnumMake": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumModel": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumXResolution": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "ExifEnumYResolution": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "ExifEnumResolutionUnit": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "ExifEnumDateTime": {
+            "total": 182,
+            "non_empty": 182
+          },
+          "ExifEnumYCbCrPositioning": {
+            "total": 18,
+            "non_empty": 18
+          },
+          "ExifEnumExposureTime": {
+            "total": 149,
+            "non_empty": 149
+          },
+          "ExifEnumFNumber": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumExposureProgram": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumISOSpeedRatings": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumDateTimeDigitized": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumComponentsConfiguration": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumShutterSpeedValue": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumApertureValue": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumBrightnessValue": {
+            "total": 17,
+            "non_empty": 17
+          },
+          "ExifEnumExposureBiasValue": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumMaxApertureValue": {
+            "total": 17,
+            "non_empty": 17
+          },
+          "ExifEnumMeteringMode": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumFlash": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumFocalLength": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumSubsecTime": {
+            "total": 18,
+            "non_empty": 18
+          },
+          "ExifEnumSubsecTimeDigitized": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumFlashpixVersion": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumExposureMode": {
+            "total": 19,
+            "non_empty": 19
+          },
+          "ExifEnumWhiteBalance": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "ExifEnumDigitalZoomRatio": {
+            "total": 16,
+            "non_empty": 16
+          },
+          "ExifEnumFocalLengthIn35mmFilm": {
+            "total": 18,
+            "non_empty": 18
+          },
+          "ExifEnumSceneCaptureType": {
+            "total": 18,
+            "non_empty": 18
+          },
+          "EXIFCameraMaker": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "EXIFCameraModel": {
+            "total": 151,
+            "non_empty": 151
+          },
+          "MetaDataResolution": {
+            "total": 51,
+            "non_empty": 51
+          },
+          "ExifEnumBitsPerSample": {
+            "total": 12,
+            "non_empty": 12
+          },
+          "ExifEnumPhotometricInterpretation": {
+            "total": 12,
+            "non_empty": 12
+          },
+          "ExifEnumSamplesPerPixel": {
+            "total": 12,
+            "non_empty": 12
+          },
+          "ExifEnumFocalPlaneXResolution": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumFocalPlaneYResolution": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumFocalPlaneResolutionUnit": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumCustomRendered": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumSensingMethod": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumFileSource": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumSceneType": {
+            "total": 2,
+            "non_empty": 2
+          },
+          "ExifEnumGainControl": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumContrast": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumSaturation": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumSharpness": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumSubjectDistanceRange": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumSubjectArea": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumImageUniqueID": {
+            "total": 1,
+            "non_empty": 1
+          },
+          "ExifEnumArtist": {
+            "total": 4,
+            "non_empty": 4
+          },
+          "ExifEnumCopyright": {
+            "total": 1,
+            "non_empty": 1
+          }
+        }
+      },
+      "access_info_timestamps": {
+        "ModifyTime": 10729,
+        "CreationTime": 4
+      },
+      "total_files": 29536,
+      "total_models": 2941
+    }
+  }
+}

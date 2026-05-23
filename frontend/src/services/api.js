@@ -1924,6 +1924,20 @@ export const filesystemAPI = {
   },
 
   /**
+   * Recursively list every file under a folder in one HTTP call.
+   * Returns { files: string[], count: number, ... } with relative paths.
+   * Avoids the N-round-trip pattern of recursing /filesystem/list per
+   * directory; for a 93k-file Cellebrite phone the old approach made ~414
+   * sequential requests and the user's browser timed out partway through.
+   */
+  listRecursive: (caseId, path = null) => {
+    const params = new URLSearchParams();
+    params.append('case_id', caseId);
+    if (path) params.append('path', path);
+    return fetchAPI(`/filesystem/list_recursive?${params.toString()}`);
+  },
+
+  /**
    * Read a text file's contents
    * @param {string} caseId - Case ID
    * @param {string} path - Relative path from case root (e.g., "file.txt" or "subfolder/file.txt")

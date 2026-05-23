@@ -13,7 +13,7 @@ processed results can be linked back to the parent Neo4j entity.
 import hashlib
 import uuid as uuid_mod
 from pathlib import Path
-from typing import Dict, List, Optional, Callable, Set
+from typing import Dict, List, Optional, Callable, Set, Tuple
 
 from .models import TaggedFile, ParsedModel
 
@@ -215,8 +215,16 @@ class CellebriteFileLinker:
                 "capture_time": tf.capture_time,
                 "creation_time": tf.creation_time,
                 "modify_time": tf.modify_time,
+                "access_time": tf.access_time,
                 "latitude": tf.latitude,
                 "longitude": tf.longitude,
+                "gps_altitude": tf.gps_altitude,
+                "camera_make": tf.camera_make,
+                "camera_model": tf.camera_model,
+                "image_width": tf.image_width,
+                "image_height": tf.image_height,
+                "orientation": tf.orientation,
+                "exif_software": tf.exif_software,
             })
 
         if not files_to_register:
@@ -246,34 +254,84 @@ class CellebriteFileLinker:
         evidence_storage,
         owner: Optional[str],
     ) -> List[dict]:
-        """Register a batch of files as evidence records."""
+        """Register a batch of files as evidence records.
+
+        Upsert by (case_id, sha256): if an evidence row for this content
+        already exists in the case, patch the cellebrite_* metadata onto
+        the existing row instead of inserting a duplicate. Stops re-ingest
+        (or running alongside the rebuild_c5_evidence_rows script) from
+        ballooning evidence.json with content-identical rows — the
+        2026-05-22 case-43f1afb1 had 188k C5 rows for 93k actual files
+        for exactly this reason.
+
+        Uses evidence_storage._file_locked so the reload-mutate-save
+        cycle survives multi-worker concurrency (see project memory
+        [[multi-worker-json-storage]]).
+        """
         from datetime import datetime
 
         records = []
         now = datetime.now().isoformat()
 
-        with evidence_storage._lock:
+        with evidence_storage._file_locked() as fresh:
+            # Build a (case_id, sha256) -> existing_id lookup once for the
+            # whole batch — avoids re-scanning the full records dict for
+            # every file in the batch.
+            sha_to_existing: Dict[Tuple[str, str], str] = {}
+            for ev_id, rec in fresh.items():
+                sha = rec.get("sha256")
+                cid = rec.get("case_id")
+                if sha and cid:
+                    sha_to_existing.setdefault((cid, sha), ev_id)
+
             for item in batch:
                 sha256 = item["sha256"]
                 resolved_path = item["resolved_path"]
                 category = item["category"]
                 model_id = item.get("model_id")
 
+                cellebrite_fields = {
+                    "cellebrite_report_key": self.report_key,
+                    "cellebrite_file_id": item["file_id"],
+                    "cellebrite_model_id": model_id,
+                    "cellebrite_category": category,
+                    "source_type": "cellebrite",
+                    "capture_time": item.get("capture_time"),
+                    "creation_time": item.get("creation_time"),
+                    "modify_time": item.get("modify_time"),
+                    "access_time": item.get("access_time"),
+                    "latitude": item.get("latitude"),
+                    "longitude": item.get("longitude"),
+                    "gps_altitude": item.get("gps_altitude"),
+                    "camera_make": item.get("camera_make"),
+                    "camera_model": item.get("camera_model"),
+                    "image_width": item.get("image_width"),
+                    "image_height": item.get("image_height"),
+                    "orientation": item.get("orientation"),
+                    "exif_software": item.get("exif_software"),
+                    "has_geotag": (
+                        item.get("latitude") is not None
+                        and item.get("longitude") is not None
+                    ),
+                }
+                cellebrite_fields = {k: v for k, v in cellebrite_fields.items() if v is not None}
+
+                existing_id = sha_to_existing.get((self.case_id, sha256))
+                if existing_id and existing_id in fresh:
+                    # Patch missing cellebrite_* metadata onto the existing
+                    # row without disturbing user-set fields (is_relevant,
+                    # status, processed_at). Only overwrites the
+                    # cellebrite_* keys + the file timestamps / geotag
+                    # which are authoritative from the XML.
+                    fresh[existing_id].update(cellebrite_fields)
+                    records.append(fresh[existing_id])
+                    continue
+
                 evidence_id = f"ev_{sha256[:16]}"
-                # Ensure uniqueness
                 suffix = 1
-                while evidence_id in evidence_storage._records:
+                while evidence_id in fresh:
                     evidence_id = f"ev_{sha256[:12]}_{suffix}"
                     suffix += 1
-
-                # Check for duplicates
-                duplicate_of = None
-                is_duplicate = False
-                for rec in evidence_storage._records.values():
-                    if rec.get("sha256") == sha256:
-                        is_duplicate = True
-                        duplicate_of = rec.get("id")
-                        break
 
                 record = {
                     "id": evidence_id,
@@ -284,44 +342,18 @@ class CellebriteFileLinker:
                     "size": item["file_info"]["size"],
                     "sha256": sha256,
                     "status": "unprocessed",
-                    "is_duplicate": is_duplicate,
-                    "duplicate_of": duplicate_of,
+                    "is_duplicate": False,
+                    "duplicate_of": None,
                     "is_relevant": False,
                     "created_at": now,
                     "processed_at": None,
                     "last_error": None,
-                    # Cellebrite-specific metadata
-                    "cellebrite_report_key": self.report_key,
-                    "cellebrite_file_id": item["file_id"],
-                    "cellebrite_model_id": model_id,
-                    "cellebrite_category": category,
-                    "source_type": "cellebrite",
-                    # File timestamps parsed out of <taggedFiles> metadata.
-                    # `capture_time` is EXIF DateTimeOriginal (camera moment);
-                    # creation/modify are filesystem-level. None of these
-                    # are guaranteed to be present — older reports often
-                    # omit them entirely. Filter UI reads `capture_time`
-                    # first, falling back to `creation_time` for the
-                    # "Date taken" column.
-                    "capture_time": item.get("capture_time"),
-                    "creation_time": item.get("creation_time"),
-                    "modify_time": item.get("modify_time"),
-                    # Per-file geotag (when Cellebrite parsed EXIF GPS).
-                    # `has_geotag` is the cheap boolean the API uses for
-                    # the "has location" filter — avoids materialising
-                    # both lat/lon just to check existence.
-                    "latitude": item.get("latitude"),
-                    "longitude": item.get("longitude"),
-                    "has_geotag": (
-                        item.get("latitude") is not None
-                        and item.get("longitude") is not None
-                    ),
+                    **cellebrite_fields,
                 }
 
-                evidence_storage._records[evidence_id] = record
+                fresh[evidence_id] = record
+                sha_to_existing[(self.case_id, sha256)] = evidence_id
                 records.append(record)
-
-            evidence_storage._persist()
 
         return records
 

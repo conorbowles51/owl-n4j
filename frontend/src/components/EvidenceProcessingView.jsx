@@ -63,6 +63,36 @@ export default function EvidenceProcessingView({
   const { canUploadEvidence } = useCasePermissions();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // Lookup indexes built once per `files` change. The folder-stats matchers
+  // used to call `files.find(...)` per file path — O(n²) over the evidence
+  // list, which freezes the UI thread for a 93k-file cellebrite phone. Two
+  // Maps cover the cheap matches; suffix-style fallbacks were dropped because
+  // every record now carries a canonical `stored_path`.
+  const evidenceByRelPath = useMemo(() => {
+    const map = new Map();
+    for (const f of files) {
+      const normalized = normalizeStoredPath(f.stored_path, caseId);
+      if (normalized && !map.has(normalized)) map.set(normalized, f);
+    }
+    return map;
+  }, [files, caseId]);
+  const evidenceByFilename = useMemo(() => {
+    const map = new Map();
+    for (const f of files) {
+      const name = f.original_filename;
+      if (name && !map.has(name)) map.set(name, f);
+    }
+    return map;
+  }, [files]);
+  const findEvidenceForPath = useCallback((filePath) => {
+    const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const exact = evidenceByRelPath.get(normalizedFP);
+    if (exact) return exact;
+    const fileName = normalizedFP.split('/').pop() || normalizedFP;
+    return evidenceByFilename.get(fileName) || null;
+  }, [evidenceByRelPath, evidenceByFilename]);
+
   const [uploading, setUploading] = useState(false);
   // Byte-level progress for the active browser → server upload. null when
   // no upload is in flight. `total` may be 0 if the browser couldn't compute
@@ -617,41 +647,42 @@ export default function EvidenceProcessingView({
         // Clear file selection when showing folder info
         setSelectedIds(new Set());
 
-        // Background: scan folder files for statistics (non-blocking)
+        // Background: scan folder files for statistics (non-blocking).
+        // `totalFiles` is the raw on-disk count from listRecursive — the
+        // evidence list is artifact-filtered server-side for Cellebrite
+        // report folders (see backend/routers/evidence.py:215, default
+        // include_cellebrite_artifacts=False), so matching against `files`
+        // can't be used as a file count for those folders. processed/
+        // unprocessed counts still come from matched evidence records,
+        // which means Cellebrite folders show 0/0 here until ingestion
+        // — that's accurate (cellebrite rows aren't tracked individually
+        // through this status flow).
         getFolderFilesRecursive(item.path).then(folderFiles => {
-          const folderEvidenceFiles = folderFiles.map(filePath => {
-            const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-            const fileName = normalizedFP.split('/').pop() || normalizedFP;
-            return files.find(f => {
-              const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
-              const originalFilename = f.original_filename || '';
-              return normalizedStored === normalizedFP ||
-                     normalizedStored.endsWith('/' + normalizedFP) ||
-                     normalizedFP.endsWith('/' + normalizedStored) ||
-                     originalFilename === fileName ||
-                     normalizedFP.endsWith(originalFilename);
-            });
-          }).filter(Boolean);
+          const folderEvidenceFiles = folderFiles
+            .map(findEvidenceForPath)
+            .filter(Boolean);
 
           const processedCount = folderEvidenceFiles.filter(f => f.status === 'processed').length;
           const unprocessedCount = folderEvidenceFiles.filter(f => f.status === 'unprocessed' || f.status === 'failed').length;
 
+          // File-type detection: scan filenames from the raw walk (works
+          // for both cellebrite-artifact and regular folders).
           const fileTypes = new Set();
-          folderEvidenceFiles.forEach(f => {
-            const ext = (f.original_filename || '').split('.').pop()?.toLowerCase() || '';
-            if (ext) {
-              const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
-              const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
-              const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
-              const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
-              const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
-              if (imageTypes.includes(ext)) fileTypes.add('Image');
-              else if (docTypes.includes(ext)) fileTypes.add('Document');
-              else if (audioTypes.includes(ext)) fileTypes.add('Audio');
-              else if (videoTypes.includes(ext)) fileTypes.add('Video');
-              else if (dataTypes.includes(ext)) fileTypes.add('Data');
-              else if (ext) fileTypes.add('Other');
-            }
+          folderFiles.forEach(filePath => {
+            const fileName = filePath.split('/').pop() || filePath;
+            const ext = fileName.split('.').pop()?.toLowerCase() || '';
+            if (!ext) return;
+            const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
+            const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
+            const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
+            const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
+            const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
+            if (imageTypes.includes(ext)) fileTypes.add('Image');
+            else if (docTypes.includes(ext)) fileTypes.add('Document');
+            else if (audioTypes.includes(ext)) fileTypes.add('Audio');
+            else if (videoTypes.includes(ext)) fileTypes.add('Video');
+            else if (dataTypes.includes(ext)) fileTypes.add('Data');
+            else fileTypes.add('Other');
           });
 
           // Update folder info with file statistics (only if still viewing the same folder)
@@ -659,7 +690,7 @@ export default function EvidenceProcessingView({
             if (prev?.path !== item.path) return prev; // User navigated away
             return {
               ...prev,
-              totalFiles: folderEvidenceFiles.length,
+              totalFiles: folderFiles.length,
               processedCount,
               unprocessedCount,
               fileTypes: Array.from(fileTypes).sort(),
@@ -679,30 +710,18 @@ export default function EvidenceProcessingView({
     }
   };
 
-  // Helper function to recursively get all files in a folder
+  // Helper function to recursively get all files in a folder.
+  // Uses the bulk /filesystem/list_recursive endpoint (one round-trip)
+  // instead of recursing via /filesystem/list per directory (N round-trips,
+  // which timed out the browser on large Cellebrite folders).
   const getFolderFilesRecursive = async (folderPath) => {
-    const allFiles = [];
-    
-    const traverse = async (path) => {
-      try {
-        const result = await filesystemAPI.list(caseId, path || null);
-        const items = result?.items || [];
-        
-        for (const item of items) {
-          if (item.type === 'file') {
-            allFiles.push(item.path);
-          } else if (item.type === 'directory') {
-            // Recursively traverse subdirectories
-            await traverse(item.path);
-          }
-        }
-      } catch (err) {
-        console.error(`Failed to list directory ${path}:`, err);
-      }
-    };
-    
-    await traverse(folderPath);
-    return allFiles;
+    try {
+      const result = await filesystemAPI.listRecursive(caseId, folderPath || null);
+      return result?.files || [];
+    } catch (err) {
+      console.error(`Failed to list directory ${folderPath}:`, err);
+      return [];
+    }
   };
 
   const handleProcessWiretap = async (folderPaths, onTaskCreated) => {
@@ -817,47 +836,40 @@ export default function EvidenceProcessingView({
           // Get all files in the folder (recursively)
           const folderFiles = await getFolderFilesRecursive(folderPath);
           
-          // Match with evidence files
-          const folderEvidenceFiles = folderFiles.map(filePath => {
-            const normalizedFP = filePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-            const fileName = normalizedFP.split('/').pop() || normalizedFP;
-            return files.find(f => {
-              const normalizedStored = normalizeStoredPath(f.stored_path, caseId);
-              const originalFilename = f.original_filename || '';
-              return normalizedStored === normalizedFP ||
-                     normalizedStored.endsWith('/' + normalizedFP) ||
-                     normalizedFP.endsWith('/' + normalizedStored) ||
-                     originalFilename === fileName ||
-                     normalizedFP.endsWith(originalFilename);
-            });
-          }).filter(Boolean);
+          // Match with evidence files via O(1) Map lookup. `folderFiles`
+          // is the authoritative on-disk count (used for `totalFiles`);
+          // matched evidence is only used for processed/unprocessed —
+          // those will read 0 for Cellebrite folders, which is accurate
+          // because cellebrite rows are filtered from /api/evidence by
+          // default (see EvidenceProcessingView folder-card comment).
+          const folderEvidenceFiles = folderFiles
+            .map(findEvidenceForPath)
+            .filter(Boolean);
 
-          // Calculate statistics
           const processedCount = folderEvidenceFiles.filter(f =>
             f.status === 'processed'
           ).length;
-          const unprocessedCount = folderEvidenceFiles.filter(f => 
+          const unprocessedCount = folderEvidenceFiles.filter(f =>
             f.status === 'unprocessed' || f.status === 'failed'
           ).length;
-          
-          // Get file types
+
+          // File-type detection from raw walk (works for cellebrite too).
           const fileTypes = new Set();
-          folderEvidenceFiles.forEach(f => {
-            const ext = (f.original_filename || '').split('.').pop()?.toLowerCase() || '';
-            if (ext) {
-              const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
-              const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
-              const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
-              const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
-              const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
-              
-              if (imageTypes.includes(ext)) fileTypes.add('Image');
-              else if (docTypes.includes(ext)) fileTypes.add('Document');
-              else if (audioTypes.includes(ext)) fileTypes.add('Audio');
-              else if (videoTypes.includes(ext)) fileTypes.add('Video');
-              else if (dataTypes.includes(ext)) fileTypes.add('Data');
-              else if (ext) fileTypes.add('Other');
-            }
+          folderFiles.forEach(filePath => {
+            const fileName = filePath.split('/').pop() || filePath;
+            const ext = fileName.split('.').pop()?.toLowerCase() || '';
+            if (!ext) return;
+            const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'];
+            const docTypes = ['pdf', 'doc', 'docx', 'txt', 'rtf', 'odt'];
+            const audioTypes = ['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'];
+            const videoTypes = ['mp4', 'avi', 'mov', 'wmv', 'flv', 'mkv'];
+            const dataTypes = ['xls', 'xlsx', 'csv', 'json', 'xml'];
+            if (imageTypes.includes(ext)) fileTypes.add('Image');
+            else if (docTypes.includes(ext)) fileTypes.add('Document');
+            else if (audioTypes.includes(ext)) fileTypes.add('Audio');
+            else if (videoTypes.includes(ext)) fileTypes.add('Video');
+            else if (dataTypes.includes(ext)) fileTypes.add('Data');
+            else fileTypes.add('Other');
           });
           
           // Check wiretap suitability
@@ -884,7 +896,7 @@ export default function EvidenceProcessingView({
           foldersInfoArray.push({
             path: folderPath,
             name: folderName,
-            totalFiles: folderEvidenceFiles.length,
+            totalFiles: folderFiles.length,
             processedCount,
             unprocessedCount,
             fileTypes: Array.from(fileTypes).sort(),

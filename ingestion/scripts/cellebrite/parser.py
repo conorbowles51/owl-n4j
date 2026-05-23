@@ -11,6 +11,7 @@ downstream processing.
 """
 
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, Iterator, List, Dict
 
@@ -22,6 +23,72 @@ from .models import (
     TaggedFile,
     ParsedModel,
 )
+
+
+# ---------------------------------------------------------------------------
+# TaggedFile EXIF / metadata helpers
+# ---------------------------------------------------------------------------
+
+
+def _exif_dt_to_iso(s: str) -> Optional[str]:
+    """Convert EXIF datetime '2021:07:29 15:06:15' to ISO '2021-07-29T15:06:15'.
+
+    Tolerates dates without time and ignores fractional/subsecond suffixes —
+    those are exposed separately by Cellebrite (ExifEnumSubsecTimeOriginal).
+    """
+    if not s:
+        return None
+    s = s.strip()
+    if len(s) < 10:
+        return None
+    try:
+        date_part = s[:10].replace(":", "-")
+        if len(s) >= 19:
+            return f"{date_part}T{s[11:19]}"
+        return date_part
+    except Exception:
+        return None
+
+
+def _us_dt_to_iso(s: str) -> Optional[str]:
+    """Convert US-locale '7/29/2021 3:06:15 PM' to ISO. Used for EXIFCaptureTime."""
+    if not s:
+        return None
+    try:
+        return datetime.strptime(s.strip(), "%m/%d/%Y %I:%M:%S %p").isoformat(timespec="seconds")
+    except (ValueError, TypeError):
+        return None
+
+
+def _exif_gps_to_decimal(coord: str, ref: Optional[str]) -> Optional[float]:
+    """Convert EXIF sexagesimal '38, 59, 20' + ref 'N'/'S'/'E'/'W' to signed decimal."""
+    if not coord:
+        return None
+    try:
+        parts = [float(p.strip()) for p in coord.split(",")]
+        if len(parts) < 3:
+            return None
+        deg, mnt, sec = parts[0], parts[1], parts[2]
+        decimal = deg + (mnt / 60.0) + (sec / 3600.0)
+        if ref and ref.strip().upper() in ("S", "W"):
+            decimal = -decimal
+        return decimal
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_int(v) -> Optional[int]:
+    try:
+        return int(v)
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_float(v) -> Optional[float]:
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return None
 
 NS = "http://pa.cellebrite.com/report/2.0"
 NS_BRACKET = f"{{{NS}}}"
@@ -62,11 +129,20 @@ SUPPORTED_MODEL_TYPES = {
     "ProfilePicture",
     "KeyValueModel",
     "Party",
+    # Phase 6 — device inventory & file provenance
+    "InstalledApplication",
+    "FileDownload",
 }
 
-# Model types we intentionally skip (too granular / low investigative value)
+# Model types we intentionally skip (too granular / low investigative value).
+# DictionaryWord: per-language autocomplete dictionary entries. Cellebrite
+# exports thousands of these and they aren't actionable for an investigator
+# — keeping them out of SUPPORTED_MODEL_TYPES (which has the same effect)
+# would also make reconciliation flag them as "not_supported", a misleading
+# label since the omission is deliberate.
 SKIPPED_MODEL_TYPES = {
     "NetworkUsage",
+    "DictionaryWord",
 }
 
 
@@ -397,54 +473,149 @@ class CellebriteXMLParser:
                     extraction_id=elem.get("extractionId", ""),
                 )
 
-                # Extract Local Path, hashes, tags, EXIF-ish timestamps
-                # and geotag from nested metadata. Cellebrite emits all
-                # of these as <item name="X">value</item> children of
-                # <metadata>. Names vary across report versions — we
-                # match the most common ones for each concept.
+                # ----- accessInfo timestamps (richer than metadata items) --
+                # Cellebrite emits filesystem-level timestamps as <timestamp
+                # name="ModifyTime|CreationTime|AccessTime"> children of
+                # <accessInfo>, with a formattedTimestamp attribute carrying
+                # the ISO 8601 representation. Prefer these over the
+                # CoreFileSystemFileSystemNode* MetaData items because the
+                # accessInfo form is consistent across report versions.
+                ai = elem.find(_ns("accessInfo"))
+                if ai is not None:
+                    for ts in ai.findall(_ns("timestamp")):
+                        ts_name = ts.get("name", "")
+                        formatted = ts.get("formattedTimestamp") or (ts.text or "").strip()
+                        if not formatted:
+                            continue
+                        if ts_name == "ModifyTime":
+                            tf.modify_time = formatted
+                        elif ts_name == "CreationTime":
+                            tf.creation_time = formatted
+                        elif ts_name == "AccessTime":
+                            tf.access_time = formatted
+
+                # ----- metadata items -------------------------------------
+                # Collect into a dict so derived fields (GPS, capture time)
+                # can cross-reference multiple item names. Cellebrite emits
+                # the same fact under multiple `name` aliases depending on
+                # device + UFED version, e.g. EXIFCaptureTime (File
+                # Metadata section, US locale) AND ExifEnumDateTimeOriginal
+                # (EXIF section, EXIF format) for the same photo.
+                items: Dict[str, str] = {}
                 for meta_section in elem.findall(_ns("metadata")):
                     for item in meta_section.findall(_ns("item")):
-                        item_name = item.get("name", "")
-                        item_text = (item.text or "").strip()
-                        if not item_text:
+                        name = item.get("name", "")
+                        text = (item.text or "").strip()
+                        if not name or not text:
                             continue
-                        if item_name == "Local Path":
-                            tf.local_path = item_text
-                        elif item_name == "MD5":
-                            tf.md5 = item_text
-                        elif item_name == "SHA256":
-                            tf.sha256 = item_text
-                        elif item_name == "Tags":
-                            tf.tags = item_text
-                        # Timestamps — Cellebrite uses a small zoo of
-                        # names depending on the source app and OS.
-                        elif item_name in ("Creation time", "CreationTime", "Created"):
-                            tf.creation_time = item_text
-                        elif item_name in ("Modify Time", "ModifyTime", "Modified"):
-                            tf.modify_time = item_text
-                        # EXIF DateTimeOriginal (camera capture) — preferred
-                        # for image search since it's the moment of capture,
-                        # not the file write.
-                        elif item_name in (
-                            "Capture Time", "CaptureTime", "DateTimeOriginal",
-                            "Date Taken", "Photo Taken",
-                        ):
-                            tf.capture_time = item_text
-                        # Geotag — parsed lazily because Cellebrite sometimes
-                        # emits these as decimal strings and sometimes as
-                        # "N 51° 30' 26.4\"" sexagesimal. We accept anything
-                        # that parses cleanly as float; sexagesimal forms
-                        # fall through (no false positives).
-                        elif item_name in ("Latitude", "GPS Latitude", "GpsLatitude"):
-                            try:
-                                tf.latitude = float(item_text)
-                            except ValueError:
-                                pass
-                        elif item_name in ("Longitude", "GPS Longitude", "GpsLongitude"):
-                            try:
-                                tf.longitude = float(item_text)
-                            except ValueError:
-                                pass
+                        # Direct, single-value matches.
+                        if name == "Local Path":
+                            tf.local_path = text
+                        elif name == "MD5":
+                            tf.md5 = text
+                        elif name == "SHA256":
+                            tf.sha256 = text
+                        elif name == "Tags":
+                            tf.tags = text
+                        items[name] = text
+
+                # ----- derive timestamps from EXIF / filesystem items ----
+                # capture_time priority:
+                #   1. ExifEnumDateTimeOriginal (the camera shutter moment)
+                #   2. EXIFCaptureTime (File Metadata, US locale string)
+                #   3. ExifEnumDateTime (modified-by-camera time)
+                #   4. ExifEnumDateTimeDigitized
+                #   5. Capture datetime (older Cellebrite alias)
+                cap = items.get("ExifEnumDateTimeOriginal")
+                if cap:
+                    tf.capture_time = _exif_dt_to_iso(cap)
+                if not tf.capture_time:
+                    cap = items.get("EXIFCaptureTime")
+                    if cap:
+                        tf.capture_time = _us_dt_to_iso(cap)
+                if not tf.capture_time:
+                    for alias in ("ExifEnumDateTime", "ExifEnumDateTimeDigitized",
+                                  "Capture datetime"):
+                        cap = items.get(alias)
+                        if cap:
+                            tf.capture_time = _exif_dt_to_iso(cap) or cap
+                            if tf.capture_time:
+                                break
+
+                # Filesystem creation / modify — fall back to MetaData if
+                # accessInfo didn't carry the timestamp (older reports).
+                if not tf.modify_time:
+                    tf.modify_time = (
+                        items.get("CoreFileSystemFileSystemNodeModifyTime")
+                        or items.get("Modify Time") or items.get("ModifyTime")
+                        or items.get("Modified")
+                    )
+                if not tf.creation_time:
+                    tf.creation_time = (
+                        items.get("CoreFileSystemFileSystemNodeCreationTime")
+                        or items.get("Creation time") or items.get("CreationTime")
+                        or items.get("Created")
+                    )
+                if not tf.access_time:
+                    tf.access_time = items.get("CoreFileSystemFileSystemNodeLastAccessTime")
+
+                # ----- GPS — prefer the pre-decoded decimal form ---------
+                # Cellebrite's "MetaDataLatitudeAndLongitude" is already a
+                # signed decimal pair ("38.988888 / -76.980834") so prefer
+                # it over the raw EXIF sexagesimal which needs degrees/min/
+                # sec assembly plus a hemisphere ref to resolve sign.
+                ll = items.get("MetaDataLatitudeAndLongitude")
+                if ll and "/" in ll:
+                    try:
+                        lat_s, lon_s = ll.split("/", 1)
+                        lat = _safe_float(lat_s.strip())
+                        lon = _safe_float(lon_s.strip())
+                        if lat is not None and lon is not None:
+                            tf.latitude = lat
+                            tf.longitude = lon
+                    except (ValueError, TypeError):
+                        pass
+                if tf.latitude is None or tf.longitude is None:
+                    lat_str = items.get("ExifEnumGPSLatitude")
+                    lon_str = items.get("ExifEnumGPSLongitude")
+                    if lat_str:
+                        tf.latitude = _exif_gps_to_decimal(lat_str, items.get("ExifEnumGPSLatitudeRef", "N"))
+                    if lon_str:
+                        tf.longitude = _exif_gps_to_decimal(lon_str, items.get("ExifEnumGPSLongitudeRef", "E"))
+                # Generic decimal fallback (older reports).
+                if tf.latitude is None:
+                    tf.latitude = _safe_float(
+                        items.get("Latitude") or items.get("GPS Latitude") or items.get("GpsLatitude")
+                    )
+                if tf.longitude is None:
+                    tf.longitude = _safe_float(
+                        items.get("Longitude") or items.get("GPS Longitude") or items.get("GpsLongitude")
+                    )
+
+                # ----- GPS altitude — sign by AltitudeRef (0=above, 1=below) ----
+                alt = _safe_float(items.get("ExifEnumGPSAltitude"))
+                if alt is not None:
+                    if items.get("ExifEnumGPSAltitudeRef", "0").strip() == "1":
+                        alt = -alt
+                    tf.gps_altitude = alt
+
+                # ----- camera identity ------------------------------------
+                tf.camera_make = items.get("ExifEnumMake") or items.get("EXIFCameraMaker")
+                tf.camera_model = items.get("ExifEnumModel") or items.get("EXIFCameraModel")
+                tf.exif_software = items.get("ExifEnumSoftware")
+                tf.orientation = items.get("EXIFOrientation") or items.get("ExifEnumOrientation")
+
+                # ----- image dimensions -----------------------------------
+                tf.image_width = _safe_int(
+                    items.get("ExifEnumPixelXDimension")
+                    or items.get("ExifEnumImageWidth")
+                    or items.get("Width")
+                )
+                tf.image_height = _safe_int(
+                    items.get("ExifEnumPixelYDimension")
+                    or items.get("ExifEnumImageLength")
+                    or items.get("Height")
+                )
 
                 if tf.local_path:  # Only include files with a local path
                     tagged_files.append(tf)

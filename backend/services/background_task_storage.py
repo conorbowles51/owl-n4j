@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import uuid
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional, Dict
 from datetime import datetime
@@ -19,9 +21,16 @@ from config import BASE_DIR
 
 TASK_DIR = BASE_DIR / "data"
 TASK_FILE = TASK_DIR / "background_tasks.json"
+LOCK_FILE = TASK_DIR / "background_tasks.json.lock"
 
 # Maximum number of task entries to retain (oldest are dropped)
 MAX_TASK_ENTRIES = 500
+
+# Maximum number of per-file status entries kept on a single task. Bulk
+# folder uploads can otherwise grow this list into the tens of thousands
+# (one per file) and bloat the on-disk JSON to ~20MB+, which dominates the
+# upload-loop write time.
+MAX_FILES_PER_TASK = 100
 
 
 class TaskStatus(str, Enum):
@@ -60,11 +69,31 @@ def _save_tasks(tasks: List[Dict]) -> None:
 
 
 class BackgroundTaskStorage:
-    """Simple JSON-file backed storage for background tasks. Thread-safe."""
+    """JSON-file backed storage for background tasks.
+
+    Multi-process safe: every mutation reloads the on-disk JSON under an
+    fcntl file lock, applies the change, then atomically saves. See the
+    EvidenceStorage docstring for the same bug pattern.
+    """
 
     def __init__(self) -> None:
         self._tasks: List[Dict] = _load_tasks()
         self._lock = RLock()  # Reentrant lock for thread-safe operations
+
+    @contextmanager
+    def _file_locked(self):
+        """Yield a freshly-loaded tasks list that will be persisted on exit."""
+        with self._lock:
+            _ensure_dir()
+            with open(LOCK_FILE, "a") as lf:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                try:
+                    fresh = _load_tasks()
+                    yield fresh
+                    _save_tasks(fresh)
+                    self._tasks = fresh
+                finally:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
     def reload(self) -> None:
         """Reload tasks from disk."""
@@ -96,39 +125,34 @@ class BackgroundTaskStorage:
         Returns:
             Task dict with id, status, etc.
         """
-        with self._lock:
-            task_id = str(uuid.uuid4())
-            timestamp = datetime.now().isoformat()
-
-            task = {
-                "id": task_id,
-                "task_type": task_type,
-                "task_name": task_name,
-                "owner": owner,
-                "case_id": case_id,
-                "status": TaskStatus.PENDING.value,
-                "created_at": timestamp,
-                "updated_at": timestamp,
-                "started_at": None,
-                "completed_at": None,
-                "progress": {
-                    "total": 0,
-                    "completed": 0,
-                    "failed": 0,
-                },
-                "files": [],  # List of file processing statuses
-                "error": None,
-                "metadata": metadata or {},
-            }
-
-            self._tasks.append(task)
-
-            # Trim to last MAX_TASK_ENTRIES
-            if len(self._tasks) > MAX_TASK_ENTRIES:
-                self._tasks = self._tasks[-MAX_TASK_ENTRIES :]
-
-            self._persist()
-            return task
+        task_id = str(uuid.uuid4())
+        timestamp = datetime.now().isoformat()
+        task = {
+            "id": task_id,
+            "task_type": task_type,
+            "task_name": task_name,
+            "owner": owner,
+            "case_id": case_id,
+            "status": TaskStatus.PENDING.value,
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "started_at": None,
+            "completed_at": None,
+            "progress": {
+                "total": 0,
+                "completed": 0,
+                "failed": 0,
+            },
+            "files": [],
+            "error": None,
+            "metadata": metadata or {},
+        }
+        with self._file_locked() as tasks:
+            tasks.append(task)
+            if len(tasks) > MAX_TASK_ENTRIES:
+                # Mutate in place — the context manager persists the list.
+                del tasks[:-MAX_TASK_ENTRIES]
+        return task
 
     def get_task(self, task_id: str) -> Optional[Dict]:
         """Get a task by ID."""
@@ -168,10 +192,9 @@ class BackgroundTaskStorage:
         Returns:
             Updated task dict or None if not found
         """
-        with self._lock:
-            # Find task directly instead of calling get_task to avoid double-locking
+        with self._file_locked() as tasks:
             task = None
-            for t in self._tasks:
+            for t in tasks:
                 if t.get("id") == task_id:
                     task = t
                     break
@@ -197,7 +220,6 @@ class BackgroundTaskStorage:
                 updated = True
 
             if file_status is not None:
-                # Update or add file status
                 file_id = file_status.get("file_id")
                 if file_id:
                     existing_file = next(
@@ -208,6 +230,8 @@ class BackgroundTaskStorage:
                         existing_file.update(file_status)
                     else:
                         task["files"].append(file_status)
+                        if len(task["files"]) > MAX_FILES_PER_TASK:
+                            task["files"] = task["files"][-MAX_FILES_PER_TASK:]
                     updated = True
 
             if error is not None:
@@ -224,8 +248,6 @@ class BackgroundTaskStorage:
 
             if updated:
                 task["updated_at"] = datetime.now().isoformat()
-                self._persist()
-
             return task
 
     def list_tasks(
@@ -274,18 +296,15 @@ class BackgroundTaskStorage:
         Returns:
             True if deleted, False if not found
         """
-        with self._lock:
-            # Find task directly instead of calling get_task to avoid double-locking
+        with self._file_locked() as tasks:
             task = None
-            for t in self._tasks:
+            for t in tasks:
                 if t.get("id") == task_id:
                     task = t
                     break
             if not task:
                 return False
-
-            self._tasks.remove(task)
-            self._persist()
+            tasks.remove(task)
             return True
 
 

@@ -32,20 +32,26 @@ from .models import ParsedModel
 # tells the reconciler "the persisted count won't equal the XML count by
 # design — display both, don't flag as missing".
 _RECONCILE_MAP: dict = {
-    "Contact":          {"stats": ["contacts_created"],     "nested": False},
-    "Call":             {"stats": ["calls_created"],        "nested": False},
-    "Chat":             {"stats": ["chats_created"],        "nested": False},
-    "InstantMessage":   {"stats": ["messages_created"],     "nested": True},
-    "Email":            {"stats": ["emails_created"],       "nested": False},
-    "Location":         {"stats": ["locations_created"],    "nested": False},
-    "UserAccount":      {"stats": ["accounts_created"],     "nested": False},
-    "SearchedItem":     {"stats": ["searches_created"],     "nested": False},
-    "VisitedPage":      {"stats": ["visited_pages_created"],"nested": False},
-    "CalendarEntry":    {"stats": ["meetings_created"],     "nested": False},
-    "Password":         {"stats": ["credentials_created"],  "nested": False},
-    "WebBookmark":      {"stats": ["bookmarks_created"],    "nested": False},
-    "WirelessNetwork":  {"stats": ["wifi_networks_created"],"nested": False},
-    "RecognizedDevice": {"stats": ["devices_created"],      "nested": False},
+    "Contact":              {"stats": ["contacts_created"],         "nested": False},
+    "Call":                 {"stats": ["calls_created"],            "nested": False},
+    "Chat":                 {"stats": ["chats_created"],            "nested": False},
+    "InstantMessage":       {"stats": ["messages_created"],         "nested": True},
+    "Email":                {"stats": ["emails_created"],           "nested": False},
+    "Location":             {"stats": ["locations_created"],        "nested": False},
+    "UserAccount":          {"stats": ["accounts_created"],         "nested": False},
+    "SearchedItem":         {"stats": ["searches_created"],         "nested": False},
+    "VisitedPage":          {"stats": ["visited_pages_created"],    "nested": False},
+    "CalendarEntry":        {"stats": ["meetings_created"],         "nested": False},
+    "Password":             {"stats": ["credentials_created"],      "nested": False},
+    "WebBookmark":          {"stats": ["bookmarks_created"],        "nested": False},
+    "WirelessNetwork":      {"stats": ["wifi_networks_created"],    "nested": False},
+    "RecognizedDevice":     {"stats": ["devices_created"],          "nested": False},
+    # Phase 6 — device inventory / identity / downloads
+    "Autofill":             {"stats": ["autofill_created"],         "nested": False},
+    "SIMData":              {"stats": ["sim_data_created"],         "nested": False},
+    "User":                 {"stats": ["users_created"],            "nested": False},
+    "InstalledApplication": {"stats": ["installed_apps_created"],   "nested": False},
+    "FileDownload":         {"stats": ["file_downloads_created"],   "nested": False},
 }
 
 
@@ -274,6 +280,26 @@ def ingest_cellebrite_report(
             _log(f"Written {processed}/{len(all_models)} models ({pct:.1f}%)")
 
     # ------------------------------------------------------------------
+    # Step 8.3: Finalise aggregated entities (SIMCard, etc.)
+    # ------------------------------------------------------------------
+    # SIMData rows arrive one-per-property — finalise_sim_card collapses
+    # the buffered Name=Value pairs into a single SIMCard node. Must
+    # run before the CONTAINS sweep so the SIMCard is linked too.
+    try:
+        writer.finalise_sim_card()
+    except Exception as e:
+        _log(f"WARNING: SIMCard finalisation failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Step 8.4: Link every entity to the PhoneReport via CONTAINS
+    # ------------------------------------------------------------------
+    _log("Step 8.4: Linking entities to PhoneReport (CONTAINS)...")
+    try:
+        writer.link_all_to_report()
+    except Exception as e:
+        _log(f"WARNING: CONTAINS linking failed: {e}")
+
+    # ------------------------------------------------------------------
     # Step 8.5: Geotag backfill for comms events
     # ------------------------------------------------------------------
     _log("Step 8.5: Backfilling nearest-location tags on comms events...")
@@ -377,6 +403,11 @@ def ingest_cellebrite_report(
         f"  WiFi: {stats['wifi_networks_created']}\n"
         f"  Credentials: {stats['credentials_created']}\n"
         f"  Bookmarks: {stats['bookmarks_created']}\n"
+        f"  Autofill: {stats['autofill_created']}\n"
+        f"  SIM cards: {stats['sim_data_created']}\n"
+        f"  Device users: {stats['users_created']}\n"
+        f"  Installed apps: {stats['installed_apps_created']}\n"
+        f"  Downloads: {stats['file_downloads_created']}\n"
         f"  Total nodes: {stats['total_nodes']}\n"
         f"  Total relationships: {stats['total_relationships']}\n"
         f"  Media files registered: {media_registered}\n"

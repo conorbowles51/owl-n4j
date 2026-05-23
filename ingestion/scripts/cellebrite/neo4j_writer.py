@@ -15,7 +15,7 @@ All nodes get:
 import json
 import re
 import uuid
-from typing import List, Dict, Optional, Set, Callable, Tuple
+from typing import List, Dict, Optional, Set, Callable, Tuple  # noqa: F401
 
 from .models import ParsedModel, Party, CellebriteReport
 
@@ -44,6 +44,67 @@ def _geocode_lat_lon(lat: float, lon: float) -> Optional[Dict]:
         return reverse_geocode(float(lat), float(lon))
     except Exception:
         return None
+
+
+def _safe_int(v) -> Optional[int]:
+    """Best-effort int coercion; returns None on bad input rather than raising."""
+    try:
+        return int(v) if v not in (None, "") else None
+    except (ValueError, TypeError):
+        return None
+
+
+# Search engines whose URL "q=" / "query=" / "search_query=" parameters
+# carry the literal search term the user typed. Cellebrite usually does
+# NOT emit a separate SearchedItem for these — the only record is the
+# VisitedPage URL. Recognising them here surfaces the search behind
+# every "they went to google.com/search?q=..." entry.
+_SEARCH_HOST_QUERY_PARAMS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("google.",        ("q", "query")),
+    ("bing.",          ("q",)),
+    ("duckduckgo.",    ("q",)),
+    ("yahoo.",         ("p", "q")),
+    ("yandex.",        ("text",)),
+    ("baidu.",         ("wd", "word")),
+    ("youtube.",       ("search_query",)),
+    ("twitter.",       ("q",)),
+    ("x.com",          ("q",)),
+    ("reddit.",        ("q",)),
+    ("amazon.",        ("k", "field-keywords")),
+    ("ebay.",          ("_nkw",)),
+)
+
+
+def _extract_search_query(url: Optional[str]) -> Optional[str]:
+    """If `url` is a known search-engine query URL, return the search term."""
+    if not url or "://" not in url:
+        return None
+    try:
+        from urllib.parse import urlparse, parse_qs, unquote_plus
+    except ImportError:
+        return None
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    host = (parsed.netloc or "").lower()
+    if not host:
+        return None
+    for host_prefix, params in _SEARCH_HOST_QUERY_PARAMS:
+        if host_prefix not in host:
+            continue
+        try:
+            qs = parse_qs(parsed.query, keep_blank_values=False)
+        except ValueError:
+            return None
+        for p in params:
+            if p in qs and qs[p]:
+                # parse_qs already URL-decodes; trim whitespace; cap length.
+                q = qs[p][0].strip()
+                if q:
+                    return q[:500]
+        return None
+    return None
 
 
 def _normalise_phone(raw: Optional[str]) -> Optional[str]:
@@ -159,6 +220,12 @@ class CellebriteNeo4jWriter:
         self.devices_created = 0
         self.wifi_created = 0
         self.bookmarks_created = 0
+        # Phase 6 — device inventory / file provenance / identity
+        self.autofill_created = 0
+        self.sim_data_created = 0
+        self.users_created = 0
+        self.installed_apps_created = 0
+        self.file_downloads_created = 0
         self.nodes_total = 0
         self.relationships_total = 0
 
@@ -167,9 +234,66 @@ class CellebriteNeo4jWriter:
         self._phone_owner_names: Dict[str, int] = {}  # name -> count
         self._phone_owner_identifiers: Set[str] = set()
 
+        # SIMData aggregation — see _write_sim_data / finalise_sim_card.
+        # Cellebrite emits SIM properties one per model row; we collect
+        # them all then write a single SIMCard node at finalisation.
+        self._sim_properties: Dict[str, str] = {}
+        self._sim_categories: Dict[str, str] = {}
+
     def _log(self, msg: str):
         if self.log_callback:
             self.log_callback(msg)
+
+    # Centralised timestamp-field-name aliases. Cellebrite uses different
+    # field names on different model types for what is conceptually the
+    # same fact ("when did this happen"): VisitedPage uses `LastVisited`,
+    # Chat uses `LastActivity`, InstalledApplication uses `PurchaseDate`,
+    # InstantMessage uses `TimeStamp` + (optionally) `DateDelivered`,
+    # UserAccount uses `TimeLastLoggedIn`, etc.
+    #
+    # Handlers should call `_extract_timestamp(model, prefer=("X","Y"))`
+    # instead of hardcoding `model.get_field("TimeStamp")`. The audit
+    # script (scripts/audit_cellebrite_coverage.py) flags any handler
+    # that hardcodes only `TimeStamp` — that pattern has historically
+    # dropped 15,000+ events in a single report.
+    _TIMESTAMP_ALIASES = (
+        "TimeStamp",
+        "Timestamp",
+        "LastVisited",
+        "LastActivity",
+        "LastAccessed",
+        "LastConnection",
+        "PurchaseDate",
+        "TimeCreated",
+        "TimeLastLoggedIn",
+        "DateDelivered",
+        "StartTime",
+        "EndTime",
+        "StartDate",
+        "EndDate",
+        "Date",
+        "DownloadTime",
+    )
+
+    def _extract_timestamp(self, model: ParsedModel,
+                           prefer: Optional[tuple] = None) -> Optional[str]:
+        """Return the first non-empty timestamp field on `model`.
+
+        `prefer` is an ordered tuple of field names the caller knows are
+        canonical for this model type; tried first. Falls back to the
+        full `_TIMESTAMP_ALIASES` list. Returns None if nothing matched.
+        """
+        for name in (prefer or ()):
+            v = model.get_field(name)
+            if v:
+                return v
+        for name in self._TIMESTAMP_ALIASES:
+            if prefer and name in prefer:
+                continue
+            v = model.get_field(name)
+            if v:
+                return v
+        return None
 
     def _base_props(self, model: ParsedModel, key: str, name: str) -> Dict:
         """Build base properties common to all Cellebrite nodes."""
@@ -189,6 +313,14 @@ class CellebriteNeo4jWriter:
         # so older nodes that didn't capture this still match cleanly.
         if model.decoding_confidence:
             props["decoding_confidence"] = model.decoding_confidence
+        # UserMapping ties an artifact to a specific device user on
+        # multi-user devices (e.g. Android profiles). Cellebrite emits
+        # this on every model — capturing it here means every node gets
+        # the prop without per-handler boilerplate. Used downstream for
+        # phone-owner disambiguation when multiple users share a device.
+        user_mapping = model.get_field("UserMapping")
+        if user_mapping:
+            props["user_mapping"] = user_mapping
         return props
 
     def _attachment_props(self, model: ParsedModel) -> Dict:
@@ -200,6 +332,78 @@ class CellebriteNeo4jWriter:
             "attachment_file_ids": list(file_ids),
             "attachment_count": len(file_ids),
         }
+
+    def _message_provenance_props(self, model: ParsedModel) -> Dict:
+        """Extract Forwarded/Reply/MessageLabel nested children as flat props.
+
+        Cellebrite nests these as <modelField name="Forwarded"> /
+        "ReplyTo" / "Labels" (or multiModelField for the latter). The
+        parser already captures the nested ParsedModel; we flatten the
+        useful identifiers onto the parent message node so investigative
+        views can filter "show me only forwarded messages" or "messages
+        labelled X" without joining through a sub-node.
+        """
+        props: Dict = {}
+
+        # Forwarded: messages that originated elsewhere and were relayed.
+        # Cellebrite uses several wrapper names depending on extraction;
+        # try them in order.
+        for fwd_name in ("Forwarded", "ForwardedFrom", "ForwardedMessageData"):
+            fwd = model.model_fields.get(fwd_name)
+            if fwd is not None:
+                props["is_forwarded"] = True
+                orig_sender = (
+                    fwd.get_field("OriginalSender")
+                    or fwd.get_field("From")
+                    or fwd.get_field("Sender")
+                )
+                orig_ts = (
+                    fwd.get_field("OriginalTimeStamp")
+                    or fwd.get_field("TimeStamp")
+                    or fwd.get_field("Date")
+                )
+                if orig_sender:
+                    props["forwarded_from"] = orig_sender
+                if orig_ts:
+                    props["forwarded_original_timestamp"] = orig_ts
+                break
+
+        # Reply: this message is a reply to another. Store the target
+        # message id so the UI can render a "↳ in reply to X" affordance.
+        for rep_name in ("ReplyTo", "ReplyMessageData", "InReplyTo"):
+            rep = model.model_fields.get(rep_name)
+            if rep is not None:
+                props["is_reply"] = True
+                target = (
+                    rep.get_field("MessageId")
+                    or rep.get_field("Id")
+                    or rep.get_field("OriginalMessageId")
+                )
+                if target:
+                    props["reply_to_message_id"] = target
+                snippet = rep.get_field("Body") or rep.get_field("Text")
+                if snippet:
+                    props["reply_to_snippet"] = snippet[:200]
+                break
+
+        # Labels / Tags: applied labels (Starred, Important, custom folders).
+        labels: List[str] = []
+        for lbl_name in ("Labels", "MessageLabels", "Tags"):
+            for lbl in model.multi_model_fields.get(lbl_name, []) or []:
+                name = lbl.get_field("Name") or lbl.get_field("Value") or lbl.get_field("Label")
+                if name and name not in labels:
+                    labels.append(name)
+        # Single-child variant
+        for lbl_name in ("MessageLabel", "Label"):
+            lbl = model.model_fields.get(lbl_name)
+            if lbl is not None:
+                name = lbl.get_field("Name") or lbl.get_field("Value") or lbl.get_field("Label")
+                if name and name not in labels:
+                    labels.append(name)
+        if labels:
+            props["labels"] = labels
+
+        return props
 
     def _ensure_person(
         self,
@@ -231,15 +435,25 @@ class CellebriteNeo4jWriter:
         if extra_props:
             props.update(extra_props)
 
-        # Use run_query for MERGE to handle concurrency
+        # MERGE for concurrency-safety. ON CREATE bootstraps the full
+        # prop set; ON MATCH only patches in the `extra_props` payload
+        # (addresses, photo_file_ids, contact_source, etc.) — the core
+        # identity fields (key, name, id) are left intact. Necessary
+        # because Person nodes can be created first by a message
+        # handler (with only identifier+name+source_app) and only
+        # later enriched by the Contact handler — without ON MATCH the
+        # rich Contact data was being silently dropped.
+        match_patch = extra_props or {}
         self.db.run_query(
             """
             MERGE (p:Person {key: $key, case_id: $case_id})
             ON CREATE SET p = $props
+            ON MATCH  SET p += $match_patch
             """,
             key=key,
             case_id=self.case_id,
             props=props,
+            match_patch=match_patch,
         )
 
         self._created_person_keys.add(key)
@@ -537,6 +751,12 @@ class CellebriteNeo4jWriter:
             "Attachment": self._write_attachment,
             "ContactPhoto": self._write_contact_photo,
             "ProfilePicture": self._write_profile_picture,
+            # Phase 6: device inventory / identity / downloads
+            "Autofill": self._write_autofill,
+            "SIMData": self._write_sim_data,
+            "User": self._write_user,
+            "InstalledApplication": self._write_installed_application,
+            "FileDownload": self._write_file_download,
             # Explicit ignores (parser emits them, writer silently skips)
             "KeyValueModel": self._noop,
             "Party": self._noop,
@@ -549,22 +769,90 @@ class CellebriteNeo4jWriter:
         return None
 
     def _write_contact(self, model: ParsedModel):
-        """Contact -> Person node."""
+        """Contact -> Person node.
+
+        Walks all nested children Cellebrite hangs off a Contact:
+          - Entries (PhoneNumber / EmailAddress / WebAddress / UserID / ProfilePicture)
+          - Photos (ContactPhoto with jump_target → file UUID)
+          - Addresses (StreetAddress with Street/City/Country/Postal etc.)
+          - Organizations (Organization with Name/Title/Department)
+        Audit on 2026-05-23 found we were dropping all of Photos (822
+        across 3 reports), Addresses (67) and Organizations (2). Now
+        flattened onto the Person node.
+        """
         name = model.get_field("Name")
         source = model.get_field("Source")
         account = model.get_field("Account")
+        contact_type = model.get_field("Type")
+        group = model.get_field("Group")
 
         # Get phone numbers and emails from contact entries
-        phone_numbers = []
-        emails = []
+        phone_numbers: List[str] = []
+        emails: List[str] = []
+        web_addresses: List[str] = []
+        user_ids: List[str] = []
+        photo_file_ids: List[str] = []
         for entry in model.multi_model_fields.get("Entries", []):
-            category = entry.get_field("Category")
-            value = entry.get_field("Value")
-            if value:
-                if category and "mail" in category.lower():
+            etype = entry.model_type or ""
+            value = entry.get_field("Value") or entry.get_field("Identifier")
+            category = entry.get_field("Category") or ""
+            if etype == "PhoneNumber" and value:
+                phone_numbers.append(value)
+            elif etype == "EmailAddress" and value:
+                emails.append(value)
+            elif etype == "WebAddress" and value:
+                web_addresses.append(value)
+            elif etype == "UserID" and value:
+                user_ids.append(value)
+            elif etype == "ProfilePicture":
+                # Carry the file UUID via the entry's jump_target — the
+                # frontend can render the thumbnail by resolving it
+                # through evidence_storage.
+                if entry.jump_targets:
+                    photo_file_ids.append(entry.jump_targets[0])
+            elif value:
+                # Generic Entry fallback — categorize on Category name.
+                if "mail" in category.lower():
                     emails.append(value)
                 else:
                     phone_numbers.append(value)
+
+        # ContactPhoto entries (separate from Entries on some reports)
+        for photo in model.multi_model_fields.get("Photos", []):
+            if photo.jump_targets:
+                photo_file_ids.append(photo.jump_targets[0])
+
+        # StreetAddress entries — flatten to a list of human-readable
+        # postal strings + a structured first-address dict so the
+        # frontend can render either.
+        addresses_text: List[str] = []
+        first_addr: Dict[str, Optional[str]] = {}
+        for addr in model.multi_model_fields.get("Addresses", []):
+            parts = []
+            for fld in ("HouseNumber", "Street", "City", "State", "PostalCode", "Country"):
+                v = addr.get_field(fld)
+                if v:
+                    parts.append(v)
+            if parts:
+                addresses_text.append(", ".join(parts))
+            if not first_addr:
+                for fld, key in (("Street", "street"), ("HouseNumber", "house_number"),
+                                  ("City", "city"), ("State", "state"),
+                                  ("PostalCode", "postal_code"), ("Country", "country")):
+                    v = addr.get_field(fld)
+                    if v:
+                        first_addr[f"address_{key}"] = v
+
+        # Organization affiliations.
+        organizations: List[str] = []
+        org_titles: List[str] = []
+        for org in model.multi_model_fields.get("Organizations", []):
+            org_name = org.get_field("Name") or org.get_field("OrganizationName")
+            if org_name:
+                organizations.append(org_name)
+            title = org.get_field("Title") or org.get_field("Position")
+            if title:
+                org_titles.append(title)
 
         # Generate key from best identifier
         best_id = phone_numbers[0] if phone_numbers else (emails[0] if emails else account)
@@ -572,13 +860,31 @@ class CellebriteNeo4jWriter:
         if not key:
             return
 
-        extra_props = {}
+        extra_props: Dict = {}
         if phone_numbers:
             extra_props["phone_numbers"] = phone_numbers
         if emails:
             extra_props["emails"] = emails
+        if web_addresses:
+            extra_props["web_addresses"] = web_addresses
+        if user_ids:
+            extra_props["user_ids"] = user_ids
+        if photo_file_ids:
+            extra_props["photo_file_ids"] = photo_file_ids
+        if addresses_text:
+            extra_props["addresses"] = addresses_text
+        if first_addr:
+            extra_props.update(first_addr)
+        if organizations:
+            extra_props["organizations"] = organizations
+        if org_titles:
+            extra_props["org_titles"] = org_titles
         if source:
             extra_props["contact_source"] = source
+        if contact_type:
+            extra_props["contact_type"] = contact_type
+        if group:
+            extra_props["contact_group"] = group
 
         self._ensure_person(identifier=best_id, name=name, source_app=source, extra_props=extra_props)
         self._create_relationship(key, self.report_key, "EXTRACTED_FROM")
@@ -589,9 +895,15 @@ class CellebriteNeo4jWriter:
         source = model.get_field("Source")
         direction = model.get_field("Direction")
         call_type = model.get_field("Type")
-        timestamp = model.get_field("TimeStamp")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp",))
         duration = model.get_field("Duration")
         video_call = model.get_field("VideoCall")
+        # Call.Status carries the call outcome (Missed / Rejected /
+        # Established / Voicemail / Unknown). Confirmed dropped on
+        # 7,881 of 7,896 Call instances by the 2026-05-23 audit —
+        # user feedback explicitly called this out as missing.
+        status = model.get_field("Status")
+        account = model.get_field("Account")
 
         # Generate unique key for this call
         call_key = f"call-{model.model_id[:12]}"
@@ -603,12 +915,15 @@ class CellebriteNeo4jWriter:
             "duration": duration,
             "video_call": video_call == "True" if video_call else False,
             "source_app": source,
+            "status": status,
+            "account": account,
         })
         if timestamp:
             props["date"] = timestamp[:10]  # YYYY-MM-DD
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None  # HH:MM
             props["timestamp"] = timestamp
         props.update(self._attachment_props(model))
+        props = {k: v for k, v in props.items() if v is not None}
 
         self._create_node("PhoneCall", call_key, props)
 
@@ -634,15 +949,32 @@ class CellebriteNeo4jWriter:
         chat_id = model.get_field("Id")
         start_time = model.get_field("StartTime")
         last_activity = model.get_field("LastActivity")
+        # Account, Name and Description are useful for group-chat
+        # identification; 100% dropped in the 2026-05-23 audit.
+        account = model.get_field("Account")
+        chat_name = model.get_field("Name")
+        chat_description = model.get_field("Description")
 
         chat_key = f"chat-{model.model_id[:12]}"
         messages = model.multi_model_fields.get("Messages", [])
+        participants = model.get_parties("Participants")
 
-        props = self._base_props(model, chat_key, f"Chat ({source or 'Unknown'})")
+        props = self._base_props(
+            model, chat_key,
+            chat_name or f"Chat ({source or 'Unknown'})",
+        )
         props.update({
             "chat_id": chat_id,
             "source_app": source,
             "message_count": len(messages),
+            "account": account,
+            "chat_name": chat_name,
+            "description": chat_description,
+            # Coarse "is this a group chat?" heuristic from participant
+            # count — Cellebrite doesn't always carry an IsGroup flag
+            # but >2 participants almost always means group.
+            "is_group": len(participants) > 2 if participants else None,
+            "participant_count": len(participants) if participants else None,
         })
         if start_time:
             props["date"] = start_time[:10]
@@ -650,6 +982,7 @@ class CellebriteNeo4jWriter:
         if last_activity:
             props["last_activity"] = last_activity
 
+        props = {k: v for k, v in props.items() if v is not None}
         self._create_node("Communication", chat_key, props)
 
         # Link participants
@@ -672,7 +1005,17 @@ class CellebriteNeo4jWriter:
         """InstantMessage -> Communication node (individual message)."""
         source = model.get_field("Source") or model.get_field("SourceApplication")
         body = model.get_field("Body")
-        timestamp = model.get_field("TimeStamp")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp",))
+        # Status carries the send/delivery state ("Sent" / "Delivered" /
+        # "Read" / "Failed" / "Draft"). Identifier is the app-side
+        # message ID (e.g. WhatsApp's server message ID). DateDelivered
+        # is the moment the recipient device acknowledged receipt —
+        # distinct from TimeStamp (when the message was composed/sent).
+        # All three were dropped in the 2026-05-23 audit.
+        status = model.get_field("Status")
+        identifier = model.get_field("Identifier")
+        folder = model.get_field("Folder")
+        date_delivered = model.get_field("DateDelivered")
 
         msg_key = f"msg-{model.model_id[:12]}"
 
@@ -684,12 +1027,18 @@ class CellebriteNeo4jWriter:
             "body": body,
             "source_app": source,
             "message_type": model.get_field("Type"),
+            "status": status,
+            "identifier": identifier,
+            "folder": folder,
+            "date_delivered": date_delivered,
         })
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
             props["timestamp"] = timestamp
         props.update(self._attachment_props(model))
+        props.update(self._message_provenance_props(model))
+        props = {k: v for k, v in props.items() if v is not None}
 
         self._create_node("Communication", msg_key, props)
 
@@ -715,9 +1064,12 @@ class CellebriteNeo4jWriter:
         source = model.get_field("Source")
         subject = model.get_field("Subject")
         body = model.get_field("Body")
-        timestamp = model.get_field("TimeStamp")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp",))
         folder = model.get_field("Folder")
         status = model.get_field("Status")
+        # Account = which mailbox this email lives in (e.g. "gmail").
+        # Important for multi-account devices.
+        account = model.get_field("Account")
 
         email_key = f"email-{model.model_id[:12]}"
 
@@ -728,12 +1080,14 @@ class CellebriteNeo4jWriter:
             "source_app": source,
             "folder": folder,
             "email_status": status,
+            "account": account,
         })
         if timestamp:
             props["date"] = timestamp[:10]
             props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
             props["timestamp"] = timestamp
         props.update(self._attachment_props(model))
+        props.update(self._message_provenance_props(model))
 
         # Remove None values
         props = {k: v for k, v in props.items() if v is not None}
@@ -758,8 +1112,14 @@ class CellebriteNeo4jWriter:
     def _write_location(self, model: ParsedModel):
         """Location -> Location node."""
         source = model.get_field("Source")
-        timestamp = model.get_field("TimeStamp")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp",))
         loc_type = model.get_field("Type")
+        # Name (e.g. "Home", "Work"), Category ("Frequented" / "Visit" /
+        # "Search"), Description — all dropped on 120/148, 120/148 and
+        # 5/22 Location rows in the 2026-05-23 audit.
+        loc_name = model.get_field("Name")
+        category = model.get_field("Category")
+        description = model.get_field("Description")
 
         # Get coordinates from nested Position/Coordinate. Cellebrite
         # also embeds accuracy ("PrecisionInMeters" / "Precision" /
@@ -848,12 +1208,18 @@ class CellebriteNeo4jWriter:
         # Name is the bare type token (no "Location (...)" wrapper)
         # so node names + the table column read identically.
         effective_type = loc_type or source or "Unknown"
+        # Use Cellebrite-supplied display name when present (Home/Work
+        # labels etc.); fall back to the type token.
+        display_name = loc_name or effective_type
 
-        props = self._base_props(model, loc_key, effective_type)
+        props = self._base_props(model, loc_key, display_name)
         props.update({
             "latitude": lat,
             "longitude": lon,
             "location_type": effective_type,
+            "location_category": category,
+            "place_label": loc_name,
+            "description": description,
             "source_app": source,
         })
         if accuracy_meters is not None:
@@ -905,6 +1271,14 @@ class CellebriteNeo4jWriter:
         source = model.get_field("Source")
         name = model.get_field("Name")
         username = model.get_field("Username")
+        # ServiceType (e.g. "Facebook" / "WhatsApp" / "Google Drive") +
+        # ServiceIdentifier (the per-service unique account ID) +
+        # TimeCreated were dropped on 100% / 9% / 6% of UserAccount
+        # instances respectively by the 2026-05-23 audit.
+        service_type = model.get_field("ServiceType")
+        service_identifier = model.get_field("ServiceIdentifier")
+        time_created = model.get_field("TimeCreated")
+        password = model.get_field("Password")
 
         acct_key = f"acct-{model.model_id[:12]}"
 
@@ -921,6 +1295,14 @@ class CellebriteNeo4jWriter:
         props.update({
             "username": username,
             "platform": source,
+            "service_type": service_type,
+            "service_identifier": service_identifier,
+            "time_created": time_created,
+            # Account credential — stored only when Cellebrite carved
+            # it; not always a real password (sometimes a hash/token).
+            # `is_sensitive` flags it for redaction in any export.
+            "credential": password,
+            "is_sensitive": bool(password),
             "user_ids": user_ids if user_ids else None,
         })
         props = {k: v for k, v in props.items() if v is not None}
@@ -962,11 +1344,24 @@ class CellebriteNeo4jWriter:
         self.searches_created += 1
 
     def _write_visited_page(self, model: ParsedModel):
-        """VisitedPage -> VisitedPage node (lightweight, no relationships)."""
+        """VisitedPage -> VisitedPage node.
+
+        Cellebrite uses `LastVisited` as the canonical field name on
+        VisitedPage (not `TimeStamp`) — the audit on 2026-05-23 found
+        15,995 timestamps had been silently dropped on case 43f1afb1
+        because the handler only read `TimeStamp`. `_extract_timestamp`
+        now tries `LastVisited` first then falls through.
+
+        Also derives a `search_query` when the URL is a well-known
+        search-engine query so investigators can find "what did they
+        google" without parsing every browser-history URL by hand.
+        """
         url = model.get_field("Url")
         title = model.get_field("Title")
-        timestamp = model.get_field("TimeStamp")
         source = model.get_field("Source")
+        timestamp = self._extract_timestamp(model, prefer=("LastVisited", "TimeStamp"))
+        visit_count = model.get_field("VisitCount")
+        url_cache_file = model.get_field("UrlCacheFile")
 
         if not url and not title:
             return
@@ -976,12 +1371,27 @@ class CellebriteNeo4jWriter:
         props = self._base_props(model, key, title or url[:80] if url else "Visited Page")
         props.update({
             "url": url,
+            "title": title,
             "source_app": source,
+            "visit_count": _safe_int(visit_count),
+            "url_cache_file": url_cache_file,
         })
         if timestamp:
             props["date"] = timestamp[:10]
             props["timestamp"] = timestamp
+            props["last_visited"] = timestamp
 
+        # Detect search-engine queries embedded in the URL. Folds the
+        # "browser searches" complaint into VisitedPage rather than
+        # requiring a separate SearchedItem (Cellebrite doesn't always
+        # emit one — for ~99% of "I googled X" traces the only record
+        # is a VisitedPage with q= in the URL).
+        search_query = _extract_search_query(url)
+        if search_query:
+            props["search_query"] = search_query
+            props["is_search"] = True
+
+        props = {k: v for k, v in props.items() if v is not None}
         self._create_node("VisitedPage", key, props)
         self.pages_created += 1
 
@@ -992,6 +1402,14 @@ class CellebriteNeo4jWriter:
         location = model.get_field("Location")
         start_date = model.get_field("StartDate")
         end_date = model.get_field("EndDate")
+        # Source = which calendar app (Google Calendar / Outlook /
+        # iCloud), Category = calendar grouping (Work / Personal /
+        # Holidays). Both dropped on 100% of CalendarEntry instances
+        # by the 2026-05-23 audit.
+        source = model.get_field("Source")
+        category = model.get_field("Category")
+        repeat_rule = model.get_field("RepeatRule")
+        repeat_until = model.get_field("RepeatUntil")
 
         if not subject:
             return
@@ -1002,6 +1420,10 @@ class CellebriteNeo4jWriter:
         props.update({
             "details": details,
             "location_text": location,
+            "source_app": source,
+            "category": category,
+            "repeat_rule": repeat_rule,
+            "repeat_until": repeat_until,
         })
         if start_date:
             props["date"] = start_date[:10]
@@ -1022,7 +1444,15 @@ class CellebriteNeo4jWriter:
         """WirelessNetwork -> WirelessNetwork node."""
         ssid = model.get_field("SSId") or model.get_field("Name")
         bssid = model.get_field("BSSId")
-        timestamp = model.get_field("TimeStamp")
+        # WirelessNetwork has BOTH `TimeStamp` (first/most-recent seen)
+        # and `LastConnection` (last time the device actually connected).
+        # Audit on 2026-05-23 showed 677/677 instances had Source set
+        # but it was dropped; LastConnection was rare (5/677) but
+        # important when present.
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp", "LastConnection"))
+        last_connection = model.get_field("LastConnection")
+        source = model.get_field("Source")
+        security_mode = model.get_field("SecurityMode")
 
         if not ssid and not bssid:
             return
@@ -1033,6 +1463,9 @@ class CellebriteNeo4jWriter:
         props.update({
             "ssid": ssid,
             "bssid": bssid,
+            "source_app": source,
+            "security_mode": security_mode,
+            "last_connection": last_connection,
         })
         if timestamp:
             props["date"] = timestamp[:10]
@@ -1048,17 +1481,23 @@ class CellebriteNeo4jWriter:
         name = model.get_field("Name")
         device_type = model.get_field("Type")
         mac = model.get_field("MACAddress")
-        timestamp = model.get_field("TimeStamp") or model.get_field("LastConnected")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp", "LastConnected", "LastConnection"))
+        source = model.get_field("Source")
+        # SerialNumber is often populated even when MAC/Name are not —
+        # carrying it lets us correlate paired devices across reports.
+        serial = model.get_field("SerialNumber")
 
-        if not name and not mac:
+        if not name and not mac and not serial:
             return
 
         key = f"dev-{model.model_id[:12]}"
 
-        props = self._base_props(model, key, name or mac or "Unknown Device")
+        props = self._base_props(model, key, name or mac or serial or "Unknown Device")
         props.update({
             "device_type": device_type,
             "mac_address": mac,
+            "serial_number": serial,
+            "source_app": source,
         })
         if timestamp:
             props["date"] = timestamp[:10]
@@ -1074,10 +1513,25 @@ class CellebriteNeo4jWriter:
         self.devices_created += 1
 
     def _write_password(self, model: ParsedModel):
-        """Password -> Credential node (metadata only, NOT the actual secret)."""
+        """Password -> Credential node (metadata only, NOT the actual secret).
+
+        Cellebrite's Password model carries quite a bit beyond the bare
+        secret. We intentionally drop the `Data` field (the actual
+        password/token bytes) but capture every other index — service,
+        access group, identifier — so investigators can tell *what*
+        the credential is for without ever exposing the secret.
+        """
         label = model.get_field("Label")
         cred_type = model.get_field("Type")
         account = model.get_field("Account")
+        # `Service` typically holds the URL or app identifier the
+        # credential is scoped to. `AccessGroup` is the iOS Keychain
+        # access group (or Android keystore alias). `ServiceIdentifier`
+        # is a free-form vendor-specific identifier.
+        service = model.get_field("Service")
+        access_group = model.get_field("AccessGroup")
+        service_identifier = model.get_field("ServiceIdentifier")
+        source = model.get_field("Source")
 
         key = f"cred-{model.model_id[:12]}"
 
@@ -1086,8 +1540,13 @@ class CellebriteNeo4jWriter:
             "label": label,
             "credential_type": cred_type,
             "account_ref": account,
+            "service": service,
+            "access_group": access_group,
+            "service_identifier": service_identifier,
+            "source_app": source,
             "is_sensitive": True,
-            # NOTE: actual password/token data is intentionally NOT stored
+            # NOTE: actual password/token data (`Data` field) is
+            # intentionally NOT stored.
         })
         props = {k: v for k, v in props.items() if v is not None}
 
@@ -1223,23 +1682,39 @@ class CellebriteNeo4jWriter:
     def _write_device_event(self, model: ParsedModel):
         """
         Generic device event (power, unlock, lock, wake, sleep, reboot).
-        Cellebrite emits these under several model type names depending on extraction.
-        Stores them under a single DeviceEvent label with an event_type discriminator.
+
+        Cellebrite emits these under several model type names — DeviceEvent
+        / PoweringEvent / PowerEvent / UserEvent / ScreenEvent — and uses
+        DIFFERENT field names per type:
+          - DeviceEvent: StartTime + EventType + Value
+          - PoweringEvent: Element + Event + Description + TimeStamp
+          - Older variants: TimeStamp + State + Type + Action + Reason
+
+        The 2026-05-23 audit found we were dropping 100% of DeviceEvent
+        fields and 75% of PoweringEvent fields because the handler only
+        read the older variant names. Try every alias.
         """
-        timestamp = model.get_field("TimeStamp")
+        timestamp = self._extract_timestamp(model, prefer=("TimeStamp", "StartTime"))
         source = model.get_field("Source")
-        state = model.get_field("State") or model.get_field("Type") or model.get_field("Action")
-        reason = model.get_field("Reason") or model.get_field("Details")
+        # State / type — try every field name we've ever seen.
+        state = (model.get_field("State") or model.get_field("Type")
+                 or model.get_field("Action") or model.get_field("EventType")
+                 or model.get_field("Event") or model.get_field("Element"))
+        reason = (model.get_field("Reason") or model.get_field("Details")
+                  or model.get_field("Description"))
+        # `Value` is a free-form payload (e.g. "Charging", "Discharging",
+        # battery percentage). DeviceEvent uses this generically.
+        value = model.get_field("Value")
         battery = model.get_field("Battery") or model.get_field("BatteryLevel")
 
-        # Infer event_type from model type + state
+        # Infer a coarse event_type from the model type + state.
         mt = (model.model_type or "").lower()
         if "power" in mt:
             event_type = "power"
         elif "user" in mt or "lock" in mt or "unlock" in mt:
-            event_type = "unlock" if state and "unlock" in state.lower() else \
-                         "lock"   if state and "lock"   in state.lower() else \
-                         "user"
+            event_type = ("unlock" if state and "unlock" in state.lower() else
+                          "lock"   if state and "lock"   in state.lower() else
+                          "user")
         else:
             event_type = "device"
 
@@ -1252,6 +1727,7 @@ class CellebriteNeo4jWriter:
             "event_type": event_type,
             "state": state,
             "reason": reason,
+            "value": value,
             "battery": battery,
             "source_app": source,
         })
@@ -1374,6 +1850,321 @@ class CellebriteNeo4jWriter:
         return
 
     # ------------------------------------------------------------------
+    # Phase 6: Device inventory / identity / file provenance
+    # ------------------------------------------------------------------
+
+    def _write_autofill(self, model: ParsedModel):
+        """Autofill -> Autofill node.
+
+        Browser/app autofill entries (saved logins, addresses, cards, search
+        terms). Investigator-valuable because it surfaces credentials and
+        personal data the user kept in browser/app form fillers.
+
+        Cellebrite uses `Key` (the form field name) and `Value` (the
+        filled value). LastUsedDate is the most recent use. The 2026-05-23
+        audit found Key + LastUsedDate were dropped — fixed here.
+        """
+        value = (
+            model.get_field("Value") or model.get_field("FieldValue")
+        )
+        # Try Key first (the actual Cellebrite XML attribute), then fall
+        # back to the older FieldName / Name aliases for compatibility
+        # with older UFED PA versions.
+        field_name = (
+            model.get_field("Key")
+            or model.get_field("FieldName")
+            or model.get_field("Name")
+        )
+        source = model.get_field("Source") or model.get_field("SourceApplication")
+        timestamp = self._extract_timestamp(model, prefer=("LastUsedDate", "TimeStamp", "LastUsed"))
+        last_used = model.get_field("LastUsedDate") or model.get_field("LastUsed")
+        url = model.get_field("Url") or model.get_field("Domain")
+
+        if not value and not field_name:
+            return
+
+        key = f"autofill-{model.model_id[:12]}"
+        label = field_name or (value[:80] if value else "Autofill")
+
+        props = self._base_props(model, key, label)
+        props.update({
+            "field_name": field_name,
+            "value": value,
+            "url": url,
+            "source_app": source,
+            "last_used": last_used,
+        })
+        if timestamp:
+            props["date"] = timestamp[:10]
+            props["timestamp"] = timestamp
+
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("Autofill", key, props)
+
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "AUTOFILLED")
+
+        self.autofill_created += 1
+
+    def _write_sim_data(self, model: ParsedModel):
+        """SIMData -> aggregated SIMCard properties.
+
+        Cellebrite emits SIMData as a stream of `Name=X, Value=Y, Category=Z`
+        records — ONE record per SIM property (one for ICCID, one for IMSI,
+        one for MSISDN, etc.) — NOT one SIMData per SIM card. The 2026-05-23
+        audit showed our previous handler (which read fields like ICCID /
+        IMSI / MSISDN directly off the model) captured 0% on 9 instances.
+
+        We collect every (name, value) pair into `_sim_properties`. The
+        final `finalise_sim_card()` (called once per ingest by the
+        orchestrator) creates a single SIMCard node carrying every
+        collected property as a sanitised attribute.
+        """
+        name = model.get_field("Name")
+        value = model.get_field("Value")
+        category = model.get_field("Category")
+        if not name or not value:
+            return
+
+        # Defer node creation until finalise_sim_card() — multiple
+        # SIMData rows aggregate into one SIMCard.
+        prop_key = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").lower()
+        if not prop_key:
+            return
+        # Last-write-wins for repeats; UFEDLib's SIM aggregation does
+        # the same. Cellebrite rarely emits duplicates for the same
+        # property name within one extraction.
+        self._sim_properties[prop_key] = value
+        if category:
+            self._sim_categories[prop_key] = category
+        self.sim_data_created += 1
+
+    def finalise_sim_card(self) -> Optional[str]:
+        """Materialise one SIMCard node from the aggregated SIMData rows.
+
+        Must be called once after the writer's main batch loop completes
+        — by ingestion.py — so every SIMData row across the report has
+        contributed. Returns the SIMCard key, or None if no SIM data
+        was seen.
+        """
+        if not self._sim_properties:
+            return None
+        key = f"sim-{self.report_key}"
+        # The MSISDN-equivalent is the most useful label.
+        label = (self._sim_properties.get("msisdn")
+                 or self._sim_properties.get("phone_number")
+                 or self._sim_properties.get("iccid")
+                 or self._sim_properties.get("imsi")
+                 or "SIM Card")
+        props = {
+            "id": str(uuid.uuid4()),
+            "key": key,
+            "name": label,
+            "case_id": self.case_id,
+            "cellebrite_report_key": self.report_key,
+            "source_type": "cellebrite",
+        }
+        props.update(self._sim_properties)
+        # Drop blanks / Nones.
+        props = {k: v for k, v in props.items() if v is not None and v != ""}
+        # MERGE so a re-ingest updates instead of duplicating.
+        self.db.run_query(
+            """
+            MERGE (s:SIMCard {key: $key, case_id: $cid})
+            ON CREATE SET s = $props
+            ON MATCH  SET s += $props
+            """,
+            key=key, cid=self.case_id, props=props,
+        )
+        self._created_node_keys.add(key)
+        self.nodes_total += 1
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "USED_SIM")
+        self._log(f"SIMCard upserted with {len(self._sim_properties)} properties")
+        return key
+
+    def _write_user(self, model: ParsedModel):
+        """User -> DeviceUser node.
+
+        OS-level user accounts on the device itself (e.g. Android profiles,
+        guest user). Distinct from UserAccount (which is per-app credentials).
+
+        Cellebrite carries Identifier (UID), SerialNumber (system-assigned)
+        and TimeLastLoggedIn — all 100% non-empty in audited reports but
+        dropped pre-2026-05-23.
+        """
+        name = model.get_field("Name") or model.get_field("UserName") or model.get_field("FullName")
+        user_id = (
+            model.get_field("Identifier")
+            or model.get_field("UserID")
+            or model.get_field("Id")
+        )
+        user_type = model.get_field("UserType") or model.get_field("Type")
+        source = model.get_field("Source")
+        serial_number = model.get_field("SerialNumber")
+        last_login = self._extract_timestamp(
+            model, prefer=("TimeLastLoggedIn", "LastLogin"),
+        )
+
+        if not name and not user_id and not serial_number:
+            return
+
+        key = f"deviceuser-{model.model_id[:12]}"
+        label = name or user_id or serial_number or "Device User"
+
+        props = self._base_props(model, key, label)
+        props.update({
+            "user_name": name,
+            "user_id": user_id,
+            "user_type": user_type,
+            "source_app": source,
+            "serial_number": serial_number,
+            "time_last_logged_in": last_login,
+        })
+
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("DeviceUser", key, props)
+
+        self.users_created += 1
+
+    def _write_installed_application(self, model: ParsedModel):
+        """InstalledApplication -> InstalledApp node.
+
+        Software inventory of the device — what apps were on it at the time
+        of extraction. Commonly requested in digital forensics for both
+        evidence-collection (was app X present?) and timeline correlation.
+        """
+        name = (
+            model.get_field("Name")
+            or model.get_field("ApplicationName")
+            or model.get_field("AppName")
+        )
+        package = (
+            model.get_field("Identifier")
+            or model.get_field("Package")
+            or model.get_field("BundleId")
+            or model.get_field("PackageName")
+        )
+        version = model.get_field("Version") or model.get_field("VersionName")
+        install_date = (
+            model.get_field("InstallDate")
+            or model.get_field("PurchaseDate")
+            or self._extract_timestamp(model, prefer=("PurchaseDate", "InstallDate"))
+        )
+        publisher = model.get_field("Publisher") or model.get_field("Author")
+        # OperationMode (Background / Foreground), IsEmulatable (running
+        # via an Android emulator on PC, important for fraud cases),
+        # DecodingStatus — all captured by the XML on 100% / 94% / 29%
+        # of InstalledApplication rows but were dropped pre-audit.
+        operation_mode = model.get_field("OperationMode")
+        is_emulatable = model.get_field("IsEmulatable")
+        decoding_status = model.get_field("DecodingStatus")
+
+        if not name and not package:
+            return
+
+        key = f"app-installed-{model.model_id[:12]}"
+        label = name or package
+
+        props = self._base_props(model, key, label)
+        props.update({
+            "app_name": name,
+            "app_package": package,
+            "app_version": version,
+            "install_date": install_date,
+            "publisher": publisher,
+            "operation_mode": operation_mode,
+            "is_emulatable": is_emulatable == "True" if is_emulatable else None,
+            "decoding_status": decoding_status,
+        })
+        if install_date:
+            props["date"] = install_date[:10]
+            props["timestamp"] = install_date
+
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("InstalledApp", key, props)
+
+        # Tie installed app to the phone owner
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "HAD_INSTALLED")
+
+        self.installed_apps_created += 1
+
+    def _write_file_download(self, model: ParsedModel):
+        """FileDownload -> FileDownload node.
+
+        A file the device downloaded (typically via a browser or messaging
+        app). Provenance is investigation-relevant: distinguishes user-
+        acquired files from pre-installed or sync'd ones.
+
+        Cellebrite carries the full timeline: StartTime (download begun),
+        EndTime (completed), LastAccessed (user opened it), TargetPath
+        (where it landed on disk), BytesReceived (partial-download
+        indicator). All dropped pre-2026-05-23 audit.
+        """
+        url = model.get_field("Url") or model.get_field("SourceUrl")
+        filename = model.get_field("Filename") or model.get_field("Name")
+        timestamp = self._extract_timestamp(
+            model, prefer=("TimeStamp", "StartTime", "DownloadTime", "Date"),
+        )
+        start_time = model.get_field("StartTime")
+        end_time = model.get_field("EndTime")
+        last_accessed = model.get_field("LastAccessed")
+        size_raw = model.get_field("Size") or model.get_field("FileSize")
+        bytes_received_raw = model.get_field("BytesReceived")
+        source = model.get_field("Source") or model.get_field("SourceApplication")
+        # FileDownload uses `DownloadState` ("Completed"/"InProgress"/
+        # "Failed") on newer reports; older ones use `Status` or `State`.
+        status = (
+            model.get_field("DownloadState")
+            or model.get_field("Status")
+            or model.get_field("State")
+        )
+        target_path = model.get_field("TargetPath")
+
+        if not url and not filename:
+            return
+
+        try:
+            size = int(size_raw) if size_raw else None
+        except (TypeError, ValueError):
+            size = None
+        try:
+            bytes_received = int(bytes_received_raw) if bytes_received_raw else None
+        except (TypeError, ValueError):
+            bytes_received = None
+
+        key = f"dl-{model.model_id[:12]}"
+        label = filename or (url[:80] if url else "Download")
+
+        props = self._base_props(model, key, label)
+        props.update({
+            "url": url,
+            "filename": filename,
+            "size": size,
+            "bytes_received": bytes_received,
+            "download_status": status,
+            "source_app": source,
+            "target_path": target_path,
+            "start_time": start_time,
+            "end_time": end_time,
+            "last_accessed": last_accessed,
+        })
+        if timestamp:
+            props["date"] = timestamp[:10]
+            props["time"] = timestamp[11:16] if len(timestamp) > 16 else None
+            props["timestamp"] = timestamp
+        props.update(self._attachment_props(model))
+
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("FileDownload", key, props)
+
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "DOWNLOADED")
+
+        self.file_downloads_created += 1
+
+    # ------------------------------------------------------------------
     # Summary
     # ------------------------------------------------------------------
 
@@ -1394,7 +2185,54 @@ class CellebriteNeo4jWriter:
             "devices_created": self.devices_created,
             "wifi_networks_created": self.wifi_created,
             "bookmarks_created": self.bookmarks_created,
+            "autofill_created": self.autofill_created,
+            "sim_data_created": self.sim_data_created,
+            "users_created": self.users_created,
+            "installed_apps_created": self.installed_apps_created,
+            "file_downloads_created": self.file_downloads_created,
             "total_nodes": self.nodes_total,
             "total_relationships": self.relationships_total,
             "phone_owner": self._phone_owner_key,
         }
+
+    def link_all_to_report(self) -> int:
+        """Connect every node tagged with this report_key to the PhoneReport
+        via a `CONTAINS` edge.
+
+        Done as a single batched sweep after Step 8 so investigative views
+        can filter "everything from this device" with a single hop instead
+        of property-based filtering. APOC batching keeps the transaction
+        small even on reports with hundreds of thousands of entities (the
+        2026-05-12 tx-log corruption was caused by an unbatched 33k-node
+        write — see project_cellebrite_ingestion_failures memory).
+
+        Returns the number of relationships created.
+        """
+        try:
+            result = self.db.run_query(
+                """
+                CALL apoc.periodic.iterate(
+                    'MATCH (r:PhoneReport {case_id: $cid, key: $rk}),
+                           (n {case_id: $cid, cellebrite_report_key: $rk})
+                     WHERE n.key <> $rk
+                     RETURN r, n',
+                    'MERGE (r)-[rel:CONTAINS {case_id: $cid}]->(n)',
+                    {batchSize: 1000, parallel: false,
+                     params: {cid: $case_id, rk: $report_key}}
+                ) YIELD batches, total, errorMessages
+                RETURN batches, total, errorMessages
+                """,
+                case_id=self.case_id,
+                report_key=self.report_key,
+            )
+            if result:
+                row = result[0]
+                created = int(row.get("total") or 0)
+                self.relationships_total += created
+                if row.get("errorMessages"):
+                    self._log(f"WARNING: CONTAINS sweep errors: {row['errorMessages']}")
+                self._log(f"Linked {created} entities to PhoneReport via CONTAINS")
+                return created
+        except Exception as e:
+            self._log(f"WARNING: CONTAINS sweep failed: {e}")
+        return 0

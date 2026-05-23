@@ -269,8 +269,11 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
     // Check immediately
     checkActiveTask();
 
-    // Poll every 3 seconds while folder is selected
-    const intervalId = setInterval(checkActiveTask, 3000);
+    // Poll every 10 seconds while folder is selected. Was 3s — combined
+    // with the other two polling loops below + BackgroundTasksPanel, that
+    // hit ~1.3 req/sec on /api/background-tasks per browser tab, which
+    // contributed to TCP connection timeouts on slower client networks.
+    const intervalId = setInterval(checkActiveTask, 10000);
 
     return () => clearInterval(intervalId);
   }, [caseId, folderInfo?.path, activeTask?.id]); // Removed onProcessWiretap from dependencies - we don't want to restart processing when task completes
@@ -312,7 +315,8 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
     };
 
     checkCellebriteTask();
-    const intervalId = setInterval(checkCellebriteTask, 3000);
+    // 10s (was 3s) — see comment on checkActiveTask poll above.
+    const intervalId = setInterval(checkCellebriteTask, 10000);
     return () => clearInterval(intervalId);
   }, [caseId, folderInfo?.path, folderInfo?.cellebriteInfo?.suitable, cellebriteTask?.id]);
 
@@ -358,8 +362,8 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
     // Check immediately
     checkActiveTasks();
 
-    // Poll every 3 seconds while folders are selected
-    const intervalId = setInterval(checkActiveTasks, 3000);
+    // Poll every 10 seconds while folders are selected (was 3s).
+    const intervalId = setInterval(checkActiveTasks, 10000);
 
     return () => clearInterval(intervalId);
   }, [caseId, foldersInfo?.map(f => f.path).join(',')]);

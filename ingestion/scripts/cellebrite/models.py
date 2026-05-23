@@ -83,9 +83,21 @@ class TaggedFile:
     # parsing the original bytes.
     creation_time: Optional[str] = None  # ISO 8601 — when the file was created on the device
     modify_time: Optional[str] = None    # ISO 8601 — last modification
+    access_time: Optional[str] = None    # ISO 8601 — last access
     capture_time: Optional[str] = None   # ISO 8601 — EXIF DateTimeOriginal (camera capture)
     latitude: Optional[float] = None     # Decimal degrees
     longitude: Optional[float] = None    # Decimal degrees
+    gps_altitude: Optional[float] = None # Meters (negative below sea level)
+    # Camera identity from EXIF — surfaces "what device took this photo".
+    camera_make: Optional[str] = None
+    camera_model: Optional[str] = None
+    # Image dimensions in pixels.
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+    # EXIF Orientation tag — needed to render thumbnails the right way up.
+    orientation: Optional[str] = None
+    # Software field from EXIF (camera firmware version or editing app).
+    exif_software: Optional[str] = None
 
 
 @dataclass

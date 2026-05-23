@@ -297,11 +297,20 @@ class EvidenceService:
             
             # Start background upload for this folder (runs in a separate thread)
             def upload_folder_task(folder_files_param, task_id_param):
-                """Background upload task function for a single folder."""
+                """Background upload task function for a single folder.
+
+                Batches the JSON writes: evidence.json (~hundreds of MB) and
+                background_tasks.json (~tens of MB) are rewritten once per
+                BATCH_SIZE files instead of per file. Without this batching a
+                93k-file folder upload spends almost all its time fsyncing.
+                """
                 from datetime import datetime
-                
+
+                # Persist every N files. Sized so that a 100k-file upload
+                # incurs ~1k JSON rewrites instead of ~300k.
+                BATCH_SIZE = 100
+
                 try:
-                    # Update task status to running
                     background_task_storage.update_task(
                         task_id_param,
                         status=TaskStatus.RUNNING.value,
@@ -310,64 +319,77 @@ class EvidenceService:
                         progress_completed=0,
                     )
 
-                    # Process files one by one with progress updates
                     uploaded_files = []
+                    pending_uploads: List[Dict] = []
+                    pending_failed: List[Dict] = []
+                    completed_count = 0
+                    failed_count = 0
+
+                    def flush(last_index: int):
+                        nonlocal completed_count, failed_count, uploaded_files
+                        if pending_uploads:
+                            try:
+                                records = service_self.add_uploaded_files(
+                                    case_id=case_id,
+                                    uploads=pending_uploads,
+                                    owner=owner,
+                                    preserve_structure=True,
+                                )
+                                uploaded_files.extend(records)
+                                completed_count += len(pending_uploads)
+                            except Exception as batch_error:
+                                # Whole-batch failure (e.g. evidence.json write
+                                # failed). Surface as failed files so progress
+                                # still moves and the user sees the problem.
+                                print(f"Batch flush error in task {task_id_param}: {batch_error}")
+                                failed_count += len(pending_uploads)
+                                pending_failed.extend([
+                                    {"filename": u.get("original_filename"), "error": str(batch_error)}
+                                    for u in pending_uploads
+                                ])
+                            pending_uploads.clear()
+
+                        # One task-status write per batch with summary progress
+                        # and a single representative file_status (last completed
+                        # in the batch) so the UI shows recent activity.
+                        file_status = None
+                        if last_index >= 0 and last_index < len(folder_files_param):
+                            last_fd = folder_files_param[last_index]
+                            file_status = {
+                                "file_id": f"file_{last_index}",
+                                "filename": last_fd.get("original_filename", "unknown"),
+                                "status": "completed",
+                            }
+                        background_task_storage.update_task(
+                            task_id_param,
+                            progress_completed=completed_count,
+                            progress_failed=failed_count,
+                            file_status=file_status,
+                        )
+
+                    last_completed_index = -1
                     for index, file_data in enumerate(folder_files_param):
                         try:
-                            original_filename = file_data.get("original_filename", "unknown")
-
-                            # Update file status to processing
-                            background_task_storage.update_task(
-                                task_id_param,
-                                file_status={
-                                    "file_id": f"file_{index}",
-                                    "filename": original_filename,
-                                    "status": "processing",
-                                },
-                            )
-
-                            # Forward the whole file_data dict so staged_path/
-                            # sha256/size (or content for legacy callers) flow
-                            # through to add_uploaded_files unchanged.
-                            records = service_self.add_uploaded_files(
-                                case_id=case_id,
-                                uploads=[file_data],
-                                owner=owner,
-                                preserve_structure=True,  # Always preserve structure for folder uploads
-                            )
-
-                            uploaded_files.extend(records)
-
-                            # Update file status to completed
-                            background_task_storage.update_task(
-                                task_id_param,
-                                progress_completed=index + 1,
-                                file_status={
-                                    "file_id": f"file_{index}",
-                                    "filename": original_filename,
-                                    "status": "completed",
-                                },
-                            )
+                            pending_uploads.append(file_data)
+                            last_completed_index = index
                         except Exception as file_error:
-                            print(f"Error uploading file {original_filename}: {file_error}")
-                            background_task_storage.update_task(
-                                task_id_param,
-                                progress_completed=index + 1,
-                                file_status={
-                                    "file_id": f"file_{index}",
-                                    "filename": original_filename,
-                                    "status": "failed",
-                                    "error": str(file_error),
-                                },
-                            )
+                            original_filename = file_data.get("original_filename", "unknown")
+                            print(f"Error preparing file {original_filename}: {file_error}")
+                            failed_count += 1
+                            pending_failed.append({"filename": original_filename, "error": str(file_error)})
 
-                    # Mark task as completed
+                        if (index + 1) % BATCH_SIZE == 0:
+                            flush(last_completed_index)
+
+                    # Final flush for the remainder
+                    flush(last_completed_index)
+
                     background_task_storage.update_task(
                         task_id_param,
                         status=TaskStatus.COMPLETED.value,
                         completed_at=datetime.now().isoformat(),
                     )
-                    print(f"Folder upload task {task_id_param} completed: {len(uploaded_files)} files uploaded")
+                    print(f"Folder upload task {task_id_param} completed: {len(uploaded_files)} files uploaded ({failed_count} failed)")
                 except Exception as e:
                     print(f"Error in folder upload task {task_id_param}: {e}")
                     background_task_storage.update_task(
@@ -377,10 +399,6 @@ class EvidenceService:
                         completed_at=datetime.now().isoformat(),
                     )
                 finally:
-                    # Best-effort: remove the shared staging dir if every task
-                    # in this request has finished moving its files. rmdir
-                    # only succeeds when the dir is empty, so concurrent tasks
-                    # that haven't drained yet just see OSError here.
                     _cleanup_staging_dir(folder_files_param)
             
             # Start the background thread for this folder (non-daemon so it continues even if request ends)

@@ -6,6 +6,8 @@ Handles persistent storage of uploaded evidence files and their processing statu
 
 import json
 import hashlib
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -18,6 +20,7 @@ from config import BASE_DIR
 # Store metadata under <project>/data and binary files under <project>/ingestion/data
 DATA_DIR = BASE_DIR / "data"
 STORAGE_FILE = DATA_DIR / "evidence.json"
+LOCK_FILE = DATA_DIR / "evidence.json.lock"
 
 # Physical file storage root – reuse ingestion data directory so ingest_data.py can read files
 EVIDENCE_ROOT_DIR = BASE_DIR / "ingestion" / "data"
@@ -59,31 +62,63 @@ def _compute_sha256(data: bytes) -> str:
 
 
 class EvidenceStorage:
-    """Service for managing evidence file metadata and status. Thread-safe."""
+    """Service for managing evidence file metadata and status.
+
+    Multi-process safe: every mutation reloads the on-disk JSON under an
+    fcntl file lock, applies the change, then atomically saves and refreshes
+    the in-memory cache. Without this, uvicorn's multiple worker processes
+    each held independent in-memory dicts and any single-record mutation from
+    worker A would overwrite the latest disk state written by worker B (which
+    held records A had never seen). Observed on case 43f1afb1 2026-05-22:
+    a 93k-row C5 upload completed in worker 3, then a single DELETE request
+    landed on worker 1 and wiped all 93k rows on save.
+    """
 
     def __init__(self) -> None:
         self._records: Dict[str, dict] = _load_evidence()
         self._lock = RLock()  # Reentrant lock for thread-safe operations
         self._migrate_records()
 
+    @contextmanager
+    def _file_locked(self):
+        """Yield a freshly-loaded records dict that will be atomically
+        persisted on successful exit. Holds an exclusive fcntl file lock
+        across the entire reload-mutate-save window so writes from other
+        worker processes serialize correctly.
+        """
+        with self._lock:
+            ensure_dirs()
+            with open(LOCK_FILE, "a") as lf:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                try:
+                    fresh = _load_evidence()
+                    yield fresh
+                    _save_evidence(fresh)
+                    self._records = fresh
+                finally:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
     def _migrate_records(self) -> None:
         """Migrate legacy records: separate 'duplicate' status into is_duplicate flag,
         and ensure is_relevant field exists."""
-        changed = False
-        with self._lock:
-            for rec in self._records.values():
+        # Check first against in-memory copy; only take the file lock if a
+        # migration is actually needed (avoids contention on every worker boot).
+        needs_migration = any(
+            ("is_relevant" not in rec) or ("is_duplicate" not in rec)
+            for rec in self._records.values()
+        )
+        if not needs_migration:
+            return
+        with self._file_locked() as records:
+            for rec in records.values():
                 if "is_relevant" not in rec:
                     rec["is_relevant"] = False
-                    changed = True
                 if "is_duplicate" not in rec:
                     if rec.get("status") == "duplicate":
                         rec["is_duplicate"] = True
                         rec["status"] = "processed" if rec.get("processed_at") else "unprocessed"
                     else:
                         rec["is_duplicate"] = bool(rec.get("duplicate_of"))
-                    changed = True
-            if changed:
-                self._persist()
 
     # ------------- Basic accessors -------------
 
@@ -176,11 +211,9 @@ class EvidenceStorage:
         Returns:
             List of evidence records that were created.
         """
-        with self._lock:
-            ensure_dirs()
-            created_records: List[dict] = []
+        created_records: List[dict] = []
+        with self._file_locked() as records:
             now = datetime.now().isoformat()
-
             for file_info in files:
                 original_filename = file_info["original_filename"]
                 stored_path: Path = file_info["stored_path"]
@@ -190,17 +223,15 @@ class EvidenceStorage:
                 else:
                     content: bytes = file_info["content"]
                     sha256 = _compute_sha256(content)
-                # Find duplicate directly to avoid double-locking
                 duplicate_rec = None
-                for rec in self._records.values():
+                for rec in records.values():
                     if rec.get("sha256") == sha256:
                         duplicate_rec = rec
                         break
 
                 evidence_id = f"ev_{sha256[:16]}"
-                # Ensure uniqueness even if same hash used for id in multiple cases
                 suffix = 1
-                while evidence_id in self._records:
+                while evidence_id in records:
                     evidence_id = f"ev_{sha256[:12]}_{suffix}"
                     suffix += 1
 
@@ -218,7 +249,7 @@ class EvidenceStorage:
                     "stored_path": str(stored_path),
                     "size": size,
                     "sha256": sha256,
-                    "status": "unprocessed",  # unprocessed | processing | processed | failed
+                    "status": "unprocessed",
                     "is_duplicate": is_duplicate,
                     "duplicate_of": duplicate_of,
                     "is_relevant": False,
@@ -229,22 +260,19 @@ class EvidenceStorage:
                 if file_info.get("relative_path") is not None:
                     record["relative_path"] = file_info["relative_path"]
 
-                self._records[evidence_id] = record
+                records[evidence_id] = record
                 created_records.append(record)
-
-            self._persist()
-            return created_records
+        return created_records
 
     def delete_record(self, evidence_id: str) -> Optional[dict]:
         """
         Delete an evidence record by ID. Returns the deleted record or None.
         Does NOT delete the physical file — caller is responsible for that.
         """
-        with self._lock:
-            rec = self._records.pop(evidence_id, None)
-            if rec:
-                self._persist()
-            return rec
+        deleted = [None]
+        with self._file_locked() as records:
+            deleted[0] = records.pop(evidence_id, None)
+        return deleted[0]
 
     def get_by_cellebrite_file_ids(
         self, case_id: str, file_ids: List[str]
@@ -272,10 +300,9 @@ class EvidenceStorage:
 
     def mark_processing(self, evidence_ids: List[str]) -> None:
         """Mark selected evidence as 'processing'."""
-        with self._lock:
-            now = datetime.now().isoformat()
+        with self._file_locked() as records:
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if not rec:
                     continue
                 if rec.get("status") in ("processed", "processing"):
@@ -283,7 +310,6 @@ class EvidenceStorage:
                 rec["status"] = "processing"
                 rec["last_error"] = None
                 rec["processed_at"] = None
-            self._persist()
 
     def mark_processed(
         self,
@@ -291,10 +317,10 @@ class EvidenceStorage:
         error: Optional[str] = None,
     ) -> None:
         """Mark selected evidence as processed or failed."""
-        with self._lock:
+        with self._file_locked() as records:
             now = datetime.now().isoformat()
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if not rec:
                     continue
                 if error:
@@ -304,19 +330,16 @@ class EvidenceStorage:
                     rec["status"] = "processed"
                     rec["last_error"] = None
                 rec["processed_at"] = now
-            self._persist()
 
     def set_relevance(self, evidence_ids: List[str], is_relevant: bool) -> int:
         """Mark evidence files as relevant or non-relevant. Returns count updated."""
         updated = 0
-        with self._lock:
+        with self._file_locked() as records:
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if rec:
                     rec["is_relevant"] = is_relevant
                     updated += 1
-            if updated:
-                self._persist()
         return updated
 
     # ------------------------------------------------------------------
@@ -324,16 +347,16 @@ class EvidenceStorage:
     # ------------------------------------------------------------------
 
     def add_tags(self, evidence_ids: List[str], tags: List[str]) -> int:
-        """Add tags to one or more evidence records. Bulk-safe (one persist)."""
+        """Add tags to one or more evidence records."""
         if not tags:
             return 0
         clean = [t.strip() for t in tags if t and t.strip()]
         if not clean:
             return 0
         updated = 0
-        with self._lock:
+        with self._file_locked() as records:
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if rec is None:
                     continue
                 existing = set(rec.get("tags") or [])
@@ -344,8 +367,6 @@ class EvidenceStorage:
                     updated += 1
                 elif "tags" not in rec:
                     rec["tags"] = sorted(existing)
-            if updated:
-                self._persist()
         return updated
 
     def remove_tags(self, evidence_ids: List[str], tags: List[str]) -> int:
@@ -354,29 +375,27 @@ class EvidenceStorage:
             return 0
         remove = set(t.strip() for t in tags if t and t.strip())
         updated = 0
-        with self._lock:
+        with self._file_locked() as records:
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if rec is None:
                     continue
                 existing = set(rec.get("tags") or [])
                 if existing & remove:
                     rec["tags"] = sorted(existing - remove)
                     updated += 1
-            if updated:
-                self._persist()
         return updated
 
     def set_tags(self, evidence_id: str, tags: List[str]) -> bool:
         """Replace the tag list on a single evidence record."""
         clean = sorted({t.strip() for t in (tags or []) if t and t.strip()})
-        with self._lock:
-            rec = self._records.get(evidence_id)
-            if rec is None:
-                return False
-            rec["tags"] = clean
-            self._persist()
-            return True
+        success = [False]
+        with self._file_locked() as records:
+            rec = records.get(evidence_id)
+            if rec is not None:
+                rec["tags"] = clean
+                success[0] = True
+        return success[0]
 
     def get_tag_counts(self, case_id: str) -> List[Dict]:
         """Return a case-wide tag cloud sorted by usage."""
@@ -400,9 +419,9 @@ class EvidenceStorage:
         if not to_add:
             return 0
         updated = 0
-        with self._lock:
+        with self._file_locked() as records:
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if rec is None:
                     continue
                 existing = set(rec.get("linked_entity_ids") or [])
@@ -413,8 +432,6 @@ class EvidenceStorage:
                     updated += 1
                 elif "linked_entity_ids" not in rec:
                     rec["linked_entity_ids"] = sorted(existing)
-            if updated:
-                self._persist()
         return updated
 
     def unlink_entities(self, evidence_ids: List[str], entity_ids: List[str]) -> int:
@@ -423,17 +440,15 @@ class EvidenceStorage:
         if not remove:
             return 0
         updated = 0
-        with self._lock:
+        with self._file_locked() as records:
             for evid in evidence_ids:
-                rec = self._records.get(evid)
+                rec = records.get(evid)
                 if rec is None:
                     continue
                 existing = set(rec.get("linked_entity_ids") or [])
                 if existing & remove:
                     rec["linked_entity_ids"] = sorted(existing - remove)
                     updated += 1
-            if updated:
-                self._persist()
         return updated
 
     def list_by_entity(self, case_id: str, entity_id: str) -> List[Dict]:
@@ -451,8 +466,8 @@ class EvidenceStorage:
     def unlink_entities_from_all(self, case_id: str, entity_id: str) -> int:
         """Used when a CaseEntity is deleted — remove its link from every record in the case."""
         updated = 0
-        with self._lock:
-            for rec in self._records.values():
+        with self._file_locked() as records:
+            for rec in records.values():
                 if rec.get("case_id") != case_id:
                     continue
                 linked = set(rec.get("linked_entity_ids") or [])
@@ -460,8 +475,6 @@ class EvidenceStorage:
                     linked.discard(entity_id)
                     rec["linked_entity_ids"] = sorted(linked)
                     updated += 1
-            if updated:
-                self._persist()
         return updated
 
 

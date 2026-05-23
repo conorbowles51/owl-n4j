@@ -1957,25 +1957,32 @@ export default function CaseManagementView({
 
                 {/* Processing History Section */}
                 <div className="mb-6">
-                  <button
-                    onClick={() => setShowProcessingHistory(!showProcessingHistory)}
-                    className="w-full flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors mb-2"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Archive className="w-5 h-5 text-owl-blue-700" />
-                      <h3 className="text-md font-semibold text-owl-blue-900">
-                        Processing History
-                      </h3>
-                    </div>
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <button
+                      onClick={() => setShowProcessingHistory(!showProcessingHistory)}
+                      className="flex-1 flex items-center justify-between p-3 bg-light-100 hover:bg-light-200 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Archive className="w-5 h-5 text-owl-blue-700" />
+                        <h3 className="text-md font-semibold text-owl-blue-900">
+                          Processing History
+                        </h3>
+                      </div>
+                      {showProcessingHistory ? (
+                        <ChevronDown className="w-4 h-4 text-light-600" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-light-600" />
+                      )}
+                    </button>
+                    {showProcessingHistory && (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={() => {
                           if (selectedCase) {
                             loadEvidenceLogsForCase(selectedCase.id);
                           }
                         }}
-                        className="flex items-center gap-1 text-xs text-light-600 hover:text-owl-blue-700"
+                        className="flex items-center gap-1 px-3 py-2 text-xs text-light-600 hover:text-owl-blue-700 border border-light-300 rounded-lg bg-white hover:bg-light-50 transition-colors"
+                        title="Refresh processing history"
                       >
                         <RefreshCw
                           className={`w-3 h-3 ${
@@ -1984,13 +1991,8 @@ export default function CaseManagementView({
                         />
                         Refresh
                       </button>
-                      {showProcessingHistory ? (
-                        <ChevronDown className="w-4 h-4 text-light-600" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-light-600" />
-                      )}
-                    </div>
-                  </button>
+                    )}
+                  </div>
                   {showProcessingHistory && (
                     <div
                       ref={logsContainerRef}
