@@ -21,11 +21,23 @@ import { backgroundTasksAPI } from '../services/api';
 // so 5 min without a heartbeat means the worker thread is gone.
 const STALL_MS = 5 * 60 * 1000;
 
+// Backend writes naive ISO timestamps (`datetime.now().isoformat()` —
+// no `Z`, no `+HH:MM`). The server runs in UTC; browsers parse such
+// strings as **local time**, so on a UTC+N browser every "heartbeat
+// age" reads N hours stale even for tasks updating right now. Symptom:
+// 2026-05-23 14:09 UK browser saw "Heartbeat: 1h ago" on a task
+// last updated 21 seconds prior. Append 'Z' when no TZ is present.
+const parseUtcTimestamp = (s) => {
+  if (!s) return null;
+  const hasTz = /(?:Z|[+\-]\d{2}:?\d{2})$/.test(s);
+  const t = new Date(hasTz ? s : s + 'Z').getTime();
+  return Number.isNaN(t) ? null : t;
+};
+
 const getHeartbeatAge = (task) => {
   const ts = task.updated_at || task.started_at || task.created_at;
-  if (!ts) return null;
-  const t = new Date(ts).getTime();
-  if (Number.isNaN(t)) return null;
+  const t = parseUtcTimestamp(ts);
+  if (t === null) return null;
   return Date.now() - t;
 };
 

@@ -135,6 +135,7 @@ def ingest_cellebrite_report(
     profile_name: Optional[str] = None,
     owner: Optional[str] = None,
     evidence_storage=None,
+    progress_callback: Optional[Callable[[dict], None]] = None,
 ) -> dict:
     """
     Ingest a complete Cellebrite UFED report into the Neo4j graph.
@@ -146,6 +147,13 @@ def ingest_cellebrite_report(
         profile_name: LLM profile name (unused in Tier 1, passed for compatibility)
         owner: Username for evidence record ownership
         evidence_storage: EvidenceStorage instance for registering media files
+        progress_callback: Optional callback invoked at phase boundaries and
+            periodically inside the write loop. Receives a dict with keys
+            `phase`, `total`, `completed`, `failed` so the orchestrator
+            can update the background task's progress + updated_at and
+            keep the UI live during the multi-hour ingest. Pre-2026-05-23
+            the task showed `running` with 0/0 progress for the entire
+            run — users couldn't tell if it was working.
 
     Returns:
         Dict with ingestion statistics and status
@@ -155,6 +163,14 @@ def ingest_cellebrite_report(
     def _log(msg: str):
         if log_callback:
             log_callback(msg)
+
+    def _emit_progress(**kwargs):
+        if progress_callback:
+            try:
+                progress_callback(kwargs)
+            except Exception as e:
+                # Never let a flaky heartbeat sink the ingest itself.
+                _log(f"WARNING: progress callback raised: {e}")
 
     # ------------------------------------------------------------------
     # Step 1: Detect and validate XML
@@ -268,16 +284,37 @@ def ingest_cellebrite_report(
     # Step 8: Write all models to Neo4j
     # ------------------------------------------------------------------
     _log("Step 8/9: Writing models to Neo4j...")
+    total_models = len(all_models)
+
+    # Emit an initial progress beacon so the UI shows a non-zero total
+    # even before the first batch completes.
+    _emit_progress(phase="writing", total=total_models, completed=0, failed=0)
 
     batch_size = 200
-    for i in range(0, len(all_models), batch_size):
+    # Throttle: send the heartbeat at most once every ~2 seconds so we
+    # don't beat up background_tasks.json with rapid-fire writes during
+    # the hot loop. The UI poll is on a 10s cadence anyway.
+    HEARTBEAT_MIN_INTERVAL_S = 2.0
+    last_heartbeat = time.time()
+
+    for i in range(0, total_models, batch_size):
         batch = all_models[i:i + batch_size]
         writer.write_batch(batch)
 
-        processed = min(i + batch_size, len(all_models))
-        if processed % 1000 == 0 or processed == len(all_models):
-            pct = 100 * processed / max(len(all_models), 1)
-            _log(f"Written {processed}/{len(all_models)} models ({pct:.1f}%)")
+        processed = min(i + batch_size, total_models)
+        if processed % 1000 == 0 or processed == total_models:
+            pct = 100 * processed / max(total_models, 1)
+            _log(f"Written {processed}/{total_models} models ({pct:.1f}%)")
+
+        now = time.time()
+        if (now - last_heartbeat) >= HEARTBEAT_MIN_INTERVAL_S or processed == total_models:
+            _emit_progress(
+                phase="writing",
+                total=total_models,
+                completed=processed,
+                failed=sum(writer.write_errors.values()),
+            )
+            last_heartbeat = now
 
     # ------------------------------------------------------------------
     # Step 8.3: Finalise aggregated entities (SIMCard, etc.)
@@ -285,6 +322,8 @@ def ingest_cellebrite_report(
     # SIMData rows arrive one-per-property — finalise_sim_card collapses
     # the buffered Name=Value pairs into a single SIMCard node. Must
     # run before the CONTAINS sweep so the SIMCard is linked too.
+    _emit_progress(phase="finalising_sim", total=total_models, completed=total_models,
+                   failed=sum(writer.write_errors.values()))
     try:
         writer.finalise_sim_card()
     except Exception as e:
@@ -294,6 +333,8 @@ def ingest_cellebrite_report(
     # Step 8.4: Link every entity to the PhoneReport via CONTAINS
     # ------------------------------------------------------------------
     _log("Step 8.4: Linking entities to PhoneReport (CONTAINS)...")
+    _emit_progress(phase="linking_contains", total=total_models, completed=total_models,
+                   failed=sum(writer.write_errors.values()))
     try:
         writer.link_all_to_report()
     except Exception as e:
@@ -303,6 +344,8 @@ def ingest_cellebrite_report(
     # Step 8.5: Geotag backfill for comms events
     # ------------------------------------------------------------------
     _log("Step 8.5: Backfilling nearest-location tags on comms events...")
+    _emit_progress(phase="geotag_backfill", total=total_models, completed=total_models,
+                   failed=sum(writer.write_errors.values()))
     try:
         backfill_stats = _backfill_nearest_location(db, case_id, report_key, log_callback=log_callback)
         _log(
@@ -321,6 +364,9 @@ def ingest_cellebrite_report(
     media_registered = 0
     if evidence_storage:
         _log("Step 9/9: Registering media files as evidence records...")
+        _emit_progress(phase="registering_media", total=total_models,
+                       completed=total_models,
+                       failed=sum(writer.write_errors.values()))
         media_registered = file_linker.register_media_files(
             evidence_storage=evidence_storage,
             owner=owner,

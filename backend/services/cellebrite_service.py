@@ -239,23 +239,82 @@ def process_cellebrite_report(
 
         _, ingest_cellebrite_report = _import_cellebrite()
 
+        # Heartbeat: forwards per-batch progress from the writer into
+        # background_task_storage. update_task auto-bumps `updated_at`
+        # on every call, which feeds:
+        #   - the frontend's progress bar / "Processing N of M models"
+        #   - the stalled-task heuristic in BackgroundTasksPanel
+        #   - the startup watchdog (V3) — anything older than 5 min is
+        #     declared dead.
+        # The orchestrator already throttles to ~1 call/2s; no
+        # additional rate-limiting needed here.
+        def _heartbeat(payload: dict):
+            try:
+                background_task_storage.update_task(
+                    task_id,
+                    progress_total=payload.get("total") or 0,
+                    progress_completed=payload.get("completed") or 0,
+                    progress_failed=payload.get("failed") or 0,
+                )
+            except Exception as e:
+                _log(f"WARNING: heartbeat update failed: {e}")
+
         result = ingest_cellebrite_report(
             report_dir=folder_path,
             case_id=case_id,
             log_callback=_log,
             owner=owner,
             evidence_storage=evidence_storage,
+            progress_callback=_heartbeat,
         )
 
         if result.get("status") == "success":
-            background_task_storage.update_task(
-                task_id,
-                status=TaskStatus.COMPLETED.value,
-                completed_at=datetime.now().isoformat(),
-                progress_total=result.get("xml_model_count", 0),
-                progress_completed=result.get("total_nodes", 0),
-            )
-            _log(f"Cellebrite ingestion completed: {result.get('total_nodes', 0)} nodes created")
+            # Failure-rate threshold: if more than 5% of expected
+            # entities raised inside their handler, the task succeeded
+            # in name only. Mark it FAILED with the breakdown so the UI
+            # surfaces it loudly instead of looking green-and-good.
+            # Pre-2026-05-23 this was silent — users got a "completed"
+            # task and noticed missing data weeks later.
+            xml_total = result.get("xml_model_count") or 0
+            errors_total = result.get("write_errors_total") or 0
+            error_rate = (errors_total / xml_total) if xml_total else 0.0
+            FAILURE_THRESHOLD = 0.05
+
+            if error_rate > FAILURE_THRESHOLD:
+                breakdown = result.get("write_errors") or {}
+                top = ", ".join(
+                    f"{t}={c}" for t, c in
+                    sorted(breakdown.items(), key=lambda kv: -kv[1])[:5]
+                )
+                err_msg = (
+                    f"Ingestion completed but {errors_total} of {xml_total} "
+                    f"entities ({error_rate:.1%}) failed to write. Top: {top}. "
+                    "Check journalctl owl-backend for the per-entity warnings."
+                )
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.FAILED.value,
+                    completed_at=datetime.now().isoformat(),
+                    error=err_msg,
+                    progress_total=xml_total,
+                    progress_completed=result.get("total_nodes", 0),
+                    progress_failed=errors_total,
+                )
+                _log(f"Cellebrite ingestion DEGRADED: {err_msg}")
+            else:
+                background_task_storage.update_task(
+                    task_id,
+                    status=TaskStatus.COMPLETED.value,
+                    completed_at=datetime.now().isoformat(),
+                    progress_total=xml_total,
+                    progress_completed=result.get("total_nodes", 0),
+                    progress_failed=errors_total,
+                )
+                _log(
+                    f"Cellebrite ingestion completed: "
+                    f"{result.get('total_nodes', 0)} nodes, "
+                    f"{errors_total} write errors"
+                )
         else:
             background_task_storage.update_task(
                 task_id,

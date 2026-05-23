@@ -79,6 +79,39 @@ class BackgroundTaskStorage:
     def __init__(self) -> None:
         self._tasks: List[Dict] = _load_tasks()
         self._lock = RLock()  # Reentrant lock for thread-safe operations
+        # mtime of the on-disk file at the time we last loaded it.
+        # Read methods compare against the current file mtime and
+        # reload if another worker process has mutated since. Without
+        # this, each uvicorn worker serves a stale copy of the task
+        # list — a task created by worker A is invisible to read
+        # requests routed to workers B/C/D. Symptom: cellebrite ingest
+        # starts, task appears briefly in the panel, then "disappears"
+        # the next time the poll lands on a worker with a stale cache.
+        # Observed on case 43f1afb1 2026-05-23 13:42 UTC.
+        try:
+            self._mtime: float = TASK_FILE.stat().st_mtime
+        except OSError:
+            self._mtime = 0.0
+
+    def _refresh_if_stale(self) -> None:
+        """Reload `self._tasks` if the on-disk file has been mutated since
+        we last cached it (almost always by another uvicorn worker).
+        Cheap — single stat() call per read; file is local + small.
+        """
+        try:
+            current_mtime = TASK_FILE.stat().st_mtime
+        except OSError:
+            return
+        if current_mtime > self._mtime:
+            with self._lock:
+                # Re-check inside the lock to avoid duplicate reloads.
+                try:
+                    current_mtime = TASK_FILE.stat().st_mtime
+                except OSError:
+                    return
+                if current_mtime > self._mtime:
+                    self._tasks = _load_tasks()
+                    self._mtime = current_mtime
 
     @contextmanager
     def _file_locked(self):
@@ -92,6 +125,10 @@ class BackgroundTaskStorage:
                     yield fresh
                     _save_tasks(fresh)
                     self._tasks = fresh
+                    try:
+                        self._mtime = TASK_FILE.stat().st_mtime
+                    except OSError:
+                        pass
                 finally:
                     fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
@@ -99,6 +136,10 @@ class BackgroundTaskStorage:
         """Reload tasks from disk."""
         with self._lock:
             self._tasks = _load_tasks()
+            try:
+                self._mtime = TASK_FILE.stat().st_mtime
+            except OSError:
+                self._mtime = 0.0
 
     def _persist(self) -> None:
         _save_tasks(self._tasks)
@@ -156,6 +197,7 @@ class BackgroundTaskStorage:
 
     def get_task(self, task_id: str) -> Optional[Dict]:
         """Get a task by ID."""
+        self._refresh_if_stale()
         with self._lock:
             for task in self._tasks:
                 if task.get("id") == task_id:
@@ -270,6 +312,7 @@ class BackgroundTaskStorage:
         Returns:
             List of task dicts
         """
+        self._refresh_if_stale()
         with self._lock:
             tasks = self._tasks.copy()  # Copy to avoid modification during iteration
 

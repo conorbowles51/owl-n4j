@@ -118,8 +118,25 @@ function DocumentSummaryDisplay({ filename, caseId }) {
 }
 
 /**
+ * Format a seconds-based ETA as a short "Xh Ym" / "Ym Zs" / "Zs" string
+ * for display next to the progress bar. Anything under 5 seconds reads
+ * "almost done" so the number doesn't oscillate noisily at the tail.
+ */
+function formatEta(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  if (seconds < 5) return 'almost done';
+  const s = Math.round(seconds);
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h}h`;
+}
+
+/**
  * FileInfoViewer
- * 
+ *
  * Displays detailed information about selected files/folders:
  * - Upload dates
  * - Processed dates
@@ -299,11 +316,41 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
         );
 
         if (active) {
+          // Compute ETA from heartbeat data when both started_at and
+          // progress.completed > 0 — gives the user a "X minutes left"
+          // estimate instead of a slowly-creeping percentage.
+          // Pre-2026-05-23 there was no live progress at all so this
+          // was impossible; ingest_cellebrite_report now heartbeats
+          // every ~2 seconds with completed/total/failed.
+          const completed = active.progress?.completed || 0;
+          const total = active.progress?.total || 0;
+          const failed = active.progress?.failed || 0;
+          let etaSeconds = null;
+          if (active.started_at && completed > 0 && total > completed) {
+            // Backend writes naive ISO timestamps (no Z / no offset);
+            // server runs in UTC. JS parses naive strings as local
+            // time, so without the 'Z' suffix the ETA is wrong by
+            // the browser's TZ offset. See BackgroundTasksPanel for
+            // the full bug write-up.
+            const startedTs = active.started_at;
+            const hasTz = /(?:Z|[+\-]\d{2}:?\d{2})$/.test(startedTs);
+            const startedMs = new Date(hasTz ? startedTs : startedTs + 'Z').getTime();
+            const elapsedMs = Date.now() - startedMs;
+            if (elapsedMs > 0) {
+              const rate = completed / (elapsedMs / 1000);
+              if (rate > 0) {
+                etaSeconds = (total - completed) / rate;
+              }
+            }
+          }
           setCellebriteTask({
             id: active.id,
             status: active.status,
-            progress: active.progress?.completed || 0,
-            total: active.progress?.total || 0,
+            progress: completed,
+            total,
+            failed,
+            startedAt: active.started_at || null,
+            etaSeconds,
           });
         } else if (cellebriteTask && cellebriteTask.id) {
           // Task was being tracked but is now done
@@ -1066,7 +1113,9 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                       {cellebriteTask !== null ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          {cellebriteTask.status === 'pending' ? 'Starting...' : `Processing (${cellebriteTask.progress}/${cellebriteTask.total})`}
+                          {cellebriteTask.status === 'pending'
+                            ? 'Starting...'
+                            : `Processing ${cellebriteTask.progress.toLocaleString()}/${cellebriteTask.total.toLocaleString()}`}
                         </>
                       ) : (
                         <>
@@ -1077,12 +1126,27 @@ export default function FileInfoViewer({ selectedFiles, files, folderInfo, folde
                     </button>
 
                     {cellebriteTask !== null && cellebriteTask.status === 'running' && cellebriteTask.total > 0 && (
-                      <div className="w-full h-1.5 bg-light-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-500 transition-all"
-                          style={{ width: `${Math.min(100, (cellebriteTask.progress / cellebriteTask.total) * 100)}%` }}
-                        />
-                      </div>
+                      <>
+                        <div className="w-full h-1.5 bg-light-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-emerald-500 transition-all"
+                            style={{ width: `${Math.min(100, (cellebriteTask.progress / cellebriteTask.total) * 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-xs text-light-600 mt-1 flex items-center justify-between">
+                          <span>
+                            {((cellebriteTask.progress / cellebriteTask.total) * 100).toFixed(1)}%
+                            {cellebriteTask.etaSeconds != null && cellebriteTask.etaSeconds > 0 && (
+                              <> · ~{formatEta(cellebriteTask.etaSeconds)} left</>
+                            )}
+                          </span>
+                          {cellebriteTask.failed > 0 && (
+                            <span className="text-red-600 font-medium">
+                              {cellebriteTask.failed.toLocaleString()} write {cellebriteTask.failed === 1 ? 'error' : 'errors'}
+                            </span>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>

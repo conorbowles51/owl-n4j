@@ -77,7 +77,35 @@ class EvidenceStorage:
     def __init__(self) -> None:
         self._records: Dict[str, dict] = _load_evidence()
         self._lock = RLock()  # Reentrant lock for thread-safe operations
+        try:
+            self._mtime: float = STORAGE_FILE.stat().st_mtime
+        except OSError:
+            self._mtime = 0.0
         self._migrate_records()
+
+    def _refresh_if_stale(self) -> None:
+        """Reload `self._records` if the on-disk file has been mutated by
+        another uvicorn worker since we last cached. The _file_locked
+        write path covers writes; this is the corresponding read-side
+        guard so READS don't serve stale data from a worker that hasn't
+        mutated lately. See background_task_storage._refresh_if_stale —
+        same bug pattern: a record created by worker A is invisible to
+        reads routed to workers B/C/D until they happen to perform a
+        mutation themselves.
+        """
+        try:
+            current_mtime = STORAGE_FILE.stat().st_mtime
+        except OSError:
+            return
+        if current_mtime > self._mtime:
+            with self._lock:
+                try:
+                    current_mtime = STORAGE_FILE.stat().st_mtime
+                except OSError:
+                    return
+                if current_mtime > self._mtime:
+                    self._records = _load_evidence()
+                    self._mtime = current_mtime
 
     @contextmanager
     def _file_locked(self):
@@ -95,6 +123,10 @@ class EvidenceStorage:
                     yield fresh
                     _save_evidence(fresh)
                     self._records = fresh
+                    try:
+                        self._mtime = STORAGE_FILE.stat().st_mtime
+                    except OSError:
+                        pass
                 finally:
                     fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
@@ -132,23 +164,26 @@ class EvidenceStorage:
 
     def get_all(self) -> List[dict]:
         """Return all evidence records as a list."""
+        self._refresh_if_stale()
         with self._lock:
             return list(self._records.values())
 
     def get(self, evidence_id: str) -> Optional[dict]:
         """Get a single evidence record by id."""
+        self._refresh_if_stale()
         with self._lock:
             return self._records.get(evidence_id)
 
     # ------------- Query helpers -------------
 
-    def list_files(
+    def list_files(  # noqa: D401 — read path; calls _refresh_if_stale below
         self,
         case_id: Optional[str] = None,
         status: Optional[str] = None,
         owner: Optional[str] = None,
     ) -> List[dict]:
         """List evidence files, optionally filtered by case_id, status, and owner."""
+        self._refresh_if_stale()
         with self._lock:
             results = []
             for rec in self._records.values():
@@ -165,6 +200,7 @@ class EvidenceStorage:
 
     def find_by_hash(self, sha256: str) -> Optional[dict]:
         """Find first record matching a given hash."""
+        self._refresh_if_stale()
         with self._lock:
             for rec in self._records.values():
                 if rec.get("sha256") == sha256:
@@ -173,6 +209,7 @@ class EvidenceStorage:
 
     def find_all_by_hash(self, sha256: str) -> List[dict]:
         """Find all records matching a given hash."""
+        self._refresh_if_stale()
         with self._lock:
             results = []
             for rec in self._records.values():
@@ -285,6 +322,7 @@ class EvidenceStorage:
             return {}
         wanted = set(file_ids)
         out: Dict[str, dict] = {}
+        self._refresh_if_stale()
         with self._lock:
             for rec in self._records.values():
                 if rec.get("case_id") != case_id:
@@ -400,6 +438,7 @@ class EvidenceStorage:
     def get_tag_counts(self, case_id: str) -> List[Dict]:
         """Return a case-wide tag cloud sorted by usage."""
         counts: Dict[str, int] = {}
+        self._refresh_if_stale()
         with self._lock:
             for rec in self._records.values():
                 if rec.get("case_id") != case_id:
@@ -454,6 +493,7 @@ class EvidenceStorage:
     def list_by_entity(self, case_id: str, entity_id: str) -> List[Dict]:
         """All evidence records in a case that are linked to a given entity."""
         out: List[Dict] = []
+        self._refresh_if_stale()
         with self._lock:
             for rec in self._records.values():
                 if rec.get("case_id") != case_id:

@@ -58,6 +58,47 @@ async def lifespan(app: FastAPI):
 
     # Cases are now stored in PostgreSQL - no JSON file to reload
 
+    # Watchdog: any cellebrite_ingestion (or upload) task left in
+    # pending/running state by a previous backend instance that died
+    # mid-flight is now genuinely dead — the worker thread didn't
+    # survive the restart. Surface them as FAILED so the UI doesn't
+    # show "running forever" and so the advisory lock doesn't block
+    # legitimate retries. Threshold = 5 min of no heartbeat (the
+    # ingest heartbeats every ~2s during the write loop).
+    try:
+        from datetime import datetime, timedelta
+        from services.background_task_storage import background_task_storage, TaskStatus
+
+        now = datetime.now()
+        stale_threshold = timedelta(minutes=5)
+        rescued = 0
+        for status_filter in (TaskStatus.RUNNING.value, TaskStatus.PENDING.value):
+            for t in background_task_storage.list_tasks(status=status_filter, limit=500):
+                if t.get("task_type") not in ("cellebrite_ingestion", "file_upload"):
+                    continue
+                ts = (t.get("updated_at") or t.get("started_at")
+                      or t.get("created_at"))
+                try:
+                    ts_dt = datetime.fromisoformat(ts) if ts else None
+                except (ValueError, TypeError):
+                    ts_dt = None
+                # If we can't read the timestamp, treat as stale —
+                # safer than leaving an undead task blocking retries.
+                if ts_dt is None or (now - ts_dt) > stale_threshold:
+                    background_task_storage.update_task(
+                        t["id"],
+                        status=TaskStatus.FAILED.value,
+                        completed_at=now.isoformat(),
+                        error=("process died mid-ingest (backend restarted) — "
+                               "last heartbeat was "
+                               f"{(now - ts_dt) if ts_dt else 'unknown'} ago"),
+                    )
+                    rescued += 1
+        if rescued:
+            print(f"Watchdog: marked {rescued} stale task(s) as failed")
+    except Exception as e:
+        print(f"Warning: stalled-task watchdog failed: {e}")
+
     # Background task: clean up orphaned chunk upload cache entries
     cleanup_task = asyncio.create_task(_cleanup_stale_chunks())
 

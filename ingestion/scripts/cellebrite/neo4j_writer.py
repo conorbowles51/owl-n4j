@@ -15,6 +15,7 @@ All nodes get:
 import json
 import re
 import uuid
+from collections import Counter
 from typing import List, Dict, Optional, Set, Callable, Tuple  # noqa: F401
 
 from .models import ParsedModel, Party, CellebriteReport
@@ -228,6 +229,14 @@ class CellebriteNeo4jWriter:
         self.file_downloads_created = 0
         self.nodes_total = 0
         self.relationships_total = 0
+
+        # Per-model-type failure counter — populated when a handler
+        # raises inside `write_batch`. Exposed via `get_stats()` so the
+        # orchestrator can fail the task if too many entities are lost.
+        # Pre-2026-05-23 the writer swallowed these silently into a log
+        # warning and the task still showed `completed` — users had
+        # data missing with no UI indication. Now visible.
+        self.write_errors: Counter = Counter()
 
         # Phone owner identity (populated during first pass)
         self._phone_owner_key: Optional[str] = None
@@ -646,6 +655,15 @@ class CellebriteNeo4jWriter:
             "key": self.report_key,
             "name": self.report.report_name,
             "case_id": self.case_id,
+            # The PhoneReport tags ITSELF with its report_key so the
+            # standard "wipe everything for this report" filter
+            # (case_id + cellebrite_report_key) matches the parent
+            # node too. Pre-2026-05-23 only its children carried this
+            # prop, leaving the PhoneReport node orphaned after a wipe
+            # — which then triggered a false "duplicate phone in this
+            # case" 409 on the next ingest. See 2026-05-23 wipe-and-
+            # re-ingest sequence in WORKING.md.
+            "cellebrite_report_key": self.report_key,
             "source_type": "cellebrite_ufed",
             "report_version": self.report.report_version,
             "extraction_type": self.report.extraction_type,
@@ -710,13 +728,21 @@ class CellebriteNeo4jWriter:
     # ------------------------------------------------------------------
 
     def write_batch(self, models: List[ParsedModel]):
-        """Write a batch of parsed models to Neo4j."""
+        """Write a batch of parsed models to Neo4j.
+
+        Per-entity errors are caught and counted (not re-raised) — a
+        single malformed model shouldn't tear down the whole ingest.
+        The counter is exposed via `get_stats()['write_errors']` and the
+        orchestrator decides whether to fail the task based on the
+        failure rate.
+        """
         for model in models:
             try:
                 handler = self._get_handler(model.model_type)
                 if handler:
                     handler(model)
             except Exception as e:
+                self.write_errors[model.model_type or "unknown"] += 1
                 self._log(f"WARNING: Error writing {model.model_type} ({model.model_id[:8]}): {e}")
 
     def _get_handler(self, model_type: str):
@@ -2193,6 +2219,12 @@ class CellebriteNeo4jWriter:
             "total_nodes": self.nodes_total,
             "total_relationships": self.relationships_total,
             "phone_owner": self._phone_owner_key,
+            # Per-type write failure counts. {} on a clean run; non-empty
+            # means at least one handler raised. Orchestrator surfaces
+            # the total via task.progress.failed and fails the task if
+            # the rate exceeds the threshold (see cellebrite_service).
+            "write_errors": dict(self.write_errors),
+            "write_errors_total": sum(self.write_errors.values()),
         }
 
     def link_all_to_report(self) -> int:
