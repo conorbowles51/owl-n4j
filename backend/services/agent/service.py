@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from models.llm_models import get_model_by_id
 from postgres.models.agent import AgentThread
+from postgres.models.cost_record import CostRecord
 from postgres.models.cost_record import CostJobType
 from postgres.models.user import User
 from services.agent.cancellation import clear_cancel, is_cancelled, request_cancel
@@ -15,6 +16,8 @@ from services.agent.exports import AgentArtifactExport, AgentExportFormat, rende
 from services.agent.graph import AgentGraphRunner, AgentRunCancelled
 from services.agent.schemas import (
     AgentArtifact,
+    AgentClarification,
+    AgentClarificationOption,
     AgentCost,
     AgentMessageRequest,
     AgentMessageResponse,
@@ -28,6 +31,7 @@ from services.agent.schemas import (
 import services.agent.storage as storage
 from services.ai_costs_service import CostOperationKind, record_cost
 from services.case_service import check_case_access
+from services.system_log_service import LogOrigin, LogType, system_log_service
 
 
 class AgentService:
@@ -72,6 +76,13 @@ class AgentService:
         db.refresh(run)
 
         run_id = str(run.id)
+        self._log_agent_event(
+            db,
+            action="agent_run_started",
+            user=user,
+            run=run,
+            details={"thread_id": str(thread.id), "streaming": True},
+        )
         yield {
             "type": "run_started",
             "thread_id": str(thread.id),
@@ -108,7 +119,15 @@ class AgentService:
             if final_result is None:
                 raise ValueError("Agent run did not produce a final result")
 
+            runner_clarification = self._clarification_from_runner(
+                final_result.get("clarification"),
+                thread_id=str(thread.id),
+                run_id=str(run.id),
+                original_message=request.message,
+            )
             answer = (final_result.get("answer") or "").strip()
+            if runner_clarification:
+                answer = runner_clarification.question
             if not answer:
                 answer = "I could not produce an answer from the available case data."
 
@@ -125,13 +144,23 @@ class AgentService:
             )
 
             tool_trace = final_result.get("tool_trace") or []
-            artifacts = (final_result.get("artifacts") or [])[:5]
-            artifact_records = storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
+            artifacts = self._with_refinement_metadata(
+                (final_result.get("artifacts") or [])[:5],
+                request_message=request.message,
+                thread=thread,
+            )
+            artifact_records = [] if runner_clarification else storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
             storage.persist_tool_trace(db, run=run, trace=tool_trace)
+            if runner_clarification:
+                storage.update_run_metadata(
+                    db,
+                    run=run,
+                    metadata={"clarification": runner_clarification.model_dump(mode="json")},
+                )
             storage.finish_run(
                 db,
                 run=run,
-                status="completed",
+                status="clarification_required" if runner_clarification else "completed",
                 final_answer=answer,
                 usage=usage,
             )
@@ -152,6 +181,19 @@ class AgentService:
                     }
                     for item in tool_trace
                 ],
+            )
+            self._log_agent_event(
+                db,
+                action="agent_clarification_requested" if runner_clarification else "agent_run_completed",
+                user=user,
+                run=run,
+                details={
+                    "tool_count": len(tool_trace),
+                    "artifact_count": len(artifact_records),
+                    "artifact_types": [record.type for record in artifact_records],
+                    "streaming": True,
+                    "question": runner_clarification.question if runner_clarification else None,
+                },
             )
             db.commit()
             db.refresh(run)
@@ -180,7 +222,8 @@ class AgentService:
                 )
                 if cost_record
                 else None,
-                status="completed",
+                clarification=runner_clarification,
+                status="clarification_required" if runner_clarification else "completed",
             )
             clear_cancel(run_id)
             yield {"type": "done", "response": response.model_dump(mode="json")}
@@ -188,6 +231,14 @@ class AgentService:
             db.rollback()
             run = db.merge(run)
             storage.finish_run(db, run=run, status="cancelled", error=str(exc))
+            self._log_agent_event(
+                db,
+                action="agent_run_cancelled",
+                user=user,
+                run=run,
+                success=False,
+                error=str(exc),
+            )
             db.commit()
             clear_cancel(run_id)
             yield {
@@ -201,6 +252,15 @@ class AgentService:
             try:
                 run = db.merge(run)
                 storage.finish_run(db, run=run, status="failed", error=str(exc))
+                self._log_agent_event(
+                    db,
+                    action="agent_run_failed",
+                    user=user,
+                    run=run,
+                    success=False,
+                    error=str(exc),
+                    details={"streaming": True},
+                )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -251,6 +311,13 @@ class AgentService:
             extra_metadata={"artifact_preference": request.artifact_preference},
         )
         db.flush()
+        self._log_agent_event(
+            db,
+            action="agent_run_started",
+            user=user,
+            run=run,
+            details={"thread_id": str(thread.id), "streaming": False},
+        )
 
         history = self._build_history(db, thread=thread)
         runner = AgentGraphRunner(provider=provider, model_id=model.id)
@@ -263,7 +330,15 @@ class AgentService:
                 max_tool_calls=12,
                 thread_id=str(thread.id),
             )
+            runner_clarification = self._clarification_from_runner(
+                result.get("clarification"),
+                thread_id=str(thread.id),
+                run_id=str(run.id),
+                original_message=request.message,
+            )
             answer = (result.get("answer") or "").strip()
+            if runner_clarification:
+                answer = runner_clarification.question
             if not answer:
                 answer = "I could not produce an answer from the available case data."
 
@@ -280,13 +355,23 @@ class AgentService:
             )
 
             tool_trace = result.get("tool_trace") or []
-            artifacts = (result.get("artifacts") or [])[:5]
-            artifact_records = storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
+            artifacts = self._with_refinement_metadata(
+                (result.get("artifacts") or [])[:5],
+                request_message=request.message,
+                thread=thread,
+            )
+            artifact_records = [] if runner_clarification else storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
             storage.persist_tool_trace(db, run=run, trace=tool_trace)
+            if runner_clarification:
+                storage.update_run_metadata(
+                    db,
+                    run=run,
+                    metadata={"clarification": runner_clarification.model_dump(mode="json")},
+                )
             storage.finish_run(
                 db,
                 run=run,
-                status="completed",
+                status="clarification_required" if runner_clarification else "completed",
                 final_answer=answer,
                 usage=usage,
             )
@@ -312,6 +397,19 @@ class AgentService:
                     ],
                 )
 
+            self._log_agent_event(
+                db,
+                action="agent_clarification_requested" if runner_clarification else "agent_run_completed",
+                user=user,
+                run=run,
+                details={
+                    "tool_count": len(tool_trace),
+                    "artifact_count": len(artifact_records),
+                    "artifact_types": [record.type for record in artifact_records],
+                    "streaming": False,
+                    "question": runner_clarification.question if runner_clarification else None,
+                },
+            )
             db.commit()
             db.refresh(thread)
             db.refresh(run)
@@ -339,7 +437,8 @@ class AgentService:
                 )
                 if cost_record
                 else None,
-                status="completed",
+                clarification=runner_clarification,
+                status="clarification_required" if runner_clarification else "completed",
             )
         except Exception as exc:
             db.rollback()
@@ -357,6 +456,15 @@ class AgentService:
                     extra_metadata={"artifact_preference": request.artifact_preference},
                 )
                 storage.finish_run(db, run=failed_run, status="failed", error=str(exc))
+                self._log_agent_event(
+                    db,
+                    action="agent_run_failed",
+                    user=user,
+                    run=failed_run,
+                    success=False,
+                    error=str(exc),
+                    details={"streaming": False},
+                )
                 db.commit()
             except Exception:
                 db.rollback()
@@ -370,6 +478,14 @@ class AgentService:
                 db,
                 run=run,
                 status="cancelled",
+                error="Cancellation requested by user",
+            )
+            self._log_agent_event(
+                db,
+                action="agent_run_cancelled",
+                user=user,
+                run=run,
+                success=False,
                 error="Cancellation requested by user",
             )
             db.commit()
@@ -391,6 +507,36 @@ class AgentService:
     def get_run(self, *, db: Session, user: User, run_id: UUID) -> AgentRunDetail:
         return storage.get_run_detail(db, run_id=run_id, user=user)
 
+    def get_cost_summary(self, *, db: Session, user: User) -> dict[str, Any]:
+        records = (
+            db.query(CostRecord)
+            .filter(CostRecord.job_type == CostJobType.AI_ASSISTANT.value)
+            .filter(CostRecord.user_id == user.id)
+            .all()
+        )
+        agent_records = [
+            record
+            for record in records
+            if isinstance(record.extra_metadata, dict) and record.extra_metadata.get("agent")
+        ]
+        linked = [record for record in agent_records if record.agent_run_id is not None]
+        orphaned = [record for record in agent_records if record.agent_run_id is None]
+
+        def summarize(rows: list[CostRecord]) -> dict[str, Any]:
+            return {
+                "records": len(rows),
+                "usd": round(sum(float(record.cost_usd or 0) for record in rows), 6),
+                "prompt_tokens": sum(record.prompt_tokens or 0 for record in rows),
+                "completion_tokens": sum(record.completion_tokens or 0 for record in rows),
+                "total_tokens": sum(record.total_tokens or 0 for record in rows),
+            }
+
+        return {
+            "agent": summarize(agent_records),
+            "linked_runs": summarize(linked),
+            "orphaned_runs": summarize(orphaned),
+        }
+
     def export_artifact(
         self,
         *,
@@ -400,7 +546,16 @@ class AgentService:
         export_format: AgentExportFormat,
     ) -> AgentArtifactExport:
         artifact = storage.get_artifact_for_user(db, artifact_id=artifact_id, user=user)
-        return render_artifact_export(artifact, export_format)
+        exported = render_artifact_export(artifact, export_format)
+        self._log_agent_event(
+            db,
+            action="agent_artifact_exported",
+            user=user,
+            run=artifact.run,
+            details={"artifact_id": str(artifact.id), "artifact_type": artifact.type, "format": export_format},
+        )
+        db.commit()
+        return exported
 
     def _resolve_thread(self, db: Session, *, user: User, request: AgentMessageRequest) -> AgentThread:
         if request.thread_id:
@@ -467,6 +622,7 @@ class AgentService:
             total_tokens=usage.get("total_tokens"),
             case_id=request.case_id,
             user_id=user.id,
+            agent_run_id=run_id,
             description=f"AI Agent Query: {request.message[:100]}",
             extra_metadata={
                 "agent": True,
@@ -474,6 +630,107 @@ class AgentService:
                 "run_id": str(run_id),
                 "artifact_preference": request.artifact_preference,
             },
+        )
+
+    @staticmethod
+    def _clarification_from_runner(
+        payload: dict[str, Any] | None,
+        *,
+        thread_id: str,
+        run_id: str,
+        original_message: str,
+    ) -> AgentClarification | None:
+        if not isinstance(payload, dict):
+            return None
+        options = payload.get("options")
+        if not isinstance(options, list) or len(options) < 2:
+            return None
+        normalized_options = [
+            AgentClarificationOption(
+                id=str(option.get("id") or f"option_{index}"),
+                label=str(option.get("label") or option.get("id") or f"Option {index}"),
+                description=option.get("description"),
+            )
+            for index, option in enumerate(options[:4], start=1)
+            if isinstance(option, dict)
+        ]
+        if len(normalized_options) < 2:
+            return None
+        return AgentClarification(
+            question=str(payload.get("question") or "Can you clarify how you want me to proceed?"),
+            options=normalized_options,
+            allow_free_text=bool(payload.get("allow_free_text", True)),
+            pending_run_id=run_id,
+            thread_id=thread_id,
+            original_message=original_message,
+            context=payload.get("context") if isinstance(payload.get("context"), dict) else {},
+        )
+
+    @staticmethod
+    def _with_refinement_metadata(
+        artifacts: list[dict[str, Any]],
+        *,
+        request_message: str,
+        thread: AgentThread,
+    ) -> list[dict[str, Any]]:
+        normalized = request_message.lower()
+        refinement_terms = (
+            "add ",
+            "remove ",
+            "only ",
+            "instead",
+            "update",
+            "refine",
+            "expand",
+            "narrow",
+            "center",
+            "centred",
+            "centered",
+        )
+        if not artifacts or not any(term in normalized for term in refinement_terms):
+            return artifacts
+        previous_artifacts = sorted(thread.artifacts, key=lambda item: item.created_at or item.id)
+        if not previous_artifacts:
+            return artifacts
+        source = previous_artifacts[-1]
+        enriched: list[dict[str, Any]] = []
+        for artifact in artifacts:
+            metadata = dict(artifact.get("metadata") or {})
+            metadata.setdefault("refinement", True)
+            metadata.setdefault("source_artifact_id", str(source.id))
+            metadata.setdefault("source_artifact_type", source.type)
+            metadata.setdefault("source_artifact_title", source.title)
+            metadata.setdefault("refinement_request", request_message[:500])
+            enriched.append({**artifact, "metadata": metadata})
+        return enriched
+
+    @staticmethod
+    def _log_agent_event(
+        db: Session,
+        *,
+        action: str,
+        user: User,
+        run,
+        success: bool = True,
+        error: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        payload = {
+            "run_id": str(run.id),
+            "thread_id": str(run.thread_id),
+            "case_id": str(run.case_id),
+            "status": run.status,
+            **(details or {}),
+        }
+        system_log_service.log(
+            LogType.AI_ASSISTANT,
+            LogOrigin.BACKEND,
+            action,
+            details=payload,
+            user=user.email,
+            success=success,
+            error=error,
+            db=db,
         )
 
 

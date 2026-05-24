@@ -24,6 +24,22 @@ export interface AgentToolTraceItem {
   error?: string | null
 }
 
+export interface AgentClarificationOption {
+  id: string
+  label: string
+  description?: string | null
+}
+
+export interface AgentClarification {
+  question: string
+  options: AgentClarificationOption[]
+  allow_free_text: boolean
+  pending_run_id: string
+  thread_id: string
+  original_message: string
+  context: Record<string, unknown>
+}
+
 export interface AgentCost {
   usd: number
   prompt_tokens?: number | null
@@ -49,7 +65,8 @@ export interface AgentMessageResponse {
   tool_trace: AgentToolTraceItem[]
   model_info: AgentModelInfo
   cost?: AgentCost | null
-  status: "running" | "completed" | "failed" | "cancelled"
+  clarification?: AgentClarification | null
+  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required"
   created_at: string
 }
 
@@ -83,6 +100,10 @@ export type AgentStreamEvent =
       artifact: AgentArtifact
     }
   | {
+      type: "clarification"
+      clarification: AgentClarification
+    }
+  | {
       type: "assistant_draft"
       answer: string
     }
@@ -110,7 +131,7 @@ export type AgentStreamEvent =
 export interface AgentRunStatus {
   run_id: string
   thread_id: string
-  status: "running" | "completed" | "failed" | "cancelled"
+  status: "running" | "completed" | "failed" | "cancelled" | "clarification_required"
   error?: string | null
   completed_at?: string | null
 }
@@ -136,6 +157,7 @@ export interface AgentStoredMessage {
   model_id?: string | null
   artifact_ids: string[]
   tool_trace_summary: Array<Record<string, unknown>>
+  clarification?: AgentClarification | null
   created_at: string
 }
 
@@ -148,6 +170,7 @@ export interface AgentClientMessage {
   id: string
   role: "user" | "assistant"
   content: string
+  clarification?: AgentClarification | null
   pending?: boolean
   createdAt?: string
 }

@@ -53,6 +53,7 @@ class AgentState(TypedDict, total=False):
     tool_trace: Annotated[list[dict[str, Any]], operator.add]
     tool_results: Annotated[dict[str, Any], _merge_dict]
     artifacts: Annotated[list[dict[str, Any]], operator.add]
+    clarifications: Annotated[list[dict[str, Any]], operator.add]
     final_answer: str
 
 
@@ -101,8 +102,15 @@ Your job:
 - Search documents when the answer needs source text, document excerpts, or semantic context.
 - Use run_readonly_cypher for precise graph questions that need counts, filters, paths, or custom tables.
 - If the user asks for a graph, timeline, map, table, or financial view, build the matching artifact.
+- For graph requests, choose the narrowest graph mode that matches the user's words:
+  transaction_only for only Transaction nodes, transactions_plus_accounts for transaction nodes and accounts,
+  transaction_flow for money-flow context, shortest_paths for connective tissue between named nodes,
+  entity_neighborhood for normal entity expansion.
+- If the graph request is ambiguous and the difference changes meaning, ask a clarifying question before building.
+- Use request_clarification with 2-4 options when you need the user to choose a scope before continuing.
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
 - Create one artifact for a normal request. Create more than one only when the user explicitly asks for multiple views.
+- Treat follow-ups like "add emails too", "remove non-transaction nodes", "expand it", or "center this node" as refinements of the previous artifact in the thread.
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
@@ -112,8 +120,15 @@ Artifact preference from the UI: {state.get("artifact_preference", "auto")}.
 
 Cypher safety rules:
 - Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.
-- Include $case_id in every Cypher query.
+- Scope actual nodes or relationships with .case_id = $case_id in every Cypher query.
+- Do not use fake scoping like WHERE $case_id IS NOT NULL.
+- Use Neo4j syntax: RETURN ... ORDER BY ... LIMIT 50. Do not use NULLS FIRST/LAST.
+- Use literal numeric LIMIT values, not LIMIT $limit.
 - Never use CREATE, MERGE, SET, DELETE, REMOVE, DROP, CALL, LOAD, or admin commands.
+
+Common labels: Person, Organization, Account, Transaction, Communication, Event, Location, LegalAction, Other.
+Common relationship types include SENT_PAYMENT, RECEIVED_PAYMENT, VIA_ACCOUNT, HELD_BY, HELD_AT_BANK,
+COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER_OF, TRANSFERRED_TO.
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
@@ -128,6 +143,7 @@ Cypher safety rules:
             tool_messages: list[ToolMessage] = []
             trace: list[dict[str, Any]] = []
             artifacts: list[dict[str, Any]] = []
+            clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
 
             for tool_call in tool_calls:
@@ -144,6 +160,8 @@ Cypher safety rules:
                         raise ValueError(f"Unknown tool: {name}")
                     raw = tools_by_name[name].invoke(args)
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
+                    status = str(output.get("status") or "success")
+                    error = output.get("error")
                 except Exception as exc:
                     status = "error"
                     error = str(exc)
@@ -157,6 +175,9 @@ Cypher safety rules:
                 artifact = output.get("artifact")
                 if isinstance(artifact, dict):
                     artifacts.append(to_jsonable(artifact))
+                clarification = output.get("clarification")
+                if isinstance(clarification, dict):
+                    clarifications.append(to_jsonable(clarification))
 
                 summary = str(output.get("summary") or "")
                 trace.append(
@@ -164,7 +185,7 @@ Cypher safety rules:
                         "id": call_id,
                         "name": name or "unknown",
                         "arguments": to_jsonable(args),
-                        "status": status,
+                        "status": "error" if status == "error" else "success",
                         "duration_ms": duration_ms,
                         "summary": summary,
                         "result_id": result_id,
@@ -194,6 +215,7 @@ Cypher safety rules:
                 "messages": tool_messages,
                 "tool_trace": trace,
                 "artifacts": artifacts,
+                "clarifications": clarifications,
                 "tool_results": tool_results,
                 "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
             }
@@ -245,6 +267,7 @@ Cypher safety rules:
                 "tool_trace": [],
                 "tool_results": {},
                 "artifacts": [],
+                "clarifications": [],
             },
             config={"configurable": {"thread_id": thread_id or f"agent_{uuid.uuid4().hex}"}},
         )
@@ -252,6 +275,7 @@ Cypher safety rules:
         return {
             "answer": result.get("final_answer") or "",
             "artifacts": result.get("artifacts") or [],
+            "clarification": (result.get("clarifications") or [None])[-1],
             "tool_trace": result.get("tool_trace") or [],
             "messages": result.get("messages") or [],
             "usage": self._extract_usage(result.get("messages") or []),
@@ -286,8 +310,15 @@ Your job:
 - Search documents when the answer needs source text, document excerpts, or semantic context.
 - Use run_readonly_cypher for precise graph questions that need counts, filters, paths, or custom tables.
 - If the user asks for a graph, timeline, map, table, or financial view, build the matching artifact.
+- For graph requests, choose the narrowest graph mode that matches the user's words:
+  transaction_only for only Transaction nodes, transactions_plus_accounts for transaction nodes and accounts,
+  transaction_flow for money-flow context, shortest_paths for connective tissue between named nodes,
+  entity_neighborhood for normal entity expansion.
+- If the graph request is ambiguous and the difference changes meaning, ask a clarifying question before building.
+- Use request_clarification with 2-4 options when you need the user to choose a scope before continuing.
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
 - Create one artifact for a normal request. Create more than one only when the user explicitly asks for multiple views.
+- Treat follow-ups like "add emails too", "remove non-transaction nodes", "expand it", or "center this node" as refinements of the previous artifact in the thread.
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
@@ -297,8 +328,15 @@ Artifact preference from the UI: {state.get("artifact_preference", "auto")}.
 
 Cypher safety rules:
 - Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.
-- Include $case_id in every Cypher query.
+- Scope actual nodes or relationships with .case_id = $case_id in every Cypher query.
+- Do not use fake scoping like WHERE $case_id IS NOT NULL.
+- Use Neo4j syntax: RETURN ... ORDER BY ... LIMIT 50. Do not use NULLS FIRST/LAST.
+- Use literal numeric LIMIT values, not LIMIT $limit.
 - Never use CREATE, MERGE, SET, DELETE, REMOVE, DROP, CALL, LOAD, or admin commands.
+
+Common labels: Person, Organization, Account, Transaction, Communication, Event, Location, LegalAction, Other.
+Common relationship types include SENT_PAYMENT, RECEIVED_PAYMENT, VIA_ACCOUNT, HELD_BY, HELD_AT_BANK,
+COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER_OF, TRANSFERRED_TO.
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
@@ -315,6 +353,7 @@ Cypher safety rules:
             tool_messages: list[ToolMessage] = []
             trace: list[dict[str, Any]] = []
             artifacts: list[dict[str, Any]] = []
+            clarifications: list[dict[str, Any]] = []
             tool_results: dict[str, Any] = {}
 
             for tool_call in tool_calls:
@@ -333,6 +372,8 @@ Cypher safety rules:
                         raise ValueError(f"Unknown tool: {name}")
                     raw = tools_by_name[name].invoke(args)
                     output = raw if isinstance(raw, dict) else {"summary": str(raw), "data": raw}
+                    status = str(output.get("status") or "success")
+                    error = output.get("error")
                 except Exception as exc:
                     status = "error"
                     error = str(exc)
@@ -346,6 +387,9 @@ Cypher safety rules:
                 artifact = output.get("artifact")
                 if isinstance(artifact, dict):
                     artifacts.append(to_jsonable(artifact))
+                clarification = output.get("clarification")
+                if isinstance(clarification, dict):
+                    clarifications.append(to_jsonable(clarification))
 
                 summary = str(output.get("summary") or "")
                 trace.append(
@@ -353,7 +397,7 @@ Cypher safety rules:
                         "id": call_id,
                         "name": name or "unknown",
                         "arguments": to_jsonable(args),
-                        "status": status,
+                        "status": "error" if status == "error" else "success",
                         "duration_ms": duration_ms,
                         "summary": summary,
                         "result_id": result_id,
@@ -383,6 +427,7 @@ Cypher safety rules:
                 "messages": tool_messages,
                 "tool_trace": trace,
                 "artifacts": artifacts,
+                "clarifications": clarifications,
                 "tool_results": tool_results,
                 "tool_iterations": int(state.get("tool_iterations") or 0) + len(tool_calls),
             }
@@ -437,11 +482,13 @@ Cypher safety rules:
             "tool_trace": [],
             "tool_results": {},
             "artifacts": [],
+            "clarifications": [],
         }
         config = {"configurable": {"thread_id": thread_id or f"agent_{uuid.uuid4().hex}"}}
         collected_messages: list[AnyMessage] = []
         collected_trace: list[dict[str, Any]] = []
         collected_artifacts: list[dict[str, Any]] = []
+        collected_clarifications: list[dict[str, Any]] = []
         final_answer = ""
 
         yield {"type": "status", "stage": "reasoning", "message": "Thinking through the request"}
@@ -476,12 +523,16 @@ Cypher safety rules:
                 collected_messages.extend(tool_messages)
                 trace = tools_update.get("tool_trace") or []
                 artifacts = tools_update.get("artifacts") or []
+                clarifications = tools_update.get("clarifications") or []
                 collected_trace.extend(trace)
                 collected_artifacts.extend(artifacts)
+                collected_clarifications.extend(clarifications)
                 for item in trace:
                     yield {"type": "tool_result", "tool": item}
                 for artifact in artifacts:
                     yield {"type": "artifact", "artifact": artifact}
+                for clarification in clarifications:
+                    yield {"type": "clarification", "clarification": clarification}
 
             finalize_update = update.get("finalize")
             if finalize_update:
@@ -494,6 +545,7 @@ Cypher safety rules:
         result = {
             "answer": final_answer,
             "artifacts": collected_artifacts,
+            "clarification": (collected_clarifications or [None])[-1],
             "tool_trace": collected_trace,
             "messages": collected_messages,
             "usage": self._extract_usage(collected_messages),

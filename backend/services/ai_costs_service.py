@@ -192,6 +192,7 @@ def record_cost(
     duration_seconds: float | None = None,
     case_id: uuid.UUID | None = None,
     user_id: uuid.UUID | None = None,
+    agent_run_id: uuid.UUID | None = None,
     engine_job_id: str | None = None,
     evidence_file_id: uuid.UUID | None = None,
     description: str | None = None,
@@ -229,6 +230,7 @@ def record_cost(
         pricing_version=rate.pricing_version if rate else None,
         case_id=case_id,
         user_id=user_id,
+        agent_run_id=agent_run_id,
         description=description,
         extra_metadata=payload or None,
     )

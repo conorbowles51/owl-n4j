@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from postgres.models.user import User
 from postgres.session import get_db
 from routers.users import get_current_db_user
-from services import neo4j_service
+from services.neo4j_service import neo4j_service
 from services.case_service import CaseAccessDenied, CaseNotFound, check_case_access
 from services.financial_export_service import render_financial_export
 

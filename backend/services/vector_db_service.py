@@ -490,18 +490,47 @@ class VectorDBService:
 
 # Lazy singleton instance - only create when accessed
 _vector_db_service = None
+_vector_db_last_error = None
 
 def get_vector_db_service():
     """Get or create the vector DB service singleton (lazy initialization)."""
-    global _vector_db_service
+    global _vector_db_service, _vector_db_last_error
     if _vector_db_service is None:
         try:
             _vector_db_service = VectorDBService()
+            _vector_db_last_error = None
         except ImportError as e:
             # If ChromaDB can't be imported (e.g., Python 3.14 compatibility), return None
+            _vector_db_last_error = str(e)
             print(f"Warning: VectorDBService unavailable: {e}")
             return None
+        except Exception as e:
+            _vector_db_last_error = f"{type(e).__name__}: {e}"
+            print(f"Warning: VectorDBService unavailable: {_vector_db_last_error}")
+            return None
     return _vector_db_service
+
+
+def get_vector_db_health() -> dict:
+    """Return explicit vector-search health for Agent tools and admin surfaces."""
+    service = get_vector_db_service()
+    if service is None:
+        return {
+            "available": False,
+            "reason": _vector_db_last_error or "VectorDBService is not initialized.",
+            "chunks_healthy": False,
+            "entities_healthy": False,
+            "chunk_count": 0,
+            "entity_count": 0,
+        }
+    return {
+        "available": True,
+        "reason": None,
+        "chunks_healthy": bool(getattr(service, "_chunks_healthy", False)),
+        "entities_healthy": bool(getattr(service, "_entities_healthy", False)),
+        "chunk_count": service.count_chunks(),
+        "entity_count": service.count_entities(),
+    }
 
 # For backwards compatibility, try to create instance but handle errors gracefully
 # This will fail on Python 3.14 due to ChromaDB's Pydantic v1 incompatibility
@@ -522,4 +551,5 @@ except Exception as e:
     else:
         print(f"Warning: Could not initialize VectorDBService: {error_type}: {error_msg}")
         print("   Vector search will be disabled.")
+    _vector_db_last_error = f"{error_type}: {error_msg}"
     vector_db_service = None

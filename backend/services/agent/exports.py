@@ -85,6 +85,9 @@ def _columns_for_artifact(
             "type",
             "summary",
             "notes",
+            "source",
+            "source_filename",
+            "source_page",
             "key",
             "amount",
         ],
@@ -102,6 +105,8 @@ def _columns_for_artifact(
             "counterparty_details",
             "summary",
             "source",
+            "source_filename",
+            "source_page",
             "key",
         ],
         "map": [
@@ -123,9 +128,16 @@ def _columns_for_artifact(
             "summary",
             "date",
             "amount",
+            "properties.date",
+            "properties.amount",
+            "properties.currency",
+            "properties.detail",
+            "properties.source_files",
         ],
     }
-    return _dedupe([*preferred.get(artifact_type, []), *_flattened_keys(rows)])
+    if artifact_type in preferred:
+        return _dedupe([*preferred[artifact_type], *[key for key in _flattened_keys(rows) if key in preferred[artifact_type]]])
+    return _dedupe(_flattened_keys(rows))
 
 
 def _graph_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:

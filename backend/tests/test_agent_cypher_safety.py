@@ -30,6 +30,27 @@ class AgentCypherSafetyTests(unittest.TestCase):
 
         self.assertTrue(query.endswith("LIMIT 50"))
 
+    def test_replaces_parameterized_limit_with_numeric_cap(self):
+        query = validate_readonly_cypher(
+            "MATCH (n {case_id: $case_id}) RETURN n LIMIT $limit",
+            limit=25,
+        )
+
+        self.assertTrue(query.endswith("LIMIT 25"))
+        self.assertNotIn("$limit", query)
+
+    def test_rejects_fake_case_scope(self):
+        with self.assertRaises(UnsafeCypherError):
+            validate_readonly_cypher(
+                "MATCH (n) WHERE $case_id IS NOT NULL RETURN n",
+            )
+
+    def test_rejects_unsupported_null_ordering(self):
+        with self.assertRaises(UnsafeCypherError):
+            validate_readonly_cypher(
+                "MATCH (n {case_id: $case_id}) RETURN n ORDER BY n.date NULLS LAST",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

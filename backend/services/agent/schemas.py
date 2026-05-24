@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 AgentArtifactType = Literal["graph", "timeline", "table", "map", "financial"]
 AgentToolStatus = Literal["success", "error"]
-AgentRunStatus = Literal["running", "completed", "failed", "cancelled"]
+AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required"]
 AgentArtifactPreference = Literal[
     "auto",
     "none",
@@ -78,6 +78,22 @@ class AgentToolTraceItem(BaseModel):
     error: str | None = None
 
 
+class AgentClarificationOption(BaseModel):
+    id: str
+    label: str
+    description: str | None = None
+
+
+class AgentClarification(BaseModel):
+    question: str
+    options: list[AgentClarificationOption] = Field(default_factory=list)
+    allow_free_text: bool = True
+    pending_run_id: str
+    thread_id: str
+    original_message: str
+    context: dict[str, Any] = Field(default_factory=dict)
+
+
 class AgentMessageResponse(BaseModel):
     thread_id: str
     run_id: str
@@ -88,6 +104,7 @@ class AgentMessageResponse(BaseModel):
     tool_trace: list[AgentToolTraceItem] = Field(default_factory=list)
     model_info: AgentModelInfo
     cost: AgentCost | None = None
+    clarification: AgentClarification | None = None
     status: AgentRunStatus
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -136,6 +153,7 @@ class AgentStoredMessage(BaseModel):
     model_id: str | None = None
     artifact_ids: list[str] = Field(default_factory=list)
     tool_trace_summary: list[dict[str, Any]] = Field(default_factory=list)
+    clarification: AgentClarification | None = None
     created_at: datetime
 
 

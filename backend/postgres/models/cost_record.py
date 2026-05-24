@@ -49,6 +49,13 @@ class CostRecord(Base, TimestampMixin):
         index=True,
     )
 
+    agent_run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("agent_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     # Model information
     provider: Mapped[str] = mapped_column(String(50), nullable=False)  # "openai" or "ollama"
     model_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
@@ -79,3 +86,4 @@ class CostRecord(Base, TimestampMixin):
     # Relationships
     case = relationship("Case", foreign_keys=[case_id])
     user = relationship("User", foreign_keys=[user_id])
+    agent_run = relationship("AgentRun", foreign_keys=[agent_run_id])

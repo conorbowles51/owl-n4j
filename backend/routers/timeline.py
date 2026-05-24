@@ -5,7 +5,7 @@ Timeline Router - endpoints for timeline visualization data.
 from typing import List, Optional
 from fastapi import APIRouter, Query
 
-from services import neo4j_service
+from services.neo4j_service import neo4j_service
 
 router = APIRouter(prefix="/api/timeline", tags=["timeline"])
 

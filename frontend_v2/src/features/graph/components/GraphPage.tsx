@@ -236,7 +236,7 @@ export function GraphPage() {
             <Badge variant="outline" className="uppercase">
               {workspaceGraphSource.sourceType}
             </Badge>
-            <span className="text-muted-foreground">Workspace source</span>
+            <span className="text-muted-foreground">Spotlight source</span>
             <span className="font-medium">{workspaceGraphSource.sourceLabel}</span>
           </div>
         </div>

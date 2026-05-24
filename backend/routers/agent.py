@@ -140,6 +140,14 @@ async def get_agent_run(
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+@router.get("/costs/summary")
+async def get_agent_cost_summary(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    return agent_service.get_cost_summary(db=db, user=current_user)
+
+
 @router.post("/runs/{run_id}:cancel", response_model=AgentRunStatusResponse)
 async def cancel_agent_run(
     run_id: UUID,

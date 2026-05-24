@@ -19,6 +19,7 @@ from postgres.models.user import User
 from services.agent.json_utils import to_jsonable, truncate_payload
 from services.agent.schemas import (
     AgentArtifact,
+    AgentClarification,
     AgentRunDetail,
     AgentStoredMessage,
     AgentThreadDetail,
@@ -203,6 +204,13 @@ def finish_run(
     return run
 
 
+def update_run_metadata(db: Session, *, run: AgentRun, metadata: dict[str, Any]) -> AgentRun:
+    run.extra_metadata = to_jsonable({**(run.extra_metadata or {}), **metadata})
+    db.flush()
+    db.refresh(run)
+    return run
+
+
 def persist_tool_trace(
     db: Session,
     *,
@@ -310,6 +318,13 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
             model_id=message.model_id,
             artifact_ids=[str(item) for item in (message.artifact_ids or [])],
             tool_trace_summary=message.tool_trace_summary or [],
+            clarification=(
+                AgentClarification(**message.run.extra_metadata["clarification"])
+                if message.run
+                and isinstance(message.run.extra_metadata, dict)
+                and isinstance(message.run.extra_metadata.get("clarification"), dict)
+                else None
+            ),
             created_at=message.created_at,
         )
         for message in thread.messages

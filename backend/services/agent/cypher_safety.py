@@ -52,16 +52,35 @@ def _single_statement(query: str) -> str:
 
 def _enforce_limit(query: str, limit: int) -> str:
     safe_limit = max(1, min(int(limit or 100), 200))
-    limit_pattern = re.compile(r"\bLIMIT\s+(\d+)\b", flags=re.IGNORECASE)
+    limit_pattern = re.compile(r"\bLIMIT\s+(\$[A-Za-z_][A-Za-z0-9_]*|\d+)\b", flags=re.IGNORECASE)
     match = list(limit_pattern.finditer(query))
     if not match:
         return f"{query}\nLIMIT {safe_limit}"
 
     last = match[-1]
-    current = int(last.group(1))
-    if current <= safe_limit:
+    value = last.group(1)
+    if value.isdigit() and int(value) <= safe_limit:
         return query
     return query[: last.start(1)] + str(safe_limit) + query[last.end(1) :]
+
+
+def _has_real_case_scope(query: str) -> bool:
+    return bool(
+        re.search(r"\b[A-Za-z_][A-Za-z0-9_]*\.case_id\s*=\s*\$case_id\b", query, flags=re.IGNORECASE)
+        or re.search(r"\{\s*[^}]*case_id\s*:\s*\$case_id\b", query, flags=re.IGNORECASE)
+    )
+
+
+def repair_common_cypher(query: str) -> str:
+    """Repair small Neo4j syntax slips the agent commonly makes."""
+    repaired = re.sub(r"\s+NULLS\s+(FIRST|LAST)\b", "", query, flags=re.IGNORECASE)
+    repaired = re.sub(
+        r"\bLIMIT\s+\$[A-Za-z_][A-Za-z0-9_]*\b",
+        "",
+        repaired,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r"\s+", " ", repaired).strip()
 
 
 def validate_readonly_cypher(query: str, *, limit: int = 100) -> str:
@@ -76,6 +95,10 @@ def validate_readonly_cypher(query: str, *, limit: int = 100) -> str:
         raise UnsafeCypherError("Cypher must return data")
     if "$CASE_ID" not in upper:
         raise UnsafeCypherError("Cypher must include the $case_id parameter")
+    if not _has_real_case_scope(squashed):
+        raise UnsafeCypherError("Cypher must scope a node or relationship with .case_id = $case_id")
+    if re.search(r"\bNULLS\s+(FIRST|LAST)\b", upper):
+        raise UnsafeCypherError("Neo4j in this app does not support ORDER BY NULLS FIRST/LAST")
 
     found = sorted(keyword for keyword in DENIED_KEYWORDS if re.search(rf"\b{keyword}\b", upper))
     if found:
