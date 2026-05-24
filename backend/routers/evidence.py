@@ -9,6 +9,7 @@ import shutil
 import hashlib
 import uuid
 import zipfile
+import errno
 from pathlib import Path
 from typing import List, Optional
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Depends, Request
@@ -598,7 +599,31 @@ async def upload_evidence(
     through the existing folder-ingestion path. This avoids the multi-
     thousand multipart parts that overwhelm dev-server proxies.
     """
-    form = await request.form(max_files=20000, max_fields=20000)
+    # request.form() streams each multipart part to a SpooledTemporaryFile that
+    # rolls over to disk under TMPDIR. If that staging filesystem fills (or the
+    # box is out of memory), the spool raises here — outside the try/except
+    # below — and the client gets an opaque "Internal Server Error" with no
+    # response body. Catch it and return an actionable message instead.
+    try:
+        form = await request.form(max_files=20000, max_fields=20000)
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.ENOSPC:
+            raise HTTPException(
+                status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+                detail=(
+                    "Server ran out of disk space while staging the upload. "
+                    "Free space on the server and retry."
+                ),
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to read the upload from the connection: {e}",
+        )
+    except MemoryError:
+        raise HTTPException(
+            status_code=status.HTTP_507_INSUFFICIENT_STORAGE,
+            detail="Server ran out of memory while staging the upload. Retry shortly.",
+        )
     case_id = form.get("case_id")
     is_folder = form.get("is_folder")
     is_archive = form.get("is_archive")
