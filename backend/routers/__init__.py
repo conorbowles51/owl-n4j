@@ -4,6 +4,7 @@ Routers package - API endpoints.
 
 from routers.graph import router as graph_router
 from routers.chat import router as chat_router
+from routers.agent import router as agent_router
 from routers.query import router as query_router
 from routers.timeline import router as timeline_router
 from routers.snapshots import router as snapshots_router
@@ -35,6 +36,7 @@ from routers.triage import router as triage_router
 __all__ = [
     "graph_router",
     "chat_router",
+    "agent_router",
     "query_router",
     "timeline_router",
     "snapshots_router",

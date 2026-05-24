@@ -52,6 +52,11 @@ const ChatPage = lazy(() =>
     default: m.ChatPage,
   }))
 )
+const AgentPage = lazy(() =>
+  import("@/features/agent/components/AgentPage").then((m) => ({
+    default: m.AgentPage,
+  }))
+)
 const WorkspacePage = lazy(() =>
   import("@/features/workspace/components/WorkspacePage").then((m) => ({
     default: m.WorkspacePage,
@@ -149,6 +154,7 @@ export function AppRoutes() {
             <Route path="profiles" element={<LazyPage><CaseProfilesPage /></LazyPage>} />
             <Route path="evidence" element={<EvidenceExplorer />} />
             <Route path="chat" element={<LazyPage><ChatPage /></LazyPage>} />
+            <Route path="agent" element={<LazyPage><AgentPage /></LazyPage>} />
             <Route path="workspace" element={<LazyPage><WorkspacePage /></LazyPage>} />
             <Route path="reports" element={<LazyPage><ReportsPage /></LazyPage>} />
             <Route path="settings" element={<LazyPage><CaseSettingsPage /></LazyPage>} />

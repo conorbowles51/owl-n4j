@@ -17,6 +17,7 @@ export function AppLayout() {
   const currentCaseId = caseMatch?.params.id ?? null
   const isGraphRoute = !!useMatch("/cases/:id/graph")
   const isChatRoute = !!useMatch("/cases/:id/chat")
+  const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isCaseRoute = !!caseMatch
 
   const graphPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
@@ -25,7 +26,7 @@ export function AppLayout() {
   const expandGraphPanelTo = useUIStore((s) => s.expandGraphPanelTo)
 
   // Routes that manage their own side panel
-  const hasSelfManagedPanel = isGraphRoute || isChatRoute
+  const hasSelfManagedPanel = isGraphRoute || isChatRoute || isAgentRoute
 
   // Keyboard shortcut: Ctrl+Shift+L — works globally
   useEffect(() => {

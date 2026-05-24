@@ -8,6 +8,7 @@ import {
   DollarSign,
   FileText,
   MessageSquare,
+  Bot,
   Briefcase,
   ClipboardList,
   Settings,
@@ -41,7 +42,7 @@ const mainNav: NavItem[] = [
   { label: "Triage", icon: ShieldCheck, to: "/triage" },
 ]
 
-function getCaseNav(caseId: string): NavItem[] {
+function getCaseInvestigationNav(caseId: string): NavItem[] {
   return [
     { label: "Graph", icon: Network, to: `/cases/${caseId}/graph`, shortcut: "1" },
     { label: "Timeline", icon: Clock, to: `/cases/${caseId}/timeline`, shortcut: "2" },
@@ -51,7 +52,18 @@ function getCaseNav(caseId: string): NavItem[] {
     { label: "Cellebrite", icon: Smartphone, to: `/cases/${caseId}/cellebrite`, shortcut: "6" },
     { label: "Profiles", icon: UserRoundSearch, to: `/cases/${caseId}/profiles`, shortcut: "7" },
     { label: "Evidence", icon: FileText, to: `/cases/${caseId}/evidence`, shortcut: "8" },
+  ]
+}
+
+function getCaseAiNav(caseId: string): NavItem[] {
+  return [
     { label: "Chat", icon: MessageSquare, to: `/cases/${caseId}/chat` },
+    { label: "Agent", icon: Bot, to: `/cases/${caseId}/agent` },
+  ]
+}
+
+function getCaseWorkspaceNav(caseId: string): NavItem[] {
+  return [
     { label: "Workspace", icon: Briefcase, to: `/cases/${caseId}/workspace` },
     { label: "Reports", icon: ClipboardList, to: `/cases/${caseId}/reports` },
   ]
@@ -159,7 +171,43 @@ export function AppSidebar() {
                 Active Case
               </p>
             )}
-            {getCaseNav(caseId).map((item) => (
+            {getCaseInvestigationNav(caseId).map((item) => (
+              <SidebarLink
+                key={item.to}
+                item={item}
+                expanded={sidebarExpanded}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* AI */}
+        {caseId && (
+          <div className="mt-4 space-y-0.5">
+            {sidebarExpanded && (
+              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                AI
+              </p>
+            )}
+            {getCaseAiNav(caseId).map((item) => (
+              <SidebarLink
+                key={item.to}
+                item={item}
+                expanded={sidebarExpanded}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Workspace */}
+        {caseId && (
+          <div className="mt-4 space-y-0.5">
+            {sidebarExpanded && (
+              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                Workspace
+              </p>
+            )}
+            {getCaseWorkspaceNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}

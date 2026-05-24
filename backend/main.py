@@ -13,6 +13,7 @@ from config import API_HOST, API_PORT, CORS_ORIGINS
 from routers import (
     graph_router,
     chat_router,
+    agent_router,
     query_router,
     timeline_router,
     snapshots_router,
@@ -118,6 +119,7 @@ app.add_middleware(
 # Include routers
 app.include_router(graph_router)
 app.include_router(chat_router)
+app.include_router(agent_router)
 app.include_router(query_router)
 app.include_router(timeline_router)
 app.include_router(snapshots_router)

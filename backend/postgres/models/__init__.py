@@ -9,6 +9,13 @@ from postgres.models.case_deadline import CaseDeadline
 from postgres.models.processing_profile import ProcessingProfile, CaseProcessingConfig
 from postgres.models.geocoding_cache import GeocodingCacheEntry
 from postgres.models.chat import CaseRevision, ChatConversation, ChatMessage
+from postgres.models.agent import (
+    AgentArtifactRecord,
+    AgentMessage,
+    AgentRun,
+    AgentThread,
+    AgentToolCall,
+)
 from postgres.models.evidence import EvidenceFolder, EvidenceFile, IngestionLog
 from postgres.models.case_profile import (
     CaseProfile,
@@ -45,6 +52,7 @@ __all__ = [
     "ProcessingProfile", "CaseProcessingConfig",
     "GeocodingCacheEntry",
     "CaseRevision", "ChatConversation", "ChatMessage",
+    "AgentArtifactRecord", "AgentMessage", "AgentRun", "AgentThread", "AgentToolCall",
     "EvidenceFolder", "EvidenceFile", "IngestionLog", "GraphRecycleBinItem",
     "CaseProfile", "CaseProfileAttribute", "CaseProfileEvidenceLink",
     "CaseProfileFindingLink", "CaseProfileGraphNodeLink", "CaseProfileNoteLink",

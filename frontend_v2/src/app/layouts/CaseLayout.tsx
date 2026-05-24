@@ -13,10 +13,11 @@ export function CaseLayout() {
   const { id: caseId } = useParams()
   const graphPanelCollapsed = useUIStore((s) => s.graphPanelCollapsed)
   const isGraphRoute = !!useMatch("/cases/:id/graph")
+  const isAgentRoute = !!useMatch("/cases/:id/agent")
   const isEvidenceRoute = !!useMatch("/cases/:id/evidence")
 
-  // Graph page manages its own side panel with tool overlays
-  const showCaseSidePanel = !isGraphRoute
+  // Graph and Agent routes manage their own full-width workspaces.
+  const showCaseSidePanel = !isGraphRoute && !isAgentRoute
 
   return (
     <div className="flex h-full">
