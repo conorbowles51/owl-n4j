@@ -194,8 +194,8 @@ function DeviceCard({ report, onDrillDown, onDelete, onEditName }) {
 
       {/* Device Info */}
       <div className="p-4 space-y-2">
-        {report.phone_numbers && (
-          <InfoRow icon={Phone} label="Phone" value={report.phone_numbers} />
+        {report.phone_numbers?.length > 0 && (
+          <InfoRow icon={Phone} label="Phone" value={report.phone_numbers.join(', ')} />
         )}
         {report.imei && (
           <InfoRow icon={Hash} label="IMEI" value={report.imei} />
