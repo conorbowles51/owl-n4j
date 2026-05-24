@@ -123,4 +123,4 @@ striprtf>=0.0.26
 # only when GEOCODER=geonames or GEOCODER_FALLBACK=geonames is set.
 # Pulls in numpy + scipy as transitive deps; safe to skip on minimal
 # installs that don't need the city-name fallback.
-reverse-geocoder>=1.5.1
+reverse-geocoder>=1.5.1phonenumbers==9.0.31

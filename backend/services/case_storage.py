@@ -224,6 +224,26 @@ class CaseStorage:
             return True
         return False
     
+    def get_default_region(self, case_id: str) -> str:
+        """Region (ISO 3166-1 alpha-2, e.g. "US", "GT") assumed when
+        normalising *bare* phone numbers that lack a leading "+". Numbers
+        that already carry a "+" country code ignore this. Defaults to
+        "US" when the case has no override set."""
+        case = self._cases.get(case_id) or {}
+        region = case.get("default_region")
+        return region.strip().upper() if region else "US"
+
+    def set_default_region(self, case_id: str, region: str) -> bool:
+        """Set the per-case default phone region. Returns False if the
+        case doesn't exist. Reloads from disk first so a concurrent worker's
+        writes aren't clobbered (case_storage has no reload-under-lock)."""
+        self._cases = load_cases()
+        if case_id not in self._cases:
+            return False
+        self._cases[case_id]["default_region"] = (region or "US").strip().upper()
+        save_cases(self._cases)
+        return True
+
     def reload(self):
         """Reload cases from disk."""
         self._cases = load_cases()

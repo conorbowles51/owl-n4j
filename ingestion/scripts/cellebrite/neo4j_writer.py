@@ -108,21 +108,25 @@ def _extract_search_query(url: Optional[str]) -> Optional[str]:
     return None
 
 
-def _normalise_phone(raw: Optional[str]) -> Optional[str]:
-    """Normalize a phone number for deduplication."""
-    if not raw:
-        return None
-    # Strip everything except digits and leading +
-    cleaned = re.sub(r"[^\d+]", "", raw.strip())
-    if not cleaned:
-        return None
-    # Remove leading + for consistency
-    if cleaned.startswith("+"):
-        cleaned = cleaned[1:]
-    # Remove country code 1 for US numbers if 11 digits
-    if len(cleaned) == 11 and cleaned.startswith("1"):
-        cleaned = cleaned[1:]
-    return cleaned
+def _normalise_phone(
+    raw: Optional[str], default_region: str = "US"
+) -> Optional[str]:
+    """Canonical E.164 form of a phone number (e.g. ``+13017289052``), or
+    None if it isn't a *valid* number.
+
+    Delegates to the shared libphonenumber-backed normaliser
+    (``services.phone_normalise``) so cellebrite ingestion and the backend
+    "unify by number" rollup agree on canonicalisation — including
+    international numbers, not just US/NANP. ``default_region`` is the
+    per-case region assumed for bare numbers that lack a leading ``+``.
+
+    NOTE: this now returns E.164 *with* the ``+`` (it used to return bare
+    national digits). Callers that built ``phone-{digits}`` keys must use
+    ``_generate_person_key`` / the shared ``person_key`` instead of
+    slicing this result.
+    """
+    from services.phone_normalise import normalise
+    return normalise(raw, default_region=default_region)
 
 
 def _normalise_key(raw: Optional[str]) -> str:
@@ -140,6 +144,7 @@ def _generate_person_key(
     identifier: Optional[str] = None,
     name: Optional[str] = None,
     source_app: Optional[str] = None,
+    default_region: str = "US",
 ) -> Optional[str]:
     """
     Generate a stable key for a person from available identifiers.
@@ -150,10 +155,15 @@ def _generate_person_key(
     3. App-specific ID (platform + ID)
     4. Name (fallback)
     """
-    # Try phone number first
-    phone = _normalise_phone(identifier)
-    if phone and phone.isdigit() and len(phone) >= 7:
-        return f"phone-{phone}"
+    # Try phone number first — canonical E.164 with the country code baked
+    # into the key (``phone-13017289052``). The shared person_key() validates
+    # via libphonenumber, so app IDs / numeric junk fall through to the
+    # email / app-id / name branches below instead of being mis-keyed as
+    # phones.
+    from services.phone_normalise import person_key as _phone_key
+    pk = _phone_key(identifier, default_region=default_region)
+    if pk:
+        return pk
 
     # Try email
     if identifier and "@" in identifier and "." in identifier:
@@ -191,12 +201,17 @@ class CellebriteNeo4jWriter:
         report: CellebriteReport,
         log_callback: Optional[Callable[[str], None]] = None,
         attachment_map: Optional[Dict[str, List[str]]] = None,
+        default_region: str = "US",
     ):
         self.db = neo4j_client
         self.case_id = case_id
         self.report_key = report_key
         self.report = report
         self.log_callback = log_callback
+        # Region assumed when normalising bare phone numbers (no leading
+        # "+"). Threaded from the case's default_region; numbers carrying a
+        # "+" ignore it. See services.phone_normalise.
+        self.default_region = default_region
 
         # Mapping of model_id -> [file_id, ...] for attachment persistence.
         # Populated from file_linker.build_model_file_map() and set before write_batch().
@@ -427,7 +442,9 @@ class CellebriteNeo4jWriter:
         Ensure a Person node exists, returning its key.
         Uses MERGE semantics — creates if new, skips if exists.
         """
-        key = _generate_person_key(identifier, name, source_app)
+        key = _generate_person_key(
+            identifier, name, source_app, default_region=self.default_region
+        )
         if not key:
             return None
 
@@ -594,22 +611,23 @@ class CellebriteNeo4jWriter:
         best_identifier = None
         device_phones = set()
         for msisdn in self.report.device_info.msisdn:
-            norm = _normalise_phone(msisdn)
+            norm = _normalise_phone(msisdn, self.default_region)
             if norm:
                 device_phones.add(norm)
 
         # First choice: use a device MSISDN found in owner identifiers
         for ident in self._phone_owner_identifiers:
-            norm = _normalise_phone(ident)
+            norm = _normalise_phone(ident, self.default_region)
             if norm and norm in device_phones:
                 best_identifier = ident
                 break
 
-        # Second choice: any identifier that looks like a real phone number (7-12 digits)
+        # Second choice: any identifier that is a real phone number.
+        # _normalise_phone validates via libphonenumber, so a non-None
+        # result already IS a valid number (no isdigit/length heuristic).
         if not best_identifier:
             for ident in self._phone_owner_identifiers:
-                phone = _normalise_phone(ident)
-                if phone and phone.isdigit() and 7 <= len(phone) <= 12:
+                if _normalise_phone(ident, self.default_region):
                     best_identifier = ident
                     break
 
@@ -624,6 +642,7 @@ class CellebriteNeo4jWriter:
         key = _generate_person_key(
             identifier=best_identifier,
             name=best_name,
+            default_region=self.default_region,
         )
         if not key:
             self._log("WARNING: Could not generate key for phone owner")
@@ -632,9 +651,9 @@ class CellebriteNeo4jWriter:
         extra_props = {
             "is_phone_owner": True,
             "phone_numbers": list({
-                _normalise_phone(i)
+                _normalise_phone(i, self.default_region)
                 for i in self._phone_owner_identifiers
-                if _normalise_phone(i)
+                if _normalise_phone(i, self.default_region)
             }),
             "all_identifiers": list(self._phone_owner_identifiers),
         }
@@ -662,6 +681,23 @@ class CellebriteNeo4jWriter:
             if di.device_name_candidates else None
         )
         accessory_imeis = list(di.accessory_imeis) if di.accessory_imeis else None
+
+        # Normalise + dedup the MSISDN list before storing it on the node.
+        # Raw di.msisdn can carry the same number in two formats (e.g.
+        # "13017289052" and "+13017289052"), which _normalise_phone collapses
+        # (strips +, drops the US country-code 1) — without this the report
+        # appears to have more numbers than it does. Mirrors the owner Person
+        # node's normalisation (see _ensure_phone_owner); preserves first-seen
+        # order so a re-ingest is deterministic. The empty-list case is left
+        # as-is (not None) so it doesn't interact with the upstream
+        # device_info.msisdn precondition in ingestion.py.
+        seen_msisdn: Set[str] = set()
+        phone_numbers: List[str] = []
+        for raw_msisdn in di.msisdn:
+            normalised = _normalise_phone(raw_msisdn, self.default_region)
+            if normalised and normalised not in seen_msisdn:
+                seen_msisdn.add(normalised)
+                phone_numbers.append(normalised)
 
         props = {
             "id": str(uuid.uuid4()),
@@ -699,7 +735,7 @@ class CellebriteNeo4jWriter:
             "imei": di.imei,
             "accessory_imeis": accessory_imeis,
             "os_type": di.os_type,
-            "phone_numbers": di.msisdn,
+            "phone_numbers": phone_numbers,
             # True when phone_numbers contains an investigator-supplied
             # identifier (report had no extractable number, or an override
             # alias was added). UI badges this so a manual identity isn't
@@ -900,9 +936,31 @@ class CellebriteNeo4jWriter:
             if title:
                 org_titles.append(title)
 
-        # Generate key from best identifier
-        best_id = phone_numbers[0] if phone_numbers else (emails[0] if emails else account)
-        key = _generate_person_key(identifier=best_id, name=name, source_app=source)
+        # Canonicalise the contact's listed numbers to E.164 where they
+        # validate. Keep any that DON'T validate (extensions / unusual
+        # formats) as their raw value so a contact never silently loses a
+        # number; dedup the result.
+        canon_phones: List[str] = []
+        seen_phone: Set[str] = set()
+        first_valid_phone: Optional[str] = None
+        for p in phone_numbers:
+            canon = _normalise_phone(p, self.default_region)
+            value = canon or (p.strip() if p else None)
+            if value and value not in seen_phone:
+                seen_phone.add(value)
+                canon_phones.append(value)
+            if canon and first_valid_phone is None:
+                first_valid_phone = canon
+        phone_numbers = canon_phones
+
+        # Generate key — prefer a valid (normalisable) number so a junk
+        # first entry doesn't force a weaker name/email key.
+        best_id = first_valid_phone or (phone_numbers[0] if phone_numbers else None) \
+            or (emails[0] if emails else account)
+        key = _generate_person_key(
+            identifier=best_id, name=name, source_app=source,
+            default_region=self.default_region,
+        )
         if not key:
             return
 

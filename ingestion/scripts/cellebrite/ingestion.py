@@ -290,12 +290,24 @@ def ingest_cellebrite_report(
     from neo4j_client import Neo4jClient
 
     db = Neo4jClient()
+
+    # Per-case default region for phone-number normalisation (used only for
+    # bare numbers lacking a "+"). Falls back to "US" when case_storage
+    # isn't importable, e.g. a standalone run outside the backend path.
+    default_region = "US"
+    try:
+        from services.case_storage import case_storage
+        default_region = case_storage.get_default_region(case_id)
+    except Exception:
+        pass
+
     writer = CellebriteNeo4jWriter(
         neo4j_client=db,
         case_id=case_id,
         report_key=report_key,
         report=report,
         log_callback=log_callback,
+        default_region=default_region,
     )
 
     writer.create_phone_report_node()
