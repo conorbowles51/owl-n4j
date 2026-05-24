@@ -658,9 +658,21 @@ class Neo4jClient:
         Returns:
             List of result records as dicts
         """
-        with self.driver.session() as session:
-            result = session.run(query, **params)
-            return [dict(record) for record in result]
+        # Wrapped in _execute_with_retry so a transient connection drop
+        # (e.g. "Failed to read from defunct connection" / ServiceUnavailable
+        # under host IO/RAM contention) retries with backoff instead of
+        # surfacing as a hard failure. The cellebrite writer routes ALL of
+        # its writes through run_query, so without this a single Neo4j blip
+        # silently drops every model in flight (C5 lost 2,450 entities on
+        # 2026-05-24 this way). Mirrors create_entity/ensure_document, which
+        # already retry. Autocommit CREATEs here return no rows, so the
+        # commit→read window is effectively nil and retry is safe.
+        def _run():
+            with self.driver.session() as session:
+                result = session.run(query, **params)
+                return [dict(record) for record in result]
+
+        return self._execute_with_retry(_run)
 
     def clear_database(self):
         """
