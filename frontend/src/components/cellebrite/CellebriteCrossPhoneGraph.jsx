@@ -1365,6 +1365,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           setSelectionBox(null);
         }}
       >
+        <ForceGraph2D
           /* ref assigned below in a callback so we can also tune
              the live d3-force objects on mount */
           graphData={filteredData}
