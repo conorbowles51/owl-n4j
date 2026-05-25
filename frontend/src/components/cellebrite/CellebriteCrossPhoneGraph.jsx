@@ -120,68 +120,33 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return [...perspective.activeKeys];
   }, [perspective?.hasPerspective, perspective?.activeKeys]);
 
-  // Camera-preservation: when the user toggles an edge type or
-  // changes depth, the new graphData triggers react-force-graph-2d
-  // to re-run its simulation. Without intervention the simulated
-  // positions land at fresh random coords AND the user's pan/zoom
-  // is lost because the nodes they were looking at have moved.
+  // ---- Fetch policy --------------------------------------------------
+  // Refetch ONLY when the scope changes — perspective anchors or depth.
+  // Edge-type toggles narrow what's RENDERED client-side (see
+  // `filteredData` below) so toggling a type never triggers a refetch,
+  // never reseeds the simulation, and never moves the camera. This is
+  // the only way to keep the user's view perfectly stable on toggle.
   //
-  // Fix: (a) carry x/y/vx/vy from the OLD nodes onto the new ones
-  // whose `id` matches — so unchanged nodes don't budge — and
-  // (b) snapshot the camera (centre + zoom) just before swapping
-  // data and re-apply it once the new graph has settled.
-  const lastNodePosRef = useRef(new Map());
-  const cameraSnapshotRef = useRef(null);
-
+  // Backend keeps its `event_types` param for the perspective rebuild
+  // route, but we deliberately always request the full superset here
+  // (passing `undefined` so the API call omits it and gets the
+  // backend's all-edges default). The 200-node / 600-edge caps keep
+  // this safe.
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
     setLoading(true);
 
-    // Capture the current camera ONLY when we already have data
-    // showing (i.e. this isn't the initial load — there's nothing
-    // useful to preserve when the canvas is empty). Reading both
-    // before the fetch avoids a race where the new data lands and
-    // resets the camera before we sample it.
-    if (fgRef.current && graphData.nodes.length > 0) {
-      try {
-        const centre = fgRef.current.centerAt();
-        const z = fgRef.current.zoom();
-        if (centre && Number.isFinite(centre.x) && Number.isFinite(centre.y)) {
-          cameraSnapshotRef.current = { x: centre.x, y: centre.y, z };
-        }
-      } catch {
-        // centerAt/zoom can throw before the canvas has a size — skip
-        cameraSnapshotRef.current = null;
-      }
-    }
-
     cellebriteAPI.getCrossPhoneGraph(caseId, {
       personKeys: personKeys || undefined,
-      eventTypes: [...activeEventTypes],
+      // Always full set — client-side filter handles the visible subset.
+      eventTypes: GRAPH_EVENT_TYPES.map((t) => t.key),
       depth,
     }).then(data => {
-      if (cancelled) return;
-      const next = data || { nodes: [], links: [] };
-
-      // Stitch previous {x, y, vx, vy} onto the new nodes so the
-      // simulation starts from the user's existing layout instead of
-      // a fresh random seed. Library treats x/y already-present on a
-      // node as a placement hint, not a hard pin, so the sim still
-      // relaxes the new edges without yanking the whole graph.
-      if (lastNodePosRef.current.size > 0) {
-        for (const n of next.nodes) {
-          const prev = lastNodePosRef.current.get(n.id);
-          if (prev) {
-            n.x = prev.x;
-            n.y = prev.y;
-            n.vx = prev.vx || 0;
-            n.vy = prev.vy || 0;
-          }
-        }
+      if (!cancelled) {
+        setGraphData(data || { nodes: [], links: [] });
+        setLoading(false);
       }
-      setGraphData(next);
-      setLoading(false);
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
@@ -190,20 +155,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     });
 
     return () => { cancelled = true; };
-  }, [caseId, personKeys, activeEventTypes, depth]);
-
-  // Maintain the position cache from whatever's currently on screen.
-  // Effect runs after every render, so by the time the user toggles
-  // a filter the latest positions are already captured.
-  useEffect(() => {
-    const m = lastNodePosRef.current;
-    for (const n of graphData.nodes) {
-      if (n.id == null) continue;
-      if (Number.isFinite(n.x) && Number.isFinite(n.y)) {
-        m.set(n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy });
-      }
-    }
-  });
+  }, [caseId, personKeys, depth]);
 
   // Build a per-node search haystack ONCE per graph data load so the
   // per-keystroke filter is O(n) string-contains, not O(n × field
@@ -244,22 +196,43 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return out;
   }, [graphData.links]);
 
-  // Free-text filter — each whitespace-separated term must match
-  // SOMEWHERE in the node's full haystack. Quoted "exact phrases" are
-  // kept intact. Same friendly tokenisation parseQuery uses for the
-  // event/thread surfaces, but applied as plain substring (the graph
-  // doesn't have a meaningful schema for from:/to:/app: operators).
+  // First stage of the client-side filter pipeline: drop every link
+  // whose event type is currently toggled OFF. PhoneReport-to-Person
+  // structural links (label = 'CONTAINS_CONTACT' or 'BELONGS_TO')
+  // always stay so the case skeleton remains visible. Nodes are kept
+  // as-is — a Person whose only edges are now hidden still renders,
+  // they just appear unconnected at this scope. That's honest: the
+  // person IS in the case, they just don't participate in any of the
+  // edge types you have switched on.
+  const edgeTypeFiltered = useMemo(() => {
+    if (graphData.links.length === 0) return graphData;
+    const isStructural = (label) => {
+      const l = (label || '').toLowerCase();
+      return l === 'contains_contact' || l === 'belongs_to';
+    };
+    const visibleLinks = graphData.links.filter((l) => {
+      if (isStructural(l.label)) return true;
+      const t = (l.label || '').toLowerCase();
+      return activeEventTypes.has(t);
+    });
+    return { nodes: graphData.nodes, links: visibleLinks };
+  }, [graphData, activeEventTypes]);
+
+  // Second stage: free-text search narrowing. Each whitespace-separated
+  // term must match SOMEWHERE in a node's haystack; matched nodes' direct
+  // neighbours are also kept so the result remains a navigable subgraph.
+  // Operates on the edge-type-filtered set so search obeys both filters.
   const filteredData = useMemo(() => {
     const raw = (searchTerm || '').trim();
-    if (!raw) return graphData;
+    if (!raw) return edgeTypeFiltered;
 
     const terms = tokeniseGraphSearch(raw);
-    if (terms.length === 0) return graphData;
+    if (terms.length === 0) return edgeTypeFiltered;
 
     const matchesHaystack = (h) => terms.every((t) => h.includes(t));
 
     const matchingNodeIds = new Set();
-    for (const n of graphData.nodes) {
+    for (const n of edgeTypeFiltered.nodes) {
       if (matchesHaystack(haystackByNodeId.get(n.id) || '')) {
         matchingNodeIds.add(n.id);
       }
@@ -267,7 +240,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
 
     // Include any node connected by a link whose label/count itself
     // matches (so "calls" surfaces the call edges + both endpoints).
-    graphData.links.forEach((l, i) => {
+    edgeTypeFiltered.links.forEach((l, i) => {
       const linkHay = haystackByLink.get(i) || '';
       const srcId = typeof l.source === 'object' ? l.source.id : l.source;
       const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
@@ -277,12 +250,9 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       }
     });
 
-    // Include the immediate neighbours of every matched node so the
-    // result remains a navigable subgraph — searching "Lemus" returns
-    // Lemus AND the people connected to Lemus, not Lemus floating
-    // alone.
+    // Direct-neighbour expansion.
     const neighbourIds = new Set(matchingNodeIds);
-    graphData.links.forEach((l) => {
+    edgeTypeFiltered.links.forEach((l) => {
       const srcId = typeof l.source === 'object' ? l.source.id : l.source;
       const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
       if (matchingNodeIds.has(srcId)) neighbourIds.add(tgtId);
@@ -290,14 +260,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     });
 
     return {
-      nodes: graphData.nodes.filter((n) => neighbourIds.has(n.id)),
-      links: graphData.links.filter((l) => {
+      nodes: edgeTypeFiltered.nodes.filter((n) => neighbourIds.has(n.id)),
+      links: edgeTypeFiltered.links.filter((l) => {
         const srcId = typeof l.source === 'object' ? l.source.id : l.source;
         const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
         return neighbourIds.has(srcId) && neighbourIds.has(tgtId);
       }),
     };
-  }, [graphData, searchTerm, haystackByNodeId, haystackByLink]);
+  }, [edgeTypeFiltered, searchTerm, haystackByNodeId, haystackByLink]);
 
   // Per-edge-type colour lookup. The backend tags each link's
   // `label` with the event-type key ('call', 'message', 'email',
@@ -330,105 +300,122 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return map;
   }, [filteredData.links, edgeColorByType]);
 
+  // Node renderer — concentric-ring encoding.
+  //
+  // Person nodes are drawn as three nested shapes:
+  //   1. INNER DISC   = phone identity colour (which device they're on)
+  //   2. OUTER RING   = segmented pie of edge-type colours, one slice
+  //                     per type the person participates in across the
+  //                     visible edges. Single-type = solid ring; multi-
+  //                     type = donut wedges (alphabetical by type-key
+  //                     for stable ordering across renders).
+  //   3. SHARED HALO  = bold gold stroke outside the outer ring, drawn
+  //                     only when the contact is shared across phones.
+  //
+  // PhoneReport nodes keep the existing rounded-square treatment in
+  // their phone identity colour — they ARE phones, not participants in
+  // a communication graph, so the ring encoding doesn't apply.
+  //
+  // Sizes scale with comm_count so heavily-active people draw bigger,
+  // matching the original behaviour.
   const paintNode = useCallback((node, ctx, globalScale) => {
     const isReport = node.type === 'PhoneReport';
-    const isShared = node.shared;
+    const isShared = !!node.shared;
 
-    // Phone identity colour: a PhoneReport node IS a phone, so it uses
-    // its own report_key. A Person node carries one (or more) report_keys
-    // depending on whether they appear on one or multiple phones.
     const phoneKey = node.report_key || node.cellebrite_report_key;
     const phoneIdentity = phoneCtx && phoneKey
       ? phoneCtx.getIdentityByKey(phoneKey)
       : null;
 
-    // PhoneReport: fill with the phone's persistent palette colour so it
-    // matches every chip / stripe / map ring elsewhere in the app.
-    // Person: keep the existing semantic colours (default vs shared) but
-    // add a coloured ring in the phone's identity colour to show which
-    // phone owns the contact.
-    const fillColor = isReport && phoneIdentity
-      ? phoneIdentity.hex
-      : isReport
-      ? NODE_COLORS.PhoneReport
-      : isShared
-      ? NODE_COLORS.PersonShared
-      : NODE_COLORS.Person;
-
-    const r = isReport ? 8 : 4 + Math.min(node.comm_count || 0, 10) * 0.3;
-
-    // Phone identity ring on Person nodes (non-report). Drawn first so
-    // the node fill sits inside it.
-    if (!isReport && phoneIdentity) {
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, r + 2, 0, 2 * Math.PI);
-      ctx.fillStyle = phoneIdentity.hex;
-      ctx.fill();
-    }
-
-    // Draw node
-    ctx.beginPath();
+    // PhoneReport: unchanged rounded-square in phone colour.
     if (isReport) {
+      const r = 8;
+      ctx.beginPath();
       const size = r * 2;
       ctx.roundRect(node.x - r, node.y - r, size, size, 3);
+      ctx.fillStyle = phoneIdentity ? phoneIdentity.hex : NODE_COLORS.PhoneReport;
+      ctx.fill();
+
+      const fontSize = 11 / globalScale;
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#334155';
+      let label = (node.name || '').substring(0, 20);
+      if (phoneIdentity) label = `${phoneIdentity.short} · ${label}`;
+      ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
+      return;
+    }
+
+    // Person — concentric rings.
+    // Base radius scales gently with comm volume.
+    const rOuter = 6 + Math.min(node.comm_count || 0, 10) * 0.45;
+    const rInner = rOuter * 0.55; // inner disc roughly half the diameter
+
+    const phoneHex = phoneIdentity ? phoneIdentity.hex : '#94a3b8';
+
+    // The edge-type set this person participates in among visible edges.
+    const types = [...(nodeEdgeTypes.get(node.id) || [])].sort();
+
+    // --- 1. Outer ring (edge-type pie) ---
+    // If the person has no visible edges (e.g. user toggled everything
+    // off, or they're an isolate in the current filter), the outer ring
+    // becomes a neutral grey so the node still reads as "a person, just
+    // not currently linked".
+    if (types.length === 0) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, rOuter, 0, 2 * Math.PI);
+      ctx.fillStyle = '#cbd5e1'; // light-300
+      ctx.fill();
+    } else if (types.length === 1) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, rOuter, 0, 2 * Math.PI);
+      ctx.fillStyle = edgeColorByType.get(types[0]) || '#94a3b8';
+      ctx.fill();
     } else {
-      ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-    }
-    ctx.fillStyle = fillColor;
-    ctx.fill();
-
-    if (isShared) {
-      ctx.strokeStyle = '#d97706';
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-
-    // Per-edge-type indicator dots — one small coloured satellite
-    // per active edge type the node participates in. Placed evenly
-    // around the upper hemisphere so the dots stay legible even
-    // when the underlying node fill is monochrome.
-    if (!isReport) {
-      const edgeTypes = nodeEdgeTypes.get(node.id);
-      if (edgeTypes && edgeTypes.size > 0) {
-        // Stable order so the dots don't reshuffle on every paint
-        // (Set iteration would be insertion-order anyway, but sort
-        // by event-type-key for predictability across re-renders).
-        const types = [...edgeTypes].sort();
-        const dotR = Math.max(1.2, r * 0.35);
-        const orbit = r + dotR + 0.5;
-        const total = types.length;
-        // Spread evenly across the top semicircle (−135° → −45°)
-        const spanStart = -Math.PI * 0.75;
-        const spanEnd = -Math.PI * 0.25;
-        for (let i = 0; i < total; i++) {
-          const t = total === 1
-            ? (spanStart + spanEnd) / 2
-            : spanStart + ((spanEnd - spanStart) * i) / (total - 1);
-          const cx = node.x + orbit * Math.cos(t);
-          const cy = node.y + orbit * Math.sin(t);
-          ctx.beginPath();
-          ctx.arc(cx, cy, dotR, 0, 2 * Math.PI);
-          ctx.fillStyle = edgeColorByType.get(types[i]) || '#94a3b8';
-          ctx.fill();
-          // 1px white halo so the dot reads off any background.
-          ctx.lineWidth = Math.max(0.25, 0.6 / globalScale);
-          ctx.strokeStyle = '#ffffff';
-          ctx.stroke();
-        }
+      // Pie slices — start at -90° (12 o'clock) and go clockwise.
+      const sliceArc = (2 * Math.PI) / types.length;
+      for (let i = 0; i < types.length; i++) {
+        const start = -Math.PI / 2 + i * sliceArc;
+        const end = start + sliceArc;
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y);
+        ctx.arc(node.x, node.y, rOuter, start, end);
+        ctx.closePath();
+        ctx.fillStyle = edgeColorByType.get(types[i]) || '#94a3b8';
+        ctx.fill();
       }
     }
 
+    // --- 2. Thin white gap so the inner phone disc reads cleanly ---
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, rInner + 0.7, 0, 2 * Math.PI);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+
+    // --- 3. Inner phone-colour disc ---
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, rInner, 0, 2 * Math.PI);
+    ctx.fillStyle = phoneHex;
+    ctx.fill();
+
+    // --- 4. Shared halo (drawn LAST so it sits on top) ---
+    if (isShared) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, rOuter + 1.2, 0, 2 * Math.PI);
+      ctx.lineWidth = Math.max(1.6, 1.8 / globalScale);
+      ctx.strokeStyle = '#d97706'; // amber-600
+      ctx.stroke();
+    }
+
     // Label
-    const fontSize = isReport ? 11 / globalScale : 9 / globalScale;
-    ctx.font = `${isReport ? 'bold ' : ''}${fontSize}px sans-serif`;
+    const fontSize = 9 / globalScale;
+    ctx.font = `${fontSize}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#334155';
-    let label = (node.name || '').substring(0, 20);
-    if (isReport && phoneIdentity) {
-      label = `${phoneIdentity.short} · ${label}`;
-    }
-    ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
+    const label = (node.name || '').substring(0, 20);
+    ctx.fillText(label, node.x, node.y + rOuter + 2 / globalScale);
   }, [phoneCtx, nodeEdgeTypes, edgeColorByType]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
@@ -485,23 +472,35 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-4 px-4 py-1.5 border-b border-light-100 text-xs text-light-600 flex-shrink-0 flex-wrap">
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: NODE_COLORS.Person }} />
-          Contact
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-3 h-3 rounded-full border-2 border-amber-500" style={{ backgroundColor: NODE_COLORS.PersonShared }} />
-          Shared Contact
+      {/* Legend — explains the concentric-ring encoding:
+            inner disc  = phone identity (which device the contact is on)
+            outer ring  = edge-type pie (one slice per type they're in)
+            gold halo   = shared across multiple phones                */}
+      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-light-100 text-xs text-light-600 flex-shrink-0 flex-wrap">
+        {/* Inline SVG sample so the user can see the exact encoding
+            the graph paints — phone-coloured inner, multi-coloured
+            outer ring (using up to 3 edge-type colours), gold halo. */}
+        <svg viewBox="-12 -12 24 24" className="w-5 h-5 flex-shrink-0">
+          {/* Outer ring sample = three quarters in three different
+              edge-type colours — calls / messages / locations — so
+              the user immediately reads "outer = comm types". */}
+          <path d="M 0 -9 A 9 9 0 0 1 9 0 L 0 0 Z" fill={GRAPH_EVENT_TYPES[1].color} />
+          <path d="M 9 0 A 9 9 0 0 1 0 9 L 0 0 Z" fill={GRAPH_EVENT_TYPES[0].color} />
+          <path d="M 0 9 A 9 9 0 1 1 0 -9 L 0 0 Z" fill={GRAPH_EVENT_TYPES[3].color} />
+          <circle cx="0" cy="0" r="5" fill="#ffffff" />
+          <circle cx="0" cy="0" r="4.3" fill="#3b82f6" />
+          <circle cx="0" cy="0" r="10.5" fill="none" stroke="#d97706" strokeWidth="1.4" />
+        </svg>
+        <span className="text-light-700">
+          <span className="font-medium">Inner</span> = phone ·
+          <span className="font-medium ml-1">outer slices</span> = edge types ·
+          <span className="font-medium ml-1 text-amber-700">gold halo</span> = shared
         </span>
 
         {/* Edge-type swatches — only the ACTIVE event types so the
-            legend mirrors what the user can actually see. The chip
-            strip below still shows ALL types (active + inactive); this
-            strip is the read-side key. */}
+            legend mirrors what the user can actually see right now. */}
         <span className="h-4 w-px bg-light-300" />
-        <span className="text-light-500 font-medium">Edges:</span>
+        <span className="text-light-500 font-medium">Active edges:</span>
         {GRAPH_EVENT_TYPES.filter((t) => activeEventTypes.has(t.key)).map((t) => (
           <span key={t.key} className="flex items-center gap-1" title={`${t.label} edges`}>
             <span
@@ -639,22 +638,6 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
-          // Once the simulation settles after a refetch, restore the
-          // camera the user was looking at. cameraSnapshotRef is only
-          // populated when there WAS a prior view to preserve, so the
-          // initial load is unaffected — it still auto-fits via the
-          // library's default first-render behaviour.
-          onEngineStop={() => {
-            const snap = cameraSnapshotRef.current;
-            if (!snap || !fgRef.current) return;
-            try {
-              fgRef.current.centerAt(snap.x, snap.y, 0);
-              fgRef.current.zoom(snap.z, 0);
-            } catch {
-              /* ref not ready yet — skip silently */
-            }
-            cameraSnapshotRef.current = null;
-          }}
         />
       </div>
 
