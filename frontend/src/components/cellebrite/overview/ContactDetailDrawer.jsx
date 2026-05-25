@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
   X, User, Phone, Mail, MessageSquare, Loader2, Smartphone,
-  ArrowDownLeft, ArrowUpRight, PhoneIncoming, PhoneOutgoing, PhoneMissed,
+  ArrowDownLeft, ArrowUpRight, PhoneIncoming, PhoneOutgoing, PhoneMissed, Users,
 } from 'lucide-react';
 import { cellebriteOverviewAPI } from '../../../services/api';
 import { formatTs, formatDuration } from '../events/eventUtils';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import MergeIdentitiesDialog from './MergeIdentitiesDialog';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 
 /**
@@ -17,6 +18,7 @@ export default function ContactDetailDrawer({ caseId, reportKey, contactKey, con
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [showMerge, setShowMerge] = useState(false);
   const { selectEntity } = useCellebriteSelection();
 
   // Click a message → publish a 'thread' rail selection so the universal
@@ -121,11 +123,28 @@ export default function ContactDetailDrawer({ caseId, reportKey, contactKey, con
             className="flex-shrink-0"
           />
         )}
+        <button
+          onClick={() => setShowMerge(true)}
+          className="p-1 text-light-500 hover:text-owl-blue-700"
+          title="Merge another identity (other number/handle) into this contact"
+        >
+          <Users className="w-4 h-4" />
+        </button>
         <LinkNodeToEntityButton caseId={caseId} nodeKey={contactKey} />
         <button onClick={onClose} className="p-1 text-light-500 hover:text-light-800" title="Close (Esc)">
           <X className="w-4 h-4" />
         </button>
       </div>
+
+      {showMerge && (
+        <MergeIdentitiesDialog
+          caseId={caseId}
+          primaryKey={contactKey}
+          primaryName={contact.name}
+          onClose={() => setShowMerge(false)}
+          onMerged={() => { setShowMerge(false); window.location.reload(); }}
+        />
+      )}
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">

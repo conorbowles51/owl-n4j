@@ -3160,6 +3160,16 @@ export const cellebriteOverviewAPI = {
     const p = new URLSearchParams({ case_id: caseId, report_key: reportKey });
     return fetchAPI(`/cellebrite/overview/contact/${encodeURIComponent(contactKey)}?${p.toString()}`);
   },
+  // Investigator-asserted identity merge: fold secondaryKeys (a contact's other
+  // numbers/handles) into primaryKey. The system never auto-merges different
+  // numbers, so this is a deliberate human action (recorded on the survivor).
+  mergePersons: (caseId, primaryKey, secondaryKeys) => {
+    const p = new URLSearchParams({ case_id: caseId });
+    return fetchAPI(`/cellebrite/persons/merge?${p.toString()}`, {
+      method: 'POST',
+      body: JSON.stringify({ primary_key: primaryKey, secondary_keys: secondaryKeys }),
+    });
+  },
 };
 
 
