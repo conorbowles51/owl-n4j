@@ -6347,7 +6347,14 @@ class Neo4jService:
                       'CALLED_TO','SENT_TO','EMAILED','PARTICIPATED_IN',
                       'ATTENDED_BY','TRANSFERRED_TO','RECEIVED_FROM'
                     ]
-                    WITH p, device_keys, device_count, out_count + count(rel_in) AS activity_count
+                    // Two-step aggregation: materialise in_count first
+                    // (count(rel_in) is the aggregate), then add to the
+                    // already-grouped out_count in a fresh WITH. Cypher
+                    // disallows mixing a bare non-aggregate (`out_count`)
+                    // with an aggregate expression inside the same
+                    // projection.
+                    WITH p, device_keys, device_count, out_count, count(rel_in) AS in_count
+                    WITH p, device_keys, device_count, out_count + in_count AS activity_count
                     ORDER BY device_count DESC, activity_count DESC
                     LIMIT 200
                     RETURN p, device_keys, device_count, activity_count AS comm_count
