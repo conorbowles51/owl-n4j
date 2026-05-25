@@ -56,6 +56,43 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # ============================================================
+# Step 0: Memory safety — swap file + on-disk temp dir
+# ============================================================
+# This host has ~31G RAM and ships with NO swap. Neo4j (~9G heap) co-resident
+# with a multi-worker backend (each holds a full ~1GB evidence.json copy) and
+# Nominatim has repeatedly tripped the OOM-killer — including killing the prod
+# Neo4j mid-write (tx-log corruption risk). A swapfile is the safety net, and
+# the backend unit below spools uploads to a disk temp dir instead of the
+# RAM-backed /tmp tmpfs. These were hand-applied during incident response;
+# baking them in here so a from-scratch provision recreates them.
+step "Ensuring swap file + on-disk temp dir"
+
+SWAPFILE=/swapfile
+if ! swapon --show=NAME --noheadings 2>/dev/null | grep -qx "${SWAPFILE}"; then
+    if [ ! -f "${SWAPFILE}" ]; then
+        fallocate -l 32G "${SWAPFILE}" 2>/dev/null || dd if=/dev/zero of="${SWAPFILE}" bs=1M count=32768
+        chmod 600 "${SWAPFILE}"
+        mkswap "${SWAPFILE}" >/dev/null
+    fi
+    swapon "${SWAPFILE}"
+    success "Swap enabled (32G)"
+else
+    success "Swap already active"
+fi
+# Persist across reboots
+if ! grep -q "^${SWAPFILE} " /etc/fstab; then
+    echo "${SWAPFILE} none swap sw 0 0" >> /etc/fstab
+fi
+# Prefer reclaiming page cache over swapping out app memory
+echo "vm.swappiness=10" > /etc/sysctl.d/99-swappiness.conf
+sysctl -p /etc/sysctl.d/99-swappiness.conf >/dev/null 2>&1 || true
+
+# On-disk temp dir for upload spooling — referenced by the backend unit's
+# TMPDIR= below. Must be writable by the deploy user.
+install -d -o "${DEPLOY_USER}" -g "${DEPLOY_GROUP}" -m 0700 "${PROJECT_DIR}/data/tmp"
+success "On-disk temp dir ready (${PROJECT_DIR}/data/tmp)"
+
+# ============================================================
 # Step 1: Stop and disable nginx (if running)
 # ============================================================
 step "Cleaning up nginx (not needed)"
@@ -87,8 +124,20 @@ User=${DEPLOY_USER}
 Group=${DEPLOY_GROUP}
 WorkingDirectory=${PROJECT_DIR}/backend
 Environment="PATH=${VENV_DIR}/bin:/usr/local/bin:/usr/bin:/bin"
+# Reverse-geocode Cellebrite Location/photo coords (was override.conf drop-in).
+Environment="GEOCODER=geonames"
+# Spool multipart uploads to disk, not the RAM-backed /tmp tmpfs — a multi-GB
+# Cellebrite zip on tmpfs had no RAM to land in, killing the worker mid-upload
+# (proxy 500 / read ECONNRESET). Dir created in Step 0 (was tmpdir.conf drop-in).
+Environment="TMPDIR=${PROJECT_DIR}/data/tmp"
+Environment="TMP=${PROJECT_DIR}/data/tmp"
+Environment="TEMP=${PROJECT_DIR}/data/tmp"
 EnvironmentFile=${PROJECT_DIR}/.env
-ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+# --workers 1: evidence.json can reach ~1GB / 1M+ records and each worker holds
+# a full in-memory copy (~4-5G of Python objects); multiple workers + Neo4j's
+# ~9G heap exceed RAM and trigger the OOM-killer. Keep at 1 until evidence
+# storage is append-only/lazy (see WORKING.md). Was workers.conf drop-in.
+ExecStart=${VENV_DIR}/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --workers 1
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
