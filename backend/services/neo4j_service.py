@@ -6768,6 +6768,36 @@ class Neo4jService:
             ).single()
             total_persons = int(total_r["n"]) if total_r else 0
 
+        # --- Final consistency scrub --------------------------------
+        # Belt-and-braces guarantee for the renderer: never return a
+        # link whose source or target isn't in the node set, and never
+        # return a Person / Resource node that ends up with no incident
+        # edges after filtering. d3-force throws "node not found" +
+        # "Cannot create property 'vx' on string" when a link
+        # references a missing node, which kills the canvas on every
+        # subsequent tick. Belt-and-braces because every upstream path
+        # SHOULD already gate on seen_nodes — this catches any leak.
+        valid_ids = {n["id"] for n in nodes}
+        clean_links = []
+        for l in links:
+            s = l.get("source")
+            t = l.get("target")
+            if s in valid_ids and t in valid_ids and s != t:
+                clean_links.append(l)
+        links = clean_links
+
+        # Drop nodes with no incident edges, except PhoneReports
+        # (they anchor the case and should always render even if the
+        # user's current filter hides every edge touching them).
+        endpoints = set()
+        for l in links:
+            endpoints.add(l["source"])
+            endpoints.add(l["target"])
+        nodes = [
+            n for n in nodes
+            if n.get("type") == "PhoneReport" or n["id"] in endpoints
+        ]
+
         return {
             "nodes": nodes,
             "links": links,
