@@ -55,6 +55,19 @@ _RECONCILE_MAP: dict = {
     "FileDownload":         {"stats": ["file_downloads_created"],   "nested": False},
     "NetworkUsage":         {"stats": ["network_usage_created"],    "nested": False},
     "DictionaryWord":       {"stats": ["dictionary_words_created"], "nested": False},
+    # Phase 9 — app-activity / provenance / movement events (2026-05-25).
+    # AppsUsageLog/ApplicationUsage both write AppSession (no dedicated counter)
+    # so they're left out here, same as ApplicationUsage — they reconcile "ok".
+    "SocialMediaActivity":  {"stats": ["social_activity_created"],     "nested": False},
+    "ChatActivity":         {"stats": ["chat_activity_created"],       "nested": False},
+    "FileUpload":           {"stats": ["file_uploads_created"],        "nested": False},
+    "Journey":              {"stats": ["journeys_created"],            "nested": False},
+    "Note":                 {"stats": ["notes_created"],               "nested": False},
+    "DeviceConnectivity":   {"stats": ["device_connectivity_created"], "nested": False},
+    "Cookie":               {"stats": ["cookies_created"],             "nested": False},
+    "LogEntry":             {"stats": ["log_entries_created"],         "nested": False},
+    # ActivitySensorData -> one MotionActivity window node each (children summarised)
+    "ActivitySensorData":   {"stats": ["motion_activity_created"],     "nested": False},
 }
 
 
@@ -482,6 +495,26 @@ def ingest_cellebrite_report(
     # question "did we process everything Cellebrite reported?" — surfaced
     # as a banner on the Cellebrite Overview tab.
     reconciliation = _build_reconciliation(parser.xml_counts_by_type, stats)
+
+    # UNKNOWN-TYPE GUARD (2026-05-25). The parser silently drops any top-level
+    # model type not in SUPPORTED ∪ SKIPPED. That's how ~45k app/movement
+    # events went missing for weeks (the audit predated the reports carrying
+    # them). Surface it LOUDLY here — a type present in the XML but not handled
+    # is a coverage regression, not a detail to bury in a JSON file. Lists the
+    # offenders (largest first) so the next person sees exactly what to add.
+    unsupported = [
+        (r["model_type"], r["xml_count"])
+        for r in reconciliation["rows"] if r["status"] == "not_supported"
+    ]
+    if unsupported:
+        unsupported.sort(key=lambda x: -x[1])
+        total_dropped = sum(c for _, c in unsupported)
+        _log(
+            f"WARNING: UNKNOWN MODEL TYPES dropped (not in SUPPORTED/SKIPPED) — "
+            f"{len(unsupported)} types, {total_dropped:,} instances: "
+            + ", ".join(f"{t}({c})" for t, c in unsupported[:15])
+            + " — add a handler or mark SKIPPED."
+        )
 
     # Write to disk next to the report so it's discoverable without DB
     # access (useful for re-ingest comparisons and offline review).

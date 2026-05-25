@@ -244,6 +244,16 @@ class CellebriteNeo4jWriter:
         self.file_downloads_created = 0
         self.network_usage_created = 0
         self.dictionary_words_created = 0
+        # Phase 9 — app-activity / provenance / movement events (2026-05-25)
+        self.social_activity_created = 0
+        self.chat_activity_created = 0
+        self.file_uploads_created = 0
+        self.journeys_created = 0
+        self.notes_created = 0
+        self.device_connectivity_created = 0
+        self.cookies_created = 0
+        self.log_entries_created = 0
+        self.motion_activity_created = 0
         self.nodes_total = 0
         self.relationships_total = 0
 
@@ -847,6 +857,7 @@ class CellebriteNeo4jWriter:
             "ScreenEvent": self._write_device_event,
             "ApplicationUsage": self._write_app_session,
             "AppUsage": self._write_app_session,
+            "AppsUsageLog": self._write_app_session,
             # Phase 5: Media helpers
             "Attachment": self._write_attachment,
             "ContactPhoto": self._write_contact_photo,
@@ -859,6 +870,16 @@ class CellebriteNeo4jWriter:
             "FileDownload": self._write_file_download,
             "NetworkUsage": self._write_network_usage,
             "DictionaryWord": self._write_dictionary_word,
+            # Phase 9 — app-activity / provenance / movement events (2026-05-25)
+            "SocialMediaActivity": self._write_social_media_activity,
+            "ChatActivity": self._write_chat_activity,
+            "FileUpload": self._write_file_upload,
+            "Journey": self._write_journey,
+            "Note": self._write_note,
+            "DeviceConnectivity": self._write_device_connectivity,
+            "Cookie": self._write_cookie,
+            "LogEntry": self._write_log_entry,
+            "ActivitySensorData": self._write_motion_activity,
             # Explicit ignores (parser emits them, writer silently skips)
             "KeyValueModel": self._noop,
             "Party": self._noop,
@@ -1123,7 +1144,21 @@ class CellebriteNeo4jWriter:
         for msg in messages:
             self._write_instant_message(msg, parent_chat_key=chat_key)
 
+        # Chat actions (join/leave/rename/...) are nested under ActivityLog,
+        # not top-level — the dispatcher never reaches them, so pull them here.
+        self._write_chat_activities(model)
+
         self.chats_created += 1
+
+    def _write_chat_activities(self, chat_model: ParsedModel):
+        """Extract nested ChatActivity from a Chat's ActivityLog into
+        ChatActivity nodes linked to the chat via HAS_ACTIVITY. ChatActivity
+        is never a top-level model (lives under Chat > ActivityLog), so it must
+        be pulled from the parent — both during ingest and in the backfill."""
+        chat_key = f"chat-{chat_model.model_id[:12]}"
+        for act in chat_model.multi_model_fields.get("ActivityLog", []) or []:
+            self._write_chat_activity(act)
+            self._create_relationship(chat_key, f"chatact-{act.model_id[:12]}", "HAS_ACTIVITY")
 
     def _write_instant_message(self, model: ParsedModel, parent_chat_key: Optional[str] = None):
         """InstantMessage -> Communication node (individual message)."""
@@ -1923,6 +1958,266 @@ class CellebriteNeo4jWriter:
             self._create_relationship(self._phone_owner_key, key, "USED")
 
     # ------------------------------------------------------------------
+    # Phase 9: app-activity / provenance / movement events (2026-05-25)
+    # Coverage gap — these top-level types were silently dropped because the
+    # 2026-05-23 audit predated the reports that carry them. Each maps to a
+    # timestamped node that surfaces on the Location & Event Center feed.
+    # ------------------------------------------------------------------
+
+    def _stamp(self, props: Dict, ts: Optional[str]):
+        """Set date/time/timestamp on a node so it lands on the timeline."""
+        if ts:
+            props["date"] = ts[:10]
+            props["time"] = ts[11:16] if len(ts) > 16 else None
+            props["timestamp"] = ts
+
+    def _latlon_from(self, m) -> tuple:
+        """Best-effort (lat, lon) from a Location-shaped child model."""
+        if m is None:
+            return None, None
+        pos = m.model_fields.get("Position") or m
+        try:
+            lat = pos.get_field("Latitude")
+            lon = pos.get_field("Longitude")
+            return (float(lat) if lat else None, float(lon) if lon else None)
+        except (TypeError, ValueError, AttributeError):
+            return None, None
+
+    def _write_social_media_activity(self, model: ParsedModel):
+        """SocialMediaActivity -> SocialMediaActivity node (post/like/comment)."""
+        ts = self._extract_timestamp(model, prefer=("TimeStamp",))
+        source = model.get_field("Source")
+        title = model.get_field("Title")
+        body = model.get_field("Body")
+        key = f"social-{model.model_id[:12]}"
+        name = title or (body[:60] if body else None) or f"{source or 'Social'} activity"
+        props = self._base_props(model, key, name)
+        props.update({
+            "source_app": source,
+            "title": title,
+            "body": body,
+            "url": model.get_field("Url"),
+            "activity_type": model.get_field("SocialActivityType"),
+            "account": model.get_field("Account"),
+            "privacy": model.get_field("PrivacySetting"),
+        })
+        for fld, pk in (("ReactionsCount", "reactions_count"),
+                        ("SharesCount", "shares_count"),
+                        ("CommentCount", "comment_count")):
+            v = model.get_field(fld)
+            if v is not None:
+                props[pk] = v
+        author = model.model_fields.get("Author")
+        if author is not None:
+            props["author"] = author.get_field("Name") or author.get_field("Identifier")
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("SocialMediaActivity", key, props)
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "POSTED")
+        self.social_activity_created += 1
+
+    def _write_chat_activity(self, model: ParsedModel):
+        """ChatActivity -> ChatActivity node (chat action: join/leave/rename...)."""
+        ts = self._extract_timestamp(model)
+        action = model.get_field("Action")
+        key = f"chatact-{model.model_id[:12]}"
+        props = self._base_props(model, key, action or "Chat activity")
+        props.update({
+            "action": action,
+            "source_app": model.get_field("Source"),
+            "body": model.get_field("Body"),
+            "account": model.get_field("Account"),
+        })
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("ChatActivity", key, props)
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "DID")
+        self.chat_activity_created += 1
+
+    def _write_file_upload(self, model: ParsedModel):
+        """FileUpload -> FileUpload node (outbound file share via an app)."""
+        ts = self._extract_timestamp(model, prefer=("DateUploaded", "DateLastModified"))
+        source = model.get_field("Source")
+        ftype = model.get_field("FileType")
+        key = f"upload-{model.model_id[:12]}"
+        name = f"{source or 'File'} upload" + (f" ({ftype})" if ftype else "")
+        props = self._base_props(model, key, name)
+        props.update({
+            "source_app": source,
+            "file_type": ftype,
+            "account": model.get_field("Account"),
+        })
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("FileUpload", key, props)
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "UPLOADED")
+        self.file_uploads_created += 1
+
+    def _write_journey(self, model: ParsedModel):
+        """Journey -> Journey node (navigation trip; carries start/end coords)."""
+        ts = self._extract_timestamp(model, prefer=("StartTime",))
+        key = f"journey-{model.model_id[:12]}"
+        props = self._base_props(model, key, model.get_field("Name") or "Journey")
+        props.update({
+            "source_app": model.get_field("Source"),
+            "account": model.get_field("Account"),
+        })
+        waypoints = model.multi_model_fields.get("WayPoints") or []
+        from_pt = model.model_fields.get("FromPoint") or (waypoints[0] if waypoints else None)
+        to_pt = model.model_fields.get("ToPoint") or (waypoints[-1] if waypoints else None)
+        lat, lon = self._latlon_from(from_pt)
+        elat, elon = self._latlon_from(to_pt)
+        if lat is not None and lon is not None:
+            props["latitude"] = lat
+            props["longitude"] = lon
+        if elat is not None and elon is not None:
+            props["end_latitude"] = elat
+            props["end_longitude"] = elon
+        if waypoints:
+            props["waypoint_count"] = len(waypoints)
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("Journey", key, props)
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "TRAVELED")
+        self.journeys_created += 1
+
+    def _write_note(self, model: ParsedModel):
+        """Note -> Note node (user note content)."""
+        ts = self._extract_timestamp(model, prefer=("Creation", "CreationTime"))
+        title = model.get_field("Title")
+        body = model.get_field("Body")
+        key = f"note-{model.model_id[:12]}"
+        props = self._base_props(model, key, title or (body[:60] if body else None) or "Note")
+        props.update({
+            "title": title,
+            "body": body,
+            "summary": model.get_field("Summary"),
+            "folder": model.get_field("Folder"),
+            "source_app": model.get_field("Source"),
+            "account": model.get_field("Account"),
+            "modified": model.get_field("Modification"),
+        })
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("Note", key, props)
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "WROTE")
+        self.notes_created += 1
+
+    def _write_device_connectivity(self, model: ParsedModel):
+        """DeviceConnectivity -> DeviceConnectivity node (BT/USB/network link)."""
+        ts = self._extract_timestamp(model)
+        method = model.get_field("ConnectivityMethod")
+        nature = model.get_field("ConnectivityNature")
+        key = f"conn-{model.model_id[:12]}"
+        props = self._base_props(model, key, f"{method or 'Device'} {nature or 'connection'}")
+        props.update({"connectivity_method": method, "connectivity_nature": nature})
+        idents = []
+        for kv in model.multi_model_fields.get("DeviceIdentifiers", []) or []:
+            k = kv.get_field("Key") or kv.get_field("Name")
+            v = kv.get_field("Value")
+            if k and v:
+                idents.append(f"{k}={v}")
+            elif k or v:
+                idents.append(k or v)
+        if idents:
+            props["device_identifiers"] = idents
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("DeviceConnectivity", key, props)
+        self.device_connectivity_created += 1
+
+    def _write_cookie(self, model: ParsedModel):
+        """Cookie -> Cookie node (browser/app cookie; web attribution)."""
+        ts = self._extract_timestamp(model, prefer=("LastAccessTime", "CreationTime"))
+        domain = model.get_field("Domain")
+        cname = model.get_field("Name")
+        key = f"cookie-{model.model_id[:12]}"
+        props = self._base_props(model, key, domain or cname or "Cookie")
+        props.update({
+            "cookie_name": cname,
+            "domain": domain,
+            "path": model.get_field("Path"),
+            "related_application": model.get_field("RelatedApplication"),
+            "source_app": model.get_field("Source"),
+            "expiry": model.get_field("Expiry"),
+        })
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("Cookie", key, props)
+        self.cookies_created += 1
+
+    def _write_log_entry(self, model: ParsedModel):
+        """LogEntry -> LogEntry node (app/system log line)."""
+        ts = self._extract_timestamp(model, prefer=("TimeStamp",))
+        app = model.get_field("Application")
+        source = model.get_field("Source")
+        key = f"log-{model.model_id[:12]}"
+        props = self._base_props(model, key, f"{app or source or 'Log'} entry")
+        props.update({
+            "application": app,
+            "source_app": source,
+            "identifier": model.get_field("Identifier"),
+            "body": model.get_field("Body"),
+        })
+        self._stamp(props, ts)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("LogEntry", key, props)
+        self.log_entries_created += 1
+
+    def _write_motion_activity(self, model: ParsedModel):
+        """ActivitySensorData -> MotionActivity window node.
+
+        One node per sensor WINDOW (From/To) carrying DistanceTraveled and a
+        summary of the nested Measurements (variable types/units). The
+        per-second ActivitySensorDataSample children (and the Measurement
+        models) are NOT materialised — ~155k raw-sample nodes with no
+        investigative value beyond the window. Window + distance + timestamp is
+        enough to place "device moving at time T" on the timeline and correlate
+        with Location events (alibi corroboration).
+        """
+        start = model.get_field("From") or self._extract_timestamp(model)
+        end = model.get_field("To")
+        dist = None
+        try:
+            raw = model.get_field("DistanceTraveled")
+            dist = float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            pass
+        key = f"motion-{model.model_id[:12]}"
+        variables, units = [], []
+        for meas in model.multi_model_fields.get("Measurements", []) or []:
+            v = meas.get_field("MeasuredVariableType")
+            u = meas.get_field("Unit")
+            if v and v not in variables:
+                variables.append(v)
+            if u and u not in units:
+                units.append(u)
+        label = ("Motion " + "+".join(variables)).strip() if variables else "Motion activity"
+        props = self._base_props(model, key, label)
+        props.update({
+            "source_app": model.get_field("Source"),
+            "window_start": start,
+            "window_end": end,
+            "distance_m": dist,
+            "variables": variables or None,
+            "units": units or None,
+        })
+        sc = model.get_field("TotalSampleCount")
+        if sc is not None:
+            props["sample_count"] = sc
+        self._stamp(props, start)
+        props = {k: v for k, v in props.items() if v is not None}
+        self._create_node("MotionActivity", key, props)
+        if self._phone_owner_key:
+            self._create_relationship(self._phone_owner_key, key, "MOVED")
+        self.motion_activity_created += 1
+
+    # ------------------------------------------------------------------
     # Phase 5: Media helpers (Attachment, ContactPhoto, ProfilePicture)
     # ------------------------------------------------------------------
 
@@ -2443,6 +2738,16 @@ class CellebriteNeo4jWriter:
             "file_downloads_created": self.file_downloads_created,
             "network_usage_created": self.network_usage_created,
             "dictionary_words_created": self.dictionary_words_created,
+            # Phase 9 — app-activity / provenance / movement events
+            "social_activity_created": self.social_activity_created,
+            "chat_activity_created": self.chat_activity_created,
+            "file_uploads_created": self.file_uploads_created,
+            "journeys_created": self.journeys_created,
+            "notes_created": self.notes_created,
+            "device_connectivity_created": self.device_connectivity_created,
+            "cookies_created": self.cookies_created,
+            "log_entries_created": self.log_entries_created,
+            "motion_activity_created": self.motion_activity_created,
             "total_nodes": self.nodes_total,
             "total_relationships": self.relationships_total,
             "phone_owner": self._phone_owner_key,

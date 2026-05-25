@@ -142,6 +142,26 @@ SUPPORTED_MODEL_TYPES = {
     # of typed phrases. The word + frequency reveals what the owner typed
     # most. 6.5k tiny nodes/phone is negligible. Keep them.
     "DictionaryWord",
+    # Phase 9 — coverage gap found 2026-05-25 (audit predated the iOS/Android
+    # reports C2/C4/C6/C7/C8, which carry these types; they were silently
+    # dropped — see harvest_app_events / WORKING.md). App-activity + provenance
+    # + movement events that belong on the Locations & Events feed + timeline.
+    "AppsUsageLog",          # foreground app-usage sessions (8,960) -> AppSession
+    "SocialMediaActivity",   # posts/activity w/ body, url, author (1,127)
+    "ChatActivity",          # chat actions (775)
+    "FileUpload",            # outbound file shares (3,332)
+    "Journey",               # navigation trips w/ waypoints (75) — geo
+    "Note",                  # user notes w/ content (13)
+    "DeviceConnectivity",    # BT/USB/network connection events (4,083)
+    "Cookie",                # browser cookies — web attribution (10,115)
+    "LogEntry",              # app/system log entries (16,311)
+    # ActivitySensorData = motion/health windows (From/To + DistanceTraveled).
+    # Ingested as compact MotionActivity window nodes; the nested
+    # ActivitySensorDataMeasurement/Sample children are summarised onto the
+    # window, NOT created as ~155k separate nodes (would bloat the graph). The
+    # nested types stay out of SUPPORTED because the parser only dispatches
+    # top-level models — they're reached inside the ActivitySensorData handler.
+    "ActivitySensorData",
 }
 
 # Model types we intentionally skip (too granular / low investigative value).
