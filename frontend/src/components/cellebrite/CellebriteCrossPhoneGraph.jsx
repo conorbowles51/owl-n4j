@@ -1389,28 +1389,26 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             }
             setMultiSelection(next);
 
-            // Publish a selection-rail entry describing the picked
-            // set so the user immediately sees a list of what they
-            // grabbed without having to click each one. Falls back
-            // to GenericAccordion (key/value table) since there's
-            // no dedicated 'graph-selection' renderer yet.
+            // Publish the full selection to the rail so the user sees
+            // one rich info card per node (GraphSelectionAccordion
+            // handles the type-aware rendering). We pass the actual
+            // node payloads via the buildNodePayload helper — gives
+            // the rail everything it needs without an extra fetch.
             if (selectEntity && selectedNodes.length > 0) {
-              const persons = selectedNodes.filter((n) => n.type !== 'PhoneReport' && n.type !== 'Resource');
-              const resources = selectedNodes.filter((n) => n.type === 'Resource');
-              const phones = selectedNodes.filter((n) => n.type === 'PhoneReport');
+              const nodePayloads = selectedNodes
+                .map((n) => buildNodePayload(n, graphData.links))
+                .filter(Boolean);
+              // Cap at 200 so a huge box drag doesn't ship 1k items
+              // into the rail (which would freeze the panel render).
+              const capped = nodePayloads.slice(0, 200);
               selectEntity({
                 type: 'graph-selection',
                 id: `graph-selection-${Date.now()}`,
                 caseId,
                 payload: {
-                  total: selectedNodes.length,
-                  persons: persons.length,
-                  resources: resources.length,
-                  phones: phones.length,
-                  // Show up to 25 names per group; ellipsis after.
-                  person_names: persons.slice(0, 25).map((n) => n.name).filter(Boolean),
-                  resource_names: resources.slice(0, 25).map((n) => n.name).filter(Boolean),
-                  phone_names: phones.slice(0, 25).map((n) => n.name).filter(Boolean),
+                  total: nodePayloads.length,
+                  truncated: nodePayloads.length > capped.length,
+                  nodes: capped,
                 },
                 source: 'graph.rubber-band',
               });
@@ -1840,6 +1838,7 @@ function buildNodePayload(node, links) {
   if (!node) return null;
   if (node.type === 'PhoneReport') {
     return {
+      kind: 'phone-report',
       type: 'phone-report',
       id: node.id,
       reportKey: node.report_key,
@@ -1861,6 +1860,7 @@ function buildNodePayload(node, links) {
       }
     }
     return {
+      kind: 'resource',
       type: 'resource',
       id: node.id,
       node_key: node.id,
@@ -1875,11 +1875,13 @@ function buildNodePayload(node, links) {
   // Person
   const personKey = String(node.id || '').replace(/^person-/, '');
   return {
+    kind: 'person',
     type: 'person',
     id: node.id,
     node_key: personKey,
     person_key: personKey,
     reportKey: node.report_key || node.cellebrite_report_key || null,
+    report_key: node.report_key || node.cellebrite_report_key || null,
     name: node.name,
     phone: node.phone,
     device_count: node.device_count,
