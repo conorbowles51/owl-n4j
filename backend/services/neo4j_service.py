@@ -9470,11 +9470,29 @@ class Neo4jService:
             )
             params["search"] = search
 
+        # Report-anchored membership + counts (2026-05-25). A contact must
+        # appear in a device's list if they have comms TIED TO THAT DEVICE —
+        # not based on the Person node's single home report_key. After
+        # cross-phone identity unification a person's node carries one
+        # home-report but their relationships span every phone they appear on;
+        # the old `cellebrite_report_key:$rk` filter on the Person hid every
+        # unified contact from all but their home device. We now anchor on the
+        # report's (indexed) PhoneCall/Communication/Email nodes and roll the
+        # person endpoints up, so counts are per-device and membership is
+        # correct for cross-phone identities.
         with self._driver.session() as session:
             total = session.run(
                 f"""
-                MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
-                WHERE p.key IS NOT NULL {search_clause}
+                CALL {{
+                  MATCH (c:PhoneCall {{case_id:$case_id, cellebrite_report_key:$rk}})-[:CALLED|CALLED_TO]-(p:Person) RETURN p
+                  UNION
+                  MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})<-[:SENT_MESSAGE]-(p:Person) WHERE m.body IS NOT NULL RETURN p
+                  UNION
+                  MATCH (msg:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p:Person) WHERE msg.body IS NOT NULL RETURN p
+                  UNION
+                  MATCH (e:Email {{case_id:$case_id, cellebrite_report_key:$rk}})-[:EMAILED|SENT_TO]-(p:Person) RETURN p
+                }}
+                WITH DISTINCT p WHERE p.key IS NOT NULL {search_clause}
                 RETURN count(p) AS n
                 """,
                 params,
@@ -9483,18 +9501,25 @@ class Neo4jService:
 
             result = session.run(
                 f"""
-                MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
+                CALL {{
+                  MATCH (c:PhoneCall {{case_id:$case_id, cellebrite_report_key:$rk}})
+                  MATCH (p:Person)-[:CALLED|CALLED_TO]-(c)
+                  RETURN p AS person, count(DISTINCT c) AS calls, 0 AS msgs, 0 AS emails
+                  UNION ALL
+                  MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}}) WHERE m.body IS NOT NULL
+                  MATCH (p:Person)-[:SENT_MESSAGE]->(m)
+                  RETURN p AS person, 0 AS calls, count(DISTINCT m) AS msgs, 0 AS emails
+                  UNION ALL
+                  MATCH (msg:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})-[:PART_OF]->(chat:Communication) WHERE msg.body IS NOT NULL
+                  MATCH (p:Person)-[:PARTICIPATED_IN]->(chat)
+                  RETURN p AS person, 0 AS calls, count(DISTINCT msg) AS msgs, 0 AS emails
+                  UNION ALL
+                  MATCH (e:Email {{case_id:$case_id, cellebrite_report_key:$rk}})
+                  MATCH (p:Person)-[:EMAILED|SENT_TO]-(e)
+                  RETURN p AS person, 0 AS calls, 0 AS msgs, count(DISTINCT e) AS emails
+                }}
+                WITH person AS p, sum(calls) AS calls, sum(msgs) AS messages, sum(emails) AS emails
                 WHERE p.key IS NOT NULL {search_clause}
-                OPTIONAL MATCH (p)-[r1:CALLED|CALLED_TO]-(c:PhoneCall)
-                WITH p, count(DISTINCT c) AS calls
-                OPTIONAL MATCH (p)-[r2:SENT_MESSAGE]-(m:Communication)
-                WITH p, calls, count(DISTINCT m) AS msgs_out
-                OPTIONAL MATCH (p)-[:PARTICIPATED_IN]->(chat:Communication)
-                OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
-                WHERE msg.body IS NOT NULL
-                WITH p, calls, msgs_out, count(DISTINCT msg) AS msgs_chat
-                OPTIONAL MATCH (p)-[:EMAILED|SENT_TO]-(e:Email)
-                WITH p, calls, msgs_out, msgs_chat, count(DISTINCT e) AS emails
                 RETURN p.key AS key,
                        p.name AS name,
                        p.phone_numbers AS phone_numbers,
@@ -9502,9 +9527,9 @@ class Neo4jService:
                        p.cellebrite_id AS cellebrite_id,
                        p.all_identifiers AS all_identifiers,
                        calls,
-                       msgs_out + msgs_chat AS messages,
+                       messages,
                        emails,
-                       calls + msgs_out + msgs_chat + emails AS interactions
+                       calls + messages + emails AS interactions
                 ORDER BY interactions DESC, name
                 SKIP $offset LIMIT $limit
                 """,
