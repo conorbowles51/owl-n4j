@@ -6316,51 +6316,77 @@ class Neo4jService:
             #   (c) anchored, depth=2: above + one more hop. Hard-capped
             #       at 200 nodes total so a busy case doesn't draw a hairball.
             if not anchored:
-                # Person ranking — widened beyond comms so the rendered
-                # 200 reflects activity of any kind, not just calls /
-                # messages / emails / chat participation. Without this,
-                # toggling on Visits / WiFi / Account / etc. brought
-                # no new Persons into view because the cut was made on
-                # comm volume alone. Counts every Person-originated
-                # activity plus reverse edges from comm nodes so people
-                # who only RECEIVE comms still rank above zero-activity
-                # contacts. We surface the new count under the existing
-                # `comm_count` key so the frontend's reads keep working.
-                result = session.run(
-                    """
-                    MATCH (r:PhoneReport {case_id: $case_id})
-                    MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
-                    WHERE p.cellebrite_report_key = r.key
-                    WITH p, collect(DISTINCT r.key) AS device_keys,
-                         count(DISTINCT r) AS device_count
-                    OPTIONAL MATCH (p)-[rel_out]->()
-                    WHERE type(rel_out) IN [
-                      'CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN',
-                      'WAS_AT','CONNECTED_TO','USED_TOWER','PAIRED_WITH',
-                      'OWNS_ACCOUNT','ATTENDED','SEARCHED',
-                      'BROKER_OF','BROKERED','BENEFITS_FROM','INVOLVED_IN','PAYER',
-                      'TRANSFERRED_TO','RECEIVED_FROM','FUNDED'
-                    ]
-                    WITH p, device_keys, device_count, count(rel_out) AS out_count
-                    OPTIONAL MATCH ()-[rel_in]->(p)
-                    WHERE type(rel_in) IN [
-                      'CALLED_TO','SENT_TO','EMAILED','PARTICIPATED_IN',
-                      'ATTENDED_BY','TRANSFERRED_TO','RECEIVED_FROM'
-                    ]
-                    // Two-step aggregation: materialise in_count first
-                    // (count(rel_in) is the aggregate), then add to the
-                    // already-grouped out_count in a fresh WITH. Cypher
-                    // disallows mixing a bare non-aggregate (`out_count`)
-                    // with an aggregate expression inside the same
-                    // projection.
-                    WITH p, device_keys, device_count, out_count, count(rel_in) AS in_count
-                    WITH p, device_keys, device_count, out_count + in_count AS activity_count
-                    ORDER BY device_count DESC, activity_count DESC
-                    LIMIT 200
-                    RETURN p, device_keys, device_count, activity_count AS comm_count
-                    """,
-                    case_id=case_id,
-                )
+                # Person ranking — driven by the ACTIVE comm-style edge
+                # types only. Resource toggles surface their own nodes
+                # (diamonds) via the resource emission pass below; they
+                # don't drag Persons into the Person set.
+                #
+                # If NO comm types are active (user has only resource
+                # toggles on), we still render the phones + every
+                # selected resource, but the Person layer collapses to
+                # whatever sender/recipient turns up via the resource
+                # edges — i.e. nothing. That's the honest behaviour:
+                # turning off all comms hides the people layer.
+                #
+                # Type list is filtered against EDGE_PATTERNS so unknown
+                # types coming over the wire are ignored.
+                comm_rel_types_out: List[str] = []
+                comm_rel_types_in: List[str] = []
+                for t in active_types:
+                    pat = EDGE_PATTERNS.get(t)
+                    if not pat or pat["kind"] != "pair":
+                        continue
+                    if pat.get("special") == "chat_participants":
+                        # Messages flow Person -> Communication -> chat
+                        # parent; recipients participate via the chat.
+                        # Use both the sender edge and the chat-
+                        # participation edge.
+                        comm_rel_types_out.append("SENT_MESSAGE")
+                        comm_rel_types_in.append("PARTICIPATED_IN")
+                    else:
+                        out_rel = pat.get("out")
+                        in_rel = pat.get("in")
+                        if out_rel:
+                            comm_rel_types_out.append(out_rel)
+                        if in_rel:
+                            comm_rel_types_in.append(in_rel)
+
+                if comm_rel_types_out or comm_rel_types_in:
+                    result = session.run(
+                        """
+                        MATCH (r:PhoneReport {case_id: $case_id})
+                        MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                        WHERE p.cellebrite_report_key = r.key
+                        WITH p, collect(DISTINCT r.key) AS device_keys,
+                             count(DISTINCT r) AS device_count
+                        OPTIONAL MATCH (p)-[rel_out]->()
+                        WHERE type(rel_out) IN $out_types
+                        WITH p, device_keys, device_count, count(rel_out) AS out_count
+                        OPTIONAL MATCH ()-[rel_in]->(p)
+                        WHERE type(rel_in) IN $in_types
+                        WITH p, device_keys, device_count, out_count, count(rel_in) AS in_count
+                        WITH p, device_keys, device_count, out_count + in_count AS activity_count
+                        // Only render Persons who participate in at
+                        // least one active-type edge. Without this,
+                        // deselecting every comm leaves the whole
+                        // Person population on the canvas with no
+                        // edges — exactly the behaviour the user
+                        // pushed back on.
+                        WHERE activity_count > 0
+                        ORDER BY device_count DESC, activity_count DESC
+                        LIMIT 200
+                        RETURN p, device_keys, device_count, activity_count AS comm_count
+                        """,
+                        case_id=case_id,
+                        out_types=list(set(comm_rel_types_out)),
+                        in_types=list(set(comm_rel_types_in)),
+                    )
+                else:
+                    # All comm chips off — skip the Person query
+                    # entirely. The graph will render phones +
+                    # resources only (resources still emit via the
+                    # pass below).
+                    result = iter([])
             else:
                 # Build a single query that gathers the anchors + their
                 # ±depth neighbourhood across the active edge types.

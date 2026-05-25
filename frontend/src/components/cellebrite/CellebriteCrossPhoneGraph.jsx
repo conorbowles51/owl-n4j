@@ -73,27 +73,33 @@ function tokeniseGraphSearch(input) {
 // edges. Resource toggles add small Resource nodes (diamonds) that
 // each phone connects to via a Phone→Resource edge.
 //
-// All default ON per the user's preference for "Both on, mixed".
+// Default state: only calls + messages on. The user explicitly asked
+// to see "where possible the whole graph but by default only have
+// messages and calls visible. The rest can be toggled on or off."
+//
+// Each toggle is a true add/remove: deselecting a type causes the
+// backend to omit Persons / Resources whose only edges were of that
+// type, so the canvas stays meaningful at every toggle state.
 const GRAPH_EVENT_TYPES = [
-  // Comms
-  { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true, group: 'comms' },
-  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true, group: 'comms' },
-  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: true, group: 'comms' },
+  // Comms — on by default
+  { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true,  group: 'comms' },
+  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true,  group: 'comms' },
+  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: false, group: 'comms' },
   // Movement / proximity
-  { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: true, group: 'movement' },
-  { key: 'wifi',       label: 'WiFi',        icon: Wifi,          color: '#22c55e', defaultOn: true, group: 'movement' },
-  { key: 'cell_tower', label: 'Cell tower',  icon: Radio,         color: '#8b5cf6', defaultOn: true, group: 'movement' },
-  { key: 'meeting',    label: 'Meetings',    icon: UsersIcon,     color: '#f97316', defaultOn: true, group: 'movement' },
+  { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: false, group: 'movement' },
+  { key: 'wifi',       label: 'WiFi',        icon: Wifi,          color: '#22c55e', defaultOn: false, group: 'movement' },
+  { key: 'cell_tower', label: 'Cell tower',  icon: Radio,         color: '#8b5cf6', defaultOn: false, group: 'movement' },
+  { key: 'meeting',    label: 'Meetings',    icon: UsersIcon,     color: '#f97316', defaultOn: false, group: 'movement' },
   // Web activity
-  { key: 'visit',      label: 'Web domains', icon: Globe,         color: '#a855f7', defaultOn: true, group: 'web' },
-  { key: 'search',     label: 'Searches',    icon: SearchIcon,    color: '#ec4899', defaultOn: true, group: 'web' },
-  { key: 'bookmark',   label: 'Bookmarks',   icon: Bookmark,      color: '#d946ef', defaultOn: true, group: 'web' },
+  { key: 'visit',      label: 'Web domains', icon: Globe,         color: '#a855f7', defaultOn: false, group: 'web' },
+  { key: 'search',     label: 'Searches',    icon: SearchIcon,    color: '#ec4899', defaultOn: false, group: 'web' },
+  { key: 'bookmark',   label: 'Bookmarks',   icon: Bookmark,      color: '#d946ef', defaultOn: false, group: 'web' },
   // Identity
-  { key: 'account',    label: 'Accounts',    icon: ShieldCheck,   color: '#0ea5e9', defaultOn: true, group: 'identity' },
-  { key: 'credential', label: 'Credentials', icon: Key,           color: '#eab308', defaultOn: true, group: 'identity' },
+  { key: 'account',    label: 'Accounts',    icon: ShieldCheck,   color: '#0ea5e9', defaultOn: false, group: 'identity' },
+  { key: 'credential', label: 'Credentials', icon: Key,           color: '#eab308', defaultOn: false, group: 'identity' },
   // Other
-  { key: 'financial',  label: 'Financial',   icon: DollarSign,    color: '#16a34a', defaultOn: true, group: 'other' },
-  { key: 'pairing',    label: 'Pairings',    icon: Bluetooth,     color: '#6366f1', defaultOn: true, group: 'other' },
+  { key: 'financial',  label: 'Financial',   icon: DollarSign,    color: '#16a34a', defaultOn: false, group: 'other' },
+  { key: 'pairing',    label: 'Pairings',    icon: Bluetooth,     color: '#6366f1', defaultOn: false, group: 'other' },
 ];
 
 const NODE_COLORS = {
@@ -116,7 +122,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // Per-case localStorage so the user's preferred event-type toggle
   // state persists across visits. Keyed off case so different cases
   // don't bleed settings.
-  const eventTypesKey = `cb.graph.eventTypes.${caseId || 'unknown'}`;
+  // localStorage key bumped to v2 when toggle semantics changed from
+  // "show/hide edges among an unchanging Person set" to "add/remove
+  // Persons + Resources entirely". The old v1 selections (which were
+  // mostly "all on" after the previous default-on rollout) would map
+  // to a hairball under the new semantics — invalidating the cache
+  // keeps the new default (calls + messages only) for everyone on
+  // first open.
+  const eventTypesKey = `cb.graph.eventTypes.v2.${caseId || 'unknown'}`;
   const [activeEventTypes, setActiveEventTypes] = useState(() => {
     if (typeof window === 'undefined') {
       return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
@@ -137,45 +150,36 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     } catch { /* full / disabled */ }
   }, [activeEventTypes, eventTypesKey]);
 
-  // ---- Rotation fix: pin positions across filter toggles -----------
-  // When the user flicks an edge-type chip the d3-force simulation can
-  // still be slowly relaxing in the background. React re-renders the
-  // <ForceGraph2D /> with the new filteredData and the lib resumes the
-  // sim's next tick — which appears to the user as a "slight rotation"
-  // even though the data the React tree owns hasn't moved.
+  // Camera preservation + position carry-over across refetches.
   //
-  // Fix: on every chip-toggle we set hard pins (fx/fy = current x/y)
-  // on every node so subsequent ticks can't move them. We release the
-  // pins a short delay later (300ms) so:
-  //   - The simulation stops thrashing the user's view DURING the
-  //     toggle, but
-  //   - Future perspective refetches (which DO want to relax) work
-  //     normally.
-  // The release is deliberately fire-and-forget — if the user toggles
-  // again before it runs, the next pin overrides.
-  const pinReleaseTimerRef = useRef(null);
+  // Every event-type toggle now triggers a backend refetch so the new
+  // node set actually changes (Persons whose only edges were the
+  // deselected type disappear, resources of newly-selected types
+  // appear). Without these refs we'd lose the user's pan/zoom and the
+  // unchanged nodes would teleport to fresh random positions.
+  //
+  // Strategy:
+  //   - cameraSnapshotRef:   captured just BEFORE a refetch, restored
+  //                          via centerAt+zoom inside onEngineStop
+  //                          once the new simulation settles.
+  //   - lastNodePosRef:      maintained from whatever's currently on
+  //                          screen. Used to seed new nodes with the
+  //                          previous node's x/y/vx/vy when their ids
+  //                          match — so anything that's still on the
+  //                          canvas stays put.
+  const cameraSnapshotRef = useRef(null);
+  const lastNodePosRef = useRef(new Map());
+  // Continuously maintain the position cache so the next refetch
+  // always has the freshest layout to seed from.
   useEffect(() => {
-    // Skip the first render — no positions to pin yet.
-    if (!graphData.nodes.length) return;
+    const m = lastNodePosRef.current;
     for (const n of graphData.nodes) {
+      if (n.id == null) continue;
       if (Number.isFinite(n.x) && Number.isFinite(n.y)) {
-        n.fx = n.x;
-        n.fy = n.y;
+        m.set(n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy });
       }
     }
-    if (pinReleaseTimerRef.current) clearTimeout(pinReleaseTimerRef.current);
-    pinReleaseTimerRef.current = setTimeout(() => {
-      for (const n of graphData.nodes) {
-        delete n.fx;
-        delete n.fy;
-      }
-      pinReleaseTimerRef.current = null;
-    }, 300);
-    return () => {
-      // No-op on unmount; the next effect run handles cleanup.
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeEventTypes]);
+  });
   // Depth toggle — 1 (anchors + direct contacts) is the safer default;
   // 2 hops off-anchor and is best for "find connections-of-connections"
   // exploration. Only meaningful when a perspective is active.
@@ -211,37 +215,68 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   }, [perspective?.hasPerspective, perspective?.activeKeys]);
 
   // ---- Fetch policy --------------------------------------------------
-  // Refetch ONLY when the scope changes — perspective anchors or depth.
-  // Edge-type toggles narrow what's RENDERED client-side (see
-  // `filteredData` below) so toggling a type never triggers a refetch,
-  // never reseeds the simulation, and never moves the camera. This is
-  // the only way to keep the user's view perfectly stable on toggle.
+  // Refetch on any change that affects which nodes belong on the
+  // canvas: perspective anchors, depth, AND the active event-type set.
+  // The backend produces a graph containing ONLY Persons / Resources
+  // reachable via active edges, so toggling a chip both adds and
+  // removes nodes (not just edges).
   //
-  // Backend keeps its `event_types` param for the perspective rebuild
-  // route, but we deliberately always request the full superset here
-  // (passing `undefined` so the API call omits it and gets the
-  // backend's all-edges default). The 200-node / 600-edge caps keep
-  // this safe.
+  // Camera + node positions are preserved across the refetch — we
+  // snapshot centerAt+zoom just BEFORE the call and restore them in
+  // onEngineStop once the new simulation settles, and we copy x/y/
+  // vx/vy from matching old nodes onto the new ones so unchanged
+  // nodes don't teleport.
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
-    setLoading(true);
 
+    // Snapshot the current camera BEFORE issuing the fetch so the
+    // post-fetch onEngineStop has something to restore. Initial load
+    // skips the snapshot (graph hasn't rendered yet) and the library's
+    // default first-render fit applies normally.
+    if (fgRef.current && graphData.nodes.length > 0) {
+      try {
+        const centre = fgRef.current.centerAt();
+        const z = fgRef.current.zoom();
+        if (centre && Number.isFinite(centre.x) && Number.isFinite(centre.y)) {
+          cameraSnapshotRef.current = { x: centre.x, y: centre.y, z };
+        }
+      } catch {
+        cameraSnapshotRef.current = null;
+      }
+    }
+
+    setLoading(true);
     cellebriteAPI.getCrossPhoneGraph(caseId, {
       personKeys: personKeys || undefined,
-      // Always full set — client-side filter handles the visible subset.
-      eventTypes: GRAPH_EVENT_TYPES.map((t) => t.key),
+      // Send the user's active set so the backend includes/excludes
+      // the matching Persons + Resources. Empty set = no event types.
+      eventTypes: [...activeEventTypes],
       depth,
     }).then(data => {
-      if (!cancelled) {
-        setGraphData({
-          nodes: (data && data.nodes) || [],
-          links: (data && data.links) || [],
-        });
-        setTotalPersons((data && Number(data.total_persons)) || 0);
-        setEdgeCountsByType((data && data.edge_counts_by_type) || {});
-        setLoading(false);
+      if (cancelled) return;
+      const nextNodes = (data && data.nodes) || [];
+      // Seed positions from the existing layout so unchanged nodes
+      // don't move. Library treats x/y on a node as a placement hint;
+      // the new sim relaxes around them.
+      if (lastNodePosRef.current.size > 0) {
+        for (const n of nextNodes) {
+          const prev = lastNodePosRef.current.get(n.id);
+          if (prev) {
+            n.x = prev.x;
+            n.y = prev.y;
+            n.vx = prev.vx || 0;
+            n.vy = prev.vy || 0;
+          }
+        }
       }
+      setGraphData({
+        nodes: nextNodes,
+        links: (data && data.links) || [],
+      });
+      setTotalPersons((data && Number(data.total_persons)) || 0);
+      setEdgeCountsByType((data && data.edge_counts_by_type) || {});
+      setLoading(false);
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
@@ -252,7 +287,11 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     });
 
     return () => { cancelled = true; };
-  }, [caseId, personKeys, depth]);
+    // graphData intentionally omitted — we read it inside but only
+    // care about the moment-of-call snapshot; re-firing on every
+    // graphData mutation would cause an infinite loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, personKeys, depth, [...activeEventTypes].sort().join(',')]);
 
   // Build a per-node search haystack ONCE per graph data load so the
   // per-keystroke filter is O(n) string-contains, not O(n × field
@@ -927,6 +966,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
+          // Once the post-refetch simulation settles, restore the
+          // camera the user was looking at before the toggle so they
+          // never lose their place. Snapshot is only populated when
+          // there was a prior view to preserve, so the initial load's
+          // default fit-to-view behaviour is unaffected.
+          onEngineStop={() => {
+            const snap = cameraSnapshotRef.current;
+            if (!snap || !fgRef.current) return;
+            try {
+              fgRef.current.centerAt(snap.x, snap.y, 0);
+              fgRef.current.zoom(snap.z, 0);
+            } catch {
+              /* ref not ready yet — skip */
+            }
+            cameraSnapshotRef.current = null;
+          }}
         />
 
         {/* Search results panel — overlays the canvas in Search mode.
