@@ -43,6 +43,41 @@ def _merge_dict(left: dict[str, Any] | None, right: dict[str, Any] | None) -> di
     return merged
 
 
+def _artifact_store_from_available(available_artifacts: list[dict[str, Any]] | None) -> dict[str, dict[str, Any]]:
+    store: dict[str, dict[str, Any]] = {}
+    for artifact in available_artifacts or []:
+        if not isinstance(artifact, dict):
+            continue
+        artifact_id = str(artifact.get("id") or "")
+        if artifact_id:
+            store[artifact_id] = to_jsonable(artifact)
+    return store
+
+
+def _format_available_artifacts(available_artifacts: list[dict[str, Any]] | None) -> str:
+    rows: list[str] = []
+    for artifact in (available_artifacts or [])[-8:]:
+        if not isinstance(artifact, dict):
+            continue
+        artifact_id = str(artifact.get("id") or "")
+        artifact_type = str(artifact.get("type") or "artifact")
+        title = str(artifact.get("title") or "Untitled artifact")
+        if artifact_id:
+            rows.append(f"- {artifact_id} ({artifact_type}): {title}")
+    if not rows:
+        return "No previous artifacts are available in this thread yet."
+    return "\n".join(rows)
+
+
+def _messages_without_dangling_tool_calls(messages: list[AnyMessage]) -> list[AnyMessage]:
+    if not messages:
+        return messages
+    last_message = messages[-1]
+    if isinstance(last_message, AIMessage) and (getattr(last_message, "tool_calls", []) or []):
+        return messages[:-1]
+    return messages
+
+
 class AgentState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     case_id: str
@@ -82,10 +117,13 @@ class AgentGraphRunner:
         artifact_preference: str = "auto",
         max_tool_calls: int = 12,
         thread_id: str | None = None,
+        available_artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
+        available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
             artifact_preference=artifact_preference,
+            artifact_store=_artifact_store_from_available(available_artifacts),
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
@@ -101,7 +139,17 @@ Your job:
 - Search the graph when the user asks about people, companies, events, relationships, timelines, locations, or transactions.
 - Search documents when the answer needs source text, document excerpts, or semantic context.
 - Use run_readonly_cypher for precise graph questions that need counts, filters, paths, or custom tables.
-- If the user asks for a graph, timeline, map, table, or financial view, build the matching artifact.
+- Use inspect_graph_schema before writing custom Cypher for labels or properties you have not already inspected in this run.
+- For human-readable entity names in Cypher, prefer coalesce(n.name, n.display_name, n.full_name, n.title, n.key); do not assume display_name exists.
+- If the user asks for a graph, map, table, chart, or report view, build the matching artifact.
+- Use build_table_artifact for query-backed tables where rows come directly from Neo4j.
+- Use build_table_artifact_from_rows for synthesized analytical tables you have already reasoned out from tool evidence, such as ranked contradictions, witness matrices, issue lists, or source comparison tables.
+- Use build_chart_artifact for numeric summaries, distributions, rankings, comparisons, trends, and proportions. Pick bar/stacked_bar, line/area, pie/donut, or scatter according to the user's wording and the data shape.
+- Do not encode hand-built analytical rows as Cypher UNWIND just to create a table artifact.
+- For report requests, do not build the report until the user has clearly specified the purpose, scope, and what should be included. If any of those are unclear, use request_clarification.
+- When useful for a report, offer to embed graph, table, or chart artifacts, or create and embed them yourself when they materially support the report.
+- Build reports with build_report_artifact. Treat follow-ups as revisions of the previous report artifact and explain what changed.
+- If the user asks for a timeline, chronology, transaction list, or financial table, build a table artifact with useful date, amount, entity, and reasoning columns.
 - For graph requests, choose the narrowest graph mode that matches the user's words:
   transaction_only for only Transaction nodes, transactions_plus_accounts for transaction nodes and accounts,
   transaction_flow for money-flow context, shortest_paths for connective tissue between named nodes,
@@ -118,6 +166,11 @@ Your job:
 
 Artifact preference from the UI: {state.get("artifact_preference", "auto")}.
 
+Recent artifacts available in this thread:
+{available_artifact_context}
+
+Use these artifact ids when revising a previous report or embedding an existing graph, table, or chart in a report.
+
 Cypher safety rules:
 - Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.
 - Scope actual nodes or relationships with .case_id = $case_id in every Cypher query.
@@ -129,6 +182,7 @@ Cypher safety rules:
 Common labels: Person, Organization, Account, Transaction, Communication, Event, Location, LegalAction, Other.
 Common relationship types include SENT_PAYMENT, RECEIVED_PAYMENT, VIA_ACCOUNT, HELD_BY, HELD_AT_BANK,
 COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER_OF, TRANSFERRED_TO.
+Actual labels and fields vary by case, so inspect the schema when field choice matters.
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
@@ -233,16 +287,19 @@ COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER
             if isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": message_content_to_text(last_message.content)}
 
+            final_messages = _messages_without_dangling_tool_calls(state["messages"])
             response = self.base_model.invoke(
                 [
                     SystemMessage(
                         content=(
                             "Write the final answer from the tool results. "
                             "Be concise, do not call tools, and mention any artifacts created. "
+                            "If the previous assistant turn requested more tools than the run budget allowed, "
+                            "ignore that unexecuted request and summarize only the completed tool results. "
                             "If CSV export is relevant, refer to the artifact CSV button; do not claim a file is attached."
                         )
                     ),
-                    *state["messages"],
+                    *final_messages,
                 ]
             )
             return {"messages": [response], "final_answer": message_content_to_text(response.content)}
@@ -289,11 +346,14 @@ COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER
         artifact_preference: str = "auto",
         max_tool_calls: int = 12,
         thread_id: str | None = None,
+        available_artifacts: list[dict[str, Any]] | None = None,
         should_cancel: Callable[[], bool] | None = None,
     ):
+        available_artifact_context = _format_available_artifacts(available_artifacts)
         tool_context = AgentToolContext(
             case_id=case_id,
             artifact_preference=artifact_preference,
+            artifact_store=_artifact_store_from_available(available_artifacts),
         )
         tools = make_agent_tools(tool_context)
         tools_by_name = {tool.name: tool for tool in tools}
@@ -309,7 +369,17 @@ Your job:
 - Search the graph when the user asks about people, companies, events, relationships, timelines, locations, or transactions.
 - Search documents when the answer needs source text, document excerpts, or semantic context.
 - Use run_readonly_cypher for precise graph questions that need counts, filters, paths, or custom tables.
-- If the user asks for a graph, timeline, map, table, or financial view, build the matching artifact.
+- Use inspect_graph_schema before writing custom Cypher for labels or properties you have not already inspected in this run.
+- For human-readable entity names in Cypher, prefer coalesce(n.name, n.display_name, n.full_name, n.title, n.key); do not assume display_name exists.
+- If the user asks for a graph, map, table, chart, or report view, build the matching artifact.
+- Use build_table_artifact for query-backed tables where rows come directly from Neo4j.
+- Use build_table_artifact_from_rows for synthesized analytical tables you have already reasoned out from tool evidence, such as ranked contradictions, witness matrices, issue lists, or source comparison tables.
+- Use build_chart_artifact for numeric summaries, distributions, rankings, comparisons, trends, and proportions. Pick bar/stacked_bar, line/area, pie/donut, or scatter according to the user's wording and the data shape.
+- Do not encode hand-built analytical rows as Cypher UNWIND just to create a table artifact.
+- For report requests, do not build the report until the user has clearly specified the purpose, scope, and what should be included. If any of those are unclear, use request_clarification.
+- When useful for a report, offer to embed graph, table, or chart artifacts, or create and embed them yourself when they materially support the report.
+- Build reports with build_report_artifact. Treat follow-ups as revisions of the previous report artifact and explain what changed.
+- If the user asks for a timeline, chronology, transaction list, or financial table, build a table artifact with useful date, amount, entity, and reasoning columns.
 - For graph requests, choose the narrowest graph mode that matches the user's words:
   transaction_only for only Transaction nodes, transactions_plus_accounts for transaction nodes and accounts,
   transaction_flow for money-flow context, shortest_paths for connective tissue between named nodes,
@@ -326,6 +396,11 @@ Your job:
 
 Artifact preference from the UI: {state.get("artifact_preference", "auto")}.
 
+Recent artifacts available in this thread:
+{available_artifact_context}
+
+Use these artifact ids when revising a previous report or embedding an existing graph, table, or chart in a report.
+
 Cypher safety rules:
 - Only write read-only MATCH/OPTIONAL MATCH/WITH/UNWIND queries that RETURN data.
 - Scope actual nodes or relationships with .case_id = $case_id in every Cypher query.
@@ -337,6 +412,7 @@ Cypher safety rules:
 Common labels: Person, Organization, Account, Transaction, Communication, Event, Location, LegalAction, Other.
 Common relationship types include SENT_PAYMENT, RECEIVED_PAYMENT, VIA_ACCOUNT, HELD_BY, HELD_AT_BANK,
 COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER_OF, TRANSFERRED_TO.
+Actual labels and fields vary by case, so inspect the schema when field choice matters.
 """
 
         def agent_node(state: AgentState) -> dict[str, Any]:
@@ -449,16 +525,19 @@ COMMUNICATED_WITH, PARTICIPATED_IN, WORKS_FOR, ASSOCIATED_WITH, BENEFICIAL_OWNER
             if isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": message_content_to_text(last_message.content)}
 
+            final_messages = _messages_without_dangling_tool_calls(state["messages"])
             response = self.base_model.invoke(
                 [
                     SystemMessage(
                         content=(
                             "Write the final answer from the tool results. "
                             "Be concise, do not call tools, and mention any artifacts created. "
+                            "If the previous assistant turn requested more tools than the run budget allowed, "
+                            "ignore that unexecuted request and summarize only the completed tool results. "
                             "If CSV export is relevant, refer to the artifact CSV button; do not claim a file is attached."
                         )
                     ),
-                    *state["messages"],
+                    *final_messages,
                 ]
             )
             return {"messages": [response], "final_answer": message_content_to_text(response.content)}

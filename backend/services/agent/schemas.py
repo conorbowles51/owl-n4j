@@ -7,17 +7,17 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-AgentArtifactType = Literal["graph", "timeline", "table", "map", "financial"]
+AgentArtifactType = Literal["graph", "table", "map", "report", "chart"]
 AgentToolStatus = Literal["success", "error"]
 AgentRunStatus = Literal["running", "completed", "failed", "cancelled", "clarification_required"]
 AgentArtifactPreference = Literal[
     "auto",
     "none",
     "graph",
-    "timeline",
     "table",
     "map",
-    "financial",
+    "report",
+    "chart",
 ]
 
 

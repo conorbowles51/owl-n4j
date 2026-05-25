@@ -1,9 +1,9 @@
 export type AgentArtifactType =
   | "graph"
-  | "timeline"
   | "table"
   | "map"
-  | "financial"
+  | "report"
+  | "chart"
 
 export interface AgentArtifact {
   id: string

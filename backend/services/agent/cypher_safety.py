@@ -40,12 +40,70 @@ def _strip_comments(query: str) -> str:
     return re.sub(r"//.*?$", " ", without_block, flags=re.MULTILINE)
 
 
+def _has_statement_separator(query: str) -> bool:
+    quote: str | None = None
+    in_line_comment = False
+    in_block_comment = False
+    index = 0
+    while index < len(query):
+        char = query[index]
+        next_char = query[index + 1] if index + 1 < len(query) else ""
+
+        if in_line_comment:
+            if char in "\r\n":
+                in_line_comment = False
+            index += 1
+            continue
+
+        if in_block_comment:
+            if char == "*" and next_char == "/":
+                in_block_comment = False
+                index += 2
+            else:
+                index += 1
+            continue
+
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                if next_char == quote:
+                    index += 2
+                    continue
+                quote = None
+            index += 1
+            continue
+
+        if char in ("'", '"'):
+            quote = char
+            index += 1
+            continue
+
+        if char == "/" and next_char == "/":
+            in_line_comment = True
+            index += 2
+            continue
+
+        if char == "/" and next_char == "*":
+            in_block_comment = True
+            index += 2
+            continue
+
+        if char == ";":
+            return True
+
+        index += 1
+
+    return False
+
+
 def _single_statement(query: str) -> str:
     stripped = query.strip()
     if not stripped:
         raise UnsafeCypherError("Cypher query is required")
     without_trailing = stripped[:-1].strip() if stripped.endswith(";") else stripped
-    if ";" in without_trailing:
+    if _has_statement_separator(without_trailing):
         raise UnsafeCypherError("Only a single read-only Cypher statement is allowed")
     return without_trailing
 

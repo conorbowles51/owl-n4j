@@ -169,7 +169,7 @@ async def cancel_agent_run(
 @router.get("/artifacts/{artifact_id}/export")
 async def export_agent_artifact(
     artifact_id: UUID,
-    format: Literal["csv"] = Query(default="csv"),
+    format: Literal["csv", "pdf", "docx"] = Query(default="csv"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -194,7 +194,7 @@ async def export_agent_artifact(
             },
         )
     except ValueError as exc:
-        status_code = 400 if str(exc).startswith("Unsupported") else 404
+        status_code = 404 if "not found" in str(exc).lower() else 400
         raise HTTPException(status_code=status_code, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc

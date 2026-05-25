@@ -107,6 +107,7 @@ class AgentService:
                 artifact_preference=request.artifact_preference,
                 max_tool_calls=12,
                 thread_id=str(thread.id),
+                available_artifacts=self._available_artifacts_for_runner(thread),
                 should_cancel=lambda: is_cancelled(run_id),
             ):
                 if event.get("type") == "final":
@@ -329,6 +330,7 @@ class AgentService:
                 artifact_preference=request.artifact_preference,
                 max_tool_calls=12,
                 thread_id=str(thread.id),
+                available_artifacts=self._available_artifacts_for_runner(thread),
             )
             runner_clarification = self._clarification_from_runner(
                 result.get("clarification"),
@@ -581,6 +583,17 @@ class AgentService:
             elif message.role == "assistant":
                 history.append(AIMessage(content=message.content))
         return history
+
+    @staticmethod
+    def _available_artifacts_for_runner(thread: AgentThread) -> list[dict[str, Any]]:
+        artifacts = sorted(
+            storage.supported_artifacts(thread.artifacts),
+            key=lambda item: item.created_at or item.id,
+        )
+        return [
+            storage.to_api_artifact(artifact).model_dump(mode="json")
+            for artifact in artifacts[-8:]
+        ]
 
     @staticmethod
     def _public_trace_item(item: dict[str, Any]) -> dict[str, Any]:

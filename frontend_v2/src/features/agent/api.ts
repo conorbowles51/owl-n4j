@@ -7,11 +7,13 @@ import type {
   AgentThreadSummary,
 } from "./types"
 
+export type AgentArtifactExportFormat = "csv" | "pdf" | "docx"
+
 export interface SendAgentMessageParams {
   caseId: string
   message: string
   threadId?: string | null
-  artifactPreference?: "auto" | "none" | "graph" | "timeline" | "table" | "map" | "financial"
+  artifactPreference?: "auto" | "none" | "graph" | "table" | "map" | "report" | "chart"
   provider?: string
   model?: string
 }
@@ -112,6 +114,6 @@ export const agentAPI = {
       method: "POST",
     }),
 
-  artifactExportUrl: (artifactId: string, format: "csv" = "csv") =>
+  artifactExportUrl: (artifactId: string, format: AgentArtifactExportFormat = "csv") =>
     `/api/agent/artifacts/${artifactId}/export?format=${format}`,
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { MouseEvent, MutableRefObject, ReactNode } from "react"
+import type { MutableRefObject, ReactNode } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import ForceGraph2D, {
   type ForceGraphMethods,
@@ -7,10 +7,28 @@ import ForceGraph2D, {
   type NodeObject,
 } from "react-force-graph-2d"
 import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Scatter,
+  ScatterChart,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
+import {
   Bot,
+  ChartColumn,
   CircleHelp,
-  Clock3,
-  Coins,
   Crosshair,
   Download,
   FileText,
@@ -53,6 +71,7 @@ import {
 } from "@/components/ui/resizable"
 import { cn } from "@/lib/cn"
 import { agentAPI } from "../api"
+import type { AgentArtifactExportFormat } from "../api"
 import type {
   AgentArtifact,
   AgentClarification,
@@ -90,13 +109,51 @@ interface AgentFGLink {
 type AgentForceNode = NodeObject<AgentFGNode>
 type AgentForceLink = LinkObject<AgentFGNode, AgentFGLink>
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function getArtifactGraphLayout(nodeCount: number, linkCount: number, width: number, height: number) {
+  const density = linkCount / Math.max(nodeCount, 1)
+  const shorterSide = Math.max(320, Math.min(width || 520, height || 420))
+  const roomBoost = shorterSide > 720 ? 28 : shorterSide > 520 ? 14 : 0
+
+  return {
+    linkDistance: clamp(138 + Math.sqrt(Math.max(nodeCount, 1)) * 15 + density * 18 + roomBoost, 150, 310),
+    chargeStrength: -clamp(380 + nodeCount * 8 + density * 70, 440, 1250),
+    centerStrength: nodeCount > 35 ? 0.035 : 0.045,
+    alphaDecay: nodeCount > 35 ? 0.018 : 0.022,
+    velocityDecay: nodeCount > 35 ? 0.44 : 0.38,
+    cooldownTime: nodeCount > 35 ? 4200 : 3400,
+    warmupTicks: nodeCount > 35 ? 90 : 60,
+    zoomPadding: clamp(shorterSide * 0.13, 76, 132),
+  }
+}
+
+function getArtifactNodeRadius(node: AgentForceNode, nodeCount: number) {
+  const degree = node._degree ?? 0
+  const denseScale = nodeCount > 30 ? 0.76 : nodeCount > 18 ? 0.86 : 1
+  return (4.4 + Math.min(Math.log1p(degree) * 2.3, 6.2)) * denseScale
+}
+
 const artifactIcons = {
   graph: Network,
-  timeline: Clock3,
   table: Table2,
   map: MapIcon,
-  financial: Coins,
+  report: FileText,
+  chart: ChartColumn,
 } as const
+
+const CHART_COLORS = [
+  "#6366F1",
+  "#F59E0B",
+  "#14B8A6",
+  "#EC4899",
+  "#8B5CF6",
+  "#06B6D4",
+  "#84CC16",
+  "#F97316",
+]
 
 function asArray<T = Dict>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : []
@@ -114,36 +171,22 @@ function valueText(value: unknown): string {
   return String(value)
 }
 
+function numericValue(value: unknown): number | null {
+  if (typeof value === "boolean" || value === null || value === undefined) return null
+  if (typeof value === "number") return Number.isFinite(value) ? value : null
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/,/g, "").trim())
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
 function entityKeyFromRecord(value: Dict): string | null {
   for (const key of ["key", "entity_key", "node_key", "target_key", "source_key"]) {
     const candidate = value[key]
     if (typeof candidate === "string" && candidate.trim()) return candidate
   }
   return null
-}
-
-function stopAndSelect(
-  event: MouseEvent,
-  key: string | null,
-  onEntitySelect: (key: string) => void
-) {
-  event.stopPropagation()
-  if (key) onEntitySelect(key)
-}
-
-function compactText(value: unknown, fallback = "") {
-  const text = valueText(value || fallback)
-  return text.length > 220 ? `${text.slice(0, 217)}...` : text
-}
-
-function formatAmount(value: unknown, currency?: unknown) {
-  const amount = Number(value)
-  const currencyText = valueText(currency)
-  if (!Number.isFinite(amount)) return valueText(value)
-  const formatted = new Intl.NumberFormat(undefined, {
-    maximumFractionDigits: 2,
-  }).format(amount)
-  return currencyText ? `${formatted} ${currencyText}` : formatted
 }
 
 function storedToClientMessage(message: AgentStoredMessage): AgentClientMessage | null {
@@ -168,7 +211,7 @@ function formatToolName(name: string) {
   return name.replace(/_/g, " ")
 }
 
-function artifactFilename(artifact: AgentArtifact, format: "csv") {
+function artifactFilename(artifact: AgentArtifact, format: AgentArtifactExportFormat) {
   const slug = artifact.title
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
@@ -182,19 +225,81 @@ function firstEntityKeyFromArtifact(artifact: AgentArtifact): string | null {
   if (artifact.type === "graph") {
     return entityKeyFromRecord(asArray<Dict>(artifact.data.nodes)[0] ?? {})
   }
-  if (artifact.type === "timeline") {
-    return entityKeyFromRecord(asArray<Dict>(artifact.data.events)[0] ?? {})
-  }
-  if (artifact.type === "financial") {
-    return entityKeyFromRecord(asArray<Dict>(artifact.data.transactions)[0] ?? {})
-  }
   if (artifact.type === "map") {
     return entityKeyFromRecord(asArray<Dict>(artifact.data.locations)[0] ?? {})
   }
   if (artifact.type === "table") {
     return entityKeyFromRecord(asArray<Dict>(artifact.data.rows)[0] ?? {})
   }
+  if (artifact.type === "chart") {
+    return entityKeyFromRecord(asArray<Dict>(artifact.data.rows)[0] ?? {})
+  }
+  if (artifact.type === "report") {
+    for (const section of asArray<Dict>(artifact.data.sections)) {
+      for (const embed of asArray<Dict>(section.embeds)) {
+        const data = asRecord(embed.data)
+        const key =
+          entityKeyFromRecord(asArray<Dict>(data.nodes)[0] ?? {}) ||
+          entityKeyFromRecord(asArray<Dict>(data.rows)[0] ?? {})
+        if (key) return key
+      }
+    }
+  }
   return null
+}
+
+function listText(value: unknown): string[] {
+  return asArray<unknown>(value)
+    .map((item) => valueText(item).trim())
+    .filter(Boolean)
+}
+
+function reportColumns(data: Dict, rows: Dict[]): Dict[] {
+  const explicitColumns = asArray<Dict>(data.columns)
+  if (explicitColumns.length > 0) return explicitColumns
+
+  const keys: string[] = []
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      if (!keys.includes(key)) keys.push(key)
+    }
+  }
+  return keys.slice(0, 8).map((key) => ({ key, label: key.replace(/_/g, " ") }))
+}
+
+function reportEmbeddedArtifact(embed: Dict, artifacts: AgentArtifact[]): AgentArtifact | null {
+  const existing = artifacts.find((artifact) => artifact.id === valueText(embed.artifact_id))
+  if (existing && (existing.type === "graph" || existing.type === "table" || existing.type === "chart")) {
+    return existing
+  }
+
+  const type = valueText(embed.type)
+  if ((type !== "graph" && type !== "table" && type !== "chart") || embed.available === false) return null
+  const data = asRecord(embed.data)
+  if (Object.keys(data).length === 0) return null
+
+  return {
+    id: valueText(embed.artifact_id || embed.id || "embedded-report-artifact"),
+    type,
+    title: valueText(embed.title || "Embedded artifact"),
+    data,
+    metadata: asRecord(embed.metadata),
+  }
+}
+
+function chartSeries(artifact: AgentArtifact) {
+  const yKeys = asArray<unknown>(artifact.data.y_keys).map(valueText).filter(Boolean)
+  const explicit = asArray<Dict>(artifact.data.series)
+  const byKey = new Map(explicit.map((item) => [valueText(item.key), item]))
+  return yKeys.map((key, index) => {
+    const item = byKey.get(key) ?? {}
+    return {
+      key,
+      label: valueText(item.label || key.replace(/_/g, " ")),
+      color: valueText(item.color) || CHART_COLORS[index % CHART_COLORS.length],
+      stack: valueText(item.stack),
+    }
+  })
 }
 
 export function AgentPage() {
@@ -422,14 +527,24 @@ export function AgentPage() {
       )
       loadThreads()
     } catch (error) {
-      setMessages((current) =>
-        current.filter(
-          (message) =>
-            message.id !== optimisticId && message.id !== committedUserMessageId
-        )
-      )
       const message = error instanceof Error ? error.message : "Agent request failed"
-      toast.error(message)
+      setMessages((current) => {
+        const next = current.map((item) =>
+          item.id === optimisticId || item.id === committedUserMessageId
+            ? { ...item, pending: false }
+            : item
+        )
+        return [
+          ...next,
+          {
+            id: `error_${Date.now()}`,
+            role: "assistant",
+            content: `The run failed before I could write a final response.\n\n${message}`,
+            createdAt: new Date().toISOString(),
+          },
+        ]
+      })
+      toast.error(message, { duration: 12000 })
     } finally {
       setIsLoading(false)
       setActiveRunId(null)
@@ -554,7 +669,7 @@ export function AgentPage() {
                   </div>
                 </div>
               ) : (
-                <div className="mx-auto flex max-w-3xl flex-col gap-4">
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-5">
                   {messages.map((message) => (
                     <MessageBubble
                       key={message.id}
@@ -659,36 +774,42 @@ function MessageBubble({
     message.content.trim() === clarificationQuestion
   const showClarificationPanel = !isUser && Boolean(message.clarification && onClarificationAnswer)
   const hideMessageBodyForPanel = showClarificationPanel && repeatsClarification
-  return (
-    <article className={cn("flex gap-3", isUser && "justify-end")}>
-      {!isUser && (
-        <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-card text-muted-foreground shadow-sm">
-          <Bot className="size-4" />
-        </div>
-      )}
-      <div
-        className={cn(
-          "max-w-[84%] rounded-lg border px-3 py-2 text-sm shadow-sm",
-          isUser
-            ? "border-slate-900 bg-slate-900 text-white dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50"
-            : "border-border bg-card text-card-foreground"
-        )}
-      >
-        {isUser ? (
+
+  if (isUser) {
+    return (
+      <article className="flex justify-end">
+        <div className="max-w-[82%] rounded-lg border border-slate-900 bg-slate-900 px-3 py-2 text-sm text-white shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50 sm:max-w-[68%]">
           <p className="whitespace-pre-wrap">{message.content}</p>
-        ) : !hideMessageBodyForPanel ? (
-          <Markdown content={message.content} className="text-sm leading-6" />
+          <div className="mt-1 text-[11px] text-white/70 dark:text-slate-300">
+            {message.pending ? "Sending..." : formatTime(message.createdAt)}
+          </div>
+        </div>
+      </article>
+    )
+  }
+
+  return (
+    <article className="flex gap-3">
+      <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground ring-1 ring-border/60">
+        <Bot className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1 py-0.5 text-sm text-foreground">
+        {!hideMessageBodyForPanel ? (
+          <Markdown
+            content={message.content}
+            className="max-w-none leading-6 [overflow-wrap:anywhere]"
+          />
         ) : null}
         {showClarificationPanel && message.clarification && onClarificationAnswer && (
-          <div className={cn(!hideMessageBodyForPanel && "mt-3")}>
+          <div className={cn("max-w-3xl", !hideMessageBodyForPanel && "mt-3")}>
             <ClarificationPanel
               clarification={message.clarification}
               onAnswer={onClarificationAnswer}
             />
           </div>
         )}
-        <div className={cn("mt-1 text-[11px]", isUser ? "text-white/70 dark:text-slate-300" : "text-muted-foreground")}>
-          {message.pending ? "Sending..." : formatTime(message.createdAt)}
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {formatTime(message.createdAt)}
         </div>
       </div>
     </article>
@@ -847,7 +968,7 @@ function AgentEntityDetailsPanel({
               Select an entity to inspect it
             </p>
             <p className="text-xs text-muted-foreground/70">
-              Click graph nodes, timeline items, map points, or financial entities.
+              Click graph nodes, table rows, or map points.
             </p>
           </div>
         )}
@@ -946,7 +1067,7 @@ function ArtifactWorkspace({
   onEntitySelect: (key: string) => void
 }) {
   return (
-    <section className="flex h-full min-w-0 flex-col border-l border-border bg-muted/10">
+    <section className="flex h-full min-w-0 flex-col bg-muted/10">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <PanelRight className="size-4 text-muted-foreground" />
@@ -971,7 +1092,7 @@ function ArtifactWorkspace({
               No artifact yet
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Ask for a graph, timeline, map, table, or financial view.
+              Ask for a graph, table, chart, report, or map view.
             </p>
           </div>
         </div>
@@ -998,10 +1119,11 @@ function ArtifactWorkspace({
               )
             })}
           </div>
-          <div className="flex min-h-0 flex-1 p-4">
+          <div className="flex min-h-0 flex-1 px-4 py-3">
             {selectedArtifact && (
               <ArtifactRenderer
                 artifact={selectedArtifact}
+                artifacts={artifacts}
                 exportEnabled={exportEnabled}
                 onEntitySelect={onEntitySelect}
               />
@@ -1015,18 +1137,20 @@ function ArtifactWorkspace({
 
 function ArtifactRenderer({
   artifact,
+  artifacts,
   exportEnabled,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
+  artifacts: AgentArtifact[]
   exportEnabled: boolean
   onEntitySelect: (key: string) => void
 }) {
   if (artifact.type === "graph") return <GraphArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "timeline") return <TimelineArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
   if (artifact.type === "table") return <TableArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
   if (artifact.type === "map") return <MapArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
-  if (artifact.type === "financial") return <FinancialArtifact artifact={artifact} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
+  if (artifact.type === "report") return <ReportArtifact artifact={artifact} artifacts={artifacts} exportEnabled={exportEnabled} onEntitySelect={onEntitySelect} />
+  if (artifact.type === "chart") return <ChartArtifact artifact={artifact} exportEnabled={exportEnabled} />
   return <pre className="h-full overflow-auto text-xs">{JSON.stringify(artifact.data, null, 2)}</pre>
 }
 
@@ -1043,18 +1167,20 @@ function ArtifactShell({
 }) {
   const Icon = artifactIcons[artifact.type] ?? FileText
   const [isDownloading, setIsDownloading] = useState(false)
+  const exportFormats: AgentArtifactExportFormat[] =
+    artifact.type === "report" ? ["pdf", "docx"] : ["csv"]
 
-  const downloadCsv = async () => {
+  const downloadArtifact = async (format: AgentArtifactExportFormat) => {
     if (!exportEnabled || isDownloading) return
     setIsDownloading(true)
     try {
       await downloadProtectedFile(
-        agentAPI.artifactExportUrl(artifact.id, "csv"),
-        artifactFilename(artifact, "csv")
+        agentAPI.artifactExportUrl(artifact.id, format),
+        artifactFilename(artifact, format)
       )
-      toast.success("CSV export downloaded")
+      toast.success(`${format.toUpperCase()} export downloaded`)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to download CSV"
+      const message = error instanceof Error ? error.message : `Failed to download ${format.toUpperCase()}`
       toast.error(message)
     } finally {
       setIsDownloading(false)
@@ -1062,8 +1188,8 @@ function ArtifactShell({
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col rounded-lg border border-border bg-background">
-      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/70 px-1 pb-2">
         <div className="flex min-w-0 items-center gap-2">
           <Icon className="size-4 text-muted-foreground" />
           <h3 className="truncate text-sm font-semibold text-foreground">
@@ -1072,28 +1198,31 @@ function ArtifactShell({
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {headerActions}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 px-2 text-xs"
-            onClick={downloadCsv}
-            disabled={!exportEnabled || isDownloading}
-            title={exportEnabled ? "Download CSV" : "CSV is available when the run finishes"}
-          >
-            {isDownloading ? (
-              <Loader2 className="mr-1 size-3 animate-spin" />
-            ) : (
-              <Download className="mr-1 size-3" />
-            )}
-            CSV
-          </Button>
+          {exportFormats.map((format) => (
+            <Button
+              key={format}
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => downloadArtifact(format)}
+              disabled={!exportEnabled || isDownloading}
+              title={exportEnabled ? `Download ${format.toUpperCase()}` : "Exports are available when the run finishes"}
+            >
+              {isDownloading ? (
+                <Loader2 className="mr-1 size-3 animate-spin" />
+              ) : (
+                <Download className="mr-1 size-3" />
+              )}
+              {format === "docx" ? "Word" : format.toUpperCase()}
+            </Button>
+          ))}
           <Badge variant="secondary" className="capitalize">
             {artifact.type}
           </Badge>
         </div>
       </div>
-      <div className="flex min-h-0 flex-1 flex-col p-3">{children}</div>
+      <div className="flex min-h-0 flex-1 flex-col pt-3">{children}</div>
     </div>
   )
 }
@@ -1178,10 +1307,43 @@ function GraphArtifact({
     }
   }, [rawNodes, rawLinks])
 
+  const layout = useMemo(
+    () =>
+      getArtifactGraphLayout(
+        graphData.nodes.length,
+        graphData.links.length,
+        dimensions.width,
+        dimensions.height
+      ),
+    [dimensions.height, dimensions.width, graphData.links.length, graphData.nodes.length]
+  )
+
+  useEffect(() => {
+    const graph = graphRef.current
+    if (!graph || graphData.nodes.length === 0) return
+
+    const linkForce = graph.d3Force("link")
+    linkForce?.distance(layout.linkDistance)
+    linkForce?.strength?.(graphData.nodes.length > 35 ? 0.34 : 0.42)
+
+    graph.d3Force("charge")?.strength(layout.chargeStrength)
+    graph.d3Force("center")?.strength(layout.centerStrength)
+    graph.d3ReheatSimulation()
+  }, [
+    graphData.links.length,
+    graphData.nodes.length,
+    layout.centerStrength,
+    layout.chargeStrength,
+    layout.linkDistance,
+  ])
+
   useEffect(() => {
     if (graphData.nodes.length === 0) return
-    window.setTimeout(() => graphRef.current?.zoomToFit(450, 42), 120)
-  }, [graphData.nodes.length, graphData.links.length])
+    const fitTimer = window.setTimeout(() => {
+      graphRef.current?.zoomToFit(550, layout.zoomPadding)
+    }, 900)
+    return () => window.clearTimeout(fitTimer)
+  }, [graphData.nodes.length, graphData.links.length, layout.zoomPadding])
 
   const spotlightKeys = useMemo(
     () => Array.from(new Set(graphData.nodes.map((node) => node.key).filter(Boolean))),
@@ -1221,7 +1383,8 @@ function GraphArtifact({
       const x = node.x ?? 0
       const y = node.y ?? 0
       const isSelected = selectedNodeKeys.has(node.key)
-      const radius = 5 + Math.min((node._degree ?? 0) * 1.2, 9)
+      const nodeCount = graphData.nodes.length
+      const radius = getArtifactNodeRadius(node, nodeCount)
 
       if (isSelected) {
         ctx.beginPath()
@@ -1242,7 +1405,14 @@ function GraphArtifact({
       ctx.lineWidth = 2 / globalScale
       ctx.stroke()
 
-      const fontSize = Math.max(10 / globalScale, 2.5)
+      const degree = node._degree ?? 0
+      const labelScaleThreshold = nodeCount > 28 ? 1.25 : nodeCount > 16 ? 1.08 : 0
+      const shouldShowLabel =
+        isSelected || labelScaleThreshold === 0 || globalScale >= labelScaleThreshold || degree >= 4
+
+      if (!shouldShowLabel) return
+
+      const fontSize = Math.max(9 / globalScale, 2.4)
       ctx.font = `${fontSize}px Inter, system-ui, sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "top"
@@ -1250,7 +1420,7 @@ function GraphArtifact({
       const label = node.label.length > 26 ? `${node.label.slice(0, 24)}...` : node.label
       ctx.fillText(label, x, y + radius + 3)
     },
-    [canvasColors, selectedNodeKeys]
+    [canvasColors, graphData.nodes.length, selectedNodeKeys]
   )
 
   const paintLink = useCallback(
@@ -1259,12 +1429,13 @@ function GraphArtifact({
       const target = link.target as AgentForceNode
       if (source?.x == null || source.y == null || target?.x == null || target.y == null) return
 
+      ctx.save()
       ctx.beginPath()
       ctx.moveTo(source.x, source.y)
       ctx.lineTo(target.x, target.y)
       ctx.strokeStyle = canvasColors.linkColor
-      ctx.globalAlpha = 0.45
-      ctx.lineWidth = Math.max(1 / Math.sqrt(globalScale), 0.6)
+      ctx.globalAlpha = graphData.links.length > 35 ? 0.26 : 0.36
+      ctx.lineWidth = Math.max(0.8 / Math.sqrt(globalScale), 0.45)
       ctx.stroke()
 
       const dx = target.x - source.x
@@ -1273,8 +1444,9 @@ function GraphArtifact({
       if (length > 1) {
         const angle = Math.atan2(dy, dx)
         const arrowLen = 5 / globalScale
-        const endX = target.x - (dx / length) * 10
-        const endY = target.y - (dy / length) * 10
+        const targetRadius = getArtifactNodeRadius(target, graphData.nodes.length)
+        const endX = target.x - (dx / length) * (targetRadius + 3)
+        const endY = target.y - (dy / length) * (targetRadius + 3)
         ctx.beginPath()
         ctx.moveTo(endX, endY)
         ctx.lineTo(
@@ -1290,7 +1462,13 @@ function GraphArtifact({
         ctx.fill()
       }
 
-      if (link.type) {
+      const showLinkLabel =
+        link.type &&
+        length > 44 / Math.max(globalScale, 0.1) &&
+        (graphData.links.length <= 12 ||
+          globalScale >= (graphData.links.length > 35 ? 1.65 : 1.25))
+
+      if (showLinkLabel) {
         const midX = (source.x + target.x) / 2
         const midY = (source.y + target.y) / 2
         const fontSize = Math.max(8 / globalScale, 2)
@@ -1313,9 +1491,9 @@ function GraphArtifact({
         ctx.fillText(text, midX, midY)
       }
 
-      ctx.globalAlpha = 1
+      ctx.restore()
     },
-    [canvasColors]
+    [canvasColors, graphData.links.length, graphData.nodes.length]
   )
 
   return (
@@ -1337,7 +1515,10 @@ function GraphArtifact({
         </Button>
       }
     >
-      <div ref={containerRef} className="min-h-[320px] flex-1 overflow-hidden rounded-md border border-border bg-slate-100 dark:bg-slate-950">
+      <div
+        ref={containerRef}
+        className="min-h-[320px] flex-1 overflow-hidden rounded-md border border-border bg-slate-100 dark:bg-slate-950"
+      >
         {graphData.nodes.length === 0 ? (
           <SmallEmpty label="No graph nodes returned" />
         ) : (
@@ -1349,7 +1530,7 @@ function GraphArtifact({
             backgroundColor={canvasColors.background}
             nodeCanvasObject={paintNode}
             nodePointerAreaPaint={(node: AgentForceNode, color, ctx) => {
-              const radius = 6 + Math.min((node._degree ?? 0) * 1.2, 9)
+              const radius = getArtifactNodeRadius(node, graphData.nodes.length)
               ctx.beginPath()
               ctx.arc(node.x ?? 0, node.y ?? 0, radius + 5, 0, 2 * Math.PI)
               ctx.fillStyle = color
@@ -1358,9 +1539,12 @@ function GraphArtifact({
             linkCanvasObject={paintLink}
             linkDirectionalParticles={0}
             onNodeClick={(node) => onEntitySelect(node.key)}
-            cooldownTime={1800}
-            d3AlphaDecay={0.035}
-            d3VelocityDecay={0.36}
+            onEngineStop={() => graphRef.current?.zoomToFit(450, layout.zoomPadding)}
+            cooldownTime={layout.cooldownTime}
+            warmupTicks={layout.warmupTicks}
+            d3AlphaDecay={layout.alphaDecay}
+            d3VelocityDecay={layout.velocityDecay}
+            enableNodeDrag
           />
         )}
       </div>
@@ -1372,73 +1556,587 @@ function GraphArtifact({
   )
 }
 
-function TimelineArtifact({
+function ChartPreview({ artifact }: { artifact: AgentArtifact }) {
+  const rows = asArray<Dict>(artifact.data.rows)
+  const rawType = valueText(artifact.data.chart_type)
+  const chartType = ["bar", "stacked_bar", "line", "area", "pie", "donut", "scatter"].includes(rawType)
+    ? rawType
+    : "bar"
+  const xKey = valueText(artifact.data.x_key)
+  const categoryKey = valueText(artifact.data.category_key)
+  const valueKey = valueText(artifact.data.value_key)
+  const xLabel = valueText(artifact.data.x_label || xKey || categoryKey)
+  const yLabel = valueText(artifact.data.y_label || valueKey)
+  const series = chartSeries(artifact)
+  const chartData = useMemo(
+    () =>
+      rows.map((row) => {
+        const normalized: Dict = { ...row }
+        for (const item of series) {
+          normalized[item.key] = numericValue(row[item.key])
+        }
+        if (valueKey) normalized[valueKey] = numericValue(row[valueKey])
+        if (xKey && chartType === "scatter") normalized[xKey] = numericValue(row[xKey])
+        return normalized
+      }),
+    [chartType, rows, series, valueKey, xKey]
+  )
+  const pieData = useMemo(
+    () =>
+      rows
+        .map((row) => ({
+          name: valueText(row[categoryKey] || "Unknown"),
+          value: numericValue(row[valueKey]) ?? 0,
+        }))
+        .filter((item) => item.value !== 0),
+    [categoryKey, rows, valueKey]
+  )
+
+  const axisTick = { fill: "var(--muted-foreground)", fontSize: 11 }
+  const tooltipStyle = {
+    background: "var(--popover)",
+    border: "1px solid var(--border)",
+    borderRadius: "8px",
+    color: "var(--popover-foreground)",
+    fontSize: "12px",
+  }
+
+  const chartBody = () => {
+    if (rows.length === 0) return <SmallEmpty label="No chart rows returned" />
+    if (chartType === "pie" || chartType === "donut") {
+      if (!categoryKey || !valueKey || pieData.length === 0) {
+        return <SmallEmpty label="No pie chart values returned" />
+      }
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            <Pie
+              data={pieData}
+              dataKey="value"
+              nameKey="name"
+              innerRadius={chartType === "donut" ? "52%" : 0}
+              outerRadius="78%"
+              paddingAngle={chartType === "donut" ? 2 : 1}
+              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
+              labelLine={false}
+            >
+              {pieData.map((_, index) => (
+                <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (!xKey || series.length === 0) {
+      return <SmallEmpty label="No chart axes returned" />
+    }
+
+    if (chartType === "line") {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: 12, right: 18, left: 4, bottom: 12 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis dataKey={xKey} tick={axisTick} label={xLabel ? { value: xLabel, position: "insideBottom", offset: -8 } : undefined} />
+            <YAxis tick={axisTick} width={56} label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft" } : undefined} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            {series.map((item) => (
+              <Line key={item.key} type="monotone" dataKey={item.key} name={item.label} stroke={item.color} strokeWidth={2.2} dot={{ r: 2.8 }} />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (chartType === "area") {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={chartData} margin={{ top: 12, right: 18, left: 4, bottom: 12 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis dataKey={xKey} tick={axisTick} label={xLabel ? { value: xLabel, position: "insideBottom", offset: -8 } : undefined} />
+            <YAxis tick={axisTick} width={56} label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft" } : undefined} />
+            <Tooltip contentStyle={tooltipStyle} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            {series.map((item) => (
+              <Area key={item.key} type="monotone" dataKey={item.key} name={item.label} stroke={item.color} fill={item.color} fillOpacity={0.22} strokeWidth={2} />
+            ))}
+          </AreaChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    if (chartType === "scatter") {
+      return (
+        <ResponsiveContainer width="100%" height="100%">
+          <ScatterChart margin={{ top: 12, right: 18, left: 4, bottom: 12 }}>
+            <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+            <XAxis type="number" dataKey="x" name={xLabel || xKey} tick={axisTick} />
+            <YAxis type="number" dataKey="y" name={yLabel || series[0]?.label} tick={axisTick} width={56} />
+            <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: "3 3" }} />
+            <Legend wrapperStyle={{ fontSize: 12 }} />
+            {series.map((item) => (
+              <Scatter
+                key={item.key}
+                name={item.label}
+                fill={item.color}
+                data={chartData
+                  .map((row) => ({ x: numericValue(row[xKey]), y: numericValue(row[item.key]) }))
+                  .filter((point) => point.x !== null && point.y !== null)}
+              />
+            ))}
+          </ScatterChart>
+        </ResponsiveContainer>
+      )
+    }
+
+    return (
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={chartData} margin={{ top: 12, right: 18, left: 4, bottom: 12 }}>
+          <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+          <XAxis dataKey={xKey} tick={axisTick} label={xLabel ? { value: xLabel, position: "insideBottom", offset: -8 } : undefined} />
+          <YAxis tick={axisTick} width={56} label={yLabel ? { value: yLabel, angle: -90, position: "insideLeft" } : undefined} />
+          <Tooltip contentStyle={tooltipStyle} />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {series.map((item) => (
+            <Bar
+              key={item.key}
+              dataKey={item.key}
+              name={item.label}
+              fill={item.color}
+              radius={chartType === "stacked_bar" ? [0, 0, 0, 0] : [4, 4, 0, 0]}
+              stackId={chartType === "stacked_bar" ? item.stack || "total" : undefined}
+            />
+          ))}
+        </BarChart>
+      </ResponsiveContainer>
+    )
+  }
+
+  return chartBody()
+}
+
+function ChartArtifact({
   artifact,
+  exportEnabled,
+}: {
+  artifact: AgentArtifact
+  exportEnabled: boolean
+}) {
+  const rows = asArray<Dict>(artifact.data.rows)
+  const rawType = valueText(artifact.data.chart_type)
+  const chartType = ["bar", "stacked_bar", "line", "area", "pie", "donut", "scatter"].includes(rawType)
+    ? rawType
+    : "bar"
+  const valueKey = valueText(artifact.data.value_key)
+  const series = chartSeries(artifact)
+  const notes = valueText(artifact.data.notes).trim()
+
+  return (
+    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <div className="grid shrink-0 grid-cols-3 gap-2 text-xs">
+          <Stat label="Type" value={chartType.replace("_", " ")} />
+          <Stat label="Rows" value={rows.length} />
+          <Stat label="Series" value={Math.max(series.length, valueKey ? 1 : 0)} />
+        </div>
+        {notes && (
+          <p className="shrink-0 border-l-2 border-amber-500/70 pl-3 text-xs leading-5 text-muted-foreground">
+            {notes}
+          </p>
+        )}
+        <div className="min-h-[360px] flex-1 rounded-md bg-muted/20 p-3 text-muted-foreground">
+          <ChartPreview artifact={artifact} />
+        </div>
+      </div>
+    </ArtifactShell>
+  )
+}
+
+function ReportArtifact({
+  artifact,
+  artifacts,
   exportEnabled,
   onEntitySelect,
 }: {
   artifact: AgentArtifact
+  artifacts: AgentArtifact[]
   exportEnabled: boolean
   onEntitySelect: (key: string) => void
 }) {
-  const events = asArray<Dict>(artifact.data.events)
+  const sections = asArray<Dict>(artifact.data.sections)
+  const includedItems = listText(artifact.data.included_items)
+  const openQuestions = listText(artifact.data.open_questions)
+  const purpose = valueText(artifact.data.purpose).trim()
+  const scope = valueText(artifact.data.scope).trim()
+  const audience = valueText(artifact.data.audience).trim()
+  const revisionNote = valueText(artifact.metadata.revision_note).trim()
+
   return (
     <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
-      <div className="mb-3 grid shrink-0 grid-cols-2 gap-2 text-xs">
-        <Stat label="Events" value={events.length} />
-        <Stat label="Range" value={`${valueText(events[0]?.date || "n/a")} - ${valueText(events[events.length - 1]?.date || "n/a")}`} />
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-        {events.length === 0 ? (
-          <SmallEmpty label="No timeline events returned" />
-        ) : (
-          <div className="relative pl-5">
-            <div className="absolute bottom-2 left-[5px] top-2 w-px bg-border" />
-            {events.map((event, index) => {
-              const key = entityKeyFromRecord(event)
-              const clickable = Boolean(key)
-              return (
-                <button
-                  key={valueText(event.key || index)}
-                  type="button"
-                  onClick={() => key && onEntitySelect(key)}
-                  className={cn(
-                    "group relative mb-2 w-full rounded-md border border-border bg-card px-3 py-2 text-left transition-colors",
-                    clickable && "hover:border-amber-400/70 hover:bg-amber-50/40 dark:hover:bg-amber-500/10"
-                  )}
-                >
-                  <span className="absolute -left-[21px] top-3 size-3 rounded-full border-2 border-background bg-amber-500 shadow-sm" />
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                          {valueText(event.date || "No date")}
-                          {event.time ? ` ${valueText(event.time)}` : ""}
-                        </span>
-                        {typeof event.type === "string" && event.type && (
-                          <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                            {valueText(event.type)}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">
-                        {valueText(event.name || event.key || "Untitled event")}
-                      </div>
-                      <p className="mt-1 line-clamp-3 text-xs leading-5 text-muted-foreground">
-                        {compactText(event.summary || event.notes)}
-                      </p>
-                    </div>
-                    {clickable && (
-                      <PanelRightOpen className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-                    )}
-                  </div>
-                </button>
-              )
-            })}
+      <article className="min-h-0 flex-1 overflow-y-auto px-1 pb-6 pr-3">
+        <div className="mx-auto max-w-3xl">
+          <div className="border-b border-border/70 pb-4">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+              <span>Report draft</span>
+              {audience && <span className="normal-case tracking-normal">For {audience}</span>}
+            </div>
+            {purpose && (
+              <p className="mt-2 text-sm leading-6 text-foreground">
+                {purpose}
+              </p>
+            )}
+            {(scope || revisionNote) && (
+              <div className="mt-3 space-y-2 border-l-2 border-amber-500/70 pl-3 text-xs leading-5 text-muted-foreground">
+                {scope && <p>{scope}</p>}
+                {revisionNote && <p>Revision: {revisionNote}</p>}
+              </div>
+            )}
+            {includedItems.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {includedItems.slice(0, 12).map((item) => (
+                  <span
+                    key={item}
+                    className="rounded-md bg-muted px-2 py-1 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+
+          {sections.length === 0 ? (
+            <div className="py-8">
+              <SmallEmpty label="No report sections returned" />
+            </div>
+          ) : (
+            <div className="divide-y divide-border/70">
+              {sections.map((section, index) => {
+                const embeds = asArray<Dict>(section.embeds)
+                return (
+                  <section key={valueText(section.id || section.heading || index)} className="py-5">
+                    <h2 className="text-base font-semibold text-foreground">
+                      {valueText(section.heading || `Section ${index + 1}`)}
+                    </h2>
+                    <Markdown
+                      content={valueText(section.content)}
+                      className="mt-2 max-w-none text-sm leading-6 text-foreground [overflow-wrap:anywhere]"
+                    />
+                    {embeds.length > 0 && (
+                      <div className="mt-4 space-y-4">
+                        {embeds.map((embed, embedIndex) => (
+                          <ReportEmbedBlock
+                            key={valueText(embed.artifact_id || embedIndex)}
+                            embed={embed}
+                            artifacts={artifacts}
+                            onEntitySelect={onEntitySelect}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+                )
+              })}
+            </div>
+          )}
+
+          {openQuestions.length > 0 && (
+            <section className="mt-2 border-t border-border/70 pt-5">
+              <h2 className="text-sm font-semibold text-foreground">Open questions</h2>
+              <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-6 text-muted-foreground">
+                {openQuestions.map((question) => (
+                  <li key={question}>{question}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      </article>
     </ArtifactShell>
+  )
+}
+
+function ReportEmbedBlock({
+  embed,
+  artifacts,
+  onEntitySelect,
+}: {
+  embed: Dict
+  artifacts: AgentArtifact[]
+  onEntitySelect: (key: string) => void
+}) {
+  const artifact = reportEmbeddedArtifact(embed, artifacts)
+  const caption = valueText(embed.caption).trim()
+
+  if (!artifact) {
+    return (
+      <figure className="border-y border-border/70 py-3">
+        <figcaption className="text-xs font-medium text-muted-foreground">
+          {valueText(embed.title || "Referenced artifact")}
+        </figcaption>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {valueText(embed.reason || "This embedded artifact is not available in the report snapshot.")}
+        </p>
+      </figure>
+    )
+  }
+
+  if (artifact.type === "graph") {
+    return (
+      <ReportGraphEmbed
+        artifact={artifact}
+        caption={caption}
+        onEntitySelect={onEntitySelect}
+      />
+    )
+  }
+
+  if (artifact.type === "chart") {
+    return (
+      <ReportChartEmbed
+        artifact={artifact}
+        caption={caption}
+      />
+    )
+  }
+
+  return (
+    <ReportTableEmbed
+      artifact={artifact}
+      caption={caption}
+      onEntitySelect={onEntitySelect}
+    />
+  )
+}
+
+function ReportChartEmbed({
+  artifact,
+  caption,
+}: {
+  artifact: AgentArtifact
+  caption: string
+}) {
+  const rows = asArray<Dict>(artifact.data.rows)
+  const chartType = valueText(artifact.data.chart_type || "chart").replace("_", " ")
+
+  return (
+    <figure className="border-y border-border/70 py-3">
+      <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-semibold text-foreground">Chart: {artifact.title}</span>
+        <span className="text-muted-foreground">
+          {chartType} · {rows.length} rows
+        </span>
+      </figcaption>
+      {caption && <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>}
+      <div className="mt-3 h-80 rounded-md bg-muted/20 p-3 text-muted-foreground">
+        <ChartPreview artifact={artifact} />
+      </div>
+    </figure>
+  )
+}
+
+function ReportTableEmbed({
+  artifact,
+  caption,
+  onEntitySelect,
+}: {
+  artifact: AgentArtifact
+  caption: string
+  onEntitySelect: (key: string) => void
+}) {
+  const rows = asArray<Dict>(artifact.data.rows)
+  const columns = reportColumns(artifact.data, rows).slice(0, 8)
+  return (
+    <figure className="border-y border-border/70 py-3">
+      <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-semibold text-foreground">Table: {artifact.title}</span>
+        <span className="text-muted-foreground">{rows.length} rows</span>
+      </figcaption>
+      {caption && <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>}
+      {rows.length === 0 ? (
+        <div className="mt-3">
+          <SmallEmpty label="No embedded table rows" />
+        </div>
+      ) : (
+        <div className="mt-3 max-h-80 overflow-auto">
+          <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-10 bg-background/95 backdrop-blur">
+              <tr>
+                {columns.map((column) => (
+                  <th
+                    key={valueText(column.key)}
+                    className="whitespace-nowrap border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground"
+                  >
+                    {valueText(column.label || column.key)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.slice(0, 12).map((row, rowIndex) => {
+                const key = entityKeyFromRecord(row)
+                return (
+                  <tr
+                    key={rowIndex}
+                    onClick={() => key && onEntitySelect(key)}
+                    className={cn(key && "cursor-pointer hover:bg-muted/45")}
+                  >
+                    {columns.map((column) => {
+                      const cellText = valueText(row[valueText(column.key)]).slice(0, 160)
+                      return (
+                        <td
+                          key={valueText(column.key)}
+                          className="max-w-72 truncate border-b border-border/50 px-3 py-2 align-top leading-5 text-muted-foreground"
+                          title={cellText}
+                        >
+                          {cellText}
+                        </td>
+                      )
+                    })}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </figure>
+  )
+}
+
+function ReportGraphEmbed({
+  artifact,
+  caption,
+  onEntitySelect,
+}: {
+  artifact: AgentArtifact
+  caption: string
+  onEntitySelect: (key: string) => void
+}) {
+  const rawNodes = asArray<Dict>(artifact.data.nodes)
+  const rawLinks = asArray<Dict>(artifact.data.links)
+  const nodes = rawNodes.slice(0, 18).map((node, index) => {
+    const key = valueText(node.key || node.id || `node-${index}`)
+    return {
+      key,
+      label: valueText(node.name || node.label || key),
+      type: valueText(node.type || "entity").toLowerCase(),
+    }
+  })
+  const endpointLookup = new Map<string, string>()
+  nodes.forEach((node) => {
+    endpointLookup.set(node.key, node.key)
+    endpointLookup.set(node.label, node.key)
+  })
+  const links = rawLinks
+    .slice(0, 36)
+    .map((link) => ({
+      source: endpointLookup.get(valueText(link.source)) ?? valueText(link.source),
+      target: endpointLookup.get(valueText(link.target)) ?? valueText(link.target),
+    }))
+    .filter((link) => endpointLookup.has(link.source) && endpointLookup.has(link.target))
+
+  const width = 560
+  const height = 230
+  const centerX = width / 2
+  const centerY = height / 2
+  const radius = nodes.length <= 2 ? 54 : Math.min(92, 46 + nodes.length * 2.6)
+  const positions = new Map(
+    nodes.map((node, index) => {
+      if (nodes.length === 1) return [node.key, { x: centerX, y: centerY }]
+      const angle = -Math.PI / 2 + (index / nodes.length) * Math.PI * 2
+      return [
+        node.key,
+        {
+          x: centerX + Math.cos(angle) * radius,
+          y: centerY + Math.sin(angle) * radius,
+        },
+      ]
+    })
+  )
+
+  return (
+    <figure className="border-y border-border/70 py-3">
+      <figcaption className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <span className="font-semibold text-foreground">Graph: {artifact.title}</span>
+        <span className="text-muted-foreground">
+          {rawNodes.length} nodes, {rawLinks.length} relationships
+        </span>
+      </figcaption>
+      {caption && <p className="mt-1 text-xs leading-5 text-muted-foreground">{caption}</p>}
+      {nodes.length === 0 ? (
+        <div className="mt-3">
+          <SmallEmpty label="No embedded graph nodes" />
+        </div>
+      ) : (
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="mt-3 h-56 w-full rounded-md bg-muted/25"
+          role="img"
+          aria-label={`Embedded graph ${artifact.title}`}
+        >
+          {links.map((link, index) => {
+            const source = positions.get(link.source)
+            const target = positions.get(link.target)
+            if (!source || !target) return null
+            return (
+              <line
+                key={`${link.source}-${link.target}-${index}`}
+                x1={source.x}
+                y1={source.y}
+                x2={target.x}
+                y2={target.y}
+                stroke="currentColor"
+                strokeOpacity="0.2"
+                strokeWidth="1.4"
+                className="text-muted-foreground"
+              />
+            )
+          })}
+          {nodes.map((node) => {
+            const position = positions.get(node.key) ?? { x: centerX, y: centerY }
+            const shortLabel = node.label.length > 22 ? `${node.label.slice(0, 20)}...` : node.label
+            return (
+              <g
+                key={node.key}
+                role="button"
+                tabIndex={0}
+                className="cursor-pointer outline-none"
+                onClick={() => onEntitySelect(node.key)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    onEntitySelect(node.key)
+                  }
+                }}
+              >
+                <circle
+                  cx={position.x}
+                  cy={position.y}
+                  r="10"
+                  fill={getNodeColor(node.type)}
+                  stroke="currentColor"
+                  strokeOpacity="0.2"
+                  strokeWidth="1.5"
+                />
+                <text
+                  x={position.x}
+                  y={position.y + 23}
+                  textAnchor="middle"
+                  className="fill-muted-foreground text-[10px]"
+                >
+                  {shortLabel}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      )}
+    </figure>
   )
 }
 
@@ -1458,12 +2156,12 @@ function TableArtifact({
       {rows.length === 0 ? (
         <SmallEmpty label="No rows returned" />
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border">
-          <table className="w-full border-collapse text-xs">
-            <thead className="sticky top-0 bg-muted">
+        <div className="min-h-0 flex-1 overflow-auto">
+          <table className="w-max min-w-full border-separate border-spacing-0 text-xs">
+            <thead className="sticky top-0 z-10 bg-muted/70 backdrop-blur">
               <tr>
                 {columns.map((column) => (
-                  <th key={valueText(column.key)} className="border-b border-border px-2 py-2 text-left font-semibold">
+                  <th key={valueText(column.key)} className="whitespace-nowrap border-b border-border/70 px-3 py-2 text-left font-semibold text-foreground">
                     {valueText(column.label || column.key)}
                   </th>
                 ))}
@@ -1477,15 +2175,22 @@ function TableArtifact({
                     key={rowIndex}
                     onClick={() => key && onEntitySelect(key)}
                     className={cn(
-                      "odd:bg-muted/30",
-                      key && "cursor-pointer hover:bg-amber-50/50 dark:hover:bg-amber-500/10"
+                      "text-foreground",
+                      key && "cursor-pointer hover:bg-muted/45"
                     )}
                   >
-                    {columns.map((column) => (
-                      <td key={valueText(column.key)} className="border-b border-border px-2 py-2 align-top">
-                        {valueText(row[valueText(column.key)]).slice(0, 180)}
-                      </td>
-                    ))}
+                    {columns.map((column) => {
+                      const cellText = valueText(row[valueText(column.key)]).slice(0, 180)
+                      return (
+                        <td
+                          key={valueText(column.key)}
+                          className="max-w-80 truncate border-b border-border/50 px-3 py-2 align-top leading-5 text-muted-foreground"
+                          title={cellText}
+                        >
+                          {cellText}
+                        </td>
+                      )
+                    })}
                   </tr>
                 )
               })}
@@ -1566,140 +2271,6 @@ function MapArtifact({
         })}
       </div>
     </ArtifactShell>
-  )
-}
-
-function FinancialArtifact({
-  artifact,
-  exportEnabled,
-  onEntitySelect,
-}: {
-  artifact: AgentArtifact
-  exportEnabled: boolean
-  onEntitySelect: (key: string) => void
-}) {
-  const transactions = asArray<Dict>(artifact.data.transactions)
-  const totalVolume = artifact.data.total_volume || transactions.reduce((sum, transaction) => {
-    const amount = Number(transaction.amount)
-    return Number.isFinite(amount) ? sum + Math.abs(amount) : sum
-  }, 0)
-  return (
-    <ArtifactShell artifact={artifact} exportEnabled={exportEnabled}>
-      <div className="mb-3 grid shrink-0 grid-cols-2 gap-2 text-xs">
-        <Stat label="Transactions" value={transactions.length} />
-        <Stat label="Volume" value={formatAmount(totalVolume)} />
-      </div>
-      {transactions.length === 0 ? (
-        <SmallEmpty label="No financial records returned" />
-      ) : (
-        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-          {transactions.map((transaction, index) => {
-            const fromEntity = asRecord(transaction.from_entity)
-            const toEntity = asRecord(transaction.to_entity)
-            const transactionKey = entityKeyFromRecord(transaction)
-            const fromKey = entityKeyFromRecord(fromEntity)
-            const toKey = entityKeyFromRecord(toEntity)
-            return (
-              <div
-                key={valueText(transaction.key || index)}
-                role={transactionKey ? "button" : undefined}
-                tabIndex={transactionKey ? 0 : undefined}
-                onClick={() => transactionKey && onEntitySelect(transactionKey)}
-                onKeyDown={(event) => {
-                  if (!transactionKey) return
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault()
-                    onEntitySelect(transactionKey)
-                  }
-                }}
-                className={cn(
-                  "w-full rounded-md border border-border bg-card p-3 text-left text-xs transition-colors",
-                  transactionKey && "hover:border-amber-400/70 hover:bg-amber-50/40 dark:hover:bg-amber-500/10"
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        {valueText(transaction.date || "No date")}
-                      </span>
-                      {typeof transaction.category === "string" && transaction.category && (
-                        <Badge variant="outline" className="h-5 px-1.5 text-[10px]">
-                          {valueText(transaction.category)}
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="mt-1 truncate text-sm font-semibold text-foreground">
-                      {valueText(transaction.name || transaction.key || "Financial record")}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <div className="text-sm font-semibold text-foreground">
-                      {formatAmount(transaction.amount, transaction.currency)}
-                    </div>
-                    {typeof transaction.type === "string" && transaction.type && (
-                      <div className="text-[11px] text-muted-foreground">
-                        {valueText(transaction.type)}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center gap-2 text-muted-foreground">
-                  <EntityChip
-                    label={valueText(fromEntity.name || fromEntity.key || transaction.from_entity || "Unknown sender")}
-                    entityKey={fromKey}
-                    onEntitySelect={onEntitySelect}
-                  />
-                  <span className="text-border">{"->"}</span>
-                  <EntityChip
-                    label={valueText(toEntity.name || toEntity.key || transaction.to_entity || "Unknown receiver")}
-                    entityKey={toKey}
-                    onEntitySelect={onEntitySelect}
-                  />
-                </div>
-                {Boolean(transaction.summary || transaction.purpose || transaction.notes) && (
-                  <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">
-                    {compactText(transaction.summary || transaction.purpose || transaction.notes)}
-                  </p>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </ArtifactShell>
-  )
-}
-
-function EntityChip({
-  label,
-  entityKey,
-  onEntitySelect,
-}: {
-  label: string
-  entityKey: string | null
-  onEntitySelect: (key: string) => void
-}) {
-  return (
-    <span
-      role={entityKey ? "button" : undefined}
-      tabIndex={entityKey ? 0 : undefined}
-      onClick={(event) => stopAndSelect(event, entityKey, onEntitySelect)}
-      onKeyDown={(event) => {
-        if (!entityKey) return
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault()
-          onEntitySelect(entityKey)
-        }
-      }}
-      className={cn(
-        "min-w-0 max-w-[45%] truncate rounded border border-border bg-muted/40 px-2 py-1 text-[11px]",
-        entityKey && "cursor-pointer hover:border-amber-400/70 hover:bg-amber-50 dark:hover:bg-amber-500/10"
-      )}
-      title={label}
-    >
-      {label}
-    </span>
   )
 }
 

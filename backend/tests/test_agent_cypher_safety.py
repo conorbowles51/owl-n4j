@@ -51,6 +51,20 @@ class AgentCypherSafetyTests(unittest.TestCase):
                 "MATCH (n {case_id: $case_id}) RETURN n ORDER BY n.date NULLS LAST",
             )
 
+    def test_allows_semicolon_inside_string_literal(self):
+        query = validate_readonly_cypher(
+            "MATCH (n {case_id: $case_id}) RETURN 'a.txt; b.txt' AS sources",
+            limit=10,
+        )
+
+        self.assertIn("'a.txt; b.txt'", query)
+
+    def test_rejects_second_statement_after_semicolon(self):
+        with self.assertRaises(UnsafeCypherError):
+            validate_readonly_cypher(
+                "MATCH (n {case_id: $case_id}) RETURN n; MATCH (m {case_id: $case_id}) RETURN m",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

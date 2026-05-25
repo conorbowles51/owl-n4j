@@ -28,6 +28,8 @@ from services.agent.schemas import (
 )
 from services.case_service import check_case_access
 
+SUPPORTED_ARTIFACT_TYPES = {"graph", "table", "map", "report", "chart"}
+
 
 def summarize_title(message: str) -> str:
     words = message.strip().split()
@@ -246,12 +248,15 @@ def persist_artifacts(
 ) -> list[AgentArtifactRecord]:
     records: list[AgentArtifactRecord] = []
     for artifact in artifacts:
+        artifact_type = str(artifact.get("type") or "table")
+        if artifact_type not in SUPPORTED_ARTIFACT_TYPES:
+            continue
         artifact_id = artifact.get("id")
         record = AgentArtifactRecord(
             id=uuid.UUID(artifact_id) if artifact_id else uuid.uuid4(),
             thread_id=thread.id,
             run_id=run.id,
-            type=str(artifact.get("type") or "table"),
+            type=artifact_type,
             title=str(artifact.get("title") or "Agent artifact"),
             payload=to_jsonable(artifact.get("data") or {}),
             extra_metadata=to_jsonable(artifact.get("metadata") or {}),
@@ -260,6 +265,10 @@ def persist_artifacts(
         records.append(record)
     db.flush()
     return records
+
+
+def supported_artifacts(records: list[AgentArtifactRecord]) -> list[AgentArtifactRecord]:
+    return [record for record in records if record.type in SUPPORTED_ARTIFACT_TYPES]
 
 
 def to_api_artifact(record: AgentArtifactRecord) -> AgentArtifact:
@@ -301,7 +310,7 @@ def get_run_detail(db: Session, *, run_id: UUID, user: User) -> AgentRunDetail:
         usage=run.usage,
         started_at=run.started_at,
         completed_at=run.completed_at,
-        artifacts=[to_api_artifact(artifact) for artifact in run.artifacts],
+        artifacts=[to_api_artifact(artifact) for artifact in supported_artifacts(run.artifacts)],
         tool_trace=[to_api_tool_trace(tool_call) for tool_call in run.tool_calls],
     )
 
@@ -340,5 +349,5 @@ def get_thread_detail(db: Session, *, thread_id: UUID, user: User) -> AgentThrea
         created_at=thread.created_at,
         updated_at=thread.updated_at,
         messages=messages,
-        artifacts=[to_api_artifact(artifact) for artifact in thread.artifacts],
+        artifacts=[to_api_artifact(artifact) for artifact in supported_artifacts(thread.artifacts)],
     )
