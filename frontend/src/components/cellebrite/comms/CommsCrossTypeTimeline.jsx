@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity, ArrowDownWideNarrow, ArrowUpWideNarrow, Layers } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity, ArrowDownWideNarrow, ArrowUpWideNarrow, Layers, List, LayoutPanelTop, LayoutPanelLeft } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
+import CommsCrossTypeSwimLane from './CommsCrossTypeSwimLane';
 
 // Two-line row layout (per user feedback):
 //   line 1: [phone] [time] [type icon] [app] [body preview]
@@ -41,8 +42,16 @@ export default function CommsCrossTypeTimeline({
   // so a single row click both navigates to the parent thread (if the
   // caller wants that) and publishes the item to the universal rail.
   onItemSelect = null,
+  // Optional callback fired when the user drags a selection box in
+  // swim-lane mode and clicks "Apply as filter". The parent Comms
+  // Center wires this into its scrubber so the picked window narrows
+  // the rest of the page (threads + thread view) too.
+  onApplyWindow = null,
 }) {
   const [expanded, setExpanded] = useState(true);
+  // List | Lanes ↓ | Lanes → renderer selector. Same data either
+  // way — only the visual layout differs.
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'swim-v' | 'swim-h'
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -168,6 +177,34 @@ export default function CommsCrossTypeTimeline({
           {loading && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
         </button>
         {expanded && (
+          <div className="inline-flex items-center bg-white border border-light-300 rounded overflow-hidden text-[11px] flex-shrink-0 mr-1">
+            <button
+              type="button"
+              title="List view"
+              onClick={() => setViewMode('list')}
+              className={`px-1.5 py-0.5 inline-flex items-center gap-1 ${viewMode === 'list' ? 'bg-owl-blue-100 text-owl-blue-900' : 'text-light-700 hover:bg-light-100'}`}
+            >
+              <List className="w-3 h-3" /> List
+            </button>
+            <button
+              type="button"
+              title="Swim-lane (vertical)"
+              onClick={() => setViewMode('swim-v')}
+              className={`px-1.5 py-0.5 inline-flex items-center gap-1 border-l border-light-200 ${viewMode === 'swim-v' ? 'bg-owl-blue-100 text-owl-blue-900' : 'text-light-700 hover:bg-light-100'}`}
+            >
+              <LayoutPanelTop className="w-3 h-3" /> Lanes ↓
+            </button>
+            <button
+              type="button"
+              title="Swim-lane (horizontal)"
+              onClick={() => setViewMode('swim-h')}
+              className={`px-1.5 py-0.5 inline-flex items-center gap-1 border-l border-light-200 ${viewMode === 'swim-h' ? 'bg-owl-blue-100 text-owl-blue-900' : 'text-light-700 hover:bg-light-100'}`}
+            >
+              <LayoutPanelLeft className="w-3 h-3" /> Lanes →
+            </button>
+          </div>
+        )}
+        {expanded && viewMode === 'list' && (
           <div className="relative flex-shrink-0">
             <button
               onClick={() => setSortOpen((v) => !v)}
@@ -219,7 +256,7 @@ export default function CommsCrossTypeTimeline({
       {expanded && (
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto"
+          className={`flex-1 min-h-0 ${viewMode === 'list' ? 'overflow-y-auto' : 'flex flex-col overflow-hidden'}`}
           onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
         >
           {loading && items.length === 0 ? (
@@ -230,6 +267,18 @@ export default function CommsCrossTypeTimeline({
             <div className="text-xs text-light-500 italic text-center py-6">
               No comms match the current filters
             </div>
+          ) : viewMode !== 'list' ? (
+            <CommsCrossTypeSwimLane
+              items={orderedItems}
+              orientation={viewMode === 'swim-h' ? 'horizontal' : 'vertical'}
+              onItemSelect={(item) => {
+                if (onJumpToThread) onJumpToThread(item);
+                if (onItemSelect) onItemSelect(item);
+              }}
+              onApplyWindow={(win) => {
+                if (onApplyWindow) onApplyWindow(win);
+              }}
+            />
           ) : (
             <div style={{ height: totalHeight, position: 'relative' }}>
               <div style={{ height: topPad }} />

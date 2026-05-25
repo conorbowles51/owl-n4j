@@ -714,6 +714,19 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       endDate={endDate || null}
       onItemSelect={handleItemSelect}
       onClose={() => setTimelineFlyoverOpen(false)}
+      // Swim-lane drag-to-select → narrow the comms scrubber so the
+      // thread list + thread view both filter to the picked window.
+      // Phone narrowing only kicks in when the drag actually picked a
+      // subset of the available lanes (so a one-lane drag on a busy
+      // case never accidentally collapses the global phone selection).
+      onApplyWindow={({ startTs, endTs, reportKeys }) => {
+        setWindowStart(startTs ? new Date(startTs) : null);
+        setWindowEnd(endTs ? new Date(endTs) : null);
+        if (phoneCtx && Array.isArray(reportKeys) && reportKeys.length > 0
+            && reportKeys.length < reports.length) {
+          phoneCtx.setSelection(reportKeys);
+        }
+      }}
     />
   ) : null;
 
@@ -937,7 +950,7 @@ function ModeToggleButton({
  */
 function CrossTypeTimelineFlyover({
   caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps,
-  startDate, endDate, onItemSelect, onClose,
+  startDate, endDate, onItemSelect, onClose, onApplyWindow,
 }) {
   // Esc to dismiss.
   useEffect(() => {
@@ -1067,6 +1080,7 @@ function CrossTypeTimelineFlyover({
           startDate={startDate}
           endDate={endDate}
           onItemSelect={onItemSelect}
+          onApplyWindow={onApplyWindow}
         />
       </div>
     </aside>
