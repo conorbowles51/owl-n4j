@@ -10359,8 +10359,16 @@ class Neo4jService:
         """
         active = set(types) if types else {"call", "message", "email"}
 
+        # No artificial contact cap (2026-05-25): a key contact had a 72k-message
+        # thread that the old per-type LIMIT 2000/4000/1000 + outer 5000 cap hid
+        # >90% of — and `total` was computed AFTER capping, so it under-reported
+        # the real volume too. Now each per-type query fetches enough to fill the
+        # requested page (offset+limit) and `total` is a TRUE uncapped count, so
+        # the UI always shows the real number and can page through all of it.
+        fetch_cap = offset + limit
         rk_filter = ""
-        params: Dict[str, Any] = {"case_id": case_id, "contact_key": contact_key}
+        params: Dict[str, Any] = {"case_id": case_id, "contact_key": contact_key,
+                                  "fetch_cap": fetch_cap}
         if report_keys:
             rk_filter = "AND n.cellebrite_report_key IN $report_keys"
             params["report_keys"] = list(report_keys)
@@ -10384,14 +10392,17 @@ class Neo4jService:
                 rs = session.run(
                     f"""
                     MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
-                    MATCH (n:PhoneCall {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE ((p)-[:CALLED]->(n) OR (n)-[:CALLED_TO]->(p))
-                      {rk_filter}
+                    CALL {{
+                      WITH p MATCH (p)-[:CALLED]->(n:PhoneCall {{source_type:'cellebrite'}}) RETURN n
+                      UNION
+                      WITH p MATCH (n:PhoneCall {{source_type:'cellebrite'}})-[:CALLED_TO]->(p) RETURN n
+                    }}
+                    WITH DISTINCT n WHERE n.case_id = $case_id {rk_filter}
+                    ORDER BY n.timestamp DESC
+                    LIMIT $fetch_cap
                     OPTIONAL MATCH (src:Person)-[:CALLED]->(n)
                     OPTIONAL MATCH (n)-[:CALLED_TO]->(dst:Person)
                     RETURN n, src, dst
-                    ORDER BY n.timestamp DESC
-                    LIMIT 2000
                     """,
                     params,
                 )
@@ -10429,20 +10440,17 @@ class Neo4jService:
                 rs = session.run(
                     f"""
                     MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
-                    MATCH (n:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE n.body IS NOT NULL
-                      AND (
-                        (p)-[:SENT_MESSAGE]->(n)
-                        OR EXISTS {{
-                          MATCH (n)-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p)
-                        }}
-                      )
-                      {rk_filter}
+                    CALL {{
+                      WITH p MATCH (p)-[:SENT_MESSAGE]->(n:Communication {{source_type:'cellebrite'}}) RETURN n
+                      UNION
+                      WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
+                    }}
+                    WITH DISTINCT n WHERE n.case_id = $case_id AND n.body IS NOT NULL {rk_filter}
+                    ORDER BY n.timestamp DESC
+                    LIMIT $fetch_cap
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(n)
                     OPTIONAL MATCH (n)-[:PART_OF]->(chat:Communication)
                     RETURN n, sender, chat
-                    ORDER BY n.timestamp DESC
-                    LIMIT 4000
                     """,
                     params,
                 )
@@ -10476,15 +10484,19 @@ class Neo4jService:
                 rs = session.run(
                     f"""
                     MATCH (p:Person {{case_id: $case_id, key: $contact_key}})
-                    MATCH (n:Email {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE ((p)-[:EMAILED]->(n) OR (n)-[:SENT_TO]->(p))
-                      {rk_filter}
+                    CALL {{
+                      WITH p MATCH (p)-[:EMAILED]->(n:Email {{source_type:'cellebrite'}}) RETURN n
+                      UNION
+                      WITH p MATCH (n:Email {{source_type:'cellebrite'}})-[:SENT_TO]->(p) RETURN n
+                    }}
+                    WITH DISTINCT n WHERE n.case_id = $case_id {rk_filter}
+                    ORDER BY n.timestamp DESC
+                    LIMIT $fetch_cap
                     OPTIONAL MATCH (src:Person)-[:EMAILED]->(n)
                     OPTIONAL MATCH (n)-[:SENT_TO]->(dst:Person)
                     WITH n, src, collect(DISTINCT dst) AS dsts
                     RETURN n, src, dsts
                     ORDER BY n.timestamp DESC
-                    LIMIT 1000
                     """,
                     params,
                 )
@@ -10519,9 +10531,51 @@ class Neo4jService:
                         "recipient_count": len(dsts),
                     })
 
-        # Sort newest-first, paginate
+            # TRUE uncapped totals per active type, so `total` reflects the real
+            # volume even when we return only a page — the UI never sees a number
+            # that was silently capped (cf. the old post-cap len(items)).
+            true_total = 0
+            if "call" in active:
+                r = session.run(
+                    f"""
+                    MATCH (p:Person {{case_id:$case_id, key:$contact_key}})
+                    CALL {{
+                      WITH p MATCH (p)-[:CALLED]->(n:PhoneCall {{source_type:'cellebrite'}}) RETURN n
+                      UNION WITH p MATCH (n:PhoneCall {{source_type:'cellebrite'}})-[:CALLED_TO]->(p) RETURN n
+                    }}
+                    WITH DISTINCT n WHERE n.case_id=$case_id {rk_filter}
+                    RETURN count(n) AS c
+                    """, params).single()
+                true_total += int(r["c"]) if r else 0
+            if "message" in active:
+                r = session.run(
+                    f"""
+                    MATCH (p:Person {{case_id:$case_id, key:$contact_key}})
+                    CALL {{
+                      WITH p MATCH (p)-[:SENT_MESSAGE]->(n:Communication {{source_type:'cellebrite'}}) RETURN n
+                      UNION WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
+                    }}
+                    WITH DISTINCT n WHERE n.case_id=$case_id AND n.body IS NOT NULL {rk_filter}
+                    RETURN count(n) AS c
+                    """, params).single()
+                true_total += int(r["c"]) if r else 0
+            if "email" in active:
+                r = session.run(
+                    f"""
+                    MATCH (p:Person {{case_id:$case_id, key:$contact_key}})
+                    CALL {{
+                      WITH p MATCH (p)-[:EMAILED]->(n:Email {{source_type:'cellebrite'}}) RETURN n
+                      UNION WITH p MATCH (n:Email {{source_type:'cellebrite'}})-[:SENT_TO]->(p) RETURN n
+                    }}
+                    WITH DISTINCT n WHERE n.case_id=$case_id {rk_filter}
+                    RETURN count(n) AS c
+                    """, params).single()
+                true_total += int(r["c"]) if r else 0
+
+        # Sort newest-first, return the requested page. `total` is the TRUE
+        # count (not the capped page), and `truncated` flags when more exists
+        # beyond this page — so truncation is always visible.
         items.sort(key=lambda i: (i.get("timestamp") or ""), reverse=True)
-        total = len(items)
         items = items[offset: offset + limit]
 
         return {
@@ -10533,7 +10587,10 @@ class Neo4jService:
                 "all_identifiers": list(contact.get("all_identifiers") or []),
             } if contact else None,
             "items": items,
-            "total": total,
+            "total": true_total,
+            "returned": len(items),
+            "offset": offset,
+            "truncated": true_total > offset + len(items),
         }
 
 

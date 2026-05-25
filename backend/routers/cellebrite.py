@@ -1339,7 +1339,11 @@ def comms_contact_feed(
     case_id: str = Query(...),
     report_keys: Optional[str] = Query(None),
     types: Optional[str] = Query(None, description="Comma-separated: call,message,email"),
-    limit: int = Query(1000, ge=1, le=5000),
+    # No artificial contact cap: a key contact's thread can run to tens of
+    # thousands of messages (2026-05-25). Default page stays modest; the ceiling
+    # is high enough to pull a whole thread, and the response carries the TRUE
+    # total + a `truncated` flag so nothing is hidden silently.
+    limit: int = Query(2000, ge=1, le=200000),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
