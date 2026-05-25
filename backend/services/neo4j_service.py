@@ -6372,9 +6372,16 @@ class Neo4jService:
                         // Person population on the canvas with no
                         // edges — exactly the behaviour the user
                         // pushed back on.
+                        //
+                        // Sanity cap at 2,000 nodes — that's enough
+                        // to render every Person in a typical case
+                        // (the user reported wanting "all the phone
+                        // data") while keeping the d3 simulation
+                        // tractable. d3-force handles ~5k cleanly;
+                        // 2k leaves headroom for Resources + Phones.
                         WHERE activity_count > 0
                         ORDER BY device_count DESC, activity_count DESC
-                        LIMIT 200
+                        LIMIT 2000
                         RETURN p, device_keys, device_count, activity_count AS comm_count
                         """,
                         case_id=case_id,
@@ -6486,14 +6493,14 @@ class Neo4jService:
                         )
                         for rec in hop2_r:
                             all_keys.add(rec["nkey"])
-                            if len(all_keys) >= 200:
+                            if len(all_keys) >= 600:
                                 break
 
                 # Cap at 200 to keep the force-graph render legible.
                 # Prefer anchors + hop1, drop hop2 first.
                 if len(all_keys) > 200:
                     prioritised = list(anchor_keys) + list(hop1_keys - set(anchor_keys))
-                    all_keys = set(prioritised[:200])
+                    all_keys = set(prioritised[:600])
 
                 # Project the final node set with the same property
                 # bundle the legacy path produces.
@@ -7001,14 +7008,53 @@ class Neo4jService:
                 except Exception:
                     continue
 
-        # Sort the unified list so Persons surface first (they're the
-        # primary investigation unit), then resources alphabetically.
-        results.sort(key=lambda r: (
-            0 if r.get("entity") == "person" else 1,
-            -int(r.get("comm_count") or 0),
-            r.get("name") or "",
-        ))
-        results = results[: int(limit)]
+        # Interleave Persons + Resources so Resources actually surface
+        # in the top-N panel. Previously we put all Persons first;
+        # with 50 Person matches the Resources never reached the panel
+        # even when the user was clearly looking for them (e.g. typed
+        # "dia" expecting to find Meeting nodes).
+        #
+        # New ordering:
+        #   1. Sort Persons by comm_count desc, name (existing
+        #      relevance signal — most-active match first).
+        #   2. Sort Resources alphabetically inside each label group.
+        #   3. Interleave: take up to 6 Persons, then up to 6 of each
+        #      resource label, then round-robin the rest. So a search
+        #      for "dia" returns the top Persons (Claudia Baires etc.)
+        #      AND every Meeting / Location / Account / etc. matching
+        #      "dia" in roughly equal weight.
+        persons = [r for r in results if r.get("entity") == "person"]
+        resources = [r for r in results if r.get("entity") == "resource"]
+        persons.sort(key=lambda r: (-int(r.get("comm_count") or 0), r.get("name") or ""))
+        # Bucket resources by chip_key (label) so we can interleave
+        # across types — otherwise a single chatty label (e.g.
+        # WebBookmark) would consume the resource slots.
+        from collections import defaultdict
+        by_type: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for r in resources:
+            by_type[r.get("resource_type", "_")].append(r)
+        for v in by_type.values():
+            v.sort(key=lambda r: (r.get("name") or "").lower())
+        merged: List[Dict[str, Any]] = []
+        merged.extend(persons[:6])  # top Persons up front
+        # Round-robin the resource buckets
+        bucket_keys = list(by_type.keys())
+        bucket_idx = {k: 0 for k in bucket_keys}
+        while len(merged) < int(limit):
+            progressed = False
+            for k in bucket_keys:
+                i = bucket_idx[k]
+                if i < len(by_type[k]):
+                    merged.append(by_type[k][i])
+                    bucket_idx[k] = i + 1
+                    progressed = True
+                    if len(merged) >= int(limit):
+                        break
+            if not progressed:
+                break
+        # Spill remaining Persons (after the initial 6) at the bottom
+        merged.extend(persons[6:])
+        results = merged[: int(limit)]
 
         return {
             "results": results,

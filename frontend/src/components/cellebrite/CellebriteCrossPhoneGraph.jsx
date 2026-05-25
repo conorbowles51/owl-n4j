@@ -84,9 +84,14 @@ function tokeniseGraphSearch(input) {
 // backend to omit Persons / Resources whose only edges were of that
 // type, so the canvas stays meaningful at every toggle state.
 const GRAPH_EVENT_TYPES = [
-  // Comms — on by default
+  // Defaults are intentionally light. The user asked for "mostly
+  // deselected so the graph doesn't start too chaotic" + "all the
+  // phone data" — every Person is now eligible (sanity-cap raised
+  // to 2,000 in the backend), so leaving Messages default-on would
+  // pull thousands of nodes in on first load. Calls alone gives a
+  // legible comms baseline the user can build on by toggling.
   { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true,  group: 'comms' },
-  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true,  group: 'comms' },
+  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: false, group: 'comms' },
   { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: false, group: 'comms' },
   // Movement / proximity
   { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: false, group: 'movement' },
@@ -126,14 +131,17 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // Per-case localStorage so the user's preferred event-type toggle
   // state persists across visits. Keyed off case so different cases
   // don't bleed settings.
-  // localStorage key bumped to v2 when toggle semantics changed from
-  // "show/hide edges among an unchanging Person set" to "add/remove
-  // Persons + Resources entirely". The old v1 selections (which were
-  // mostly "all on" after the previous default-on rollout) would map
-  // to a hairball under the new semantics — invalidating the cache
-  // keeps the new default (calls + messages only) for everyone on
-  // first open.
-  const eventTypesKey = `cb.graph.eventTypes.v2.${caseId || 'unknown'}`;
+  // localStorage key bumped to v3. v2 stored stale chip keys that
+  // no longer exist in EDGE_PATTERNS (e.g. 'wifi_ssid' was folded
+  // into 'wifi') — those were still being sent to the backend on
+  // each refetch and silently ignored. v3 reseeds from defaultOn
+  // and filters out any key that isn't in the current registry on
+  // load, so previously-cached state can never leak unknown keys.
+  const eventTypesKey = `cb.graph.eventTypes.v4.${caseId || 'unknown'}`;
+  const knownKeys = useMemo(
+    () => new Set(GRAPH_EVENT_TYPES.map((t) => t.key)),
+    [],
+  );
   const [activeEventTypes, setActiveEventTypes] = useState(() => {
     if (typeof window === 'undefined') {
       return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
@@ -142,7 +150,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       const raw = window.localStorage.getItem(eventTypesKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return new Set(parsed);
+        if (Array.isArray(parsed)) {
+          // Filter out any key that's no longer in EDGE_PATTERNS —
+          // 'wifi_ssid' etc. would otherwise survive a code change
+          // that removed them and still get sent to the backend.
+          const known = new Set(GRAPH_EVENT_TYPES.map((t) => t.key));
+          const sanitised = parsed.filter((k) => known.has(k));
+          if (sanitised.length > 0) return new Set(sanitised);
+        }
       }
     } catch { /* ignore */ }
     return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
@@ -232,40 +247,31 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // aren't in the rendered subset at all.
   const [searchMode, setSearchMode] = useState('filter'); // 'filter' | 'search'
 
-  // Master "labels all on" toggle. When false (default) labels show
-  // only on hover / search match / Phones. When true every node
-  // renders its small label. Toolbar button + keyboard shortcut.
-  const [labelsAllOn, setLabelsAllOn] = useState(false);
+  // Master "labels all on" toggle.
+  //   true  (default) → every node renders a compact label;
+  //                     hovered node enlarges it; search matches
+  //                     get cyan colour + slight bump.
+  //   false           → labels suppressed except hover / search
+  //                     match / Phones. For dense graphs.
+  const [labelsAllOn, setLabelsAllOn] = useState(true);
 
-  // Interaction mode for the canvas. 'drag' is the default — clicks
-  // / drags move nodes one at a time. Hold Shift to enter 'select'
-  // — drag a rubber-band box across the canvas; nodes inside are
-  // batched as a multi-selection that the cross-tab pivot bar can
-  // pivot on.
-  const [interactionMode, setInteractionMode] = useState('drag'); // 'drag' | 'select'
-  // Hold-Shift binding (per the user's spec). Tracked via window
-  // keydown/keyup so we don't need to keep focus on a specific elem.
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key !== 'Shift') return;
-      setInteractionMode(e.type === 'keydown' ? 'select' : 'drag');
-    };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKey);
-    };
-  }, []);
-
-  // Drag-box state — only used in select mode. Stored in screen
-  // (client) coordinates; converted to canvas coords when committing
-  // the selection via fgRef.current.screen2GraphCoords().
+  // Selection rubber-band state.
+  // Trigger: right-click + drag anywhere on the canvas. Mouse button
+  // 2 starts the box; we suppress the browser context-menu so the
+  // gesture feels natural. Left-click drag still moves single nodes
+  // OR translates the whole multi-selection (see onNodeDrag below).
   const [selectionBox, setSelectionBox] = useState(null);
   const selectionBoxStartRef = useRef(null);
   // Persistent multi-selection (node ids). Survives canvas redraws
   // so the user can pivot on the selection from the perspective bar.
   const [multiSelection, setMultiSelection] = useState(new Set());
+
+  // Group-drag state.
+  // When the user starts dragging a node that's part of the
+  // multi-selection, every selected node moves by the same delta.
+  // We snapshot starting positions for every selected node so we
+  // can compute the delta on each onNodeDrag frame.
+  const groupDragRef = useRef(null);
 
   // Pending centre-and-fan focus id. When the user clicks a Person
   // search result we both rebuild the graph (via setPerspective)
@@ -745,10 +751,13 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
 
     const drawLabel = (text, atY) => {
       if (!text || labelState === 'hidden') return;
-      // Target on-screen pixels per state. Bigger on hover/match so
-      // the user can read the focused node easily; small everywhere
-      // else so the canvas stays scannable when "show all" is on.
-      const TARGETS = { small: 9, hover: 14, match: 13, pinned: 12 };
+      // Smaller defaults — the previous 12-14px range overwhelmed
+      // dense graphs. Default labels sit at 8px; hover bumps to 12
+      // (the user asked specifically for "enlarge on hover"); search
+      // matches get a colour pop + a slight size boost so they're
+      // still legible without dominating the canvas; Phones stay
+      // bold at 11.
+      const TARGETS = { small: 8, hover: 12, match: 10, pinned: 11 };
       const COLORS = {
         small: '#475569',
         hover: '#0f172a',
@@ -1266,22 +1275,13 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         </div>
       )}
 
-      {/* Mode hint bar — informs the user about Shift-to-select. Tiny
-          and unobtrusive; updates to show the active mode. */}
+      {/* Mode hint bar — small instructions for the right-click
+          multi-select gesture + the labels toggle. */}
       <div className="flex items-center gap-2 px-4 py-1 border-b border-light-100 bg-light-50 text-[10px] text-light-600 flex-shrink-0">
-        {interactionMode === 'select' ? (
-          <>
-            <MousePointerSquareDashed className="w-3 h-3 text-emerald-600" />
-            <span className="text-emerald-800 font-semibold">Select mode</span>
-            <span className="text-light-500">— drag a box to select multiple nodes · release Shift to drag nodes again</span>
-          </>
-        ) : (
-          <>
-            <Move className="w-3 h-3 text-light-500" />
-            <span>Drag mode</span>
-            <span className="text-light-400">— hold <kbd className="px-1 py-px rounded border border-light-300 bg-white text-[9px]">Shift</kbd> to enter select mode (rubber-band multi-select)</span>
-          </>
-        )}
+        <MousePointerSquareDashed className="w-3 h-3 text-light-500" />
+        <span className="text-light-500">
+          Right-click + drag to select a group · drag any selected node to move the whole group · click empty space to clear
+        </span>
         <div className="flex-1" />
         <button
           type="button"
@@ -1291,7 +1291,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
               ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
               : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
           }`}
-          title={labelsAllOn ? 'Hide labels (show only on hover)' : 'Show all labels'}
+          title={labelsAllOn ? 'Hide labels (show only on hover + search matches + phones)' : 'Show every node label'}
         >
           <Tag className="w-2.5 h-2.5" />
           {labelsAllOn ? 'Labels on' : 'Labels off'}
@@ -1301,12 +1301,15 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       {/* Graph */}
       <div
         className="flex-1 min-h-0 relative"
+        // Right-click engages the rubber-band selection. We suppress
+        // the browser's default context menu on this surface so the
+        // gesture feels natural; the lib already uses right-click
+        // for its own thing on nodes via onNodeRightClick (currently
+        // unused after this refactor).
+        onContextMenu={(e) => e.preventDefault()}
         onMouseDown={(e) => {
-          // Only engage the rubber-band when the user is in select
-          // mode (Shift held) and started the drag on bare canvas.
-          if (interactionMode !== 'select') return;
-          // Ignore mousedown on the search panel / banner / pivot
-          // buttons. e.target.closest checks the DOM ancestry.
+          // mouse button 2 = right click
+          if (e.button !== 2) return;
           if (e.target.closest('[data-graph-overlay]')) return;
           const rect = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - rect.left;
@@ -1326,7 +1329,9 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             y2: y,
           });
         }}
-        onMouseUp={() => {
+        onMouseUp={(e) => {
+          // Only commit a selection if THIS was a right-click drag.
+          // Left-click drags are handled by the lib's own node-drag.
           if (!selectionBoxStartRef.current || !selectionBox || !fgRef.current) {
             selectionBoxStartRef.current = null;
             setSelectionBox(null);
@@ -1420,29 +1425,74 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           // the user. They can un-pin by double-clicking (handler
           // below) or by toggling chips (which refetches and seeds
           // positions from this same x/y, then releases).
+          // Drag start — if the user grabs a node that's in the
+          // multi-selection, snapshot every selected node's starting
+          // position so we can translate the whole group as the drag
+          // progresses.
+          onNodeDragStart={(node) => {
+            if (!node || !multiSelection.has(node.id)) {
+              groupDragRef.current = null;
+              return;
+            }
+            const positions = new Map();
+            for (const id of multiSelection) {
+              const n = graphData.nodes.find((m) => m.id === id);
+              if (n && Number.isFinite(n.x) && Number.isFinite(n.y)) {
+                positions.set(id, { x: n.x, y: n.y });
+              }
+            }
+            groupDragRef.current = {
+              anchorId: node.id,
+              anchorStart: { x: node.x, y: node.y },
+              positions,
+            };
+          }}
+          // During drag — translate every other selected node by the
+          // same delta as the dragged anchor. Use fx/fy so the lib
+          // doesn't try to fight us; pins are made permanent on
+          // dragend.
+          onNodeDrag={(node) => {
+            const gd = groupDragRef.current;
+            if (!gd || !node || node.id !== gd.anchorId) return;
+            const dx = node.x - gd.anchorStart.x;
+            const dy = node.y - gd.anchorStart.y;
+            for (const [id, start] of gd.positions) {
+              if (id === gd.anchorId) continue;
+              const n = graphData.nodes.find((m) => m.id === id);
+              if (!n) continue;
+              n.fx = start.x + dx;
+              n.fy = start.y + dy;
+              n.x = n.fx;
+              n.y = n.fy;
+            }
+          }}
+          // Drag end — pin every node we moved (the anchor + all
+          // group members) so the sim can't yank them back. If this
+          // wasn't a group drag, just pin the single node like before.
           onNodeDragEnd={(node) => {
             if (!node) return;
             node.fx = node.x;
             node.fy = node.y;
+            const gd = groupDragRef.current;
+            if (gd && node.id === gd.anchorId) {
+              for (const id of gd.positions.keys()) {
+                if (id === gd.anchorId) continue;
+                const n = graphData.nodes.find((m) => m.id === id);
+                if (!n) continue;
+                n.fx = n.x;
+                n.fy = n.y;
+              }
+            }
+            groupDragRef.current = null;
           }}
-          // Double-click a node to release a pin and let the sim
-          // relax it. Useful when the user dragged something out of
-          // place and wants it to find its own home.
-          onNodeClick={(node) => {
-            if (!node) return;
-            // Heuristic: distinguish a click that's actually meant
-            // as un-pin from a normal selection click via the modifier
-            // key state would be nicer, but react-force-graph doesn't
-            // expose the original MouseEvent here. Leaving the click
-            // a no-op preserves the previous behaviour.
+          onNodeClick={() => {
+            // No-op; click is reserved. (Search-result click does the
+            // centre-and-fan; in-canvas clicks just hover.)
           }}
-          onNodeRightClick={(node) => {
-            if (!node) return;
-            // Right-click releases a pinned node so the user can
-            // un-stick something they previously dragged.
-            delete node.fx;
-            delete node.fy;
-          }}
+          // Right-click on a node is now the rubber-band-selection
+          // gesture at the canvas level (handled by the wrapper's
+          // onMouseDown). We DO want to forward the contextmenu
+          // suppression — done on the wrapper.
           // Camera lock during post-refetch sim warm-up.
           //
           // The library auto-fits when graphData changes — that's the
