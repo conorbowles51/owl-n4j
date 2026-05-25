@@ -247,6 +247,13 @@ class CellebriteNeo4jWriter:
         self.nodes_total = 0
         self.relationships_total = 0
 
+        # Photo-geotag harvest parity (Step 8.35). expected = geotagged photos
+        # in <taggedFiles>; created = Location nodes persisted. A gap means a
+        # MERGE raised — surfaced via get_stats + a loud orchestrator WARNING.
+        # This is the visibility the 2026-05-25 geotag leak slipped past.
+        self.photo_geotags_expected = 0
+        self.photo_geotags_created = 0
+
         # Per-model-type failure counter — populated when a handler
         # raises inside `write_batch`. Exposed via `get_stats()` so the
         # orchestrator can fail the task if too many entities are lost.
@@ -477,6 +484,7 @@ class CellebriteNeo4jWriter:
             MERGE (p:Person {key: $key, case_id: $case_id})
             ON CREATE SET p = $props
             ON MATCH  SET p += $match_patch
+            SET p:CbNode
             """,
             key=key,
             case_id=self.case_id,
@@ -499,8 +507,15 @@ class CellebriteNeo4jWriter:
         if not sanitized:
             sanitized = "Other"
 
+        # :CbNode is a shared secondary label on every cellebrite node so the
+        # relationship helper can MATCH endpoints by {key, case_id} against the
+        # CbNode(case_id, key) composite index instead of an AllNodesScan (the
+        # label-less MATCH was doing two full DB scans per edge — see
+        # _create_relationship). All four node-creation paths add it
+        # (_create_node, _ensure_person, create_phone_report_node,
+        # finalise_sim_card) so no endpoint is ever missed.
         self.db.run_query(
-            f"CREATE (n:`{sanitized}` $props)",
+            f"CREATE (n:`{sanitized}`:CbNode $props)",
             props=props,
         )
 
@@ -525,10 +540,14 @@ class CellebriteNeo4jWriter:
             **(extra_props or {}),
         }
 
+        # :CbNode label lets both MATCHes use the CbNode(case_id, key) index
+        # (O(log n)) instead of an AllNodesScan per endpoint. Every cellebrite
+        # node carries :CbNode (all 4 creation paths) and existing nodes are
+        # backfilled, so this never misses an endpoint.
         self.db.run_query(
             f"""
-            MATCH (a {{key: $from_key, case_id: $case_id}})
-            MATCH (b {{key: $to_key, case_id: $case_id}})
+            MATCH (a:CbNode {{key: $from_key, case_id: $case_id}})
+            MATCH (b:CbNode {{key: $to_key, case_id: $case_id}})
             MERGE (a)-[r:`{sanitized}` {{case_id: $case_id}}]->(b)
             """,
             **params,
@@ -756,6 +775,7 @@ class CellebriteNeo4jWriter:
             MERGE (r:PhoneReport {case_id: $case_id, key: $key})
             ON CREATE SET r = $create_props
             ON MATCH SET r += $match_props
+            SET r:CbNode
             """,
             case_id=self.case_id,
             key=self.report_key,
@@ -2091,6 +2111,7 @@ class CellebriteNeo4jWriter:
             MERGE (s:SIMCard {key: $key, case_id: $cid})
             ON CREATE SET s = $props
             ON MATCH  SET s += $props
+            SET s:CbNode
             """,
             key=key, cid=self.case_id, props=props,
         )
@@ -2425,6 +2446,11 @@ class CellebriteNeo4jWriter:
             "total_nodes": self.nodes_total,
             "total_relationships": self.relationships_total,
             "phone_owner": self._phone_owner_key,
+            # Photo-geotag harvest parity (Step 8.35). _expected == _created on
+            # a clean run; a gap means geotags in the XML failed to persist —
+            # the signal the 2026-05-25 leak had no check for.
+            "photo_geotags_expected": self.photo_geotags_expected,
+            "photo_geotags_created": self.photo_geotags_created,
             # Per-type write failure counts. {} on a clean run; non-empty
             # means at least one handler raised. Orchestrator surfaces
             # the total via task.progress.failed and fails the task if
@@ -2432,6 +2458,106 @@ class CellebriteNeo4jWriter:
             "write_errors": dict(self.write_errors),
             "write_errors_total": sum(self.write_errors.values()),
         }
+
+    def harvest_photo_geotags(self, tagged_files: List) -> Tuple[int, int]:
+        """Persist photo EXIF geotags from <taggedFiles> as Location nodes.
+
+        Geotag coordinates live in the taggedFiles metadata and do NOT need
+        the binary file. Previously they reached the graph only as a
+        side-effect of media-file registration (Step 9) — which is skipped for
+        skip-media ingests and silently dropped tagged files whose binaries
+        didn't resolve into the registered set. So geotags present in the XML
+        never landed (2026-05-25 leak: 365 photos across case 43f1afb1, 0 in
+        graph). This harvests them directly and unconditionally: one Location
+        node per geotagged photo (`location_type='Photo'`, key
+        `loc-photo-<file_id>`), reverse-geocoded like model-Locations,
+        independent of binary resolution. Idempotent (MERGE on case_id+key).
+        Linked to the PhoneReport by the Step 8.4 CONTAINS sweep (the node
+        carries cellebrite_report_key) and WAS_AT from the phone owner here.
+
+        Returns (expected, created) so the orchestrator can assert parity —
+        the XML-vs-persisted check the leak slipped past. created < expected
+        means a MERGE raised (logged); equal means every geotag persisted.
+        """
+        geo = [t for t in (tagged_files or [])
+               if getattr(t, "latitude", None) is not None
+               and getattr(t, "longitude", None) is not None]
+        expected = len(geo)
+        created = 0
+        for tf in geo:
+            try:
+                lat = float(tf.latitude)
+                lon = float(tf.longitude)
+            except (TypeError, ValueError):
+                continue
+            fid = tf.file_id or str(uuid.uuid4())
+            key = f"loc-photo-{fid}"
+            name = (tf.original_path or "").rsplit("/", 1)[-1] or "Photo location"
+            props = {
+                "id": str(uuid.uuid4()),
+                "key": key,
+                "name": name,
+                "case_id": self.case_id,
+                "cellebrite_report_key": self.report_key,
+                "source_type": "cellebrite",
+                "location_type": "Photo",
+                "location_category": "Photo EXIF",
+                "source_app": "Photo EXIF",
+                "latitude": lat,
+                "longitude": lon,
+                "photo_file_id": fid,
+            }
+            if tf.original_path:
+                props["photo_path"] = tf.original_path
+            if getattr(tf, "gps_altitude", None) is not None:
+                props["gps_altitude"] = tf.gps_altitude
+            if getattr(tf, "camera_make", None):
+                props["camera_make"] = tf.camera_make
+            if getattr(tf, "camera_model", None):
+                props["camera_model"] = tf.camera_model
+            ts = getattr(tf, "capture_time", None) or getattr(tf, "creation_time", None)
+            if ts:
+                props["timestamp"] = ts
+                if len(ts) >= 10:
+                    props["date"] = ts[:10]
+                if len(ts) > 16:
+                    props["time"] = ts[11:16]
+            # Reverse-geocode (same pluggable / default-off contract as
+            # _write_location) so photo points get an address + geocode badge.
+            try:
+                g = _geocode_lat_lon(lat, lon)
+            except Exception:
+                g = None
+            if g:
+                for k in ("address", "place_name", "country", "country_code",
+                          "admin1", "admin2", "geocode_source", "geocode_accuracy"):
+                    v = g.get(k)
+                    if v is not None:
+                        props[k] = v
+            try:
+                self.db.run_query(
+                    "MERGE (l:Location {case_id: $cid, key: $key}) "
+                    "SET l += $props, l:CbNode",
+                    cid=self.case_id, key=key, props=props,
+                )
+            except Exception as e:
+                self._log(f"WARNING: geotag MERGE failed for {key}: {e}")
+                continue
+            self._created_node_keys.add(key)
+            self.locations_created += 1
+            self.nodes_total += 1
+            # WAS_AT from the phone owner (mirrors _write_location). Best-effort
+            # — the CONTAINS-to-report edge is the load-bearing one.
+            if self._phone_owner_key:
+                try:
+                    self._create_relationship(self._phone_owner_key, key, "WAS_AT")
+                except Exception:
+                    pass
+            created += 1
+
+        self.photo_geotags_expected = expected
+        self.photo_geotags_created = created
+        return expected, created
 
     def link_all_to_report(self) -> int:
         """Connect every node tagged with this report_key to the PhoneReport

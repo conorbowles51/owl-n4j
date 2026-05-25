@@ -16,6 +16,7 @@ Usage:
 """
 
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional, Callable, List
@@ -395,6 +396,28 @@ def ingest_cellebrite_report(
         _log(f"WARNING: SIMCard finalisation failed: {e}")
 
     # ------------------------------------------------------------------
+    # Step 8.35: Harvest photo EXIF geotags into Location nodes
+    # ------------------------------------------------------------------
+    # Geotag coordinates live in <taggedFiles> and don't need the binary file.
+    # Persist them DIRECTLY here so they reach the graph even when media
+    # registration (Step 9) is skipped or a tagged file's binary never resolved
+    # — closing the 2026-05-25 leak where geotags present in the XML never
+    # landed (365 photos, 0 in graph). Runs ALWAYS (cheap; reuses the
+    # already-parsed tagged_files from Step 3). Created before Step 8.4 so the
+    # CONTAINS sweep links the new Location nodes for free. The (expected,
+    # created) parity is the assertion the leak slipped past — surfaced in
+    # stats and logged loudly on any gap.
+    _log("Step 8.35: Harvesting photo geotags from tagged files...")
+    try:
+        geo_expected, geo_created = writer.harvest_photo_geotags(tagged_files)
+        _log(f"Geotag harvest: {geo_created}/{geo_expected} photo locations persisted")
+        if geo_created != geo_expected:
+            _log(f"WARNING: GEOTAG PARITY MISMATCH — {geo_expected} geotagged photos "
+                 f"in <taggedFiles> but only {geo_created} persisted")
+    except Exception as e:
+        _log(f"WARNING: Geotag harvest failed: {e}")
+
+    # ------------------------------------------------------------------
     # Step 8.4: Link every entity to the PhoneReport via CONTAINS
     # ------------------------------------------------------------------
     _log("Step 8.4: Linking entities to PhoneReport (CONTAINS)...")
@@ -427,7 +450,13 @@ def ingest_cellebrite_report(
     # Step 9: Register media files as evidence records
     # ------------------------------------------------------------------
     media_registered = 0
-    if evidence_storage:
+    # Media registration links media files to evidence rows for OPTIONAL Tier-2
+    # LLM processing; the core graph is already complete without it. On a large
+    # evidence.json it rewrites the whole file repeatedly (very slow), so allow
+    # skipping it for batch CLI ingests via CELLEBRITE_SKIP_MEDIA_REGISTRATION=1
+    # (files stay on disk + already have evidence rows; relink later if needed).
+    _skip_media = os.environ.get("CELLEBRITE_SKIP_MEDIA_REGISTRATION") == "1"
+    if evidence_storage and not _skip_media:
         _log("Step 9/9: Registering media files as evidence records...")
         _emit_progress(phase="registering_media", total=total_models,
                        completed=total_models,
@@ -437,6 +466,9 @@ def ingest_cellebrite_report(
             owner=owner,
             model_file_map=model_file_map,
         )
+    elif _skip_media:
+        _log("Step 9/9: Skipping media registration (CELLEBRITE_SKIP_MEDIA_REGISTRATION=1; "
+             "graph fully ingested, media-linking deferred)")
     else:
         _log("Step 9/9: Skipping media registration (no evidence storage)")
 
