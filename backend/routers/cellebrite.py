@@ -165,6 +165,40 @@ def patch_phone_report(
     return updated
 
 
+class MergePersonsRequest(BaseModel):
+    """POST body for /persons/merge — fold secondary identities into a primary."""
+    primary_key: str
+    secondary_keys: List[str]
+
+
+@router.post("/persons/merge")
+def merge_persons(
+    body: MergePersonsRequest,
+    case_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Investigator-asserted identity merge: fold secondary Person identities
+    (a contact's other numbers / handles) into a primary one. The system never
+    auto-merges different numbers — that would be false attribution — so this is
+    a deliberate human action, recorded on the survivor for audit. Requires
+    evidence-write access since it mutates the graph.
+    """
+    _require_case_evidence_access(case_id, current_user, db)
+    if not body.secondary_keys:
+        raise HTTPException(status_code=400, detail="secondary_keys must be non-empty")
+    actor = getattr(current_user, "email", None) or getattr(current_user, "username", None)
+    result = neo4j_service.merge_person_identities(
+        case_id=case_id,
+        primary_key=body.primary_key,
+        secondary_keys=body.secondary_keys,
+        actor=actor,
+    )
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=result.get("detail", "primary identity not found"))
+    return result
+
+
 @router.get("/cross-phone-graph")
 def get_cross_phone_graph(
     case_id: str = Query(...),

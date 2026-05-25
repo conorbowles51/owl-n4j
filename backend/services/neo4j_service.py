@@ -5874,6 +5874,72 @@ class Neo4jService:
                 "phone_owner_name": owner.get("name", "") if owner else "",
             }
 
+    def merge_person_identities(
+        self,
+        case_id: str,
+        primary_key: str,
+        secondary_keys: List[str],
+        actor: Optional[str] = None,
+    ) -> dict:
+        """Investigator-asserted merge of Person identities into a primary.
+
+        For the case the system can't auto-resolve: the same human under
+        multiple numbers / handles (e.g. "27 Maitra" + "Maitro" + "Trabajo 444").
+        Auto-merging different numbers would be false attribution, so this is a
+        deliberate human action. Relationships move to the primary (apoc
+        mergeNodes, deduped); the secondary's name is kept as an alias and the
+        merge is recorded on the survivor (merged_from / merged_by / merged_at)
+        so the combination is auditable. Not auto-reversible — the provenance
+        documents exactly what was combined.
+        """
+        merged: List[str] = []
+        with self._driver.session() as session:
+            prim = session.run(
+                "MATCH (p:Person {case_id:$cid, key:$k}) RETURN p.name AS name LIMIT 1",
+                cid=case_id, k=primary_key,
+            ).single()
+            if not prim:
+                return {"status": "not_found",
+                        "detail": f"primary identity '{primary_key}' not found"}
+            for sk in secondary_keys:
+                if not sk or sk == primary_key:
+                    continue
+                res = session.run(
+                    """
+                    MATCH (prim:Person {case_id:$cid, key:$pk})
+                    MATCH (sec:Person {case_id:$cid, key:$sk})
+                    WHERE elementId(prim) <> elementId(sec)
+                    SET prim.merged_from = coalesce(prim.merged_from, []) + [$sk],
+                        prim.aliases = coalesce(prim.aliases, []) +
+                          CASE WHEN sec.name IS NOT NULL
+                                 AND NOT sec.name IN coalesce(prim.aliases, [])
+                                 AND sec.name <> coalesce(prim.name, '')
+                               THEN [sec.name] ELSE [] END,
+                        prim.merged_by = $actor,
+                        prim.merged_at = toString(datetime())
+                    WITH prim, sec
+                    CALL apoc.refactor.mergeNodes([prim, sec],
+                         {properties:'discard', mergeRels:true}) YIELD node
+                    RETURN node.key AS k
+                    """,
+                    cid=case_id, pk=primary_key, sk=sk, actor=actor,
+                ).single()
+                if res:
+                    merged.append(sk)
+            deg = session.run(
+                "MATCH (p:Person {case_id:$cid, key:$k}) "
+                "RETURN size([(p)--() | 1]) AS d, p.aliases AS aliases",
+                cid=case_id, k=primary_key,
+            ).single()
+        return {
+            "status": "merged" if merged else "noop",
+            "primary_key": primary_key,
+            "merged": merged,
+            "merged_count": len(merged),
+            "relationships_now": int(deg["d"]) if deg else None,
+            "aliases": list(deg["aliases"]) if deg and deg["aliases"] else [],
+        }
+
     def delete_phone_report(self, case_id: str, report_key: str) -> dict:
         """
         Delete a PhoneReport node and every node tagged with the same
