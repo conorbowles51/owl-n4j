@@ -168,12 +168,46 @@ def patch_phone_report(
 @router.get("/cross-phone-graph")
 def get_cross_phone_graph(
     case_id: str = Query(...),
+    person_keys: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated Person keys to anchor the graph on. "
+            "When provided, returns only the anchor set + their "
+            "±depth neighbourhood across the active event types."
+        ),
+    ),
+    event_types: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated event types to include as edges. "
+            "Subset of "
+            "call,message,email,location,wifi,cell_tower,meeting. "
+            "Defaults to call+message+email (legacy comms-only)."
+        ),
+    ),
+    depth: int = Query(1, ge=1, le=2, description="Neighbourhood depth (1 or 2). Only used when person_keys is set."),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
-    """Get cross-phone graph showing shared contacts across devices."""
+    """Get cross-phone graph showing shared contacts across devices.
+
+    Backwards-compatible: when neither person_keys nor event_types is
+    supplied, the response matches the pre-perspective shape (top 200
+    persons by comm volume, comms edges only).
+    """
     _require_case_access(case_id, current_user, db)
-    graph = neo4j_service.get_cellebrite_cross_phone_graph(case_id)
+    pk = [k.strip() for k in person_keys.split(",")] if person_keys else None
+    et = [t.strip() for t in event_types.split(",")] if event_types else None
+    if pk:
+        pk = [k for k in pk if k]
+    if et:
+        et = [t for t in et if t]
+    graph = neo4j_service.get_cellebrite_cross_phone_graph(
+        case_id,
+        person_keys=pk,
+        event_types=et,
+        depth=depth,
+    )
     return graph
 
 

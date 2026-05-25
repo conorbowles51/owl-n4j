@@ -1,10 +1,35 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Loader2, Search, ArrowUpDown, Smartphone, Users, ChevronRight } from 'lucide-react';
+import {
+  Loader2, Search, ArrowUpDown, Smartphone, Users, ChevronRight,
+  Home, X, Network, MessageSquare, MoreHorizontal,
+} from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
-import CommsContactDrawer from './comms/CommsContactDrawer';
+import CommsContactFeed from './comms/CommsContactFeed';
+import NameActionMenu from './shared/NameActionMenu';
+import { usePerspective } from '../../context/PerspectiveContext';
+import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
+import { requestCellebriteTabSwitch } from '../../utils/commsHandoff';
 
 /**
- * Communication analysis view with contact frequency table and shared contacts.
+ * Communication analysis view with breadcrumbed drill-down.
+ *
+ * Root layer:
+ *   - Contact frequency table (left) — every Person across every phone
+ *     with their call/message/email counts.
+ *   - Shared contacts panel (right) — Persons appearing on more than
+ *     one phone.
+ *
+ * Drilled layers (one frame per click):
+ *   - Replace the layout with a full-width breadcrumb header + the
+ *     CommsContactFeed for that contact.
+ *   - Names inside the feed are still clickable (NameActionMenu)
+ *     so the investigator can keep stepping in: A → B → C → …
+ *   - Breadcrumb crumbs are clickable to walk back to any prior step.
+ *
+ * Perspective:
+ *   - Every drill ALSO pushes onto the global PerspectiveContext, so
+ *     other tabs (Cross-Phone Graph, Comms Center, Timeline, etc.)
+ *     can rebuild from the same lens via the PerspectivePill actions.
  */
 export default function CellebriteCommunicationView({ caseId }) {
   const [data, setData] = useState({ contacts: [], shared_contacts: [] });
@@ -17,11 +42,17 @@ export default function CellebriteCommunicationView({ caseId }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortField, setSortField] = useState('call_count');
   const [sortDir, setSortDir] = useState('desc');
-  // Highlighted row in the table (purely UI state — not the drawer trigger)
-  const [highlightedKey, setHighlightedKey] = useState(null);
-  // Contact whose drill-down drawer is open (full row object so the drawer
-  // can show a name + phone before the API responds)
-  const [drillContact, setDrillContact] = useState(null);
+
+  // Drill stack — unlimited depth. Each entry is the contact row the
+  // user clicked to enter that layer ({ person_key, name, phone, … }).
+  // [] = root layer (frequency table); [...3 items] = three levels deep.
+  const [drillStack, setDrillStack] = useState([]);
+
+  // The perspective context mirrors the drill stack: every push here
+  // also pushes a perspective frame so the rest of the app can rebuild
+  // from the active person.
+  const perspective = usePerspective();
+  const { selectEntity } = useCellebriteSelection();
 
   useEffect(() => {
     if (!caseId) return;
@@ -37,10 +68,6 @@ export default function CellebriteCommunicationView({ caseId }) {
     }).catch((e) => {
       if (!cancelled) {
         setData({ contacts: [], shared_contacts: [] });
-        // Log the failure to the console too — at least the original
-        // network reason is reachable from devtools rather than lost.
-        // Surface the real message in-UI so investigators can paste
-        // it into a bug report.
         console.error('[CellebriteCommunicationView] failed', e);
         setError(e?.message || String(e) || 'Failed to load contacts');
         setLoading(false);
@@ -77,6 +104,74 @@ export default function CellebriteCommunicationView({ caseId }) {
     }
   };
 
+  /**
+   * Drill into a contact: push a new layer locally AND a perspective
+   * frame globally. The two stacks track each other for as long as
+   * the user stays inside Communications.
+   */
+  const drillInto = (contact) => {
+    if (!contact?.person_key) return;
+    setDrillStack((prev) => [...prev, contact]);
+    if (perspective) {
+      perspective.pushFrame(
+        [contact.person_key],
+        contact.name || contact.person_key,
+        'communications.drill',
+      );
+    }
+  };
+
+  /**
+   * Walk back to a specific drill depth. depth=-1 returns to the root
+   * (no contact opened). Pop the perspective stack to match so the
+   * pill mirrors the breadcrumb the user actually sees.
+   */
+  const drillTo = (depth) => {
+    if (depth < -1 || depth >= drillStack.length) return;
+    setDrillStack((prev) => (depth < 0 ? [] : prev.slice(0, depth + 1)));
+    if (perspective) {
+      perspective.popToFrame(depth);
+    }
+  };
+
+  /**
+   * Re-anchor the perspective on the currently-drilled contact and
+   * jump to the Cross-Phone Graph. Used by the "View Cross-Phone
+   * Graph from this perspective" button on the drill toolbar.
+   */
+  const openInGraph = () => {
+    if (drillStack.length === 0) return;
+    const head = drillStack[drillStack.length - 1];
+    if (perspective) {
+      // setPerspective resets the stack to this single frame so the
+      // graph rebuilds with a clean lens — drilling further afterward
+      // re-pushes naturally.
+      perspective.setPerspective([head.person_key], head.name || head.person_key, 'communications.open-graph');
+    }
+    requestCellebriteTabSwitch('graph');
+  };
+
+  /**
+   * Filter the Comms Center by the active drill. Re-uses the existing
+   * `_filter_intent: 'comms'` plumbing so the Comms Center seeds its
+   * participants filter the same way it does for Overview drill-downs.
+   */
+  const openInComms = () => {
+    if (drillStack.length === 0) return;
+    const head = drillStack[drillStack.length - 1];
+    if (perspective) {
+      perspective.setPerspective([head.person_key], head.name || head.person_key, 'communications.open-comms');
+    }
+    selectEntity({
+      type: 'name-action',
+      id: `name-action-${head.person_key}-${Date.now()}`,
+      caseId,
+      payload: { _filter_intent: 'comms', person_keys: [head.person_key] },
+      source: 'communications.drill',
+    });
+    requestCellebriteTabSwitch('comms');
+  };
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -99,8 +194,29 @@ export default function CellebriteCommunicationView({ caseId }) {
     );
   }
 
+  // -------- Drilled layer -----------------------------------------
+  if (drillStack.length > 0) {
+    return (
+      <div className="h-full flex flex-col min-h-0">
+        <DrillBreadcrumbBar
+          stack={drillStack}
+          onDrillTo={drillTo}
+          onOpenInGraph={openInGraph}
+          onOpenInComms={openInComms}
+        />
+        <div className="flex-1 min-h-0">
+          <CommsContactFeed
+            caseId={caseId}
+            contact={drillStack[drillStack.length - 1]}
+            onDrillName={(personKey, name) => drillInto({ person_key: personKey, name })}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // -------- Root layer -----------------------------------------
   return (
-    <>
     <div className="h-full flex min-h-0">
       {/* Left: Contact Frequency Table */}
       <div className="flex-1 flex flex-col min-w-0 border-r border-light-200">
@@ -132,23 +248,17 @@ export default function CellebriteCommunicationView({ caseId }) {
                 <SortHeader field="message_count" label="Messages" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader field="email_count" label="Emails" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <th className="text-center px-3 py-2 font-medium text-light-600">Devices</th>
+                <th className="text-center px-3 py-2 font-medium text-light-600">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredContacts.map((contact) => {
-                const total = (contact.call_count || 0) + (contact.message_count || 0) + (contact.email_count || 0);
-                const isHighlighted = highlightedKey === contact.person_key;
                 return (
                   <tr
                     key={contact.person_key}
-                    className={`border-b border-light-100 cursor-pointer transition-colors group ${
-                      isHighlighted ? 'bg-emerald-50' : 'hover:bg-light-50'
-                    }`}
-                    onClick={() => {
-                      setHighlightedKey(contact.person_key);
-                      setDrillContact(contact);
-                    }}
-                    title="Click to see all calls, messages and emails"
+                    className="border-b border-light-100 cursor-pointer hover:bg-light-50 group"
+                    onClick={() => drillInto(contact)}
+                    title="Click to drill into this contact's communications"
                   >
                     <td className="px-3 py-2 font-medium text-owl-blue-900 truncate max-w-[150px]">
                       {contact.name}
@@ -183,12 +293,24 @@ export default function CellebriteCommunicationView({ caseId }) {
                         <ChevronRight className="w-3 h-3 text-light-300 group-hover:text-owl-blue-500 transition-colors" />
                       </span>
                     </td>
+                    <td className="px-3 py-2 text-center relative">
+                      {/* Suppress row click on the action menu — the menu's
+                          own buttons publish their own intents. */}
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <NameActionMenu
+                          personKey={contact.person_key}
+                          name={contact.name}
+                          onDrill={() => drillInto(contact)}
+                          compact
+                        />
+                      </span>
+                    </td>
                   </tr>
                 );
               })}
               {filteredContacts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-light-400">
+                  <td colSpan={7} className="px-3 py-8 text-center text-light-400">
                     No contacts found
                   </td>
                 </tr>
@@ -225,18 +347,12 @@ export default function CellebriteCommunicationView({ caseId }) {
             (data.shared_contacts || []).map(sc => (
               <div
                 key={sc.person_key}
-                className={`p-2.5 bg-white rounded border transition-colors cursor-pointer ${
-                  highlightedKey === sc.person_key
-                    ? 'border-amber-300 shadow-sm'
-                    : 'border-light-200 hover:border-light-300'
-                }`}
+                className="p-2.5 bg-white rounded border border-light-200 hover:border-light-300 cursor-pointer transition-colors"
                 onClick={() => {
-                  setHighlightedKey(sc.person_key);
-                  // Find the full contact row from the main list (has all counts)
                   const full = (data.contacts || []).find((c) => c.person_key === sc.person_key) || sc;
-                  setDrillContact(full);
+                  drillInto(full);
                 }}
-                title="Click to see all calls, messages and emails"
+                title="Click to drill into this contact's communications"
               >
                 <div className="flex items-center gap-2">
                   <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -250,6 +366,17 @@ export default function CellebriteCommunicationView({ caseId }) {
                       <div className="text-[10px] text-light-500 truncate">{sc.phone}</div>
                     )}
                   </div>
+                  <span onClick={(e) => e.stopPropagation()}>
+                    <NameActionMenu
+                      personKey={sc.person_key}
+                      name={sc.name}
+                      onDrill={() => {
+                        const full = (data.contacts || []).find((c) => c.person_key === sc.person_key) || sc;
+                        drillInto(full);
+                      }}
+                      compact
+                    />
+                  </span>
                 </div>
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {(sc.devices || []).map((dk, i) => (
@@ -268,14 +395,83 @@ export default function CellebriteCommunicationView({ caseId }) {
         </div>
       </div>
     </div>
-    {drillContact && (
-      <CommsContactDrawer
-        caseId={caseId}
-        contact={drillContact}
-        onClose={() => setDrillContact(null)}
-      />
-    )}
-    </>
+  );
+}
+
+/**
+ * Breadcrumb header rendered above the contact feed in any drilled
+ * layer. Shows: All contacts > Sender Lemus > Jaime García > … with
+ * each crumb clickable to walk back. Also surfaces the "open from
+ * here" cross-tab actions on the active layer.
+ */
+function DrillBreadcrumbBar({ stack, onDrillTo, onOpenInGraph, onOpenInComms }) {
+  const lastIdx = stack.length - 1;
+  return (
+    <div className="flex items-center gap-1 px-3 py-1.5 border-b border-light-200 bg-white flex-shrink-0">
+      <nav className="flex items-center gap-1 flex-wrap min-w-0 flex-1" aria-label="Communications drill breadcrumb">
+        <button
+          type="button"
+          onClick={() => onDrillTo(-1)}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-light-700 hover:bg-light-100 rounded"
+          title="Back to all contacts"
+        >
+          <Home className="w-3 h-3" />
+          All contacts
+        </button>
+        {stack.map((c, idx) => {
+          const isLast = idx === lastIdx;
+          return (
+            <React.Fragment key={`${c.person_key}-${idx}`}>
+              <ChevronRight className="w-3 h-3 text-light-400" />
+              <button
+                type="button"
+                onClick={() => onDrillTo(idx)}
+                className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded max-w-[200px] truncate ${
+                  isLast
+                    ? 'bg-owl-blue-100 text-owl-blue-900 font-semibold'
+                    : 'text-light-700 hover:bg-light-100'
+                }`}
+                title={c.name || c.person_key}
+              >
+                <Users className="w-2.5 h-2.5" />
+                <span className="truncate">{c.name || c.person_key}</span>
+              </button>
+            </React.Fragment>
+          );
+        })}
+      </nav>
+
+      {/* Cross-tab actions anchored to the head of the stack */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <button
+          type="button"
+          onClick={onOpenInGraph}
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-light-300 bg-white hover:bg-light-50 text-light-700"
+          title="View Cross-Phone Graph from this perspective"
+        >
+          <Network className="w-3 h-3" />
+          In Graph
+        </button>
+        <button
+          type="button"
+          onClick={onOpenInComms}
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-light-300 bg-white hover:bg-light-50 text-light-700"
+          title="Filter Comms Center by this perspective"
+        >
+          <MessageSquare className="w-3 h-3" />
+          In Comms
+        </button>
+        <button
+          type="button"
+          onClick={() => onDrillTo(-1)}
+          className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full hover:bg-light-100 text-light-500"
+          title="Close drill"
+          aria-label="Close drill"
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
   );
 }
 

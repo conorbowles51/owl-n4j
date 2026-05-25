@@ -16,6 +16,8 @@ import CellebriteUnifiedContacts from './CellebriteUnifiedContacts';
 import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
 import { CellebriteSelectionProvider, useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
+import PerspectivePill from './shared/PerspectivePill';
+import { PerspectiveProvider } from '../../context/PerspectiveContext';
 import { onCellebriteTabSwitch } from '../../utils/commsHandoff';
 
 const TABS = [
@@ -125,6 +127,7 @@ export default function CellebriteView({ caseId }) {
   return (
     <CellebriteStatusProvider>
     <CellebriteSelectionProvider>
+    <PerspectiveProvider caseId={caseId}>
     {/* Cross-tab intent listener — when a tab publishes a selection
         with `_filter_intent: 'comms'` (e.g. the unified-contacts
         "Filter Comms" button), switch the active tab to Comms so the
@@ -132,7 +135,9 @@ export default function CellebriteView({ caseId }) {
     <FilterIntentTabSwitcher onSwitchToComms={() => handleTabClick('comms')} />
     {/* Swim-lane "Open in Comms" handoff — the Timeline swim-lane
         dispatches a tab-switch event so we can pull the user to the
-        Comms tab when they pick a window-and-phones selection. */}
+        Comms tab when they pick a window-and-phones selection. The
+        same event also drives the Communications → Graph / Comms
+        "View from this perspective" buttons. */}
     <SwimLaneTabSwitcher onSwitch={handleTabClick} />
     <div className="flex flex-col h-full min-h-0">
       {/* Tab Bar */}
@@ -168,6 +173,12 @@ export default function CellebriteView({ caseId }) {
           that's mounted at the bottom of this component (overlays via
           fixed positioning) so it pays zero layout cost when no
           selection is active. */}
+      {/* Cross-tab perspective indicator. Hidden when no perspective
+          is active. Sits between the tab bar and the tab content so
+          investigators always see which lens (if any) they're looking
+          through. */}
+      <PerspectivePill />
+
       <RailAwareTabHost>
         {mountedTabs.has('overview') && (
           <TabPane active={activeTab === 'overview'}>
@@ -226,6 +237,7 @@ export default function CellebriteView({ caseId }) {
           investigator never has to ask "is this all of it?". */}
       <CellebriteStatusBar />
     </div>
+    </PerspectiveProvider>
     </CellebriteSelectionProvider>
     </CellebriteStatusProvider>
   );

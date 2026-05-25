@@ -2670,8 +2670,23 @@ export const cellebriteAPI = {
    * Get cross-phone graph (shared contacts across devices)
    * @param {string} caseId - REQUIRED: Case ID
    */
-  getCrossPhoneGraph: (caseId) =>
-    fetchAPI(`/cellebrite/cross-phone-graph?case_id=${encodeURIComponent(caseId)}`),
+  getCrossPhoneGraph: (caseId, opts = {}) => {
+    // Backwards-compatible: callers passing only caseId get the legacy
+    // shape. The new optional params power the perspective rebuild and
+    // the event-type chip strip on the Cross-Phone Graph tab.
+    const params = new URLSearchParams();
+    params.set('case_id', caseId);
+    if (Array.isArray(opts.personKeys) && opts.personKeys.length > 0) {
+      params.set('person_keys', opts.personKeys.join(','));
+    }
+    if (Array.isArray(opts.eventTypes) && opts.eventTypes.length > 0) {
+      params.set('event_types', opts.eventTypes.join(','));
+    }
+    if (opts.depth && Number.isFinite(opts.depth)) {
+      params.set('depth', String(opts.depth));
+    }
+    return fetchAPI(`/cellebrite/cross-phone-graph?${params.toString()}`);
+  },
 
   /**
    * Get multi-device event timeline

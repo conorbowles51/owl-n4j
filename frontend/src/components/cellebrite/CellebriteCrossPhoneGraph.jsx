@@ -1,9 +1,25 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Loader2, Search, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import {
+  Loader2, Search, ZoomIn, ZoomOut, Maximize2,
+  Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
+} from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
+import { usePerspective } from '../../context/PerspectiveContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
+
+// Available edge types — defaults match the backend's legacy comms-only
+// behaviour. Persisted per case in localStorage via the toggle bar below.
+const GRAPH_EVENT_TYPES = [
+  { key: 'call',       label: 'Calls',     icon: Phone,         color: '#10b981', defaultOn: true  },
+  { key: 'message',    label: 'Messages',  icon: MessageSquare, color: '#2563eb', defaultOn: true  },
+  { key: 'email',      label: 'Emails',    icon: Mail,          color: '#f59e0b', defaultOn: true  },
+  { key: 'location',   label: 'Locations', icon: MapPin,        color: '#06b6d4', defaultOn: false },
+  { key: 'wifi',       label: 'WiFi',      icon: Wifi,          color: '#10b981', defaultOn: false },
+  { key: 'cell_tower', label: 'Cell',      icon: Radio,         color: '#8b5cf6', defaultOn: false },
+  { key: 'meeting',    label: 'Meetings',  icon: UsersIcon,     color: '#f97316', defaultOn: false },
+];
 
 const NODE_COLORS = {
   PhoneReport: '#059669',  // emerald-600 (fallback when no phone identity)
@@ -16,20 +32,59 @@ const NODE_COLORS = {
  */
 export default function CellebriteCrossPhoneGraph({ caseId }) {
   const phoneCtx = usePhoneReports();
+  const perspective = usePerspective();
 
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [hoveredNode, setHoveredNode] = useState(null);
+  // Per-case localStorage so the user's preferred event-type toggle
+  // state persists across visits. Keyed off case so different cases
+  // don't bleed settings.
+  const eventTypesKey = `cb.graph.eventTypes.${caseId || 'unknown'}`;
+  const [activeEventTypes, setActiveEventTypes] = useState(() => {
+    if (typeof window === 'undefined') {
+      return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
+    }
+    try {
+      const raw = window.localStorage.getItem(eventTypesKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return new Set(parsed);
+      }
+    } catch { /* ignore */ }
+    return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(eventTypesKey, JSON.stringify([...activeEventTypes]));
+    } catch { /* full / disabled */ }
+  }, [activeEventTypes, eventTypesKey]);
+  // Depth toggle — 1 (anchors + direct contacts) is the safer default;
+  // 2 hops off-anchor and is best for "find connections-of-connections"
+  // exploration. Only meaningful when a perspective is active.
+  const [depth, setDepth] = useState(1);
+
   const fgRef = useRef();
   const containerRef = useRef();
+
+  // Active perspective anchors (or null = full case)
+  const personKeys = useMemo(() => {
+    if (!perspective?.hasPerspective) return null;
+    return [...perspective.activeKeys];
+  }, [perspective?.hasPerspective, perspective?.activeKeys]);
 
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
     setLoading(true);
 
-    cellebriteAPI.getCrossPhoneGraph(caseId).then(data => {
+    cellebriteAPI.getCrossPhoneGraph(caseId, {
+      personKeys: personKeys || undefined,
+      eventTypes: [...activeEventTypes],
+      depth,
+    }).then(data => {
       if (!cancelled) {
         setGraphData(data || { nodes: [], links: [] });
         setLoading(false);
@@ -42,7 +97,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     });
 
     return () => { cancelled = true; };
-  }, [caseId]);
+  }, [caseId, personKeys, activeEventTypes, depth]);
 
   const filteredData = React.useMemo(() => {
     if (!searchTerm.trim()) return graphData;
@@ -210,6 +265,87 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           </>
         )}
       </div>
+
+      {/* Event-type toggle strip — same data, more connections.
+          Calls/messages/emails on by default; locations/wifi/cell/meetings
+          available as opt-ins because they create dense edges fast. */}
+      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-100 bg-light-50 text-xs flex-shrink-0 flex-wrap">
+        <span className="text-light-500 font-medium">Show edges:</span>
+        {GRAPH_EVENT_TYPES.map((t) => {
+          const Icon = t.icon;
+          const on = activeEventTypes.has(t.key);
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => {
+                setActiveEventTypes((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(t.key)) next.delete(t.key);
+                  else next.add(t.key);
+                  return next;
+                });
+              }}
+              className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[11px] rounded border transition-colors ${
+                on
+                  ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+                  : 'border-light-300 bg-white text-light-500 hover:bg-light-100'
+              }`}
+              title={`Toggle ${t.label} edges`}
+            >
+              <Icon className="w-3 h-3" style={{ color: on ? t.color : undefined }} />
+              {t.label}
+            </button>
+          );
+        })}
+
+        {perspective?.hasPerspective && (
+          <>
+            <span className="h-4 w-px bg-light-300 mx-1" />
+            <span className="text-light-500 font-medium">Depth:</span>
+            <div className="inline-flex border border-light-300 rounded overflow-hidden">
+              {[1, 2].map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setDepth(d)}
+                  className={`px-1.5 py-0.5 text-[11px] ${depth === d ? 'bg-owl-blue-100 text-owl-blue-900' : 'bg-white text-light-600 hover:bg-light-100'}`}
+                  title={d === 1 ? 'Anchors + direct contacts' : 'Anchors + friends-of-friends'}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Perspective banner — when active, signals that the graph is
+          rebuilt from a subset of the case. Single-click clear. */}
+      {perspective?.hasPerspective && (
+        <div className="flex items-center gap-2 px-4 py-1 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-900 flex-shrink-0">
+          <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
+            Anchored on:
+          </span>
+          <span className="truncate">
+            {perspective.active?.label}
+            {perspective.active?.personKeys?.length > 1 && (
+              <span className="ml-1 text-amber-600">
+                ({perspective.active.personKeys.length})
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => perspective.clear()}
+            className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded"
+            title="Clear perspective and show the whole case"
+          >
+            <X className="w-2.5 h-2.5" />
+            Show whole case
+          </button>
+        </div>
+      )}
 
       {/* Graph */}
       <div className="flex-1 min-h-0">
