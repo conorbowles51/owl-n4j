@@ -2670,6 +2670,22 @@ export const cellebriteAPI = {
    * Get cross-phone graph (shared contacts across devices)
    * @param {string} caseId - REQUIRED: Case ID
    */
+  /**
+   * Full-case Person search backing the Cross-Phone Graph search bar.
+   * The graph render is capped at 200 nodes; this endpoint reaches
+   * the entire Person set so the user can find anyone regardless of
+   * whether they made the rendered cut.
+   */
+  searchCrossPhoneGraph: (caseId, q, opts = {}) => {
+    const params = new URLSearchParams();
+    params.set('case_id', caseId);
+    params.set('q', q);
+    if (opts.limit && Number.isFinite(opts.limit)) {
+      params.set('limit', String(opts.limit));
+    }
+    return fetchAPI(`/cellebrite/cross-phone-graph/search?${params.toString()}`);
+  },
+
   getCrossPhoneGraph: (caseId, opts = {}) => {
     // Backwards-compatible: callers passing only caseId get the legacy
     // shape. The new optional params power the perspective rebuild and

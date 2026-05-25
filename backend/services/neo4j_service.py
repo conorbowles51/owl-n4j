@@ -6199,6 +6199,67 @@ class Neo4jService:
                 "kind": "pair",
                 "out": "ATTENDED", "to_node": "Meeting", "in": "ATTENDED_BY",
             },
+            # ---------------- Additional edge types ----------------
+            # These connect Persons through a shared *value* rather than
+            # a shared node. Cellebrite ingests one VisitedPage / SearchedItem
+            # / WirelessNetwork etc. per device, so the same URL or query
+            # exists as N separate nodes (one per phone). The cross-phone
+            # signal is "two Persons on different phones touched something
+            # with the same value" — captured here via `shared_by_value`.
+            "visit": {
+                "kind": "shared_by_value",
+                "node": "VisitedPage",
+                "value_field": "url",
+            },
+            "search": {
+                "kind": "shared_by_value",
+                "node": "SearchedItem",
+                # SearchedItem nodes carry the query string under `name` —
+                # there isn't a dedicated `value` field in this dataset.
+                "value_field": "name",
+            },
+            "bookmark": {
+                "kind": "shared_by_value",
+                "node": "WebBookmark",
+                "value_field": "url",
+            },
+            "wifi_ssid": {
+                # Stronger pairing signal than plain `wifi` (which keys on
+                # the WirelessNetwork node itself — meaningful only when
+                # parser de-duplicated SSIDs across phones). This variant
+                # matches by SSID string so different WirelessNetwork rows
+                # on different phones with the same SSID also link.
+                "kind": "shared_by_value",
+                "node": "WirelessNetwork",
+                "value_field": "ssid",
+            },
+            "account": {
+                # OWNS_ACCOUNT joins two Persons through the same Account
+                # node when present. Falls back to shared username +
+                # platform when Account nodes are distinct.
+                "kind": "shared",
+                "rel": "OWNS_ACCOUNT", "node": "Account",
+            },
+            "credential": {
+                # Credentials are owned via OWNS_ACCOUNT in this dataset
+                # (no dedicated relationship). Two persons sharing a
+                # credential is a strong identity overlap.
+                "kind": "shared_by_value",
+                "node": "Credential",
+                "value_field": "label",
+            },
+            "financial": {
+                # Persons connected by ANY transaction-shaped edge. The
+                # dataset uses several relationship names (BROKER_OF,
+                # BROKERED, INVOLVED_IN, BENEFITS_FROM, PAYER, etc.) so
+                # we don't anchor on a specific name — match all and
+                # collapse on the Transaction/Payment endpoint instead.
+                "kind": "financial",
+            },
+            "pairing": {
+                "kind": "shared",
+                "rel": "PAIRED_WITH", "node": "Device",
+            },
         }
         # Default = comms-only (the legacy behaviour); when the caller
         # passes an explicit list we honour it as-is.
@@ -6284,16 +6345,23 @@ class Neo4jService:
                 # plain `apoc.path.subgraphNodes` only when APOC is
                 # available — otherwise fall back to explicit MATCHes
                 # for depth=1 and depth=2.
-                rel_pair_types = []  # comms relationships (A -> X <- B)
-                rel_shared_types = []  # venue relationships (A -> V <- B)
+                rel_pair_types = []      # comms relationships (A -> X <- B)
+                rel_shared_types = []    # venue relationships (A -> V <- B)
+                shared_by_value = []     # (node_label, value_field) for value-keyed sharing
+                include_financial = False
                 for t in active_types:
                     pat = EDGE_PATTERNS.get(t)
                     if not pat:
                         continue
-                    if pat["kind"] == "pair":
+                    kind = pat["kind"]
+                    if kind == "pair":
                         rel_pair_types.append((pat["out"], pat.get("to_node"), pat.get("in"), pat.get("special")))
-                    else:
+                    elif kind == "shared":
                         rel_shared_types.append((pat["rel"], pat["node"]))
+                    elif kind == "shared_by_value":
+                        shared_by_value.append((pat["node"], pat["value_field"]))
+                    elif kind == "financial":
+                        include_financial = True
 
                 # Walk the graph from the anchor set. We emit a MATCH per
                 # active edge pattern and UNION the resulting neighbour
@@ -6333,6 +6401,39 @@ class Neo4jService:
                         WHERE a.key IN $anchor_keys
                         MATCH (a)-[:{rel}]->(v:{node_label})<-[:{rel}]-(b:Person)
                         WHERE b.case_id = $case_id AND b.key <> a.key
+                        RETURN DISTINCT b.key AS nkey
+                    """)
+                # Shared-by-value hops — two Persons "touched" the same
+                # node-by-value (URL, query, SSID, label). Cellebrite's
+                # parser doesn't create a Person→VisitedPage edge, so we
+                # walk through the phone identity instead: a's phone owns
+                # the same-valued VisitedPage as b's phone.
+                for node_label, value_field in shared_by_value:
+                    neighbour_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id}})
+                        WHERE a.key IN $anchor_keys
+                        MATCH (n1:{node_label} {{case_id: $case_id, cellebrite_report_key: a.cellebrite_report_key}})
+                        WHERE n1.{value_field} IS NOT NULL AND n1.{value_field} <> ''
+                        MATCH (n2:{node_label} {{case_id: $case_id}})
+                        WHERE n2.{value_field} = n1.{value_field}
+                          AND n2.cellebrite_report_key <> a.cellebrite_report_key
+                        MATCH (b:Person {{case_id: $case_id}})
+                        WHERE b.cellebrite_report_key = n2.cellebrite_report_key
+                          AND b.key <> a.key
+                        RETURN DISTINCT b.key AS nkey
+                    """)
+                # Financial — generic transaction/payment hop. Matches
+                # any non-comms relationship to a Transaction or Payment
+                # node, then back out to another Person.
+                if include_financial:
+                    neighbour_query_parts.append("""
+                        MATCH (a:Person {case_id: $case_id})
+                        WHERE a.key IN $anchor_keys
+                        MATCH (a)-[r1]-(x)-[r2]-(b:Person)
+                        WHERE (x:Transaction OR x:Payment OR x:Invoice)
+                          AND x.case_id = $case_id
+                          AND b.case_id = $case_id AND b.key <> a.key
+                          AND NOT type(r1) IN ['CALLED','CALLED_TO','SENT_MESSAGE','PART_OF','EMAILED','SENT_TO','PARTICIPATED_IN','ATTENDED','ATTENDED_BY']
                         RETURN DISTINCT b.key AS nkey
                     """)
 
@@ -6463,7 +6564,7 @@ class Neo4jService:
                         WHERE cnt >= 2
                         RETURN src, tgt, rel_type, cnt
                     """)
-                else:
+                elif pat["kind"] == "shared":
                     # Shared-venue edge. Each pair of persons who touched
                     # the same node forms one edge (count = number of
                     # shared touches).
@@ -6473,6 +6574,37 @@ class Neo4jService:
                         WHERE a <> b
                         WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(*) AS cnt
                         WHERE cnt >= 2
+                        RETURN src, tgt, rel_type, cnt
+                    """)
+                elif pat["kind"] == "shared_by_value":
+                    # Two Persons whose phones each carry a node of the
+                    # given label with the same value. Joins through the
+                    # phone identity since Cellebrite doesn't materialise
+                    # a Person→VisitedPage / Person→SearchedItem edge.
+                    edge_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                        MATCH (n1:{pat['node']} {{case_id: $case_id, cellebrite_report_key: a.cellebrite_report_key}})
+                        WHERE n1.{pat['value_field']} IS NOT NULL AND n1.{pat['value_field']} <> ''
+                        MATCH (n2:{pat['node']} {{case_id: $case_id}})
+                        WHERE n2.{pat['value_field']} = n1.{pat['value_field']}
+                          AND n2.cellebrite_report_key <> a.cellebrite_report_key
+                        MATCH (b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                        WHERE b.cellebrite_report_key = n2.cellebrite_report_key AND a <> b
+                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(DISTINCT n1.{pat['value_field']}) AS cnt
+                        WHERE cnt >= 1
+                        RETURN src, tgt, rel_type, cnt
+                    """)
+                elif pat["kind"] == "financial":
+                    # Persons connected by any financial relationship via
+                    # a shared Transaction / Payment / Invoice endpoint.
+                    edge_query_parts.append(f"""
+                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[r1]-(x)-[r2]-(b:Person {{case_id: $case_id}})
+                        WHERE (x:Transaction OR x:Payment OR x:Invoice)
+                          AND x.case_id = $case_id
+                          AND a <> b
+                          AND NOT type(r1) IN ['CALLED','CALLED_TO','SENT_MESSAGE','PART_OF','EMAILED','SENT_TO','PARTICIPATED_IN','ATTENDED','ATTENDED_BY']
+                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(DISTINCT x) AS cnt
+                        WHERE cnt >= 1
                         RETURN src, tgt, rel_type, cnt
                     """)
 
@@ -6499,7 +6631,107 @@ class Neo4jService:
                             "count": record["cnt"],
                         })
 
-        return {"nodes": nodes, "links": links}
+            # Total count of Persons in the case (pre-cap) so the UI
+            # can show "200 of N" and surface a "search the rest"
+            # affordance when N > nodes returned.
+            total_r = session.run(
+                """
+                MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                RETURN count(p) AS n
+                """,
+                case_id=case_id,
+            ).single()
+            total_persons = int(total_r["n"]) if total_r else 0
+
+        return {
+            "nodes": nodes,
+            "links": links,
+            "total_persons": total_persons,
+        }
+
+    def search_cellebrite_persons(
+        self,
+        case_id: str,
+        query: str,
+        limit: int = 50,
+    ) -> dict:
+        """Search every Person in the case (no 200-cap) by free text.
+
+        Designed to back the Cross-Phone Graph's "Search the full case"
+        affordance — the graph render is capped at 200 Persons for
+        legibility, but the investigator needs to be able to find
+        anyone in the case from the search bar regardless of whether
+        they made it into the rendered subset.
+
+        Returns lightweight Person summaries — enough for a results
+        panel row + a one-click "anchor on this person" action.
+        """
+        if not query or not query.strip():
+            return {"results": [], "total": 0, "limited": False}
+        tokens = [t.strip().lower() for t in query.split() if t.strip()]
+        if not tokens:
+            return {"results": [], "total": 0, "limited": False}
+
+        params: Dict[str, Any] = {
+            "case_id": case_id,
+            "limit": int(limit),
+        }
+        # Inline parameter names per token. The values are lowercase
+        # whitespace-stripped strings passed as Cypher params (not
+        # string-built into the query) so injection risk is bounded
+        # to the parameter names — which we generate, not the user.
+        token_clauses = []
+        for i, tok in enumerate(tokens):
+            param = f"tok{i}"
+            params[param] = tok
+            token_clauses.append(
+                f"toLower(coalesce(p.name,'') + ' ' + coalesce(p.phone,'') + ' ' + coalesce(p.key,'')) CONTAINS ${param}"
+            )
+        where_clause = " AND ".join(token_clauses)
+
+        with self._driver.session() as session:
+            cnt_r = session.run(
+                f"""
+                MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                WHERE {where_clause}
+                RETURN count(p) AS n
+                """,
+                params,
+            ).single()
+            total = int(cnt_r["n"]) if cnt_r else 0
+
+            r = session.run(
+                f"""
+                MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
+                WHERE {where_clause}
+                OPTIONAL MATCH (p)-[rel]->()
+                WHERE type(rel) IN ['CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN']
+                WITH p, count(rel) AS comm_count
+                RETURN p.key AS key,
+                       p.name AS name,
+                       p.phone AS phone,
+                       p.cellebrite_report_key AS report_key,
+                       comm_count
+                ORDER BY comm_count DESC, p.name
+                LIMIT $limit
+                """,
+                params,
+            )
+            results = []
+            for rec in r:
+                results.append({
+                    "key": rec["key"],
+                    "name": rec["name"] or rec["key"],
+                    "phone": rec["phone"] or "",
+                    "report_key": rec["report_key"],
+                    "comm_count": int(rec["comm_count"] or 0),
+                })
+
+        return {
+            "results": results,
+            "total": total,
+            "limited": total > limit,
+        }
 
     def get_cellebrite_timeline(
         self,

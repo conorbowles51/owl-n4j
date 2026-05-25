@@ -216,6 +216,28 @@ def merge_persons(
     return result
 
 
+@router.get("/cross-phone-graph/search")
+def search_cross_phone_graph(
+    case_id: str = Query(...),
+    q: str = Query(..., description="Free-text query — name / phone / key substring match"),
+    limit: int = Query(50, ge=1, le=200, description="Max results to return"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Full-case Person search backing the Cross-Phone Graph search bar.
+
+    The graph render is capped at 200 Persons for legibility, so the
+    canvas-side filter can only narrow to what's already drawn. This
+    endpoint searches every Person in the case so the investigator
+    can find anyone regardless of whether they made the cut.
+
+    Each result carries enough to render a row + offer a one-click
+    "anchor the graph on this person" action.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.search_cellebrite_persons(case_id, q, limit=limit)
+
+
 @router.get("/cross-phone-graph")
 def get_cross_phone_graph(
     case_id: str = Query(...),
@@ -231,8 +253,9 @@ def get_cross_phone_graph(
         None,
         description=(
             "Comma-separated event types to include as edges. "
-            "Subset of "
-            "call,message,email,location,wifi,cell_tower,meeting. "
+            "Subset of call, message, email, location, wifi, cell_tower, "
+            "meeting, visit, search, bookmark, wifi_ssid, account, "
+            "credential, financial, pairing. "
             "Defaults to call+message+email (legacy comms-only)."
         ),
     ),

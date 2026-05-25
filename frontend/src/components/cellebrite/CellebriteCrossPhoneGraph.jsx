@@ -3,6 +3,8 @@ import ForceGraph2D from 'react-force-graph-2d';
 import {
   Loader2, ZoomIn, ZoomOut, Maximize2,
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
+  Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
+  Bluetooth, Filter as FilterIcon, ChevronRight,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
@@ -54,16 +56,34 @@ function tokeniseGraphSearch(input) {
   return tokens.filter(Boolean);
 }
 
-// Available edge types — defaults match the backend's legacy comms-only
-// behaviour. Persisted per case in localStorage via the toggle bar below.
+// Available edge types — chips that toggle on/off in the legend strip.
+// Comms types default ON (the legacy "shared contacts" view); web /
+// identity / financial / pairing types are OFF by default because
+// they introduce dense edge sets that overwhelm the comms picture on
+// first look. Persisted per case in localStorage.
+//
+// Each entry maps 1:1 onto a backend EDGE_PATTERNS key.
 const GRAPH_EVENT_TYPES = [
-  { key: 'call',       label: 'Calls',     icon: Phone,         color: '#10b981', defaultOn: true  },
-  { key: 'message',    label: 'Messages',  icon: MessageSquare, color: '#2563eb', defaultOn: true  },
-  { key: 'email',      label: 'Emails',    icon: Mail,          color: '#f59e0b', defaultOn: true  },
-  { key: 'location',   label: 'Locations', icon: MapPin,        color: '#06b6d4', defaultOn: false },
-  { key: 'wifi',       label: 'WiFi',      icon: Wifi,          color: '#10b981', defaultOn: false },
-  { key: 'cell_tower', label: 'Cell',      icon: Radio,         color: '#8b5cf6', defaultOn: false },
-  { key: 'meeting',    label: 'Meetings',  icon: UsersIcon,     color: '#f97316', defaultOn: false },
+  // Comms
+  { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true,  group: 'comms' },
+  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true,  group: 'comms' },
+  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: true,  group: 'comms' },
+  // Movement / proximity
+  { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: false, group: 'movement' },
+  { key: 'wifi',       label: 'WiFi node',   icon: Wifi,          color: '#10b981', defaultOn: false, group: 'movement' },
+  { key: 'wifi_ssid',  label: 'WiFi SSID',   icon: Wifi,          color: '#22c55e', defaultOn: false, group: 'movement' },
+  { key: 'cell_tower', label: 'Cell tower',  icon: Radio,         color: '#8b5cf6', defaultOn: false, group: 'movement' },
+  { key: 'meeting',    label: 'Meetings',    icon: UsersIcon,     color: '#f97316', defaultOn: false, group: 'movement' },
+  // Web activity
+  { key: 'visit',      label: 'Web visits',  icon: Globe,         color: '#a855f7', defaultOn: false, group: 'web' },
+  { key: 'search',     label: 'Searches',    icon: SearchIcon,    color: '#ec4899', defaultOn: false, group: 'web' },
+  { key: 'bookmark',   label: 'Bookmarks',   icon: Bookmark,      color: '#d946ef', defaultOn: false, group: 'web' },
+  // Identity
+  { key: 'account',    label: 'Accounts',    icon: ShieldCheck,   color: '#0ea5e9', defaultOn: false, group: 'identity' },
+  { key: 'credential', label: 'Credentials', icon: Key,           color: '#eab308', defaultOn: false, group: 'identity' },
+  // Other
+  { key: 'financial',  label: 'Financial',   icon: DollarSign,    color: '#16a34a', defaultOn: false, group: 'other' },
+  { key: 'pairing',    label: 'Pairings',    icon: Bluetooth,     color: '#6366f1', defaultOn: false, group: 'other' },
 ];
 
 const NODE_COLORS = {
@@ -106,6 +126,46 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       window.localStorage.setItem(eventTypesKey, JSON.stringify([...activeEventTypes]));
     } catch { /* full / disabled */ }
   }, [activeEventTypes, eventTypesKey]);
+
+  // ---- Rotation fix: pin positions across filter toggles -----------
+  // When the user flicks an edge-type chip the d3-force simulation can
+  // still be slowly relaxing in the background. React re-renders the
+  // <ForceGraph2D /> with the new filteredData and the lib resumes the
+  // sim's next tick — which appears to the user as a "slight rotation"
+  // even though the data the React tree owns hasn't moved.
+  //
+  // Fix: on every chip-toggle we set hard pins (fx/fy = current x/y)
+  // on every node so subsequent ticks can't move them. We release the
+  // pins a short delay later (300ms) so:
+  //   - The simulation stops thrashing the user's view DURING the
+  //     toggle, but
+  //   - Future perspective refetches (which DO want to relax) work
+  //     normally.
+  // The release is deliberately fire-and-forget — if the user toggles
+  // again before it runs, the next pin overrides.
+  const pinReleaseTimerRef = useRef(null);
+  useEffect(() => {
+    // Skip the first render — no positions to pin yet.
+    if (!graphData.nodes.length) return;
+    for (const n of graphData.nodes) {
+      if (Number.isFinite(n.x) && Number.isFinite(n.y)) {
+        n.fx = n.x;
+        n.fy = n.y;
+      }
+    }
+    if (pinReleaseTimerRef.current) clearTimeout(pinReleaseTimerRef.current);
+    pinReleaseTimerRef.current = setTimeout(() => {
+      for (const n of graphData.nodes) {
+        delete n.fx;
+        delete n.fy;
+      }
+      pinReleaseTimerRef.current = null;
+    }, 300);
+    return () => {
+      // No-op on unmount; the next effect run handles cleanup.
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEventTypes]);
   // Depth toggle — 1 (anchors + direct contacts) is the safer default;
   // 2 hops off-anchor and is best for "find connections-of-connections"
   // exploration. Only meaningful when a perspective is active.
@@ -113,6 +173,20 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
 
   const fgRef = useRef();
   const containerRef = useRef();
+
+  // Total Persons in the case (pre 200-cap). Surfaced by the
+  // backend so the UI can show "200 of N" and offer search when N
+  // exceeds the rendered set.
+  const [totalPersons, setTotalPersons] = useState(0);
+
+  // Search vs Filter mode. Filter = narrow what's drawn (matches +
+  // their neighbours). Search = highlight matches and surface them
+  // in a results panel; the underlying graph is not narrowed. Search
+  // mode also hits the backend so the user can find Persons that
+  // aren't in the rendered subset at all.
+  const [searchMode, setSearchMode] = useState('filter'); // 'filter' | 'search'
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   // Active perspective anchors (or null = full case)
   const personKeys = useMemo(() => {
@@ -144,12 +218,17 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       depth,
     }).then(data => {
       if (!cancelled) {
-        setGraphData(data || { nodes: [], links: [] });
+        setGraphData({
+          nodes: (data && data.nodes) || [],
+          links: (data && data.links) || [],
+        });
+        setTotalPersons((data && Number(data.total_persons)) || 0);
         setLoading(false);
       }
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
+        setTotalPersons(0);
         setLoading(false);
       }
     });
@@ -196,6 +275,43 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return out;
   }, [graphData.links]);
 
+  // Backend search effect — only runs in Search mode (Filter mode
+  // narrows the rendered subgraph client-side and is per-keystroke
+  // synchronous). A 250 ms debounce keeps roundtrips down.
+  useEffect(() => {
+    if (searchMode !== 'search') {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return undefined;
+    }
+    const q = (searchTerm || '').trim();
+    if (!q) {
+      setSearchResults(null);
+      setSearchLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const t = setTimeout(() => {
+      cellebriteAPI
+        .searchCrossPhoneGraph(caseId, q, { limit: 50 })
+        .then((data) => {
+          if (cancelled) return;
+          setSearchResults(data || { results: [], total: 0, limited: false });
+          setSearchLoading(false);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setSearchResults({ results: [], total: 0, limited: false });
+          setSearchLoading(false);
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [caseId, searchMode, searchTerm]);
+
   // First stage of the client-side filter pipeline: drop every link
   // whose event type is currently toggled OFF. PhoneReport-to-Person
   // structural links (label = 'CONTAINS_CONTACT' or 'BELONGS_TO')
@@ -218,11 +334,12 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return { nodes: graphData.nodes, links: visibleLinks };
   }, [graphData, activeEventTypes]);
 
-  // Second stage: free-text search narrowing. Each whitespace-separated
-  // term must match SOMEWHERE in a node's haystack; matched nodes' direct
-  // neighbours are also kept so the result remains a navigable subgraph.
-  // Operates on the edge-type-filtered set so search obeys both filters.
+  // Second stage: free-text *filter* narrowing (only active in Filter
+  // mode). Search mode hits the backend instead and leaves the rendered
+  // subgraph untouched — matches are highlighted on the canvas and
+  // surfaced in the results panel.
   const filteredData = useMemo(() => {
+    if (searchMode !== 'filter') return edgeTypeFiltered;
     const raw = (searchTerm || '').trim();
     if (!raw) return edgeTypeFiltered;
 
@@ -267,7 +384,25 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         return neighbourIds.has(srcId) && neighbourIds.has(tgtId);
       }),
     };
-  }, [edgeTypeFiltered, searchTerm, haystackByNodeId, haystackByLink]);
+  }, [searchMode, edgeTypeFiltered, searchTerm, haystackByNodeId, haystackByLink]);
+
+  // In Search mode we also compute a set of matched node ids so the
+  // paint can highlight them (slight outline glow). The canvas data
+  // itself is unfiltered in search mode — we want to SEE the matches
+  // in context, not narrow to just them.
+  const searchHighlightIds = useMemo(() => {
+    if (searchMode !== 'search') return null;
+    const raw = (searchTerm || '').trim();
+    if (!raw) return null;
+    const terms = tokeniseGraphSearch(raw);
+    if (terms.length === 0) return null;
+    const matches = new Set();
+    for (const n of edgeTypeFiltered.nodes) {
+      const h = haystackByNodeId.get(n.id) || '';
+      if (terms.every((t) => h.includes(t))) matches.add(n.id);
+    }
+    return matches;
+  }, [searchMode, searchTerm, edgeTypeFiltered.nodes, haystackByNodeId]);
 
   // Per-edge-type colour lookup. The backend tags each link's
   // `label` with the event-type key ('call', 'message', 'email',
@@ -408,6 +543,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.stroke();
     }
 
+    // --- 5. Search highlight ring (Search mode, matched nodes) ---
+    // Drawn even further out than the shared halo so the two signals
+    // can co-exist. A bright cyan glow reads off both light and dark
+    // edge colours; we also fade the unmatched nodes slightly via the
+    // alpha on the outer ring (handled implicitly — search mode keeps
+    // every node rendered, the highlight just makes matches POP).
+    if (searchHighlightIds && searchHighlightIds.has(node.id)) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, rOuter + 3.5, 0, 2 * Math.PI);
+      ctx.lineWidth = Math.max(2, 2.4 / globalScale);
+      ctx.strokeStyle = '#22d3ee'; // cyan-400 — distinct from the
+                                   // amber shared halo and from every
+                                   // edge-type colour.
+      ctx.stroke();
+    }
+
     // Label
     const fontSize = 9 / globalScale;
     ctx.font = `${fontSize}px sans-serif`;
@@ -416,7 +567,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     ctx.fillStyle = '#334155';
     const label = (node.name || '').substring(0, 20);
     ctx.fillText(label, node.x, node.y + rOuter + 2 / globalScale);
-  }, [phoneCtx, nodeEdgeTypes, edgeColorByType]);
+  }, [phoneCtx, nodeEdgeTypes, edgeColorByType, searchHighlightIds]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
   const handleZoomOut = () => fgRef.current?.zoom(fgRef.current.zoom() / 1.5, 300);
@@ -442,19 +593,55 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     <div className="h-full flex flex-col" ref={containerRef}>
       {/* Controls */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
+        {/* Filter | Search mode toggle */}
+        <div className="inline-flex border border-light-300 rounded overflow-hidden text-[11px] flex-shrink-0">
+          <button
+            type="button"
+            onClick={() => setSearchMode('filter')}
+            className={`px-2 py-1 inline-flex items-center gap-1 ${
+              searchMode === 'filter'
+                ? 'bg-owl-blue-100 text-owl-blue-900'
+                : 'text-light-700 hover:bg-light-100'
+            }`}
+            title="Filter mode — narrow the rendered subgraph to matches + neighbours"
+          >
+            <FilterIcon className="w-3 h-3" />
+            Filter
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode('search')}
+            className={`px-2 py-1 inline-flex items-center gap-1 border-l border-light-200 ${
+              searchMode === 'search'
+                ? 'bg-owl-blue-100 text-owl-blue-900'
+                : 'text-light-700 hover:bg-light-100'
+            }`}
+            title="Search mode — highlight matches in context + search the full case via the results panel"
+          >
+            <SearchIcon className="w-3 h-3" />
+            Search
+          </button>
+        </div>
+
         <div className="flex-1 max-w-xl">
-          {/* Full-text search across every visible string on every
-              node + edge — name, phone, owner, device model, phone
-              identity short label, edge label, edge count, "shared".
-              Matched nodes' immediate neighbours are kept so the
-              result stays a navigable subgraph. */}
+          {/* Filter mode: per-keystroke client-side narrow.
+              Search mode: highlight matches + hit the backend for the
+              full Person set (results panel below the toolbar). */}
           <CellebriteSearchInput
             value={searchTerm}
             onChange={setSearchTerm}
-            placeholder='Search the graph — name, phone, app, device, "exact phrase"…'
-            matchCount={filteredData.nodes.length}
+            placeholder={
+              searchMode === 'filter'
+                ? 'Filter the rendered graph — name, phone, app, device, "exact phrase"…'
+                : 'Search the entire case — Persons not in the rendered 200 will appear in the results panel'
+            }
+            matchCount={
+              searchMode === 'filter'
+                ? filteredData.nodes.length
+                : (searchHighlightIds ? searchHighlightIds.size : graphData.nodes.length)
+            }
             totalCount={graphData.nodes.length}
-            itemNoun="node"
+            itemNoun={searchMode === 'filter' ? 'node' : 'match'}
             compact
           />
         </div>
@@ -467,8 +654,17 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <button onClick={handleFit} className="p-1.5 hover:bg-light-200 rounded" title="Fit to view">
           <Maximize2 className="w-4 h-4 text-light-600" />
         </button>
-        <div className="text-xs text-light-500 ml-2">
-          {filteredData.nodes.length} nodes, {filteredData.links.length} links
+        {/* N-of-M counter — surfaces the 200-cap so the user knows
+            when there's more case data than the canvas can show. */}
+        <div className="text-xs text-light-500 ml-2 whitespace-nowrap">
+          {filteredData.nodes.length} of {totalPersons > 0 ? totalPersons.toLocaleString() : graphData.nodes.length} nodes
+          {totalPersons > graphData.nodes.length && (
+            <span className="ml-1 text-amber-600 font-medium" title={`Render capped at ${graphData.nodes.length}; switch to Search mode to find Persons outside the rendered subset.`}>
+              · capped
+            </span>
+          )}
+          {' · '}
+          {filteredData.links.length} edges
         </div>
       </div>
 
@@ -611,7 +807,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       )}
 
       {/* Graph */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 relative">
         <ForceGraph2D
           ref={fgRef}
           graphData={filteredData}
@@ -639,6 +835,79 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
         />
+
+        {/* Search results panel — overlays the canvas in Search mode.
+            Lists every Person in the case matching the query (not
+            just the 200 rendered). Each row clicks to anchor the
+            graph on that person via the perspective context. */}
+        {searchMode === 'search' && (searchTerm || '').trim() && (
+          <div className="absolute top-3 right-3 w-72 max-h-[60vh] bg-white border border-light-300 shadow-lg rounded-lg overflow-hidden z-20 flex flex-col">
+            <div className="px-3 py-2 border-b border-light-200 bg-light-50 flex items-center gap-2 flex-shrink-0">
+              <SearchIcon className="w-3.5 h-3.5 text-owl-blue-600" />
+              <span className="text-xs font-semibold text-owl-blue-900 flex-1 truncate">
+                Search results
+              </span>
+              {searchLoading && <Loader2 className="w-3 h-3 animate-spin text-light-400" />}
+              {searchResults && (
+                <span className="text-[10px] text-light-500">
+                  {searchResults.total.toLocaleString()}
+                  {searchResults.limited ? ' (top 50)' : ''}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {searchResults && searchResults.results.length === 0 && !searchLoading && (
+                <div className="text-xs italic text-light-500 px-3 py-4 text-center">
+                  No Persons match "{searchTerm}".
+                </div>
+              )}
+              {searchResults && searchResults.results.map((r) => {
+                const inRendered = graphData.nodes.some((n) => n.id === `person-${r.key}`);
+                return (
+                  <button
+                    key={r.key}
+                    type="button"
+                    onClick={() => {
+                      if (perspective) {
+                        perspective.setPerspective(
+                          [r.key],
+                          r.name || r.key,
+                          'graph.search-panel',
+                        );
+                      }
+                    }}
+                    className="w-full text-left px-3 py-2 border-b border-light-100 hover:bg-light-50 last:border-b-0 flex items-start gap-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-owl-blue-900 truncate">
+                        {r.name}
+                      </div>
+                      <div className="text-[10px] text-light-500 truncate flex items-center gap-1">
+                        {r.phone && <span className="font-mono">{r.phone}</span>}
+                        {r.comm_count > 0 && (
+                          <>
+                            <span>·</span>
+                            <span>{r.comm_count.toLocaleString()} comms</span>
+                          </>
+                        )}
+                        {!inRendered && (
+                          <>
+                            <span>·</span>
+                            <span className="text-amber-600">off-canvas</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-3 h-3 text-light-400 mt-0.5 flex-shrink-0" />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="px-3 py-1.5 border-t border-light-100 bg-light-50 text-[10px] text-light-600 flex-shrink-0">
+              Click a result to anchor the graph on that Person.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Hover tooltip */}
