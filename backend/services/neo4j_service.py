@@ -7330,7 +7330,7 @@ class Neo4jService:
                 msg_result = session.run(
                     """
                     MATCH (msg:Communication)-[:PART_OF]->(chat:Communication {case_id: $case_id, key: $thread_id})
-                    WHERE msg.body IS NOT NULL
+                    WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(msg)
                     RETURN msg, sender
                     ORDER BY msg.timestamp
@@ -7371,7 +7371,7 @@ class Neo4jService:
                 total_r = session.run(
                     """
                     MATCH (msg:Communication)-[:PART_OF]->(chat:Communication {case_id: $case_id, key: $thread_id})
-                    WHERE msg.body IS NOT NULL
+                    WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                     RETURN count(msg) AS n
                     """,
                     case_id=case_id,
@@ -7769,7 +7769,8 @@ class Neo4jService:
                 msg_cursor_clause = _cursor_clause("message", "msg.timestamp", "msg.id")
                 query = f"""
                     MATCH (sender:Person)-[:SENT_MESSAGE]->(msg:Communication)-[:PART_OF]->(chat:Communication)
-                    WHERE msg.case_id = $case_id AND msg.body IS NOT NULL
+                    WHERE msg.case_id = $case_id
+                      AND (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                       AND (size($from_keys) = 0 OR sender.key IN $from_keys)
                       {rk_filter_msg} {app_filter_msg} {date_filter_msg}
                       {msg_cursor_clause}
@@ -10097,7 +10098,7 @@ class Neo4jService:
             total = session.run(
                 f"""
                 MATCH (m:Communication {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
-                WHERE m.body IS NOT NULL {search_clause}
+                WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0) {search_clause}
                 RETURN count(m) AS n
                 """,
                 params,
@@ -10107,7 +10108,7 @@ class Neo4jService:
             result = session.run(
                 f"""
                 MATCH (m:Communication {{case_id: $case_id, source_type: 'cellebrite', cellebrite_report_key: $rk}})
-                WHERE m.body IS NOT NULL {search_clause}
+                WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0) {search_clause}
                 OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
                 OPTIONAL MATCH (m)-[:PART_OF]->(chat:Communication)
                 RETURN m, sender, chat

@@ -61,6 +61,10 @@ export default function CommsCrossTypeTimeline({
   const [cursor, setCursor] = useState(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const loadingMoreRef = useRef(false);
+  // Exact total from the envelope endpoint (counts every matching comm under
+  // the same filters, media included) so the header can show "N of M loaded"
+  // rather than just what's been paged in.
+  const [exactTotal, setExactTotal] = useState(null);
 
   // Sort: 'desc' (newest first), 'asc' (oldest first), or 'type' (group
   // by message/call/email then by timestamp DESC within group).
@@ -118,6 +122,18 @@ export default function CommsCrossTypeTimeline({
         setLoading(false);
       }
     });
+    // Exact total (envelope) under the same filters — for "N of M".
+    setExactTotal(null);
+    cellebriteCommsAPI.getEnvelope(caseId, {
+      fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
+      toKeys: toKeys.size > 0 ? [...toKeys] : null,
+      participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
+      types: [...types],
+      reportKeys: reportKeys.size > 0 ? [...reportKeys] : null,
+      sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
+      startDate,
+      endDate,
+    }).then((env) => { if (!cancelled) setExactTotal(env?.total ?? null); }).catch(() => {});
     return () => { cancelled = true; };
   }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode]);
 
@@ -223,7 +239,9 @@ export default function CommsCrossTypeTimeline({
           <span className="text-light-500">{contextLabel}</span>
           <span className="text-light-400">·</span>
           <span className="text-light-500">
-            {orderedItems.length.toLocaleString()}{cursor ? '+' : ''} loaded
+            {exactTotal != null
+              ? `${orderedItems.length.toLocaleString()} of ${exactTotal.toLocaleString()}`
+              : `${orderedItems.length.toLocaleString()}${cursor ? '+' : ''} loaded`}
           </span>
           {(loading || loadingMore) && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
         </button>
