@@ -1,7 +1,8 @@
-import React from 'react';
-import { Phone, MessageSquare, Mail, Smartphone } from 'lucide-react';
+import React, { useState } from 'react';
+import { Phone, MessageSquare, Mail, Smartphone, Users } from 'lucide-react';
 import PhoneIdentityChip from '../PhoneIdentityChip';
 import { formatTs } from '../../events/eventUtils';
+import MergeIdentitiesDialog from '../../overview/MergeIdentitiesDialog';
 
 /**
  * Rail body for a unified-by-number contact.
@@ -28,7 +29,18 @@ import { formatTs } from '../../events/eventUtils';
  */
 export default function UnifiedContactAccordion({ selection }) {
   const row = selection?.payload || null;
+  const [showMerge, setShowMerge] = useState(false);
   if (!row) return null;
+
+  // Primary identity for a merge = the canonical phone-keyed node when present,
+  // else the bucket's first person key. Investigator merges OTHER numbers
+  // (e.g. a contact's second SIM) into this unified contact.
+  const caseId = selection?.caseId;
+  const canonicalDigits = (row.canonical || '').replace(/[^0-9]/g, '');
+  const primaryKey =
+    (row.person_keys || []).find((k) => canonicalDigits && k === `phone-${canonicalDigits}`) ||
+    (row.person_keys || [])[0];
+  const primaryName = row.display_number || row.aliases?.[0]?.name || primaryKey;
 
   // Build an alias-by-device index so the per-device list can show
   // "this device knew them as X". A single alias may appear on
@@ -74,7 +86,26 @@ export default function UnifiedContactAccordion({ selection }) {
             ))}
           </div>
         )}
+        {primaryKey && caseId && (
+          <button
+            onClick={() => setShowMerge(true)}
+            className="mt-2 inline-flex items-center gap-1 text-[11px] text-owl-blue-700 hover:text-owl-blue-900 border border-owl-blue-200 rounded px-1.5 py-0.5"
+            title="Merge another number/handle into this contact (same person, different identity)"
+          >
+            <Users className="w-3 h-3" /> Merge identity…
+          </button>
+        )}
       </div>
+
+      {showMerge && (
+        <MergeIdentitiesDialog
+          caseId={caseId}
+          primaryKey={primaryKey}
+          primaryName={primaryName}
+          onClose={() => setShowMerge(false)}
+          onMerged={() => { setShowMerge(false); window.location.reload(); }}
+        />
+      )}
 
       {/* Activity counters */}
       <div className="grid grid-cols-3 gap-2">
