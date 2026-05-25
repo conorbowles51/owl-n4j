@@ -11,6 +11,25 @@ import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 
 /**
+ * Convert a `#rrggbb` hex string to `rgba()` with the supplied alpha.
+ * Used by linkColor so the edge-type colours can sit at <1 opacity
+ * without doubling the GRAPH_EVENT_TYPES table. Tolerates short hex
+ * (`#abc`) and bypasses unknown formats (returns the input as-is so
+ * named colours / rgb() values still work).
+ */
+function withAlpha(hex, alpha) {
+  if (typeof hex !== 'string' || !hex.startsWith('#')) return hex;
+  let h = hex.slice(1);
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (h.length !== 6) return hex;
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  if ([r, g, b].some((v) => Number.isNaN(v))) return hex;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+/**
  * Tokenise the graph search input. Same quoted-phrase support as the
  * shared parseQuery (so "Sender Lemus" stays one token) but no
  * operator handling — graph nodes don't have from/to/app/etc fields
@@ -101,20 +120,68 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return [...perspective.activeKeys];
   }, [perspective?.hasPerspective, perspective?.activeKeys]);
 
+  // Camera-preservation: when the user toggles an edge type or
+  // changes depth, the new graphData triggers react-force-graph-2d
+  // to re-run its simulation. Without intervention the simulated
+  // positions land at fresh random coords AND the user's pan/zoom
+  // is lost because the nodes they were looking at have moved.
+  //
+  // Fix: (a) carry x/y/vx/vy from the OLD nodes onto the new ones
+  // whose `id` matches — so unchanged nodes don't budge — and
+  // (b) snapshot the camera (centre + zoom) just before swapping
+  // data and re-apply it once the new graph has settled.
+  const lastNodePosRef = useRef(new Map());
+  const cameraSnapshotRef = useRef(null);
+
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
     setLoading(true);
+
+    // Capture the current camera ONLY when we already have data
+    // showing (i.e. this isn't the initial load — there's nothing
+    // useful to preserve when the canvas is empty). Reading both
+    // before the fetch avoids a race where the new data lands and
+    // resets the camera before we sample it.
+    if (fgRef.current && graphData.nodes.length > 0) {
+      try {
+        const centre = fgRef.current.centerAt();
+        const z = fgRef.current.zoom();
+        if (centre && Number.isFinite(centre.x) && Number.isFinite(centre.y)) {
+          cameraSnapshotRef.current = { x: centre.x, y: centre.y, z };
+        }
+      } catch {
+        // centerAt/zoom can throw before the canvas has a size — skip
+        cameraSnapshotRef.current = null;
+      }
+    }
 
     cellebriteAPI.getCrossPhoneGraph(caseId, {
       personKeys: personKeys || undefined,
       eventTypes: [...activeEventTypes],
       depth,
     }).then(data => {
-      if (!cancelled) {
-        setGraphData(data || { nodes: [], links: [] });
-        setLoading(false);
+      if (cancelled) return;
+      const next = data || { nodes: [], links: [] };
+
+      // Stitch previous {x, y, vx, vy} onto the new nodes so the
+      // simulation starts from the user's existing layout instead of
+      // a fresh random seed. Library treats x/y already-present on a
+      // node as a placement hint, not a hard pin, so the sim still
+      // relaxes the new edges without yanking the whole graph.
+      if (lastNodePosRef.current.size > 0) {
+        for (const n of next.nodes) {
+          const prev = lastNodePosRef.current.get(n.id);
+          if (prev) {
+            n.x = prev.x;
+            n.y = prev.y;
+            n.vx = prev.vx || 0;
+            n.vy = prev.vy || 0;
+          }
+        }
       }
+      setGraphData(next);
+      setLoading(false);
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
@@ -124,6 +191,19 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
 
     return () => { cancelled = true; };
   }, [caseId, personKeys, activeEventTypes, depth]);
+
+  // Maintain the position cache from whatever's currently on screen.
+  // Effect runs after every render, so by the time the user toggles
+  // a filter the latest positions are already captured.
+  useEffect(() => {
+    const m = lastNodePosRef.current;
+    for (const n of graphData.nodes) {
+      if (n.id == null) continue;
+      if (Number.isFinite(n.x) && Number.isFinite(n.y)) {
+        m.set(n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy });
+      }
+    }
+  });
 
   // Build a per-node search haystack ONCE per graph data load so the
   // per-keystroke filter is O(n) string-contains, not O(n × field
@@ -219,6 +299,37 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     };
   }, [graphData, searchTerm, haystackByNodeId, haystackByLink]);
 
+  // Per-edge-type colour lookup. The backend tags each link's
+  // `label` with the event-type key ('call', 'message', 'email',
+  // 'location', 'wifi', 'cell_tower', 'meeting'); we map it to the
+  // same colour the toggle chip uses so the graph reads visually
+  // consistent with the chip strip. Unknown labels fall back to
+  // neutral grey so we never crash on a stray relationship.
+  const edgeColorByType = useMemo(() => {
+    const m = new Map();
+    for (const t of GRAPH_EVENT_TYPES) m.set(t.key, t.color);
+    return m;
+  }, []);
+
+  // For each visible Person node, compute the set of active edge
+  // types that node participates in (so we can paint small coloured
+  // indicator dots around its circumference). PhoneReport nodes
+  // skip the analysis — their colour already encodes phone identity.
+  const nodeEdgeTypes = useMemo(() => {
+    const map = new Map(); // nodeId -> Set<event-type-key>
+    for (const l of filteredData.links) {
+      const t = (l.label || '').toLowerCase();
+      if (!edgeColorByType.has(t)) continue;
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (!map.has(srcId)) map.set(srcId, new Set());
+      if (!map.has(tgtId)) map.set(tgtId, new Set());
+      map.get(srcId).add(t);
+      map.get(tgtId).add(t);
+    }
+    return map;
+  }, [filteredData.links, edgeColorByType]);
+
   const paintNode = useCallback((node, ctx, globalScale) => {
     const isReport = node.type === 'PhoneReport';
     const isShared = node.shared;
@@ -272,6 +383,41 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.stroke();
     }
 
+    // Per-edge-type indicator dots — one small coloured satellite
+    // per active edge type the node participates in. Placed evenly
+    // around the upper hemisphere so the dots stay legible even
+    // when the underlying node fill is monochrome.
+    if (!isReport) {
+      const edgeTypes = nodeEdgeTypes.get(node.id);
+      if (edgeTypes && edgeTypes.size > 0) {
+        // Stable order so the dots don't reshuffle on every paint
+        // (Set iteration would be insertion-order anyway, but sort
+        // by event-type-key for predictability across re-renders).
+        const types = [...edgeTypes].sort();
+        const dotR = Math.max(1.2, r * 0.35);
+        const orbit = r + dotR + 0.5;
+        const total = types.length;
+        // Spread evenly across the top semicircle (−135° → −45°)
+        const spanStart = -Math.PI * 0.75;
+        const spanEnd = -Math.PI * 0.25;
+        for (let i = 0; i < total; i++) {
+          const t = total === 1
+            ? (spanStart + spanEnd) / 2
+            : spanStart + ((spanEnd - spanStart) * i) / (total - 1);
+          const cx = node.x + orbit * Math.cos(t);
+          const cy = node.y + orbit * Math.sin(t);
+          ctx.beginPath();
+          ctx.arc(cx, cy, dotR, 0, 2 * Math.PI);
+          ctx.fillStyle = edgeColorByType.get(types[i]) || '#94a3b8';
+          ctx.fill();
+          // 1px white halo so the dot reads off any background.
+          ctx.lineWidth = Math.max(0.25, 0.6 / globalScale);
+          ctx.strokeStyle = '#ffffff';
+          ctx.stroke();
+        }
+      }
+    }
+
     // Label
     const fontSize = isReport ? 11 / globalScale : 9 / globalScale;
     ctx.font = `${isReport ? 'bold ' : ''}${fontSize}px sans-serif`;
@@ -283,7 +429,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       label = `${phoneIdentity.short} · ${label}`;
     }
     ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
-  }, [phoneCtx]);
+  }, [phoneCtx, nodeEdgeTypes, edgeColorByType]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
   const handleZoomOut = () => fgRef.current?.zoom(fgRef.current.zoom() / 1.5, 300);
@@ -349,6 +495,26 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           <span className="w-3 h-3 rounded-full border-2 border-amber-500" style={{ backgroundColor: NODE_COLORS.PersonShared }} />
           Shared Contact
         </span>
+
+        {/* Edge-type swatches — only the ACTIVE event types so the
+            legend mirrors what the user can actually see. The chip
+            strip below still shows ALL types (active + inactive); this
+            strip is the read-side key. */}
+        <span className="h-4 w-px bg-light-300" />
+        <span className="text-light-500 font-medium">Edges:</span>
+        {GRAPH_EVENT_TYPES.filter((t) => activeEventTypes.has(t.key)).map((t) => (
+          <span key={t.key} className="flex items-center gap-1" title={`${t.label} edges`}>
+            <span
+              className="inline-block w-3 h-0.5 rounded"
+              style={{ backgroundColor: t.color }}
+            />
+            <span>{t.label}</span>
+          </span>
+        ))}
+        {activeEventTypes.size === 0 && (
+          <span className="text-light-400 italic">no edge types selected</span>
+        )}
+
         {phoneCtx?.hasMultiple && (
           <>
             <span className="h-4 w-px bg-light-300" />
@@ -458,7 +624,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
             ctx.fill();
           }}
-          linkColor={() => '#e2e8f0'}
+          linkColor={(l) => {
+            // Edge tint = the edge-type colour at moderate opacity. Hex
+            // colours don't take a built-in alpha argument here, so we
+            // emit `rgba()` via a tiny adapter. Unknown labels fall
+            // through to a near-grey so we never crash on stray data.
+            const c = edgeColorByType.get((l.label || '').toLowerCase());
+            return c ? withAlpha(c, 0.55) : '#cbd5e1';
+          }}
           linkWidth={l => l.count ? Math.min(l.count / 5, 3) : 0.5}
           linkDirectionalArrowLength={0}
           onNodeHover={setHoveredNode}
@@ -466,6 +639,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
+          // Once the simulation settles after a refetch, restore the
+          // camera the user was looking at. cameraSnapshotRef is only
+          // populated when there WAS a prior view to preserve, so the
+          // initial load is unaffected — it still auto-fits via the
+          // library's default first-render behaviour.
+          onEngineStop={() => {
+            const snap = cameraSnapshotRef.current;
+            if (!snap || !fgRef.current) return;
+            try {
+              fgRef.current.centerAt(snap.x, snap.y, 0);
+              fgRef.current.zoom(snap.z, 0);
+            } catch {
+              /* ref not ready yet — skip silently */
+            }
+            cameraSnapshotRef.current = null;
+          }}
         />
       </div>
 
