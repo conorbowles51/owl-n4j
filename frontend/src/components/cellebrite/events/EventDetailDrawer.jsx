@@ -6,6 +6,7 @@ import CommsCallRow from '../comms/CommsCallRow';
 import CommsEmailCard from '../comms/CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import RailEmailBody from '../shared/rail/RailEmailBody';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 
@@ -214,13 +215,21 @@ export function EventBody({ event, detail, caseId = null }) {
         recipients: detailRecipients,
       };
       return (
-        <div className="p-3 space-y-3">
-          <PhoneChip />
-          <GeoBlock />
-          <div className="border border-light-200 rounded">
-            <CommsEmailCard item={item} defaultExpanded />
+        <div className="space-y-3">
+          <div className="px-3 pt-3">
+            <PhoneChip />
+            <GeoBlock />
           </div>
-          <RawProps detail={detail} />
+          {/* Rail-tuned renderer: HTML / Text / Raw toggle plus a
+              dedicated attachments section with "Open in Files"
+              links. Replaces the CommsEmailCard reuse, which was
+              built for the thread view (collapsible chevron, dense
+              metadata row) and didn't suit the permanently-expanded
+              rail flyout. */}
+          <RailEmailBody item={item} caseId={caseId} />
+          <div className="px-3 pb-3">
+            <RawProps detail={detail} />
+          </div>
         </div>
       );
     }
