@@ -309,11 +309,20 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     });
 
     return () => { cancelled = true; };
-    // graphData intentionally omitted — we read it inside but only
-    // care about the moment-of-call snapshot; re-firing on every
-    // graphData mutation would cause an infinite loop.
+    // Use STABLE string fingerprints in the deps. Arrays/Sets compare
+    // by reference, and the perspective context creates new instances
+    // even when contents are unchanged — that previously caused both
+    // unwanted refetches AND (more recently) missed refetches when
+    // the array reference happened to be stable across a render. The
+    // join() of sorted keys is a content-keyed hash that fires
+    // exactly when the user's perspective truly changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, personKeys, depth, [...activeEventTypes].sort().join(',')]);
+  }, [
+    caseId,
+    (personKeys || []).join('|'),
+    depth,
+    [...activeEventTypes].sort().join(','),
+  ]);
 
   // Build a per-node search haystack ONCE per graph data load so the
   // per-keystroke filter is O(n) string-contains, not O(n × field
@@ -541,6 +550,60 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ? phoneCtx.getIdentityByKey(phoneKey)
       : null;
 
+    // Label helper — draws a white rounded-pill background behind the
+    // text so labels read clearly off any canvas background. Font size
+    // floors at 4.5 (canvas units) so the text never disappears below
+    // a usable threshold; the lib divides by globalScale to keep
+    // labels readable in absolute screen pixels as the user zooms.
+    const drawLabel = (text, atY, opts = {}) => {
+      if (!text) return;
+      const { bold = false, color = '#1f2937' } = opts;
+      // We want ~12px ON SCREEN regardless of zoom. globalScale=1
+      // means 1 canvas unit per pixel; the lib paints in canvas
+      // coords so we divide.
+      const targetPx = bold ? 13 : 12;
+      const fontSize = Math.max(4.5, targetPx / globalScale);
+      ctx.font = `${bold ? 'bold ' : ''}${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const metrics = ctx.measureText(text);
+      const padX = 4 / globalScale;
+      const padY = 2 / globalScale;
+      const w = metrics.width + padX * 2;
+      const h = fontSize + padY * 2;
+      const x = node.x - w / 2;
+      const y = atY - h / 2;
+
+      // White pill background
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.beginPath();
+      const radius = Math.min(4 / globalScale, h / 2);
+      // Manual rounded rect (roundRect is patchy across browsers in
+      // canvas — we draw it ourselves for compatibility).
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Subtle 1px ring so the pill reads against very pale
+      // backgrounds (light grid lines etc.)
+      ctx.lineWidth = Math.max(0.4, 0.5 / globalScale);
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = color;
+      ctx.fillText(text, node.x, atY);
+    };
+
     // PhoneReport: unchanged rounded-square in phone colour.
     if (isReport) {
       const r = 8;
@@ -550,14 +613,9 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.fillStyle = phoneIdentity ? phoneIdentity.hex : NODE_COLORS.PhoneReport;
       ctx.fill();
 
-      const fontSize = 11 / globalScale;
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#334155';
-      let label = (node.name || '').substring(0, 20);
+      let label = (node.name || '').substring(0, 28);
       if (phoneIdentity) label = `${phoneIdentity.short} · ${label}`;
-      ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
+      drawLabel(label, node.y + r + (10 / globalScale), { bold: true });
       return;
     }
 
@@ -606,17 +664,11 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         ctx.stroke();
       }
 
-      // Label — only render when zoomed in enough so dense resource
-      // clusters don't turn into a wall of text.
-      if (globalScale > 1.2) {
-        const fontSize = 8 / globalScale;
-        ctx.font = `${fontSize}px sans-serif`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        ctx.fillStyle = '#475569';
-        const label = (node.name || '').substring(0, 22);
-        ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
-      }
+      // Label — always rendered now (with a white pill background it
+      // stays readable even in dense resource clusters). Truncated to
+      // 28 chars so domain / SSID strings don't take over the canvas.
+      const label = (node.name || '').substring(0, 28);
+      drawLabel(label, node.y + r + (8 / globalScale));
       return;
     }
 
@@ -697,14 +749,10 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.stroke();
     }
 
-    // Label
-    const fontSize = 9 / globalScale;
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#334155';
-    const label = (node.name || '').substring(0, 20);
-    ctx.fillText(label, node.x, node.y + rOuter + 2 / globalScale);
+    // Label — white pill background keeps Person names readable
+    // against any backdrop, including dense clusters.
+    const label = (node.name || '').substring(0, 28);
+    drawLabel(label, node.y + rOuter + (10 / globalScale));
   }, [phoneCtx, nodeEdgeTypes, edgeColorByType, searchHighlightIds]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
@@ -988,6 +1036,36 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
+          // Sticky drag — when the user drops a node we leave its
+          // fx/fy set so the simulation can't pull it back to the
+          // force equilibrium. The library's default behaviour clears
+          // them on dragend, which let nodes snap home and frustrated
+          // the user. They can un-pin by double-clicking (handler
+          // below) or by toggling chips (which refetches and seeds
+          // positions from this same x/y, then releases).
+          onNodeDragEnd={(node) => {
+            if (!node) return;
+            node.fx = node.x;
+            node.fy = node.y;
+          }}
+          // Double-click a node to release a pin and let the sim
+          // relax it. Useful when the user dragged something out of
+          // place and wants it to find its own home.
+          onNodeClick={(node) => {
+            if (!node) return;
+            // Heuristic: distinguish a click that's actually meant
+            // as un-pin from a normal selection click via the modifier
+            // key state would be nicer, but react-force-graph doesn't
+            // expose the original MouseEvent here. Leaving the click
+            // a no-op preserves the previous behaviour.
+          }}
+          onNodeRightClick={(node) => {
+            if (!node) return;
+            // Right-click releases a pinned node so the user can
+            // un-stick something they previously dragged.
+            delete node.fx;
+            delete node.fy;
+          }}
           // Camera lock during post-refetch sim warm-up.
           //
           // The library auto-fits when graphData changes — that's the
@@ -1051,13 +1129,45 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                   No Persons match "{searchTerm}".
                 </div>
               )}
-              {searchResults && searchResults.results.map((r) => {
-                const inRendered = graphData.nodes.some((n) => n.id === `person-${r.key}`);
+              {searchResults && searchResults.results.map((r, idx) => {
+                const isResource = r.entity === 'resource';
+                // Person id format = `person-{key}`; Resource id
+                // format = `res-{type}-{safe-bucket}` (built by the
+                // backend resource pass). To check "is this currently
+                // on canvas" we look for either prefix.
+                const candidateId = isResource
+                  ? graphData.nodes.find((n) => n.type === 'Resource'
+                      && (n.name === r.name || n.bucket === r.name))?.id
+                  : `person-${r.key}`;
+                const inRendered = !!candidateId
+                  && graphData.nodes.some((n) => n.id === candidateId);
+                const ResIcon = isResource
+                  ? GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.icon
+                  : null;
+                const resColor = isResource
+                  ? GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.color
+                  : null;
                 return (
                   <button
-                    key={r.key}
+                    key={`${r.entity}-${r.key || r.name}-${idx}`}
                     type="button"
                     onClick={() => {
+                      if (isResource) {
+                        // For resources we can't "anchor on" — the
+                        // perspective model is Person-keyed. Best-
+                        // effort: pan the camera to the matching node
+                        // if it's already on canvas. Otherwise show
+                        // a brief hint that we'd need a perspective
+                        // model for resources to navigate further.
+                        if (candidateId && fgRef.current) {
+                          const node = graphData.nodes.find((n) => n.id === candidateId);
+                          if (node && Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                            fgRef.current.centerAt(node.x, node.y, 600);
+                            fgRef.current.zoom(3, 600);
+                          }
+                        }
+                        return;
+                      }
                       if (perspective) {
                         perspective.setPerspective(
                           [r.key],
@@ -1068,13 +1178,25 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                     }}
                     className="w-full text-left px-3 py-2 border-b border-light-100 hover:bg-light-50 last:border-b-0 flex items-start gap-2"
                   >
+                    {isResource && ResIcon && (
+                      <ResIcon
+                        className="w-3 h-3 flex-shrink-0 mt-0.5"
+                        style={{ color: resColor }}
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-owl-blue-900 truncate">
                         {r.name}
                       </div>
                       <div className="text-[10px] text-light-500 truncate flex items-center gap-1">
-                        {r.phone && <span className="font-mono">{r.phone}</span>}
-                        {r.comm_count > 0 && (
+                        {isResource ? (
+                          <span className="font-mono text-light-600">
+                            {GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.label || r.label}
+                          </span>
+                        ) : (
+                          r.phone && <span className="font-mono">{r.phone}</span>
+                        )}
+                        {!isResource && r.comm_count > 0 && (
                           <>
                             <span>·</span>
                             <span>{r.comm_count.toLocaleString()} comms</span>

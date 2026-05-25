@@ -6811,55 +6811,121 @@ class Neo4jService:
         query: str,
         limit: int = 50,
     ) -> dict:
-        """Search every Person in the case (no 200-cap) by free text.
+        """Search every node the Cross-Phone Graph could render — Persons
+        AND Resources (Meetings, Locations, Visits, Accounts, etc.).
 
-        Designed to back the Cross-Phone Graph's "Search the full case"
-        affordance — the graph render is capped at 200 Persons for
-        legibility, but the investigator needs to be able to find
-        anyone in the case from the search bar regardless of whether
-        they made it into the rendered subset.
+        The graph render is capped at 200 nodes for legibility, so the
+        canvas-side filter can only narrow what's already drawn. This
+        endpoint scans the entire case so the investigator can find
+        anything regardless of whether it made the cut.
 
-        Returns lightweight Person summaries — enough for a results
-        panel row + a one-click "anchor on this person" action.
+        Returns unified result rows — each carries an `entity` field of
+        'person' or 'resource' so the UI can route the click correctly
+        (Person → setPerspective via Person key; Resource → frontend
+        currently just centres on the node id in the canvas).
         """
         if not query or not query.strip():
             return {"results": [], "total": 0, "limited": False}
-        tokens = [t.strip().lower() for t in query.split() if t.strip()]
+        # Lowercase + strip diacritics on both sides so a query of
+        # "dia" matches "Día de la Herencia". Neo4j has no built-in
+        # unaccent(), so we fold on the way IN (the token) and
+        # nest replace() calls on the way OUT (the haystack).
+        def _fold(s: str) -> str:
+            replacements = {
+                "á": "a", "à": "a", "ä": "a", "â": "a", "ã": "a", "å": "a",
+                "é": "e", "è": "e", "ë": "e", "ê": "e",
+                "í": "i", "ì": "i", "ï": "i", "î": "i",
+                "ó": "o", "ò": "o", "ö": "o", "ô": "o", "õ": "o",
+                "ú": "u", "ù": "u", "ü": "u", "û": "u",
+                "ñ": "n", "ç": "c",
+            }
+            out = s.lower()
+            for k, v in replacements.items():
+                out = out.replace(k, v)
+            return out
+
+        tokens = [_fold(t.strip()) for t in query.split() if t.strip()]
         if not tokens:
             return {"results": [], "total": 0, "limited": False}
+
+        # Cypher-side fold: nest replace() over toLower(). Each field
+        # in the haystack runs through this so the comparison matches
+        # what the user typed regardless of accents.
+        def _cypher_fold(expr: str) -> str:
+            chain = f"toLower({expr})"
+            replacements = [
+                ("á", "a"), ("à", "a"), ("ä", "a"), ("â", "a"), ("ã", "a"), ("å", "a"),
+                ("é", "e"), ("è", "e"), ("ë", "e"), ("ê", "e"),
+                ("í", "i"), ("ì", "i"), ("ï", "i"), ("î", "i"),
+                ("ó", "o"), ("ò", "o"), ("ö", "o"), ("ô", "o"), ("õ", "o"),
+                ("ú", "u"), ("ù", "u"), ("ü", "u"), ("û", "u"),
+                ("ñ", "n"), ("ç", "c"),
+            ]
+            for src, dst in replacements:
+                chain = f"replace({chain}, '{src}', '{dst}')"
+            return chain
+
+        # Resource labels we surface — keys match the frontend's
+        # GRAPH_EVENT_TYPES so a Meeting result will use the meeting
+        # chip's colour in the results panel.
+        RESOURCE_LABELS = [
+            ("Location",        "name", "location"),
+            ("WirelessNetwork", "ssid", "wifi"),
+            ("CellTower",       "cell_id", "cell_tower"),
+            ("Meeting",         "name", "meeting"),
+            ("VisitedPage",     "url",  "visit"),
+            ("SearchedItem",    "name", "search"),
+            ("WebBookmark",     "url",  "bookmark"),
+            ("Account",         "username", "account"),
+            ("Credential",      "label", "credential"),
+            ("Device",          "name", "pairing"),
+        ]
 
         params: Dict[str, Any] = {
             "case_id": case_id,
             "limit": int(limit),
         }
-        # Inline parameter names per token. The values are lowercase
-        # whitespace-stripped strings passed as Cypher params (not
-        # string-built into the query) so injection risk is bounded
-        # to the parameter names — which we generate, not the user.
-        token_clauses = []
+        # Per-token CONTAINS clauses share parameters across the
+        # Person and Resource halves so we only declare each once.
         for i, tok in enumerate(tokens):
-            param = f"tok{i}"
-            params[param] = tok
-            token_clauses.append(
-                f"toLower(coalesce(p.name,'') + ' ' + coalesce(p.phone,'') + ' ' + coalesce(p.key,'')) CONTAINS ${param}"
+            params[f"tok{i}"] = tok
+
+        def _person_where():
+            haystack = _cypher_fold(
+                "coalesce(p.name,'') + ' ' + coalesce(p.phone,'') + ' ' + coalesce(p.key,'')"
             )
-        where_clause = " AND ".join(token_clauses)
+            return " AND ".join(
+                f"{haystack} CONTAINS $tok{i}" for i in range(len(tokens))
+            )
+
+        def _resource_where(value_field: str):
+            haystack = _cypher_fold(
+                f"coalesce(n.{value_field},'') + ' ' + coalesce(n.name,'') + ' ' + coalesce(n.key,'')"
+            )
+            return " AND ".join(
+                f"{haystack} CONTAINS $tok{i}" for i in range(len(tokens))
+            )
+
+        results: List[Dict[str, Any]] = []
+        total = 0
 
         with self._driver.session() as session:
-            cnt_r = session.run(
+            # Person half
+            person_where = _person_where()
+            cnt_p = session.run(
                 f"""
                 MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                WHERE {where_clause}
+                WHERE {person_where}
                 RETURN count(p) AS n
                 """,
                 params,
             ).single()
-            total = int(cnt_r["n"]) if cnt_r else 0
+            total += int(cnt_p["n"]) if cnt_p else 0
 
             r = session.run(
                 f"""
                 MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                WHERE {where_clause}
+                WHERE {person_where}
                 OPTIONAL MATCH (p)-[rel]->()
                 WHERE type(rel) IN ['CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN']
                 WITH p, count(rel) AS comm_count
@@ -6873,15 +6939,76 @@ class Neo4jService:
                 """,
                 params,
             )
-            results = []
             for rec in r:
                 results.append({
+                    "entity": "person",
                     "key": rec["key"],
                     "name": rec["name"] or rec["key"],
                     "phone": rec["phone"] or "",
                     "report_key": rec["report_key"],
                     "comm_count": int(rec["comm_count"] or 0),
                 })
+
+            # Resource half — one query per resource label. Each hit
+            # is rolled into the same results list so the frontend
+            # renders one unified panel. We cap per-label at limit/2
+            # so a single chatty label can't drown the rest.
+            per_label_cap = max(5, int(limit) // 2)
+            params["per_label_cap"] = per_label_cap
+
+            for label, value_field, chip_key in RESOURCE_LABELS:
+                where = _resource_where(value_field)
+                try:
+                    cnt_r = session.run(
+                        f"""
+                        MATCH (n:{label} {{case_id: $case_id}})
+                        WHERE {where}
+                        RETURN count(n) AS n
+                        """,
+                        params,
+                    ).single()
+                    total += int(cnt_r["n"]) if cnt_r else 0
+                except Exception:
+                    # Unknown property on some labels (e.g. Device with
+                    # no .name) — skip silently rather than 500.
+                    continue
+
+                try:
+                    rq = session.run(
+                        f"""
+                        MATCH (n:{label} {{case_id: $case_id}})
+                        WHERE {where}
+                        RETURN n.key AS key,
+                               coalesce(n.{value_field}, n.name, n.key) AS name,
+                               n.cellebrite_report_key AS report_key
+                        ORDER BY name
+                        LIMIT $per_label_cap
+                        """,
+                        params,
+                    )
+                    for rec in rq:
+                        nm = rec["name"]
+                        results.append({
+                            "entity": "resource",
+                            "resource_type": chip_key,
+                            "label": label,
+                            "key": rec["key"],
+                            "name": (nm or "")[:80] or rec["key"],
+                            "report_key": rec["report_key"],
+                            # No comm_count — kept as 0 for shape parity.
+                            "comm_count": 0,
+                        })
+                except Exception:
+                    continue
+
+        # Sort the unified list so Persons surface first (they're the
+        # primary investigation unit), then resources alphabetically.
+        results.sort(key=lambda r: (
+            0 if r.get("entity") == "person" else 1,
+            -int(r.get("comm_count") or 0),
+            r.get("name") or "",
+        ))
+        results = results[: int(limit)]
 
         return {
             "results": results,
