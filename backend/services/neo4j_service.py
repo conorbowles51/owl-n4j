@@ -231,6 +231,9 @@ class Neo4jService:
             "Person", "PhoneCall", "Communication", "Email", "Location",
             "CellTower", "WirelessNetwork", "DeviceEvent", "AppSession",
             "SearchedItem", "VisitedPage", "Meeting",
+            # Phase 9 — app-activity / provenance / movement event nodes
+            "SocialMediaActivity", "ChatActivity", "FileUpload", "Journey",
+            "Note", "DeviceConnectivity", "Cookie", "LogEntry", "MotionActivity",
         ]
         single_indexes = [
             ("PhoneReport", "key"),
@@ -7970,6 +7973,9 @@ class Neo4jService:
         active = set(event_types) if event_types else {
             "location", "cell_tower", "wifi", "call", "message", "email",
             "power", "device_event", "app_session", "search", "visit", "meeting",
+            # Phase 9 — app-activity / provenance / movement events (2026-05-25)
+            "social_media", "chat_activity", "file_upload", "journey",
+            "note", "device_connectivity", "cookie", "log_entry", "motion",
         }
 
         # Per-type cap: each Cypher returns at most `per_type_cap` newest rows
@@ -8157,6 +8163,34 @@ class Neo4jService:
                         row["event_type"] = "meeting"
                         events.append(row)
 
+            # Phase 9 — app-activity / provenance / movement events. These all
+            # share the standard node shape (timestamp + optional lat/lon), so
+            # one parameterised branch each via _project_event rather than nine
+            # hand-written queries. ts_order keeps undated rows from crowding
+            # out real ones at the per-type cap.
+            _PHASE9 = [
+                ("social_media", "SocialMediaActivity"),
+                ("chat_activity", "ChatActivity"),
+                ("file_upload", "FileUpload"),
+                ("journey", "Journey"),
+                ("note", "Note"),
+                ("device_connectivity", "DeviceConnectivity"),
+                ("cookie", "Cookie"),
+                ("log_entry", "LogEntry"),
+                ("motion", "MotionActivity"),
+            ]
+            for et, lbl in _PHASE9:
+                if et not in active:
+                    continue
+                cypher = f"""
+                    MATCH (n:{lbl} {{source_type:'cellebrite'}})
+                    WHERE {where}
+                    RETURN n
+                    {ts_order}
+                    LIMIT $per_type_cap
+                """
+                _add(cypher, base_params, et, lambda rec, _et=et: _project_event(rec["n"], _et))
+
         # Sort newest-first so when total > limit the cap drops the oldest
         # events, not the most recent. Events without a timestamp sort to the
         # back — a missing timestamp shouldn't push a real event out of the slice.
@@ -8221,6 +8255,16 @@ class Neo4jService:
             _count("AppSession", "", "app_session", "App sessions")
             _count("SearchedItem", "AND n.timestamp IS NOT NULL", "search", "Searches")
             _count("VisitedPage", "AND n.timestamp IS NOT NULL", "visit", "Page visits")
+            # Phase 9 — app-activity / provenance / movement events (2026-05-25)
+            _count("SocialMediaActivity", "", "social_media", "Social media activity")
+            _count("ChatActivity", "", "chat_activity", "Chat activity")
+            _count("FileUpload", "", "file_upload", "File uploads")
+            _count("Journey", "", "journey", "Journeys")
+            _count("Note", "", "note", "Notes")
+            _count("DeviceConnectivity", "", "device_connectivity", "Device connections")
+            _count("Cookie", "", "cookie", "Cookies")
+            _count("LogEntry", "", "log_entry", "Log entries")
+            _count("MotionActivity", "", "motion", "Motion / activity")
 
             # Meeting — separate (not always source_type cellebrite)
             r = session.run(
