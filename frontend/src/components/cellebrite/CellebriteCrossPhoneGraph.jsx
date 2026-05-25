@@ -63,27 +63,37 @@ function tokeniseGraphSearch(input) {
 // first look. Persisted per case in localStorage.
 //
 // Each entry maps 1:1 onto a backend EDGE_PATTERNS key.
+// Each entry corresponds 1:1 to a backend EDGE_PATTERNS key. Toggles
+// just show or hide nodes of that type on the canvas — they don't do
+// any clever cross-phone matching. Connectivity between phones is a
+// natural side effect when a resource (e.g. WiFi SSID, Account) is
+// owned by more than one phone.
+//
+// Comms toggles (call/message/email) light up direct Person↔Person
+// edges. Resource toggles add small Resource nodes (diamonds) that
+// each phone connects to via a Phone→Resource edge.
+//
+// All default ON per the user's preference for "Both on, mixed".
 const GRAPH_EVENT_TYPES = [
   // Comms
-  { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true,  group: 'comms' },
-  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true,  group: 'comms' },
-  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: true,  group: 'comms' },
+  { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true, group: 'comms' },
+  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true, group: 'comms' },
+  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: true, group: 'comms' },
   // Movement / proximity
-  { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: false, group: 'movement' },
-  { key: 'wifi',       label: 'WiFi node',   icon: Wifi,          color: '#10b981', defaultOn: false, group: 'movement' },
-  { key: 'wifi_ssid',  label: 'WiFi SSID',   icon: Wifi,          color: '#22c55e', defaultOn: false, group: 'movement' },
-  { key: 'cell_tower', label: 'Cell tower',  icon: Radio,         color: '#8b5cf6', defaultOn: false, group: 'movement' },
-  { key: 'meeting',    label: 'Meetings',    icon: UsersIcon,     color: '#f97316', defaultOn: false, group: 'movement' },
+  { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: true, group: 'movement' },
+  { key: 'wifi',       label: 'WiFi',        icon: Wifi,          color: '#22c55e', defaultOn: true, group: 'movement' },
+  { key: 'cell_tower', label: 'Cell tower',  icon: Radio,         color: '#8b5cf6', defaultOn: true, group: 'movement' },
+  { key: 'meeting',    label: 'Meetings',    icon: UsersIcon,     color: '#f97316', defaultOn: true, group: 'movement' },
   // Web activity
-  { key: 'visit',      label: 'Web visits',  icon: Globe,         color: '#a855f7', defaultOn: false, group: 'web' },
-  { key: 'search',     label: 'Searches',    icon: SearchIcon,    color: '#ec4899', defaultOn: false, group: 'web' },
-  { key: 'bookmark',   label: 'Bookmarks',   icon: Bookmark,      color: '#d946ef', defaultOn: false, group: 'web' },
+  { key: 'visit',      label: 'Web domains', icon: Globe,         color: '#a855f7', defaultOn: true, group: 'web' },
+  { key: 'search',     label: 'Searches',    icon: SearchIcon,    color: '#ec4899', defaultOn: true, group: 'web' },
+  { key: 'bookmark',   label: 'Bookmarks',   icon: Bookmark,      color: '#d946ef', defaultOn: true, group: 'web' },
   // Identity
-  { key: 'account',    label: 'Accounts',    icon: ShieldCheck,   color: '#0ea5e9', defaultOn: false, group: 'identity' },
-  { key: 'credential', label: 'Credentials', icon: Key,           color: '#eab308', defaultOn: false, group: 'identity' },
+  { key: 'account',    label: 'Accounts',    icon: ShieldCheck,   color: '#0ea5e9', defaultOn: true, group: 'identity' },
+  { key: 'credential', label: 'Credentials', icon: Key,           color: '#eab308', defaultOn: true, group: 'identity' },
   // Other
-  { key: 'financial',  label: 'Financial',   icon: DollarSign,    color: '#16a34a', defaultOn: false, group: 'other' },
-  { key: 'pairing',    label: 'Pairings',    icon: Bluetooth,     color: '#6366f1', defaultOn: false, group: 'other' },
+  { key: 'financial',  label: 'Financial',   icon: DollarSign,    color: '#16a34a', defaultOn: true, group: 'other' },
+  { key: 'pairing',    label: 'Pairings',    icon: Bluetooth,     color: '#6366f1', defaultOn: true, group: 'other' },
 ];
 
 const NODE_COLORS = {
@@ -487,6 +497,65 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       let label = (node.name || '').substring(0, 20);
       if (phoneIdentity) label = `${phoneIdentity.short} · ${label}`;
       ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
+      return;
+    }
+
+    // Resource — small diamond in the resource type's colour. Stands
+    // visually apart from the round Person rings + square Phones so
+    // the three concepts (people, phones, resources) read at a glance.
+    // A phone-count > 1 (resource owned by more than one phone) gets
+    // a gold halo because it's a natural cross-phone connector.
+    if (node.type === 'Resource') {
+      const resType = node.resource_type;
+      const fill = edgeColorByType.get(resType) || '#94a3b8';
+      const r = 5 + Math.min(node.hits || 0, 60) * 0.04;
+      // Draw diamond (square rotated 45°).
+      ctx.beginPath();
+      ctx.moveTo(node.x, node.y - r);
+      ctx.lineTo(node.x + r, node.y);
+      ctx.lineTo(node.x, node.y + r);
+      ctx.lineTo(node.x - r, node.y);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.5, 0.8 / globalScale);
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      // Multi-phone resource → gold halo (same gold as a shared
+      // Person, signalling "connector across phones").
+      if (node.phone_count && node.phone_count > 1) {
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y - r - 2);
+        ctx.lineTo(node.x + r + 2, node.y);
+        ctx.lineTo(node.x, node.y + r + 2);
+        ctx.lineTo(node.x - r - 2, node.y);
+        ctx.closePath();
+        ctx.lineWidth = Math.max(1.4, 1.6 / globalScale);
+        ctx.strokeStyle = '#d97706';
+        ctx.stroke();
+      }
+
+      // Search highlight ring.
+      if (searchHighlightIds && searchHighlightIds.has(node.id)) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI);
+        ctx.lineWidth = Math.max(1.5, 2 / globalScale);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.stroke();
+      }
+
+      // Label — only render when zoomed in enough so dense resource
+      // clusters don't turn into a wall of text.
+      if (globalScale > 1.2) {
+        const fontSize = 8 / globalScale;
+        ctx.font = `${fontSize}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillStyle = '#475569';
+        const label = (node.name || '').substring(0, 22);
+        ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
+      }
       return;
     }
 
