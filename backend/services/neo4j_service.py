@@ -109,6 +109,63 @@ def safe_float(value, default=0) -> float:
         return default
 
 
+def _duration_to_seconds(value: Optional[str]) -> Optional[int]:
+    """Parse Cellebrite's HH:MM:SS / MM:SS / numeric duration strings into seconds.
+
+    Returns None when the value is missing or unparseable. Used by the call-type
+    inference below — knowing whether duration > 0 lets us tell connected vs
+    cancelled vs missed without depending on a stored Type field that
+    Cellebrite leaves blank for the common "completed call" case.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if ":" in s:
+        try:
+            parts = [int(p) for p in s.split(":")]
+        except ValueError:
+            return None
+        if len(parts) == 3:
+            return parts[0] * 3600 + parts[1] * 60 + parts[2]
+        if len(parts) == 2:
+            return parts[0] * 60 + parts[1]
+        if len(parts) == 1:
+            return parts[0]
+        return None
+    try:
+        return int(float(s))
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_call_type(direction: Optional[str], duration: Optional[str]) -> Optional[str]:
+    """Derive a useful call_type label when Cellebrite left the Type field blank.
+
+    Cellebrite explicitly tags Missed / Cancelled / Rejected; every other
+    call lands with an empty Type. Inferring a label keeps the Overview
+    calls table readable instead of showing em-dashes on the majority of
+    rows — and is straightforward from the data we DO have:
+
+      - duration > 0  → "Connected"
+      - duration == 0 and Outgoing → "Cancelled" (recipient didn't answer)
+      - duration == 0 and Incoming → "Missed"   (we didn't answer)
+      - duration unknown → return None so the UI can fall through.
+    """
+    secs = _duration_to_seconds(duration)
+    if secs is None:
+        return None
+    if secs > 0:
+        return "Connected"
+    d = (direction or "").lower()
+    if "out" in d:
+        return "Cancelled"
+    if "in" in d:
+        return "Missed"
+    return None
+
+
 class Neo4jService:
     """Service for Neo4j graph operations."""
 
@@ -9560,6 +9617,15 @@ class Neo4jService:
                 c = dict(rec["c"])
                 src = dict(rec["src"]) if rec["src"] else None
                 dst = dict(rec["dst"]) if rec["dst"] else None
+                stored_type = c.get("call_type")
+                duration_str = c.get("duration")
+                direction = c.get("direction")
+                # Cellebrite only tags Missed / Cancelled / Rejected calls
+                # explicitly — regular completed calls land with an empty
+                # Type. Infer a useful display label so the UI never shows
+                # an em-dash for a call we actually have direction +
+                # duration data on.
+                call_type_display = stored_type or _infer_call_type(direction, duration_str)
                 rows.append({
                     "key": c.get("key"),
                     "id": c.get("id"),
@@ -9567,9 +9633,12 @@ class Neo4jService:
                     "timestamp": c.get("timestamp"),
                     "date": c.get("date"),
                     "time": c.get("time"),
-                    "direction": c.get("direction"),
-                    "call_type": c.get("call_type"),
-                    "duration": c.get("duration"),
+                    "direction": direction,
+                    "call_type": stored_type,
+                    # Derived; the frontend prefers this when present so
+                    # the table never shows a blank for completed calls.
+                    "call_type_display": call_type_display,
+                    "duration": duration_str,
                     "video_call": bool(c.get("video_call")),
                     "source_app": c.get("source_app"),
                     "deleted_state": c.get("deleted_state"),

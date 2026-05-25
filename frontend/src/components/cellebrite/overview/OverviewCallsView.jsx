@@ -9,7 +9,11 @@ import { formatTs, formatDuration } from '../events/eventUtils';
 function callIcon(direction, callType) {
   const t = (callType || '').toLowerCase();
   const d = (direction || '').toLowerCase();
-  if (t === 'missed' || d.includes('miss')) return PhoneMissed;
+  // Missed / Cancelled / Rejected → red phone icon regardless of direction
+  // so the investigator's eye lands on the non-completed calls first.
+  if (t === 'missed' || t === 'cancelled' || t === 'rejected' || d.includes('miss')) {
+    return PhoneMissed;
+  }
   if (d.includes('incoming')) return PhoneIncoming;
   if (d.includes('outgoing')) return PhoneOutgoing;
   return Phone;
@@ -55,11 +59,17 @@ export default function OverviewCallsView({ caseId, report, onBack }) {
       label: 'Direction',
       width: 'minmax(120px, 140px)',
       render: (r) => {
-        const Icon = callIcon(r.direction, r.call_type);
-        const isMissed = (r.call_type || '').toLowerCase() === 'missed';
+        // Prefer the backend's derived display label (which falls back to
+        // direction+duration when Cellebrite's Type field is blank — the
+        // common case) so the colour coding still distinguishes
+        // missed/cancelled calls from completed ones.
+        const effectiveType = r.call_type_display || r.call_type;
+        const Icon = callIcon(r.direction, effectiveType);
+        const t = (effectiveType || '').toLowerCase();
+        const isNonCompleted = t === 'missed' || t === 'cancelled' || t === 'rejected';
         return (
           <span className="flex items-center gap-1.5">
-            <Icon className={`w-3 h-3 ${isMissed ? 'text-red-600' : 'text-emerald-600'}`} />
+            <Icon className={`w-3 h-3 ${isNonCompleted ? 'text-red-600' : 'text-emerald-600'}`} />
             <span>{r.direction || '—'}</span>
             {r.video_call && <Video className="w-3 h-3 text-light-500" />}
           </span>
@@ -70,7 +80,10 @@ export default function OverviewCallsView({ caseId, report, onBack }) {
       key: 'call_type',
       label: 'Type',
       width: 'minmax(100px, 120px)',
-      render: (r) => r.call_type || '—',
+      // `call_type_display` is the backend's derived label that fills in
+      // "Connected" / "Cancelled" / "Missed" when Cellebrite stored an
+      // empty Type — which it does on ~98% of completed calls.
+      render: (r) => r.call_type_display || r.call_type || '—',
     },
     {
       key: 'duration',

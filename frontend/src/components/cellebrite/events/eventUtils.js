@@ -138,10 +138,51 @@ export function haversineM(lat1, lon1, lat2, lon2) {
 /**
  * Format a duration in ms as "1h 23m" / "45s".
  */
-export function formatDuration(ms) {
-  if (ms == null) return '';
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.round(ms / 1000);
+export function formatDuration(value) {
+  if (value == null || value === '') return '';
+  // Strings: Cellebrite stores call durations as "HH:MM:SS" (or "MM:SS"
+  // for short calls), the events feed sometimes sends "1h 23m" already
+  // pre-formatted, and a few legacy paths emit ISO-8601 like "PT1M30S".
+  // Anything that isn't a finite number gets normalised through here.
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    // Already pre-formatted (contains a unit suffix) — return as-is.
+    if (/[a-zA-Z]/.test(trimmed) && !/^P/i.test(trimmed)) return trimmed;
+    // HH:MM:SS / MM:SS / SS
+    if (/^\d{1,2}(:\d{1,2}){0,2}$/.test(trimmed)) {
+      const parts = trimmed.split(':').map((p) => parseInt(p, 10) || 0);
+      let secs = 0;
+      if (parts.length === 3) secs = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      else if (parts.length === 2) secs = parts[0] * 60 + parts[1];
+      else secs = parts[0];
+      return formatSeconds(secs);
+    }
+    // ISO-8601 PT?H?M?S — minimal subset, no fractional support.
+    const iso = /^P(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/i.exec(trimmed);
+    if (iso) {
+      const h = parseInt(iso[1] || '0', 10);
+      const m = parseInt(iso[2] || '0', 10);
+      const s = parseInt(iso[3] || '0', 10);
+      return formatSeconds(h * 3600 + m * 60 + s);
+    }
+    // Numeric string — fall through to the number branch.
+    const asNum = Number(trimmed);
+    if (Number.isFinite(asNum)) return formatNumeric(asNum);
+    return '';
+  }
+  return formatNumeric(value);
+}
+
+function formatNumeric(ms) {
+  if (!Number.isFinite(ms)) return '';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return formatSeconds(Math.round(ms / 1000));
+}
+
+function formatSeconds(s) {
+  if (!Number.isFinite(s) || s < 0) return '';
+  if (s === 0) return '0s';
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${s % 60}s`;
