@@ -123,4 +123,9 @@ striprtf>=0.0.26
 # only when GEOCODER=geonames or GEOCODER_FALLBACK=geonames is set.
 # Pulls in numpy + scipy as transitive deps; safe to skip on minimal
 # installs that don't need the city-name fallback.
-reverse-geocoder>=1.5.1phonenumbers==9.0.31
+reverse-geocoder>=1.5.1
+
+# Required — drives phone_normalise.py's canonical-MSISDN keying used
+# by the unified Contacts tab and by every cross-phone identity match.
+# Without it, /cellebrite/contacts/unified raises ModuleNotFoundError.
+phonenumbers==9.0.31
