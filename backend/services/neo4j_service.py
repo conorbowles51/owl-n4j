@@ -6321,6 +6321,16 @@ class Neo4jService:
             #   (c) anchored, depth=2: above + one more hop. Hard-capped
             #       at 200 nodes total so a busy case doesn't draw a hairball.
             if not anchored:
+                # Person ranking — widened beyond comms so the rendered
+                # 200 reflects activity of any kind, not just calls /
+                # messages / emails / chat participation. Without this,
+                # toggling on Visits / WiFi / Account / etc. brought
+                # no new Persons into view because the cut was made on
+                # comm volume alone. Counts every Person-originated
+                # activity plus reverse edges from comm nodes so people
+                # who only RECEIVE comms still rank above zero-activity
+                # contacts. We surface the new count under the existing
+                # `comm_count` key so the frontend's reads keep working.
                 result = session.run(
                     """
                     MATCH (r:PhoneReport {case_id: $case_id})
@@ -6328,13 +6338,24 @@ class Neo4jService:
                     WHERE p.cellebrite_report_key = r.key
                     WITH p, collect(DISTINCT r.key) AS device_keys,
                          count(DISTINCT r) AS device_count
-                    // Get communication counts
-                    OPTIONAL MATCH (p)-[rel]->()
-                    WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED', 'PARTICIPATED_IN']
-                    WITH p, device_keys, device_count, count(rel) AS comm_count
-                    ORDER BY device_count DESC, comm_count DESC
+                    OPTIONAL MATCH (p)-[rel_out]->()
+                    WHERE type(rel_out) IN [
+                      'CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN',
+                      'WAS_AT','CONNECTED_TO','USED_TOWER','PAIRED_WITH',
+                      'OWNS_ACCOUNT','ATTENDED','SEARCHED',
+                      'BROKER_OF','BROKERED','BENEFITS_FROM','INVOLVED_IN','PAYER',
+                      'TRANSFERRED_TO','RECEIVED_FROM','FUNDED'
+                    ]
+                    WITH p, device_keys, device_count, count(rel_out) AS out_count
+                    OPTIONAL MATCH ()-[rel_in]->(p)
+                    WHERE type(rel_in) IN [
+                      'CALLED_TO','SENT_TO','EMAILED','PARTICIPATED_IN',
+                      'ATTENDED_BY','TRANSFERRED_TO','RECEIVED_FROM'
+                    ]
+                    WITH p, device_keys, device_count, out_count + count(rel_in) AS activity_count
+                    ORDER BY device_count DESC, activity_count DESC
                     LIMIT 200
-                    RETURN p, device_keys, device_count, comm_count
+                    RETURN p, device_keys, device_count, activity_count AS comm_count
                     """,
                     case_id=case_id,
                 )
@@ -6631,6 +6652,17 @@ class Neo4jService:
                             "count": record["cnt"],
                         })
 
+            # Tally edges-per-type so the chip strip can render a count
+            # badge ("Visits 0", "Calls 142", etc.) and the user knows
+            # whether a toggle has any payload before flicking it on.
+            # Also surfaces zero-payload types so silent emptiness reads
+            # as "no data" rather than "broken feature".
+            edge_counts_by_type: Dict[str, int] = {t: 0 for t in active_types}
+            for link in links:
+                t = (link.get("label") or "").lower()
+                if t in edge_counts_by_type:
+                    edge_counts_by_type[t] += 1
+
             # Total count of Persons in the case (pre-cap) so the UI
             # can show "200 of N" and surface a "search the rest"
             # affordance when N > nodes returned.
@@ -6647,6 +6679,7 @@ class Neo4jService:
             "nodes": nodes,
             "links": links,
             "total_persons": total_persons,
+            "edge_counts_by_type": edge_counts_by_type,
         }
 
     def search_cellebrite_persons(

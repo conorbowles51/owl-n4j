@@ -179,6 +179,12 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // exceeds the rendered set.
   const [totalPersons, setTotalPersons] = useState(0);
 
+  // Per-edge-type edge counts (from the backend). The chip strip
+  // renders these as small badges so the user sees "Visits 0" and
+  // understands an empty toggle is "no data" rather than "broken".
+  // Keys match GRAPH_EVENT_TYPES.key.
+  const [edgeCountsByType, setEdgeCountsByType] = useState({});
+
   // Search vs Filter mode. Filter = narrow what's drawn (matches +
   // their neighbours). Search = highlight matches and surface them
   // in a results panel; the underlying graph is not narrowed. Search
@@ -223,12 +229,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           links: (data && data.links) || [],
         });
         setTotalPersons((data && Number(data.total_persons)) || 0);
+        setEdgeCountsByType((data && data.edge_counts_by_type) || {});
         setLoading(false);
       }
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
         setTotalPersons(0);
+        setEdgeCountsByType({});
         setLoading(false);
       }
     });
@@ -726,13 +734,18 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       </div>
 
       {/* Event-type toggle strip — same data, more connections.
-          Calls/messages/emails on by default; locations/wifi/cell/meetings
-          available as opt-ins because they create dense edges fast. */}
+          Calls/messages/emails on by default; locations/wifi/cell/etc.
+          opt-in because they create dense edges fast. Each chip carries
+          a small count badge so the user can tell whether toggling it
+          will actually surface anything (0 = no cross-Person edges
+          exist for this type on the current dataset). */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-100 bg-light-50 text-xs flex-shrink-0 flex-wrap">
         <span className="text-light-500 font-medium">Show edges:</span>
         {GRAPH_EVENT_TYPES.map((t) => {
           const Icon = t.icon;
           const on = activeEventTypes.has(t.key);
+          const cnt = Number(edgeCountsByType?.[t.key]) || 0;
+          const empty = cnt === 0;
           return (
             <button
               key={t.key}
@@ -749,11 +762,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                 on
                   ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
                   : 'border-light-300 bg-white text-light-500 hover:bg-light-100'
-              }`}
-              title={`Toggle ${t.label} edges`}
+              } ${empty ? 'opacity-60' : ''}`}
+              title={
+                empty
+                  ? `${t.label}: no cross-Person edges in this dataset (needs ≥2 phones sharing the same value)`
+                  : `Toggle ${t.label} edges (${cnt} in dataset)`
+              }
             >
               <Icon className="w-3 h-3" style={{ color: on ? t.color : undefined }} />
               {t.label}
+              <span
+                className={`ml-0.5 text-[10px] tabular-nums ${
+                  empty ? 'text-light-400' : on ? 'text-owl-blue-700' : 'text-light-500'
+                }`}
+              >
+                {cnt}
+              </span>
             </button>
           );
         })}
