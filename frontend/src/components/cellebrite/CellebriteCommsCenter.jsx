@@ -730,17 +730,11 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     />
   ) : null;
 
-  // When the selection rail is open it covers the rightmost 480px
-  // of the viewport. On smaller screens that lands on top of the
-  // chat pane, eating both wheel events and clicks for any content
-  // that sits beneath it. Apply matching right padding to the
-  // thread-split wrapper so the chat is guaranteed an uncovered
-  // surface even with the rail visible. min(480px, 90vw) mirrors
-  // the rail panel's `w-[480px] max-w-[90vw]`.
-  const railOpen = !!selection;
-  const layoutShiftStyle = railOpen
-    ? { paddingRight: 'min(480px, 90vw)' }
-    : undefined;
+  // Rail-aware right-padding is now applied once in CellebriteView's
+  // RailAwareTabHost so every tab benefits — including the maps in
+  // Locations / Events that were getting overlaid before. The local
+  // ref is kept to avoid touching every reference below.
+  const layoutShiftStyle = undefined;
 
   // ---------------- Read mode: max-feed layout ----------------
   // No filter chrome, no bottom timeline, no scrubber. Just the

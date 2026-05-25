@@ -16,6 +16,7 @@ import CellebriteUnifiedContacts from './CellebriteUnifiedContacts';
 import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
 import { CellebriteSelectionProvider, useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
+import { onCellebriteTabSwitch } from '../../utils/commsHandoff';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
@@ -129,6 +130,10 @@ export default function CellebriteView({ caseId }) {
         "Filter Comms" button), switch the active tab to Comms so the
         user sees the just-applied filter take effect. */}
     <FilterIntentTabSwitcher onSwitchToComms={() => handleTabClick('comms')} />
+    {/* Swim-lane "Open in Comms" handoff — the Timeline swim-lane
+        dispatches a tab-switch event so we can pull the user to the
+        Comms tab when they pick a window-and-phones selection. */}
+    <SwimLaneTabSwitcher onSwitch={handleTabClick} />
     <div className="flex flex-col h-full min-h-0">
       {/* Tab Bar */}
       <div className="flex items-center border-b border-light-200 bg-light-50 px-4 flex-shrink-0">
@@ -163,7 +168,7 @@ export default function CellebriteView({ caseId }) {
           that's mounted at the bottom of this component (overlays via
           fixed positioning) so it pays zero layout cost when no
           selection is active. */}
-      <div className="flex-1 min-h-0 overflow-hidden relative">
+      <RailAwareTabHost>
         {mountedTabs.has('overview') && (
           <TabPane active={activeTab === 'overview'}>
             <CellebriteOverview caseId={caseId} reports={reports} onReportsChanged={refreshReports} isActive={activeTab === 'overview'} />
@@ -209,7 +214,7 @@ export default function CellebriteView({ caseId }) {
             <CellebriteCommunicationView caseId={caseId} isActive={activeTab === 'communications'} />
           </TabPane>
         )}
-      </div>
+      </RailAwareTabHost>
 
       {/* Universal selection flyout — overlays the page (fixed
           position) when something is selected, returns nothing when
@@ -268,4 +273,64 @@ function FilterIntentTabSwitcher({ onSwitchToComms }) {
     onSwitchToComms?.();
   }, [selection, onSwitchToComms]);
   return null;
+}
+
+/**
+ * Listens for the cross-component tab-switch event published by the
+ * Timeline swim-lane's "Open in Comms" action. Kept tiny + isolated
+ * so the parent CellebriteView doesn't have to grow another effect.
+ */
+function SwimLaneTabSwitcher({ onSwitch }) {
+  React.useEffect(() => {
+    return onCellebriteTabSwitch((tabId) => {
+      if (tabId) onSwitch?.(tabId);
+    });
+  }, [onSwitch]);
+  return null;
+}
+
+/**
+ * Wraps the tab-content host with rail-aware right-padding so the
+ * 480px selection flyout never overlays the underlying tab content —
+ * specifically the Leaflet maps in Locations / Events / Overview
+ * detail drawers, which were getting partially covered when the rail
+ * opened.
+ *
+ * Implementation notes:
+ *   - Padding is applied here once, instead of inside every tab —
+ *     CellebriteCommsCenter used to ship its own copy of this shift
+ *     for its thread split; lifting the shift up means new tabs get
+ *     correct behaviour for free.
+ *   - Leaflet caches the map's pixel size on first render and won't
+ *     re-measure on a CSS-driven container resize; the standard
+ *     escape hatch is to dispatch a synthetic window 'resize' event
+ *     after the CSS transition completes. Maps listening through
+ *     react-leaflet / leaflet-react already invalidate on this.
+ *   - 150ms matches the `transition-[padding] duration-150` we apply,
+ *     plus a one-frame settle.
+ */
+function RailAwareTabHost({ children }) {
+  const { selection } = useCellebriteSelection();
+  const open = !!selection;
+  React.useEffect(() => {
+    // Two pulses: one mid-transition (so the map starts re-rendering
+    // while the pane is still shrinking, avoiding a visible "snap"),
+    // one at the end so the final layout is what Leaflet measures.
+    const t1 = window.setTimeout(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch { /* noop */ }
+    }, 90);
+    const t2 = window.setTimeout(() => {
+      try { window.dispatchEvent(new Event('resize')); } catch { /* noop */ }
+    }, 220);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [open]);
+  const style = open ? { paddingRight: 'min(480px, 90vw)' } : undefined;
+  return (
+    <div
+      className="flex-1 min-h-0 overflow-hidden relative transition-[padding] duration-150"
+      style={style}
+    >
+      {children}
+    </div>
+  );
 }
