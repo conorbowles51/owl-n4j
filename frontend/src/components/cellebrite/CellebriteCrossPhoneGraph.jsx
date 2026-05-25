@@ -280,6 +280,13 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // which point the effect below runs the layout.
   const pendingFanRef = useRef(null);
 
+  // Same pattern but for Resources. The resource graph id is
+  // computed by the backend's safe_bucket sanitisation which we
+  // don't reproduce client-side; instead we store the matchable
+  // (resource_type, bucket) tuple and resolve it once graphData
+  // lands.
+  const pendingResourceFanRef = useRef(null);
+
   // Pivot the active perspective (or the multi-selection if it's
   // non-empty) into another Cellebrite tab. Each target tab has a
   // slightly different intake contract:
@@ -394,14 +401,28 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   }, []);
 
   // Run the pending centre-and-fan once the rebuilt graphData
-  // contains the target focus id.
+  // contains the target focus id. Person path uses an exact id;
+  // resource path uses (resource_type, bucket) since the backend
+  // generates safe_bucket sanitisation we don't reproduce here.
   useEffect(() => {
     const focusId = pendingFanRef.current;
-    if (!focusId) return;
-    const exists = graphData.nodes.some((n) => n.id === focusId);
-    if (!exists) return;
-    centreAndFan(focusId, graphData.nodes, graphData.links);
-    pendingFanRef.current = null;
+    if (focusId && graphData.nodes.some((n) => n.id === focusId)) {
+      setMultiSelection(new Set([focusId]));
+      centreAndFan(focusId, graphData.nodes, graphData.links);
+      pendingFanRef.current = null;
+    }
+    const pr = pendingResourceFanRef.current;
+    if (pr) {
+      const match = graphData.nodes.find((n) =>
+        n.type === 'Resource'
+        && n.resource_type === pr.resource_type
+        && (n.bucket === pr.bucket || n.name === pr.bucket));
+      if (match) {
+        setMultiSelection(new Set([match.id]));
+        centreAndFan(match.id, graphData.nodes, graphData.links);
+        pendingResourceFanRef.current = null;
+      }
+    }
   }, [graphData, centreAndFan]);
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -1358,13 +1379,42 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             const gyMin = Math.min(a.y, b.y);
             const gyMax = Math.max(a.y, b.y);
             const next = new Set();
+            const selectedNodes = [];
             for (const n of graphData.nodes) {
               if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
               if (n.x >= gxMin && n.x <= gxMax && n.y >= gyMin && n.y <= gyMax) {
                 next.add(n.id);
+                selectedNodes.push(n);
               }
             }
             setMultiSelection(next);
+
+            // Publish a selection-rail entry describing the picked
+            // set so the user immediately sees a list of what they
+            // grabbed without having to click each one. Falls back
+            // to GenericAccordion (key/value table) since there's
+            // no dedicated 'graph-selection' renderer yet.
+            if (selectEntity && selectedNodes.length > 0) {
+              const persons = selectedNodes.filter((n) => n.type !== 'PhoneReport' && n.type !== 'Resource');
+              const resources = selectedNodes.filter((n) => n.type === 'Resource');
+              const phones = selectedNodes.filter((n) => n.type === 'PhoneReport');
+              selectEntity({
+                type: 'graph-selection',
+                id: `graph-selection-${Date.now()}`,
+                caseId,
+                payload: {
+                  total: selectedNodes.length,
+                  persons: persons.length,
+                  resources: resources.length,
+                  phones: phones.length,
+                  // Show up to 25 names per group; ellipsis after.
+                  person_names: persons.slice(0, 25).map((n) => n.name).filter(Boolean),
+                  resource_names: resources.slice(0, 25).map((n) => n.name).filter(Boolean),
+                  phone_names: phones.slice(0, 25).map((n) => n.name).filter(Boolean),
+                },
+                source: 'graph.rubber-band',
+              });
+            }
           } catch { /* ref not ready */ }
           selectionBoxStartRef.current = null;
           setSelectionBox(null);
@@ -1485,9 +1535,26 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             }
             groupDragRef.current = null;
           }}
-          onNodeClick={() => {
-            // No-op; click is reserved. (Search-result click does the
-            // centre-and-fan; in-canvas clicks just hover.)
+          // Single-click a node → publish to the universal selection
+          // rail so the user sees the full content (calls/messages
+          // for a Person, list of accounts for a Phone, the actual
+          // bucket value for a Resource). Also seeds the multi-
+          // selection so the perspective banner's pivot bar can
+          // hand off to other tabs immediately.
+          onNodeClick={(node) => {
+            if (!node) return;
+            setMultiSelection(new Set([node.id]));
+            if (selectEntity) {
+              const payload = buildNodePayload(node, graphData.links);
+              selectEntity({
+                type: payload.type,
+                id: payload.id,
+                caseId,
+                reportKey: payload.reportKey || null,
+                payload,
+                source: 'graph.node-click',
+              });
+            }
           }}
           // Right-click on a node is now the rubber-band-selection
           // gesture at the canvas level (handled by the wrapper's
@@ -1574,13 +1641,20 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
               )}
               {searchResults && searchResults.results.map((r, idx) => {
                 const isResource = r.entity === 'resource';
-                // Person id format = `person-{key}`; Resource id
-                // format = `res-{type}-{safe-bucket}` (built by the
-                // backend resource pass). To check "is this currently
-                // on canvas" we look for either prefix.
+                // Person id format = `person-{key}`. Resource id
+                // format = `res-{type}-{safe-bucket}`. The backend
+                // search now returns each Resource's rolled-up
+                // `bucket` (host for visits/bookmarks, raw value
+                // otherwise) — exactly the key the graph's resource
+                // pass used. We match by (resource_type, bucket).
                 const candidateId = isResource
-                  ? graphData.nodes.find((n) => n.type === 'Resource'
-                      && (n.name === r.name || n.bucket === r.name))?.id
+                  ? graphData.nodes.find((n) =>
+                      n.type === 'Resource'
+                      && n.resource_type === r.resource_type
+                      && (n.bucket === r.bucket
+                          || n.name === r.bucket
+                          || n.bucket === r.name
+                          || n.name === r.name))?.id
                   : `person-${r.key}`;
                 const inRendered = !!candidateId
                   && graphData.nodes.some((n) => n.id === candidateId);
@@ -1596,11 +1670,46 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                     type="button"
                     onClick={() => {
                       if (isResource) {
-                        // Resource: best-effort centre + fan if it's on
-                        // canvas already. (No perspective rebuild
-                        // because the perspective model is Person-keyed.)
+                        // Make sure the chip for this resource type
+                        // is ON — clicking a "Meetings" search result
+                        // makes no sense if Meetings is toggled off.
+                        if (r.resource_type
+                            && !activeEventTypes.has(r.resource_type)) {
+                          setActiveEventTypes((prev) => {
+                            const next = new Set(prev);
+                            next.add(r.resource_type);
+                            return next;
+                          });
+                          // The chip toggle triggers a refetch. Queue
+                          // the centre-and-fan for once the new data
+                          // lands — the same pending-fan ref the
+                          // Person path uses, but keyed by bucket
+                          // since the resource id isn't computable
+                          // here without the backend's safe_bucket
+                          // sanitisation. We resolve it inside the
+                          // effect using (resource_type, bucket).
+                          pendingResourceFanRef.current = {
+                            resource_type: r.resource_type,
+                            bucket: r.bucket || r.name,
+                          };
+                          return;
+                        }
+                        // Chip is already on — if the node is in the
+                        // rendered set, centre + fan immediately.
                         if (candidateId) {
+                          // Persist a search highlight on this id so
+                          // the cyan ring + label pop appear.
+                          setMultiSelection(new Set([candidateId]));
                           centreAndFan(candidateId, graphData.nodes, graphData.links);
+                        } else {
+                          // Not in the current rendered subgraph —
+                          // queue a pending resource fan so once the
+                          // chip-driven refetch lands the node gets
+                          // centred.
+                          pendingResourceFanRef.current = {
+                            resource_type: r.resource_type,
+                            bucket: r.bucket || r.name,
+                          };
                         }
                         return;
                       }
@@ -1715,6 +1824,68 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       )}
     </div>
   );
+}
+
+/**
+ * Build a selection-rail payload for a graph node.
+ *
+ * The rail expects a `type` (used to pick the accordion renderer) and
+ * a `payload.node_key` for the rail's GET /events/detail/{key} call.
+ * Person nodes have a Cellebrite Person key under `n.id` = `person-{key}`.
+ * PhoneReport nodes have a report_key. Resource nodes don't have a
+ * single canonical lookup — we pass enough metadata that a future
+ * Resource-aware accordion can render bucket + hits + phone count.
+ */
+function buildNodePayload(node, links) {
+  if (!node) return null;
+  if (node.type === 'PhoneReport') {
+    return {
+      type: 'phone-report',
+      id: node.id,
+      reportKey: node.report_key,
+      node_key: node.report_key,
+      name: node.name,
+      device_model: node.name,
+      phone_owner: node.phone_owner,
+    };
+  }
+  if (node.type === 'Resource') {
+    // Count incoming Phone→Resource edges so the rail can display
+    // "owned by N phones" + list edge counterparts.
+    const incomingPhones = [];
+    for (const l of (links || [])) {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (t === node.id && typeof s === 'string' && s.startsWith('report-')) {
+        incomingPhones.push(s.replace(/^report-/, ''));
+      }
+    }
+    return {
+      type: 'resource',
+      id: node.id,
+      node_key: node.id,
+      resource_type: node.resource_type,
+      bucket: node.bucket,
+      name: node.name,
+      hits: node.hits,
+      phone_count: node.phone_count,
+      phone_report_keys: incomingPhones,
+    };
+  }
+  // Person
+  const personKey = String(node.id || '').replace(/^person-/, '');
+  return {
+    type: 'person',
+    id: node.id,
+    node_key: personKey,
+    person_key: personKey,
+    reportKey: node.report_key || node.cellebrite_report_key || null,
+    name: node.name,
+    phone: node.phone,
+    device_count: node.device_count,
+    comm_count: node.comm_count,
+    shared: node.shared,
+  };
 }
 
 /**

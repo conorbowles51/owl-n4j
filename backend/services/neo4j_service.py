@@ -6980,6 +6980,22 @@ class Neo4jService:
                     # no .name) — skip silently rather than 500.
                     continue
 
+                # The graph resource pass buckets by `value_field` —
+                # for URL-bearing types it rolls up to the host. We
+                # surface the same `bucket` here so the frontend can
+                # find the matching graph node by (resource_type,
+                # bucket) without guessing.
+                rollup_visit_bookmark = chip_key in ("visit", "bookmark")
+                if rollup_visit_bookmark:
+                    bucket_expr = (
+                        f"CASE WHEN n.{value_field} IS NULL OR n.{value_field} = '' THEN NULL "
+                        f"     WHEN n.{value_field} CONTAINS '://' THEN "
+                        f"          split(split(n.{value_field}, '://')[1], '/')[0] "
+                        f"     ELSE split(n.{value_field}, '/')[0] END"
+                    )
+                else:
+                    bucket_expr = f"n.{value_field}"
+
                 try:
                     rq = session.run(
                         f"""
@@ -6987,6 +7003,7 @@ class Neo4jService:
                         WHERE {where}
                         RETURN n.key AS key,
                                coalesce(n.{value_field}, n.name, n.key) AS name,
+                               {bucket_expr} AS bucket,
                                n.cellebrite_report_key AS report_key
                         ORDER BY name
                         LIMIT $per_label_cap
@@ -6995,12 +7012,17 @@ class Neo4jService:
                     )
                     for rec in rq:
                         nm = rec["name"]
+                        bucket = rec["bucket"]
                         results.append({
                             "entity": "resource",
                             "resource_type": chip_key,
                             "label": label,
                             "key": rec["key"],
                             "name": (nm or "")[:80] or rec["key"],
+                            # `bucket` is what the graph resource node
+                            # uses as its identity — surface it so the
+                            # frontend can locate the matching node.
+                            "bucket": bucket,
                             "report_key": rec["report_key"],
                             # No comm_count — kept as 0 for shape parity.
                             "comm_count": 0,
