@@ -232,6 +232,11 @@ class _GeoNamesBackend(_Backend):
         # disables the backend entirely.
         import reverse_geocoder  # noqa: F401  # presence check
         self._rg = None
+        # Per-coord result cache. Cellebrite location data clusters heavily
+        # (a device pings the same handful of places repeatedly), so caching
+        # by rounded coord turns most lookups into a dict hit. Keyed to ~11 m
+        # (4 decimals), which is finer than the dataset's city-level accuracy.
+        self._cache: Dict[tuple, Optional[Dict[str, Optional[str]]]] = {}
 
     def _ensure_loaded(self):
         if self._rg is not None:
@@ -240,22 +245,38 @@ class _GeoNamesBackend(_Backend):
             if self._rg is not None:
                 return
             import reverse_geocoder
-            # mode=2 = multi-process query; OK in worker contexts.
-            self._rg = reverse_geocoder.RGeocoder(mode=2, verbose=False)
+            # mode=1 = SINGLE-THREADED in-process query. mode=2 forks a
+            # multiprocessing pool on EVERY query() call — fine for one bulk
+            # query of many coords, but ruinous for our access pattern (one
+            # coord per Location node, tens of thousands of calls): each call
+            # forked the whole worker process and joined it, collapsing
+            # ingestion to <1 model/s on location-dense iOS reports (C2,
+            # 2026-05-25). mode=1 builds the k-d tree once and queries it
+            # directly. See WORKING.md.
+            self._rg = reverse_geocoder.RGeocoder(mode=1, verbose=False)
 
     def reverse(self, lat: float, lon: float) -> Optional[Dict[str, Optional[str]]]:
         try:
+            lat_f = float(lat)
+            lon_f = float(lon)
+        except (TypeError, ValueError):
+            return None
+        cache_key = (round(lat_f, 4), round(lon_f, 4))
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        try:
             self._ensure_loaded()
-            res = self._rg.query([(float(lat), float(lon))])
+            res = self._rg.query([(lat_f, lon_f)])
         except Exception as e:  # noqa: BLE001
             logger.debug("GeoNames lookup error: %s", e)
             return None
         if not res:
+            self._cache[cache_key] = None
             return None
         r = res[0]
         place = r.get("name") or None
         country_code = (r.get("cc") or "").upper() or None
-        return {
+        result = {
             "address": None,  # no street-level data in this dataset
             "place_name": place,
             "country": _COUNTRY_NAMES.get(country_code or ""),
@@ -265,6 +286,8 @@ class _GeoNamesBackend(_Backend):
             "geocode_source": "geonames",
             "geocode_accuracy": "city" if place else "country",
         }
+        self._cache[cache_key] = result
+        return result
 
 
 # Minimal ISO country code → name map for the GeoNames backend
