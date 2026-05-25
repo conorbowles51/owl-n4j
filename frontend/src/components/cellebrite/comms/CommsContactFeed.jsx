@@ -2,50 +2,87 @@
  * CommsContactFeed
  *
  * Inline (non-drawer) version of CommsContactDrawer's body. Renders
- * every call/message/email involving one contact across all phones,
- * grouped by day, newest first. Used by:
+ * every call/message/email involving one contact across all phones.
  *
- *   - CommsContactDrawer (legacy slide-in flyover from the old
- *     Communications row click), as a thin shell around this feed
- *   - CellebriteCommunicationView's NEW breadcrumb drill pane,
- *     mounted directly in the page (no drawer chrome) so the
- *     investigator can chain drills.
+ * Two view modes, toggled at the top:
+ *   - Chat   : interleaved bubble / row / card layout (the original)
+ *   - Table  : flat row-per-event spreadsheet (CommsContactTable)
  *
- * Adds a `nameRenderer` slot so the page-level caller can wrap each
- * person name (sender, recipient) with a clickable affordance. Every
- * existing comm bubble / card already accepts the name via
- * `item.sender`/`item.recipients`, so we pass the renderer in as a
- * prop and have the bubbles pick it up on render.
+ * Search:
+ *   A CellebriteSearchInput sits above the body and applies the same
+ *   parseQuery / matchItem engine used by Timeline + Comms-Center
+ *   thread list, so `type:call from:John app:WhatsApp before:2023-01-15`
+ *   etc. all work consistently. The matcher operates on the loaded
+ *   items in memory — instant per-keystroke filtering with highlights.
  *
- * The drawer wrapper continues to work — it uses the default
- * (non-clickable) name renderer.
+ * In-table filters (table mode only):
+ *   Cells like App, Type, Date, Direction are clickable to narrow the
+ *   table without leaving the drill. Filter state lives here so it
+ *   survives toggling between Chat and Table modes.
+ *
+ * Used by:
+ *   - CellebriteCommunicationView's breadcrumb drill pane (page-level)
+ *   - CommsContactDrawer (legacy slide-in flyover) — still works,
+ *     just with no onDrillName passed in (names are static there).
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Loader2, Phone, MessageSquare, Mail } from 'lucide-react';
+import { Loader2, Phone, MessageSquare, Mail, MessageCircle, Table2 } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import CommsTypeFilter from './CommsTypeFilter';
 import CommsMessageBubble from './CommsMessageBubble';
 import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
+import CommsContactTable from './CommsContactTable';
+import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { buildSenderPalette } from './commsUtils';
+import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
+
+const DEFAULT_TYPES = ['message', 'call', 'email'];
 
 export default function CommsContactFeed({
   caseId,
-  contact, // { person_key, name, ... } — minimum required is person_key
-  // Optional pass-through so callers can pre-narrow by type
-  initialTypes = ['message', 'call', 'email'],
-  // Called when the user clicks a name in any rendered row. The new
-  // Communications breadcrumb drill wires this to push a new frame;
-  // the legacy drawer leaves it undefined (names are unclickable
-  // there, preserving the original UX).
+  contact,
+  initialTypes = DEFAULT_TYPES,
+  // Push a new drill frame in the parent breadcrumb stack.
   onDrillName = null,
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTypes, setActiveTypes] = useState(new Set(initialTypes));
+
+  // Chat | Table view-mode toggle. Per-case localStorage so the
+  // investigator's preference persists.
+  const viewKey = `cb.communications.feedView.${caseId || 'unknown'}`;
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window === 'undefined') return 'chat';
+    try {
+      const stored = window.localStorage.getItem(viewKey);
+      return stored === 'table' ? 'table' : 'chat';
+    } catch { return 'chat'; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(viewKey, viewMode); }
+    catch { /* ignore */ }
+  }, [viewKey, viewMode]);
+
+  // In-table filter state lives here so toggling between Chat and
+  // Table doesn't lose narrowing the user already applied.
+  const [cellFilters, setCellFilters] = useState({});
+
+  // Full search input — uses the shared parseQuery engine so the
+  // syntax matches Timeline + Comms-Center thread search exactly.
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Reset per-contact state when the contact changes (drilling into a
+  // new person should start with a clean lens).
+  useEffect(() => {
+    setCellFilters({});
+    setSearchQuery('');
+  }, [contact?.person_key]);
 
   useEffect(() => {
     if (!caseId || !contact?.person_key) return;
@@ -55,7 +92,7 @@ export default function CommsContactFeed({
     cellebriteCommsAPI
       .getContactFeed(caseId, contact.person_key, {
         types: [...activeTypes],
-        limit: 1000,
+        limit: 2000,
       })
       .then((res) => {
         if (cancelled) return;
@@ -73,6 +110,7 @@ export default function CommsContactFeed({
 
   const phoneCtx = usePhoneReports();
   const hasMultiplePhones = !!phoneCtx?.hasMultiple;
+  const reports = phoneCtx?.reports || [];
 
   // Stable colour palette across the contact's feed.
   const palette = useMemo(() => {
@@ -86,13 +124,63 @@ export default function CommsContactFeed({
     return buildSenderPalette([...seen.values()]);
   }, [data]);
 
-  // Group by day + mark speaker runs so the message-bubble component
-  // collapses repeated sender avatars.
+  // -----------------------------------------------------------------
+  // Filter pipeline.
+  //
+  // The raw `data.items` array gets passed through three stages:
+  //   1. Full-text search (parseQuery + matchItem)
+  //   2. In-table cell filters (app=, type=, date=, direction=)
+  //   3. (Render stage decides chat vs table)
+  //
+  // We compute highlights from the search stage so both views can
+  // render <mark>'d substrings.
+  // -----------------------------------------------------------------
+  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+
+  const { searchFiltered, highlights } = useMemo(() => {
+    if (!searchQuery) {
+      return { searchFiltered: data?.items || [], highlights: [] };
+    }
+    const out = [];
+    const allHighlights = new Set();
+    for (const it of data?.items || []) {
+      const m = matchItem(it, parsedQuery, 'event', reports);
+      if (m.matches) {
+        out.push(it);
+        m.highlights.forEach((h) => allHighlights.add(h));
+      }
+    }
+    return { searchFiltered: out, highlights: [...allHighlights] };
+  }, [data, searchQuery, parsedQuery, reports]);
+
+  const cellFiltered = useMemo(() => {
+    const filters = cellFilters || {};
+    const keys = Object.keys(filters);
+    if (keys.length === 0) return searchFiltered;
+    return searchFiltered.filter((it) => {
+      for (const k of keys) {
+        const want = filters[k];
+        if (!want) continue;
+        if (k === 'app') {
+          if ((it.source_app || '').toLowerCase() !== String(want).toLowerCase()) return false;
+        } else if (k === 'type') {
+          if ((it.type || '').toLowerCase() !== String(want).toLowerCase()) return false;
+        } else if (k === 'date') {
+          if ((it.timestamp || '').slice(0, 10) !== want) return false;
+        } else if (k === 'direction') {
+          if ((it.direction || '').toLowerCase() !== String(want).toLowerCase()) return false;
+        }
+      }
+      return true;
+    });
+  }, [searchFiltered, cellFilters]);
+
+  // Group by day + speaker runs (chat view only)
   const grouped = useMemo(() => {
     const out = [];
     let currentDay = null;
     let lastSenderKey = null;
-    for (const item of data?.items || []) {
+    for (const item of cellFiltered) {
       const day = (item.timestamp || '').slice(0, 10) || '—';
       if (currentDay !== day) {
         out.push({ type: 'date-sep', day });
@@ -110,15 +198,19 @@ export default function CommsContactFeed({
       }
     }
     return out;
-  }, [data]);
+  }, [cellFiltered]);
 
+  // Counts (post-search, pre-cell-filter so the user sees how the
+  // search itself affected the type distribution).
   const counts = useMemo(() => {
-    if (!data?.items) return {};
-    return data.items.reduce((acc, it) => {
+    return (searchFiltered || []).reduce((acc, it) => {
       acc[it.type] = (acc[it.type] || 0) + 1;
       return acc;
     }, {});
-  }, [data]);
+  }, [searchFiltered]);
+
+  const totalRaw = data?.total ?? (data?.items?.length || 0);
+  const totalMatched = cellFiltered.length;
 
   if (!contact?.person_key) {
     return (
@@ -130,9 +222,40 @@ export default function CommsContactFeed({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Filter row + counts */}
-      <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
+      {/* Filter row + view toggle + counts */}
+      <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0 flex-wrap">
         <CommsTypeFilter active={activeTypes} onChange={setActiveTypes} />
+
+        {/* Chat | Table toggle */}
+        <div className="inline-flex items-center bg-white border border-light-300 rounded overflow-hidden text-[11px]">
+          <button
+            type="button"
+            onClick={() => setViewMode('chat')}
+            className={`px-2 py-1 inline-flex items-center gap-1 ${
+              viewMode === 'chat'
+                ? 'bg-owl-blue-100 text-owl-blue-900'
+                : 'text-light-700 hover:bg-light-100'
+            }`}
+            title="Chat view (bubbles + speaker runs)"
+          >
+            <MessageCircle className="w-3 h-3" />
+            Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('table')}
+            className={`px-2 py-1 inline-flex items-center gap-1 border-l border-light-200 ${
+              viewMode === 'table'
+                ? 'bg-owl-blue-100 text-owl-blue-900'
+                : 'text-light-700 hover:bg-light-100'
+            }`}
+            title="Table view (sortable row per event, clickable cells)"
+          >
+            <Table2 className="w-3 h-3" />
+            Table
+          </button>
+        </div>
+
         <div className="flex-1" />
         {loading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
         <div className="flex items-center gap-2 text-[11px] text-light-600">
@@ -148,68 +271,93 @@ export default function CommsContactFeed({
             <Mail className="w-3 h-3 text-amber-600" />
             {(counts.email || 0).toLocaleString()}
           </span>
-          <span className="text-light-500">· {(data?.total || 0).toLocaleString()} total</span>
+          <span className="text-light-500">·</span>
+          <span className="text-light-700 font-medium">
+            {totalMatched.toLocaleString()}
+          </span>
+          <span className="text-light-500">of {totalRaw.toLocaleString()}</span>
         </div>
       </div>
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto bg-gradient-to-b from-light-50 to-light-100 py-2">
-        {error && <div className="p-4 text-xs text-red-600">{error}</div>}
-        {!loading && !error && (data?.items?.length || 0) === 0 && (
-          <div className="flex items-center justify-center h-full text-sm text-light-500 italic">
-            No comms found for this contact.
-          </div>
-        )}
-        {grouped.map((row, idx) => {
-          if (row.type === 'date-sep') {
-            return (
-              <div key={`sep-${idx}`} className="flex items-center justify-center my-2">
-                <span className="text-[10px] bg-light-200 text-light-600 px-2 py-0.5 rounded-full">
-                  {formatDay(row.day)}
-                </span>
-              </div>
-            );
-          }
-          const item = row.item;
-          if (item.type === 'call') {
-            return (
-              <CommsCallRow
-                key={item.id || idx}
-                item={item}
-                reportKey={item.report_key}
-                showPhoneChip={hasMultiplePhones}
-                caseId={caseId}
-                onDrillName={onDrillName}
-              />
-            );
-          }
-          if (item.type === 'email') {
-            return (
-              <CommsEmailCard
-                key={item.id || idx}
-                item={item}
-                reportKey={item.report_key}
-                showPhoneChip={hasMultiplePhones}
-                caseId={caseId}
-                onDrillName={onDrillName}
-              />
-            );
-          }
-          return (
-            <CommsMessageBubble
-              key={item.id || idx}
-              item={item}
-              palette={palette}
-              showSenderName
-              isFirstInRun={row.isFirstInRun}
-              reportKey={item.report_key}
-              showPhoneChip={hasMultiplePhones}
-              caseId={caseId}
-              onDrillName={onDrillName}
-            />
-          );
-        })}
+      {/* Full search input — same engine as Timeline / threads. */}
+      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
+        <CellebriteSearchInput
+          value={searchQuery}
+          onChange={setSearchQuery}
+          placeholder='Search this contact — try type:call before:2023-01-15 app:WhatsApp "exact phrase"'
+          matchCount={totalMatched}
+          totalCount={data?.items?.length || 0}
+          itemNoun="comm"
+          focusOnSlash
+        />
       </div>
+
+      {/* Body — chat OR table */}
+      {viewMode === 'table' ? (
+        <CommsContactTable
+          items={cellFiltered}
+          caseId={caseId}
+          onDrillName={onDrillName}
+          highlights={highlights}
+          cellFilters={cellFilters}
+          onCellFiltersChange={setCellFilters}
+        />
+      ) : (
+        <div className="flex-1 overflow-y-auto bg-gradient-to-b from-light-50 to-light-100 py-2">
+          {error && <div className="p-4 text-xs text-red-600">{error}</div>}
+          {!loading && !error && cellFiltered.length === 0 && (
+            <div className="flex items-center justify-center h-full text-sm text-light-500 italic">
+              No comms match the current filters.
+            </div>
+          )}
+          {grouped.map((row, idx) => {
+            if (row.type === 'date-sep') {
+              return (
+                <div key={`sep-${idx}`} className="flex items-center justify-center my-2">
+                  <span className="text-[10px] bg-light-200 text-light-600 px-2 py-0.5 rounded-full">
+                    {formatDay(row.day)}
+                  </span>
+                </div>
+              );
+            }
+            const item = row.item;
+            if (item.type === 'call') {
+              return (
+                <CommsCallRow
+                  key={item.id || idx}
+                  item={item}
+                  reportKey={item.report_key}
+                  showPhoneChip={hasMultiplePhones}
+                  caseId={caseId}
+                />
+              );
+            }
+            if (item.type === 'email') {
+              return (
+                <CommsEmailCard
+                  key={item.id || idx}
+                  item={item}
+                  reportKey={item.report_key}
+                  showPhoneChip={hasMultiplePhones}
+                  caseId={caseId}
+                />
+              );
+            }
+            return (
+              <CommsMessageBubble
+                key={item.id || idx}
+                item={item}
+                palette={palette}
+                showSenderName
+                isFirstInRun={row.isFirstInRun}
+                reportKey={item.report_key}
+                showPhoneChip={hasMultiplePhones}
+                caseId={caseId}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

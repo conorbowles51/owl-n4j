@@ -1,13 +1,39 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import {
-  Loader2, Search, ZoomIn, ZoomOut, Maximize2,
+  Loader2, ZoomIn, ZoomOut, Maximize2,
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import { usePerspective } from '../../context/PerspectiveContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
+import CellebriteSearchInput from './shared/CellebriteSearchInput';
+
+/**
+ * Tokenise the graph search input. Same quoted-phrase support as the
+ * shared parseQuery (so "Sender Lemus" stays one token) but no
+ * operator handling — graph nodes don't have from/to/app/etc fields
+ * that map cleanly. Free-text-only is honest to what the graph
+ * actually carries.
+ */
+function tokeniseGraphSearch(input) {
+  const tokens = [];
+  let buf = '';
+  let inQuotes = false;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (ch === '"') { inQuotes = !inQuotes; continue; }
+    if (!inQuotes && /\s/.test(ch)) {
+      if (buf) tokens.push(buf.toLowerCase());
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  if (buf) tokens.push(buf.toLowerCase());
+  return tokens.filter(Boolean);
+}
 
 // Available edge types — defaults match the backend's legacy comms-only
 // behaviour. Persisted per case in localStorage via the toggle bar below.
@@ -99,33 +125,99 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return () => { cancelled = true; };
   }, [caseId, personKeys, activeEventTypes, depth]);
 
-  const filteredData = React.useMemo(() => {
-    if (!searchTerm.trim()) return graphData;
+  // Build a per-node search haystack ONCE per graph data load so the
+  // per-keystroke filter is O(n) string-contains, not O(n × field
+  // count). Every string on the node ends up in the haystack — name,
+  // phone, type, owner, device_model, report_key, plus the phone
+  // identity's short label ("P1") so the search bar matches what the
+  // node renders to the user.
+  const haystackByNodeId = useMemo(() => {
+    const map = new Map();
+    for (const n of graphData.nodes) {
+      const phoneKey = n.report_key || n.cellebrite_report_key;
+      const phoneIdentity = phoneCtx && phoneKey ? phoneCtx.getIdentityByKey(phoneKey) : null;
+      const parts = [
+        n.name, n.phone, n.type, n.phone_owner,
+        n.report_key, n.cellebrite_report_key,
+        phoneIdentity?.short, phoneIdentity?.model, phoneIdentity?.owner,
+        // device + comm counts as text so "shared 3" / "comms 12" hit.
+        n.device_count != null ? `devices:${n.device_count}` : null,
+        n.comm_count != null ? `comms:${n.comm_count}` : null,
+        n.shared ? 'shared' : null,
+      ]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase());
+      map.set(n.id, parts.join(' '));
+    }
+    return map;
+  }, [graphData.nodes, phoneCtx]);
 
-    const term = searchTerm.toLowerCase();
-    const matchingNodeIds = new Set(
-      graphData.nodes
-        .filter(n => (n.name || '').toLowerCase().includes(term) || (n.phone || '').includes(term))
-        .map(n => n.id)
-    );
+  // Edge haystack lets `link.label` / count match too (e.g. "calls").
+  const haystackByLink = useMemo(() => {
+    const out = new Map();
+    graphData.links.forEach((l, i) => {
+      const parts = [l.label, l.count != null ? String(l.count) : null]
+        .filter(Boolean)
+        .map((v) => String(v).toLowerCase());
+      out.set(i, parts.join(' '));
+    });
+    return out;
+  }, [graphData.links]);
 
-    // Include linked nodes
-    graphData.links.forEach(l => {
+  // Free-text filter — each whitespace-separated term must match
+  // SOMEWHERE in the node's full haystack. Quoted "exact phrases" are
+  // kept intact. Same friendly tokenisation parseQuery uses for the
+  // event/thread surfaces, but applied as plain substring (the graph
+  // doesn't have a meaningful schema for from:/to:/app: operators).
+  const filteredData = useMemo(() => {
+    const raw = (searchTerm || '').trim();
+    if (!raw) return graphData;
+
+    const terms = tokeniseGraphSearch(raw);
+    if (terms.length === 0) return graphData;
+
+    const matchesHaystack = (h) => terms.every((t) => h.includes(t));
+
+    const matchingNodeIds = new Set();
+    for (const n of graphData.nodes) {
+      if (matchesHaystack(haystackByNodeId.get(n.id) || '')) {
+        matchingNodeIds.add(n.id);
+      }
+    }
+
+    // Include any node connected by a link whose label/count itself
+    // matches (so "calls" surfaces the call edges + both endpoints).
+    graphData.links.forEach((l, i) => {
+      const linkHay = haystackByLink.get(i) || '';
       const srcId = typeof l.source === 'object' ? l.source.id : l.source;
       const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-      if (matchingNodeIds.has(srcId)) matchingNodeIds.add(tgtId);
-      if (matchingNodeIds.has(tgtId)) matchingNodeIds.add(srcId);
+      if (matchesHaystack(linkHay)) {
+        matchingNodeIds.add(srcId);
+        matchingNodeIds.add(tgtId);
+      }
+    });
+
+    // Include the immediate neighbours of every matched node so the
+    // result remains a navigable subgraph — searching "Lemus" returns
+    // Lemus AND the people connected to Lemus, not Lemus floating
+    // alone.
+    const neighbourIds = new Set(matchingNodeIds);
+    graphData.links.forEach((l) => {
+      const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+      const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+      if (matchingNodeIds.has(srcId)) neighbourIds.add(tgtId);
+      if (matchingNodeIds.has(tgtId)) neighbourIds.add(srcId);
     });
 
     return {
-      nodes: graphData.nodes.filter(n => matchingNodeIds.has(n.id)),
-      links: graphData.links.filter(l => {
+      nodes: graphData.nodes.filter((n) => neighbourIds.has(n.id)),
+      links: graphData.links.filter((l) => {
         const srcId = typeof l.source === 'object' ? l.source.id : l.source;
         const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-        return matchingNodeIds.has(srcId) && matchingNodeIds.has(tgtId);
+        return neighbourIds.has(srcId) && neighbourIds.has(tgtId);
       }),
     };
-  }, [graphData, searchTerm]);
+  }, [graphData, searchTerm, haystackByNodeId, haystackByLink]);
 
   const paintNode = useCallback((node, ctx, globalScale) => {
     const isReport = node.type === 'PhoneReport';
@@ -217,14 +309,20 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     <div className="h-full flex flex-col" ref={containerRef}>
       {/* Controls */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-light-400" />
-          <input
-            type="text"
-            placeholder="Search contacts..."
+        <div className="flex-1 max-w-xl">
+          {/* Full-text search across every visible string on every
+              node + edge — name, phone, owner, device model, phone
+              identity short label, edge label, edge count, "shared".
+              Matched nodes' immediate neighbours are kept so the
+              result stays a navigable subgraph. */}
+          <CellebriteSearchInput
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs border border-light-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-emerald-400"
+            onChange={setSearchTerm}
+            placeholder='Search the graph — name, phone, app, device, "exact phrase"…'
+            matchCount={filteredData.nodes.length}
+            totalCount={graphData.nodes.length}
+            itemNoun="node"
+            compact
           />
         </div>
         <button onClick={handleZoomIn} className="p-1.5 hover:bg-light-200 rounded" title="Zoom in">
