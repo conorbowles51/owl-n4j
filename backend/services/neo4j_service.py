@@ -7002,7 +7002,7 @@ class Neo4jService:
 
                     UNWIND persons AS person
                     OPTIONAL MATCH (person)-[:SENT_MESSAGE]->(m:Communication)
-                      WHERE m.body IS NOT NULL
+                      WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
                         AND (size($report_keys_list) = 0 OR m.cellebrite_report_key IN $report_keys_list)
                     WITH key, device_keys, names, phone_lists, is_owner_str,
                          calls_out_ids, calls_in_ids, persons,
@@ -7013,7 +7013,7 @@ class Neo4jService:
                       WHERE chat.chat_id IS NOT NULL
                         AND (size($report_keys_list) = 0 OR chat.cellebrite_report_key IN $report_keys_list)
                     OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
-                      WHERE msg.body IS NOT NULL
+                      WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                     WITH key, device_keys, names, phone_lists, is_owner_str,
                          calls_out_ids, calls_in_ids, msgs_sent_ids, persons,
                          collect(DISTINCT msg.id) AS msgs_received_ids
@@ -7132,7 +7132,7 @@ class Neo4jService:
                 f"""
                 MATCH (n:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
                 WHERE n.source_app IS NOT NULL
-                  AND (n.body IS NOT NULL OR n.chat_id IS NOT NULL)
+                  AND (n.body IS NOT NULL OR n.chat_id IS NOT NULL OR coalesce(n.attachment_count, 0) > 0)
                   {rk_filter}
                 RETURN n.source_app AS app, count(n) AS n
                 ORDER BY n DESC
@@ -7271,7 +7271,7 @@ class Neo4jService:
                     LIMIT $per_block_cap
                     OPTIONAL MATCH (p:Person)-[:PARTICIPATED_IN]->(chat)
                     OPTIONAL MATCH (msg:Communication)-[:PART_OF]->(chat)
-                      WHERE msg.body IS NOT NULL
+                      WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                     WITH chat, collect(DISTINCT p) AS participants,
                          count(DISTINCT msg) AS msg_count,
                          sum(coalesce(msg.attachment_count, 0)) AS attach_count,
@@ -7821,10 +7821,10 @@ class Neo4jService:
             """
             MATCH (anchor:Communication {case_id: $case_id, key: $anchor_key})
                   -[:PART_OF]->(chat:Communication {case_id: $case_id, key: $thread_id})
-            WHERE anchor.body IS NOT NULL
+            WHERE (anchor.body IS NOT NULL OR coalesce(anchor.attachment_count, 0) > 0)
             WITH anchor.timestamp AS ts, anchor.key AS aks
             MATCH (m:Communication)-[:PART_OF]->(:Communication {case_id: $case_id, key: $thread_id})
-            WHERE m.body IS NOT NULL
+            WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
               AND (m.timestamp < ts OR (m.timestamp = ts AND m.key < aks))
             RETURN count(m) AS before
             """,
@@ -8698,7 +8698,7 @@ class Neo4jService:
                     "AND (n.latitude IS NOT NULL OR n.nearest_location_lat IS NOT NULL)"
                 cypher = f"""
                     MATCH (n:Communication {{source_type:'cellebrite'}})
-                    WHERE {where} AND n.body IS NOT NULL {extra}
+                    WHERE {where} AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {extra}
                     WITH n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -8879,7 +8879,7 @@ class Neo4jService:
             _count("CellTower", "", "cell_tower", "Cell towers")
             _count("WirelessNetwork", "AND n.timestamp IS NOT NULL", "wifi", "WiFi networks")
             _count("PhoneCall", "", "call", "Calls")
-            _count("Communication", "AND n.body IS NOT NULL", "message", "Messages")
+            _count("Communication", "AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0)", "message", "Messages")
             _count("Email", "", "email", "Emails")
             _count("DeviceEvent", "AND n.event_type = 'power'", "power", "Power events")
             _count("DeviceEvent", "AND (n.event_type IS NULL OR n.event_type <> 'power')",
@@ -9387,7 +9387,7 @@ class Neo4jService:
             )
             # Also include backfilled nearest_location points from comms so tracks are denser
             for label, src in (("PhoneCall", "call"), ("Communication", "message"), ("Email", "email")):
-                body_filter = "AND n.body IS NOT NULL" if label == "Communication" else ""
+                body_filter = "AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0)" if label == "Communication" else ""
                 _collect(
                     f"""
                     MATCH (n:{label} {{case_id:$case_id, source_type:'cellebrite'}})
@@ -9796,9 +9796,9 @@ class Neo4jService:
                   UNION
                   MATCH (c:PhoneCall {{case_id:$case_id, cellebrite_report_key:$rk}})-[:CALLED|CALLED_TO]-(p:Person) RETURN p
                   UNION
-                  MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})<-[:SENT_MESSAGE]-(p:Person) WHERE m.body IS NOT NULL RETURN p
+                  MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})<-[:SENT_MESSAGE]-(p:Person) WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count,0) > 0) RETURN p
                   UNION
-                  MATCH (msg:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p:Person) WHERE msg.body IS NOT NULL RETURN p
+                  MATCH (msg:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})-[:PART_OF]->(chat:Communication)<-[:PARTICIPATED_IN]-(p:Person) WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count,0) > 0) RETURN p
                   UNION
                   MATCH (e:Email {{case_id:$case_id, cellebrite_report_key:$rk}})-[:EMAILED|SENT_TO]-(p:Person) RETURN p
                 }}
@@ -9821,11 +9821,11 @@ class Neo4jService:
                   MATCH (p:Person)-[:CALLED|CALLED_TO]-(c)
                   RETURN p AS person, count(DISTINCT c) AS calls, 0 AS msgs, 0 AS emails
                   UNION ALL
-                  MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}}) WHERE m.body IS NOT NULL
+                  MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}}) WHERE (m.body IS NOT NULL OR coalesce(m.attachment_count,0) > 0)
                   MATCH (p:Person)-[:SENT_MESSAGE]->(m)
                   RETURN p AS person, 0 AS calls, count(DISTINCT m) AS msgs, 0 AS emails
                   UNION ALL
-                  MATCH (msg:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})-[:PART_OF]->(chat:Communication) WHERE msg.body IS NOT NULL
+                  MATCH (msg:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})-[:PART_OF]->(chat:Communication) WHERE (msg.body IS NOT NULL OR coalesce(msg.attachment_count,0) > 0)
                   MATCH (p:Person)-[:PARTICIPATED_IN]->(chat)
                   RETURN p AS person, 0 AS calls, count(DISTINCT msg) AS msgs, 0 AS emails
                   UNION ALL
@@ -10619,7 +10619,7 @@ class Neo4jService:
                     MATCH (p)-[:SENT_MESSAGE]->(m:Communication)
                     WHERE m.case_id = $case_id
                       AND m.cellebrite_report_key = $rk
-                      AND m.body IS NOT NULL
+                      AND (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
                     OPTIONAL MATCH (m)-[:PART_OF]->(t:Communication)
                     RETURN m, p.key AS sender_key, t.key AS thread_id
                     UNION
@@ -10627,7 +10627,7 @@ class Neo4jService:
                     MATCH (p)-[:PARTICIPATED_IN]->(chat:Communication)<-[:PART_OF]-(m:Communication)
                     WHERE m.case_id = $case_id
                       AND m.cellebrite_report_key = $rk
-                      AND m.body IS NOT NULL
+                      AND (m.body IS NOT NULL OR coalesce(m.attachment_count, 0) > 0)
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(m)
                     RETURN m, sender.key AS sender_key, chat.key AS thread_id
                 }
@@ -10800,7 +10800,7 @@ class Neo4jService:
                       UNION
                       WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id = $case_id AND n.body IS NOT NULL {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id = $case_id AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {rk_filter}
                     ORDER BY n.timestamp DESC
                     LIMIT $fetch_cap
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(n)
@@ -10910,7 +10910,7 @@ class Neo4jService:
                       WITH p MATCH (p)-[:SENT_MESSAGE]->(n:Communication {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id=$case_id AND n.body IS NOT NULL {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id=$case_id AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {rk_filter}
                     RETURN count(n) AS c
                     """, params).single()
                 true_total += int(r["c"]) if r else 0
