@@ -34,7 +34,32 @@ from services.phone_normalise import person_key as phone_person_key  # noqa: E40
 from neo4j_client import Neo4jClient  # noqa: E402
 
 CHECK_ONLY = "--check" in sys.argv
+# WhatsApp/messaging JID: the part before @ is the full international number.
 JID_RE = re.compile(r"^email-(\+?\d{7,15})@(?:s\.whatsapp\.net|c\.us)$", re.IGNORECASE)
+# App-id / other non-phone key ending in a digit run (e.g.
+# telephone-number-14438221188, participant-12023902247, whatsapp-12404291127).
+# Facebook/Instagram/Telegram IDs also end in digits but libphonenumber rejects
+# them (verified), so the person_key validation below is the real gate.
+TRAILING_RE = re.compile(r"-(\+?\d{7,15})$")
+
+
+def candidate_phone_key(key: str) -> str | None:
+    """Return the phone-* key this identity should resolve to, or None.
+
+    Gated entirely by libphonenumber (person_key) so app-internal IDs
+    (facebook-messenger-100…, telegram-…, instagram-…) — which end in digits
+    but are NOT phone numbers — return None and are never merged."""
+    m = JID_RE.match(key)
+    if m:
+        # JIDs carry the full E.164 number — prepend '+'.
+        return phone_person_key("+" + m.group(1).lstrip("+"), default_region="US")
+    if not key.startswith("email-"):
+        m = TRAILING_RE.search(key)
+        if m:
+            # App-id numbers: conservative region-US parse (no forced '+'), so
+            # only unambiguous real phones validate; ambiguous IDs stay put.
+            return phone_person_key(m.group(1), default_region="US")
+    return None
 
 
 def main() -> int:
@@ -43,28 +68,21 @@ def main() -> int:
         rows = db.run_query(
             """
             MATCH (p:Person)
-            WHERE p.key STARTS WITH 'email-'
-              AND (p.key ENDS WITH '@s.whatsapp.net' OR p.key ENDS WITH '@c.us')
+            WHERE NOT p.key STARTS WITH 'phone-'
             RETURN p.key AS key, p.case_id AS case_id
             """
         )
-        print(f"WhatsApp-JID Person nodes found: {len(rows)}")
+        print(f"Non-phone Person nodes scanned: {len(rows)}")
         if CHECK_ONLY:
-            print("CHECK only — no changes. (0 means fully merged.)")
+            cands = sum(1 for r in rows if candidate_phone_key(r["key"]) and candidate_phone_key(r["key"]) != r["key"])
+            print(f"CHECK only — {cands} would merge to a phone identity (0 = fully resolved).")
             return 0
 
         merged = skipped = 0
         for row in rows:
             wakey = row["key"]
             cid = row["case_id"]
-            m = JID_RE.match(wakey)
-            if not m:
-                skipped += 1
-                continue
-            # WhatsApp JIDs are full international E.164 digits (country code,
-            # no '+') — parse as E.164, not region-US (which rejects every
-            # non-US number). Prepend '+'.
-            phkey = phone_person_key("+" + m.group(1).lstrip("+"), default_region="US")
+            phkey = candidate_phone_key(wakey)
             if not phkey or phkey == wakey:
                 skipped += 1
                 continue
@@ -90,16 +108,16 @@ def main() -> int:
             if merged % 100 == 0:
                 print(f"  merged {merged}/{len(rows)}...")
 
-        print(f"DONE: merged {merged}, skipped {skipped} (non-numeric/invalid JIDs)")
+        print(f"DONE: merged {merged} into phone identities, "
+              f"skipped {skipped} (not phone-resolvable: app IDs / emails / names / invalid formats)")
         remaining = db.run_query(
             """
-            MATCH (p:Person)
-            WHERE p.key STARTS WITH 'email-'
-              AND (p.key ENDS WITH '@s.whatsapp.net' OR p.key ENDS WITH '@c.us')
+            MATCH (p:Person) WHERE NOT p.key STARTS WITH 'phone-'
+              AND p.key =~ '(?i)email-\\+?[0-9]{7,15}@(s\\.whatsapp\\.net|c\\.us)'
             RETURN count(p) AS c
             """
         )
-        print(f"WhatsApp-JID nodes remaining: {int(remaining[0]['c']) if remaining else '?'}")
+        print(f"Phone-resolvable JID nodes still unmerged: {int(remaining[0]['c']) if remaining else '?'}")
         return 0
     finally:
         db.close()
