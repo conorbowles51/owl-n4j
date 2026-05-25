@@ -5874,6 +5874,61 @@ class Neo4jService:
                 "phone_owner_name": owner.get("name", "") if owner else "",
             }
 
+    def search_persons(
+        self,
+        case_id: str,
+        q: str,
+        limit: int = 20,
+        exclude_key: Optional[str] = None,
+    ) -> List[dict]:
+        """Search Person nodes by name / phone number / key — powers the
+        merge-identity PICKER so an investigator selects a real candidate
+        (seeing their name + activity + device span) instead of typing a raw
+        key by hand. Reads the denormalised comm counts, so it's instant.
+        """
+        q = (q or "").strip()
+        if not q:
+            return []
+        digits = re.sub(r"[^0-9]", "", q)
+        params = {
+            "case_id": case_id, "q": q.lower(), "digits": digits,
+            "limit": int(limit), "exclude": exclude_key or "",
+        }
+        with self._driver.session() as session:
+            rows = session.run(
+                """
+                MATCH (p:Person {case_id:$case_id, source_type:'cellebrite'})
+                WHERE p.key IS NOT NULL AND p.key <> $exclude
+                  AND (
+                    toLower(coalesce(p.name,'')) CONTAINS $q
+                    OR ($digits <> '' AND (
+                         p.key CONTAINS $digits
+                         OR any(n IN coalesce(p.phone_numbers,[])
+                                WHERE replace(replace(replace(replace(n,' ',''),'-',''),'(',''),')','') CONTAINS $digits)
+                    ))
+                  )
+                RETURN p.key AS key, p.name AS name, p.phone_numbers AS phone_numbers,
+                       coalesce(p.comm_calls,0)  AS calls,
+                       coalesce(p.comm_msgs,0)   AS msgs,
+                       coalesce(p.comm_emails,0) AS emails,
+                       size(coalesce(p.comm_report_keys,[])) AS devices,
+                       coalesce(p.is_phone_owner,false) AS is_owner
+                ORDER BY (coalesce(p.comm_calls,0)+coalesce(p.comm_msgs,0)+coalesce(p.comm_emails,0)) DESC, name
+                LIMIT $limit
+                """,
+                params,
+            )
+            return [{
+                "key": r["key"],
+                "name": r["name"] or r["key"],
+                "phone_numbers": list(r["phone_numbers"] or []),
+                "calls": int(r["calls"] or 0),
+                "msgs": int(r["msgs"] or 0),
+                "emails": int(r["emails"] or 0),
+                "devices": int(r["devices"] or 0),
+                "is_owner": bool(r["is_owner"]),
+            } for r in rows]
+
     def merge_person_identities(
         self,
         case_id: str,

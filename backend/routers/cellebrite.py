@@ -165,6 +165,23 @@ def patch_phone_report(
     return updated
 
 
+@router.get("/persons/search")
+def persons_search(
+    case_id: str = Query(...),
+    q: str = Query(..., min_length=1),
+    exclude_key: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Search persons by name / number / key for the merge-identity picker —
+    so an investigator selects a real candidate (with its activity + device
+    span shown) rather than typing a raw key."""
+    _require_case_access(case_id, current_user, db)
+    return {"results": neo4j_service.search_persons(
+        case_id, q, limit=limit, exclude_key=exclude_key)}
+
+
 class MergePersonsRequest(BaseModel):
     """POST body for /persons/merge — fold secondary identities into a primary."""
     primary_key: str

@@ -3170,6 +3170,15 @@ export const cellebriteOverviewAPI = {
       body: JSON.stringify({ primary_key: primaryKey, secondary_keys: secondaryKeys }),
     });
   },
+  // Search persons by name / number / key for the merge picker — returns
+  // candidates with their activity + device span so the investigator selects
+  // a real entity rather than typing a key.
+  searchPersons: (caseId, q, { excludeKey = null, limit = 20 } = {}) => {
+    const p = new URLSearchParams({ case_id: caseId, q });
+    if (excludeKey) p.append('exclude_key', excludeKey);
+    p.append('limit', String(limit));
+    return fetchAPI(`/cellebrite/persons/search?${p.toString()}`);
+  },
 };
 
 
