@@ -161,6 +161,27 @@ def _generate_person_key(
     # email / app-id / name branches below instead of being mis-keyed as
     # phones.
     from services.phone_normalise import person_key as _phone_key
+
+    # WhatsApp / messaging JIDs embed the phone number: "<digits>@s.whatsapp.net"
+    # or "<digits>@c.us". Recognise these as the PHONE identity so a person's
+    # WhatsApp thread merges with their SMS/calls instead of becoming a separate
+    # email-keyed node. (2026-05-25: a key contact's 72k-message WhatsApp thread
+    # was split from her phone number — `12404291127@s.whatsapp.net` was keyed
+    # `email-...` — because the `@` sent it down the email branch below.)
+    # `@g.us` is a GROUP JID, not a person, so it's deliberately excluded.
+    if identifier:
+        _jid = re.match(r"^\+?(\d{7,15})@(?:s\.whatsapp\.net|c\.us)$",
+                        identifier.strip(), re.IGNORECASE)
+        if _jid:
+            # WhatsApp JIDs carry the FULL international number (country code
+            # included, no '+'), e.g. 50377209313 = +503 7720 9313 (El
+            # Salvador). Parse as E.164 by prepending '+', NOT via the case's
+            # default region — region-US parsing rejects every non-US JID
+            # (that stranded 410 Salvadoran/UK contacts on the first pass).
+            _wpk = _phone_key("+" + _jid.group(1).lstrip("+"), default_region=default_region)
+            if _wpk:
+                return _wpk
+
     pk = _phone_key(identifier, default_region=default_region)
     if pk:
         return pk
