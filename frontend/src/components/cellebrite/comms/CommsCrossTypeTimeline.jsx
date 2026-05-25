@@ -55,6 +55,12 @@ export default function CommsCrossTypeTimeline({
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  // Lazy-load state: follow the backend's keyset `next_cursor` and APPEND on
+  // scroll, instead of stopping at the first page (the old behaviour, which
+  // also showed the misleading per-type fetch-pool count as the "total").
+  const [cursor, setCursor] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
 
   // Sort: 'desc' (newest first), 'asc' (oldest first), or 'type' (group
   // by message/call/email then by timestamp DESC within group).
@@ -101,12 +107,14 @@ export default function CommsCrossTypeTimeline({
       if (!cancelled) {
         setItems(data.items || []);
         setTotal(data.total || 0);
+        setCursor(data.next_cursor || null);
         setLoading(false);
       }
     }).catch(() => {
       if (!cancelled) {
         setItems([]);
         setTotal(0);
+        setCursor(null);
         setLoading(false);
       }
     });
@@ -142,6 +150,47 @@ export default function CommsCrossTypeTimeline({
   const topPad = startIdx * ROW_HEIGHT;
   const bottomPad = Math.max(0, totalHeight - endIdx * ROW_HEIGHT);
 
+  // Lazy-load: follow the backend's keyset next_cursor and APPEND, so the
+  // timeline isn't capped at the first page. `cursor === null` => fully loaded.
+  const buildFetchArgs = () => ({
+    fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
+    toKeys: toKeys.size > 0 ? [...toKeys] : null,
+    participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
+    types: [...types],
+    reportKeys: reportKeys.size > 0 ? [...reportKeys] : null,
+    sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
+    startDate,
+    endDate,
+    limit: 2000,
+    sort: sortMode === 'asc' ? 'asc' : 'desc',
+  });
+
+  const loadMore = () => {
+    if (!cursor || loadingMoreRef.current) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    cellebriteCommsAPI.getBetween(caseId, { ...buildFetchArgs(), cursor })
+      .then((data) => {
+        setItems((prev) => {
+          const seen = new Set(prev.map((i) => i.id || i.node_key));
+          const fresh = (data.items || []).filter((i) => !seen.has(i.id || i.node_key));
+          return [...prev, ...fresh];
+        });
+        setCursor(data.next_cursor || null);
+      })
+      .finally(() => { loadingMoreRef.current = false; setLoadingMore(false); });
+  };
+
+  // Pull the next page when the visible window nears the bottom of what's
+  // loaded. scrollTop is already tracked for virtualization, so this just
+  // watches it.
+  useEffect(() => {
+    if (!expanded || !cursor || loadingMoreRef.current) return;
+    const nearBottom = (scrollTop + viewportH) >= (orderedItems.length * ROW_HEIGHT) - ROW_HEIGHT * 12;
+    if (nearBottom) loadMore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scrollTop, viewportH, orderedItems.length, cursor, expanded]);
+
   // Re-measure viewport on expand / data change
   useEffect(() => {
     if (!expanded) return;
@@ -173,8 +222,10 @@ export default function CommsCrossTypeTimeline({
           <span className="font-semibold">Conversation timeline</span>
           <span className="text-light-500">{contextLabel}</span>
           <span className="text-light-400">·</span>
-          <span className="text-light-500">{total.toLocaleString()} items</span>
-          {loading && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
+          <span className="text-light-500">
+            {orderedItems.length.toLocaleString()}{cursor ? '+' : ''} loaded
+          </span>
+          {(loading || loadingMore) && <Loader2 className="w-3 h-3 animate-spin text-light-400 ml-1" />}
         </button>
         {expanded && (
           <div className="inline-flex items-center bg-white border border-light-300 rounded overflow-hidden text-[11px] flex-shrink-0 mr-1">
