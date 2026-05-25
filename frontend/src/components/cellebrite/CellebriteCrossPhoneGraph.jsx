@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import {
   Loader2, ZoomIn, ZoomOut, Maximize2,
@@ -180,6 +180,28 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       }
     }
   });
+
+  // Pre-paint camera clamp.
+  //
+  // The library auto-fits the moment a new graphData reference lands.
+  // onEngineTick + onEngineStop both run AFTER the first paint —
+  // which means the user sees one frame of the lib's auto-fit before
+  // we yank the camera back. That single frame is the "snap to
+  // neutral" the user reported.
+  //
+  // Fix: useLayoutEffect runs synchronously after React commits but
+  // BEFORE the browser paints. We slam the camera back here so the
+  // very first painted frame already has the user's view restored.
+  // Pair with onEngineTick (every-frame clamp during warm-up) and
+  // onEngineStop (final release) for a zero-flicker handover.
+  useLayoutEffect(() => {
+    const snap = cameraSnapshotRef.current;
+    if (!snap || !fgRef.current) return;
+    try {
+      fgRef.current.centerAt(snap.x, snap.y, 0);
+      fgRef.current.zoom(snap.z, 0);
+    } catch { /* ref not ready */ }
+  }, [graphData]);
   // Depth toggle — 1 (anchors + direct contacts) is the safer default;
   // 2 hops off-anchor and is best for "find connections-of-connections"
   // exploration. Only meaningful when a perspective is active.
@@ -966,19 +988,39 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
-          // Once the post-refetch simulation settles, restore the
-          // camera the user was looking at before the toggle so they
-          // never lose their place. Snapshot is only populated when
-          // there was a prior view to preserve, so the initial load's
-          // default fit-to-view behaviour is unaffected.
-          onEngineStop={() => {
+          // Camera lock during post-refetch sim warm-up.
+          //
+          // The library auto-fits when graphData changes — that's the
+          // visible "snap to neutral" the user pushed back on. We can't
+          // disable the auto-fit, but we CAN overwrite the camera on
+          // every tick while a snapshot is active so the user never
+          // sees the auto-fit's intermediate state.
+          //
+          // onEngineTick fires every frame during warm-up; we slam
+          // centerAt + zoom back to the snapshot value each frame.
+          // The lib's own zoom mutations happen between ticks, so the
+          // user sees only OUR camera position. Cheap (two setters per
+          // frame for the ~100 cooldownTicks).
+          //
+          // Snapshot is cleared in onEngineStop so future user-driven
+          // pan/zoom is never overwritten.
+          onEngineTick={() => {
             const snap = cameraSnapshotRef.current;
             if (!snap || !fgRef.current) return;
             try {
               fgRef.current.centerAt(snap.x, snap.y, 0);
               fgRef.current.zoom(snap.z, 0);
-            } catch {
-              /* ref not ready yet — skip */
+            } catch { /* ref not ready */ }
+          }}
+          onEngineStop={() => {
+            // Final clamp + release. Without this, the very last tick
+            // might let the lib's auto-fit win.
+            const snap = cameraSnapshotRef.current;
+            if (snap && fgRef.current) {
+              try {
+                fgRef.current.centerAt(snap.x, snap.y, 0);
+                fgRef.current.zoom(snap.z, 0);
+              } catch { /* ref not ready */ }
             }
             cameraSnapshotRef.current = null;
           }}
