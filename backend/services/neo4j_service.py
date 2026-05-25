@@ -5926,6 +5926,26 @@ class Neo4jService:
                 ).single()
                 if res:
                     merged.append(sk)
+            # Refresh the survivor's denormalised comm counts + device span
+            # (the rollup reads these as properties; the merge just changed the
+            # node's degree, so stale values would mis-report it). Single node,
+            # cheap. Mirrors scripts/backfill_person_comm_counts.py.
+            if merged:
+                session.run(
+                    """
+                    MATCH (p:Person {case_id:$cid, key:$k})
+                    SET p.comm_calls  = count{ (p)-[:CALLED]->() } + count{ (p)<-[:CALLED_TO]-() },
+                        p.comm_msgs   = count{ (p)-[:SENT_MESSAGE]->() },
+                        p.comm_emails = count{ (p)-[:EMAILED]->() } + count{ (p)<-[:SENT_TO]-() },
+                        p.comm_report_keys = apoc.coll.toSet(
+                          [ (p)-[:CALLED|CALLED_TO|SENT_MESSAGE|EMAILED|SENT_TO]-(x)
+                            WHERE x.cellebrite_report_key IS NOT NULL | x.cellebrite_report_key ]
+                          + [ (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(m:Communication)
+                              WHERE m.cellebrite_report_key IS NOT NULL | m.cellebrite_report_key ]
+                        )
+                    """,
+                    cid=case_id, k=primary_key,
+                )
             deg = session.run(
                 "MATCH (p:Person {case_id:$cid, key:$k}) "
                 "RETURN size([(p)--() | 1]) AS d, p.aliases AS aliases",
@@ -9484,6 +9504,8 @@ class Neo4jService:
             total = session.run(
                 f"""
                 CALL {{
+                  MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite', cellebrite_report_key:$rk}}) RETURN p
+                  UNION
                   MATCH (c:PhoneCall {{case_id:$case_id, cellebrite_report_key:$rk}})-[:CALLED|CALLED_TO]-(p:Person) RETURN p
                   UNION
                   MATCH (m:Communication {{case_id:$case_id, cellebrite_report_key:$rk}})<-[:SENT_MESSAGE]-(p:Person) WHERE m.body IS NOT NULL RETURN p
@@ -9502,6 +9524,11 @@ class Neo4jService:
             result = session.run(
                 f"""
                 CALL {{
+                  // Saved contacts on this device (incl. zero-comm address-book
+                  // entries) — a 0/0/0 branch so they're never dropped.
+                  MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite', cellebrite_report_key:$rk}})
+                  RETURN p AS person, 0 AS calls, 0 AS msgs, 0 AS emails
+                  UNION ALL
                   MATCH (c:PhoneCall {{case_id:$case_id, cellebrite_report_key:$rk}})
                   MATCH (p:Person)-[:CALLED|CALLED_TO]-(c)
                   RETURN p AS person, count(DISTINCT c) AS calls, 0 AS msgs, 0 AS emails
@@ -9608,13 +9635,13 @@ class Neo4jService:
             display_format,
         )
 
-        # Hard cap on the Person fanout — no real investigation has 10K+
-        # unique humans in their contacts. The cap is a safety rail so a
-        # malformed case (or a phantom 100K-Person case) can't wedge
-        # the backend like the unbounded version did. If we ever hit
-        # this limit in real data, surface a "truncated" hint in the
-        # UI rather than uncapping silently.
-        PERSON_CAP = 5000
+        # Safety rail only — raised from 5000 to 100000 (2026-05-25) so it
+        # never bites a real case (this one has ~14.5k persons and was hitting
+        # the old cap, hiding real contacts). Counts below are now degree-based
+        # (count{}, O(1) per person) so the whole person set processes fast and
+        # uncapping is safe. The "truncated" hint only fires in the
+        # genuinely-pathological >100k case.
+        PERSON_CAP = 100000
         # Cap aliases per bucket so a really busy number (like a
         # delivery service that 50 phones all named differently) doesn't
         # blow out the response payload.
@@ -9654,6 +9681,16 @@ class Neo4jService:
             # so the limit-N cap still favours the busiest contacts.
             # Doing it as a separate query also means a count failure
             # on one relationship type doesn't blow up the persons list.
+            # Counts + device span are DENORMALISED onto the Person nodes
+            # (comm_calls / comm_msgs / comm_emails / comm_report_keys) by
+            # scripts/backfill_person_comm_counts.py, so the rollup reads them as
+            # plain properties — instant, even on high-degree unified contacts.
+            # Live per-request counting (OPTIONAL MATCH + count(DISTINCT), or
+            # count{}) traverses every relationship and timed out on a 70k-rel
+            # contact, and the except:pass then silently zeroed every count —
+            # that was the "0 messages / 0 calls" the investigator saw. Re-run
+            # the backfill after a bulk ingest; the merge endpoint refreshes the
+            # survivor inline.
             persons_raw = list(session.run(
                 f"""
                 MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite'}})
@@ -9662,101 +9699,38 @@ class Neo4jService:
                        p.name AS name,
                        p.phone_numbers AS phone_numbers,
                        p.cellebrite_report_key AS report_key,
-                       coalesce(p.is_phone_owner, false) AS is_phone_owner
+                       coalesce(p.is_phone_owner, false) AS is_phone_owner,
+                       coalesce(p.comm_calls, 0) AS calls,
+                       coalesce(p.comm_msgs, 0) AS msgs,
+                       coalesce(p.comm_emails, 0) AS emails,
+                       coalesce(p.comm_report_keys, []) AS comm_report_keys
                 LIMIT $person_cap
                 """,
                 params,
             ))
 
-            keys = [r["key"] for r in persons_raw if r["key"]]
-            counts: Dict[str, Dict[str, Any]] = {
-                k: {"calls": 0, "calls_lo": None, "calls_hi": None,
-                    "msgs": 0, "msgs_lo": None, "msgs_hi": None,
-                    "emails": 0, "emails_lo": None, "emails_hi": None}
-                for k in keys
-            }
-            # 2-4) Three independent count queries. Each runs against
-            # the same case_id + the list of person keys we just
-            # picked. UNWIND keeps it one round-trip per relationship
-            # type regardless of person count. A per-type failure no
-            # longer affects the others.
-            count_params = {"case_id": case_id, "keys": keys}
-
-            def _accum(query: str, dst_count: str, dst_lo: str, dst_hi: str):
-                try:
-                    rs = session.run(query, count_params)
-                    for rec in rs:
-                        k = rec["key"]
-                        if k in counts:
-                            counts[k][dst_count] = int(rec["n"] or 0)
-                            counts[k][dst_lo] = rec["lo"]
-                            counts[k][dst_hi] = rec["hi"]
-                except Exception:
-                    # Per-relationship-type failures are recoverable —
-                    # we want the persons list to render even if the
-                    # email count query (say) blows up. The aggregate
-                    # interaction tally will just under-count.
-                    pass
-
-            _accum(
-                """
-                UNWIND $keys AS k
-                MATCH (p:Person {key:k, case_id:$case_id})
-                OPTIONAL MATCH (p)-[:CALLED|CALLED_TO]-(c:PhoneCall {case_id:$case_id})
-                RETURN k AS key,
-                       count(DISTINCT c) AS n,
-                       min(c.timestamp) AS lo,
-                       max(c.timestamp) AS hi
-                """,
-                "calls", "calls_lo", "calls_hi",
-            )
-            _accum(
-                """
-                UNWIND $keys AS k
-                MATCH (p:Person {key:k, case_id:$case_id})
-                OPTIONAL MATCH (p)-[:SENT_MESSAGE]-(m:Communication {case_id:$case_id})
-                RETURN k AS key,
-                       count(DISTINCT m) AS n,
-                       min(m.timestamp) AS lo,
-                       max(m.timestamp) AS hi
-                """,
-                "msgs", "msgs_lo", "msgs_hi",
-            )
-            _accum(
-                """
-                UNWIND $keys AS k
-                MATCH (p:Person {key:k, case_id:$case_id})
-                OPTIONAL MATCH (p)-[:EMAILED|SENT_TO]-(e:Email {case_id:$case_id})
-                RETURN k AS key,
-                       count(DISTINCT e) AS n,
-                       min(e.timestamp) AS lo,
-                       max(e.timestamp) AS hi
-                """,
-                "emails", "emails_lo", "emails_hi",
-            )
-
-            # Materialise into the same record shape the previous
-            # combined query produced, so the downstream bucketing
-            # logic doesn't change at all.
             persons = []
             for r in persons_raw:
-                k = r["key"]
-                c = counts.get(k, {})
+                # Device span = the reports the person's COMMS touch, so a
+                # unified cross-phone contact shows on every phone they have
+                # comms on (not just their node's single home-report). Fall
+                # back to the home-report when the denorm span is unset.
+                rks = list(r["comm_report_keys"] or [])
+                if not rks and r["report_key"]:
+                    rks = [r["report_key"]]
                 persons.append({
-                    "key": k,
+                    "key": r["key"],
                     "name": r["name"],
                     "phone_numbers": r["phone_numbers"],
                     "report_key": r["report_key"],
+                    "comm_report_keys": rks,
                     "is_phone_owner": r["is_phone_owner"],
-                    "calls": c.get("calls", 0),
-                    "calls_lo": c.get("calls_lo"),
-                    "calls_hi": c.get("calls_hi"),
-                    "msgs": c.get("msgs", 0),
-                    "msgs_lo": c.get("msgs_lo"),
-                    "msgs_hi": c.get("msgs_hi"),
-                    "emails": c.get("emails", 0),
-                    "emails_lo": c.get("emails_lo"),
-                    "emails_hi": c.get("emails_hi"),
+                    "calls": int(r["calls"] or 0),
+                    "calls_lo": None, "calls_hi": None,
+                    "msgs": int(r["msgs"] or 0),
+                    "msgs_lo": None, "msgs_hi": None,
+                    "emails": int(r["emails"] or 0),
+                    "emails_lo": None, "emails_hi": None,
                 })
 
             person_count = len(persons)
@@ -9844,8 +9818,10 @@ class Neo4jService:
 
                 for b in target_buckets:
                     b["person_keys"].add(key)
-                    if rk:
-                        b["report_keys"].add(rk)
+                    # Device span from the reports the person's comms touch, so
+                    # a unified cross-phone contact shows on every phone.
+                    for _crk in (rec.get("comm_report_keys") or ([rk] if rk else [])):
+                        b["report_keys"].add(_crk)
                     if rec["is_phone_owner"]:
                         b["is_phone_owner"] = True
 
@@ -9882,8 +9858,8 @@ class Neo4jService:
                     if alias is None:
                         alias = {"name": name, "key": key, "report_keys": set()}
                         b["_alias_map"][alias_key] = alias
-                    if rk:
-                        alias["report_keys"].add(rk)
+                    for _crk in (rec.get("comm_report_keys") or ([rk] if rk else [])):
+                        alias["report_keys"].add(_crk)
 
             # Apply optional search filter on number OR alias name.
             if search:
