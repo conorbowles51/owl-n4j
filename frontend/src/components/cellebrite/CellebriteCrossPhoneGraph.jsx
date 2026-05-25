@@ -4,13 +4,16 @@ import {
   Loader2, ZoomIn, ZoomOut, Maximize2,
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
   Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
-  Bluetooth, Filter as FilterIcon, ChevronRight,
+  Bluetooth, Filter as FilterIcon, ChevronRight, Tag, Clock,
+  FolderTree, UserCheck, Move, MousePointerSquareDashed,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import { usePerspective } from '../../context/PerspectiveContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
+import { requestCellebriteTabSwitch, setCommsHandoff } from '../../utils/commsHandoff';
+import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 
 /**
  * Convert a `#rrggbb` hex string to `rgba()` with the supplied alpha.
@@ -114,6 +117,7 @@ const NODE_COLORS = {
 export default function CellebriteCrossPhoneGraph({ caseId }) {
   const phoneCtx = usePhoneReports();
   const perspective = usePerspective();
+  const { selectEntity } = useCellebriteSelection();
 
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
@@ -227,6 +231,172 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // mode also hits the backend so the user can find Persons that
   // aren't in the rendered subset at all.
   const [searchMode, setSearchMode] = useState('filter'); // 'filter' | 'search'
+
+  // Master "labels all on" toggle. When false (default) labels show
+  // only on hover / search match / Phones. When true every node
+  // renders its small label. Toolbar button + keyboard shortcut.
+  const [labelsAllOn, setLabelsAllOn] = useState(false);
+
+  // Interaction mode for the canvas. 'drag' is the default — clicks
+  // / drags move nodes one at a time. Hold Shift to enter 'select'
+  // — drag a rubber-band box across the canvas; nodes inside are
+  // batched as a multi-selection that the cross-tab pivot bar can
+  // pivot on.
+  const [interactionMode, setInteractionMode] = useState('drag'); // 'drag' | 'select'
+  // Hold-Shift binding (per the user's spec). Tracked via window
+  // keydown/keyup so we don't need to keep focus on a specific elem.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Shift') return;
+      setInteractionMode(e.type === 'keydown' ? 'select' : 'drag');
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKey);
+    };
+  }, []);
+
+  // Drag-box state — only used in select mode. Stored in screen
+  // (client) coordinates; converted to canvas coords when committing
+  // the selection via fgRef.current.screen2GraphCoords().
+  const [selectionBox, setSelectionBox] = useState(null);
+  const selectionBoxStartRef = useRef(null);
+  // Persistent multi-selection (node ids). Survives canvas redraws
+  // so the user can pivot on the selection from the perspective bar.
+  const [multiSelection, setMultiSelection] = useState(new Set());
+
+  // Pending centre-and-fan focus id. When the user clicks a Person
+  // search result we both rebuild the graph (via setPerspective)
+  // AND want to centre+fan the result. The rebuild is async; this
+  // ref stores the focus id until the next graphData arrival, at
+  // which point the effect below runs the layout.
+  const pendingFanRef = useRef(null);
+
+  // Pivot the active perspective (or the multi-selection if it's
+  // non-empty) into another Cellebrite tab. Each target tab has a
+  // slightly different intake contract:
+  //
+  //   - 'comms'           — Comms Center reads _filter_intent: 'comms'
+  //                          from the selection rail and pre-fills the
+  //                          participants chip with the person keys.
+  //   - 'communications'  — Same person-keys handoff; Communications
+  //                          uses the perspective context directly so
+  //                          we just leave the perspective active.
+  //   - 'timeline' / 'events' / 'locations' / 'files' / 'unified' —
+  //                          Backed by the perspective context which
+  //                          they read on mount. We just switch tabs;
+  //                          they pick the lens up from there.
+  //
+  // Selection sourcing:
+  //   - If the user has multi-selected nodes, derive person keys from
+  //     those (Person ids → strip 'person-' prefix) and use as the
+  //     pivot lens.
+  //   - Otherwise fall back to the active perspective.
+  const pivotTo = useCallback((tabId) => {
+    // Resolve the lens — multi-selection wins if non-empty
+    let personKeys = null;
+    let label = null;
+    if (multiSelection.size > 0) {
+      const ids = [...multiSelection];
+      const persons = ids
+        .map((id) => graphData.nodes.find((n) => n.id === id))
+        .filter((n) => n && n.type !== 'Resource' && n.type !== 'PhoneReport');
+      personKeys = persons
+        .map((n) => (n.id || '').replace(/^person-/, ''))
+        .filter(Boolean);
+      label = persons.length === 1
+        ? (persons[0].name || personKeys[0])
+        : `${persons.length} people`;
+      // Replace the perspective with this multi-selection so other
+      // tabs read a coherent lens too.
+      if (perspective && personKeys.length > 0) {
+        perspective.setPerspective(personKeys, label, 'graph.multi-select-pivot');
+      }
+    } else if (perspective?.hasPerspective) {
+      personKeys = [...(perspective.activeKeys || [])];
+      label = perspective.active?.label;
+    }
+
+    // Always publish a _filter_intent so the Comms Center can pre-fill
+    // its participants chip from the rail event, even if it hasn't
+    // read the perspective context yet.
+    if (personKeys && personKeys.length > 0) {
+      selectEntity({
+        type: 'name-action',
+        id: `graph-pivot-${tabId}-${Date.now()}`,
+        caseId,
+        payload: { _filter_intent: 'comms', person_keys: personKeys },
+        source: 'graph.pivot',
+      });
+    }
+
+    // Some tabs also want the canonical phone-keys handoff. Pass
+    // every report_key the lens touches; downstream filters narrow
+    // the device set when the user is anchored on a single phone.
+    const reportKeys = phoneCtx?.reports?.map((r) => r.report_key)
+      .filter(Boolean) || [];
+    if (tabId === 'comms' || tabId === 'communications') {
+      setCommsHandoff({
+        caseId,
+        startTs: null,
+        endTs: null,
+        reportKeys,
+        source: 'graph.pivot',
+      });
+    }
+
+    requestCellebriteTabSwitch(tabId);
+  }, [caseId, graphData.nodes, multiSelection, perspective, phoneCtx, selectEntity]);
+
+  // centreAndFan: pin a node at origin, arrange its neighbours in
+  // a circle around it, zoom to fit. Implements the user's "move
+  // that node out of the cluster and circle the cluster around it"
+  // request. Pins released ~1.2s later so the user can continue
+  // to drag if they want.
+  const centreAndFan = useCallback((focusId, nodes, links) => {
+    if (!fgRef.current) return;
+    const focus = nodes.find((n) => n.id === focusId);
+    if (!focus) return;
+    const neighbourIds = new Set();
+    for (const l of links) {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (s === focusId) neighbourIds.add(t);
+      else if (t === focusId) neighbourIds.add(s);
+    }
+    focus.fx = 0; focus.fy = 0; focus.x = 0; focus.y = 0;
+    const ring = [...neighbourIds]
+      .map((id) => nodes.find((n) => n.id === id))
+      .filter(Boolean);
+    const R = Math.max(140, 22 * Math.sqrt(ring.length));
+    ring.forEach((n, i) => {
+      const theta = (2 * Math.PI * i) / Math.max(1, ring.length);
+      n.fx = Math.cos(theta) * R;
+      n.fy = Math.sin(theta) * R;
+      n.x = n.fx;
+      n.y = n.fy;
+    });
+    try { fgRef.current.d3ReheatSimulation?.(); } catch { /* ignore */ }
+    fgRef.current.centerAt(0, 0, 600);
+    fgRef.current.zoom(Math.min(2.2, 700 / (R * 2 + 120)), 600);
+    setTimeout(() => {
+      if (focus) { delete focus.fx; delete focus.fy; }
+      ring.forEach((n) => { delete n.fx; delete n.fy; });
+    }, 1200);
+  }, []);
+
+  // Run the pending centre-and-fan once the rebuilt graphData
+  // contains the target focus id.
+  useEffect(() => {
+    const focusId = pendingFanRef.current;
+    if (!focusId) return;
+    const exists = graphData.nodes.some((n) => n.id === focusId);
+    if (!exists) return;
+    centreAndFan(focusId, graphData.nodes, graphData.links);
+    pendingFanRef.current = null;
+  }, [graphData, centreAndFan]);
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -550,37 +720,63 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ? phoneCtx.getIdentityByKey(phoneKey)
       : null;
 
-    // Label helper — draws a white rounded-pill background behind the
-    // text so labels read clearly off any canvas background. Font size
-    // floors at 4.5 (canvas units) so the text never disappears below
-    // a usable threshold; the lib divides by globalScale to keep
-    // labels readable in absolute screen pixels as the user zooms.
-    const drawLabel = (text, atY, opts = {}) => {
-      if (!text) return;
-      const { bold = false, color = '#1f2937' } = opts;
-      // We want ~12px ON SCREEN regardless of zoom. globalScale=1
-      // means 1 canvas unit per pixel; the lib paints in canvas
-      // coords so we divide.
-      const targetPx = bold ? 13 : 12;
-      const fontSize = Math.max(4.5, targetPx / globalScale);
+    // Per-node label state. We render one of:
+    //   - 'hidden'  — no label
+    //   - 'small'   — compact label (default visible state)
+    //   - 'hover'   — bigger label on the hovered node
+    //   - 'match'   — coloured label for search matches
+    //   - 'pinned'  — bold label for Phones (always shown)
+    // Callers pass the state to drawLabel which picks size + colour.
+    const isHovered = hoveredNode && hoveredNode.id === node.id;
+    const isMatch = searchHighlightIds && searchHighlightIds.has(node.id);
+
+    // What label state does this node get?
+    //   - Phones: always 'pinned'
+    //   - Hovered node: 'hover' (overrides others)
+    //   - Search matches: 'match'
+    //   - All-labels-on master toggle: 'small'
+    //   - Otherwise: 'hidden'
+    let labelState;
+    if (isReport) labelState = 'pinned';
+    else if (isHovered) labelState = 'hover';
+    else if (isMatch) labelState = 'match';
+    else if (labelsAllOn) labelState = 'small';
+    else labelState = 'hidden';
+
+    const drawLabel = (text, atY) => {
+      if (!text || labelState === 'hidden') return;
+      // Target on-screen pixels per state. Bigger on hover/match so
+      // the user can read the focused node easily; small everywhere
+      // else so the canvas stays scannable when "show all" is on.
+      const TARGETS = { small: 9, hover: 14, match: 13, pinned: 12 };
+      const COLORS = {
+        small: '#475569',
+        hover: '#0f172a',
+        match: '#0e7490', // cyan-700 — pairs with the cyan halo
+        pinned: '#1f2937',
+      };
+      const BOLD = { small: false, hover: true, match: true, pinned: true };
+      const targetPx = TARGETS[labelState];
+      const fontSize = Math.max(4, targetPx / globalScale);
+      const bold = BOLD[labelState];
       ctx.font = `${bold ? 'bold ' : ''}${fontSize}px sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       const metrics = ctx.measureText(text);
-      const padX = 4 / globalScale;
-      const padY = 2 / globalScale;
+      const padX = 3.5 / globalScale;
+      const padY = 1.8 / globalScale;
       const w = metrics.width + padX * 2;
       const h = fontSize + padY * 2;
       const x = node.x - w / 2;
       const y = atY - h / 2;
 
       // White pill background
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+      ctx.fillStyle = labelState === 'match'
+        ? 'rgba(236, 254, 255, 0.95)' // cyan-50
+        : 'rgba(255, 255, 255, 0.92)';
       ctx.beginPath();
-      const radius = Math.min(4 / globalScale, h / 2);
-      // Manual rounded rect (roundRect is patchy across browsers in
-      // canvas — we draw it ourselves for compatibility).
+      const radius = Math.min(3.5 / globalScale, h / 2);
       ctx.moveTo(x + radius, y);
       ctx.lineTo(x + w - radius, y);
       ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
@@ -593,14 +789,16 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.closePath();
       ctx.fill();
 
-      // Subtle 1px ring so the pill reads against very pale
-      // backgrounds (light grid lines etc.)
-      ctx.lineWidth = Math.max(0.4, 0.5 / globalScale);
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.55)';
+      // Subtle ring — slightly stronger for match labels so they
+      // pop against neighbouring un-coloured pills.
+      ctx.lineWidth = Math.max(0.35, (labelState === 'match' ? 0.8 : 0.5) / globalScale);
+      ctx.strokeStyle = labelState === 'match'
+        ? 'rgba(34, 211, 238, 0.7)'
+        : 'rgba(148, 163, 184, 0.45)';
       ctx.stroke();
 
       // Text
-      ctx.fillStyle = color;
+      ctx.fillStyle = COLORS[labelState];
       ctx.fillText(text, node.x, atY);
     };
 
@@ -664,9 +862,19 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         ctx.stroke();
       }
 
-      // Label — always rendered now (with a white pill background it
-      // stays readable even in dense resource clusters). Truncated to
-      // 28 chars so domain / SSID strings don't take over the canvas.
+      // Multi-select ring (drag-box selection)
+      if (multiSelection.has(node.id)) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r + 6, 0, 2 * Math.PI);
+        ctx.lineWidth = Math.max(1.8, 2.4 / globalScale);
+        ctx.strokeStyle = '#10b981'; // emerald-500 — distinct from cyan/gold
+        ctx.setLineDash([4 / globalScale, 3 / globalScale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Label — visible by default labels are off; hover/match/all-on
+      // controls visibility per labelState.
       const label = (node.name || '').substring(0, 28);
       drawLabel(label, node.y + r + (8 / globalScale));
       return;
@@ -749,11 +957,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.stroke();
     }
 
+    // Multi-select dashed ring
+    if (multiSelection.has(node.id)) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, rOuter + 5.5, 0, 2 * Math.PI);
+      ctx.lineWidth = Math.max(1.8, 2.4 / globalScale);
+      ctx.strokeStyle = '#10b981';
+      ctx.setLineDash([4 / globalScale, 3 / globalScale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     // Label — white pill background keeps Person names readable
     // against any backdrop, including dense clusters.
     const label = (node.name || '').substring(0, 28);
     drawLabel(label, node.y + rOuter + (10 / globalScale));
-  }, [phoneCtx, nodeEdgeTypes, edgeColorByType, searchHighlightIds]);
+  }, [phoneCtx, nodeEdgeTypes, edgeColorByType, searchHighlightIds, hoveredNode, labelsAllOn, multiSelection]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
   const handleZoomOut = () => fgRef.current?.zoom(fgRef.current.zoom() / 1.5, 300);
@@ -981,37 +1200,173 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         )}
       </div>
 
-      {/* Perspective banner — when active, signals that the graph is
-          rebuilt from a subset of the case. Single-click clear. */}
-      {perspective?.hasPerspective && (
-        <div className="flex items-center gap-2 px-4 py-1 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-900 flex-shrink-0">
-          <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
-            Anchored on:
-          </span>
-          <span className="truncate">
-            {perspective.active?.label}
-            {perspective.active?.personKeys?.length > 1 && (
-              <span className="ml-1 text-amber-600">
-                ({perspective.active.personKeys.length})
+      {/* Perspective + multi-selection banner. Surfaces either:
+            - The currently-anchored perspective (Anchored on …)
+            - The drag-box multi-selection (N nodes selected)
+          Either source produces a lens the user can pivot into
+          another tab via the right-hand button group.
+       */}
+      {(perspective?.hasPerspective || multiSelection.size > 0) && (
+        <div className="flex items-center gap-2 px-4 py-1 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-900 flex-shrink-0 flex-wrap">
+          {multiSelection.size > 0 ? (
+            <>
+              <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
+                Selected:
               </span>
-            )}
+              <span>{multiSelection.size} node{multiSelection.size === 1 ? '' : 's'}</span>
+              <button
+                type="button"
+                onClick={() => setMultiSelection(new Set())}
+                className="text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                title="Clear selection"
+              >
+                <X className="w-2.5 h-2.5" />
+                Clear
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
+                Anchored on:
+              </span>
+              <span className="truncate">
+                {perspective.active?.label}
+                {perspective.active?.personKeys?.length > 1 && (
+                  <span className="ml-1 text-amber-600">
+                    ({perspective.active.personKeys.length})
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => perspective.clear()}
+                className="text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                title="Clear perspective and show the whole case"
+              >
+                <X className="w-2.5 h-2.5" />
+                Show whole case
+              </button>
+            </>
+          )}
+
+          {/* Cross-tab pivot bar — open the active lens in any other
+              Cellebrite surface. Each button fires pivotTo() which
+              publishes the Person-keys handoff + requests a tab
+              switch. */}
+          <span className="ml-auto inline-flex items-center gap-1 flex-wrap">
+            <span className="text-[9px] uppercase tracking-wide text-amber-700">View in</span>
+            <PivotBtn icon={MessageSquare} label="Comms"        onClick={() => pivotTo('comms')} />
+            <PivotBtn icon={UsersIcon}     label="Communications" onClick={() => pivotTo('communications')} />
+            <PivotBtn icon={Clock}         label="Timeline"     onClick={() => pivotTo('timeline')} />
+            <PivotBtn icon={MapPin}        label="Locations"    onClick={() => pivotTo('locations')} />
+            <PivotBtn icon={Tag}           label="Events"       onClick={() => pivotTo('events')} />
+            <PivotBtn icon={FolderTree}    label="Files"        onClick={() => pivotTo('files')} />
+            <PivotBtn icon={UserCheck}     label="Unified"      onClick={() => pivotTo('unified')} />
           </span>
-          <button
-            type="button"
-            onClick={() => perspective.clear()}
-            className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded"
-            title="Clear perspective and show the whole case"
-          >
-            <X className="w-2.5 h-2.5" />
-            Show whole case
-          </button>
         </div>
       )}
 
+      {/* Mode hint bar — informs the user about Shift-to-select. Tiny
+          and unobtrusive; updates to show the active mode. */}
+      <div className="flex items-center gap-2 px-4 py-1 border-b border-light-100 bg-light-50 text-[10px] text-light-600 flex-shrink-0">
+        {interactionMode === 'select' ? (
+          <>
+            <MousePointerSquareDashed className="w-3 h-3 text-emerald-600" />
+            <span className="text-emerald-800 font-semibold">Select mode</span>
+            <span className="text-light-500">— drag a box to select multiple nodes · release Shift to drag nodes again</span>
+          </>
+        ) : (
+          <>
+            <Move className="w-3 h-3 text-light-500" />
+            <span>Drag mode</span>
+            <span className="text-light-400">— hold <kbd className="px-1 py-px rounded border border-light-300 bg-white text-[9px]">Shift</kbd> to enter select mode (rubber-band multi-select)</span>
+          </>
+        )}
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setLabelsAllOn((v) => !v)}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
+            labelsAllOn
+              ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+              : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
+          }`}
+          title={labelsAllOn ? 'Hide labels (show only on hover)' : 'Show all labels'}
+        >
+          <Tag className="w-2.5 h-2.5" />
+          {labelsAllOn ? 'Labels on' : 'Labels off'}
+        </button>
+      </div>
+
       {/* Graph */}
-      <div className="flex-1 min-h-0 relative">
-        <ForceGraph2D
-          ref={fgRef}
+      <div
+        className="flex-1 min-h-0 relative"
+        onMouseDown={(e) => {
+          // Only engage the rubber-band when the user is in select
+          // mode (Shift held) and started the drag on bare canvas.
+          if (interactionMode !== 'select') return;
+          // Ignore mousedown on the search panel / banner / pivot
+          // buttons. e.target.closest checks the DOM ancestry.
+          if (e.target.closest('[data-graph-overlay]')) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          selectionBoxStartRef.current = { x, y };
+          setSelectionBox({ x1: x, y1: y, x2: x, y2: y });
+        }}
+        onMouseMove={(e) => {
+          if (!selectionBoxStartRef.current) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          setSelectionBox({
+            x1: selectionBoxStartRef.current.x,
+            y1: selectionBoxStartRef.current.y,
+            x2: x,
+            y2: y,
+          });
+        }}
+        onMouseUp={() => {
+          if (!selectionBoxStartRef.current || !selectionBox || !fgRef.current) {
+            selectionBoxStartRef.current = null;
+            setSelectionBox(null);
+            return;
+          }
+          // Convert the box's screen coords to graph coords and
+          // collect every node inside.
+          const { x1, y1, x2, y2 } = selectionBox;
+          const xMin = Math.min(x1, x2);
+          const xMax = Math.max(x1, x2);
+          const yMin = Math.min(y1, y2);
+          const yMax = Math.max(y1, y2);
+          // Ignore tiny clicks — treat <4px as a misclick.
+          if (xMax - xMin < 4 || yMax - yMin < 4) {
+            selectionBoxStartRef.current = null;
+            setSelectionBox(null);
+            return;
+          }
+          try {
+            const a = fgRef.current.screen2GraphCoords(xMin, yMin);
+            const b = fgRef.current.screen2GraphCoords(xMax, yMax);
+            const gxMin = Math.min(a.x, b.x);
+            const gxMax = Math.max(a.x, b.x);
+            const gyMin = Math.min(a.y, b.y);
+            const gyMax = Math.max(a.y, b.y);
+            const next = new Set();
+            for (const n of graphData.nodes) {
+              if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
+              if (n.x >= gxMin && n.x <= gxMax && n.y >= gyMin && n.y <= gyMax) {
+                next.add(n.id);
+              }
+            }
+            setMultiSelection(next);
+          } catch { /* ref not ready */ }
+          selectionBoxStartRef.current = null;
+          setSelectionBox(null);
+        }}
+      >
+          /* ref assigned below in a callback so we can also tune
+             the live d3-force objects on mount */
           graphData={filteredData}
           nodeCanvasObject={paintNode}
           nodePointerAreaPaint={(node, color, ctx) => {
@@ -1036,6 +1391,27 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
+          // Spread the layout so nodes don't sit on top of each other.
+          // The library exposes the live d3-force objects via dForce
+          // accessors on the props themselves — these widen the
+          // baseline link distance and increase the repulsion charge,
+          // producing more breathing room without redesigning the
+          // simulation.
+          //
+          // Numbers picked to put a typical 1-hop neighbourhood at
+          // ~80-120 canvas units between connected nodes, vs. ~30
+          // before which is what made labels crowd into each other.
+          ref={(el) => {
+            fgRef.current = el;
+            if (el && el.d3Force) {
+              try {
+                const linkF = el.d3Force('link');
+                if (linkF && linkF.distance) linkF.distance(80);
+                const chargeF = el.d3Force('charge');
+                if (chargeF && chargeF.strength) chargeF.strength(-180);
+              } catch { /* ignore — lib will fall back to defaults */ }
+            }
+          }}
           // Sticky drag — when the user drops a node we leave its
           // fx/fy set so the simulation can't pull it back to the
           // force equilibrium. The library's default behaviour clears
@@ -1104,12 +1480,28 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           }}
         />
 
+        {/* Rubber-band selection overlay — visible while the user is
+            dragging in Select mode. Pointer-events disabled so it
+            never swallows the mousemove/up events. */}
+        {selectionBox && (
+          <div
+            data-graph-overlay="selection-box"
+            className="absolute pointer-events-none border-2 border-emerald-500 bg-emerald-500/10 rounded-sm"
+            style={{
+              left: Math.min(selectionBox.x1, selectionBox.x2),
+              top: Math.min(selectionBox.y1, selectionBox.y2),
+              width: Math.abs(selectionBox.x2 - selectionBox.x1),
+              height: Math.abs(selectionBox.y2 - selectionBox.y1),
+            }}
+          />
+        )}
+
         {/* Search results panel — overlays the canvas in Search mode.
             Lists every Person in the case matching the query (not
             just the 200 rendered). Each row clicks to anchor the
             graph on that person via the perspective context. */}
         {searchMode === 'search' && (searchTerm || '').trim() && (
-          <div className="absolute top-3 right-3 w-72 max-h-[60vh] bg-white border border-light-300 shadow-lg rounded-lg overflow-hidden z-20 flex flex-col">
+          <div data-graph-overlay="search-results" className="absolute top-3 right-3 w-72 max-h-[60vh] bg-white border border-light-300 shadow-lg rounded-lg overflow-hidden z-20 flex flex-col">
             <div className="px-3 py-2 border-b border-light-200 bg-light-50 flex items-center gap-2 flex-shrink-0">
               <SearchIcon className="w-3.5 h-3.5 text-owl-blue-600" />
               <span className="text-xs font-semibold text-owl-blue-900 flex-1 truncate">
@@ -1153,27 +1545,32 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                     type="button"
                     onClick={() => {
                       if (isResource) {
-                        // For resources we can't "anchor on" — the
-                        // perspective model is Person-keyed. Best-
-                        // effort: pan the camera to the matching node
-                        // if it's already on canvas. Otherwise show
-                        // a brief hint that we'd need a perspective
-                        // model for resources to navigate further.
-                        if (candidateId && fgRef.current) {
-                          const node = graphData.nodes.find((n) => n.id === candidateId);
-                          if (node && Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                            fgRef.current.centerAt(node.x, node.y, 600);
-                            fgRef.current.zoom(3, 600);
-                          }
+                        // Resource: best-effort centre + fan if it's on
+                        // canvas already. (No perspective rebuild
+                        // because the perspective model is Person-keyed.)
+                        if (candidateId) {
+                          centreAndFan(candidateId, graphData.nodes, graphData.links);
                         }
                         return;
                       }
+                      // Person path: rebuild via perspective AND then
+                      // centre+fan the result on the rebuilt graph.
+                      // pendingFanRef is consumed by the graphData
+                      // effect above once the rebuild arrives.
+                      pendingFanRef.current = `person-${r.key}`;
                       if (perspective) {
                         perspective.setPerspective(
                           [r.key],
                           r.name || r.key,
                           'graph.search-panel',
                         );
+                      } else {
+                        // No perspective context — still centre + fan
+                        // on the existing graph if the node's already
+                        // there.
+                        if (candidateId) {
+                          centreAndFan(candidateId, graphData.nodes, graphData.links);
+                        }
                       }
                     }}
                     className="w-full text-left px-3 py-2 border-b border-light-100 hover:bg-light-50 last:border-b-0 flex items-start gap-2"
@@ -1266,5 +1663,24 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Small pivot button shown in the perspective banner. Uniform sizing
+ * so the row reads as a single control strip rather than ad-hoc
+ * buttons.
+ */
+function PivotBtn({ icon: Icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`View this perspective in the ${label} tab`}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-300 bg-white hover:bg-amber-100 text-amber-900 text-[10px]"
+    >
+      <Icon className="w-2.5 h-2.5" />
+      {label}
+    </button>
   );
 }
