@@ -10,6 +10,8 @@ import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
 import HighlightedText from './shared/HighlightedText';
+import { List, LayoutPanelTop, LayoutPanelLeft } from 'lucide-react';
+import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import {
   EVENT_COLORS,
@@ -52,6 +54,11 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const [windowStart, setWindowStart] = useState(null);
   const [windowEnd, setWindowEnd] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // View-mode toggle. The classic chronological list stays as the
+  // default ('list'). The two swim-lane orientations share data with
+  // the list — only the renderer changes, no extra fetches.
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'swim-v' | 'swim-h'
 
   // --- Data state ---
   const [eventTypes, setEventTypes] = useState([]);
@@ -253,6 +260,33 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
           onOnlyGeolocatedChange={() => {}}
         />
         <div className="flex-1" />
+        {/* View-mode toggle — same data, different rendering. */}
+        <div className="inline-flex items-center bg-white border border-light-300 rounded-md overflow-hidden text-[11px] flex-shrink-0">
+          <button
+            type="button"
+            title="List view"
+            onClick={() => setViewMode('list')}
+            className={`px-2 py-1 inline-flex items-center gap-1 ${viewMode === 'list' ? 'bg-owl-blue-100 text-owl-blue-900' : 'text-light-700 hover:bg-light-100'}`}
+          >
+            <List className="w-3 h-3" /> List
+          </button>
+          <button
+            type="button"
+            title="Swim-lane (vertical)"
+            onClick={() => setViewMode('swim-v')}
+            className={`px-2 py-1 inline-flex items-center gap-1 border-l border-light-200 ${viewMode === 'swim-v' ? 'bg-owl-blue-100 text-owl-blue-900' : 'text-light-700 hover:bg-light-100'}`}
+          >
+            <LayoutPanelTop className="w-3 h-3" /> Lanes ↓
+          </button>
+          <button
+            type="button"
+            title="Swim-lane (horizontal)"
+            onClick={() => setViewMode('swim-h')}
+            className={`px-2 py-1 inline-flex items-center gap-1 border-l border-light-200 ${viewMode === 'swim-h' ? 'bg-owl-blue-100 text-owl-blue-900' : 'text-light-700 hover:bg-light-100'}`}
+          >
+            <LayoutPanelLeft className="w-3 h-3" /> Lanes →
+          </button>
+        </div>
       </div>
 
       {/* Histogram scrubber — replaces the old date-picker pair */}
@@ -277,8 +311,11 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         />
       </div>
 
-      {/* Body — grouped chronological list */}
-      <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto">
+      {/* Body — grouped chronological list OR swim-lane */}
+      <div
+        ref={bodyRef}
+        className={`flex-1 min-h-0 flex flex-col ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'}`}
+      >
         {loading && events.length === 0 ? (
           <TabLoadingIndicator
             label="Loading timeline events"
@@ -291,6 +328,29 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
               ? 'No phone events match the current filters.'
               : `No events match "${searchQuery}".`}
           </div>
+        ) : viewMode !== 'list' ? (
+          <CellebriteTimelineSwimLane
+            caseId={caseId}
+            events={filteredEvents}
+            reports={reports}
+            selectedReportKeys={selectedReportKeys}
+            orientation={viewMode === 'swim-h' ? 'horizontal' : 'vertical'}
+            onEventSelect={(ev) => {
+              setSelectedEvent(ev);
+              selectEntity({
+                type: ev.event_type || 'event',
+                id: ev.id || ev.node_key,
+                caseId,
+                reportKey: ev.device_report_key,
+                payload: { ...ev, node_key: ev.node_key || ev.id },
+                source: 'timeline-swim',
+              });
+            }}
+            onApplyWindow={({ startTs, endTs }) => {
+              setWindowStart(startTs ? new Date(startTs) : null);
+              setWindowEnd(endTs ? new Date(endTs) : null);
+            }}
+          />
         ) : (
           <div className="px-4 py-3">
             {groupedByDay.map((group) => (
