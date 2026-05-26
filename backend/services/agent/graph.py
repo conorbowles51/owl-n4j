@@ -13,7 +13,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
 from config import OPENAI_API_KEY
-from services.agent.json_utils import to_jsonable, truncate_payload
+from services.agent.json_utils import to_jsonable, truncate_payload, truncate_text
 from services.agent.tools import AgentToolContext, make_agent_tools
 
 
@@ -76,6 +76,155 @@ def _messages_without_dangling_tool_calls(messages: list[AnyMessage]) -> list[An
     if isinstance(last_message, AIMessage) and (getattr(last_message, "tool_calls", []) or []):
         return messages[:-1]
     return messages
+
+
+def _arg_text(args: dict[str, Any], key: str, *, max_chars: int = 90) -> str | None:
+    value = args.get(key)
+    if value is None:
+        return None
+    if isinstance(value, str):
+        stripped = value.strip()
+        return truncate_text(stripped, max_chars) if stripped else None
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    return None
+
+
+def _arg_list_text(args: dict[str, Any], key: str, *, max_items: int = 3) -> str | None:
+    value = args.get(key)
+    if not isinstance(value, list):
+        return None
+    items = [str(item).strip() for item in value if str(item).strip()]
+    if not items:
+        return None
+    visible = items[:max_items]
+    suffix = f" and {len(items) - len(visible)} more" if len(items) > len(visible) else ""
+    return ", ".join(visible) + suffix
+
+
+def _quoted(value: str | None) -> str:
+    if not value:
+        return ""
+    return f'"{value}"'
+
+
+def activity_for_tool_call(name: str | None, args: dict[str, Any] | None, call_id: str | None) -> dict[str, Any]:
+    """Create a safe, user-visible activity note from a selected tool call."""
+    safe_name = name or "unknown"
+    safe_args = args or {}
+    activity_id = call_id or f"activity_{uuid.uuid4().hex[:12]}"
+    title = "Used agent tool"
+    detail = "I'm gathering case context before answering."
+
+    if safe_name == "get_case_overview":
+        title = "Checked the case overview"
+        detail = "I need the case size and available entity types before narrowing the search."
+    elif safe_name == "search_graph_entities":
+        query = _arg_text(safe_args, "query")
+        title = f"Searched the graph for {_quoted(query)}" if query else "Searched the graph"
+        detail = "I'm finding matching entities before expanding their relationships."
+    elif safe_name == "inspect_graph_schema":
+        labels = _arg_list_text(safe_args, "labels")
+        rels = _arg_list_text(safe_args, "relationship_types")
+        title = "Inspected available graph fields"
+        if labels and rels:
+            detail = f"I need fields for {labels} and relationships like {rels} before writing Cypher."
+        elif labels:
+            detail = f"I need available fields for {labels} before writing Cypher."
+        elif rels:
+            detail = f"I need relationship fields for {rels} before writing Cypher."
+        else:
+            detail = "I need to inspect available fields before writing Cypher."
+    elif safe_name == "get_entity_details":
+        key = _arg_text(safe_args, "entity_key")
+        title = f"Loaded entity details for {_quoted(key)}" if key else "Loaded entity details"
+        detail = "I'm checking the entity's verified fields and direct context."
+    elif safe_name == "get_entity_neighborhood":
+        key = _arg_text(safe_args, "entity_key")
+        title = f"Loaded graph neighborhood for {_quoted(key)}" if key else "Loaded a graph neighborhood"
+        detail = "I'm expanding nearby nodes and relationships to see the local context."
+    elif safe_name == "find_paths_between_entities":
+        source = _arg_text(safe_args, "source_key")
+        target = _arg_text(safe_args, "target_key")
+        title = (
+            f"Looked for paths between {_quoted(source)} and {_quoted(target)}"
+            if source or target
+            else "Looked for relationship paths"
+        )
+        detail = "I'm checking how these entities connect inside the case graph."
+    elif safe_name == "search_documents":
+        query = _arg_text(safe_args, "query")
+        title = f"Searched documents for {_quoted(query)}" if query else "Searched documents"
+        detail = "I'm looking for source text and citations that support the answer."
+    elif safe_name == "run_readonly_cypher":
+        title = "Queried graph data"
+        detail = "I'm running a safe read-only Cypher query scoped to this case."
+    elif safe_name == "get_timeline_events":
+        title = "Loaded chronological case events"
+        detail = "I'm gathering dated events so the answer can be ordered in time."
+    elif safe_name == "get_financial_records":
+        title = "Loaded financial records"
+        detail = "I'm checking transactions and financial intelligence linked to the request."
+    elif safe_name == "get_map_locations":
+        title = "Loaded map locations"
+        detail = "I'm checking geocoded entities that can support a map view."
+    elif safe_name == "build_graph_artifact":
+        title_arg = _arg_text(safe_args, "title")
+        mode = _arg_text(safe_args, "mode")
+        title = f"Built graph view {_quoted(title_arg)}" if title_arg else "Built a graph view"
+        detail = f"I'm assembling the focused graph artifact using {mode or 'the selected'} scope."
+    elif safe_name == "build_table_artifact":
+        title_arg = _arg_text(safe_args, "title")
+        title = f"Built table {_quoted(title_arg)}" if title_arg else "Built a table from graph data"
+        detail = "I'm turning the Cypher results into a table artifact."
+    elif safe_name == "build_table_artifact_from_rows":
+        title_arg = _arg_text(safe_args, "title")
+        title = f"Built table {_quoted(title_arg)}" if title_arg else "Built a table from analyzed findings"
+        detail = "I'm structuring the findings into rows the workspace can export."
+    elif safe_name == "build_chart_artifact":
+        title_arg = _arg_text(safe_args, "title")
+        chart_type = _arg_text(safe_args, "chart_type")
+        chart_label = f"{chart_type} chart" if chart_type else "chart"
+        title = f"Built {chart_label} {_quoted(title_arg)}" if title_arg else f"Built a {chart_label}"
+        detail = "I'm turning the numeric summary into a chart artifact."
+    elif safe_name == "build_report_artifact":
+        title_arg = _arg_text(safe_args, "title")
+        title = f"Built report {_quoted(title_arg)}" if title_arg else "Built a report artifact"
+        detail = "I'm composing the selected findings and embedded views into a report."
+    elif safe_name == "build_map_artifact":
+        title_arg = _arg_text(safe_args, "title")
+        title = f"Built map {_quoted(title_arg)}" if title_arg else "Built a map view"
+        detail = "I'm assembling the relevant locations into a focused map artifact."
+    elif safe_name == "request_clarification":
+        question = _arg_text(safe_args, "question", max_chars=140)
+        title = "Asked for clarification"
+        detail = question or "I need the user to choose a scope before continuing."
+
+    return {
+        "id": activity_id,
+        "tool_name": safe_name,
+        "phase": "plan",
+        "status": "running",
+        "title": title,
+        "detail": detail,
+    }
+
+
+def activity_for_tool_result(item: dict[str, Any]) -> dict[str, Any]:
+    activity = dict(item.get("activity") or {})
+    if not activity:
+        activity = activity_for_tool_call(item.get("name"), item.get("arguments") or {}, item.get("id"))
+    activity["id"] = item.get("id") or activity.get("id") or f"activity_{uuid.uuid4().hex[:12]}"
+    activity["phase"] = "result"
+    activity["status"] = item.get("status") or "error"
+    activity["duration_ms"] = int(item.get("duration_ms") or 0)
+    if item.get("error"):
+        activity["result_detail"] = str(item.get("error"))
+    elif item.get("summary"):
+        activity["result_detail"] = str(item.get("summary"))
+    else:
+        activity["result_detail"] = "Completed."
+    return activity
 
 
 class AgentState(TypedDict, total=False):
@@ -150,10 +299,10 @@ Your job:
 - When useful for a report, offer to embed graph, table, or chart artifacts, or create and embed them yourself when they materially support the report.
 - Build reports with build_report_artifact. Treat follow-ups as revisions of the previous report artifact and explain what changed.
 - If the user asks for a timeline, chronology, transaction list, or financial table, build a table artifact with useful date, amount, entity, and reasoning columns.
-- For graph requests, choose the narrowest graph mode that matches the user's words:
-  transaction_only for only Transaction nodes, transactions_plus_accounts for transaction nodes and accounts,
-  transaction_flow for money-flow context, shortest_paths for connective tissue between named nodes,
-  entity_neighborhood for normal entity expansion.
+- For graph requests, first use search_graph_entities, inspect_graph_schema, or run_readonly_cypher to identify the exact node keys and relationship context that belong in the graph.
+- Prefer build_graph_artifact in selected_subgraph mode with node_keys, source_result_ids, or a graph query. The graph builder can materialize nodes/relationships from prior Cypher results, key columns, or graph-shaped rows.
+- Use specialized graph modes only as convenience fallbacks: transaction_only for only Transaction nodes, shortest_paths for connective tissue between named nodes, and entity_neighborhood for broad expansion.
+- If build_graph_artifact returns zero nodes, do not immediately ask the user. Search or query for the right node keys, inspect available fields if needed, then retry with selected_subgraph.
 - If the graph request is ambiguous and the difference changes meaning, ask a clarifying question before building.
 - Use request_clarification with 2-4 options when you need the user to choose a scope before continuing.
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
@@ -204,6 +353,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 name = tool_call.get("name")
                 args = tool_call.get("args") or {}
                 call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+                activity = activity_for_tool_call(name, args, call_id)
                 started = time.perf_counter()
                 status = "success"
                 error = None
@@ -245,6 +395,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         "result_id": result_id,
                         "error": error,
                         "result_preview": truncate_payload(output.get("data")),
+                        "activity": activity,
                     }
                 )
                 tool_messages.append(
@@ -380,10 +531,10 @@ Your job:
 - When useful for a report, offer to embed graph, table, or chart artifacts, or create and embed them yourself when they materially support the report.
 - Build reports with build_report_artifact. Treat follow-ups as revisions of the previous report artifact and explain what changed.
 - If the user asks for a timeline, chronology, transaction list, or financial table, build a table artifact with useful date, amount, entity, and reasoning columns.
-- For graph requests, choose the narrowest graph mode that matches the user's words:
-  transaction_only for only Transaction nodes, transactions_plus_accounts for transaction nodes and accounts,
-  transaction_flow for money-flow context, shortest_paths for connective tissue between named nodes,
-  entity_neighborhood for normal entity expansion.
+- For graph requests, first use search_graph_entities, inspect_graph_schema, or run_readonly_cypher to identify the exact node keys and relationship context that belong in the graph.
+- Prefer build_graph_artifact in selected_subgraph mode with node_keys, source_result_ids, or a graph query. The graph builder can materialize nodes/relationships from prior Cypher results, key columns, or graph-shaped rows.
+- Use specialized graph modes only as convenience fallbacks: transaction_only for only Transaction nodes, shortest_paths for connective tissue between named nodes, and entity_neighborhood for broad expansion.
+- If build_graph_artifact returns zero nodes, do not immediately ask the user. Search or query for the right node keys, inspect available fields if needed, then retry with selected_subgraph.
 - If the graph request is ambiguous and the difference changes meaning, ask a clarifying question before building.
 - Use request_clarification with 2-4 options when you need the user to choose a scope before continuing.
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
@@ -438,6 +589,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 name = tool_call.get("name")
                 args = tool_call.get("args") or {}
                 call_id = tool_call.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+                activity = activity_for_tool_call(name, args, call_id)
                 started = time.perf_counter()
                 status = "success"
                 error = None
@@ -479,6 +631,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         "result_id": result_id,
                         "error": error,
                         "result_preview": truncate_payload(output.get("data")),
+                        "activity": activity,
                     }
                 )
                 tool_messages.append(
@@ -580,6 +733,15 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                     last = agent_messages[-1]
                     tool_calls = getattr(last, "tool_calls", []) or []
                     if tool_calls:
+                        for call in tool_calls:
+                            yield {
+                                "type": "activity",
+                                "activity": activity_for_tool_call(
+                                    call.get("name"),
+                                    call.get("args") or {},
+                                    call.get("id"),
+                                ),
+                            }
                         yield {
                             "type": "tool_plan",
                             "tools": [
@@ -607,6 +769,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 collected_artifacts.extend(artifacts)
                 collected_clarifications.extend(clarifications)
                 for item in trace:
+                    yield {"type": "activity", "activity": activity_for_tool_result(item)}
                     yield {"type": "tool_result", "tool": item}
                 for artifact in artifacts:
                     yield {"type": "artifact", "artifact": artifact}

@@ -76,6 +76,7 @@ class AgentToolTraceItem(BaseModel):
     summary: str | None = None
     result_id: str | None = None
     error: str | None = None
+    activity: dict[str, Any] | None = None
 
 
 class AgentClarificationOption(BaseModel):

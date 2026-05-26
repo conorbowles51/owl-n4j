@@ -14,6 +14,7 @@ from postgres.models.user import User
 from services.agent.cancellation import clear_cancel, is_cancelled, request_cancel
 from services.agent.exports import AgentArtifactExport, AgentExportFormat, render_artifact_export
 from services.agent.graph import AgentGraphRunner, AgentRunCancelled
+from services.agent.json_utils import truncate_payload
 from services.agent.schemas import (
     AgentArtifact,
     AgentClarification,
@@ -175,11 +176,7 @@ class AgentService:
                 model_id=model.id,
                 artifact_ids=[str(record.id) for record in artifact_records],
                 tool_trace_summary=[
-                    {
-                        "name": item.get("name"),
-                        "status": item.get("status"),
-                        "summary": item.get("summary"),
-                    }
+                    self._trace_summary_item(item)
                     for item in tool_trace
                 ],
             )
@@ -390,11 +387,7 @@ class AgentService:
                     model_id=model.id,
                     artifact_ids=[str(record.id) for record in artifact_records],
                     tool_trace_summary=[
-                        {
-                            "name": item.get("name"),
-                            "status": item.get("status"),
-                            "summary": item.get("summary"),
-                        }
+                        self._trace_summary_item(item)
                         for item in tool_trace
                     ],
                 )
@@ -606,6 +599,21 @@ class AgentService:
             "summary": item.get("summary"),
             "result_id": item.get("result_id"),
             "error": item.get("error"),
+            "activity": item.get("activity"),
+        }
+
+    @staticmethod
+    def _trace_summary_item(item: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "arguments": truncate_payload(item.get("arguments") or {}, max_items=8, max_text_chars=300),
+            "status": item.get("status") or "error",
+            "duration_ms": item.get("duration_ms") or 0,
+            "summary": item.get("summary"),
+            "result_id": item.get("result_id"),
+            "error": item.get("error"),
+            "activity": item.get("activity"),
         }
 
     @staticmethod

@@ -1,4 +1,5 @@
-import { NavLink, useParams } from "react-router-dom"
+import type { ReactNode } from "react"
+import { Link, useLocation, useParams } from "react-router-dom"
 import {
   FolderOpen,
   Network,
@@ -34,12 +35,13 @@ interface NavItem {
   label: string
   icon: LucideIcon
   to: string
+  end?: boolean
   shortcut?: string
 }
 
 const mainNav: NavItem[] = [
-  { label: "Cases", icon: FolderOpen, to: "/cases" },
-  { label: "Triage", icon: ShieldCheck, to: "/triage" },
+  { label: "Cases", icon: FolderOpen, to: "/cases", end: true },
+  { label: "Triage", icon: ShieldCheck, to: "/triage", end: true },
 ]
 
 function getCaseInvestigationNav(caseId: string): NavItem[] {
@@ -75,48 +77,88 @@ const adminNav: NavItem[] = [
   { label: "Profiles", icon: Sliders, to: "/admin/profiles" },
 ]
 
+const settingsItem: NavItem = {
+  label: "Settings",
+  icon: Settings,
+  to: "/settings",
+  end: true,
+}
+
+function ShortcutHint({ value, active = false }: { value: string; active?: boolean }) {
+  return (
+    <kbd
+      className={cn(
+        "ml-auto rounded px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums",
+        active
+          ? "bg-white/80 text-amber-700 dark:bg-slate-950/50 dark:text-amber-300"
+          : "text-slate-400 dark:text-slate-500"
+      )}
+    >
+      Ctrl+{value}
+    </kbd>
+  )
+}
+
 function SidebarLink({
   item,
   expanded,
+  active,
 }: {
   item: NavItem
   expanded: boolean
+  active: boolean
 }) {
   const link = (
-    <NavLink
+    <Link
       to={item.to}
-      className={({ isActive }) =>
-        cn(
-          "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-          "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
-          "dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200",
-          isActive &&
-            "border-l-2 border-amber-500 bg-amber-50 text-slate-900 dark:bg-slate-800/50 dark:text-slate-50",
-          !expanded && "justify-center px-0"
-        )
-      }
+      aria-current={active ? "page" : undefined}
+      aria-label={!expanded ? item.label : undefined}
+      className={cn(
+        "group relative flex items-center rounded-lg text-sm font-medium outline-none",
+        "transition-[background-color,color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)]",
+        "focus-visible:ring-2 focus-visible:ring-amber-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-white active:scale-[0.96]",
+        "dark:focus-visible:ring-amber-400/40 dark:focus-visible:ring-offset-slate-950",
+        expanded ? "h-9 w-full gap-3 px-3" : "mx-auto h-9 w-9 justify-center px-0",
+        "text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-slate-50",
+        expanded
+          ? "hover:bg-slate-100/75 dark:hover:bg-slate-800/80"
+          : "hover:bg-slate-100/80 dark:hover:bg-slate-800/80",
+        active &&
+          (expanded
+            ? "bg-amber-50 text-slate-950 shadow-[inset_0_0_0_1px_rgba(212,146,10,0.16)] before:absolute before:left-1.5 before:top-1/2 before:h-5 before:w-0.5 before:-translate-y-1/2 before:rounded-full before:bg-amber-500 dark:bg-amber-500/10 dark:text-slate-50 dark:shadow-[inset_0_0_0_1px_rgba(212,146,10,0.24)]"
+            : "bg-slate-900 text-white shadow-[0_10px_20px_-12px_rgba(17,24,39,0.9)] dark:bg-slate-100 dark:text-slate-950")
+      )}
     >
-      <item.icon className="size-4 shrink-0" />
+      <item.icon
+        className={cn(
+          "size-4 shrink-0 transition-[color,transform] duration-150",
+          !expanded && "size-[17px]",
+          active && expanded && "text-amber-600 dark:text-amber-400",
+          !active && "group-hover:scale-105"
+        )}
+      />
       {expanded && (
-        <span className="flex-1 truncate">{item.label}</span>
+        <span className="min-w-0 flex-1 truncate">{item.label}</span>
       )}
       {expanded && item.shortcut && (
-        <kbd className="text-[10px] text-slate-400 dark:text-slate-500">⌘{item.shortcut}</kbd>
+        <ShortcutHint value={item.shortcut} active={active} />
       )}
-    </NavLink>
+    </Link>
   )
 
   if (!expanded) {
     return (
       <Tooltip>
         <TooltipTrigger asChild>{link}</TooltipTrigger>
-        <TooltipContent side="right" sideOffset={8}>
-          {item.label}
-          {item.shortcut && (
-            <kbd className="ml-2 text-[10px] text-muted-foreground">
-              ⌘{item.shortcut}
-            </kbd>
-          )}
+        <TooltipContent side="right" sideOffset={10}>
+          <span className="flex items-center gap-2">
+            <span>{item.label}</span>
+            {item.shortcut && (
+              <kbd className="rounded bg-background/15 px-1.5 py-0.5 font-mono text-[10px] text-background/80">
+                Ctrl+{item.shortcut}
+              </kbd>
+            )}
+          </span>
         </TooltipContent>
       </Tooltip>
     )
@@ -125,132 +167,218 @@ function SidebarLink({
   return link
 }
 
+function SidebarSection({
+  label,
+  expanded,
+  separated = false,
+  children,
+}: {
+  label: string
+  expanded: boolean
+  separated?: boolean
+  children: ReactNode
+}) {
+  return (
+    <section
+      className={cn(
+        expanded ? "space-y-0.5" : "space-y-1",
+        separated && (expanded ? "mt-4" : "mt-3")
+      )}
+      aria-label={label}
+    >
+      {expanded ? (
+        <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          {label}
+        </p>
+      ) : (
+        separated && (
+          <div
+            className="mx-auto mb-2 h-px w-6 bg-slate-200 dark:bg-slate-800"
+            aria-hidden="true"
+          />
+        )
+      )}
+      {children}
+    </section>
+  )
+}
+
+function isItemActive(pathname: string, item: NavItem) {
+  if (item.end) {
+    return pathname === item.to
+  }
+
+  return pathname === item.to || pathname.startsWith(`${item.to}/`)
+}
+
+function LogoMark({ expanded }: { expanded: boolean }) {
+  const mark = (
+    <Link
+      to="/cases"
+      aria-label="OWL cases"
+      className={cn(
+        "group flex min-w-0 items-center rounded-lg outline-none",
+        "transition-[background-color,box-shadow,transform] duration-150 ease-[cubic-bezier(0.2,0,0,1)] active:scale-[0.96]",
+        "focus-visible:ring-2 focus-visible:ring-amber-500/35 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+        "dark:focus-visible:ring-amber-400/40 dark:focus-visible:ring-offset-slate-950",
+        expanded ? "h-10 w-full gap-2.5 px-2" : "mx-auto h-10 w-10 justify-center"
+      )}
+    >
+      <span
+        className="relative flex size-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-[0_8px_18px_-14px_rgba(17,24,39,0.65)] dark:border-slate-700 dark:bg-slate-900"
+        aria-hidden="true"
+      >
+        <span className="size-[18px] rounded-full border-[3px] border-amber-500 transition-[transform,border-color] duration-150 group-hover:scale-105 dark:border-amber-400" />
+        <span className="absolute size-1.5 rounded-full bg-slate-950 dark:bg-slate-50" />
+      </span>
+      {expanded && (
+        <span className="min-w-0 text-[15px] font-black leading-none tracking-[0.18em] text-slate-950 dark:text-slate-50">
+          OWL
+        </span>
+      )}
+    </Link>
+  )
+
+  if (expanded) {
+    return mark
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{mark}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={10}>
+        OWL
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function AppSidebar() {
   const { id: caseId } = useParams()
+  const { pathname } = useLocation()
   const { sidebarExpanded, toggleSidebar } = useAppStore()
+
+  const toggleButton = (
+    <Button
+      variant="ghost"
+      size={sidebarExpanded ? "default" : "icon"}
+      className={cn(
+        "mt-1 w-full transition-[background-color,color,box-shadow,transform] active:scale-[0.96]",
+        sidebarExpanded
+          ? "justify-start text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+          : "mx-auto h-10 w-10 justify-center"
+      )}
+      onClick={toggleSidebar}
+      aria-label={sidebarExpanded ? "Collapse sidebar" : "Expand sidebar"}
+    >
+      {sidebarExpanded ? (
+        <>
+          <ChevronLeft className="size-4" />
+          <span className="text-xs">Collapse</span>
+        </>
+      ) : (
+        <ChevronRight className="size-4" />
+      )}
+    </Button>
+  )
 
   return (
     <aside
       className={cn(
-        "flex h-screen flex-col border-r border-border transition-all duration-200",
-        "bg-white dark:bg-slate-950",
-        sidebarExpanded ? "w-60" : "w-14"
+        "flex h-screen shrink-0 flex-col border-r border-slate-200/80 shadow-[1px_0_0_rgba(17,24,39,0.02)]",
+        "bg-[linear-gradient(180deg,#fff_0%,#fbfcfd_45%,#f8fafc_100%)] transition-[width] duration-200 ease-[cubic-bezier(0.2,0,0,1)]",
+        "dark:border-slate-800 dark:bg-[linear-gradient(180deg,#0b0f1a_0%,#0e1422_100%)]",
+        sidebarExpanded ? "w-60" : "w-16"
       )}
     >
-      {/* Logo */}
       <div
         className={cn(
-          "flex h-12 items-center border-b border-border px-4",
-          !sidebarExpanded && "justify-center px-0"
+          "flex items-center border-b border-slate-200/80 dark:border-slate-800",
+          sidebarExpanded ? "h-14 px-3" : "h-14 px-2"
         )}
       >
-        <span className="text-lg font-bold tracking-tight text-amber-500 dark:text-amber-500">
-          {sidebarExpanded ? "OWL" : "O"}
-        </span>
+        <LogoMark expanded={sidebarExpanded} />
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 overflow-y-auto p-2">
-        {/* Main */}
-        <div className="space-y-0.5">
-          {sidebarExpanded && (
-            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Investigation
-            </p>
-          )}
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
+        <SidebarSection label="Investigation" expanded={sidebarExpanded}>
           {mainNav.map((item) => (
-            <SidebarLink key={item.to} item={item} expanded={sidebarExpanded} />
+            <SidebarLink
+              key={item.to}
+              item={item}
+              expanded={sidebarExpanded}
+              active={isItemActive(pathname, item)}
+            />
           ))}
-        </div>
+        </SidebarSection>
 
-        {/* Active Case */}
         {caseId && (
-          <div className="mt-4 space-y-0.5">
-            {sidebarExpanded && (
-              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Active Case
-              </p>
-            )}
+          <SidebarSection label="Active Case" expanded={sidebarExpanded} separated>
             {getCaseInvestigationNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}
                 expanded={sidebarExpanded}
+                active={isItemActive(pathname, item)}
               />
             ))}
-          </div>
+          </SidebarSection>
         )}
 
-        {/* AI */}
         {caseId && (
-          <div className="mt-4 space-y-0.5">
-            {sidebarExpanded && (
-              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                AI
-              </p>
-            )}
+          <SidebarSection label="AI" expanded={sidebarExpanded} separated>
             {getCaseAiNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}
                 expanded={sidebarExpanded}
+                active={isItemActive(pathname, item)}
               />
             ))}
-          </div>
+          </SidebarSection>
         )}
 
-        {/* Workspace */}
         {caseId && (
-          <div className="mt-4 space-y-0.5">
-            {sidebarExpanded && (
-              <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Workspace
-              </p>
-            )}
+          <SidebarSection label="Workspace" expanded={sidebarExpanded} separated>
             {getCaseWorkspaceNav(caseId).map((item) => (
               <SidebarLink
                 key={item.to}
                 item={item}
                 expanded={sidebarExpanded}
+                active={isItemActive(pathname, item)}
               />
             ))}
-          </div>
+          </SidebarSection>
         )}
 
-        {/* Admin */}
-        <div className="mt-4 space-y-0.5">
-          {sidebarExpanded && (
-            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Admin
-            </p>
-          )}
+        <SidebarSection label="Admin" expanded={sidebarExpanded} separated>
           {adminNav.map((item) => (
-            <SidebarLink key={item.to} item={item} expanded={sidebarExpanded} />
+            <SidebarLink
+              key={item.to}
+              item={item}
+              expanded={sidebarExpanded}
+              active={isItemActive(pathname, item)}
+            />
           ))}
-        </div>
+        </SidebarSection>
       </nav>
 
-      {/* Bottom */}
-      <div className="border-t border-border p-2">
+      <div className="border-t border-slate-200/80 p-2 dark:border-slate-800">
         <SidebarLink
-          item={{ label: "Settings", icon: Settings, to: "/settings" }}
+          item={settingsItem}
           expanded={sidebarExpanded}
+          active={isItemActive(pathname, settingsItem)}
         />
-        <Button
-          variant="ghost"
-          size={sidebarExpanded ? "default" : "icon"}
-          className={cn("mt-1 w-full", !sidebarExpanded && "justify-center")}
-          onClick={toggleSidebar}
-        >
-          {sidebarExpanded ? (
-            <>
-              <ChevronLeft className="size-4" />
-              <span className="text-xs">Collapse</span>
-            </>
-          ) : (
-            <ChevronRight className="size-4" />
-          )}
-        </Button>
+        {sidebarExpanded ? (
+          toggleButton
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>{toggleButton}</TooltipTrigger>
+            <TooltipContent side="right" sideOffset={10}>
+              Expand sidebar
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </aside>
   )

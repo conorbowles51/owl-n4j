@@ -5,7 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from services.agent.graph import _messages_without_dangling_tool_calls
 from services.agent.service import AgentService
-from services.agent.tools import AgentToolContext, _filter_graph, make_agent_tools
+from services.agent.tools import AgentToolContext, _extract_graph_selection, _filter_graph, make_agent_tools
 
 
 class AgentImprovementTests(unittest.TestCase):
@@ -118,6 +118,85 @@ class AgentImprovementTests(unittest.TestCase):
 
         self.assertEqual({node["key"] for node in filtered["nodes"]}, {"tx1", "acct1"})
         self.assertEqual(len(filtered["links"]), 1)
+
+    def test_graph_selection_extracts_keys_and_relationships_from_rows(self):
+        graph, keys = _extract_graph_selection(
+            [
+                {
+                    "transaction_key": "tx1",
+                    "sender_key": "acct1",
+                    "receiver_key": "org1",
+                    "source_key": "tx1",
+                    "target_key": "acct1",
+                    "relationship_type": "VIA_ACCOUNT",
+                    "amount": 18400,
+                }
+            ]
+        )
+
+        self.assertEqual(set(keys), {"tx1", "acct1", "org1"})
+        self.assertEqual(graph["links"][0]["source"], "tx1")
+        self.assertEqual(graph["links"][0]["target"], "acct1")
+        self.assertEqual(graph["links"][0]["type"], "VIA_ACCOUNT")
+
+    def test_graph_artifact_builds_selected_subgraph_from_prior_result_rows(self):
+        class FakeResult:
+            def single(self):
+                return {
+                    "nodes": [
+                        {"id": "tx1", "key": "tx1", "name": "Payment", "type": "Transaction", "properties": {}},
+                        {"id": "acct1", "key": "acct1", "name": "AMB-4418", "type": "Account", "properties": {}},
+                        {"id": "org1", "key": "org1", "name": "Northstar Trucking", "type": "Organization", "properties": {}},
+                    ],
+                    "links": [
+                        {"source": "tx1", "target": "acct1", "type": "VIA_ACCOUNT", "properties": {}},
+                        {"source": "tx1", "target": "org1", "type": "RECEIVED_PAYMENT", "properties": {}},
+                    ],
+                }
+
+        class FakeSession:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def run(self, query, **kwargs):
+                self.kwargs = kwargs
+                return FakeResult()
+
+        class FakeDriver:
+            def session(self, **kwargs):
+                return FakeSession()
+
+        context = AgentToolContext(case_id="case-1")
+        context.result_store["res_tx"] = [
+            {
+                "transaction_key": "tx1",
+                "sender_key": "acct1",
+                "receiver_key": "org1",
+                "source_key": "tx1",
+                "target_key": "acct1",
+                "relationship_type": "VIA_ACCOUNT",
+            }
+        ]
+        tools = {tool.name: tool for tool in make_agent_tools(context)}
+
+        with patch("services.agent.tools.driver", FakeDriver()):
+            result = tools["build_graph_artifact"].invoke(
+                {
+                    "title": "Selected transaction graph",
+                    "source_result_ids": ["res_tx"],
+                    "depth": 0,
+                }
+            )
+
+        self.assertEqual(result["status"], "success")
+        artifact = result["artifact"]
+        self.assertEqual(artifact["metadata"]["mode"], "selected_subgraph")
+        self.assertEqual(artifact["metadata"]["source_result_ids"], ["res_tx"])
+        self.assertEqual({node["key"] for node in artifact["data"]["nodes"]}, {"tx1", "acct1", "org1"})
+        self.assertEqual(len(artifact["data"]["links"]), 2)
 
     def test_unsafe_cypher_tool_reports_error_status(self):
         context = AgentToolContext(case_id="case-1")

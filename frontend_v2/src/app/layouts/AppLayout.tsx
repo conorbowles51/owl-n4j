@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/resizable"
 import { useUIStore } from "@/stores/ui.store"
 import { ChatSidePanel } from "@/features/chat/components/ChatSidePanel"
+import { useGlobalShortcuts } from "@/hooks/use-global-shortcuts"
 
 export function AppLayout() {
   const chatPanelOpen = useUIStore((s) => s.chatPanelOpen)
@@ -27,6 +28,8 @@ export function AppLayout() {
 
   // Routes that manage their own side panel
   const hasSelfManagedPanel = isGraphRoute || isChatRoute || isAgentRoute
+
+  useGlobalShortcuts(currentCaseId)
 
   // Keyboard shortcut: Ctrl+Shift+L — works globally
   useEffect(() => {

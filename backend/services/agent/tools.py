@@ -149,16 +149,33 @@ class MapArgs(BaseModel):
 class GraphArtifactArgs(BaseModel):
     node_keys: list[str] = Field(default_factory=list)
     title: str | None = None
-    depth: int = Field(1, ge=0, le=3)
+    depth: int = Field(0, ge=0, le=3)
     mode: Literal[
+        "selected_subgraph",
         "entity_neighborhood",
         "transaction_only",
         "transactions_plus_accounts",
         "transaction_flow",
         "shortest_paths",
-    ] = "entity_neighborhood"
+    ] = "selected_subgraph"
     node_types: list[str] | None = None
     relationship_types: list[str] | None = None
+    query: str | None = Field(
+        default=None,
+        description=(
+            "Optional read-only Cypher that returns graph data or key columns. Prefer returning node keys and "
+            "source_key/target_key/relationship_type columns, or nodes/relationships arrays. Must include $case_id."
+        ),
+    )
+    params: dict[str, Any] = Field(default_factory=dict)
+    source_result_ids: list[str] = Field(
+        default_factory=list,
+        max_length=12,
+        description=(
+            "Result IDs from prior tools whose rows contain graph keys or graph-shaped data. "
+            "Use this after run_readonly_cypher or search tools find the nodes that belong in the graph."
+        ),
+    )
     max_nodes: int = Field(75, ge=1, le=250)
     max_relationships: int = Field(200, ge=0, le=500)
     include_bridge_nodes: bool = True
@@ -992,12 +1009,13 @@ def _graph_node_map(node: Any) -> dict[str, Any]:
     if not isinstance(node, dict):
         return {}
     props = node.get("properties") if isinstance(node.get("properties"), dict) else node
+    labels = node.get("labels") if isinstance(node.get("labels"), list) else []
     key = node.get("key") or props.get("key") or node.get("id")
     return {
         "id": node.get("id") or key,
         "key": key,
-        "name": node.get("name") or props.get("name") or key,
-        "type": node.get("type") or props.get("type"),
+        "name": node.get("name") or props.get("name") or props.get("display_name") or props.get("full_name") or props.get("title") or key,
+        "type": node.get("type") or props.get("type") or (labels[0] if labels else None),
         "summary": node.get("summary") or props.get("summary"),
         "date": node.get("date") or props.get("date"),
         "amount": node.get("amount") or props.get("amount"),
@@ -1008,11 +1026,12 @@ def _graph_node_map(node: Any) -> dict[str, Any]:
 def _relationship_map(rel: Any) -> dict[str, Any]:
     if not isinstance(rel, dict):
         return {}
+    properties = rel.get("properties") if isinstance(rel.get("properties"), dict) else {}
     return {
-        "source": rel.get("source"),
-        "target": rel.get("target"),
-        "type": rel.get("type"),
-        "properties": rel.get("properties") if isinstance(rel.get("properties"), dict) else {},
+        "source": rel.get("source") or rel.get("source_key") or properties.get("source") or properties.get("source_key"),
+        "target": rel.get("target") or rel.get("target_key") or properties.get("target") or properties.get("target_key"),
+        "type": rel.get("type") or rel.get("relationship_type") or properties.get("type"),
+        "properties": properties,
     }
 
 
@@ -1040,6 +1059,144 @@ def _dedupe_graph(graph: dict[str, Any]) -> dict[str, Any]:
         links.append(link)
 
     return {"nodes": list(nodes_by_key.values()), "links": links}
+
+
+GRAPH_KEY_FIELDS = {
+    "key",
+    "node_key",
+    "entity_key",
+    "transaction_key",
+    "account_key",
+    "person_key",
+    "organization_key",
+    "org_key",
+    "company_key",
+    "event_key",
+    "communication_key",
+    "location_key",
+    "source_key",
+    "target_key",
+    "from_key",
+    "to_key",
+    "sender_key",
+    "receiver_key",
+    "payer_key",
+    "payee_key",
+    "beneficiary_key",
+}
+
+
+def _graph_key_value(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped if stripped else None
+
+
+def _looks_like_node_payload(value: dict[str, Any]) -> bool:
+    if isinstance(value.get("properties"), dict) and (value.get("key") or value["properties"].get("key")):
+        return True
+    if isinstance(value.get("labels"), list) and isinstance(value.get("properties"), dict):
+        return True
+    return bool(value.get("key") and (value.get("name") or value.get("type") or value.get("summary")))
+
+
+def _graph_node_from_payload(value: dict[str, Any]) -> dict[str, Any]:
+    props = value.get("properties") if isinstance(value.get("properties"), dict) else value
+    labels = value.get("labels") if isinstance(value.get("labels"), list) else []
+    key = value.get("key") or props.get("key") or value.get("id")
+    return {
+        "id": value.get("id") or value.get("element_id") or key,
+        "key": key,
+        "name": value.get("name") or props.get("name") or props.get("display_name") or props.get("full_name") or props.get("title") or key,
+        "type": value.get("type") or props.get("type") or (labels[0] if labels else None),
+        "summary": value.get("summary") or props.get("summary"),
+        "date": value.get("date") or props.get("date"),
+        "amount": value.get("amount") or props.get("amount"),
+        "properties": props if props is not value else {},
+    }
+
+
+def _extract_graph_selection(value: Any) -> tuple[dict[str, Any], list[str]]:
+    nodes: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
+    selected_keys: list[str] = []
+
+    def add_key(candidate: Any) -> None:
+        key = _graph_key_value(candidate)
+        if key and key not in selected_keys:
+            selected_keys.append(key)
+
+    def add_node(raw: dict[str, Any]) -> None:
+        node = _graph_node_from_payload(raw)
+        key = node.get("key")
+        if key:
+            nodes.append(node)
+            add_key(key)
+
+    def add_link(raw: dict[str, Any]) -> None:
+        link = _relationship_map(raw)
+        source = link.get("source")
+        target = link.get("target")
+        if source and target:
+            links.append(link)
+            add_key(source)
+            add_key(target)
+
+    def visit(item: Any) -> None:
+        if isinstance(item, list):
+            for child in item:
+                visit(child)
+            return
+        if not isinstance(item, dict):
+            return
+
+        for graph_nodes_key in ("nodes", "node_rows"):
+            if isinstance(item.get(graph_nodes_key), list):
+                for node in item[graph_nodes_key]:
+                    if isinstance(node, dict):
+                        add_node(node)
+        for graph_links_key in ("links", "relationships", "relationship_rows"):
+            if isinstance(item.get(graph_links_key), list):
+                for link in item[graph_links_key]:
+                    if isinstance(link, dict):
+                        add_link(link)
+
+        if _looks_like_node_payload(item):
+            add_node(item)
+
+        source = item.get("source") or item.get("source_key") or item.get("from_key") or item.get("sender_key") or item.get("payer_key")
+        target = item.get("target") or item.get("target_key") or item.get("to_key") or item.get("receiver_key") or item.get("payee_key") or item.get("beneficiary_key")
+        if source and target:
+            add_link(
+                {
+                    "source": source,
+                    "target": target,
+                    "type": item.get("type") or item.get("relationship_type") or item.get("rel_type") or "RELATED_TO",
+                    "properties": {
+                        key: item.get(key)
+                        for key in ("date", "amount", "currency", "detail", "confidence")
+                        if item.get(key) is not None
+                    },
+                }
+            )
+
+        for key, candidate in item.items():
+            normalized = str(key).lower()
+            if normalized in GRAPH_KEY_FIELDS or normalized.endswith("_key"):
+                add_key(candidate)
+
+    visit(value)
+    return _dedupe_graph({"nodes": nodes, "links": links}), selected_keys
+
+
+def _merge_graphs(*graphs: dict[str, Any]) -> dict[str, Any]:
+    nodes: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
+    for graph in graphs:
+        nodes.extend(as_dict_list(graph.get("nodes")))
+        links.extend(as_dict_list(graph.get("links")))
+    return _dedupe_graph({"nodes": nodes, "links": links})
 
 
 def _limit_graph(
@@ -1159,6 +1316,54 @@ def _query_nodes_graph(case_id: str, node_keys: list[str] | None, node_types: li
     return {"nodes": nodes, "links": []}
 
 
+def _selected_subgraph(
+    case_id: str,
+    *,
+    node_keys: list[str],
+    relationship_types: list[str] | None,
+    limit: int,
+    max_relationships: int,
+) -> dict[str, Any]:
+    clean_keys = [key for key in dict.fromkeys(node_keys or []) if key]
+    if not clean_keys:
+        return {"nodes": [], "links": []}
+    with driver.session(default_access_mode=READ_ACCESS) as session:
+        record = session.run(
+            """
+            MATCH (n)
+            WHERE n.case_id = $case_id AND n.key IN $node_keys
+            WITH n
+            LIMIT $limit
+            WITH collect(DISTINCT n) AS selected
+            UNWIND selected AS n
+            WITH selected, collect(DISTINCT {
+                id: n.id, key: n.key, name: n.name, type: labels(n)[0],
+                summary: n.summary, date: n.date, amount: n.amount, properties: properties(n)
+            }) AS nodes
+            OPTIONAL MATCH (a)-[r]-(b)
+            WHERE a IN selected
+              AND b IN selected
+              AND r.case_id = $case_id
+              AND (size($relationship_types) = 0 OR type(r) IN $relationship_types)
+            WITH nodes, collect(DISTINCT CASE WHEN r IS NULL THEN NULL ELSE {
+                source: startNode(r).key, target: endNode(r).key,
+                type: type(r), properties: properties(r)
+            } END) AS links
+            RETURN nodes, links
+            """,
+            case_id=case_id,
+            node_keys=clean_keys,
+            relationship_types=relationship_types or [],
+            limit=max(1, min(limit, 250)),
+        ).single()
+    if not record:
+        return {"nodes": [], "links": []}
+    return {
+        "nodes": [item for item in (record["nodes"] or []) if item],
+        "links": [item for item in (record["links"] or []) if item][: max(0, min(max_relationships, 500))],
+    }
+
+
 def _transaction_flow_graph(
     case_id: str,
     *,
@@ -1167,44 +1372,84 @@ def _transaction_flow_graph(
     relationship_types: list[str] | None,
     limit: int,
 ) -> dict[str, Any]:
+    clean_keys = [key for key in dict.fromkeys(node_keys or []) if key]
     with driver.session(default_access_mode=READ_ACCESS) as session:
-        rows = session.run(
-            """
-            MATCH (t:Transaction)
-            WHERE t.case_id = $case_id
-              AND (size($node_keys) = 0 OR t.key IN $node_keys)
-            WITH t
-            ORDER BY coalesce(t.date, ''), coalesce(t.name, t.key)
-            LIMIT $limit
-            OPTIONAL MATCH (t)-[r]-(n)
-            WHERE r.case_id = $case_id
-              AND n.case_id = $case_id
-              AND (size($neighbor_types) = 0 OR labels(n)[0] IN $neighbor_types)
-              AND (size($relationship_types) = 0 OR type(r) IN $relationship_types)
-            RETURN collect(DISTINCT {
-                id: t.id, key: t.key, name: t.name, type: labels(t)[0],
-                summary: t.summary, date: t.date, amount: t.amount, properties: properties(t)
-            }) AS transaction_nodes,
-            collect(DISTINCT CASE WHEN n IS NULL THEN NULL ELSE {
-                id: n.id, key: n.key, name: n.name, type: labels(n)[0],
-                summary: n.summary, date: n.date, amount: n.amount, properties: properties(n)
-            } END) AS neighbor_nodes,
-            collect(DISTINCT CASE WHEN r IS NULL THEN NULL ELSE {
-                source: startNode(r).key, target: endNode(r).key,
-                type: type(r), properties: properties(r)
-            } END) AS links
-            """,
-            case_id=case_id,
-            node_keys=node_keys or [],
-            neighbor_types=neighbor_types,
-            relationship_types=relationship_types or [],
-            limit=max(1, min(limit, 250)),
-        )
+        if clean_keys:
+            rows = session.run(
+                """
+                MATCH (focus)
+                WHERE focus.case_id = $case_id AND focus.key IN $node_keys
+                MATCH path = (focus)-[*0..3]-(t:Transaction)
+                WHERE t.case_id = $case_id
+                  AND all(node IN nodes(path) WHERE node.case_id = $case_id)
+                  AND all(rel IN relationships(path) WHERE rel.case_id = $case_id)
+                WITH t, collect(DISTINCT path) AS focus_paths
+                ORDER BY coalesce(t.date, ''), coalesce(t.name, t.key)
+                LIMIT $limit
+                WITH collect(DISTINCT t) AS transactions, collect(focus_paths) AS focus_path_groups
+                WITH transactions, reduce(paths = [], group IN focus_path_groups | paths + group) AS focus_paths
+                UNWIND transactions AS t
+                OPTIONAL MATCH direct_path = (t)-[r]-(n)
+                WHERE r.case_id = $case_id
+                  AND n.case_id = $case_id
+                  AND (size($neighbor_types) = 0 OR labels(n)[0] IN $neighbor_types)
+                  AND (size($relationship_types) = 0 OR type(r) IN $relationship_types)
+                WITH transactions, focus_paths, collect(DISTINCT direct_path) AS direct_paths
+                WITH [path IN focus_paths + direct_paths WHERE path IS NOT NULL] AS paths
+                WITH reduce(raw_nodes = [], path IN paths | raw_nodes + nodes(path)) AS graph_nodes,
+                     reduce(raw_rels = [], path IN paths | raw_rels + relationships(path)) AS graph_rels
+                RETURN
+                  [node IN graph_nodes | {
+                    id: node.id, key: node.key, name: node.name, type: labels(node)[0],
+                    summary: node.summary, date: node.date, amount: node.amount, properties: properties(node)
+                  }] AS nodes,
+                  [rel IN graph_rels | {
+                    source: startNode(rel).key, target: endNode(rel).key,
+                    type: type(rel), properties: properties(rel)
+                  }] AS links
+                """,
+                case_id=case_id,
+                node_keys=clean_keys,
+                neighbor_types=neighbor_types,
+                relationship_types=relationship_types or [],
+                limit=max(1, min(limit, 250)),
+            )
+        else:
+            rows = session.run(
+                """
+                MATCH (t:Transaction)
+                WHERE t.case_id = $case_id
+                WITH t
+                ORDER BY coalesce(t.date, ''), coalesce(t.name, t.key)
+                LIMIT $limit
+                OPTIONAL MATCH (t)-[r]-(n)
+                WHERE r.case_id = $case_id
+                  AND n.case_id = $case_id
+                  AND (size($neighbor_types) = 0 OR labels(n)[0] IN $neighbor_types)
+                  AND (size($relationship_types) = 0 OR type(r) IN $relationship_types)
+                WITH collect(DISTINCT t) + collect(DISTINCT n) AS raw_nodes, collect(DISTINCT r) AS raw_rels
+                WITH [node IN raw_nodes WHERE node IS NOT NULL] AS graph_nodes,
+                     [rel IN raw_rels WHERE rel IS NOT NULL] AS graph_rels
+                RETURN
+                  [node IN graph_nodes | {
+                    id: node.id, key: node.key, name: node.name, type: labels(node)[0],
+                    summary: node.summary, date: node.date, amount: node.amount, properties: properties(node)
+                  }] AS nodes,
+                  [rel IN graph_rels | {
+                    source: startNode(rel).key, target: endNode(rel).key,
+                    type: type(rel), properties: properties(rel)
+                  }] AS links
+                """,
+                case_id=case_id,
+                neighbor_types=neighbor_types,
+                relationship_types=relationship_types or [],
+                limit=max(1, min(limit, 250)),
+            )
         record = rows.single()
     if not record:
         return {"nodes": [], "links": []}
     return {
-        "nodes": [item for item in [*(record["transaction_nodes"] or []), *(record["neighbor_nodes"] or [])] if item],
+        "nodes": [item for item in (record["nodes"] or []) if item],
         "links": [item for item in (record["links"] or []) if item],
     }
 
@@ -1446,28 +1691,90 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
     def build_graph_artifact(
         node_keys: list[str] | None = None,
         title: str | None = None,
-        depth: int = 1,
+        depth: int = 0,
         mode: Literal[
+            "selected_subgraph",
             "entity_neighborhood",
             "transaction_only",
             "transactions_plus_accounts",
             "transaction_flow",
             "shortest_paths",
-        ] = "entity_neighborhood",
+        ] = "selected_subgraph",
         node_types: list[str] | None = None,
         relationship_types: list[str] | None = None,
+        query: str | None = None,
+        params: dict[str, Any] | None = None,
+        source_result_ids: list[str] | None = None,
         max_nodes: int = 75,
         max_relationships: int = 200,
         include_bridge_nodes: bool = True,
     ) -> dict[str, Any]:
         keys = list(dict.fromkeys(node_keys or []))
+        source_graphs: list[dict[str, Any]] = []
+        source_count = 0
+
+        for result_id in list(dict.fromkeys(source_result_ids or []))[:12]:
+            payload = context.result_store.get(result_id)
+            if payload is None:
+                continue
+            extracted_graph, extracted_keys = _extract_graph_selection(payload)
+            if extracted_graph.get("nodes") or extracted_graph.get("links"):
+                source_graphs.append(extracted_graph)
+            for key in extracted_keys:
+                if key not in keys:
+                    keys.append(key)
+            source_count += 1
+
+        query_rows: list[dict[str, Any]] = []
+        repaired_query: str | None = None
+        if query and query.strip():
+            try:
+                repaired_query = repair_common_cypher(query)
+                query_rows = run_readonly_cypher(
+                    repaired_query,
+                    case_id=context.case_id,
+                    params=params,
+                    limit=max_nodes,
+                )
+                extracted_graph, extracted_keys = _extract_graph_selection(query_rows)
+                if extracted_graph.get("nodes") or extracted_graph.get("links"):
+                    source_graphs.append(extracted_graph)
+                for key in extracted_keys:
+                    if key not in keys:
+                        keys.append(key)
+            except (UnsafeCypherError, ValueError) as exc:
+                return context.result(
+                    "build_graph_artifact",
+                    {"error": str(exc)},
+                    summary=f"Graph artifact query rejected: {exc}",
+                    status="error",
+                    error=str(exc),
+                )
+
         if mode == "transaction_only":
-            graph = _query_nodes_graph(
-                context.case_id,
-                keys,
-                ["Transaction"],
-                max_nodes,
-            )
+            if keys:
+                graph = _filter_graph(
+                    _transaction_flow_graph(
+                        context.case_id,
+                        node_keys=keys,
+                        neighbor_types=[],
+                        relationship_types=relationship_types,
+                        limit=max_nodes,
+                    ),
+                    node_types=["Transaction"],
+                    relationship_types=relationship_types,
+                    include_bridge_nodes=False,
+                    focus_keys=keys,
+                    max_nodes=max_nodes,
+                    max_relationships=max_relationships,
+                )
+            else:
+                graph = _query_nodes_graph(
+                    context.case_id,
+                    keys,
+                    ["Transaction"],
+                    max_nodes,
+                )
         elif mode == "transactions_plus_accounts":
             graph = _transaction_flow_graph(
                 context.case_id,
@@ -1486,13 +1793,29 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             )
         elif mode == "shortest_paths":
             graph = _shortest_path_graph(context.case_id, keys, max(1, depth or 1))
-        elif keys and depth > 0:
+        elif mode == "entity_neighborhood" and keys and depth > 0:
             graph = graph_service.expand_nodes(keys, depth=depth, case_id=context.case_id)
         elif keys:
-            context_rows = graph_service.get_context_for_nodes(keys, context.case_id).get("selected_entities") or []
-            graph = {"nodes": context_rows, "links": []}
+            graph = _merge_graphs(*source_graphs)
+            if depth > 0:
+                graph = _merge_graphs(graph, graph_service.expand_nodes(keys, depth=depth, case_id=context.case_id))
+            else:
+                graph = _merge_graphs(
+                    graph,
+                    _selected_subgraph(
+                        context.case_id,
+                        node_keys=keys,
+                        relationship_types=relationship_types,
+                        limit=max_nodes,
+                        max_relationships=max_relationships,
+                    ),
+                )
         else:
-            graph = graph_service.get_graph_structure(context.case_id, limit=max_nodes, sort_by="degree")
+            graph = _merge_graphs(*source_graphs)
+            if not graph.get("nodes"):
+                graph = graph_service.get_graph_structure(context.case_id, limit=max_nodes, sort_by="degree")
+        if source_graphs and mode in {"transactions_plus_accounts", "transaction_flow", "shortest_paths", "entity_neighborhood"}:
+            graph = _merge_graphs(*source_graphs, graph)
         if mode != "transaction_only":
             graph = _filter_graph(
                 graph,
@@ -1518,6 +1841,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
                 "max_nodes": max_nodes,
                 "max_relationships": max_relationships,
                 "include_bridge_nodes": include_bridge_nodes,
+                "source_result_ids": list(source_result_ids or [])[:12],
+                "source_result_count": source_count,
+                "query": repaired_query,
+                "query_row_count": len(query_rows),
             },
         )
         return context.result(
@@ -1843,9 +2170,10 @@ def make_agent_tools(context: AgentToolContext) -> list[StructuredTool]:
             build_graph_artifact,
             name="build_graph_artifact",
             description=(
-                "Create a focused graph artifact. Supports modes: entity_neighborhood, transaction_only, "
-                "transactions_plus_accounts, transaction_flow, and shortest_paths. Use node/relationship filters "
-                "and size caps to match the user's requested scope exactly."
+                "Create a focused graph artifact from the nodes and relationships you have selected. Prefer the "
+                "default selected_subgraph mode with node_keys, source_result_ids from prior tool results, or a "
+                "safe graph query returning node keys/source_key/target_key/relationship_type. Use specialized "
+                "modes only as fallback shortcuts. Use filters and size caps to match the user's requested scope exactly."
             ),
             args_schema=GraphArtifactArgs,
         ),

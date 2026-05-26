@@ -28,12 +28,18 @@ import {
 import {
   Bot,
   ChartColumn,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   CircleHelp,
   Crosshair,
+  Database,
   Download,
+  FileSearch,
   FileText,
   GitBranch,
   Info,
+  ListChecks,
   Loader2,
   Map as MapIcon,
   Network,
@@ -41,7 +47,9 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  Search,
   Send,
+  Settings2,
   Sparkles,
   Table2,
   Wrench,
@@ -58,6 +66,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Switch } from "@/components/ui/switch"
 import { downloadProtectedFile } from "@/lib/protected-file"
 import { getCanvasColors, getNodeColor } from "@/lib/theme"
 import { useTheme } from "@/lib/theme-provider"
@@ -74,6 +84,7 @@ import { agentAPI } from "../api"
 import type { AgentArtifactExportFormat } from "../api"
 import type {
   AgentArtifact,
+  AgentActivityItem,
   AgentClarification,
   AgentClientMessage,
   AgentStoredMessage,
@@ -89,6 +100,8 @@ const AGENT_MODEL_OPTIONS = [
 ] as const
 
 type AgentModelId = (typeof AGENT_MODEL_OPTIONS)[number]["id"]
+
+const INVESTIGATION_TRAIL_SETTING_KEY = "owl.agent.showInvestigationTrail"
 
 interface AgentFGNode {
   id: string
@@ -108,6 +121,16 @@ interface AgentFGLink {
 
 type AgentForceNode = NodeObject<AgentFGNode>
 type AgentForceLink = LinkObject<AgentFGNode, AgentFGLink>
+
+interface InvestigationTrailStep {
+  id: string
+  toolName?: string | null
+  title: string
+  detail?: string | null
+  result?: string | null
+  status: "running" | "success" | "error"
+  durationMs?: number | null
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
@@ -181,6 +204,64 @@ function numericValue(value: unknown): number | null {
   return null
 }
 
+function stringOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function normalizeActivity(value: unknown, fallbackId: string): AgentActivityItem | null {
+  const record = asRecord(value)
+  const title = stringOrNull(record.title)
+  if (!title) return null
+  return {
+    id: stringOrNull(record.id) ?? fallbackId,
+    tool_name: stringOrNull(record.tool_name),
+    phase: stringOrNull(record.phase) ?? undefined,
+    status: stringOrNull(record.status) ?? undefined,
+    title,
+    detail: stringOrNull(record.detail),
+    result_detail: stringOrNull(record.result_detail),
+    duration_ms: numericValue(record.duration_ms),
+  }
+}
+
+function normalizeStoredToolTrace(items: Array<Record<string, unknown>>): AgentToolTraceItem[] {
+  return items
+    .map((item, index) => {
+      const id = stringOrNull(item.id) ?? `stored_tool_${index}`
+      const status: AgentToolTraceItem["status"] = item.status === "success" ? "success" : "error"
+      return {
+        id,
+        name: stringOrNull(item.name) ?? "unknown",
+        arguments: asRecord(item.arguments),
+        status,
+        duration_ms: numericValue(item.duration_ms) ?? 0,
+        summary: stringOrNull(item.summary),
+        result_id: stringOrNull(item.result_id),
+        error: stringOrNull(item.error),
+        activity: normalizeActivity(item.activity, id),
+      }
+    })
+    .filter((item) => item.name !== "unknown" || item.summary || item.activity)
+}
+
+function loadInvestigationTrailSetting() {
+  try {
+    return localStorage.getItem(INVESTIGATION_TRAIL_SETTING_KEY) !== "false"
+  } catch {
+    return true
+  }
+}
+
+function saveInvestigationTrailSetting(value: boolean) {
+  try {
+    localStorage.setItem(INVESTIGATION_TRAIL_SETTING_KEY, value ? "true" : "false")
+  } catch {
+    // Ignore storage failures in private browsing or restricted environments.
+  }
+}
+
 function entityKeyFromRecord(value: Dict): string | null {
   for (const key of ["key", "entity_key", "node_key", "target_key", "source_key"]) {
     const candidate = value[key]
@@ -196,6 +277,7 @@ function storedToClientMessage(message: AgentStoredMessage): AgentClientMessage 
     role: message.role,
     content: message.content,
     clarification: message.clarification ?? null,
+    toolTraceSummary: normalizeStoredToolTrace(message.tool_trace_summary),
     createdAt: message.created_at,
   }
 }
@@ -209,6 +291,155 @@ function formatTime(value?: string) {
 
 function formatToolName(name: string) {
   return name.replace(/_/g, " ")
+}
+
+function formatDuration(ms?: number | null) {
+  if (!ms || ms <= 0) return null
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)}s`
+}
+
+function quoteDetail(value: unknown, maxChars = 90) {
+  const text = valueText(value).trim()
+  if (!text) return null
+  const trimmed = text.length > maxChars ? `${text.slice(0, maxChars - 3)}...` : text
+  return `"${trimmed}"`
+}
+
+function describeToolActivity(item: AgentToolTraceItem): AgentActivityItem {
+  const args = item.arguments ?? {}
+  const titleArg = quoteDetail(args.title)
+  const query = quoteDetail(args.query)
+  const entityKey = quoteDetail(args.entity_key)
+  let title = "Used agent tool"
+  let detail = "Gathering case context before answering."
+
+  switch (item.name) {
+    case "get_case_overview":
+      title = "Checked the case overview"
+      detail = "I need the case size and available entity types before narrowing the search."
+      break
+    case "search_graph_entities":
+      title = query ? `Searched the graph for ${query}` : "Searched the graph"
+      detail = "Finding matching entities before expanding their relationships."
+      break
+    case "inspect_graph_schema":
+      title = "Inspected available graph fields"
+      detail = "I need to inspect available fields before writing Cypher."
+      break
+    case "get_entity_details":
+      title = entityKey ? `Loaded entity details for ${entityKey}` : "Loaded entity details"
+      detail = "Checking the entity's verified fields and direct context."
+      break
+    case "get_entity_neighborhood":
+      title = entityKey ? `Loaded graph neighborhood for ${entityKey}` : "Loaded a graph neighborhood"
+      detail = "Expanding nearby nodes and relationships to see the local context."
+      break
+    case "find_paths_between_entities":
+      title = "Looked for relationship paths"
+      detail = "Checking how selected entities connect inside the case graph."
+      break
+    case "search_documents":
+      title = query ? `Searched documents for ${query}` : "Searched documents"
+      detail = "Looking for source text and citations that support the answer."
+      break
+    case "run_readonly_cypher":
+      title = "Queried graph data"
+      detail = "Running a safe read-only Cypher query scoped to this case."
+      break
+    case "get_timeline_events":
+      title = "Loaded chronological case events"
+      detail = "Gathering dated events so the answer can be ordered in time."
+      break
+    case "get_financial_records":
+      title = "Loaded financial records"
+      detail = "Checking transactions and financial intelligence linked to the request."
+      break
+    case "get_map_locations":
+      title = "Loaded map locations"
+      detail = "Checking geocoded entities that can support a map view."
+      break
+    case "build_graph_artifact":
+      title = titleArg ? `Built graph view ${titleArg}` : "Built a graph view"
+      detail = "Assembling the selected nodes and relationships into a focused graph artifact."
+      break
+    case "build_table_artifact":
+      title = titleArg ? `Built table ${titleArg}` : "Built a table from graph data"
+      detail = "Turning Cypher results into a table artifact."
+      break
+    case "build_table_artifact_from_rows":
+      title = titleArg ? `Built table ${titleArg}` : "Built a table from analyzed findings"
+      detail = "Structuring the findings into rows the workspace can export."
+      break
+    case "build_chart_artifact": {
+      const chartType = valueText(args.chart_type || "chart").replace(/_/g, " ")
+      title = titleArg ? `Built ${chartType} chart ${titleArg}` : `Built a ${chartType} chart`
+      detail = "Turning the numeric summary into a chart artifact."
+      break
+    }
+    case "build_report_artifact":
+      title = titleArg ? `Built report ${titleArg}` : "Built a report artifact"
+      detail = "Composing the selected findings and embedded views into a report."
+      break
+    case "build_map_artifact":
+      title = titleArg ? `Built map ${titleArg}` : "Built a map view"
+      detail = "Assembling the relevant locations into a focused map artifact."
+      break
+    case "request_clarification":
+      title = "Asked for clarification"
+      detail = stringOrNull(args.question) ?? "Waiting for the user to choose a scope before continuing."
+      break
+    default:
+      title = formatToolName(item.name)
+      break
+  }
+
+  return {
+    id: item.id,
+    tool_name: item.name,
+    phase: "result",
+    status: item.status,
+    title,
+    detail,
+    result_detail: item.error || item.summary || null,
+    duration_ms: item.duration_ms,
+  }
+}
+
+function stepFromActivity(activity: AgentActivityItem): InvestigationTrailStep {
+  const status =
+    activity.status === "error" ? "error" : activity.status === "running" ? "running" : "success"
+  return {
+    id: activity.id,
+    toolName: activity.tool_name,
+    title: activity.title,
+    detail: activity.detail,
+    result: activity.result_detail,
+    status,
+    durationMs: activity.duration_ms,
+  }
+}
+
+function stepFromTraceItem(item: AgentToolTraceItem): InvestigationTrailStep {
+  const activity = item.activity ?? describeToolActivity(item)
+  const status = item.status === "error" ? "error" : "success"
+  return {
+    id: item.id,
+    toolName: item.name,
+    title: activity.title,
+    detail: activity.detail,
+    result: item.error || activity.result_detail || item.summary || null,
+    status,
+    durationMs: item.duration_ms,
+  }
+}
+
+function upsertActivity(items: AgentActivityItem[], next: AgentActivityItem) {
+  const index = items.findIndex((item) => item.id === next.id)
+  if (index === -1) return [...items, next]
+  const copy = [...items]
+  copy[index] = { ...copy[index], ...next }
+  return copy
 }
 
 function artifactFilename(artifact: AgentArtifact, format: AgentArtifactExportFormat) {
@@ -309,12 +540,14 @@ export function AgentPage() {
   const [messages, setMessages] = useState<AgentClientMessage[]>([])
   const [artifacts, setArtifacts] = useState<AgentArtifact[]>([])
   const [toolTrace, setToolTrace] = useState<AgentToolTraceItem[]>([])
+  const [activityTrail, setActivityTrail] = useState<AgentActivityItem[]>([])
   const [input, setInput] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [runStatusText, setRunStatusText] = useState<string | null>(null)
   const [pendingClarification, setPendingClarification] = useState<AgentClarification | null>(null)
   const [selectedModelId, setSelectedModelId] = useState<AgentModelId>("gpt-5-mini")
+  const [showInvestigationTrail, setShowInvestigationTrail] = useState(loadInvestigationTrailSetting)
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(false)
   const selectNodes = useGraphStore((s) => s.selectNodes)
@@ -371,6 +604,10 @@ export function AgentPage() {
     if (selectedNodeKeys.size > 0) setDetailsPanelOpen(true)
   }, [selectedNodeKeys])
 
+  useEffect(() => {
+    saveInvestigationTrailSetting(showInvestigationTrail)
+  }, [showInvestigationTrail])
+
   const loadThreads = useCallback(async () => {
     if (!caseId) return
     try {
@@ -392,6 +629,7 @@ export function AgentPage() {
       setMessages(thread.messages.map(storedToClientMessage).filter(Boolean) as AgentClientMessage[])
       setArtifacts(thread.artifacts)
       setToolTrace([])
+      setActivityTrail([])
       setPendingClarification(null)
       setSelectedArtifactId(thread.artifacts[0]?.id ?? null)
     } catch {
@@ -404,6 +642,7 @@ export function AgentPage() {
     setMessages([])
     setArtifacts([])
     setToolTrace([])
+    setActivityTrail([])
     setPendingClarification(null)
     setSelectedArtifactId(null)
     setInput("")
@@ -423,6 +662,7 @@ export function AgentPage() {
     setRunStatusText("Starting agent run")
     setActiveRunId(null)
     setToolTrace([])
+    setActivityTrail([])
     setMessages((current) => [
       ...current,
       { id: optimisticId, role: "user", content: prompt, pending: true },
@@ -442,7 +682,7 @@ export function AgentPage() {
             setActiveThreadId(event.thread_id)
             setActiveRunId(event.run_id)
             committedUserMessageId = event.user_message_id ?? optimisticId
-            setRunStatusText("Reasoning over the case")
+            setRunStatusText("Investigating the case")
             setMessages((current) =>
               current.map((message) =>
                 message.id === optimisticId
@@ -460,16 +700,48 @@ export function AgentPage() {
             setRunStatusText(event.message)
           }
 
+          if (event.type === "activity") {
+            setActivityTrail((current) => upsertActivity(current, event.activity))
+            if (event.activity.phase === "plan") {
+              setRunStatusText(event.activity.title)
+            } else if (event.activity.result_detail || event.activity.detail) {
+              setRunStatusText(event.activity.result_detail || event.activity.detail || event.activity.title)
+            }
+          }
+
           if (event.type === "tool_plan") {
             const names = event.tools
-              .map((tool) => formatToolName(tool.name || "tool"))
+              .map((tool) =>
+                describeToolActivity({
+                  id: tool.id || `planned_${tool.name || "tool"}`,
+                  name: tool.name || "tool",
+                  arguments: tool.arguments || {},
+                  status: "success",
+                  duration_ms: 0,
+                }).title
+              )
               .join(", ")
-            setRunStatusText(names ? `Using ${names}` : "Using tools")
+            setRunStatusText(names || "Using tools")
           }
 
           if (event.type === "tool_result") {
             setToolTrace((current) => [...current, event.tool])
-            setRunStatusText(event.tool.summary || `Finished ${formatToolName(event.tool.name)}`)
+            setActivityTrail((current) =>
+              upsertActivity(current, {
+                ...(event.tool.activity ?? describeToolActivity(event.tool)),
+                id: event.tool.id,
+                tool_name: event.tool.name,
+                status: event.tool.status,
+                phase: "result",
+                duration_ms: event.tool.duration_ms,
+                result_detail:
+                  event.tool.error ||
+                  event.tool.activity?.result_detail ||
+                  event.tool.summary ||
+                  null,
+              })
+            )
+            setRunStatusText(event.tool.summary || describeToolActivity(event.tool).title)
           }
 
           if (event.type === "artifact") {
@@ -504,10 +776,12 @@ export function AgentPage() {
                 role: "assistant",
                 content: response.answer,
                 clarification: response.clarification ?? null,
+                toolTraceSummary: response.tool_trace,
                 createdAt: response.created_at,
               },
             ])
             setPendingClarification(null)
+            setActivityTrail([])
             if (response.artifacts.length > 0) {
               setArtifacts(response.artifacts)
               setSelectedArtifactId(response.artifacts[0]?.id ?? null)
@@ -628,6 +902,52 @@ export function AgentPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="size-8"
+                      aria-label="Agent settings"
+                      title="Agent settings"
+                    >
+                      <Settings2 className="size-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-72 p-3">
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">
+                          Agent settings
+                        </div>
+                        <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                          Tune how the agent explains its work in this browser.
+                        </p>
+                      </div>
+                      <div className="flex items-start justify-between gap-3 rounded-md border border-border bg-muted/20 p-3">
+                        <div className="min-w-0">
+                          <label
+                            htmlFor="agent-investigation-trail"
+                            className="text-sm font-medium text-foreground"
+                          >
+                            Investigation trail
+                          </label>
+                          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                            Show live searches, graph queries, and artifact steps in the chat.
+                          </p>
+                        </div>
+                        <Switch
+                          id="agent-investigation-trail"
+                          size="sm"
+                          checked={showInvestigationTrail}
+                          onCheckedChange={setShowInvestigationTrail}
+                          aria-label="Show investigation trail"
+                        />
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
                 <Select
                   value={selectedModelId}
                   onValueChange={(value) => setSelectedModelId(value as AgentModelId)}
@@ -674,6 +994,7 @@ export function AgentPage() {
                     <MessageBubble
                       key={message.id}
                       message={message}
+                      showInvestigationTrail={showInvestigationTrail}
                       onClarificationAnswer={
                         message.id === activeClarificationMessageId && !isLoading
                           ? (answer) => sendMessage(answer)
@@ -687,11 +1008,19 @@ export function AgentPage() {
                       onCancel={activeRunId ? cancelActiveRun : undefined}
                     />
                   )}
+                  {isLoading && showInvestigationTrail && (activityTrail.length > 0 || visibleToolTrace.length > 0) && (
+                    <InvestigationTrail
+                      activities={activityTrail}
+                      trace={visibleToolTrace}
+                      live
+                      defaultOpen
+                    />
+                  )}
                 </div>
               )}
             </div>
 
-            {visibleToolTrace.length > 0 && (
+            {visibleToolTrace.length > 0 && !showInvestigationTrail && (
               <ToolTrace trace={visibleToolTrace} />
             )}
 
@@ -761,9 +1090,11 @@ export function AgentPage() {
 
 function MessageBubble({
   message,
+  showInvestigationTrail,
   onClarificationAnswer,
 }: {
   message: AgentClientMessage
+  showInvestigationTrail: boolean
   onClarificationAnswer?: (answer: string) => void
 }) {
   const isUser = message.role === "user"
@@ -807,6 +1138,12 @@ function MessageBubble({
               onAnswer={onClarificationAnswer}
             />
           </div>
+        )}
+        {showInvestigationTrail && message.toolTraceSummary && message.toolTraceSummary.length > 0 && (
+          <InvestigationTrail
+            trace={message.toolTraceSummary.filter((tool) => tool.name !== "request_clarification")}
+            className="mt-3 max-w-3xl"
+          />
         )}
         <div className="mt-1 text-[11px] text-muted-foreground">
           {formatTime(message.createdAt)}
@@ -1014,6 +1351,154 @@ function ThinkingBubble({
           </Button>
         )}
       </div>
+    </div>
+  )
+}
+
+function activityIconFor(toolName?: string | null) {
+  switch (toolName) {
+    case "search_graph_entities":
+      return Search
+    case "search_documents":
+      return FileSearch
+    case "inspect_graph_schema":
+    case "run_readonly_cypher":
+      return Database
+    case "build_graph_artifact":
+    case "get_entity_neighborhood":
+    case "find_paths_between_entities":
+      return Network
+    case "build_table_artifact":
+    case "build_table_artifact_from_rows":
+      return Table2
+    case "build_chart_artifact":
+      return ChartColumn
+    case "build_report_artifact":
+      return FileText
+    case "build_map_artifact":
+    case "get_map_locations":
+      return MapIcon
+    case "request_clarification":
+      return CircleHelp
+    default:
+      return ListChecks
+  }
+}
+
+function InvestigationTrail({
+  trace = [],
+  activities = [],
+  live = false,
+  defaultOpen = false,
+  className,
+}: {
+  trace?: AgentToolTraceItem[]
+  activities?: AgentActivityItem[]
+  live?: boolean
+  defaultOpen?: boolean
+  className?: string
+}) {
+  const [open, setOpen] = useState(defaultOpen || live)
+  const steps = useMemo(() => {
+    const activitySteps = activities.map(stepFromActivity)
+    if (activitySteps.length > 0) return activitySteps
+    return trace.map(stepFromTraceItem)
+  }, [activities, trace])
+  const duration = useMemo(
+    () => steps.reduce((total, step) => total + (step.durationMs || 0), 0),
+    [steps]
+  )
+  const durationLabel = formatDuration(duration)
+
+  useEffect(() => {
+    if (live) setOpen(true)
+  }, [live, steps.length])
+
+  if (steps.length === 0) return null
+
+  return (
+    <div className={cn("rounded-lg border border-border bg-muted/20 text-sm", className)}>
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted-foreground" />
+        )}
+        <ListChecks className="size-3.5 text-amber-600 dark:text-amber-300" />
+        <span className="font-medium text-foreground">Investigation trail</span>
+        <span className="text-xs text-muted-foreground">
+          {steps.length} {steps.length === 1 ? "step" : "steps"}
+          {durationLabel ? ` - ${durationLabel}` : ""}
+        </span>
+        {live && (
+          <Badge variant="secondary" className="ml-auto text-[10px]">
+            Live
+          </Badge>
+        )}
+      </button>
+      {open && (
+        <div className="border-t border-border px-3 py-2">
+          <div className="space-y-2">
+            {steps.map((step, index) => {
+              const Icon = activityIconFor(step.toolName)
+              const durationText = formatDuration(step.durationMs)
+              return (
+                <div key={`${step.id}_${index}`} className="flex gap-2">
+                  <div className="flex w-5 shrink-0 flex-col items-center">
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-5 items-center justify-center rounded-full border bg-background",
+                        step.status === "error"
+                          ? "border-destructive/40 text-destructive"
+                          : step.status === "running"
+                            ? "border-amber-400/50 text-amber-600 dark:text-amber-300"
+                            : "border-emerald-500/30 text-emerald-600 dark:text-emerald-300"
+                      )}
+                    >
+                      {step.status === "running" ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : step.status === "error" ? (
+                        <X className="size-3" />
+                      ) : (
+                        <CheckCircle2 className="size-3" />
+                      )}
+                    </span>
+                    {index < steps.length - 1 && <span className="mt-1 h-full w-px bg-border" />}
+                  </div>
+                  <div className="min-w-0 flex-1 pb-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate font-medium text-foreground">
+                        {step.title}
+                      </span>
+                      {durationText && (
+                        <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                          {durationText}
+                        </span>
+                      )}
+                    </div>
+                    {step.detail && (
+                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                        {step.detail}
+                      </p>
+                    )}
+                    {step.result && (
+                      <p className="mt-1 rounded-md bg-background/70 px-2 py-1.5 text-xs leading-5 text-muted-foreground">
+                        <span className="font-medium text-foreground">Result:</span> {step.result}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

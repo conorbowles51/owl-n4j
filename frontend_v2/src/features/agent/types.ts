@@ -22,6 +22,18 @@ export interface AgentToolTraceItem {
   summary?: string | null
   result_id?: string | null
   error?: string | null
+  activity?: AgentActivityItem | null
+}
+
+export interface AgentActivityItem {
+  id: string
+  tool_name?: string | null
+  phase?: "plan" | "result" | string
+  status?: "running" | "success" | "error" | string
+  title: string
+  detail?: string | null
+  result_detail?: string | null
+  duration_ms?: number | null
 }
 
 export interface AgentClarificationOption {
@@ -82,6 +94,10 @@ export type AgentStreamEvent =
       type: "status"
       stage?: string
       message: string
+    }
+  | {
+      type: "activity"
+      activity: AgentActivityItem
     }
   | {
       type: "tool_plan"
@@ -171,6 +187,7 @@ export interface AgentClientMessage {
   role: "user" | "assistant"
   content: string
   clarification?: AgentClarification | null
+  toolTraceSummary?: AgentToolTraceItem[]
   pending?: boolean
   createdAt?: string
 }
