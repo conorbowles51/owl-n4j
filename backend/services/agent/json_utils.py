@@ -5,10 +5,21 @@ from decimal import Decimal
 from typing import Any
 
 
+POSTGRES_NULL_REPLACEMENT = "\ufffd"
+
+
+def sanitize_text(value: Any, *, none_as_empty: bool = True) -> str:
+    """Remove text bytes PostgreSQL cannot store in text/jsonb columns."""
+    text = "" if value is None and none_as_empty else str(value)
+    return text.replace("\x00", POSTGRES_NULL_REPLACEMENT)
+
+
 def to_jsonable(value: Any) -> Any:
     """Convert Neo4j, SQLAlchemy, and Python objects into JSON-safe data."""
-    if value is None or isinstance(value, (str, int, bool)):
+    if value is None or isinstance(value, (int, bool)):
         return value
+    if isinstance(value, str):
+        return sanitize_text(value)
     if isinstance(value, float):
         if value != value or value in (float("inf"), float("-inf")):
             return None
@@ -18,7 +29,7 @@ def to_jsonable(value: Any) -> Any:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, dict):
-        return {str(k): to_jsonable(v) for k, v in value.items()}
+        return {sanitize_text(k, none_as_empty=False): to_jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
         return [to_jsonable(v) for v in value]
 
@@ -46,11 +57,11 @@ def to_jsonable(value: Any) -> Any:
             "relationships": [to_jsonable(rel) for rel in relationships],
         }
 
-    return str(value)
+    return sanitize_text(value)
 
 
 def truncate_text(value: Any, max_chars: int = 1000) -> str:
-    text = "" if value is None else str(value)
+    text = sanitize_text(value)
     if len(text) <= max_chars:
         return text
     if max_chars <= 3:

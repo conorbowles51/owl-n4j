@@ -16,7 +16,7 @@ from postgres.models.agent import (
     AgentToolCall,
 )
 from postgres.models.user import User
-from services.agent.json_utils import to_jsonable, truncate_payload
+from services.agent.json_utils import sanitize_text, to_jsonable, truncate_payload
 from services.agent.schemas import (
     AgentArtifact,
     AgentClarification,
@@ -32,7 +32,7 @@ SUPPORTED_ARTIFACT_TYPES = {"graph", "table", "map", "report", "chart"}
 
 
 def summarize_title(message: str) -> str:
-    words = message.strip().split()
+    words = sanitize_text(message).strip().split()
     title = " ".join(words[:10]) if words else "New agent thread"
     if len(title) > 80:
         title = title[:77].rstrip() + "..."
@@ -43,7 +43,7 @@ def create_thread(db: Session, *, user: User, case_id: UUID, title: str | None =
     thread = AgentThread(
         case_id=case_id,
         owner_user_id=user.id,
-        title=title or "New agent thread",
+        title=sanitize_text(title or "New agent thread"),
         status="active",
     )
     db.add(thread)
@@ -137,11 +137,11 @@ def append_message(
         run_id=run.id if run else None,
         sequence_number=next_message_sequence(db, thread.id),
         role=role,
-        content=content,
-        model_provider=provider,
-        model_id=model_id,
-        artifact_ids=artifact_ids or None,
-        tool_trace_summary=tool_trace_summary or None,
+        content=sanitize_text(content),
+        model_provider=sanitize_text(provider) if provider else None,
+        model_id=sanitize_text(model_id) if model_id else None,
+        artifact_ids=to_jsonable(artifact_ids) if artifact_ids else None,
+        tool_trace_summary=to_jsonable(tool_trace_summary) if tool_trace_summary else None,
     )
     thread.last_message_at = datetime.now(timezone.utc)
     db.add(message)
@@ -176,10 +176,10 @@ def create_run(
         case_id=thread.case_id,
         user_id=user.id,
         status="running",
-        provider=provider,
-        model_id=model_id,
-        input_message=input_message,
-        extra_metadata=extra_metadata or None,
+        provider=sanitize_text(provider),
+        model_id=sanitize_text(model_id),
+        input_message=sanitize_text(input_message),
+        extra_metadata=to_jsonable(extra_metadata) if extra_metadata else None,
     )
     db.add(run)
     db.flush()
@@ -196,9 +196,9 @@ def finish_run(
     error: str | None = None,
     usage: dict[str, Any] | None = None,
 ) -> AgentRun:
-    run.status = status
-    run.final_answer = final_answer
-    run.error = error
+    run.status = sanitize_text(status)
+    run.final_answer = sanitize_text(final_answer) if final_answer is not None else None
+    run.error = sanitize_text(error) if error is not None else None
     run.usage = to_jsonable(usage) if usage else None
     run.completed_at = datetime.now(timezone.utc)
     db.flush()
@@ -224,13 +224,13 @@ def persist_tool_trace(
         record = AgentToolCall(
             run_id=run.id,
             sequence_number=index,
-            name=str(item.get("name") or "unknown"),
+            name=sanitize_text(item.get("name") or "unknown"),
             arguments=to_jsonable(item.get("arguments") or {}),
-            status=str(item.get("status") or "error"),
+            status=sanitize_text(item.get("status") or "error"),
             duration_ms=int(item.get("duration_ms") or 0),
-            result_id=item.get("result_id"),
-            summary=item.get("summary"),
-            error=item.get("error"),
+            result_id=sanitize_text(item.get("result_id")) if item.get("result_id") else None,
+            summary=sanitize_text(item.get("summary")) if item.get("summary") is not None else None,
+            error=sanitize_text(item.get("error")) if item.get("error") is not None else None,
             result_preview=truncate_payload(item.get("result_preview")),
         )
         db.add(record)
@@ -248,7 +248,7 @@ def persist_artifacts(
 ) -> list[AgentArtifactRecord]:
     records: list[AgentArtifactRecord] = []
     for artifact in artifacts:
-        artifact_type = str(artifact.get("type") or "table")
+        artifact_type = sanitize_text(artifact.get("type") or "table")
         if artifact_type not in SUPPORTED_ARTIFACT_TYPES:
             continue
         artifact_id = artifact.get("id")
@@ -257,7 +257,7 @@ def persist_artifacts(
             thread_id=thread.id,
             run_id=run.id,
             type=artifact_type,
-            title=str(artifact.get("title") or "Agent artifact"),
+            title=sanitize_text(artifact.get("title") or "Agent artifact"),
             payload=to_jsonable(artifact.get("data") or {}),
             extra_metadata=to_jsonable(artifact.get("metadata") or {}),
         )
