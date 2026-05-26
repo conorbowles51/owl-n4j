@@ -6151,6 +6151,11 @@ class Neo4jService:
         nodes = []
         links = []
         seen_nodes = set()
+        # Flipped to True only when a hard cap actually trims the
+        # result set. The frontend's "capped" badge reads this flag
+        # so the badge stops appearing when the gap between rendered
+        # nodes and total case Persons is just a filter, not a cap.
+        hit_cap = False
 
         # Normalise filters.
         anchor_keys = [k for k in (person_keys or []) if isinstance(k, str) and k]
@@ -6493,14 +6498,19 @@ class Neo4jService:
                         )
                         for rec in hop2_r:
                             all_keys.add(rec["nkey"])
-                            if len(all_keys) >= 600:
+                            if len(all_keys) >= 2000:
                                 break
 
-                # Cap at 200 to keep the force-graph render legible.
-                # Prefer anchors + hop1, drop hop2 first.
-                if len(all_keys) > 200:
+                # Sanity ceiling at 2,000 — same as the unanchored
+                # path. Beyond that the force-graph layout becomes
+                # unreadable AND the rail's GraphSelectionAccordion
+                # would have to render thousands of cards. If we
+                # exceed it, prefer anchors + hop1 + earlier hop2
+                # rows.
+                if len(all_keys) > 2000:
                     prioritised = list(anchor_keys) + list(hop1_keys - set(anchor_keys))
-                    all_keys = set(prioritised[:600])
+                    all_keys = set(prioritised[:2000])
+                    hit_cap = True
 
                 # Project the final node set with the same property
                 # bundle the legacy path produces.
@@ -6521,7 +6531,9 @@ class Neo4jService:
                     keys=list(all_keys),
                 )
 
+            persons_emitted = 0
             for record in result:
+                persons_emitted += 1
                 p = dict(record["p"])
                 pkey = p.get("key", "")
                 node_id = f"person-{pkey}"
@@ -6550,6 +6562,14 @@ class Neo4jService:
                             "target": node_id,
                             "label": "CONTAINS_CONTACT",
                         })
+
+            # If the LIMIT 2000 actually trimmed the unanchored query
+            # we flag the response so the frontend renders the
+            # "capped" badge. (When persons_emitted < 2000 the
+            # difference between rendered and total is just the
+            # active-edge filter, not a cap.)
+            if not anchored and persons_emitted >= 2000:
+                hit_cap = True
 
             # 3. Find direct links between persons, parameterised by the
             # active edge-type set. Each edge pattern contributes one
@@ -6810,6 +6830,11 @@ class Neo4jService:
             "links": links,
             "total_persons": total_persons,
             "edge_counts_by_type": edge_counts_by_type,
+            # Only true when a hard cap actually trimmed the result.
+            # Frontend gates the "capped" badge on this — without it
+            # the badge fires for ANY gap between rendered and total
+            # Persons, even when the gap is honest filtering.
+            "hit_cap": hit_cap,
         }
 
     def search_cellebrite_persons(

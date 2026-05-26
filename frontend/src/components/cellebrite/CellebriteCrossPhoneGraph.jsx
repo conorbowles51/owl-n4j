@@ -229,10 +229,15 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   const fgRef = useRef();
   const containerRef = useRef();
 
-  // Total Persons in the case (pre 200-cap). Surfaced by the
-  // backend so the UI can show "200 of N" and offer search when N
-  // exceeds the rendered set.
+  // Total Persons in the case (regardless of any filter or cap).
+  // Surfaced by the backend so the UI can show "X of N people in
+  // case" and offer search to reach those outside the rendered set.
   const [totalPersons, setTotalPersons] = useState(0);
+  // True ONLY when the backend hit a hard 2,000-node cap. Drives
+  // the "capped" badge; the gap between rendered and total Persons
+  // is otherwise just the active-edge filter, which is honest
+  // behaviour and shouldn't surface a warning.
+  const [hitCap, setHitCap] = useState(false);
 
   // Per-edge-type edge counts (from the backend). The chip strip
   // renders these as small badges so the user sees "Visits 0" and
@@ -495,12 +500,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       });
       setTotalPersons((data && Number(data.total_persons)) || 0);
       setEdgeCountsByType((data && data.edge_counts_by_type) || {});
+      setHitCap(!!(data && data.hit_cap));
       setLoading(false);
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
         setTotalPersons(0);
         setEdgeCountsByType({});
+        setHitCap(false);
         setLoading(false);
       }
     });
@@ -1089,17 +1096,28 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <button onClick={handleFit} className="p-1.5 hover:bg-light-200 rounded" title="Fit to view">
           <Maximize2 className="w-4 h-4 text-light-600" />
         </button>
-        {/* N-of-M counter — surfaces the 200-cap so the user knows
-            when there's more case data than the canvas can show. */}
+        {/* Counter — shows what's on canvas vs what's in the case.
+            The "capped" badge ONLY appears when the backend hit a
+            hard 2,000-node ceiling. The gap between rendered and
+            total Persons usually comes from the active-edge filter,
+            not a cap, so reading "643 of 1,763" without the badge
+            means "the other 1,120 don't participate in any of the
+            currently active edge types — toggle more chips on to
+            bring them in." */}
         <div className="text-xs text-light-500 ml-2 whitespace-nowrap">
-          {filteredData.nodes.length} of {totalPersons > 0 ? totalPersons.toLocaleString() : graphData.nodes.length} nodes
-          {totalPersons > graphData.nodes.length && (
-            <span className="ml-1 text-amber-600 font-medium" title={`Render capped at ${graphData.nodes.length}; switch to Search mode to find Persons outside the rendered subset.`}>
-              · capped
+          {filteredData.nodes.length.toLocaleString()} of {totalPersons > 0 ? totalPersons.toLocaleString() : graphData.nodes.length.toLocaleString()} nodes
+          {hitCap && (
+            <span className="ml-1 text-amber-600 font-medium" title="Backend hit the 2,000-node ceiling. Anchor on a Person via search to drill into a smaller neighbourhood, or use Search mode to find any node in the case.">
+              · capped at 2,000
+            </span>
+          )}
+          {!hitCap && totalPersons > 0 && filteredData.nodes.length < totalPersons && (
+            <span className="ml-1 text-light-400" title="The rest don't participate in any of the currently active edge types. Toggle more chips on (Messages, Emails, Visits, etc.) to bring them in.">
+              · {(totalPersons - filteredData.nodes.length).toLocaleString()} hidden by filters
             </span>
           )}
           {' · '}
-          {filteredData.links.length} edges
+          {filteredData.links.length.toLocaleString()} edges
         </div>
       </div>
 
