@@ -4,6 +4,7 @@ import CommsAttachment from './CommsAttachment';
 import { formatShortTime, paletteForSenderKey, senderInitials } from './commsUtils';
 import HighlightedText from '../shared/HighlightedText';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import PersonName from '../shared/PersonName';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 
 /**
@@ -126,9 +127,12 @@ export default function CommsMessageBubble({
                 isOwner ? 'flex-row-reverse' : ''
               }`}
             >
-              <span className="text-[11px] font-semibold text-light-900 truncate max-w-[200px]">
-                {senderName}
-              </span>
+              <PersonName
+                name={sender?.name}
+                personKey={sender?.key}
+                className="text-[11px] font-semibold text-light-900 truncate max-w-[240px]"
+                numberClassName="text-[10px] font-normal"
+              />
               {isOwner && (
                 <span
                   className="inline-flex items-center gap-0.5 text-[9px] uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 px-1 py-px rounded"

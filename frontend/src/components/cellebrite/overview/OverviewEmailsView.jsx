@@ -3,6 +3,7 @@ import { Mail, Paperclip, Folder, ArrowDownLeft, ArrowUpRight } from 'lucide-rea
 import { cellebriteOverviewAPI } from '../../../services/api';
 import OverviewDetailView from './OverviewDetailView';
 import FilterCommsButton from './FilterCommsButton';
+import PersonName from '../shared/PersonName';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 import { formatTs } from '../events/eventUtils';
 
@@ -50,18 +51,25 @@ export default function OverviewEmailsView({ caseId, report, onBack }) {
     {
       key: 'from_name',
       label: 'From',
-      width: 'minmax(140px, 200px)',
-      render: (r) => r.from_name || r.from_key || '—',
+      width: 'minmax(160px, 220px)',
+      render: (r) =>
+        (r.from_name || r.from_key)
+          ? <PersonName name={r.from_name} personKey={r.from_key} numberClassName="text-[10px]" />
+          : '—',
     },
     {
       key: 'to_name',
       label: 'To',
-      width: 'minmax(140px, 200px)',
+      width: 'minmax(160px, 220px)',
       render: (r) => {
         if (!r.to_name && !r.to_key) return '—';
-        const main = r.to_name || r.to_key;
         const more = r.to_count > 1 ? ` +${r.to_count - 1}` : '';
-        return `${main}${more}`;
+        return (
+          <span className="inline-flex items-baseline gap-1 min-w-0">
+            <PersonName name={r.to_name} personKey={r.to_key} numberClassName="text-[10px]" />
+            {more && <span className="text-light-500 flex-shrink-0">{more}</span>}
+          </span>
+        );
       },
     },
     {

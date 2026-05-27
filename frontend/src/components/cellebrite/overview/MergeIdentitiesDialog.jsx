@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Loader2, Users, AlertTriangle, Check, Search, Smartphone } from 'lucide-react';
 import { cellebriteOverviewAPI } from '../../../services/api';
+import PersonName from '../shared/PersonName';
 
 /**
  * Investigator-asserted identity merge — SEARCH + PICK (no free-text keys).
@@ -91,7 +92,7 @@ export default function MergeIdentitiesDialog({ caseId, primaryKey, primaryName,
               {selected.map((s) => (
                 <div key={s.key} className="flex items-center gap-2 bg-owl-blue-50 border border-owl-blue-200 rounded px-2 py-1">
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-owl-blue-900 truncate">{s.name}</div>
+                    <PersonName name={s.name} personKey={s.key} numbers={s.phone_numbers} className="text-xs font-medium text-owl-blue-900 truncate block" numberClassName="text-[10px]" />
                     <div className="text-[10px] text-light-600 font-mono truncate">{s.key} · {fmt(s)} · {s.devices} device{s.devices === 1 ? '' : 's'}</div>
                   </div>
                   <button onClick={() => remove(s.key)} className="p-0.5 text-light-500 hover:text-red-600"><X className="w-3.5 h-3.5" /></button>
@@ -125,7 +126,7 @@ export default function MergeIdentitiesDialog({ caseId, primaryKey, primaryName,
                     >
                       <div className="flex-1 min-w-0">
                         <div className="text-xs font-medium text-light-900 truncate flex items-center gap-1">
-                          {r.name}
+                          <PersonName name={r.name} personKey={r.key} numbers={r.phone_numbers} numberClassName="text-[10px]" />
                           {r.is_owner && <span className="text-[8px] uppercase bg-emerald-100 text-emerald-700 px-1 rounded">owner</span>}
                         </div>
                         <div className="text-[10px] text-light-500 font-mono truncate">{r.key}</div>

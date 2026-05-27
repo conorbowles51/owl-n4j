@@ -2,7 +2,7 @@ import React from 'react';
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed, Phone, Video } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
-import HighlightedText from '../shared/HighlightedText';
+import PersonName from '../shared/PersonName';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { formatShortTime, formatDuration } from './commsUtils';
 
@@ -69,13 +69,21 @@ export default function CommsCallRow({
       <Icon className={`w-4 h-4 flex-shrink-0 ${color}`} />
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5 text-sm text-light-900">
-          <span className="font-medium truncate">
-            {hasHighlights ? <HighlightedText text={fromName} highlights={highlights} /> : fromName}
-          </span>
+          <PersonName
+            name={fromName}
+            personKey={item.sender?.key}
+            className="font-medium truncate"
+            numberClassName="text-[10px]"
+            highlights={hasHighlights ? highlights : null}
+          />
           <span className="text-light-400">→</span>
-          <span className="font-medium truncate">
-            {hasHighlights ? <HighlightedText text={toName} highlights={highlights} /> : toName}
-          </span>
+          <PersonName
+            name={toName}
+            personKey={item.recipient?.key}
+            className="font-medium truncate"
+            numberClassName="text-[10px]"
+            highlights={hasHighlights ? highlights : null}
+          />
           {item.video_call && <Video className="w-3 h-3 text-light-500 flex-shrink-0" title="Video call" />}
           {isMissed && <span className="text-[10px] text-red-700 bg-red-50 px-1 rounded">Missed</span>}
           {showPhoneChip && effectiveReportKey && (

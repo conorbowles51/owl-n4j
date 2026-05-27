@@ -30,6 +30,7 @@ import React, { useMemo, useState } from 'react';
 import { Folder, FileText, Code, Eye, ExternalLink, Paperclip, AlertCircle } from 'lucide-react';
 import CommsAttachment from '../../comms/CommsAttachment';
 import { formatShortTime } from '../../comms/commsUtils';
+import PersonName from '../PersonName';
 import { useCellebriteSelection } from '../CellebriteSelectionContext';
 import { requestCellebriteTabSwitch } from '../../../../utils/commsHandoff';
 
@@ -62,13 +63,14 @@ export default function RailEmailBody({ item, caseId }) {
           {subject}
         </div>
         <div className="mt-1 text-[11px] text-light-600 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span>
+          <span className="inline-flex items-baseline gap-1">
             <span className="text-light-500">From </span>
-            <span className="text-light-800 font-medium">{fromName}</span>
+            <PersonName name={fromName} personKey={item.sender?.key} className="text-light-800 font-medium" numberClassName="text-[10px]" />
           </span>
-          <span>
+          <span className="inline-flex items-baseline gap-1">
             <span className="text-light-500">to </span>
-            <span className="text-light-800 font-medium">{toName}{extraTo}</span>
+            <PersonName name={toName} personKey={item.recipient?.key || (item.recipients && item.recipients[0]?.key)} className="text-light-800 font-medium" numberClassName="text-[10px]" />
+            {extraTo && <span className="text-light-800 font-medium">{extraTo}</span>}
           </span>
           <span className="text-light-400">·</span>
           <span className="text-light-700 tabular-nums">{formatShortTime(item.timestamp)}</span>

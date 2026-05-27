@@ -7,6 +7,7 @@ import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { appIconEmoji, buildSenderPalette, senderInitials } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import PersonName from '../shared/PersonName';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import TimelineScrubber from '../shared/TimelineScrubber';
 import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
@@ -281,7 +282,12 @@ export default function CommsThreadView({
                   >
                     {senderInitials(p.name || p.key)}
                   </span>
-                  <span className="truncate max-w-[140px]">{p.name || p.key}</span>
+                  <PersonName
+                    name={p.name}
+                    personKey={p.key}
+                    className="truncate max-w-[200px]"
+                    numberClassName="text-[9px] opacity-70"
+                  />
                   {p.is_owner && <Smartphone className="w-2.5 h-2.5" />}
                 </span>
               );

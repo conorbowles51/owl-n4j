@@ -6,6 +6,7 @@ import {
 import { cellebriteAPI } from '../../services/api';
 import CommsContactFeed from './comms/CommsContactFeed';
 import NameActionMenu from './shared/NameActionMenu';
+import PersonName from './shared/PersonName';
 import { usePerspective } from '../../context/PerspectiveContext';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import { requestCellebriteTabSwitch } from '../../utils/commsHandoff';
@@ -242,8 +243,7 @@ export default function CellebriteCommunicationView({ caseId }) {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-light-50 z-10">
               <tr className="border-b border-light-200">
-                <th className="text-left px-3 py-2 font-medium text-light-600">Name</th>
-                <th className="text-left px-3 py-2 font-medium text-light-600">Phone</th>
+                <th className="text-left px-3 py-2 font-medium text-light-600">Contact</th>
                 <SortHeader field="call_count" label="Calls" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader field="message_count" label="Messages" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader field="email_count" label="Emails" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
@@ -260,11 +260,12 @@ export default function CellebriteCommunicationView({ caseId }) {
                     onClick={() => drillInto(contact)}
                     title="Click to drill into this contact's communications"
                   >
-                    <td className="px-3 py-2 font-medium text-owl-blue-900 truncate max-w-[150px]">
-                      {contact.name}
-                    </td>
-                    <td className="px-3 py-2 text-light-600 truncate max-w-[120px]">
-                      {contact.phone}
+                    <td className="px-3 py-2 font-medium text-owl-blue-900 max-w-[260px] truncate">
+                      <PersonName
+                        name={contact.name}
+                        personKey={contact.person_key}
+                        number={contact.phone}
+                      />
                     </td>
                     <td className="px-3 py-2 text-center">
                       {contact.call_count > 0 && (
@@ -310,7 +311,7 @@ export default function CellebriteCommunicationView({ caseId }) {
               })}
               {filteredContacts.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-8 text-center text-light-400">
+                  <td colSpan={6} className="px-3 py-8 text-center text-light-400">
                     No contacts found
                   </td>
                 </tr>
@@ -359,12 +360,13 @@ export default function CellebriteCommunicationView({ caseId }) {
                     <Users className="w-3 h-3 text-amber-600" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-owl-blue-900 truncate">
-                      {sc.name}
-                    </div>
-                    {sc.phone && (
-                      <div className="text-[10px] text-light-500 truncate">{sc.phone}</div>
-                    )}
+                    <PersonName
+                      name={sc.name}
+                      personKey={sc.person_key}
+                      number={sc.phone}
+                      className="text-xs font-medium text-owl-blue-900 truncate block"
+                      numberClassName="text-[10px]"
+                    />
                   </div>
                   <span onClick={(e) => e.stopPropagation()}>
                     <NameActionMenu

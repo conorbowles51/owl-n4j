@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Search, X, Phone, MessageSquare, Mail, ArrowLeftRight, Smartphone, User } from 'lucide-react';
+import PersonName from '../shared/PersonName';
 
 /**
  * Bidirectional From/To participant filter for the Comms Center.
@@ -147,12 +148,14 @@ export default function CommsEntityFilter({
           <div className="flex-1 flex items-center gap-1 overflow-x-auto">
             {[...fromKeys].map(k => (
               <Chip key={`f-${k}`} color="blue" onRemove={() => toggleFrom(k)}>
-                → {getName(k)}
+                <span className="mr-0.5">→</span>
+                <PersonName name={getName(k)} personKey={k} numberClassName="text-[10px] opacity-70" />
               </Chip>
             ))}
             {[...toKeys].map(k => (
               <Chip key={`t-${k}`} color="green" onRemove={() => toggleTo(k)}>
-                ← {getName(k)}
+                <span className="mr-0.5">←</span>
+                <PersonName name={getName(k)} personKey={k} numberClassName="text-[10px] opacity-70" />
               </Chip>
             ))}
           </div>
@@ -316,7 +319,13 @@ function EntityPanel({ title, accent, entities, selectedKeys, search, onSearchCh
                 ) : (
                   <User className="w-3.5 h-3.5 text-light-400 flex-shrink-0" />
                 )}
-                <span className="flex-1 truncate text-light-900 font-medium">{e.name}</span>
+                <PersonName
+                  name={e.name}
+                  personKey={e.key}
+                  numbers={e.phone_numbers}
+                  className="flex-1 truncate text-light-900 font-medium"
+                  numberClassName="text-[10px] font-normal"
+                />
                 {e.device_count > 1 && (
                   <span
                     className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] flex-shrink-0"

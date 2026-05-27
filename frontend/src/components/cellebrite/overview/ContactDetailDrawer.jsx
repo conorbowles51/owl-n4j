@@ -7,6 +7,7 @@ import { cellebriteOverviewAPI } from '../../../services/api';
 import { formatTs, formatDuration } from '../events/eventUtils';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import PersonName, { phoneFromKey } from '../shared/PersonName';
 import MergeIdentitiesDialog from './MergeIdentitiesDialog';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 
@@ -103,9 +104,12 @@ export default function ContactDetailDrawer({ caseId, reportKey, contactKey, con
           <User className="w-4 h-4 text-blue-600" />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-semibold text-owl-blue-900 truncate">
-            {contact.name || contact.key}
-          </div>
+          <PersonName
+            name={contact.name}
+            personKey={contact.key}
+            numbers={contact.phone_numbers}
+            className="text-sm font-semibold text-owl-blue-900 truncate block"
+          />
           <div className="text-[11px] text-light-600 flex items-center gap-1">
             {contact.is_phone_owner && (
               <span className="flex items-center gap-0.5 text-emerald-700">

@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallba
 import { ArrowUp, ArrowDown, MapPin } from 'lucide-react';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import PersonName from '../shared/PersonName';
 import { getPhoneIdentityByKey } from '../../../utils/phoneIdentity';
 
 /**
@@ -262,11 +263,12 @@ const TableRow = React.memo(function TableRow({
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const label = ev.label || EVENT_LABELS[ev.event_type] || ev.event_type;
   const senderName = ev.sender?.name || '';
-  const recipientName =
-    ev.recipient?.name ||
-    (Array.isArray(ev.recipients) && ev.recipients[0]?.name) ||
-    ev.counterpart?.name ||
-    '';
+  const recipientParty =
+    ev.recipient ||
+    (Array.isArray(ev.recipients) && ev.recipients[0]) ||
+    ev.counterpart ||
+    null;
+  const recipientName = recipientParty?.name || '';
   const hasGeo = ev.latitude != null && ev.longitude != null;
 
   const rowClasses = [
@@ -328,10 +330,14 @@ const TableRow = React.memo(function TableRow({
         {label}
       </div>
       <div className="px-2 border-r border-light-100 text-light-700 truncate" title={senderName}>
-        {senderName || '—'}
+        {ev.sender
+          ? <PersonName name={senderName} personKey={ev.sender?.key} numberClassName="text-[10px]" />
+          : '—'}
       </div>
       <div className="px-2 border-r border-light-100 text-light-700 truncate" title={recipientName}>
-        {recipientName || '—'}
+        {recipientParty
+          ? <PersonName name={recipientName} personKey={recipientParty?.key} numberClassName="text-[10px]" />
+          : '—'}
       </div>
       <div
         className="px-2 border-r border-light-100 text-light-600 truncate"

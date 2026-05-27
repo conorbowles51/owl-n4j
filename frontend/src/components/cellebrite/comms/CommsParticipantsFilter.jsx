@@ -4,6 +4,7 @@ import {
   ChevronLeft, ChevronRight as ChevronRightSm,
   Split, GitMerge,
 } from 'lucide-react';
+import PersonName from '../shared/PersonName';
 
 /**
  * Phase K1 — Participants filter with a Mode toggle.
@@ -328,9 +329,13 @@ function SidePanel({ title, entities, selected, onToggle, wide = false }) {
                 {e.is_owner
                   ? <Smartphone className="w-3 h-3 text-emerald-600 flex-shrink-0" />
                   : <User className="w-3 h-3 text-light-400 flex-shrink-0" />}
-                <span className="truncate" title={e.name || e.key}>
-                  {e.name || e.key}
-                </span>
+                <PersonName
+                  name={e.name}
+                  personKey={e.key}
+                  numbers={e.phone_numbers}
+                  className="truncate"
+                  numberClassName="text-[10px]"
+                />
                 {e._stub && (
                   <span className="ml-auto text-[9px] text-light-400 uppercase tracking-wide">
                     pending
@@ -397,9 +402,12 @@ function SelectedChip({ participant, modeIsAny, onRemove }) {
       <span className="text-[9px] uppercase tracking-wide opacity-70">
         {label}
       </span>
-      <span className="truncate max-w-[140px]" title={participant.name}>
-        {participant.name}
-      </span>
+      <PersonName
+        name={participant.name}
+        personKey={participant.key}
+        className="truncate max-w-[200px]"
+        numberClassName="text-[10px] opacity-70"
+      />
       <button
         type="button"
         onClick={onRemove}

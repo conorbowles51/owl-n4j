@@ -4,6 +4,7 @@ import { cellebriteOverviewAPI } from '../../../services/api';
 import OverviewDetailView from './OverviewDetailView';
 import ContactDetailDrawer from './ContactDetailDrawer';
 import FilterCommsButton from './FilterCommsButton';
+import PersonName, { phoneFromKey } from '../shared/PersonName';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 
 export default function OverviewContactsView({ caseId, report, onBack }) {
@@ -45,7 +46,7 @@ export default function OverviewContactsView({ caseId, report, onBack }) {
           ) : (
             <User className="w-3 h-3 text-light-400" />
           )}
-          <span className="truncate">{r.name || r.key}</span>
+          <PersonName name={r.name} personKey={r.key} hideNumber className="truncate" />
         </span>
       ),
     },
@@ -53,15 +54,23 @@ export default function OverviewContactsView({ caseId, report, onBack }) {
       key: 'phone_numbers',
       label: 'Phone numbers',
       width: 'minmax(180px, 1fr)',
-      render: (r) =>
-        (r.phone_numbers || []).length > 0 ? (
-          <span className="font-mono text-[11px] text-light-700">
-            {r.phone_numbers.slice(0, 2).join(', ')}
-            {r.phone_numbers.length > 2 && ` +${r.phone_numbers.length - 2}`}
-          </span>
-        ) : (
-          '—'
-        ),
+      render: (r) => {
+        const nums = r.phone_numbers || [];
+        if (nums.length > 0) {
+          return (
+            <span className="font-mono text-[11px] text-light-700">
+              {nums.slice(0, 2).join(', ')}
+              {nums.length > 2 && ` +${nums.length - 2}`}
+            </span>
+          );
+        }
+        // Fall back to the canonical number derived from the phone-<digits>
+        // key so a missing phone_numbers list never leaves the column blank.
+        const fromKey = phoneFromKey(r.key);
+        return fromKey
+          ? <span className="font-mono text-[11px] text-light-700">{fromKey}</span>
+          : '—';
+      },
     },
     {
       key: 'calls',

@@ -5,6 +5,7 @@ import {
   Bluetooth, Search as SearchIcon, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import PhoneIdentityChip from '../PhoneIdentityChip';
+import PersonName from '../PersonName';
 import { useCellebriteSelection } from '../CellebriteSelectionContext';
 
 /**
@@ -169,19 +170,19 @@ function NodeCard({ node, onDrill }) {
 }
 
 function PersonCard({ node, onDrill }) {
-  const name = node.name || node.person_key || node.node_key || '?';
   return (
     <div className="border border-light-200 rounded bg-white px-2.5 py-2">
       <div className="flex items-center gap-2">
         <User className="w-3.5 h-3.5 text-owl-blue-600 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <div className="text-[12px] font-semibold text-owl-blue-900 truncate">
-            {name}
-          </div>
+          <PersonName
+            name={node.name}
+            personKey={node.person_key || node.node_key}
+            number={node.phone}
+            className="text-[12px] font-semibold text-owl-blue-900 truncate block"
+            numberClassName="text-[10px]"
+          />
           <div className="text-[10px] text-light-500 truncate flex items-center gap-1.5 flex-wrap">
-            {node.phone && (
-              <span className="font-mono">{node.phone}</span>
-            )}
             {node.device_count > 1 && (
               <span className="text-amber-700">
                 <Smartphone className="inline w-2.5 h-2.5 mr-0.5" />

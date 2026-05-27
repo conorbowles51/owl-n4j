@@ -4,6 +4,7 @@ import { cellebriteEventsAPI } from '../../../../services/api';
 import { EventBody } from '../../events/EventDetailDrawer';
 import { useCellebriteSelection } from '../CellebriteSelectionContext';
 import { formatTs } from '../../events/eventUtils';
+import PersonName from '../PersonName';
 
 /**
  * Rail accordion for "event-like" selections (call / message / email /
@@ -242,7 +243,12 @@ function RelatedList({ items, onPick, highlight }) {
             {(it.summary || it.counterpart?.name) && (
               <div className="text-light-500 mt-0.5 truncate">
                 {it.counterpart?.name && (
-                  <span className="text-light-700">{it.counterpart.name}</span>
+                  <PersonName
+                    name={it.counterpart.name}
+                    personKey={it.counterpart.key}
+                    className="text-light-700"
+                    numberClassName="text-[10px]"
+                  />
                 )}
                 {it.counterpart?.name && it.summary && <span className="mx-1">·</span>}
                 {it.summary && <span>{it.summary}</span>}

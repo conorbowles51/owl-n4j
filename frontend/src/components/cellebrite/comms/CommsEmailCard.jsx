@@ -3,6 +3,7 @@ import { Mail, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import CommsAttachment from './CommsAttachment';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
+import PersonName from '../shared/PersonName';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { formatShortTime, previewBody } from './commsUtils';
 
@@ -75,7 +76,23 @@ export default function CommsEmailCard({
             )}
           </div>
           <div className="text-[10px] text-light-500 mt-0.5 flex items-center gap-2">
-            <span className="truncate">{fromName} → {toName}</span>
+            <span className="truncate flex items-center gap-1 min-w-0">
+              <PersonName
+                name={fromName}
+                personKey={item.sender?.key}
+                className="truncate"
+                numberClassName="text-[10px]"
+                highlights={hasHighlights ? highlights : null}
+              />
+              <span className="text-light-400 flex-shrink-0">→</span>
+              <PersonName
+                name={toName}
+                personKey={item.recipient?.key}
+                className="truncate"
+                numberClassName="text-[10px]"
+                highlights={hasHighlights ? highlights : null}
+              />
+            </span>
             <span>·</span>
             <span className="flex-shrink-0">{formatShortTime(item.timestamp)}</span>
             {item.folder && (
