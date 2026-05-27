@@ -467,6 +467,21 @@ def ingest_cellebrite_report(
         _log(f"WARNING: Geotag harvest failed: {e}")
 
     # ------------------------------------------------------------------
+    # Step 8.36: Harvest EVERY coordinate-bearing model into a Location
+    # ------------------------------------------------------------------
+    # WiFi networks, searched places, journeys etc. carry the coordinate
+    # where the device was, but only Location-typed models were being
+    # materialised — dropping ~25k WiFi geolocations case-wide. This
+    # captures every point, tagged by source so the map can filter by
+    # provenance. Runs before Step 8.4 so the CONTAINS sweep links them too.
+    _log("Step 8.36: Harvesting coordinates from all models (WiFi/search/...)...")
+    try:
+        harvested = writer.harvest_all_coordinates(all_models)
+        _log(f"Coordinate harvest: {harvested} extra location points materialised")
+    except Exception as e:
+        _log(f"WARNING: Coordinate harvest failed: {e}")
+
+    # ------------------------------------------------------------------
     # Step 8.4: Link every entity to the PhoneReport via CONTAINS
     # ------------------------------------------------------------------
     _log("Step 8.4: Linking entities to PhoneReport (CONTAINS)...")

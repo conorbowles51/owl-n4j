@@ -312,6 +312,7 @@ class CellebriteNeo4jWriter:
         self.chats_created = 0
         self.emails_created = 0
         self.locations_created = 0
+        self.harvested_coords_created = 0
         self.accounts_created = 0
         self.searches_created = 0
         self.pages_created = 0
@@ -1679,6 +1680,133 @@ class CellebriteNeo4jWriter:
 
         self.locations_created += 1
 
+    # ------------------------------------------------------------------
+    # Capture EVERY coordinate-bearing model as a location point
+    # ------------------------------------------------------------------
+    # model_type -> human location_type label for harvested points
+    _COORD_SOURCE_LABEL = {
+        "WirelessNetwork": "WiFi",
+        "SearchedItem": "Search",
+        "Journey": "Journey",
+        "DeviceEvent": "Device Event",
+        "MediaLocation": "Media",
+    }
+    # Types that ALREADY produce geolocated nodes elsewhere (or are pure
+    # geometry) — don't double-materialise them.
+    _COORD_SKIP_TYPES = {"Location", "CellTower", "Cell", "CellLocation", "Coordinate"}
+
+    def _extract_coord(self, model: ParsedModel):
+        """Best-effort (lat, lon, accuracy_m) from ANY model carrying a
+        coordinate: directly, in a 'Position' child, or any nested child /
+        Coordinate carrying Latitude+Longitude. Generalises _write_location's
+        reader to the non-Location models (WiFi/Search/...) so no point is lost."""
+        def _flt(s):
+            try:
+                return float(s)
+            except (TypeError, ValueError):
+                return None
+        lat = _flt(model.get_field("Latitude"))
+        lon = _flt(model.get_field("Longitude"))
+        acc = None
+        if lat is None or lon is None:
+            cands = []
+            pos = model.model_fields.get("Position")
+            if pos is not None:
+                cands.append(pos)
+            cands.extend(c for c in model.model_fields.values() if c is not None)
+            for lst in model.multi_model_fields.values():
+                cands.extend(lst)
+            for ch in cands:
+                cla, clo = _flt(ch.get_field("Latitude")), _flt(ch.get_field("Longitude"))
+                if cla is not None and clo is not None:
+                    lat, lon = cla, clo
+                    for f in ("PrecisionInMeters", "Precision", "HorizontalAccuracy"):
+                        acc = _flt(ch.get_field(f))
+                        if acc is not None:
+                            break
+                    break
+        return lat, lon, acc
+
+    def harvest_all_coordinates(self, models: List[ParsedModel]) -> int:
+        """Materialise a Location point from EVERY coordinate-bearing model
+        that isn't already a Location/CellTower — WiFi networks, searched
+        places, journeys, etc. Each is tagged `location_type`=<source> and
+        `location_source_model` so the map can filter by provenance (WiFi/cell
+        coords are lower-fidelity than GPS fixes). Idempotent (MERGE on key);
+        safe to re-run as a backfill. Returns the number materialised."""
+        created = 0
+        for m in models:
+            mt = m.model_type or ""
+            if mt in self._COORD_SKIP_TYPES:
+                continue
+            lat, lon, acc = self._extract_coord(m)
+            if lat is None or lon is None:
+                continue
+            if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+                continue
+            if lat == 0.0 and lon == 0.0:
+                continue  # null-island artifact
+            label = self._COORD_SOURCE_LABEL.get(mt, mt)
+            loc_key = f"loc-{_normalise_key(mt)[:10]}-{m.model_id[:12]}"
+            ts = self._extract_timestamp(m)
+            name = (m.get_field("Name") or m.get_field("SSId")
+                    or m.get_field("Value") or label)
+            props = {
+                "id": str(uuid.uuid4()),
+                "key": loc_key,
+                "name": name,
+                "case_id": self.case_id,
+                "cellebrite_report_key": self.report_key,
+                "source_type": "cellebrite",
+                "latitude": lat,
+                "longitude": lon,
+                "location_type": label,
+                "location_source_model": mt,
+                "source_app": m.get_field("Source"),
+            }
+            if acc is not None:
+                props["accuracy_meters"] = acc
+            if ts:
+                props["timestamp"] = ts
+                props["date"] = ts[:10]
+                props["time"] = ts[11:16] if len(ts) > 16 else None
+            try:
+                geo = _geocode_lat_lon(lat, lon)
+            except Exception:
+                geo = None
+            if geo:
+                for k in ("address", "place_name", "country", "country_code",
+                          "admin1", "admin2", "geocode_source", "geocode_accuracy"):
+                    v = geo.get(k)
+                    if v is not None:
+                        props[k] = v
+            props = {k: v for k, v in props.items() if v is not None}
+            self.db.run_query(
+                """
+                MERGE (l:Location {key:$key, case_id:$cid})
+                ON CREATE SET l = $props
+                ON MATCH  SET l += $props
+                SET l:CbNode
+                WITH l
+                MATCH (r:CbNode {key:$rk, case_id:$cid})
+                MERGE (r)-[:CONTAINS {case_id:$cid}]->(l)
+                """,
+                key=loc_key, cid=self.case_id, props=props, rk=self.report_key,
+            )
+            if self._phone_owner_key:
+                self.db.run_query(
+                    """
+                    MATCH (p:CbNode {key:$pk, case_id:$cid})
+                    MATCH (l:CbNode {key:$lk, case_id:$cid})
+                    MERGE (p)-[:WAS_AT {case_id:$cid}]->(l)
+                    """,
+                    pk=self._phone_owner_key, lk=loc_key, cid=self.case_id,
+                )
+            self.harvested_coords_created += 1
+            created += 1
+        self._log(f"Coordinate harvest: {created} extra location points materialised")
+        return created
+
     def _write_user_account(self, model: ParsedModel):
         """UserAccount -> Account node."""
         source = model.get_field("Source")
@@ -3020,6 +3148,7 @@ class CellebriteNeo4jWriter:
         return {
             "contacts_created": self.contacts_created,
             "contact_entries_created": self.contact_entries_created,
+            "harvested_coords_created": self.harvested_coords_created,
             "calls_created": self.calls_created,
             "chats_created": self.chats_created,
             "messages_created": self.messages_created,

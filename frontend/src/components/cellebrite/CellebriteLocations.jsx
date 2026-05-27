@@ -231,7 +231,11 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
           onlyGeolocated: true,
           startDate: startDate || null,
           endDate: endDate || null,
-          limit: 5000,
+          // No artificial cap — load every geolocated location so the map +
+          // trajectory are complete. The old 5000 cap, split across all
+          // selected devices, starved location-dense phones (C2 alone has
+          // ~42k). Backend hard-ceiling is 500000.
+          limit: 500000,
         });
 
     Promise.all([
