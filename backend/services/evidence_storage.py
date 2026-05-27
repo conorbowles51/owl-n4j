@@ -445,6 +445,22 @@ class EvidenceStorage:
                 success[0] = True
         return success[0]
 
+    def set_analysis(self, evidence_id: str, kind: str, result: dict) -> bool:
+        """Persist an on-demand AI media-analysis result onto an evidence
+        record under `media_analysis[kind]` (kind = "transcription" |
+        "image_analysis"). Locked reload-mutate-save so it's safe under
+        --workers N and visible to other workers via _refresh_if_stale on get()
+        (no backend restart needed). Used by the transcribe / image-recognition
+        actions so re-opening a file or attachment shows the cached result.
+        """
+        success = [False]
+        with self._file_locked() as records:
+            rec = records.get(evidence_id)
+            if rec is not None:
+                rec.setdefault("media_analysis", {})[kind] = result
+                success[0] = True
+        return success[0]
+
     def get_tag_counts(self, case_id: str) -> List[Dict]:
         """Return a case-wide tag cloud sorted by usage."""
         counts: Dict[str, int] = {}

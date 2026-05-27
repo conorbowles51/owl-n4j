@@ -1786,6 +1786,30 @@ export const evidenceAPI = {
     }),
 
   /**
+   * On-demand AI media analysis of one evidence file: transcription
+   * (audio/video, local Whisper) or image recognition (OpenAI vision).
+   * `kind` auto-detects from the file when omitted. Result is cached on the
+   * record (re-running returns {cached:true} unless force).
+   * @param {string} evidenceId
+   * @param {{kind?:string, provider?:string, language?:string, task?:string, force?:boolean}} [opts]
+   */
+  analyzeMedia: (evidenceId, opts = {}) =>
+    fetchAPI(`/evidence/${encodeURIComponent(evidenceId)}/media-analyze`, {
+      method: 'POST',
+      body: JSON.stringify({
+        kind: opts.kind ?? null,
+        provider: opts.provider ?? null,
+        language: opts.language ?? null,
+        task: opts.task ?? 'transcribe',
+        force: !!opts.force,
+      }),
+    }),
+
+  /** Fetch any cached AI media-analysis results for a file. */
+  getAnalysis: (evidenceId) =>
+    fetchAPI(`/evidence/${encodeURIComponent(evidenceId)}/analysis`),
+
+  /**
    * Process selected evidence files in the background (returns task_id)
    * @param {string} caseId - Case ID
    * @param {string[]} fileIds - Array of file IDs to process

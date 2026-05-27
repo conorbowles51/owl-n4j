@@ -1082,6 +1082,75 @@ class EvidenceService:
 
         return task_id
 
+    # ------------------------------------------------------------------
+    # On-demand media analysis ("Tier-2"): transcribe audio / recognize image.
+    # Interactive, single-file, result cached on the evidence record. Reuses
+    # the ingestion processors (local Whisper / OpenAI vision) — distinct from
+    # process_files (the heavy graph-ingest pipeline). Used by the "send to AI
+    # processing" actions on evidence files and on Cellebrite message
+    # attachments (the attachment carries its evidence_id).
+    # ------------------------------------------------------------------
+    def _resolve_media_path(self, evidence_id: str):
+        rec = evidence_storage.get(evidence_id)
+        if rec is None:
+            raise FileNotFoundError(f"Evidence {evidence_id} not found")
+        path = rec.get("stored_path")
+        if not path or not Path(path).exists():
+            raise FileNotFoundError(f"File bytes for evidence {evidence_id} are not on disk")
+        return rec, Path(path)
+
+    def _ensure_ingest_scripts_on_path(self) -> None:
+        scripts_dir = BASE_DIR / "ingestion" / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.append(str(scripts_dir))
+
+    def transcribe_evidence(
+        self, evidence_id: str, language: Optional[str] = None, task: str = "transcribe"
+    ) -> dict:
+        """Transcribe an audio (or video audio-track) evidence file with the
+        local Whisper model and cache the result under
+        media_analysis.transcription. Returns the result dict."""
+        from config import WHISPER_MODEL_SIZE, AUDIO_LANGUAGE
+        rec, path = self._resolve_media_path(evidence_id)
+        self._ensure_ingest_scripts_on_path()
+        from audio_processor import transcribe_audio, WHISPER_AVAILABLE  # type: ignore
+        from audio_ingestion import _get_whisper_model  # type: ignore
+        if not WHISPER_AVAILABLE:
+            raise RuntimeError("Whisper is not installed on this host")
+        model = _get_whisper_model()
+        # Default to Spanish (this case's dominant language) when unset, matching
+        # the ingestion default; task='translate' yields English.
+        lang = language or AUDIO_LANGUAGE or "es"
+        text = transcribe_audio(path, model, language=lang, task=task)
+        result = {
+            "kind": "transcription",
+            "text": text,
+            "model": f"whisper-{WHISPER_MODEL_SIZE}",
+            "language": lang,
+            "task": task,
+            "created_at": datetime.utcnow().isoformat() + "Z",
+        }
+        evidence_storage.set_analysis(evidence_id, "transcription", result)
+        return result
+
+    def analyze_image_evidence(self, evidence_id: str, provider: str = "openai") -> dict:
+        """Run image recognition over an image evidence file (OpenAI vision by
+        default, Tesseract OCR fallback when vision is unavailable) and cache
+        the result under media_analysis.image_analysis. Returns the result."""
+        rec, path = self._resolve_media_path(evidence_id)
+        self._ensure_ingest_scripts_on_path()
+        from image_processor import process_image  # type: ignore
+        out = process_image(path, provider=provider, doc_name=rec.get("original_filename")) or {}
+        result = {
+            "kind": "image_analysis",
+            "text": out.get("text") or "",
+            "provider": out.get("provider"),
+            "metadata": out.get("metadata") or {},
+            "created_at": datetime.utcnow().isoformat() + "Z",
+        }
+        evidence_storage.set_analysis(evidence_id, "image_analysis", result)
+        return result
+
 
 # Singleton instance
 evidence_service = EvidenceService()

@@ -832,6 +832,114 @@ async def process_evidence(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class MediaAnalyzeRequest(BaseModel):
+    # "transcription" (audio/video) | "image" (image recognition). Auto-detected
+    # from the file's category when omitted.
+    kind: Optional[str] = None
+    provider: Optional[str] = None       # image: "openai" (default) | "tesseract"
+    language: Optional[str] = None       # transcription language hint (e.g. "es", "en")
+    task: Optional[str] = "transcribe"   # "transcribe" | "translate" (→ English)
+    force: bool = False                  # re-run even if a cached result exists
+
+
+def _detect_media_kind(rec: dict) -> Optional[str]:
+    """image | transcription | None — from the Cellebrite category, else the
+    filename extension."""
+    cat = (rec.get("cellebrite_category") or "").lower()
+    if cat == "image":
+        return "image"
+    if cat in ("audio", "video"):
+        return "transcription"
+    name = (rec.get("original_filename") or rec.get("stored_path") or "").lower()
+    ext = name.rsplit(".", 1)[-1] if "." in name else ""
+    if ext in {"jpg", "jpeg", "png", "gif", "bmp", "webp", "heic", "heif", "tif", "tiff"}:
+        return "image"
+    if ext in {"mp3", "wav", "m4a", "aac", "ogg", "opus", "amr", "flac", "3gp", "mp4", "mov", "m4v", "mkv", "webm"}:
+        return "transcription"
+    return None
+
+
+@router.post("/{evidence_id}/media-analyze")
+async def media_analyze_evidence(
+    evidence_id: str,
+    request: MediaAnalyzeRequest,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """On-demand AI media analysis of a single evidence file: transcription
+    (audio/video, local Whisper) or image recognition (OpenAI vision, Tesseract
+    fallback). Results are cached on the evidence record so re-opening is
+    instant. Used by the file viewer and Cellebrite message-attachment actions.
+    """
+    rec = evidence_storage.get(evidence_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    if rec.get("case_id"):
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(rec["case_id"]), current_user, required_permission=("evidence", "upload"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+
+    kind = (request.kind or _detect_media_kind(rec) or "").lower()
+    if kind not in ("image", "transcription"):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot determine media kind — pass kind='image' or 'transcription'.",
+        )
+
+    cache_key = "image_analysis" if kind == "image" else "transcription"
+    if not request.force:
+        cached = (rec.get("media_analysis") or {}).get(cache_key)
+        if cached:
+            return {"cached": True, "kind": kind, "result": cached}
+
+    try:
+        if kind == "image":
+            result = await run_in_threadpool(
+                evidence_service.analyze_image_evidence, evidence_id, request.provider or "openai"
+            )
+        else:
+            result = await run_in_threadpool(
+                evidence_service.transcribe_evidence, evidence_id, request.language, request.task or "transcribe"
+            )
+        return {"cached": False, "kind": kind, "result": result}
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (RuntimeError, ImportError) as e:
+        # Tool unavailable (e.g. Whisper/ffmpeg not installed, vision key unset)
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{evidence_id}/analysis")
+def get_evidence_analysis(
+    evidence_id: str,
+    current_user: User = Depends(get_current_db_user),
+    db: Session = Depends(get_db),
+):
+    """Return any cached AI media-analysis results for a file (so the UI can
+    show a transcription / image description it computed earlier)."""
+    rec = evidence_storage.get(evidence_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+    if rec.get("case_id"):
+        from services.case_service import check_case_access, CaseNotFound, CaseAccessDenied
+        from uuid import UUID
+        try:
+            check_case_access(db, UUID(rec["case_id"]), current_user, required_permission=("case", "view"))
+        except (CaseNotFound, CaseAccessDenied) as e:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    return {
+        "evidence_id": evidence_id,
+        "kind_available": list((rec.get("media_analysis") or {}).keys()),
+        "media_analysis": rec.get("media_analysis") or {},
+    }
+
+
 @router.get("/logs", response_model=EvidenceLogListResponse)
 def get_evidence_logs(
     case_id: Optional[str] = None,

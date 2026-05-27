@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { X, Pin, CheckCircle2, Download, Sparkles, FileText, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Pin, CheckCircle2, Download, Sparkles, FileText, ExternalLink, Mic, Eye, Loader2 } from 'lucide-react';
 import DocumentViewer from '../../DocumentViewer';
 import { evidenceAPI, workspaceAPI } from '../../../services/api';
 import { evidenceUrl, formatSize, categoryColor } from './filesUtils';
 import FileTagEditor from './FileTagEditor';
 import FileEntityLinker from './FileEntityLinker';
+import MediaAnalysisPanel, { mediaKindFor } from './MediaAnalysisPanel';
 
 /**
  * Right-pane detail panel for a selected Cellebrite file.
@@ -206,6 +207,22 @@ export default function FileDetailPanel({ caseId, file, caseTags = [], onClose, 
             <div className="mt-2 text-[11px] text-emerald-700">{processingResult}</div>
           )}
           {error && <div className="mt-2 text-[11px] text-red-600">{error}</div>}
+
+          {/* Send to AI processing — transcription (audio/video) or image
+              recognition (image). Only shown for media files. */}
+          {mediaKindFor(file.cellebrite_category, file.original_filename) && (
+            <div className="mt-2">
+              <div className="text-[11px] text-light-500 font-medium uppercase tracking-wide mb-1.5">
+                AI processing
+              </div>
+              <MediaAnalysisPanel
+                evidenceId={file.id}
+                category={file.cellebrite_category}
+                filename={file.original_filename}
+                autoLoadCache
+              />
+            </div>
+          )}
         </div>
       </div>
 
