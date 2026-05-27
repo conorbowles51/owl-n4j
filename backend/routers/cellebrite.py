@@ -47,6 +47,19 @@ def get_reports(
     return {"reports": reports}
 
 
+@router.get("/report/devices")
+def get_device_report(
+    case_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Per-device forensic profile for the Report tab: each phone's true
+    primary user (by traffic), declared vs actual owner, device numbers,
+    recovered contact aliases, in/out comms, and activity window."""
+    _require_case_access(case_id, current_user, db)
+    return {"devices": neo4j_service.get_cellebrite_device_report(case_id)}
+
+
 @router.get("/geocoder/status")
 def get_geocoder_status(
     current_user: User = Depends(get_current_db_user),

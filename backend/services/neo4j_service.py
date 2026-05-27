@@ -5800,6 +5800,147 @@ class Neo4jService:
                 })
             return reports
 
+    def get_cellebrite_device_report(self, case_id: str) -> list:
+        """Per-device forensic profile for the Report tab — the honest,
+        traffic-derived picture of each phone, its true owner, the numbers
+        actually used, recovered contact aliases, and activity window.
+
+        Distinct from get_cellebrite_reports (which trusts the ingest-time
+        BELONGS_TO owner): here the *primary user* is derived from who actually
+        sent the messages (dominant SENT_MESSAGE sender), so a mislabelled
+        owner shows up plainly. Read-only; on-demand (not a hot path)."""
+        with self._driver.session() as session:
+            reports = session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id})
+                OPTIONAL MATCH (r)-[:BELONGS_TO]->(declared:Person)
+                RETURN r, declared
+                ORDER BY coalesce(r.name, r.key)
+                """,
+                case_id=case_id,
+            ).data()
+
+            out = []
+            seen = set()
+            for rec in reports:
+                r = dict(rec["r"])
+                key = r.get("key", "")
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                declared = dict(rec["declared"]) if rec["declared"] else None
+
+                # Investigator-assigned owner — the device_name_override is the
+                # ground-truth custodian ("C2 - Sender Godoy Lemus" → "Sender
+                # Godoy Lemus"). Strip the leading "C#[.x] - " device-code.
+                import re as _re
+                override = r.get("device_name_override") or ""
+                assigned_owner = _re.sub(r"^C[\w.]*\s*-\s*", "", override).strip() or None
+
+                # Dominant DEVICE-USER by traffic. Not a naive top sender (that
+                # gets fooled by "System Message"/default-app senders and chatty
+                # counterparties). Selection, in order:
+                #   1. one of the device's OWN numbers (authoritative), THEN
+                #   2. one carrying a real (non-numeric) saved name — so a named
+                #      SIM ("Dsnt") beats the same owner's busier-but-unnamed
+                #      second number, AND a hugely-dominant named number
+                #      (Trabajo, 57k) still wins among named ones, THEN
+                #   3. by volume.
+                # NB: we deliberately do NOT trust Person.is_phone_owner — it's
+                # over-flagged at ingest (e.g. on C6 it sits on "Mry"/51 msgs,
+                # not on the real owner Trabajo/57k who isn't flagged at all).
+                own_keys = []
+                for num in (r.get("phone_numbers") or []):
+                    digits = "".join(ch for ch in str(num) if ch.isdigit())
+                    if digits:
+                        own_keys.append(f"phone-{digits}")
+                owner = session.run(
+                    """
+                    MATCH (p:Person)-[:SENT_MESSAGE]->(c:Communication
+                        {case_id: $case_id, cellebrite_report_key: $key})
+                    WHERE coalesce(p.name,'') <> 'System Message'
+                      AND NOT coalesce(p.key,'') CONTAINS 'system-message'
+                    WITH p, count(*) AS sent,
+                         (p.key IN $own_keys) AS is_own,
+                         (p.name IS NOT NULL
+                          AND NOT p.name =~ '[+(]?[0-9][0-9\\s().\\-]{5,}'
+                          AND p.name <> p.key) AS named
+                    ORDER BY is_own DESC, named DESC, sent DESC LIMIT 1
+                    RETURN p.key AS key, p.name AS name, p.name_aliases AS aliases,
+                           p.phone_numbers AS numbers, sent, is_own, named
+                    """,
+                    case_id=case_id, key=key, own_keys=own_keys,
+                ).single()
+
+                counts = session.run(
+                    """
+                    OPTIONAL MATCH (m:Communication {case_id:$case_id, cellebrite_report_key:$key})
+                    WITH count(DISTINCT m) AS messages,
+                         min(m.timestamp) AS first_ts, max(m.timestamp) AS last_ts
+                    OPTIONAL MATCH (call:PhoneCall {case_id:$case_id, cellebrite_report_key:$key})
+                    WITH messages, first_ts, last_ts,
+                         count(DISTINCT call) AS calls,
+                         sum(CASE WHEN call.direction='Outgoing' THEN 1 ELSE 0 END) AS calls_out,
+                         sum(CASE WHEN call.direction='Incoming' THEN 1 ELSE 0 END) AS calls_in
+                    OPTIONAL MATCH (e:ContactEntry {case_id:$case_id, cellebrite_report_key:$key})
+                    WITH messages, first_ts, last_ts, calls, calls_out, calls_in,
+                         count(DISTINCT e) AS contact_entries
+                    OPTIONAL MATCH (loc:Location {case_id:$case_id, cellebrite_report_key:$key})
+                    RETURN messages, first_ts, last_ts, calls, calls_out, calls_in,
+                           contact_entries, count(DISTINCT loc) AS locations
+                    """,
+                    case_id=case_id, key=key,
+                ).single()
+
+                # device name precedence (mirror get_cellebrite_reports)
+                override = r.get("device_name_override") or ""
+                manuf = r.get("manufacturer") or ""
+                model = r.get("device_model") or ""
+                effective = override or (f"{manuf} {model}".strip() if (manuf or model) else "Unknown Device")
+
+                out.append({
+                    "report_key": key,
+                    "report_name": r.get("name", ""),
+                    "evidence_number": r.get("evidence_number", ""),
+                    "imei": r.get("imei"),
+                    "device_model": effective,
+                    "os_type": r.get("os_type"),
+                    "examiner": r.get("examiner"),
+                    # device-info MSISDNs (over-harvested — may include numbers
+                    # with no traffic; the UI flags traffic-backed vs listed)
+                    "device_numbers": r.get("phone_numbers") or [],
+                    "device_identifier_manual": r.get("device_identifier_manual", False),
+                    # Investigator-assigned custodian (ground truth) — the name
+                    # the Report leads with; never "(unnamed)".
+                    "assigned_owner": assigned_owner,
+                    "declared_owner": (
+                        {"key": declared.get("key"), "name": declared.get("name")}
+                        if declared else None
+                    ),
+                    "primary_user": (
+                        {
+                            "key": owner["key"],
+                            "name": owner["name"],
+                            "aliases": owner["aliases"] or [],
+                            "numbers": owner["numbers"] or [],
+                            "messages_sent": owner["sent"],
+                            # True when the primary user's identity is one of the
+                            # device's own numbers (high confidence). False = best
+                            # guess from traffic only (flag in UI).
+                            "matches_device_number": owner["is_own"],
+                        } if owner else None
+                    ),
+                    "messages": (counts["messages"] if counts else 0),
+                    "calls": (counts["calls"] if counts else 0),
+                    "calls_out": (counts["calls_out"] if counts else 0),
+                    "calls_in": (counts["calls_in"] if counts else 0),
+                    "contact_entries": (counts["contact_entries"] if counts else 0),
+                    "locations": (counts["locations"] if counts else 0),
+                    "activity_first": (counts["first_ts"] if counts else None),
+                    "activity_last": (counts["last_ts"] if counts else None),
+                })
+            return out
+
     def find_existing_phone_report(
         self,
         case_id: str,
