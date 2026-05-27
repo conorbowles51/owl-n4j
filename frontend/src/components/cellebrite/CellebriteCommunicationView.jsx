@@ -7,6 +7,7 @@ import { cellebriteAPI } from '../../services/api';
 import CommsContactFeed from './comms/CommsContactFeed';
 import NameActionMenu from './shared/NameActionMenu';
 import PersonName from './shared/PersonName';
+import AliasChips from './shared/AliasChips';
 import { usePerspective } from '../../context/PerspectiveContext';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import { requestCellebriteTabSwitch } from '../../utils/commsHandoff';
@@ -85,7 +86,10 @@ export default function CellebriteCommunicationView({ caseId }) {
       list = list.filter(c =>
         (c.name || '').toLowerCase().includes(term) ||
         (c.phone || '').includes(term) ||
-        (c.person_key || '').toLowerCase().includes(term)
+        (c.person_key || '').toLowerCase().includes(term) ||
+        // Match any per-device saved alias too, so searching a name a
+        // contact was stored under on one phone still finds them.
+        (c.aliases || []).some(a => (a.name || '').toLowerCase().includes(term))
       );
     }
     list.sort((a, b) => {
@@ -244,6 +248,7 @@ export default function CellebriteCommunicationView({ caseId }) {
             <thead className="sticky top-0 bg-light-50 z-10">
               <tr className="border-b border-light-200">
                 <th className="text-left px-3 py-2 font-medium text-light-600">Contact</th>
+                <th className="text-left px-3 py-2 font-medium text-light-600">Also saved as</th>
                 <SortHeader field="call_count" label="Calls" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader field="message_count" label="Messages" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
                 <SortHeader field="email_count" label="Emails" sortField={sortField} sortDir={sortDir} onSort={toggleSort} />
@@ -265,6 +270,14 @@ export default function CellebriteCommunicationView({ caseId }) {
                         name={contact.name}
                         personKey={contact.person_key}
                         number={contact.phone}
+                      />
+                    </td>
+                    <td className="px-3 py-2 max-w-[220px]">
+                      <AliasChips
+                        aliases={contact.aliases}
+                        omit={contact.name}
+                        max={4}
+                        empty={<span className="text-light-300">—</span>}
                       />
                     </td>
                     <td className="px-3 py-2 text-center">
@@ -311,7 +324,7 @@ export default function CellebriteCommunicationView({ caseId }) {
               })}
               {filteredContacts.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-light-400">
+                  <td colSpan={7} className="px-3 py-8 text-center text-light-400">
                     No contacts found
                   </td>
                 </tr>
@@ -380,6 +393,12 @@ export default function CellebriteCommunicationView({ caseId }) {
                     />
                   </span>
                 </div>
+                <AliasChips
+                  aliases={sc.aliases}
+                  omit={sc.name}
+                  max={4}
+                  className="mt-1"
+                />
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {(sc.devices || []).map((dk, i) => (
                     <span

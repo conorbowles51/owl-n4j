@@ -7346,6 +7346,9 @@ class Neo4jService:
 
     def get_cellebrite_communication_network(self, case_id: str) -> dict:
         """Get contact frequency analysis and shared contacts across devices."""
+        # Per-identity alias names (saved-as across devices) so the
+        # Communications tab can show the same alias chips as Contacts(unified).
+        pa = self.person_aliases(case_id)
         with self._driver.session() as session:
             # Get all persons with communication counts per report
             result = session.run(
@@ -7392,6 +7395,7 @@ class Neo4jService:
                     "message_count": record["message_count"],
                     "email_count": record["email_count"],
                     "devices": list(record["device_keys"]),
+                    "aliases": pa.get(record["person_key"], []),
                 }
                 contacts.append(contact)
 
@@ -7446,6 +7450,17 @@ class Neo4jService:
             )
 
             for record in result:
+                pks = list(record["person_keys"])
+                # Union the per-device saved names across every Person folded
+                # into this shared bucket (merge by name, keeping the devices).
+                merged: Dict[str, set] = {}
+                for pk in pks:
+                    for a in pa.get(pk, []):
+                        merged.setdefault(a["name"], set()).update(a.get("report_keys") or [])
+                shared_aliases = sorted(
+                    ({"name": n, "report_keys": sorted(r)} for n, r in merged.items()),
+                    key=lambda x: (-len(x["report_keys"]), x["name"]),
+                )
                 shared_contacts.append({
                     "person_key": record["person_key"],
                     "name": record["name"] or record["person_key"],
@@ -7453,7 +7468,8 @@ class Neo4jService:
                     "devices": list(record["device_keys"]),
                     # Full per-device Person keys so the UI can drill
                     # into each device's specific record from the row.
-                    "person_keys": list(record["person_keys"]),
+                    "person_keys": pks,
+                    "aliases": shared_aliases,
                 })
 
         return {"contacts": contacts, "shared_contacts": shared_contacts}
@@ -7490,6 +7506,12 @@ class Neo4jService:
         if report_keys:
             report_filter = "AND p.cellebrite_report_key IN $report_keys"
             params["report_keys"] = list(report_keys)
+
+        # Per-identity alias names so the participant / entity filters show the
+        # same alias chips as Contacts(unified) and match search on any saved
+        # name. Capped per entity to bound the payload on big cases.
+        pa = self.person_aliases(case_id)
+        _ALIAS_CAP = 8
 
         with self._driver.session() as session:
             if with_counts:
@@ -7570,6 +7592,7 @@ class Neo4jService:
                         "key": record["key"],
                         "name": record["name"] or record["key"],
                         "phone_numbers": record["phone_numbers"] or [],
+                        "aliases": pa.get(record["key"], [])[:_ALIAS_CAP],
                         "is_owner": bool(record["is_owner"]),
                         "device_keys": list(record["device_keys"] or []),
                         "device_count": int(record["device_count"] or 0),
@@ -7611,6 +7634,7 @@ class Neo4jService:
                     "key": record["key"],
                     "name": record["name"] or record["key"],
                     "phone_numbers": record["phone_numbers"] or [],
+                    "aliases": pa.get(record["key"], [])[:_ALIAS_CAP],
                     "is_owner": bool(record["is_owner"]),
                     "device_keys": list(record["device_keys"] or []),
                     "device_count": int(record["device_count"] or 0),
@@ -7711,6 +7735,46 @@ class Neo4jService:
                 tmp.setdefault((r["pk"], r["rk"]), _Counter())[r["nm"]] += 1
         out = {k: c.most_common(1)[0][0] for k, c in tmp.items()}
         self._dcn_cache = {"case_id": case_id, "t": now, "map": out}
+        return out
+
+    def person_aliases(self, case_id: str) -> dict:
+        """{person_key: [{"name": str, "report_keys": [str]}, ...]} — every
+        distinct saved name an identity was stored under across devices (from
+        ContactEntry), most-used first, each with the devices that used it.
+
+        This is the per-number alias list the Contacts(unified) tab shows,
+        factored out so other surfaces (Communications tab, comms participant /
+        entity filters) can render the SAME alias chips and match search against
+        any saved name. Built in one query; short TTL cache (data only changes
+        on ingest/backfill). Keyed per Person — a canonical-number rollup that
+        spans several Persons (unified tab) still unions these downstream.
+        """
+        import time as _time
+        from collections import Counter as _Counter, defaultdict as _dd
+        cache = getattr(self, "_pa_cache", None)
+        now = _time.time()
+        if cache and cache.get("case_id") == case_id and now - cache["t"] < 120:
+            return cache["map"]
+        counts: Dict[str, _Counter] = _dd(_Counter)          # pk -> Counter(name)
+        rks: Dict[str, Dict[str, set]] = _dd(lambda: _dd(set))  # pk -> name -> {rk}
+        with self._driver.session() as s:
+            for r in s.run(
+                "MATCH (p:Person {case_id:$cid})-[:HAS_ENTRY]->(e:ContactEntry) "
+                "WHERE e.saved_name IS NOT NULL "
+                "RETURN p.key AS pk, e.saved_name AS nm, e.cellebrite_report_key AS rk",
+                cid=case_id,
+            ):
+                pk, nm, rk = r["pk"], r["nm"], r["rk"]
+                counts[pk][nm] += 1
+                if rk:
+                    rks[pk][nm].add(rk)
+        out: Dict[str, list] = {}
+        for pk, c in counts.items():
+            out[pk] = [
+                {"name": nm, "report_keys": sorted(rks[pk][nm])}
+                for nm, _cnt in c.most_common()
+            ]
+        self._pa_cache = {"case_id": case_id, "t": now, "map": out}
         return out
 
     def get_cellebrite_comms_threads(

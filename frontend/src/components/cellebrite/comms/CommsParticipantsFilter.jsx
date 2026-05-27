@@ -5,6 +5,7 @@ import {
   Split, GitMerge,
 } from 'lucide-react';
 import PersonName from '../shared/PersonName';
+import AliasChips from '../shared/AliasChips';
 
 /**
  * Phase K1 — Participants filter with a Mode toggle.
@@ -249,7 +250,12 @@ function SidePanel({ title, entities, selected, onToggle, wide = false }) {
   const display = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const isMatch = (e) =>
-      !needle || (e.name || e.key || '').toLowerCase().includes(needle);
+      !needle ||
+      (e.name || e.key || '').toLowerCase().includes(needle) ||
+      (e.phone_numbers || []).some((p) => String(p).toLowerCase().includes(needle)) ||
+      // Match any per-device saved alias so searching a name a contact was
+      // stored under on one phone still surfaces them in the picker.
+      (e.aliases || []).some((a) => (a.name || '').toLowerCase().includes(needle));
 
     const pinned = entities.filter(e => selected.has(e.key));
     const rest = entities.filter(e => !selected.has(e.key) && isMatch(e));
@@ -314,7 +320,7 @@ function SidePanel({ title, entities, selected, onToggle, wide = false }) {
                 key={e.key}
                 type="button"
                 onClick={() => onToggle(e)}
-                className={`flex items-center gap-1.5 w-full px-2 py-1 text-left text-xs ${
+                className={`flex items-start gap-1.5 w-full px-2 py-1 text-left text-xs ${
                   isSelected
                     ? 'bg-owl-blue-50 text-owl-blue-900'
                     : 'text-light-800 hover:bg-light-100'
@@ -324,20 +330,23 @@ function SidePanel({ title, entities, selected, onToggle, wide = false }) {
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => {}}
-                  className="flex-shrink-0 w-3 h-3 accent-owl-blue-600 pointer-events-none"
+                  className="flex-shrink-0 w-3 h-3 mt-0.5 accent-owl-blue-600 pointer-events-none"
                 />
                 {e.is_owner
-                  ? <Smartphone className="w-3 h-3 text-emerald-600 flex-shrink-0" />
-                  : <User className="w-3 h-3 text-light-400 flex-shrink-0" />}
-                <PersonName
-                  name={e.name}
-                  personKey={e.key}
-                  numbers={e.phone_numbers}
-                  className="truncate"
-                  numberClassName="text-[10px]"
-                />
+                  ? <Smartphone className="w-3 h-3 mt-0.5 text-emerald-600 flex-shrink-0" />
+                  : <User className="w-3 h-3 mt-0.5 text-light-400 flex-shrink-0" />}
+                <span className="flex-1 min-w-0">
+                  <PersonName
+                    name={e.name}
+                    personKey={e.key}
+                    numbers={e.phone_numbers}
+                    className="truncate block"
+                    numberClassName="text-[10px]"
+                  />
+                  <AliasChips aliases={e.aliases} omit={e.name} max={3} className="mt-0.5" />
+                </span>
                 {e._stub && (
-                  <span className="ml-auto text-[9px] text-light-400 uppercase tracking-wide">
+                  <span className="ml-auto text-[9px] text-light-400 uppercase tracking-wide flex-shrink-0">
                     pending
                   </span>
                 )}
