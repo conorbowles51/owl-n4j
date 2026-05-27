@@ -50,7 +50,7 @@ export default function UnifiedContactAccordion({ selection }) {
   for (const a of row.aliases || []) {
     for (const rk of a.report_keys || []) {
       if (!devicesIndex[rk]) devicesIndex[rk] = [];
-      devicesIndex[rk].push(a.name);
+      if (!devicesIndex[rk].includes(a.name)) devicesIndex[rk].push(a.name);
     }
   }
 

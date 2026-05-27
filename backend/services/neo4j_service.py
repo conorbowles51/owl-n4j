@@ -7685,6 +7685,34 @@ class Neo4jService:
 
         return apps
 
+    def device_contact_names(self, case_id: str) -> dict:
+        """{(person_key, report_key): saved_name} — how each device's address
+        book named each identity, from ContactEntry. The single source for
+        per-device naming so the Comms Center, thread views, etc. show the same
+        name a device actually saved (e.g. "Maitria"/"Lan Chita"/"Doñita" for
+        +12404291127) instead of the one rolled-up Person.name everywhere.
+
+        Short TTL cache (data only changes on ingest/backfill; cheap to rebuild).
+        """
+        import time as _time
+        from collections import Counter as _Counter
+        cache = getattr(self, "_dcn_cache", None)
+        now = _time.time()
+        if cache and cache.get("case_id") == case_id and now - cache["t"] < 120:
+            return cache["map"]
+        tmp: Dict = {}
+        with self._driver.session() as s:
+            for r in s.run(
+                "MATCH (p:Person {case_id:$cid})-[:HAS_ENTRY]->(e:ContactEntry) "
+                "WHERE e.saved_name IS NOT NULL "
+                "RETURN p.key AS pk, e.cellebrite_report_key AS rk, e.saved_name AS nm",
+                cid=case_id,
+            ):
+                tmp.setdefault((r["pk"], r["rk"]), _Counter())[r["nm"]] += 1
+        out = {k: c.most_common(1)[0][0] for k, c in tmp.items()}
+        self._dcn_cache = {"case_id": case_id, "t": now, "map": out}
+        return out
+
     def get_cellebrite_comms_threads(
         self,
         case_id: str,
@@ -7717,6 +7745,9 @@ class Neo4jService:
         # surfaced to the caller via `truncated`.
         per_block_cap = max(limit + offset, limit)
         truncated = False
+        # Per-device saved names — show each thread's counterparty as the
+        # device that owns the thread actually saved them.
+        dcn = self.device_contact_names(case_id)
 
         rk_filter_chat = ""
         rk_filter_call = ""
@@ -7827,7 +7858,8 @@ class Neo4jService:
                         "participants": [
                             {
                                 "key": p.get("key"),
-                                "name": p.get("name") or p.get("key"),
+                                "name": (dcn.get((p.get("key"), chat.get("cellebrite_report_key")))
+                                         or p.get("name") or p.get("key")),
                                 "is_owner": bool(p.get("is_phone_owner")),
                             }
                             for p in participants
@@ -7890,10 +7922,12 @@ class Neo4jService:
 
                     existing = call_pairs.get(thread_id)
                     if existing is None:
-                        # Determine participants preserving person metadata
+                        # Determine participants preserving person metadata.
+                        # Names resolved to how THIS device saved each party.
+                        _rk = record["rk"]
                         participants = [
-                            {"key": a_key, "name": a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
-                            {"key": b_key, "name": b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
+                            {"key": a_key, "name": dcn.get((a_key, _rk)) or a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
+                            {"key": b_key, "name": dcn.get((b_key, _rk)) or b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
                         ]
                         # Order participants to match pair_keys ordering
                         participants.sort(key=lambda p: p["key"])
@@ -8075,6 +8109,9 @@ class Neo4jService:
                     return {"thread": None, "items": [], "total": 0}
                 chat = dict(record["chat"])
                 participants = [dict(p) for p in record["participants"] if p is not None]
+                # Resolve names to how THIS device saved each party.
+                _dcn = self.device_contact_names(case_id)
+                _rk = chat.get("cellebrite_report_key")
 
                 msg_result = session.run(
                     """
@@ -8111,7 +8148,8 @@ class Neo4jService:
                         "attachment_file_ids": list(msg.get("attachment_file_ids") or []),
                         "sender": {
                             "key": sender.get("key") if sender else None,
-                            "name": sender.get("name") if sender else None,
+                            "name": (_dcn.get((sender.get("key"), _rk))
+                                     or sender.get("name")) if sender else None,
                             "is_owner": bool(sender.get("is_phone_owner")) if sender else False,
                         } if sender else None,
                     })
@@ -8137,7 +8175,8 @@ class Neo4jService:
                         "participants": [
                             {
                                 "key": p.get("key"),
-                                "name": p.get("name") or p.get("key"),
+                                "name": (_dcn.get((p.get("key"), _rk))
+                                         or p.get("name") or p.get("key")),
                                 "is_owner": bool(p.get("is_phone_owner")),
                             }
                             for p in participants
@@ -10541,6 +10580,29 @@ class Neo4jService:
             person_count = len(persons)
             truncated = person_count >= PERSON_CAP
 
+            # Per-device SAVED names from ContactEntry nodes — this is what the
+            # "Per device → Known as …" breakdown should show. The Person node
+            # carries ONE rolled-up name, so without this every device wrongly
+            # shows the same canonical name (e.g. "Trabajo 444" on all 6 phones)
+            # even though the same number was saved as "Maitria"/"Lan Chita"/
+            # "Doñita"/… on different phones. entries_by_person maps a person
+            # key -> [(saved_name, source_report_key), ...].
+            entry_rk_clause = ""
+            if report_keys:
+                entry_rk_clause = " AND e.cellebrite_report_key IN $report_keys"
+            entries_by_person: Dict[str, list] = {}
+            for er in session.run(
+                f"""
+                MATCH (p:Person {{case_id:$case_id, source_type:'cellebrite'}})
+                      -[:HAS_ENTRY]->(e:ContactEntry)
+                WHERE e.saved_name IS NOT NULL{entry_rk_clause}
+                RETURN p.key AS person_key,
+                       collect(DISTINCT [e.saved_name, e.cellebrite_report_key]) AS entries
+                """,
+                params,
+            ):
+                entries_by_person[er["person_key"]] = er["entries"] or []
+
             # Bucket by canonical number(s) — a single Person joins
             # EVERY canonical bucket their data points at, not just the
             # first. This is the unification logic that makes the
@@ -10658,13 +10720,31 @@ class Neo4jService:
                         if hi_v and (b["_hi"] is None or hi_v > b["_hi"]):
                             b["_hi"] = hi_v
 
-                    alias_key = (name, key)
-                    alias = b["_alias_map"].get(alias_key)
-                    if alias is None:
-                        alias = {"name": name, "key": key, "report_keys": set()}
-                        b["_alias_map"][alias_key] = alias
-                    for _crk in (rec.get("comm_report_keys") or ([rk] if rk else [])):
-                        alias["report_keys"].add(_crk)
+                    # Per-device aliases come from the ContactEntry saved names
+                    # (the name as saved on each specific device). Falls back to
+                    # the Person.name spanning the comm devices only when this
+                    # identity has no address-book record at all (e.g. an
+                    # unsaved counterparty seen only in messages).
+                    entries = entries_by_person.get(key)
+                    if entries:
+                        for ent in entries:
+                            ent_name = (ent[0] or name)
+                            ent_rk = ent[1]
+                            ak = (ent_name, key)
+                            al = b["_alias_map"].get(ak)
+                            if al is None:
+                                al = {"name": ent_name, "key": key, "report_keys": set()}
+                                b["_alias_map"][ak] = al
+                            if ent_rk:
+                                al["report_keys"].add(ent_rk)
+                    else:
+                        alias_key = (name, key)
+                        alias = b["_alias_map"].get(alias_key)
+                        if alias is None:
+                            alias = {"name": name, "key": key, "report_keys": set()}
+                            b["_alias_map"][alias_key] = alias
+                        for _crk in (rec.get("comm_report_keys") or ([rk] if rk else [])):
+                            alias["report_keys"].add(_crk)
 
             # Apply optional search filter on number OR alias name.
             if search:
@@ -11258,6 +11338,14 @@ class Neo4jService:
                 contact_key=contact_key,
             ).single()
             contact = dict(contact_rec["p"]) if contact_rec else {}
+            # Per-device saved names — each feed item shows how the device it
+            # happened on named the parties.
+            dcn = self.device_contact_names(case_id)
+
+            def _nm(person, rk):
+                if not person:
+                    return None
+                return dcn.get((person.get("key"), rk)) or person.get("name")
 
             # Calls — either direction
             if "call" in active:
@@ -11297,12 +11385,12 @@ class Neo4jService:
                         "attachment_file_ids": list(n.get("attachment_file_ids") or []),
                         "sender": {
                             "key": (src.get("key") if src else None),
-                            "name": (src.get("name") if src else None),
+                            "name": _nm(src, n.get("cellebrite_report_key")),
                             "is_owner": bool(src.get("is_phone_owner")) if src else False,
                         } if src else None,
                         "recipient": {
                             "key": (dst.get("key") if dst else None),
-                            "name": (dst.get("name") if dst else None),
+                            "name": _nm(dst, n.get("cellebrite_report_key")),
                             "is_owner": bool(dst.get("is_phone_owner")) if dst else False,
                         } if dst else None,
                     })
@@ -11346,7 +11434,7 @@ class Neo4jService:
                         "thread_name": (chat.get("name") if chat else None),
                         "sender": {
                             "key": (sender.get("key") if sender else None),
-                            "name": (sender.get("name") if sender else None),
+                            "name": _nm(sender, n.get("cellebrite_report_key")),
                             "is_owner": bool(sender.get("is_phone_owner")) if sender else False,
                         } if sender else None,
                     })
@@ -11392,12 +11480,12 @@ class Neo4jService:
                         "attachment_file_ids": list(n.get("attachment_file_ids") or []),
                         "sender": {
                             "key": (src.get("key") if src else None),
-                            "name": (src.get("name") if src else None),
+                            "name": _nm(src, n.get("cellebrite_report_key")),
                             "is_owner": bool(src.get("is_phone_owner")) if src else False,
                         } if src else None,
                         "recipient": {
                             "key": (first_dst.get("key") if first_dst else None),
-                            "name": (first_dst.get("name") if first_dst else None),
+                            "name": _nm(first_dst, n.get("cellebrite_report_key")),
                             "is_owner": bool(first_dst.get("is_phone_owner")) if first_dst else False,
                         } if first_dst else None,
                         "recipient_count": len(dsts),

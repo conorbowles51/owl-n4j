@@ -255,7 +255,7 @@ function AliasChipGroup({ aliases }) {
     <div className="flex flex-wrap gap-1">
       {aliases.map((a) => (
         <span
-          key={a.key}
+          key={`${a.key}::${a.name}`}
           className="inline-flex items-center text-[11px] bg-light-100 text-light-700 px-1.5 py-0.5 rounded"
           title={
             a.report_keys.length
