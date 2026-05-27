@@ -1437,7 +1437,7 @@ def comms_contact_feed(
 ):
     """Chronological feed of every call / message / email involving a contact."""
     _require_case_access(case_id, current_user, db)
-    return neo4j_service.get_contact_comms_feed(
+    result = neo4j_service.get_contact_comms_feed(
         case_id=case_id,
         contact_key=contact_key,
         report_keys=_csv_param(report_keys),
@@ -1445,3 +1445,9 @@ def comms_contact_feed(
         limit=limit,
         offset=offset,
     )
+    # Resolve attachment file_ids → playable/viewable evidence (image/audio/
+    # video), same as the thread + between feeds, so media renders in the
+    # contact feed (Communications-tab drill + Comms-Center contact drawer)
+    # instead of silently dropping (the bubbles read item.attachments).
+    _resolve_attachments(case_id, result.get("items", []))
+    return result
