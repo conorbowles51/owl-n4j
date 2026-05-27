@@ -137,6 +137,70 @@ export default function CommsCrossTypeTimeline({
     return () => { cancelled = true; };
   }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode]);
 
+  // Per-phone seed for Lanes view.
+  //
+  // Why this exists: the main fetch returns the newest N items
+  // globally. If one phone dominates the feed (e.g. a recently-active
+  // device), all 2,000 rows can be from that one phone — every other
+  // lane shows up empty. Users read that as "the timeline doesn't
+  // load other phones" which is technically correct but unhelpful.
+  //
+  // Fix: when viewing in Lanes mode AND more than one phone is in
+  // scope, fire one extra getBetween per active phone (limit=400,
+  // narrowed to that phone) in parallel. Merge dedup into items so
+  // every lane lands populated with its own recent activity. The
+  // global cursor stays tied to the main fetch, so infinite-scroll
+  // continues to pull more global pages.
+  //
+  // The List view doesn't need this — it's strictly chronological
+  // and the global newest-N is correct.
+  useEffect(() => {
+    if (!caseId || !expanded) return undefined;
+    if (viewMode === 'list') return undefined;
+    if (reportKeys.size < 2) return undefined; // single phone == no seed needed
+
+    let cancelled = false;
+    const apiSort = sortMode === 'asc' ? 'asc' : 'desc';
+    const seedArgs = {
+      fromKeys: fromKeys.size > 0 ? [...fromKeys] : null,
+      toKeys: toKeys.size > 0 ? [...toKeys] : null,
+      participantKeys: participantKeys.size > 0 ? [...participantKeys] : null,
+      types: [...types],
+      sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
+      startDate,
+      endDate,
+      limit: 400,
+      sort: apiSort,
+    };
+    const phoneKeys = [...reportKeys];
+    Promise.all(
+      phoneKeys.map((rk) =>
+        cellebriteCommsAPI
+          .getBetween(caseId, { ...seedArgs, reportKeys: [rk] })
+          .then((d) => d?.items || [])
+          .catch(() => []),
+      ),
+    ).then((perPhone) => {
+      if (cancelled) return;
+      const flat = perPhone.flat();
+      if (flat.length === 0) return;
+      setItems((prev) => {
+        const seen = new Set(prev.map((i) => i.id || i.node_key));
+        const fresh = flat.filter((i) => !seen.has(i.id || i.node_key));
+        if (fresh.length === 0) return prev;
+        // Re-sort merged set descending by timestamp so the swim-lane
+        // layout (which assumes time-sorted items per lane internally)
+        // gets a consistent input regardless of which fetch landed
+        // first.
+        const merged = [...prev, ...fresh];
+        merged.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+        return merged;
+      });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, expanded, viewMode, [...reportKeys].join(','), sortMode]);
+
   // Apply sort=type client-side (the backend doesn't bucket by type).
   // For asc/desc the backend already returns the correct order.
   const orderedItems = useMemo(() => {
@@ -340,6 +404,20 @@ export default function CommsCrossTypeTimeline({
             <CommsCrossTypeSwimLane
               items={orderedItems}
               orientation={viewMode === 'swim-h' ? 'horizontal' : 'vertical'}
+              // Pagination — when the user scrolls near the temporal
+              // edge of the lane surface, fire loadMore to pull the
+              // next page from the global keyset cursor. `hasMore` is
+              // simply `cursor != null`.
+              hasMore={!!cursor}
+              loadingMore={loadingMore}
+              onLoadMore={loadMore}
+              totalAvailable={total}
+              loadedCount={items.length}
+              // Render a lane per SELECTED phone, not per "phone that
+              // happens to have items in the current load". Quiet
+              // phones still need a place to put their items as the
+              // per-phone seeding + infinite-scroll backfill arrive.
+              expectedReportKeys={reportKeys}
               onItemSelect={(item) => {
                 if (onJumpToThread) onJumpToThread(item);
                 if (onItemSelect) onItemSelect(item);

@@ -6292,21 +6292,36 @@ class Neo4jService:
         nodes = []
         links = []
         seen_nodes = set()
+        # Flipped to True only when a hard cap actually trims the
+        # result set. The frontend's "capped" badge reads this flag
+        # so the badge stops appearing when the gap between rendered
+        # nodes and total case Persons is just a filter, not a cap.
+        hit_cap = False
 
         # Normalise filters.
         anchor_keys = [k for k in (person_keys or []) if isinstance(k, str) and k]
         anchored = len(anchor_keys) > 0
         depth = max(1, min(2, int(depth or 1)))
 
-        # Event-type → relationship-pattern map. Used to widen the edge
-        # set when the caller toggles non-comms types on. Each entry
-        # describes how two Persons can be linked by that event type:
-        #   - 'pair' relationships: A -> Node -> B (calls, messages,
-        #     emails, chats, meetings). The inner node is the comm /
-        #     event itself.
-        #   - 'shared' relationships: A -> X <- B where X is a venue
-        #     (Location / WirelessNetwork / etc.). The shared anchor
-        #     forms the link between the two people.
+        # Event-type → relationship-pattern map. Two distinct render
+        # models live here:
+        #
+        #   1. PERSON↔PERSON edges (kind=pair) — calls, messages,
+        #      emails. A genuine person-to-person link via a comm
+        #      artefact (PhoneCall / Communication / Email).
+        #
+        #   2. PHONE↔RESOURCE↔PHONE (kind=resource) — locations, WiFi,
+        #      web visits, accounts, credentials, meetings, etc. The
+        #      backend emits ONE node per distinct anchor value found
+        #      across the case + an edge from EACH owning PhoneReport
+        #      to that resource. On a single phone you get a fan of
+        #      resource nodes around that phone. Add a second phone
+        #      and any resource they share becomes a natural bridge
+        #      between the two phones — no special cross-phone math.
+        #
+        # The legacy `shared` and `shared_by_value` kinds are folded
+        # into `resource`. `chat_participants` stays as a pair-mode
+        # special case for messages.
         EDGE_PATTERNS = {
             "call": {
                 "kind": "pair",
@@ -6315,91 +6330,76 @@ class Neo4jService:
             "message": {
                 "kind": "pair",
                 "out": "SENT_MESSAGE", "to_node": "Communication", "in": "PART_OF",
-                # Messages link to a chat parent, not to a recipient Person
-                # directly — the participants of the chat become the
-                # neighbours. Handled below specially.
                 "special": "chat_participants",
             },
             "email": {
                 "kind": "pair",
                 "out": "EMAILED", "to_node": "Email", "in": "SENT_TO",
             },
+            # ---------------- Resource toggles ----------------
+            # Each `resource` entry produces:
+            #   - one node per distinct anchor value across the case
+            #   - one Phone→Resource edge per owning phone
+            # `node` is the Neo4j label, `value_field` is the property
+            # used to bucket distinct resources. `display_field`
+            # (optional) controls what gets shown as the node name in
+            # the graph; falls back to value_field. `rollup` (optional)
+            # is a transform applied to the anchor before bucketing —
+            # currently only "domain" is supported (collapses URLs to
+            # their hostname so 6,936 visits → ~30 domains).
             "location": {
-                "kind": "shared",
-                "rel": "WAS_AT", "node": "Location",
+                "kind": "resource", "node": "Location",
+                "value_field": "name",
             },
             "wifi": {
-                "kind": "shared",
-                "rel": "CONNECTED_TO", "node": "WirelessNetwork",
+                "kind": "resource", "node": "WirelessNetwork",
+                "value_field": "ssid",
+                "display_field": "ssid",
             },
             "cell_tower": {
-                "kind": "shared",
-                "rel": "USED_TOWER", "node": "CellTower",
+                "kind": "resource", "node": "CellTower",
+                "value_field": "cell_id",
             },
             "meeting": {
-                "kind": "pair",
-                "out": "ATTENDED", "to_node": "Meeting", "in": "ATTENDED_BY",
+                "kind": "resource", "node": "Meeting",
+                "value_field": "name",
             },
-            # ---------------- Additional edge types ----------------
-            # These connect Persons through a shared *value* rather than
-            # a shared node. Cellebrite ingests one VisitedPage / SearchedItem
-            # / WirelessNetwork etc. per device, so the same URL or query
-            # exists as N separate nodes (one per phone). The cross-phone
-            # signal is "two Persons on different phones touched something
-            # with the same value" — captured here via `shared_by_value`.
             "visit": {
-                "kind": "shared_by_value",
-                "node": "VisitedPage",
+                "kind": "resource", "node": "VisitedPage",
                 "value_field": "url",
+                "rollup": "domain",  # roll up to host so we don't draw 6k nodes
             },
             "search": {
-                "kind": "shared_by_value",
-                "node": "SearchedItem",
-                # SearchedItem nodes carry the query string under `name` —
-                # there isn't a dedicated `value` field in this dataset.
+                "kind": "resource", "node": "SearchedItem",
                 "value_field": "name",
             },
             "bookmark": {
-                "kind": "shared_by_value",
-                "node": "WebBookmark",
+                "kind": "resource", "node": "WebBookmark",
                 "value_field": "url",
-            },
-            "wifi_ssid": {
-                # Stronger pairing signal than plain `wifi` (which keys on
-                # the WirelessNetwork node itself — meaningful only when
-                # parser de-duplicated SSIDs across phones). This variant
-                # matches by SSID string so different WirelessNetwork rows
-                # on different phones with the same SSID also link.
-                "kind": "shared_by_value",
-                "node": "WirelessNetwork",
-                "value_field": "ssid",
+                "rollup": "domain",
             },
             "account": {
-                # OWNS_ACCOUNT joins two Persons through the same Account
-                # node when present. Falls back to shared username +
-                # platform when Account nodes are distinct.
-                "kind": "shared",
-                "rel": "OWNS_ACCOUNT", "node": "Account",
+                "kind": "resource", "node": "Account",
+                # Account nodes carry both `username` and `platform`.
+                # We bucket by their concatenation so two accounts
+                # with the same username on different platforms stay
+                # distinct.
+                "value_field": "username",
+                "display_field": "username",
             },
             "credential": {
-                # Credentials are owned via OWNS_ACCOUNT in this dataset
-                # (no dedicated relationship). Two persons sharing a
-                # credential is a strong identity overlap.
-                "kind": "shared_by_value",
-                "node": "Credential",
+                "kind": "resource", "node": "Credential",
                 "value_field": "label",
             },
-            "financial": {
-                # Persons connected by ANY transaction-shaped edge. The
-                # dataset uses several relationship names (BROKER_OF,
-                # BROKERED, INVOLVED_IN, BENEFITS_FROM, PAYER, etc.) so
-                # we don't anchor on a specific name — match all and
-                # collapse on the Transaction/Payment endpoint instead.
-                "kind": "financial",
-            },
             "pairing": {
-                "kind": "shared",
-                "rel": "PAIRED_WITH", "node": "Device",
+                "kind": "resource", "node": "Device",
+                "value_field": "name",
+            },
+            "financial": {
+                # Persons connected by transaction-shaped relationships.
+                # Stays as a 'pair'-like Person↔Person edge (no Phone
+                # ownership signal on Transaction nodes themselves).
+                "kind": "financial",
             },
         }
         # Default = comms-only (the legacy behaviour); when the caller
@@ -6462,23 +6462,84 @@ class Neo4jService:
             #   (c) anchored, depth=2: above + one more hop. Hard-capped
             #       at 200 nodes total so a busy case doesn't draw a hairball.
             if not anchored:
-                result = session.run(
-                    """
-                    MATCH (r:PhoneReport {case_id: $case_id})
-                    MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
-                    WHERE p.cellebrite_report_key = r.key
-                    WITH p, collect(DISTINCT r.key) AS device_keys,
-                         count(DISTINCT r) AS device_count
-                    // Get communication counts
-                    OPTIONAL MATCH (p)-[rel]->()
-                    WHERE type(rel) IN ['CALLED', 'SENT_MESSAGE', 'EMAILED', 'PARTICIPATED_IN']
-                    WITH p, device_keys, device_count, count(rel) AS comm_count
-                    ORDER BY device_count DESC, comm_count DESC
-                    LIMIT 200
-                    RETURN p, device_keys, device_count, comm_count
-                    """,
-                    case_id=case_id,
-                )
+                # Person ranking — driven by the ACTIVE comm-style edge
+                # types only. Resource toggles surface their own nodes
+                # (diamonds) via the resource emission pass below; they
+                # don't drag Persons into the Person set.
+                #
+                # If NO comm types are active (user has only resource
+                # toggles on), we still render the phones + every
+                # selected resource, but the Person layer collapses to
+                # whatever sender/recipient turns up via the resource
+                # edges — i.e. nothing. That's the honest behaviour:
+                # turning off all comms hides the people layer.
+                #
+                # Type list is filtered against EDGE_PATTERNS so unknown
+                # types coming over the wire are ignored.
+                comm_rel_types_out: List[str] = []
+                comm_rel_types_in: List[str] = []
+                for t in active_types:
+                    pat = EDGE_PATTERNS.get(t)
+                    if not pat or pat["kind"] != "pair":
+                        continue
+                    if pat.get("special") == "chat_participants":
+                        # Messages flow Person -> Communication -> chat
+                        # parent; recipients participate via the chat.
+                        # Use both the sender edge and the chat-
+                        # participation edge.
+                        comm_rel_types_out.append("SENT_MESSAGE")
+                        comm_rel_types_in.append("PARTICIPATED_IN")
+                    else:
+                        out_rel = pat.get("out")
+                        in_rel = pat.get("in")
+                        if out_rel:
+                            comm_rel_types_out.append(out_rel)
+                        if in_rel:
+                            comm_rel_types_in.append(in_rel)
+
+                if comm_rel_types_out or comm_rel_types_in:
+                    result = session.run(
+                        """
+                        MATCH (r:PhoneReport {case_id: $case_id})
+                        MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                        WHERE p.cellebrite_report_key = r.key
+                        WITH p, collect(DISTINCT r.key) AS device_keys,
+                             count(DISTINCT r) AS device_count
+                        OPTIONAL MATCH (p)-[rel_out]->()
+                        WHERE type(rel_out) IN $out_types
+                        WITH p, device_keys, device_count, count(rel_out) AS out_count
+                        OPTIONAL MATCH ()-[rel_in]->(p)
+                        WHERE type(rel_in) IN $in_types
+                        WITH p, device_keys, device_count, out_count, count(rel_in) AS in_count
+                        WITH p, device_keys, device_count, out_count + in_count AS activity_count
+                        // Only render Persons who participate in at
+                        // least one active-type edge. Without this,
+                        // deselecting every comm leaves the whole
+                        // Person population on the canvas with no
+                        // edges — exactly the behaviour the user
+                        // pushed back on.
+                        //
+                        // Sanity cap at 2,000 nodes — that's enough
+                        // to render every Person in a typical case
+                        // (the user reported wanting "all the phone
+                        // data") while keeping the d3 simulation
+                        // tractable. d3-force handles ~5k cleanly;
+                        // 2k leaves headroom for Resources + Phones.
+                        WHERE activity_count > 0
+                        ORDER BY device_count DESC, activity_count DESC
+                        LIMIT 2000
+                        RETURN p, device_keys, device_count, activity_count AS comm_count
+                        """,
+                        case_id=case_id,
+                        out_types=list(set(comm_rel_types_out)),
+                        in_types=list(set(comm_rel_types_in)),
+                    )
+                else:
+                    # All comm chips off — skip the Person query
+                    # entirely. The graph will render phones +
+                    # resources only (resources still emit via the
+                    # pass below).
+                    result = iter([])
             else:
                 # Build a single query that gathers the anchors + their
                 # ±depth neighbourhood across the active edge types.
@@ -6486,9 +6547,7 @@ class Neo4jService:
                 # plain `apoc.path.subgraphNodes` only when APOC is
                 # available — otherwise fall back to explicit MATCHes
                 # for depth=1 and depth=2.
-                rel_pair_types = []      # comms relationships (A -> X <- B)
-                rel_shared_types = []    # venue relationships (A -> V <- B)
-                shared_by_value = []     # (node_label, value_field) for value-keyed sharing
+                rel_pair_types = []   # comms relationships (A -> X <- B)
                 include_financial = False
                 for t in active_types:
                     pat = EDGE_PATTERNS.get(t)
@@ -6497,12 +6556,11 @@ class Neo4jService:
                     kind = pat["kind"]
                     if kind == "pair":
                         rel_pair_types.append((pat["out"], pat.get("to_node"), pat.get("in"), pat.get("special")))
-                    elif kind == "shared":
-                        rel_shared_types.append((pat["rel"], pat["node"]))
-                    elif kind == "shared_by_value":
-                        shared_by_value.append((pat["node"], pat["value_field"]))
                     elif kind == "financial":
                         include_financial = True
+                    # 'resource' kinds don't participate in anchor
+                    # expansion. They attach to PhoneReports, not to
+                    # Persons. Emitted unconditionally below.
 
                 # Walk the graph from the anchor set. We emit a MATCH per
                 # active edge pattern and UNION the resulting neighbour
@@ -6535,37 +6593,15 @@ class Neo4jService:
                             WHERE b.case_id = $case_id AND b.key <> a.key
                             RETURN DISTINCT b.key AS nkey
                         """)
-                # Shared-anchor hops (anchor → venue ← other person)
-                for rel, node_label in rel_shared_types:
-                    neighbour_query_parts.append(f"""
-                        MATCH (a:Person {{case_id: $case_id}})
-                        WHERE a.key IN $anchor_keys
-                        MATCH (a)-[:{rel}]->(v:{node_label})<-[:{rel}]-(b:Person)
-                        WHERE b.case_id = $case_id AND b.key <> a.key
-                        RETURN DISTINCT b.key AS nkey
-                    """)
-                # Shared-by-value hops — two Persons "touched" the same
-                # node-by-value (URL, query, SSID, label). Cellebrite's
-                # parser doesn't create a Person→VisitedPage edge, so we
-                # walk through the phone identity instead: a's phone owns
-                # the same-valued VisitedPage as b's phone.
-                for node_label, value_field in shared_by_value:
-                    neighbour_query_parts.append(f"""
-                        MATCH (a:Person {{case_id: $case_id}})
-                        WHERE a.key IN $anchor_keys
-                        MATCH (n1:{node_label} {{case_id: $case_id, cellebrite_report_key: a.cellebrite_report_key}})
-                        WHERE n1.{value_field} IS NOT NULL AND n1.{value_field} <> ''
-                        MATCH (n2:{node_label} {{case_id: $case_id}})
-                        WHERE n2.{value_field} = n1.{value_field}
-                          AND n2.cellebrite_report_key <> a.cellebrite_report_key
-                        MATCH (b:Person {{case_id: $case_id}})
-                        WHERE b.cellebrite_report_key = n2.cellebrite_report_key
-                          AND b.key <> a.key
-                        RETURN DISTINCT b.key AS nkey
-                    """)
+                # Removed: shared-anchor hops + shared-by-value hops.
+                # Those patterns belonged to the cross-phone correlation
+                # model; resource nodes are now emitted as first-class
+                # nodes attached to PhoneReports instead — see the
+                # resource emission pass below.
+                #
                 # Financial — generic transaction/payment hop. Matches
-                # any non-comms relationship to a Transaction or Payment
-                # node, then back out to another Person.
+                # any non-comms relationship to a Transaction or
+                # Payment node, then back out to another Person.
                 if include_financial:
                     neighbour_query_parts.append("""
                         MATCH (a:Person {case_id: $case_id})
@@ -6603,14 +6639,19 @@ class Neo4jService:
                         )
                         for rec in hop2_r:
                             all_keys.add(rec["nkey"])
-                            if len(all_keys) >= 200:
+                            if len(all_keys) >= 2000:
                                 break
 
-                # Cap at 200 to keep the force-graph render legible.
-                # Prefer anchors + hop1, drop hop2 first.
-                if len(all_keys) > 200:
+                # Sanity ceiling at 2,000 — same as the unanchored
+                # path. Beyond that the force-graph layout becomes
+                # unreadable AND the rail's GraphSelectionAccordion
+                # would have to render thousands of cards. If we
+                # exceed it, prefer anchors + hop1 + earlier hop2
+                # rows.
+                if len(all_keys) > 2000:
                     prioritised = list(anchor_keys) + list(hop1_keys - set(anchor_keys))
-                    all_keys = set(prioritised[:200])
+                    all_keys = set(prioritised[:2000])
+                    hit_cap = True
 
                 # Project the final node set with the same property
                 # bundle the legacy path produces.
@@ -6631,7 +6672,9 @@ class Neo4jService:
                     keys=list(all_keys),
                 )
 
+            persons_emitted = 0
             for record in result:
+                persons_emitted += 1
                 p = dict(record["p"])
                 pkey = p.get("key", "")
                 node_id = f"person-{pkey}"
@@ -6660,6 +6703,14 @@ class Neo4jService:
                             "target": node_id,
                             "label": "CONTAINS_CONTACT",
                         })
+
+            # If the LIMIT 2000 actually trimmed the unanchored query
+            # we flag the response so the frontend renders the
+            # "capped" badge. (When persons_emitted < 2000 the
+            # difference between rendered and total is just the
+            # active-edge filter, not a cap.)
+            if not anchored and persons_emitted >= 2000:
+                hit_cap = True
 
             # 3. Find direct links between persons, parameterised by the
             # active edge-type set. Each edge pattern contributes one
@@ -6705,36 +6756,6 @@ class Neo4jService:
                         WHERE cnt >= 2
                         RETURN src, tgt, rel_type, cnt
                     """)
-                elif pat["kind"] == "shared":
-                    # Shared-venue edge. Each pair of persons who touched
-                    # the same node forms one edge (count = number of
-                    # shared touches).
-                    edge_query_parts.append(f"""
-                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                              -[:{pat['rel']}]->(v:{pat['node']})<-[:{pat['rel']}]-(b:Person {{case_id: $case_id}})
-                        WHERE a <> b
-                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(*) AS cnt
-                        WHERE cnt >= 2
-                        RETURN src, tgt, rel_type, cnt
-                    """)
-                elif pat["kind"] == "shared_by_value":
-                    # Two Persons whose phones each carry a node of the
-                    # given label with the same value. Joins through the
-                    # phone identity since Cellebrite doesn't materialise
-                    # a Person→VisitedPage / Person→SearchedItem edge.
-                    edge_query_parts.append(f"""
-                        MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                        MATCH (n1:{pat['node']} {{case_id: $case_id, cellebrite_report_key: a.cellebrite_report_key}})
-                        WHERE n1.{pat['value_field']} IS NOT NULL AND n1.{pat['value_field']} <> ''
-                        MATCH (n2:{pat['node']} {{case_id: $case_id}})
-                        WHERE n2.{pat['value_field']} = n1.{pat['value_field']}
-                          AND n2.cellebrite_report_key <> a.cellebrite_report_key
-                        MATCH (b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                        WHERE b.cellebrite_report_key = n2.cellebrite_report_key AND a <> b
-                        WITH a.key AS src, b.key AS tgt, '{t}' AS rel_type, count(DISTINCT n1.{pat['value_field']}) AS cnt
-                        WHERE cnt >= 1
-                        RETURN src, tgt, rel_type, cnt
-                    """)
                 elif pat["kind"] == "financial":
                     # Persons connected by any financial relationship via
                     # a shared Transaction / Payment / Invoice endpoint.
@@ -6772,6 +6793,137 @@ class Neo4jService:
                             "count": record["cnt"],
                         })
 
+            # -------------------- Resource emission --------------------
+            # For every active 'resource' edge type, emit one node per
+            # distinct anchor value found on the phones currently in
+            # scope + one Phone→Resource edge per owning phone.
+            #
+            # This is the model the user asked for: the graph shows the
+            # phone's data as a navigable network — Persons, Phones,
+            # and Resources (locations, accounts, etc.). Connectivity
+            # between phones emerges naturally if multiple phones share
+            # a resource (the same node is co-owned), no special
+            # cross-phone math needed.
+            #
+            # Capped per-type to keep the canvas readable. URL/bookmark
+            # resources roll up to domain (host) so 6,936 visits become
+            # ~30 distinct domain nodes.
+            RESOURCE_CAP_PER_TYPE = 80
+            for t in active_types:
+                pat = EDGE_PATTERNS.get(t)
+                if not pat or pat["kind"] != "resource":
+                    continue
+                node_label = pat["node"]
+                value_field = pat["value_field"]
+                display_field = pat.get("display_field", value_field)
+                rollup = pat.get("rollup")
+
+                # Limit to the report_keys we drew PhoneReport nodes for
+                # so an off-screen phone doesn't drag its resources in.
+                in_scope_report_keys = report_keys
+                if not in_scope_report_keys:
+                    continue
+
+                # Anchored mode: when person_keys is set we want
+                # resources tied to phones owned by the surviving
+                # Persons (the rendered subgraph). Persons carry
+                # cellebrite_report_key directly.
+                if anchored and allowed_keys_param is not None:
+                    person_phone_q = session.run(
+                        """
+                        MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                        WHERE p.key IN $keys
+                        RETURN DISTINCT p.cellebrite_report_key AS rk
+                        """,
+                        case_id=case_id, keys=allowed_keys_param,
+                    )
+                    anchored_phones = [r["rk"] for r in person_phone_q if r["rk"]]
+                    if anchored_phones:
+                        in_scope_report_keys = anchored_phones
+
+                # Aggregate by bucket (anchor value, optionally rolled
+                # up). Returns each bucket with the list of phones that
+                # own a node in it — that drives both the resource
+                # node's display name AND the Phone→Resource edges.
+                #
+                # `rollup` extracts host from a URL using a Cypher
+                # substring trick; "domain" is the only rollup we
+                # currently support.
+                if rollup == "domain":
+                    bucket_expr = (
+                        f"CASE WHEN n.{value_field} IS NULL OR n.{value_field} = '' THEN NULL "
+                        # Strip scheme then take everything up to the next slash.
+                        f"     WHEN n.{value_field} CONTAINS '://' THEN "
+                        f"          split(split(n.{value_field}, '://')[1], '/')[0] "
+                        f"     ELSE split(n.{value_field}, '/')[0] END"
+                    )
+                else:
+                    bucket_expr = f"n.{value_field}"
+
+                rq = session.run(
+                    f"""
+                    MATCH (n:{node_label} {{case_id: $case_id}})
+                    WHERE n.cellebrite_report_key IN $rks
+                      AND {bucket_expr} IS NOT NULL
+                      AND {bucket_expr} <> ''
+                    WITH {bucket_expr} AS bucket,
+                         collect(DISTINCT n.cellebrite_report_key) AS phones,
+                         count(*) AS hits,
+                         head(collect(n.{display_field})) AS sample_display
+                    RETURN bucket, phones, hits, sample_display
+                    ORDER BY hits DESC
+                    LIMIT $cap
+                    """,
+                    case_id=case_id,
+                    rks=in_scope_report_keys,
+                    cap=RESOURCE_CAP_PER_TYPE,
+                )
+                for rec in rq:
+                    bucket = rec["bucket"]
+                    if not bucket:
+                        continue
+                    # Stable id so React keys + colour assignment are
+                    # consistent across refetches.
+                    safe_bucket = re.sub(r"[^A-Za-z0-9_.-]", "_", str(bucket))[:80]
+                    res_id = f"res-{t}-{safe_bucket}"
+                    if res_id in seen_nodes:
+                        continue
+                    seen_nodes.add(res_id)
+                    display = rec["sample_display"] or bucket
+                    nodes.append({
+                        "id": res_id,
+                        "name": str(display)[:60],
+                        "type": "Resource",
+                        "resource_type": t,
+                        "bucket": bucket,
+                        "hits": int(rec["hits"] or 0),
+                        # Multi-phone resources highlight naturally
+                        # because they end up with multiple incoming
+                        # Phone→Resource edges. We tag them too so the
+                        # frontend can outline them if it wants.
+                        "phone_count": len(rec["phones"] or []),
+                        "val": 2 + min(int(rec["hits"] or 0) // 5, 8),
+                    })
+                    # One Phone→Resource edge per owning phone.
+                    for ph in (rec["phones"] or []):
+                        ph_id = f"report-{ph}"
+                        if ph_id in seen_nodes:
+                            links.append({
+                                "source": ph_id,
+                                "target": res_id,
+                                "label": t,
+                                "count": 1,
+                            })
+
+            # Tally edges-per-type so the chip strip can render a count
+            # badge ("Visits 0", "Calls 142", etc.) and the user knows
+            # whether a toggle has any payload before flicking it on.
+            edge_counts_by_type: Dict[str, int] = {t: 0 for t in active_types}
+            for link in links:
+                t = (link.get("label") or "").lower()
+                if t in edge_counts_by_type:
+                    edge_counts_by_type[t] += 1
+
             # Total count of Persons in the case (pre-cap) so the UI
             # can show "200 of N" and surface a "search the rest"
             # affordance when N > nodes returned.
@@ -6784,10 +6936,46 @@ class Neo4jService:
             ).single()
             total_persons = int(total_r["n"]) if total_r else 0
 
+        # --- Final consistency scrub --------------------------------
+        # Belt-and-braces guarantee for the renderer: never return a
+        # link whose source or target isn't in the node set, and never
+        # return a Person / Resource node that ends up with no incident
+        # edges after filtering. d3-force throws "node not found" +
+        # "Cannot create property 'vx' on string" when a link
+        # references a missing node, which kills the canvas on every
+        # subsequent tick. Belt-and-braces because every upstream path
+        # SHOULD already gate on seen_nodes — this catches any leak.
+        valid_ids = {n["id"] for n in nodes}
+        clean_links = []
+        for l in links:
+            s = l.get("source")
+            t = l.get("target")
+            if s in valid_ids and t in valid_ids and s != t:
+                clean_links.append(l)
+        links = clean_links
+
+        # Drop nodes with no incident edges, except PhoneReports
+        # (they anchor the case and should always render even if the
+        # user's current filter hides every edge touching them).
+        endpoints = set()
+        for l in links:
+            endpoints.add(l["source"])
+            endpoints.add(l["target"])
+        nodes = [
+            n for n in nodes
+            if n.get("type") == "PhoneReport" or n["id"] in endpoints
+        ]
+
         return {
             "nodes": nodes,
             "links": links,
             "total_persons": total_persons,
+            "edge_counts_by_type": edge_counts_by_type,
+            # Only true when a hard cap actually trimmed the result.
+            # Frontend gates the "capped" badge on this — without it
+            # the badge fires for ANY gap between rendered and total
+            # Persons, even when the gap is honest filtering.
+            "hit_cap": hit_cap,
         }
 
     def search_cellebrite_persons(
@@ -6796,55 +6984,121 @@ class Neo4jService:
         query: str,
         limit: int = 50,
     ) -> dict:
-        """Search every Person in the case (no 200-cap) by free text.
+        """Search every node the Cross-Phone Graph could render — Persons
+        AND Resources (Meetings, Locations, Visits, Accounts, etc.).
 
-        Designed to back the Cross-Phone Graph's "Search the full case"
-        affordance — the graph render is capped at 200 Persons for
-        legibility, but the investigator needs to be able to find
-        anyone in the case from the search bar regardless of whether
-        they made it into the rendered subset.
+        The graph render is capped at 200 nodes for legibility, so the
+        canvas-side filter can only narrow what's already drawn. This
+        endpoint scans the entire case so the investigator can find
+        anything regardless of whether it made the cut.
 
-        Returns lightweight Person summaries — enough for a results
-        panel row + a one-click "anchor on this person" action.
+        Returns unified result rows — each carries an `entity` field of
+        'person' or 'resource' so the UI can route the click correctly
+        (Person → setPerspective via Person key; Resource → frontend
+        currently just centres on the node id in the canvas).
         """
         if not query or not query.strip():
             return {"results": [], "total": 0, "limited": False}
-        tokens = [t.strip().lower() for t in query.split() if t.strip()]
+        # Lowercase + strip diacritics on both sides so a query of
+        # "dia" matches "Día de la Herencia". Neo4j has no built-in
+        # unaccent(), so we fold on the way IN (the token) and
+        # nest replace() calls on the way OUT (the haystack).
+        def _fold(s: str) -> str:
+            replacements = {
+                "á": "a", "à": "a", "ä": "a", "â": "a", "ã": "a", "å": "a",
+                "é": "e", "è": "e", "ë": "e", "ê": "e",
+                "í": "i", "ì": "i", "ï": "i", "î": "i",
+                "ó": "o", "ò": "o", "ö": "o", "ô": "o", "õ": "o",
+                "ú": "u", "ù": "u", "ü": "u", "û": "u",
+                "ñ": "n", "ç": "c",
+            }
+            out = s.lower()
+            for k, v in replacements.items():
+                out = out.replace(k, v)
+            return out
+
+        tokens = [_fold(t.strip()) for t in query.split() if t.strip()]
         if not tokens:
             return {"results": [], "total": 0, "limited": False}
+
+        # Cypher-side fold: nest replace() over toLower(). Each field
+        # in the haystack runs through this so the comparison matches
+        # what the user typed regardless of accents.
+        def _cypher_fold(expr: str) -> str:
+            chain = f"toLower({expr})"
+            replacements = [
+                ("á", "a"), ("à", "a"), ("ä", "a"), ("â", "a"), ("ã", "a"), ("å", "a"),
+                ("é", "e"), ("è", "e"), ("ë", "e"), ("ê", "e"),
+                ("í", "i"), ("ì", "i"), ("ï", "i"), ("î", "i"),
+                ("ó", "o"), ("ò", "o"), ("ö", "o"), ("ô", "o"), ("õ", "o"),
+                ("ú", "u"), ("ù", "u"), ("ü", "u"), ("û", "u"),
+                ("ñ", "n"), ("ç", "c"),
+            ]
+            for src, dst in replacements:
+                chain = f"replace({chain}, '{src}', '{dst}')"
+            return chain
+
+        # Resource labels we surface — keys match the frontend's
+        # GRAPH_EVENT_TYPES so a Meeting result will use the meeting
+        # chip's colour in the results panel.
+        RESOURCE_LABELS = [
+            ("Location",        "name", "location"),
+            ("WirelessNetwork", "ssid", "wifi"),
+            ("CellTower",       "cell_id", "cell_tower"),
+            ("Meeting",         "name", "meeting"),
+            ("VisitedPage",     "url",  "visit"),
+            ("SearchedItem",    "name", "search"),
+            ("WebBookmark",     "url",  "bookmark"),
+            ("Account",         "username", "account"),
+            ("Credential",      "label", "credential"),
+            ("Device",          "name", "pairing"),
+        ]
 
         params: Dict[str, Any] = {
             "case_id": case_id,
             "limit": int(limit),
         }
-        # Inline parameter names per token. The values are lowercase
-        # whitespace-stripped strings passed as Cypher params (not
-        # string-built into the query) so injection risk is bounded
-        # to the parameter names — which we generate, not the user.
-        token_clauses = []
+        # Per-token CONTAINS clauses share parameters across the
+        # Person and Resource halves so we only declare each once.
         for i, tok in enumerate(tokens):
-            param = f"tok{i}"
-            params[param] = tok
-            token_clauses.append(
-                f"toLower(coalesce(p.name,'') + ' ' + coalesce(p.phone,'') + ' ' + coalesce(p.key,'')) CONTAINS ${param}"
+            params[f"tok{i}"] = tok
+
+        def _person_where():
+            haystack = _cypher_fold(
+                "coalesce(p.name,'') + ' ' + coalesce(p.phone,'') + ' ' + coalesce(p.key,'')"
             )
-        where_clause = " AND ".join(token_clauses)
+            return " AND ".join(
+                f"{haystack} CONTAINS $tok{i}" for i in range(len(tokens))
+            )
+
+        def _resource_where(value_field: str):
+            haystack = _cypher_fold(
+                f"coalesce(n.{value_field},'') + ' ' + coalesce(n.name,'') + ' ' + coalesce(n.key,'')"
+            )
+            return " AND ".join(
+                f"{haystack} CONTAINS $tok{i}" for i in range(len(tokens))
+            )
+
+        results: List[Dict[str, Any]] = []
+        total = 0
 
         with self._driver.session() as session:
-            cnt_r = session.run(
+            # Person half
+            person_where = _person_where()
+            cnt_p = session.run(
                 f"""
                 MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                WHERE {where_clause}
+                WHERE {person_where}
                 RETURN count(p) AS n
                 """,
                 params,
             ).single()
-            total = int(cnt_r["n"]) if cnt_r else 0
+            total += int(cnt_p["n"]) if cnt_p else 0
 
             r = session.run(
                 f"""
                 MATCH (p:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                WHERE {where_clause}
+                WHERE {person_where}
                 OPTIONAL MATCH (p)-[rel]->()
                 WHERE type(rel) IN ['CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN']
                 WITH p, count(rel) AS comm_count
@@ -6858,15 +7112,137 @@ class Neo4jService:
                 """,
                 params,
             )
-            results = []
             for rec in r:
                 results.append({
+                    "entity": "person",
                     "key": rec["key"],
                     "name": rec["name"] or rec["key"],
                     "phone": rec["phone"] or "",
                     "report_key": rec["report_key"],
                     "comm_count": int(rec["comm_count"] or 0),
                 })
+
+            # Resource half — one query per resource label. Each hit
+            # is rolled into the same results list so the frontend
+            # renders one unified panel. We cap per-label at limit/2
+            # so a single chatty label can't drown the rest.
+            per_label_cap = max(5, int(limit) // 2)
+            params["per_label_cap"] = per_label_cap
+
+            for label, value_field, chip_key in RESOURCE_LABELS:
+                where = _resource_where(value_field)
+                try:
+                    cnt_r = session.run(
+                        f"""
+                        MATCH (n:{label} {{case_id: $case_id}})
+                        WHERE {where}
+                        RETURN count(n) AS n
+                        """,
+                        params,
+                    ).single()
+                    total += int(cnt_r["n"]) if cnt_r else 0
+                except Exception:
+                    # Unknown property on some labels (e.g. Device with
+                    # no .name) — skip silently rather than 500.
+                    continue
+
+                # The graph resource pass buckets by `value_field` —
+                # for URL-bearing types it rolls up to the host. We
+                # surface the same `bucket` here so the frontend can
+                # find the matching graph node by (resource_type,
+                # bucket) without guessing.
+                rollup_visit_bookmark = chip_key in ("visit", "bookmark")
+                if rollup_visit_bookmark:
+                    bucket_expr = (
+                        f"CASE WHEN n.{value_field} IS NULL OR n.{value_field} = '' THEN NULL "
+                        f"     WHEN n.{value_field} CONTAINS '://' THEN "
+                        f"          split(split(n.{value_field}, '://')[1], '/')[0] "
+                        f"     ELSE split(n.{value_field}, '/')[0] END"
+                    )
+                else:
+                    bucket_expr = f"n.{value_field}"
+
+                try:
+                    rq = session.run(
+                        f"""
+                        MATCH (n:{label} {{case_id: $case_id}})
+                        WHERE {where}
+                        RETURN n.key AS key,
+                               coalesce(n.{value_field}, n.name, n.key) AS name,
+                               {bucket_expr} AS bucket,
+                               n.cellebrite_report_key AS report_key
+                        ORDER BY name
+                        LIMIT $per_label_cap
+                        """,
+                        params,
+                    )
+                    for rec in rq:
+                        nm = rec["name"]
+                        bucket = rec["bucket"]
+                        results.append({
+                            "entity": "resource",
+                            "resource_type": chip_key,
+                            "label": label,
+                            "key": rec["key"],
+                            "name": (nm or "")[:80] or rec["key"],
+                            # `bucket` is what the graph resource node
+                            # uses as its identity — surface it so the
+                            # frontend can locate the matching node.
+                            "bucket": bucket,
+                            "report_key": rec["report_key"],
+                            # No comm_count — kept as 0 for shape parity.
+                            "comm_count": 0,
+                        })
+                except Exception:
+                    continue
+
+        # Interleave Persons + Resources so Resources actually surface
+        # in the top-N panel. Previously we put all Persons first;
+        # with 50 Person matches the Resources never reached the panel
+        # even when the user was clearly looking for them (e.g. typed
+        # "dia" expecting to find Meeting nodes).
+        #
+        # New ordering:
+        #   1. Sort Persons by comm_count desc, name (existing
+        #      relevance signal — most-active match first).
+        #   2. Sort Resources alphabetically inside each label group.
+        #   3. Interleave: take up to 6 Persons, then up to 6 of each
+        #      resource label, then round-robin the rest. So a search
+        #      for "dia" returns the top Persons (Claudia Baires etc.)
+        #      AND every Meeting / Location / Account / etc. matching
+        #      "dia" in roughly equal weight.
+        persons = [r for r in results if r.get("entity") == "person"]
+        resources = [r for r in results if r.get("entity") == "resource"]
+        persons.sort(key=lambda r: (-int(r.get("comm_count") or 0), r.get("name") or ""))
+        # Bucket resources by chip_key (label) so we can interleave
+        # across types — otherwise a single chatty label (e.g.
+        # WebBookmark) would consume the resource slots.
+        from collections import defaultdict
+        by_type: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for r in resources:
+            by_type[r.get("resource_type", "_")].append(r)
+        for v in by_type.values():
+            v.sort(key=lambda r: (r.get("name") or "").lower())
+        merged: List[Dict[str, Any]] = []
+        merged.extend(persons[:6])  # top Persons up front
+        # Round-robin the resource buckets
+        bucket_keys = list(by_type.keys())
+        bucket_idx = {k: 0 for k in bucket_keys}
+        while len(merged) < int(limit):
+            progressed = False
+            for k in bucket_keys:
+                i = bucket_idx[k]
+                if i < len(by_type[k]):
+                    merged.append(by_type[k][i])
+                    bucket_idx[k] = i + 1
+                    progressed = True
+                    if len(merged) >= int(limit):
+                        break
+            if not progressed:
+                break
+        # Spill remaining Persons (after the initial 6) at the bottom
+        merged.extend(persons[6:])
+        results = merged[: int(limit)]
 
         return {
             "results": results,

@@ -1,16 +1,19 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import {
   Loader2, ZoomIn, ZoomOut, Maximize2,
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
   Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
-  Bluetooth, Filter as FilterIcon, ChevronRight,
+  Bluetooth, Filter as FilterIcon, ChevronRight, Tag, Clock,
+  FolderTree, UserCheck, Move, MousePointerSquareDashed,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
 import { usePerspective } from '../../context/PerspectiveContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
+import { requestCellebriteTabSwitch, setCommsHandoff } from '../../utils/commsHandoff';
+import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 
 /**
  * Convert a `#rrggbb` hex string to `rgba()` with the supplied alpha.
@@ -63,19 +66,40 @@ function tokeniseGraphSearch(input) {
 // first look. Persisted per case in localStorage.
 //
 // Each entry maps 1:1 onto a backend EDGE_PATTERNS key.
+// Each entry corresponds 1:1 to a backend EDGE_PATTERNS key. Toggles
+// just show or hide nodes of that type on the canvas — they don't do
+// any clever cross-phone matching. Connectivity between phones is a
+// natural side effect when a resource (e.g. WiFi SSID, Account) is
+// owned by more than one phone.
+//
+// Comms toggles (call/message/email) light up direct Person↔Person
+// edges. Resource toggles add small Resource nodes (diamonds) that
+// each phone connects to via a Phone→Resource edge.
+//
+// Default state: only calls + messages on. The user explicitly asked
+// to see "where possible the whole graph but by default only have
+// messages and calls visible. The rest can be toggled on or off."
+//
+// Each toggle is a true add/remove: deselecting a type causes the
+// backend to omit Persons / Resources whose only edges were of that
+// type, so the canvas stays meaningful at every toggle state.
 const GRAPH_EVENT_TYPES = [
-  // Comms
+  // Defaults are intentionally light. The user asked for "mostly
+  // deselected so the graph doesn't start too chaotic" + "all the
+  // phone data" — every Person is now eligible (sanity-cap raised
+  // to 2,000 in the backend), so leaving Messages default-on would
+  // pull thousands of nodes in on first load. Calls alone gives a
+  // legible comms baseline the user can build on by toggling.
   { key: 'call',       label: 'Calls',       icon: Phone,         color: '#10b981', defaultOn: true,  group: 'comms' },
-  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: true,  group: 'comms' },
-  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: true,  group: 'comms' },
+  { key: 'message',    label: 'Messages',    icon: MessageSquare, color: '#2563eb', defaultOn: false, group: 'comms' },
+  { key: 'email',      label: 'Emails',      icon: Mail,          color: '#f59e0b', defaultOn: false, group: 'comms' },
   // Movement / proximity
   { key: 'location',   label: 'Locations',   icon: MapPin,        color: '#06b6d4', defaultOn: false, group: 'movement' },
-  { key: 'wifi',       label: 'WiFi node',   icon: Wifi,          color: '#10b981', defaultOn: false, group: 'movement' },
-  { key: 'wifi_ssid',  label: 'WiFi SSID',   icon: Wifi,          color: '#22c55e', defaultOn: false, group: 'movement' },
+  { key: 'wifi',       label: 'WiFi',        icon: Wifi,          color: '#22c55e', defaultOn: false, group: 'movement' },
   { key: 'cell_tower', label: 'Cell tower',  icon: Radio,         color: '#8b5cf6', defaultOn: false, group: 'movement' },
   { key: 'meeting',    label: 'Meetings',    icon: UsersIcon,     color: '#f97316', defaultOn: false, group: 'movement' },
   // Web activity
-  { key: 'visit',      label: 'Web visits',  icon: Globe,         color: '#a855f7', defaultOn: false, group: 'web' },
+  { key: 'visit',      label: 'Web domains', icon: Globe,         color: '#a855f7', defaultOn: false, group: 'web' },
   { key: 'search',     label: 'Searches',    icon: SearchIcon,    color: '#ec4899', defaultOn: false, group: 'web' },
   { key: 'bookmark',   label: 'Bookmarks',   icon: Bookmark,      color: '#d946ef', defaultOn: false, group: 'web' },
   // Identity
@@ -98,6 +122,7 @@ const NODE_COLORS = {
 export default function CellebriteCrossPhoneGraph({ caseId }) {
   const phoneCtx = usePhoneReports();
   const perspective = usePerspective();
+  const { selectEntity } = useCellebriteSelection();
 
   const [graphData, setGraphData] = useState({ nodes: [], links: [] });
   const [loading, setLoading] = useState(true);
@@ -106,7 +131,17 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // Per-case localStorage so the user's preferred event-type toggle
   // state persists across visits. Keyed off case so different cases
   // don't bleed settings.
-  const eventTypesKey = `cb.graph.eventTypes.${caseId || 'unknown'}`;
+  // localStorage key bumped to v3. v2 stored stale chip keys that
+  // no longer exist in EDGE_PATTERNS (e.g. 'wifi_ssid' was folded
+  // into 'wifi') — those were still being sent to the backend on
+  // each refetch and silently ignored. v3 reseeds from defaultOn
+  // and filters out any key that isn't in the current registry on
+  // load, so previously-cached state can never leak unknown keys.
+  const eventTypesKey = `cb.graph.eventTypes.v4.${caseId || 'unknown'}`;
+  const knownKeys = useMemo(
+    () => new Set(GRAPH_EVENT_TYPES.map((t) => t.key)),
+    [],
+  );
   const [activeEventTypes, setActiveEventTypes] = useState(() => {
     if (typeof window === 'undefined') {
       return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
@@ -115,7 +150,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       const raw = window.localStorage.getItem(eventTypesKey);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return new Set(parsed);
+        if (Array.isArray(parsed)) {
+          // Filter out any key that's no longer in EDGE_PATTERNS —
+          // 'wifi_ssid' etc. would otherwise survive a code change
+          // that removed them and still get sent to the backend.
+          const known = new Set(GRAPH_EVENT_TYPES.map((t) => t.key));
+          const sanitised = parsed.filter((k) => known.has(k));
+          if (sanitised.length > 0) return new Set(sanitised);
+        }
       }
     } catch { /* ignore */ }
     return new Set(GRAPH_EVENT_TYPES.filter(t => t.defaultOn).map(t => t.key));
@@ -127,45 +169,58 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     } catch { /* full / disabled */ }
   }, [activeEventTypes, eventTypesKey]);
 
-  // ---- Rotation fix: pin positions across filter toggles -----------
-  // When the user flicks an edge-type chip the d3-force simulation can
-  // still be slowly relaxing in the background. React re-renders the
-  // <ForceGraph2D /> with the new filteredData and the lib resumes the
-  // sim's next tick — which appears to the user as a "slight rotation"
-  // even though the data the React tree owns hasn't moved.
+  // Camera preservation + position carry-over across refetches.
   //
-  // Fix: on every chip-toggle we set hard pins (fx/fy = current x/y)
-  // on every node so subsequent ticks can't move them. We release the
-  // pins a short delay later (300ms) so:
-  //   - The simulation stops thrashing the user's view DURING the
-  //     toggle, but
-  //   - Future perspective refetches (which DO want to relax) work
-  //     normally.
-  // The release is deliberately fire-and-forget — if the user toggles
-  // again before it runs, the next pin overrides.
-  const pinReleaseTimerRef = useRef(null);
+  // Every event-type toggle now triggers a backend refetch so the new
+  // node set actually changes (Persons whose only edges were the
+  // deselected type disappear, resources of newly-selected types
+  // appear). Without these refs we'd lose the user's pan/zoom and the
+  // unchanged nodes would teleport to fresh random positions.
+  //
+  // Strategy:
+  //   - cameraSnapshotRef:   captured just BEFORE a refetch, restored
+  //                          via centerAt+zoom inside onEngineStop
+  //                          once the new simulation settles.
+  //   - lastNodePosRef:      maintained from whatever's currently on
+  //                          screen. Used to seed new nodes with the
+  //                          previous node's x/y/vx/vy when their ids
+  //                          match — so anything that's still on the
+  //                          canvas stays put.
+  const cameraSnapshotRef = useRef(null);
+  const lastNodePosRef = useRef(new Map());
+  // Continuously maintain the position cache so the next refetch
+  // always has the freshest layout to seed from.
   useEffect(() => {
-    // Skip the first render — no positions to pin yet.
-    if (!graphData.nodes.length) return;
+    const m = lastNodePosRef.current;
     for (const n of graphData.nodes) {
+      if (n.id == null) continue;
       if (Number.isFinite(n.x) && Number.isFinite(n.y)) {
-        n.fx = n.x;
-        n.fy = n.y;
+        m.set(n.id, { x: n.x, y: n.y, vx: n.vx, vy: n.vy });
       }
     }
-    if (pinReleaseTimerRef.current) clearTimeout(pinReleaseTimerRef.current);
-    pinReleaseTimerRef.current = setTimeout(() => {
-      for (const n of graphData.nodes) {
-        delete n.fx;
-        delete n.fy;
-      }
-      pinReleaseTimerRef.current = null;
-    }, 300);
-    return () => {
-      // No-op on unmount; the next effect run handles cleanup.
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeEventTypes]);
+  });
+
+  // Pre-paint camera clamp.
+  //
+  // The library auto-fits the moment a new graphData reference lands.
+  // onEngineTick + onEngineStop both run AFTER the first paint —
+  // which means the user sees one frame of the lib's auto-fit before
+  // we yank the camera back. That single frame is the "snap to
+  // neutral" the user reported.
+  //
+  // Fix: useLayoutEffect runs synchronously after React commits but
+  // BEFORE the browser paints. We slam the camera back here so the
+  // very first painted frame already has the user's view restored.
+  // Pair with onEngineTick (every-frame clamp during warm-up) and
+  // onEngineStop (final release) for a zero-flicker handover.
+  useLayoutEffect(() => {
+    const snap = cameraSnapshotRef.current;
+    if (!snap || !fgRef.current) return;
+    try {
+      fgRef.current.centerAt(snap.x, snap.y, 0);
+      fgRef.current.zoom(snap.z, 0);
+    } catch { /* ref not ready */ }
+  }, [graphData]);
   // Depth toggle — 1 (anchors + direct contacts) is the safer default;
   // 2 hops off-anchor and is best for "find connections-of-connections"
   // exploration. Only meaningful when a perspective is active.
@@ -174,10 +229,21 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   const fgRef = useRef();
   const containerRef = useRef();
 
-  // Total Persons in the case (pre 200-cap). Surfaced by the
-  // backend so the UI can show "200 of N" and offer search when N
-  // exceeds the rendered set.
+  // Total Persons in the case (regardless of any filter or cap).
+  // Surfaced by the backend so the UI can show "X of N people in
+  // case" and offer search to reach those outside the rendered set.
   const [totalPersons, setTotalPersons] = useState(0);
+  // True ONLY when the backend hit a hard 2,000-node cap. Drives
+  // the "capped" badge; the gap between rendered and total Persons
+  // is otherwise just the active-edge filter, which is honest
+  // behaviour and shouldn't surface a warning.
+  const [hitCap, setHitCap] = useState(false);
+
+  // Per-edge-type edge counts (from the backend). The chip strip
+  // renders these as small badges so the user sees "Visits 0" and
+  // understands an empty toggle is "no data" rather than "broken".
+  // Keys match GRAPH_EVENT_TYPES.key.
+  const [edgeCountsByType, setEdgeCountsByType] = useState({});
 
   // Search vs Filter mode. Filter = narrow what's drawn (matches +
   // their neighbours). Search = highlight matches and surface them
@@ -185,6 +251,184 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // mode also hits the backend so the user can find Persons that
   // aren't in the rendered subset at all.
   const [searchMode, setSearchMode] = useState('filter'); // 'filter' | 'search'
+
+  // Master "labels all on" toggle.
+  //   true  (default) → every node renders a compact label;
+  //                     hovered node enlarges it; search matches
+  //                     get cyan colour + slight bump.
+  //   false           → labels suppressed except hover / search
+  //                     match / Phones. For dense graphs.
+  const [labelsAllOn, setLabelsAllOn] = useState(true);
+
+  // Selection rubber-band state.
+  // Trigger: right-click + drag anywhere on the canvas. Mouse button
+  // 2 starts the box; we suppress the browser context-menu so the
+  // gesture feels natural. Left-click drag still moves single nodes
+  // OR translates the whole multi-selection (see onNodeDrag below).
+  const [selectionBox, setSelectionBox] = useState(null);
+  const selectionBoxStartRef = useRef(null);
+  // Persistent multi-selection (node ids). Survives canvas redraws
+  // so the user can pivot on the selection from the perspective bar.
+  const [multiSelection, setMultiSelection] = useState(new Set());
+
+  // Group-drag state.
+  // When the user starts dragging a node that's part of the
+  // multi-selection, every selected node moves by the same delta.
+  // We snapshot starting positions for every selected node so we
+  // can compute the delta on each onNodeDrag frame.
+  const groupDragRef = useRef(null);
+
+  // Pending centre-and-fan focus id. When the user clicks a Person
+  // search result we both rebuild the graph (via setPerspective)
+  // AND want to centre+fan the result. The rebuild is async; this
+  // ref stores the focus id until the next graphData arrival, at
+  // which point the effect below runs the layout.
+  const pendingFanRef = useRef(null);
+
+  // Same pattern but for Resources. The resource graph id is
+  // computed by the backend's safe_bucket sanitisation which we
+  // don't reproduce client-side; instead we store the matchable
+  // (resource_type, bucket) tuple and resolve it once graphData
+  // lands.
+  const pendingResourceFanRef = useRef(null);
+
+  // Pivot the active perspective (or the multi-selection if it's
+  // non-empty) into another Cellebrite tab. Each target tab has a
+  // slightly different intake contract:
+  //
+  //   - 'comms'           — Comms Center reads _filter_intent: 'comms'
+  //                          from the selection rail and pre-fills the
+  //                          participants chip with the person keys.
+  //   - 'communications'  — Same person-keys handoff; Communications
+  //                          uses the perspective context directly so
+  //                          we just leave the perspective active.
+  //   - 'timeline' / 'events' / 'locations' / 'files' / 'unified' —
+  //                          Backed by the perspective context which
+  //                          they read on mount. We just switch tabs;
+  //                          they pick the lens up from there.
+  //
+  // Selection sourcing:
+  //   - If the user has multi-selected nodes, derive person keys from
+  //     those (Person ids → strip 'person-' prefix) and use as the
+  //     pivot lens.
+  //   - Otherwise fall back to the active perspective.
+  const pivotTo = useCallback((tabId) => {
+    // Resolve the lens — multi-selection wins if non-empty
+    let personKeys = null;
+    let label = null;
+    if (multiSelection.size > 0) {
+      const ids = [...multiSelection];
+      const persons = ids
+        .map((id) => graphData.nodes.find((n) => n.id === id))
+        .filter((n) => n && n.type !== 'Resource' && n.type !== 'PhoneReport');
+      personKeys = persons
+        .map((n) => (n.id || '').replace(/^person-/, ''))
+        .filter(Boolean);
+      label = persons.length === 1
+        ? (persons[0].name || personKeys[0])
+        : `${persons.length} people`;
+      // Replace the perspective with this multi-selection so other
+      // tabs read a coherent lens too.
+      if (perspective && personKeys.length > 0) {
+        perspective.setPerspective(personKeys, label, 'graph.multi-select-pivot');
+      }
+    } else if (perspective?.hasPerspective) {
+      personKeys = [...(perspective.activeKeys || [])];
+      label = perspective.active?.label;
+    }
+
+    // Always publish a _filter_intent so the Comms Center can pre-fill
+    // its participants chip from the rail event, even if it hasn't
+    // read the perspective context yet.
+    if (personKeys && personKeys.length > 0) {
+      selectEntity({
+        type: 'name-action',
+        id: `graph-pivot-${tabId}-${Date.now()}`,
+        caseId,
+        payload: { _filter_intent: 'comms', person_keys: personKeys },
+        source: 'graph.pivot',
+      });
+    }
+
+    // Some tabs also want the canonical phone-keys handoff. Pass
+    // every report_key the lens touches; downstream filters narrow
+    // the device set when the user is anchored on a single phone.
+    const reportKeys = phoneCtx?.reports?.map((r) => r.report_key)
+      .filter(Boolean) || [];
+    if (tabId === 'comms' || tabId === 'communications') {
+      setCommsHandoff({
+        caseId,
+        startTs: null,
+        endTs: null,
+        reportKeys,
+        source: 'graph.pivot',
+      });
+    }
+
+    requestCellebriteTabSwitch(tabId);
+  }, [caseId, graphData.nodes, multiSelection, perspective, phoneCtx, selectEntity]);
+
+  // centreAndFan: pin a node at origin, arrange its neighbours in
+  // a circle around it, zoom to fit. Implements the user's "move
+  // that node out of the cluster and circle the cluster around it"
+  // request. Pins released ~1.2s later so the user can continue
+  // to drag if they want.
+  const centreAndFan = useCallback((focusId, nodes, links) => {
+    if (!fgRef.current) return;
+    const focus = nodes.find((n) => n.id === focusId);
+    if (!focus) return;
+    const neighbourIds = new Set();
+    for (const l of links) {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (s === focusId) neighbourIds.add(t);
+      else if (t === focusId) neighbourIds.add(s);
+    }
+    focus.fx = 0; focus.fy = 0; focus.x = 0; focus.y = 0;
+    const ring = [...neighbourIds]
+      .map((id) => nodes.find((n) => n.id === id))
+      .filter(Boolean);
+    const R = Math.max(140, 22 * Math.sqrt(ring.length));
+    ring.forEach((n, i) => {
+      const theta = (2 * Math.PI * i) / Math.max(1, ring.length);
+      n.fx = Math.cos(theta) * R;
+      n.fy = Math.sin(theta) * R;
+      n.x = n.fx;
+      n.y = n.fy;
+    });
+    try { fgRef.current.d3ReheatSimulation?.(); } catch { /* ignore */ }
+    fgRef.current.centerAt(0, 0, 600);
+    fgRef.current.zoom(Math.min(2.2, 700 / (R * 2 + 120)), 600);
+    setTimeout(() => {
+      if (focus) { delete focus.fx; delete focus.fy; }
+      ring.forEach((n) => { delete n.fx; delete n.fy; });
+    }, 1200);
+  }, []);
+
+  // Run the pending centre-and-fan once the rebuilt graphData
+  // contains the target focus id. Person path uses an exact id;
+  // resource path uses (resource_type, bucket) since the backend
+  // generates safe_bucket sanitisation we don't reproduce here.
+  useEffect(() => {
+    const focusId = pendingFanRef.current;
+    if (focusId && graphData.nodes.some((n) => n.id === focusId)) {
+      setMultiSelection(new Set([focusId]));
+      centreAndFan(focusId, graphData.nodes, graphData.links);
+      pendingFanRef.current = null;
+    }
+    const pr = pendingResourceFanRef.current;
+    if (pr) {
+      const match = graphData.nodes.find((n) =>
+        n.type === 'Resource'
+        && n.resource_type === pr.resource_type
+        && (n.bucket === pr.bucket || n.name === pr.bucket));
+      if (match) {
+        setMultiSelection(new Set([match.id]));
+        centreAndFan(match.id, graphData.nodes, graphData.links);
+        pendingResourceFanRef.current = null;
+      }
+    }
+  }, [graphData, centreAndFan]);
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -195,46 +439,94 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   }, [perspective?.hasPerspective, perspective?.activeKeys]);
 
   // ---- Fetch policy --------------------------------------------------
-  // Refetch ONLY when the scope changes — perspective anchors or depth.
-  // Edge-type toggles narrow what's RENDERED client-side (see
-  // `filteredData` below) so toggling a type never triggers a refetch,
-  // never reseeds the simulation, and never moves the camera. This is
-  // the only way to keep the user's view perfectly stable on toggle.
+  // Refetch on any change that affects which nodes belong on the
+  // canvas: perspective anchors, depth, AND the active event-type set.
+  // The backend produces a graph containing ONLY Persons / Resources
+  // reachable via active edges, so toggling a chip both adds and
+  // removes nodes (not just edges).
   //
-  // Backend keeps its `event_types` param for the perspective rebuild
-  // route, but we deliberately always request the full superset here
-  // (passing `undefined` so the API call omits it and gets the
-  // backend's all-edges default). The 200-node / 600-edge caps keep
-  // this safe.
+  // Camera + node positions are preserved across the refetch — we
+  // snapshot centerAt+zoom just BEFORE the call and restore them in
+  // onEngineStop once the new simulation settles, and we copy x/y/
+  // vx/vy from matching old nodes onto the new ones so unchanged
+  // nodes don't teleport.
   useEffect(() => {
     if (!caseId) return;
     let cancelled = false;
-    setLoading(true);
 
+    // Snapshot the current camera BEFORE issuing the fetch so the
+    // post-fetch onEngineStop has something to restore. Initial load
+    // skips the snapshot (graph hasn't rendered yet) and the library's
+    // default first-render fit applies normally.
+    if (fgRef.current && graphData.nodes.length > 0) {
+      try {
+        const centre = fgRef.current.centerAt();
+        const z = fgRef.current.zoom();
+        if (centre && Number.isFinite(centre.x) && Number.isFinite(centre.y)) {
+          cameraSnapshotRef.current = { x: centre.x, y: centre.y, z };
+        }
+      } catch {
+        cameraSnapshotRef.current = null;
+      }
+    }
+
+    setLoading(true);
     cellebriteAPI.getCrossPhoneGraph(caseId, {
       personKeys: personKeys || undefined,
-      // Always full set — client-side filter handles the visible subset.
-      eventTypes: GRAPH_EVENT_TYPES.map((t) => t.key),
+      // Send the user's active set so the backend includes/excludes
+      // the matching Persons + Resources. Empty set = no event types.
+      eventTypes: [...activeEventTypes],
       depth,
     }).then(data => {
-      if (!cancelled) {
-        setGraphData({
-          nodes: (data && data.nodes) || [],
-          links: (data && data.links) || [],
-        });
-        setTotalPersons((data && Number(data.total_persons)) || 0);
-        setLoading(false);
+      if (cancelled) return;
+      const nextNodes = (data && data.nodes) || [];
+      // Seed positions from the existing layout so unchanged nodes
+      // don't move. Library treats x/y on a node as a placement hint;
+      // the new sim relaxes around them.
+      if (lastNodePosRef.current.size > 0) {
+        for (const n of nextNodes) {
+          const prev = lastNodePosRef.current.get(n.id);
+          if (prev) {
+            n.x = prev.x;
+            n.y = prev.y;
+            n.vx = prev.vx || 0;
+            n.vy = prev.vy || 0;
+          }
+        }
       }
+      setGraphData({
+        nodes: nextNodes,
+        links: (data && data.links) || [],
+      });
+      setTotalPersons((data && Number(data.total_persons)) || 0);
+      setEdgeCountsByType((data && data.edge_counts_by_type) || {});
+      setHitCap(!!(data && data.hit_cap));
+      setLoading(false);
     }).catch(() => {
       if (!cancelled) {
         setGraphData({ nodes: [], links: [] });
         setTotalPersons(0);
+        setEdgeCountsByType({});
+        setHitCap(false);
         setLoading(false);
       }
     });
 
     return () => { cancelled = true; };
-  }, [caseId, personKeys, depth]);
+    // Use STABLE string fingerprints in the deps. Arrays/Sets compare
+    // by reference, and the perspective context creates new instances
+    // even when contents are unchanged — that previously caused both
+    // unwanted refetches AND (more recently) missed refetches when
+    // the array reference happened to be stable across a render. The
+    // join() of sorted keys is a content-keyed hash that fires
+    // exactly when the user's perspective truly changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    caseId,
+    (personKeys || []).join('|'),
+    depth,
+    [...activeEventTypes].sort().join(','),
+  ]);
 
   // Build a per-node search haystack ONCE per graph data load so the
   // per-keystroke filter is O(n) string-contains, not O(n × field
@@ -462,6 +754,91 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ? phoneCtx.getIdentityByKey(phoneKey)
       : null;
 
+    // Per-node label state. We render one of:
+    //   - 'hidden'  — no label
+    //   - 'small'   — compact label (default visible state)
+    //   - 'hover'   — bigger label on the hovered node
+    //   - 'match'   — coloured label for search matches
+    //   - 'pinned'  — bold label for Phones (always shown)
+    // Callers pass the state to drawLabel which picks size + colour.
+    const isHovered = hoveredNode && hoveredNode.id === node.id;
+    const isMatch = searchHighlightIds && searchHighlightIds.has(node.id);
+
+    // What label state does this node get?
+    //   - Phones: always 'pinned'
+    //   - Hovered node: 'hover' (overrides others)
+    //   - Search matches: 'match'
+    //   - All-labels-on master toggle: 'small'
+    //   - Otherwise: 'hidden'
+    let labelState;
+    if (isReport) labelState = 'pinned';
+    else if (isHovered) labelState = 'hover';
+    else if (isMatch) labelState = 'match';
+    else if (labelsAllOn) labelState = 'small';
+    else labelState = 'hidden';
+
+    const drawLabel = (text, atY) => {
+      if (!text || labelState === 'hidden') return;
+      // Smaller defaults — the previous 12-14px range overwhelmed
+      // dense graphs. Default labels sit at 8px; hover bumps to 12
+      // (the user asked specifically for "enlarge on hover"); search
+      // matches get a colour pop + a slight size boost so they're
+      // still legible without dominating the canvas; Phones stay
+      // bold at 11.
+      const TARGETS = { small: 8, hover: 12, match: 10, pinned: 11 };
+      const COLORS = {
+        small: '#475569',
+        hover: '#0f172a',
+        match: '#0e7490', // cyan-700 — pairs with the cyan halo
+        pinned: '#1f2937',
+      };
+      const BOLD = { small: false, hover: true, match: true, pinned: true };
+      const targetPx = TARGETS[labelState];
+      const fontSize = Math.max(4, targetPx / globalScale);
+      const bold = BOLD[labelState];
+      ctx.font = `${bold ? 'bold ' : ''}${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const metrics = ctx.measureText(text);
+      const padX = 3.5 / globalScale;
+      const padY = 1.8 / globalScale;
+      const w = metrics.width + padX * 2;
+      const h = fontSize + padY * 2;
+      const x = node.x - w / 2;
+      const y = atY - h / 2;
+
+      // White pill background
+      ctx.fillStyle = labelState === 'match'
+        ? 'rgba(236, 254, 255, 0.95)' // cyan-50
+        : 'rgba(255, 255, 255, 0.92)';
+      ctx.beginPath();
+      const radius = Math.min(3.5 / globalScale, h / 2);
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+      ctx.lineTo(x + radius, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+      ctx.lineTo(x, y + radius);
+      ctx.quadraticCurveTo(x, y, x + radius, y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Subtle ring — slightly stronger for match labels so they
+      // pop against neighbouring un-coloured pills.
+      ctx.lineWidth = Math.max(0.35, (labelState === 'match' ? 0.8 : 0.5) / globalScale);
+      ctx.strokeStyle = labelState === 'match'
+        ? 'rgba(34, 211, 238, 0.7)'
+        : 'rgba(148, 163, 184, 0.45)';
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = COLORS[labelState];
+      ctx.fillText(text, node.x, atY);
+    };
+
     // PhoneReport: unchanged rounded-square in phone colour.
     if (isReport) {
       const r = 8;
@@ -471,14 +848,72 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.fillStyle = phoneIdentity ? phoneIdentity.hex : NODE_COLORS.PhoneReport;
       ctx.fill();
 
-      const fontSize = 11 / globalScale;
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#334155';
-      let label = (node.name || '').substring(0, 20);
+      let label = (node.name || '').substring(0, 28);
       if (phoneIdentity) label = `${phoneIdentity.short} · ${label}`;
-      ctx.fillText(label, node.x, node.y + r + 2 / globalScale);
+      drawLabel(label, node.y + r + (10 / globalScale), { bold: true });
+      return;
+    }
+
+    // Resource — small diamond in the resource type's colour. Stands
+    // visually apart from the round Person rings + square Phones so
+    // the three concepts (people, phones, resources) read at a glance.
+    // A phone-count > 1 (resource owned by more than one phone) gets
+    // a gold halo because it's a natural cross-phone connector.
+    if (node.type === 'Resource') {
+      const resType = node.resource_type;
+      const fill = edgeColorByType.get(resType) || '#94a3b8';
+      const r = 5 + Math.min(node.hits || 0, 60) * 0.04;
+      // Draw diamond (square rotated 45°).
+      ctx.beginPath();
+      ctx.moveTo(node.x, node.y - r);
+      ctx.lineTo(node.x + r, node.y);
+      ctx.lineTo(node.x, node.y + r);
+      ctx.lineTo(node.x - r, node.y);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.lineWidth = Math.max(0.5, 0.8 / globalScale);
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+
+      // Multi-phone resource → gold halo (same gold as a shared
+      // Person, signalling "connector across phones").
+      if (node.phone_count && node.phone_count > 1) {
+        ctx.beginPath();
+        ctx.moveTo(node.x, node.y - r - 2);
+        ctx.lineTo(node.x + r + 2, node.y);
+        ctx.lineTo(node.x, node.y + r + 2);
+        ctx.lineTo(node.x - r - 2, node.y);
+        ctx.closePath();
+        ctx.lineWidth = Math.max(1.4, 1.6 / globalScale);
+        ctx.strokeStyle = '#d97706';
+        ctx.stroke();
+      }
+
+      // Search highlight ring.
+      if (searchHighlightIds && searchHighlightIds.has(node.id)) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r + 4, 0, 2 * Math.PI);
+        ctx.lineWidth = Math.max(1.5, 2 / globalScale);
+        ctx.strokeStyle = '#22d3ee';
+        ctx.stroke();
+      }
+
+      // Multi-select ring (drag-box selection)
+      if (multiSelection.has(node.id)) {
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r + 6, 0, 2 * Math.PI);
+        ctx.lineWidth = Math.max(1.8, 2.4 / globalScale);
+        ctx.strokeStyle = '#10b981'; // emerald-500 — distinct from cyan/gold
+        ctx.setLineDash([4 / globalScale, 3 / globalScale]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Label — visible by default labels are off; hover/match/all-on
+      // controls visibility per labelState.
+      const label = (node.name || '').substring(0, 28);
+      drawLabel(label, node.y + r + (8 / globalScale));
       return;
     }
 
@@ -559,15 +994,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       ctx.stroke();
     }
 
-    // Label
-    const fontSize = 9 / globalScale;
-    ctx.font = `${fontSize}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#334155';
-    const label = (node.name || '').substring(0, 20);
-    ctx.fillText(label, node.x, node.y + rOuter + 2 / globalScale);
-  }, [phoneCtx, nodeEdgeTypes, edgeColorByType, searchHighlightIds]);
+    // Multi-select dashed ring
+    if (multiSelection.has(node.id)) {
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, rOuter + 5.5, 0, 2 * Math.PI);
+      ctx.lineWidth = Math.max(1.8, 2.4 / globalScale);
+      ctx.strokeStyle = '#10b981';
+      ctx.setLineDash([4 / globalScale, 3 / globalScale]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Label — white pill background keeps Person names readable
+    // against any backdrop, including dense clusters.
+    const label = (node.name || '').substring(0, 28);
+    drawLabel(label, node.y + rOuter + (10 / globalScale));
+  }, [phoneCtx, nodeEdgeTypes, edgeColorByType, searchHighlightIds, hoveredNode, labelsAllOn, multiSelection]);
 
   const handleZoomIn = () => fgRef.current?.zoom(fgRef.current.zoom() * 1.5, 300);
   const handleZoomOut = () => fgRef.current?.zoom(fgRef.current.zoom() / 1.5, 300);
@@ -654,17 +1096,28 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <button onClick={handleFit} className="p-1.5 hover:bg-light-200 rounded" title="Fit to view">
           <Maximize2 className="w-4 h-4 text-light-600" />
         </button>
-        {/* N-of-M counter — surfaces the 200-cap so the user knows
-            when there's more case data than the canvas can show. */}
+        {/* Counter — shows what's on canvas vs what's in the case.
+            The "capped" badge ONLY appears when the backend hit a
+            hard 2,000-node ceiling. The gap between rendered and
+            total Persons usually comes from the active-edge filter,
+            not a cap, so reading "643 of 1,763" without the badge
+            means "the other 1,120 don't participate in any of the
+            currently active edge types — toggle more chips on to
+            bring them in." */}
         <div className="text-xs text-light-500 ml-2 whitespace-nowrap">
-          {filteredData.nodes.length} of {totalPersons > 0 ? totalPersons.toLocaleString() : graphData.nodes.length} nodes
-          {totalPersons > graphData.nodes.length && (
-            <span className="ml-1 text-amber-600 font-medium" title={`Render capped at ${graphData.nodes.length}; switch to Search mode to find Persons outside the rendered subset.`}>
-              · capped
+          {filteredData.nodes.length.toLocaleString()} of {totalPersons > 0 ? totalPersons.toLocaleString() : graphData.nodes.length.toLocaleString()} nodes
+          {hitCap && (
+            <span className="ml-1 text-amber-600 font-medium" title="Backend hit the 2,000-node ceiling. Anchor on a Person via search to drill into a smaller neighbourhood, or use Search mode to find any node in the case.">
+              · capped at 2,000
+            </span>
+          )}
+          {!hitCap && totalPersons > 0 && filteredData.nodes.length < totalPersons && (
+            <span className="ml-1 text-light-400" title="The rest don't participate in any of the currently active edge types. Toggle more chips on (Messages, Emails, Visits, etc.) to bring them in.">
+              · {(totalPersons - filteredData.nodes.length).toLocaleString()} hidden by filters
             </span>
           )}
           {' · '}
-          {filteredData.links.length} edges
+          {filteredData.links.length.toLocaleString()} edges
         </div>
       </div>
 
@@ -726,13 +1179,18 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       </div>
 
       {/* Event-type toggle strip — same data, more connections.
-          Calls/messages/emails on by default; locations/wifi/cell/meetings
-          available as opt-ins because they create dense edges fast. */}
+          Calls/messages/emails on by default; locations/wifi/cell/etc.
+          opt-in because they create dense edges fast. Each chip carries
+          a small count badge so the user can tell whether toggling it
+          will actually surface anything (0 = no cross-Person edges
+          exist for this type on the current dataset). */}
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-light-100 bg-light-50 text-xs flex-shrink-0 flex-wrap">
         <span className="text-light-500 font-medium">Show edges:</span>
         {GRAPH_EVENT_TYPES.map((t) => {
           const Icon = t.icon;
           const on = activeEventTypes.has(t.key);
+          const cnt = Number(edgeCountsByType?.[t.key]) || 0;
+          const empty = cnt === 0;
           return (
             <button
               key={t.key}
@@ -749,11 +1207,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                 on
                   ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
                   : 'border-light-300 bg-white text-light-500 hover:bg-light-100'
-              }`}
-              title={`Toggle ${t.label} edges`}
+              } ${empty ? 'opacity-60' : ''}`}
+              title={
+                empty
+                  ? `${t.label}: no cross-Person edges in this dataset (needs ≥2 phones sharing the same value)`
+                  : `Toggle ${t.label} edges (${cnt} in dataset)`
+              }
             >
               <Icon className="w-3 h-3" style={{ color: on ? t.color : undefined }} />
               {t.label}
+              <span
+                className={`ml-0.5 text-[10px] tabular-nums ${
+                  empty ? 'text-light-400' : on ? 'text-owl-blue-700' : 'text-light-500'
+                }`}
+              >
+                {cnt}
+              </span>
             </button>
           );
         })}
@@ -779,37 +1248,197 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         )}
       </div>
 
-      {/* Perspective banner — when active, signals that the graph is
-          rebuilt from a subset of the case. Single-click clear. */}
-      {perspective?.hasPerspective && (
-        <div className="flex items-center gap-2 px-4 py-1 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-900 flex-shrink-0">
-          <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
-            Anchored on:
-          </span>
-          <span className="truncate">
-            {perspective.active?.label}
-            {perspective.active?.personKeys?.length > 1 && (
-              <span className="ml-1 text-amber-600">
-                ({perspective.active.personKeys.length})
+      {/* Perspective + multi-selection banner. Surfaces either:
+            - The currently-anchored perspective (Anchored on …)
+            - The drag-box multi-selection (N nodes selected)
+          Either source produces a lens the user can pivot into
+          another tab via the right-hand button group.
+       */}
+      {(perspective?.hasPerspective || multiSelection.size > 0) && (
+        <div className="flex items-center gap-2 px-4 py-1 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-900 flex-shrink-0 flex-wrap">
+          {multiSelection.size > 0 ? (
+            <>
+              <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
+                Selected:
               </span>
-            )}
+              <span>{multiSelection.size} node{multiSelection.size === 1 ? '' : 's'}</span>
+              <button
+                type="button"
+                onClick={() => setMultiSelection(new Set())}
+                className="text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                title="Clear selection"
+              >
+                <X className="w-2.5 h-2.5" />
+                Clear
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="font-semibold uppercase tracking-wide text-[10px] text-amber-700">
+                Anchored on:
+              </span>
+              <span className="truncate">
+                {perspective.active?.label}
+                {perspective.active?.personKeys?.length > 1 && (
+                  <span className="ml-1 text-amber-600">
+                    ({perspective.active.personKeys.length})
+                  </span>
+                )}
+              </span>
+              <button
+                type="button"
+                onClick={() => perspective.clear()}
+                className="text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                title="Clear perspective and show the whole case"
+              >
+                <X className="w-2.5 h-2.5" />
+                Show whole case
+              </button>
+            </>
+          )}
+
+          {/* Cross-tab pivot bar — open the active lens in any other
+              Cellebrite surface. Each button fires pivotTo() which
+              publishes the Person-keys handoff + requests a tab
+              switch. */}
+          <span className="ml-auto inline-flex items-center gap-1 flex-wrap">
+            <span className="text-[9px] uppercase tracking-wide text-amber-700">View in</span>
+            <PivotBtn icon={MessageSquare} label="Comms"        onClick={() => pivotTo('comms')} />
+            <PivotBtn icon={UsersIcon}     label="Communications" onClick={() => pivotTo('communications')} />
+            <PivotBtn icon={Clock}         label="Timeline"     onClick={() => pivotTo('timeline')} />
+            <PivotBtn icon={MapPin}        label="Locations"    onClick={() => pivotTo('locations')} />
+            <PivotBtn icon={Tag}           label="Events"       onClick={() => pivotTo('events')} />
+            <PivotBtn icon={FolderTree}    label="Files"        onClick={() => pivotTo('files')} />
+            <PivotBtn icon={UserCheck}     label="Unified"      onClick={() => pivotTo('unified')} />
           </span>
-          <button
-            type="button"
-            onClick={() => perspective.clear()}
-            className="ml-auto inline-flex items-center gap-1 text-[10px] text-amber-800 hover:bg-amber-100 px-1.5 py-0.5 rounded"
-            title="Clear perspective and show the whole case"
-          >
-            <X className="w-2.5 h-2.5" />
-            Show whole case
-          </button>
         </div>
       )}
 
+      {/* Mode hint bar — small instructions for the right-click
+          multi-select gesture + the labels toggle. */}
+      <div className="flex items-center gap-2 px-4 py-1 border-b border-light-100 bg-light-50 text-[10px] text-light-600 flex-shrink-0">
+        <MousePointerSquareDashed className="w-3 h-3 text-light-500" />
+        <span className="text-light-500">
+          Right-click + drag to select a group · drag any selected node to move the whole group · click empty space to clear
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setLabelsAllOn((v) => !v)}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
+            labelsAllOn
+              ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+              : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
+          }`}
+          title={labelsAllOn ? 'Hide labels (show only on hover + search matches + phones)' : 'Show every node label'}
+        >
+          <Tag className="w-2.5 h-2.5" />
+          {labelsAllOn ? 'Labels on' : 'Labels off'}
+        </button>
+      </div>
+
       {/* Graph */}
-      <div className="flex-1 min-h-0 relative">
+      <div
+        className="flex-1 min-h-0 relative"
+        // Right-click engages the rubber-band selection. We suppress
+        // the browser's default context menu on this surface so the
+        // gesture feels natural; the lib already uses right-click
+        // for its own thing on nodes via onNodeRightClick (currently
+        // unused after this refactor).
+        onContextMenu={(e) => e.preventDefault()}
+        onMouseDown={(e) => {
+          // mouse button 2 = right click
+          if (e.button !== 2) return;
+          if (e.target.closest('[data-graph-overlay]')) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          selectionBoxStartRef.current = { x, y };
+          setSelectionBox({ x1: x, y1: y, x2: x, y2: y });
+        }}
+        onMouseMove={(e) => {
+          if (!selectionBoxStartRef.current) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          setSelectionBox({
+            x1: selectionBoxStartRef.current.x,
+            y1: selectionBoxStartRef.current.y,
+            x2: x,
+            y2: y,
+          });
+        }}
+        onMouseUp={(e) => {
+          // Only commit a selection if THIS was a right-click drag.
+          // Left-click drags are handled by the lib's own node-drag.
+          if (!selectionBoxStartRef.current || !selectionBox || !fgRef.current) {
+            selectionBoxStartRef.current = null;
+            setSelectionBox(null);
+            return;
+          }
+          // Convert the box's screen coords to graph coords and
+          // collect every node inside.
+          const { x1, y1, x2, y2 } = selectionBox;
+          const xMin = Math.min(x1, x2);
+          const xMax = Math.max(x1, x2);
+          const yMin = Math.min(y1, y2);
+          const yMax = Math.max(y1, y2);
+          // Ignore tiny clicks — treat <4px as a misclick.
+          if (xMax - xMin < 4 || yMax - yMin < 4) {
+            selectionBoxStartRef.current = null;
+            setSelectionBox(null);
+            return;
+          }
+          try {
+            const a = fgRef.current.screen2GraphCoords(xMin, yMin);
+            const b = fgRef.current.screen2GraphCoords(xMax, yMax);
+            const gxMin = Math.min(a.x, b.x);
+            const gxMax = Math.max(a.x, b.x);
+            const gyMin = Math.min(a.y, b.y);
+            const gyMax = Math.max(a.y, b.y);
+            const next = new Set();
+            const selectedNodes = [];
+            for (const n of graphData.nodes) {
+              if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) continue;
+              if (n.x >= gxMin && n.x <= gxMax && n.y >= gyMin && n.y <= gyMax) {
+                next.add(n.id);
+                selectedNodes.push(n);
+              }
+            }
+            setMultiSelection(next);
+
+            // Publish the full selection to the rail so the user sees
+            // one rich info card per node (GraphSelectionAccordion
+            // handles the type-aware rendering). We pass the actual
+            // node payloads via the buildNodePayload helper — gives
+            // the rail everything it needs without an extra fetch.
+            if (selectEntity && selectedNodes.length > 0) {
+              const nodePayloads = selectedNodes
+                .map((n) => buildNodePayload(n, graphData.links))
+                .filter(Boolean);
+              // Cap at 200 so a huge box drag doesn't ship 1k items
+              // into the rail (which would freeze the panel render).
+              const capped = nodePayloads.slice(0, 200);
+              selectEntity({
+                type: 'graph-selection',
+                id: `graph-selection-${Date.now()}`,
+                caseId,
+                payload: {
+                  total: nodePayloads.length,
+                  truncated: nodePayloads.length > capped.length,
+                  nodes: capped,
+                },
+                source: 'graph.rubber-band',
+              });
+            }
+          } catch { /* ref not ready */ }
+          selectionBoxStartRef.current = null;
+          setSelectionBox(null);
+        }}
+      >
         <ForceGraph2D
-          ref={fgRef}
+          /* ref assigned below in a callback so we can also tune
+             the live d3-force objects on mount */
           graphData={filteredData}
           nodeCanvasObject={paintNode}
           nodePointerAreaPaint={(node, color, ctx) => {
@@ -834,14 +1463,179 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           cooldownTicks={100}
           d3AlphaDecay={0.05}
           d3VelocityDecay={0.3}
+          // Spread the layout so nodes don't sit on top of each other.
+          // The library exposes the live d3-force objects via dForce
+          // accessors on the props themselves — these widen the
+          // baseline link distance and increase the repulsion charge,
+          // producing more breathing room without redesigning the
+          // simulation.
+          //
+          // Numbers picked to put a typical 1-hop neighbourhood at
+          // ~80-120 canvas units between connected nodes, vs. ~30
+          // before which is what made labels crowd into each other.
+          ref={(el) => {
+            fgRef.current = el;
+            if (el && el.d3Force) {
+              try {
+                const linkF = el.d3Force('link');
+                if (linkF && linkF.distance) linkF.distance(80);
+                const chargeF = el.d3Force('charge');
+                if (chargeF && chargeF.strength) chargeF.strength(-180);
+              } catch { /* ignore — lib will fall back to defaults */ }
+            }
+          }}
+          // Sticky drag — when the user drops a node we leave its
+          // fx/fy set so the simulation can't pull it back to the
+          // force equilibrium. The library's default behaviour clears
+          // them on dragend, which let nodes snap home and frustrated
+          // the user. They can un-pin by double-clicking (handler
+          // below) or by toggling chips (which refetches and seeds
+          // positions from this same x/y, then releases).
+          // Drag start — if the user grabs a node that's in the
+          // multi-selection, snapshot every selected node's starting
+          // position so we can translate the whole group as the drag
+          // progresses.
+          onNodeDragStart={(node) => {
+            if (!node || !multiSelection.has(node.id)) {
+              groupDragRef.current = null;
+              return;
+            }
+            const positions = new Map();
+            for (const id of multiSelection) {
+              const n = graphData.nodes.find((m) => m.id === id);
+              if (n && Number.isFinite(n.x) && Number.isFinite(n.y)) {
+                positions.set(id, { x: n.x, y: n.y });
+              }
+            }
+            groupDragRef.current = {
+              anchorId: node.id,
+              anchorStart: { x: node.x, y: node.y },
+              positions,
+            };
+          }}
+          // During drag — translate every other selected node by the
+          // same delta as the dragged anchor. Use fx/fy so the lib
+          // doesn't try to fight us; pins are made permanent on
+          // dragend.
+          onNodeDrag={(node) => {
+            const gd = groupDragRef.current;
+            if (!gd || !node || node.id !== gd.anchorId) return;
+            const dx = node.x - gd.anchorStart.x;
+            const dy = node.y - gd.anchorStart.y;
+            for (const [id, start] of gd.positions) {
+              if (id === gd.anchorId) continue;
+              const n = graphData.nodes.find((m) => m.id === id);
+              if (!n) continue;
+              n.fx = start.x + dx;
+              n.fy = start.y + dy;
+              n.x = n.fx;
+              n.y = n.fy;
+            }
+          }}
+          // Drag end — pin every node we moved (the anchor + all
+          // group members) so the sim can't yank them back. If this
+          // wasn't a group drag, just pin the single node like before.
+          onNodeDragEnd={(node) => {
+            if (!node) return;
+            node.fx = node.x;
+            node.fy = node.y;
+            const gd = groupDragRef.current;
+            if (gd && node.id === gd.anchorId) {
+              for (const id of gd.positions.keys()) {
+                if (id === gd.anchorId) continue;
+                const n = graphData.nodes.find((m) => m.id === id);
+                if (!n) continue;
+                n.fx = n.x;
+                n.fy = n.y;
+              }
+            }
+            groupDragRef.current = null;
+          }}
+          // Single-click a node → publish to the universal selection
+          // rail so the user sees the full content (calls/messages
+          // for a Person, list of accounts for a Phone, the actual
+          // bucket value for a Resource). Also seeds the multi-
+          // selection so the perspective banner's pivot bar can
+          // hand off to other tabs immediately.
+          onNodeClick={(node) => {
+            if (!node) return;
+            setMultiSelection(new Set([node.id]));
+            if (selectEntity) {
+              const payload = buildNodePayload(node, graphData.links);
+              selectEntity({
+                type: payload.type,
+                id: payload.id,
+                caseId,
+                reportKey: payload.reportKey || null,
+                payload,
+                source: 'graph.node-click',
+              });
+            }
+          }}
+          // Right-click on a node is now the rubber-band-selection
+          // gesture at the canvas level (handled by the wrapper's
+          // onMouseDown). We DO want to forward the contextmenu
+          // suppression — done on the wrapper.
+          // Camera lock during post-refetch sim warm-up.
+          //
+          // The library auto-fits when graphData changes — that's the
+          // visible "snap to neutral" the user pushed back on. We can't
+          // disable the auto-fit, but we CAN overwrite the camera on
+          // every tick while a snapshot is active so the user never
+          // sees the auto-fit's intermediate state.
+          //
+          // onEngineTick fires every frame during warm-up; we slam
+          // centerAt + zoom back to the snapshot value each frame.
+          // The lib's own zoom mutations happen between ticks, so the
+          // user sees only OUR camera position. Cheap (two setters per
+          // frame for the ~100 cooldownTicks).
+          //
+          // Snapshot is cleared in onEngineStop so future user-driven
+          // pan/zoom is never overwritten.
+          onEngineTick={() => {
+            const snap = cameraSnapshotRef.current;
+            if (!snap || !fgRef.current) return;
+            try {
+              fgRef.current.centerAt(snap.x, snap.y, 0);
+              fgRef.current.zoom(snap.z, 0);
+            } catch { /* ref not ready */ }
+          }}
+          onEngineStop={() => {
+            // Final clamp + release. Without this, the very last tick
+            // might let the lib's auto-fit win.
+            const snap = cameraSnapshotRef.current;
+            if (snap && fgRef.current) {
+              try {
+                fgRef.current.centerAt(snap.x, snap.y, 0);
+                fgRef.current.zoom(snap.z, 0);
+              } catch { /* ref not ready */ }
+            }
+            cameraSnapshotRef.current = null;
+          }}
         />
+
+        {/* Rubber-band selection overlay — visible while the user is
+            dragging in Select mode. Pointer-events disabled so it
+            never swallows the mousemove/up events. */}
+        {selectionBox && (
+          <div
+            data-graph-overlay="selection-box"
+            className="absolute pointer-events-none border-2 border-emerald-500 bg-emerald-500/10 rounded-sm"
+            style={{
+              left: Math.min(selectionBox.x1, selectionBox.x2),
+              top: Math.min(selectionBox.y1, selectionBox.y2),
+              width: Math.abs(selectionBox.x2 - selectionBox.x1),
+              height: Math.abs(selectionBox.y2 - selectionBox.y1),
+            }}
+          />
+        )}
 
         {/* Search results panel — overlays the canvas in Search mode.
             Lists every Person in the case matching the query (not
             just the 200 rendered). Each row clicks to anchor the
             graph on that person via the perspective context. */}
         {searchMode === 'search' && (searchTerm || '').trim() && (
-          <div className="absolute top-3 right-3 w-72 max-h-[60vh] bg-white border border-light-300 shadow-lg rounded-lg overflow-hidden z-20 flex flex-col">
+          <div data-graph-overlay="search-results" className="absolute top-3 right-3 w-72 max-h-[60vh] bg-white border border-light-300 shadow-lg rounded-lg overflow-hidden z-20 flex flex-col">
             <div className="px-3 py-2 border-b border-light-200 bg-light-50 flex items-center gap-2 flex-shrink-0">
               <SearchIcon className="w-3.5 h-3.5 text-owl-blue-600" />
               <span className="text-xs font-semibold text-owl-blue-900 flex-1 truncate">
@@ -861,30 +1655,121 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                   No Persons match "{searchTerm}".
                 </div>
               )}
-              {searchResults && searchResults.results.map((r) => {
-                const inRendered = graphData.nodes.some((n) => n.id === `person-${r.key}`);
+              {searchResults && searchResults.results.map((r, idx) => {
+                const isResource = r.entity === 'resource';
+                // Person id format = `person-{key}`. Resource id
+                // format = `res-{type}-{safe-bucket}`. The backend
+                // search now returns each Resource's rolled-up
+                // `bucket` (host for visits/bookmarks, raw value
+                // otherwise) — exactly the key the graph's resource
+                // pass used. We match by (resource_type, bucket).
+                const candidateId = isResource
+                  ? graphData.nodes.find((n) =>
+                      n.type === 'Resource'
+                      && n.resource_type === r.resource_type
+                      && (n.bucket === r.bucket
+                          || n.name === r.bucket
+                          || n.bucket === r.name
+                          || n.name === r.name))?.id
+                  : `person-${r.key}`;
+                const inRendered = !!candidateId
+                  && graphData.nodes.some((n) => n.id === candidateId);
+                const ResIcon = isResource
+                  ? GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.icon
+                  : null;
+                const resColor = isResource
+                  ? GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.color
+                  : null;
                 return (
                   <button
-                    key={r.key}
+                    key={`${r.entity}-${r.key || r.name}-${idx}`}
                     type="button"
                     onClick={() => {
+                      if (isResource) {
+                        // Make sure the chip for this resource type
+                        // is ON — clicking a "Meetings" search result
+                        // makes no sense if Meetings is toggled off.
+                        if (r.resource_type
+                            && !activeEventTypes.has(r.resource_type)) {
+                          setActiveEventTypes((prev) => {
+                            const next = new Set(prev);
+                            next.add(r.resource_type);
+                            return next;
+                          });
+                          // The chip toggle triggers a refetch. Queue
+                          // the centre-and-fan for once the new data
+                          // lands — the same pending-fan ref the
+                          // Person path uses, but keyed by bucket
+                          // since the resource id isn't computable
+                          // here without the backend's safe_bucket
+                          // sanitisation. We resolve it inside the
+                          // effect using (resource_type, bucket).
+                          pendingResourceFanRef.current = {
+                            resource_type: r.resource_type,
+                            bucket: r.bucket || r.name,
+                          };
+                          return;
+                        }
+                        // Chip is already on — if the node is in the
+                        // rendered set, centre + fan immediately.
+                        if (candidateId) {
+                          // Persist a search highlight on this id so
+                          // the cyan ring + label pop appear.
+                          setMultiSelection(new Set([candidateId]));
+                          centreAndFan(candidateId, graphData.nodes, graphData.links);
+                        } else {
+                          // Not in the current rendered subgraph —
+                          // queue a pending resource fan so once the
+                          // chip-driven refetch lands the node gets
+                          // centred.
+                          pendingResourceFanRef.current = {
+                            resource_type: r.resource_type,
+                            bucket: r.bucket || r.name,
+                          };
+                        }
+                        return;
+                      }
+                      // Person path: rebuild via perspective AND then
+                      // centre+fan the result on the rebuilt graph.
+                      // pendingFanRef is consumed by the graphData
+                      // effect above once the rebuild arrives.
+                      pendingFanRef.current = `person-${r.key}`;
                       if (perspective) {
                         perspective.setPerspective(
                           [r.key],
                           r.name || r.key,
                           'graph.search-panel',
                         );
+                      } else {
+                        // No perspective context — still centre + fan
+                        // on the existing graph if the node's already
+                        // there.
+                        if (candidateId) {
+                          centreAndFan(candidateId, graphData.nodes, graphData.links);
+                        }
                       }
                     }}
                     className="w-full text-left px-3 py-2 border-b border-light-100 hover:bg-light-50 last:border-b-0 flex items-start gap-2"
                   >
+                    {isResource && ResIcon && (
+                      <ResIcon
+                        className="w-3 h-3 flex-shrink-0 mt-0.5"
+                        style={{ color: resColor }}
+                      />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-owl-blue-900 truncate">
                         {r.name}
                       </div>
                       <div className="text-[10px] text-light-500 truncate flex items-center gap-1">
-                        {r.phone && <span className="font-mono">{r.phone}</span>}
-                        {r.comm_count > 0 && (
+                        {isResource ? (
+                          <span className="font-mono text-light-600">
+                            {GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.label || r.label}
+                          </span>
+                        ) : (
+                          r.phone && <span className="font-mono">{r.phone}</span>
+                        )}
+                        {!isResource && r.comm_count > 0 && (
                           <>
                             <span>·</span>
                             <span>{r.comm_count.toLocaleString()} comms</span>
@@ -954,5 +1839,90 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Build a selection-rail payload for a graph node.
+ *
+ * The rail expects a `type` (used to pick the accordion renderer) and
+ * a `payload.node_key` for the rail's GET /events/detail/{key} call.
+ * Person nodes have a Cellebrite Person key under `n.id` = `person-{key}`.
+ * PhoneReport nodes have a report_key. Resource nodes don't have a
+ * single canonical lookup — we pass enough metadata that a future
+ * Resource-aware accordion can render bucket + hits + phone count.
+ */
+function buildNodePayload(node, links) {
+  if (!node) return null;
+  if (node.type === 'PhoneReport') {
+    return {
+      kind: 'phone-report',
+      type: 'phone-report',
+      id: node.id,
+      reportKey: node.report_key,
+      node_key: node.report_key,
+      name: node.name,
+      device_model: node.name,
+      phone_owner: node.phone_owner,
+    };
+  }
+  if (node.type === 'Resource') {
+    // Count incoming Phone→Resource edges so the rail can display
+    // "owned by N phones" + list edge counterparts.
+    const incomingPhones = [];
+    for (const l of (links || [])) {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (t === node.id && typeof s === 'string' && s.startsWith('report-')) {
+        incomingPhones.push(s.replace(/^report-/, ''));
+      }
+    }
+    return {
+      kind: 'resource',
+      type: 'resource',
+      id: node.id,
+      node_key: node.id,
+      resource_type: node.resource_type,
+      bucket: node.bucket,
+      name: node.name,
+      hits: node.hits,
+      phone_count: node.phone_count,
+      phone_report_keys: incomingPhones,
+    };
+  }
+  // Person
+  const personKey = String(node.id || '').replace(/^person-/, '');
+  return {
+    kind: 'person',
+    type: 'person',
+    id: node.id,
+    node_key: personKey,
+    person_key: personKey,
+    reportKey: node.report_key || node.cellebrite_report_key || null,
+    report_key: node.report_key || node.cellebrite_report_key || null,
+    name: node.name,
+    phone: node.phone,
+    device_count: node.device_count,
+    comm_count: node.comm_count,
+    shared: node.shared,
+  };
+}
+
+/**
+ * Small pivot button shown in the perspective banner. Uniform sizing
+ * so the row reads as a single control strip rather than ad-hoc
+ * buttons.
+ */
+function PivotBtn({ icon: Icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={`View this perspective in the ${label} tab`}
+      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-amber-300 bg-white hover:bg-amber-100 text-amber-900 text-[10px]"
+    >
+      <Icon className="w-2.5 h-2.5" />
+      {label}
+    </button>
   );
 }

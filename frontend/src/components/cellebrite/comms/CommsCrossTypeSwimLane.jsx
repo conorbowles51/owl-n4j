@@ -49,6 +49,20 @@ export default function CommsCrossTypeSwimLane({
   orientation = 'vertical',
   onItemSelect,
   onApplyWindow,
+  // Pagination / progressive loading. When `hasMore` is true the
+  // surface fires `onLoadMore` as the user scrolls near the temporal
+  // bottom of the lane area. `totalAvailable` and `loadedCount`
+  // drive the "X of Y loaded" hint at the bottom.
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore = null,
+  totalAvailable = null,
+  loadedCount = null,
+  // Optional: phones the user explicitly has selected. When provided,
+  // EVERY selected phone gets a lane (even those with no items in the
+  // current load) so users see lane chrome + a "no activity loaded
+  // yet" placeholder instead of silently vanishing lanes.
+  expectedReportKeys = null,
 }) {
   const phoneCtx = usePhoneReports();
   const reports = phoneCtx?.reports || [];
@@ -65,14 +79,42 @@ export default function CommsCrossTypeSwimLane({
   })), [items]);
 
   // -----------------------------------------------------------------
-  // Lanes — one per phone that owns any item in the current feed.
+  // Lanes — one per active phone.
+  //
+  // Selection rule (in priority order):
+  //   1. If `expectedReportKeys` is supplied, render exactly those
+  //      lanes — even ones with no items yet. The parent uses this
+  //      to keep every selected phone visible while pagination /
+  //      per-phone seeding fills them in.
+  //   2. Otherwise render lanes for phones that own at least one
+  //      item in the current feed (legacy behaviour).
+  //   3. Final fallback: derive lanes from item.report_key values
+  //      when no phoneCtx is available.
   // -----------------------------------------------------------------
   const lanes = useMemo(() => {
     const present = new Set();
     for (const it of items) {
       if (it?.report_key) present.add(it.report_key);
     }
+    const expected = Array.isArray(expectedReportKeys) ? expectedReportKeys
+      : (expectedReportKeys && typeof expectedReportKeys[Symbol.iterator] === 'function'
+          ? [...expectedReportKeys]
+          : null);
+
     const out = [];
+    if (expected && expected.length > 0) {
+      for (const rk of expected) {
+        const r = reports.find((rr) => rr?.report_key === rk) || { report_key: rk };
+        out.push({
+          reportKey: rk,
+          report: r,
+          color: phoneHexByKey(rk, reports),
+          hasItems: present.has(rk),
+        });
+      }
+      return out;
+    }
+
     for (const r of reports) {
       if (!r?.report_key) continue;
       if (!present.has(r.report_key)) continue;
@@ -80,18 +122,16 @@ export default function CommsCrossTypeSwimLane({
         reportKey: r.report_key,
         report: r,
         color: phoneHexByKey(r.report_key, reports),
+        hasItems: true,
       });
     }
-    // Fallback: if reports list is empty (multi-phone context missing
-    // or user filtered all phones out) but items still carry
-    // report_key, render lanes from the items themselves.
     if (out.length === 0) {
       for (const rk of present) {
-        out.push({ reportKey: rk, report: { report_key: rk }, color: '#94a3b8' });
+        out.push({ reportKey: rk, report: { report_key: rk }, color: '#94a3b8', hasItems: true });
       }
     }
     return out;
-  }, [items, reports]);
+  }, [items, reports, expectedReportKeys]);
 
   const { byLane, minMs, maxMs } = useMemo(() => {
     const map = new Map();
@@ -216,6 +256,23 @@ export default function CommsCrossTypeSwimLane({
     );
   }
 
+  // Infinite-scroll trigger — when the user nears the temporal edge
+  // of the scroll surface (bottom for vertical, right for horizontal)
+  // we fire onLoadMore to pull the next page. The library throttles
+  // implicitly because React already coalesces fast scroll events.
+  const onSurfaceScroll = useCallback((e) => {
+    if (!hasMore || loadingMore || !onLoadMore) return;
+    const el = e.currentTarget;
+    const THRESHOLD = 120;
+    if (orientation === 'vertical') {
+      const dist = (el.scrollHeight - (el.scrollTop + el.clientHeight));
+      if (dist < THRESHOLD) onLoadMore();
+    } else {
+      const dist = (el.scrollWidth - (el.scrollLeft + el.clientWidth));
+      if (dist < THRESHOLD) onLoadMore();
+    }
+  }, [hasMore, loadingMore, onLoadMore, orientation]);
+
   return (
     <div className="flex-1 min-h-0 flex flex-col relative">
       <div
@@ -225,6 +282,7 @@ export default function CommsCrossTypeSwimLane({
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={() => { if (drag) setDrag(null); }}
+        onScroll={onSurfaceScroll}
       >
         {orientation === 'vertical' ? (
           <VerticalCommsLanes
@@ -262,6 +320,33 @@ export default function CommsCrossTypeSwimLane({
               height: committedBox.y2 - committedBox.y1,
             }}
           />
+        )}
+
+        {/* Progressive-load status pill — sticks to the bottom-right
+            of the surface so it doesn't fight the action bar that
+            sits centred above. Three states:
+              · loading more — spinner + count
+              · more available, idle — hint to scroll
+              · all loaded — quiet confirmation
+            Always shows the "X of Y loaded" counter when totals exist. */}
+        {(loadedCount != null && totalAvailable != null) && (
+          <div className="pointer-events-none absolute bottom-2 right-3 z-20 text-[11px] bg-white/90 border border-light-200 rounded-full px-2 py-0.5 shadow-sm text-light-700 tabular-nums">
+            {loadingMore && (
+              <span className="inline-flex items-center gap-1 text-owl-blue-700">
+                <span className="inline-block w-2 h-2 border border-owl-blue-500 border-t-transparent rounded-full animate-spin" />
+                loading more…
+              </span>
+            )}
+            {!loadingMore && (
+              <span>
+                <span className="font-medium">{loadedCount.toLocaleString()}</span>
+                {' of '}
+                <span>{totalAvailable.toLocaleString()}</span>
+                {' loaded'}
+                {hasMore ? ' · scroll for more' : ' · all loaded'}
+              </span>
+            )}
+          </div>
         )}
       </div>
 

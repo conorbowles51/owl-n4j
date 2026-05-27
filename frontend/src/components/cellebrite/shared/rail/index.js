@@ -13,6 +13,7 @@ import EventAccordion from './EventAccordion';
 import LocationTileAccordion from './LocationTileAccordion';
 import UnifiedContactAccordion from './UnifiedContactAccordion';
 import ThreadAccordion from './ThreadAccordion';
+import GraphSelectionAccordion from './GraphSelectionAccordion';
 
 const RENDERERS = {
   // Event-like selections from the Events Center (any of the artifact
@@ -39,6 +40,13 @@ const RENDERERS = {
   // "show me this message in its conversation" behaviour without a
   // full-page navigate.
   thread:       ThreadAccordion,
+  // Cross-Phone Graph clicks + multi-selections. Renders one rich
+  // info card per node instead of dumping the payload as a key/value
+  // table.
+  'graph-selection': GraphSelectionAccordion,
+  'person':          GraphSelectionAccordion,
+  'phone-report':    GraphSelectionAccordion,
+  'resource':        GraphSelectionAccordion,
 };
 
 export function rendererFor(type) {
@@ -62,6 +70,10 @@ const TYPE_LABELS = {
   event: 'Event',
   thread: 'Conversation',
   generic: 'Item',
+  'graph-selection': 'Graph selection',
+  'person': 'Person',
+  'phone-report': 'Phone',
+  'resource': 'Resource',
 };
 
 export function labelFor(type) {
