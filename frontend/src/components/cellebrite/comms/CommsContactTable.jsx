@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
+import { phoneFromKey } from '../shared/PersonName';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 
@@ -343,23 +344,31 @@ function ClickableCell({ children, onClick, title }) {
  */
 function PersonCell({ person, onDrillName, highlights }) {
   if (!person) return <span className="text-light-400">—</span>;
-  const name = person.name || person.identifier || person.key || '?';
   const personKey = person.key;
+  const rawName = person.name || person.identifier || person.key || '?';
+  // Always surface the number beside the name (from explicit numbers, else
+  // derived from the phone-<digits> key). When the "name" is just the bare
+  // number, show "(unnamed)" so we don't print the number twice.
+  const num = (person.phone_numbers && person.phone_numbers[0]) || person.phone
+    || person.number || phoneFromKey(personKey);
+  const nameIsNum = rawName && /^[+(]?\d[\d\s().-]{5,}$/.test(String(rawName).trim());
+  const name = (rawName && !nameIsNum) ? rawName : (num ? '(unnamed)' : rawName);
+  const numEl = num ? <span className="ml-1.5 font-mono text-[10px] text-light-400">{num}</span> : null;
   if (!personKey || !onDrillName) {
     return (
-      <span className="text-light-700 truncate" title={name}>
-        <HighlightedText text={name} highlights={highlights} />
+      <span className="text-light-700 truncate" title={num ? `${name} ${num}` : name}>
+        <HighlightedText text={name} highlights={highlights} />{numEl}
       </span>
     );
   }
   return (
     <button
       type="button"
-      onClick={(e) => { e.stopPropagation(); onDrillName(personKey, name); }}
+      onClick={(e) => { e.stopPropagation(); onDrillName(personKey, rawName); }}
       title={`Drill into ${name}'s communications`}
-      className="text-owl-blue-700 hover:text-owl-blue-900 hover:underline font-medium truncate max-w-[180px] text-left"
+      className="text-owl-blue-700 hover:text-owl-blue-900 hover:underline font-medium truncate max-w-[220px] text-left"
     >
-      <HighlightedText text={name} highlights={highlights} />
+      <HighlightedText text={name} highlights={highlights} />{numEl}
     </button>
   );
 }

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Smartphone, Network, Clock, Users, MessageSquare, MapPin, FolderTree, Loader2,
-  Globe, UserCheck,
+  Globe, UserCheck, FileText,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import CellebriteOverview from './CellebriteOverview';
+import CellebriteReport from './CellebriteReport';
 import CellebriteCrossPhoneGraph from './CellebriteCrossPhoneGraph';
 import CellebriteTimeline from './CellebriteTimeline';
 import CellebriteCommunicationView from './CellebriteCommunicationView';
@@ -22,6 +23,9 @@ import { onCellebriteTabSwitch } from '../../utils/commsHandoff';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
+  // Report: honest, traffic-derived per-device profile (true owner, recovered
+  // aliases, in/out comms, activity window). Sits beside Overview.
+  { key: 'report', label: 'Report', icon: FileText },
   { key: 'comms', label: 'Comms Center', icon: MessageSquare },
   // Unified contacts: rolls Persons up by canonical phone number so
   // the same human across multiple phones (different alias names)
@@ -183,6 +187,11 @@ export default function CellebriteView({ caseId }) {
         {mountedTabs.has('overview') && (
           <TabPane active={activeTab === 'overview'}>
             <CellebriteOverview caseId={caseId} reports={reports} onReportsChanged={refreshReports} isActive={activeTab === 'overview'} />
+          </TabPane>
+        )}
+        {mountedTabs.has('report') && (
+          <TabPane active={activeTab === 'report'}>
+            <CellebriteReport caseId={caseId} isActive={activeTab === 'report'} />
           </TabPane>
         )}
         {mountedTabs.has('comms') && (

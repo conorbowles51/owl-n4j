@@ -5,6 +5,7 @@ import OverviewDetailView from './OverviewDetailView';
 import FilterCommsButton from './FilterCommsButton';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 import { formatTs, formatDuration } from '../events/eventUtils';
+import PersonName from '../shared/PersonName';
 
 function callIcon(direction, callType) {
   const t = (callType || '').toLowerCase();
@@ -94,14 +95,14 @@ export default function OverviewCallsView({ caseId, report, onBack }) {
     {
       key: 'from_name',
       label: 'From',
-      width: 'minmax(120px, 1fr)',
-      render: (r) => r.from_name || r.from_key || '—',
+      width: 'minmax(160px, 1fr)',
+      render: (r) => <PersonName name={r.from_name} personKey={r.from_key} />,
     },
     {
       key: 'to_name',
       label: 'To',
-      width: 'minmax(120px, 1fr)',
-      render: (r) => r.to_name || r.to_key || '—',
+      width: 'minmax(160px, 1fr)',
+      render: (r) => <PersonName name={r.to_name} personKey={r.to_key} />,
     },
     {
       key: 'source_app',

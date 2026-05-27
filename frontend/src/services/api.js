@@ -2613,6 +2613,15 @@ export const cellebriteAPI = {
   },
 
   /**
+   * Per-device forensic profile for the Report tab: each phone's true
+   * primary user (by traffic), declared vs actual owner, device numbers,
+   * recovered contact aliases, in/out comms, and activity window.
+   * @param {string} caseId - REQUIRED: Case ID
+   */
+  getDeviceReport: (caseId) =>
+    fetchAPI(`/cellebrite/report/devices?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
    * Drop the cached /reports response for a case so the next
    * getReports() will re-fetch. Called by the mutating endpoints
    * automatically; expose for callers that update reports out of

@@ -6,6 +6,7 @@ import FilterCommsButton from './FilterCommsButton';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
 import { formatTs } from '../events/eventUtils';
 import { appIconEmoji } from '../comms/commsUtils';
+import PersonName from '../shared/PersonName';
 
 export default function OverviewMessagesView({ caseId, report, onBack }) {
   const { selectEntity } = useCellebriteSelection();
@@ -39,8 +40,8 @@ export default function OverviewMessagesView({ caseId, report, onBack }) {
     {
       key: 'sender_name',
       label: 'Sender',
-      width: 'minmax(120px, 180px)',
-      render: (r) => r.sender_name || r.sender_key || '—',
+      width: 'minmax(160px, 220px)',
+      render: (r) => <PersonName name={r.sender_name} personKey={r.sender_key} />,
     },
     {
       key: 'body_preview',
