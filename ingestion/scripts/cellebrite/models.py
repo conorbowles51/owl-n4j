@@ -56,6 +56,12 @@ class DeviceInfo:
     # when the report had no extractable phone number, or when an override
     # alias was provided). Lets the UI badge the identity as manual.
     identifier_is_manual: bool = False
+    # Set when the investigator-supplied identifier is NOT a valid phone
+    # number (e.g. a person's name like "Vides Martinez"). It's recorded as
+    # the device owner's NAME: the owner Person is name-keyed and the
+    # PhoneReport carries the name (badged manual) so views aren't left with
+    # an empty phone_numbers array. See cellebrite-phone-number-required.
+    manual_owner_name: Optional[str] = None
 
 
 @dataclass

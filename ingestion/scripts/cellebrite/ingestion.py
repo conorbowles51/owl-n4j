@@ -237,6 +237,21 @@ def ingest_cellebrite_report(
     # it's investigator-supplied rather than extracted.
     manual_identifier = (device_identifier or "").strip()
     report.device_info.identifier_is_manual = False
+    report.device_info.manual_owner_name = None
+    # Does the supplied identifier validate as a phone number, or is it a
+    # name/label? A non-numeric identifier (e.g. "Vides Martinez") is recorded
+    # as the device owner's NAME: the owner Person is then name-keyed and the
+    # PhoneReport carries the name (badged manual) instead of an empty
+    # phone_numbers array. See cellebrite-phone-number-required.
+    manual_is_phone = False
+    if manual_identifier:
+        try:
+            from services.phone_normalise import normalise as _normalise_check
+            manual_is_phone = _normalise_check(
+                manual_identifier, default_region="US"
+            ) is not None
+        except Exception:
+            manual_is_phone = False
     if not report.device_info.msisdn:
         if not manual_identifier:
             _log(
@@ -255,13 +270,22 @@ def ingest_cellebrite_report(
             }
         report.device_info.msisdn = [manual_identifier]
         report.device_info.identifier_is_manual = True
-        _log(f"Using investigator-supplied device identifier: {manual_identifier}")
+        if manual_is_phone:
+            _log(f"Using investigator-supplied device identifier: {manual_identifier}")
+        else:
+            report.device_info.manual_owner_name = manual_identifier
+            _log(f"Using investigator-supplied device owner name: {manual_identifier}")
     elif manual_identifier and manual_identifier not in report.device_info.msisdn:
         # Number(s) detected AND an override given: keep the real numbers,
-        # add the investigator's alias as an additional identity.
+        # add the investigator's alias (number) or name as an additional identity.
         report.device_info.msisdn = list(report.device_info.msisdn) + [manual_identifier]
         report.device_info.identifier_is_manual = True
-        _log(f"Added investigator-supplied owner alias: {manual_identifier}")
+        if not manual_is_phone:
+            report.device_info.manual_owner_name = manual_identifier
+        _log(
+            "Added investigator-supplied owner "
+            f"{'alias' if manual_is_phone else 'name'}: {manual_identifier}"
+        )
 
     # Generate unique report key
     report_key = (
@@ -407,6 +431,18 @@ def ingest_cellebrite_report(
         writer.finalise_sim_card()
     except Exception as e:
         _log(f"WARNING: SIMCard finalisation failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Step 8.33: Finalise person identities (name aliases + best primary name)
+    # ------------------------------------------------------------------
+    # Every sighting (contacts + message/call parties) accumulated the names a
+    # number was saved under. Write them all as name_aliases and upgrade the
+    # primary name off any bare-number/JID placeholder. Fixes the conflation
+    # where the first sighting's name won and the rest were discarded.
+    try:
+        writer.finalise_person_identities()
+    except Exception as e:
+        _log(f"WARNING: Person identity finalisation failed: {e}")
 
     # ------------------------------------------------------------------
     # Step 8.35: Harvest photo EXIF geotags into Location nodes

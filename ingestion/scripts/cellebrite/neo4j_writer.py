@@ -16,6 +16,7 @@ import json
 import re
 import uuid
 from collections import Counter
+from functools import lru_cache
 from typing import List, Dict, Optional, Set, Callable, Tuple  # noqa: F401
 
 from .models import ParsedModel, Party, CellebriteReport
@@ -140,6 +141,7 @@ def _normalise_key(raw: Optional[str]) -> str:
     return key.strip("-")
 
 
+@lru_cache(maxsize=200_000)
 def _generate_person_key(
     identifier: Optional[str] = None,
     name: Optional[str] = None,
@@ -206,6 +208,51 @@ def _generate_person_key(
     return None
 
 
+def _is_real_name(name: Optional[str], identifier: Optional[str] = None) -> bool:
+    """True when `name` is a human-meaningful label worth keeping as an alias.
+
+    Rejects empty/1-char names, names that are just the identifier echoed back,
+    and bare phone/JID/numeric-ID lookalikes (so "Trabajo 444" counts but
+    "12404291127" or "12404291127@s.whatsapp.net" or "+1 (240) 429-1127" do
+    not — those are the number, not a saved name). Used to pick a sensible
+    PRIMARY display name and to decide what goes into name_aliases.
+    """
+    if not name:
+        return False
+    n = name.strip()
+    if len(n) < 2:
+        return False
+    if identifier and n == str(identifier).strip():
+        return False
+    # bare number / JID / phone-format echoes (digits, +, -, spaces, parens, @suffix)
+    if re.fullmatch(r"[+\d][\d\s().\-]{4,}", n):
+        return False
+    if re.fullmatch(r"\+?\d{6,}@(?:s\.whatsapp\.net|c\.us|g\.us)", n, re.IGNORECASE):
+        return False
+    if n.startswith("_$!<") or n in ("(no name)", "System Message", "Sin Nombre"):
+        return False
+    return True
+
+
+def _is_personal_key(key: Optional[str]) -> bool:
+    """False for non-personal identities whose name aliases are noise — shared
+    service addresses (Facebook/Google notification mailers, support desks,
+    no-reply) and system/broadcast pseudo-accounts accrue dozens of unrelated
+    names (28 on notification@facebookmail.com). Keep them out of alias rollup.
+    """
+    if not key:
+        return False
+    k = key.lower()
+    if k.startswith("email-"):
+        addr = k[len("email-"):]
+        if any(s in addr for s in ("notification", "noreply", "no-reply", "support",
+                                    "@facebookmail", "@mail.", "donotreply", "helpshift")):
+            return False
+    if "system-message" in k or "statusbroadcast" in k or k.endswith("@g.us"):
+        return False
+    return True
+
+
 class CellebriteNeo4jWriter:
     """
     Writes Cellebrite parsed models to Neo4j as graph entities.
@@ -242,8 +289,24 @@ class CellebriteNeo4jWriter:
         self._created_person_keys: Set[str] = set()
         self._created_node_keys: Set[str] = set()
 
+        # Backfill mode: when True, _create_node is a no-op (the comm/call/etc.
+        # nodes already exist from the original ingest). Handlers still run, so
+        # _ensure_person accumulates name aliases and _create_relationship
+        # re-MERGEs (idempotent) — letting the backfill reuse the EXACT pipeline
+        # handlers to add ContactEntries + name_aliases without duplicating data.
+        self.identity_only = False
+
+        # EVERY name a person-key was ever seen under, across all sightings in
+        # this run (contacts AND message/call/chat parties). Accumulated in
+        # _ensure_person even on cache hits — the old code set Person.name
+        # ON CREATE only, so the first sighting's name won and every other
+        # saved name was discarded at ingest (the conflation bug). Written out
+        # as name_aliases + a best primary by finalise_person_identities().
+        self._person_names: Dict[str, "Counter[str]"] = {}
+
         # Counters
         self.contacts_created = 0
+        self.contact_entries_created = 0
         self.calls_created = 0
         self.messages_created = 0
         self.chats_created = 0
@@ -486,6 +549,13 @@ class CellebriteNeo4jWriter:
         if not key:
             return None
 
+        # Record EVERY real name this identity is seen under (incl. cache hits)
+        # so finalise_person_identities can preserve them as name_aliases. This
+        # is the fix for the conflation: previously only the first sighting's
+        # name survived (Person.name set ON CREATE only).
+        if _is_real_name(name, identifier) and _is_personal_key(key):
+            self._person_names.setdefault(key, Counter())[name.strip()] += 1
+
         if key in self._created_person_keys:
             return key
 
@@ -532,6 +602,13 @@ class CellebriteNeo4jWriter:
         if key in self._created_node_keys:
             return key
 
+        # Backfill: the node already exists from the original ingest — don't
+        # re-CREATE it (that would duplicate). Record the key so in-run dedup
+        # and any follow-up _create_relationship still resolve against it.
+        if self.identity_only:
+            self._created_node_keys.add(key)
+            return key
+
         # Sanitize label
         sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", label.strip())
         sanitized = re.sub(r"_+", "_", sanitized).strip("_")
@@ -556,6 +633,12 @@ class CellebriteNeo4jWriter:
 
     def _create_relationship(self, from_key: str, to_key: str, rel_type: str, extra_props: Optional[Dict] = None):
         """Create a relationship between two nodes."""
+        # Backfill: comm/call/contact→report edges already exist from the
+        # original ingest (all MERGE-based). Skip re-MERGEing them — the
+        # backfill only needs name aliases + ContactEntry nodes (whose own
+        # edges are written directly in _merge_contact_entry).
+        if self.identity_only:
+            return
         sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", rel_type.strip())
         sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         if not sanitized:
@@ -629,10 +712,16 @@ class CellebriteNeo4jWriter:
         # phone-owner party — otherwise the manual identifier would land on
         # the PhoneReport but not on the owner Person node, so it wouldn't
         # show in conversations. See cellebrite-phone-number-required rule.
+        manual_owner_name = getattr(self.report.device_info, "manual_owner_name", None)
         if getattr(self.report.device_info, "identifier_is_manual", False):
             for ident in self.report.device_info.msisdn:
                 if ident:
                     self._phone_owner_identifiers.add(ident)
+            # A non-numeric manual identifier is the owner's NAME, not a
+            # number. Record it as an identity so it lands in all_identifiers;
+            # the owner Person is name-keyed below.
+            if manual_owner_name:
+                self._phone_owner_identifiers.add(manual_owner_name)
 
         if not self._phone_owner_names and not self._phone_owner_identifiers:
             # Fallback: use device MSISDN
@@ -689,6 +778,33 @@ class CellebriteNeo4jWriter:
         if not best_identifier and self._phone_owner_identifiers:
             best_identifier = next(iter(self._phone_owner_identifiers))
 
+        # Investigator supplied the owner's display NAME. Prefer a real phone
+        # identity DETECTED in the extraction for the KEY, so the owner merges
+        # with their own conversations instead of fragmenting into a separate
+        # name-only node. The name stays the display name. create_phone_owner
+        # runs before the message pass, so the owner node is created first and
+        # later message MERGEs (ON MATCH) preserve this name. Falls back to a
+        # name key only if nothing resolves to a phone. The investigator can
+        # re-attribute via the merge-identities action if the pick is wrong.
+        owner_numbers: List[str] = []
+        if manual_owner_name:
+            best_name = manual_owner_name
+            phone_idents: List[str] = []
+            for ident in self._phone_owner_identifiers:
+                if ident == manual_owner_name:
+                    continue
+                k = _generate_person_key(
+                    identifier=ident, default_region=self.default_region
+                )
+                if k and k.startswith("phone-"):
+                    phone_idents.append(ident)
+                    num = "+" + k[len("phone-"):]
+                    if num not in owner_numbers:
+                        owner_numbers.append(num)
+            # Prefer an explicit E.164 (+...) identifier, else any phone id.
+            phone_idents.sort(key=lambda s: (not s.strip().startswith("+"), s))
+            best_identifier = phone_idents[0] if phone_idents else None
+
         key = _generate_person_key(
             identifier=best_identifier,
             name=best_name,
@@ -698,15 +814,25 @@ class CellebriteNeo4jWriter:
             self._log("WARNING: Could not generate key for phone owner")
             return None
 
-        extra_props = {
-            "is_phone_owner": True,
-            "phone_numbers": list({
+        if manual_owner_name:
+            owner_phone_numbers = owner_numbers
+        else:
+            owner_phone_numbers = list({
                 _normalise_phone(i, self.default_region)
                 for i in self._phone_owner_identifiers
                 if _normalise_phone(i, self.default_region)
-            }),
+            })
+        extra_props = {
+            "is_phone_owner": True,
+            "phone_numbers": owner_phone_numbers,
             "all_identifiers": list(self._phone_owner_identifiers),
         }
+        if manual_owner_name:
+            # Force the investigator-supplied name onto the owner even when the
+            # number belongs to a node another report already created (the
+            # owner number is frequently shared cross-report). Without this the
+            # MERGE's ON MATCH branch keeps the old "+number" placeholder name.
+            extra_props["name"] = manual_owner_name
 
         self._ensure_person(
             identifier=best_identifier,
@@ -715,6 +841,21 @@ class CellebriteNeo4jWriter:
         )
 
         self._phone_owner_key = key
+
+        # When the investigator named the owner and the scan found their real
+        # number(s), surface those on the PhoneReport too — it was created
+        # (create_phone_report_node) before the scan ran, so it currently holds
+        # the name as a fallback. "use these as numbers"; the name stays as the
+        # owner Person's display name. Still badged device_identifier_manual.
+        if manual_owner_name and owner_numbers:
+            self.db.run_query(
+                "MATCH (r:PhoneReport {key: $rk, case_id: $cid}) "
+                "SET r.phone_numbers = $nums, r.device_identifier_manual = true",
+                rk=self.report_key,
+                cid=self.case_id,
+                nums=owner_numbers,
+            )
+
         self._log(f"Phone owner: {best_name or 'Unknown'} (key={key})")
         return key
 
@@ -748,6 +889,14 @@ class CellebriteNeo4jWriter:
             if normalised and normalised not in seen_msisdn:
                 seen_msisdn.add(normalised)
                 phone_numbers.append(normalised)
+
+        # Investigator supplied a NAME instead of a number: surface it as the
+        # owning identity so phone_numbers isn't empty (which breaks views —
+        # see cellebrite-phone-number-required). device_identifier_manual=True
+        # already badges it as investigator-supplied, not an extracted MSISDN.
+        manual_owner_name = getattr(di, "manual_owner_name", None)
+        if manual_owner_name and not phone_numbers:
+            phone_numbers.append(manual_owner_name)
 
         props = {
             "id": str(uuid.uuid4()),
@@ -998,6 +1147,11 @@ class CellebriteNeo4jWriter:
             if title:
                 org_titles.append(title)
 
+        # Preserve the numbers EXACTLY as saved on the device before we
+        # canonicalise — the ContactEntry keeps the raw form (user wants the
+        # number "extracted exactly as it is saved on the device").
+        raw_phone_numbers = list(phone_numbers)
+
         # Canonicalise the contact's listed numbers to E.164 where they
         # validate. Keep any that DON'T validate (extensions / unusual
         # formats) as their raw value so a contact never silently loses a
@@ -1017,8 +1171,18 @@ class CellebriteNeo4jWriter:
 
         # Generate key — prefer a valid (normalisable) number so a junk
         # first entry doesn't force a weaker name/email key.
+        #
+        # user_ids (the contact's OWN app id, e.g. their WhatsApp JID
+        # "<their-number>@s.whatsapp.net") MUST be tried before any fallback:
+        # WhatsApp/Telegram contacts frequently have NO PhoneNumber entry, only
+        # a UserID. `account`, by contrast, is the address-book OWNER's account
+        # (e.g. the owner's WhatsApp id), NOT the contact's identity — using it
+        # as a key fallback silently merged every number-less app contact onto
+        # the device owner (117 of 119 contacts collapsed onto the C6 owner).
+        # So: phone → raw phone → user_id → email. Never `account`.
         best_id = first_valid_phone or (phone_numbers[0] if phone_numbers else None) \
-            or (emails[0] if emails else account)
+            or (user_ids[0] if user_ids else None) \
+            or (emails[0] if emails else None)
         key = _generate_person_key(
             identifier=best_id, name=name, source_app=source,
             default_region=self.default_region,
@@ -1054,7 +1218,66 @@ class CellebriteNeo4jWriter:
 
         self._ensure_person(identifier=best_id, name=name, source_app=source, extra_props=extra_props)
         self._create_relationship(key, self.report_key, "EXTRACTED_FROM")
+
+        # Preserve THIS address-book record verbatim as a ContactEntry, scoped
+        # to its source device + storage area (phone book / SIM / app account).
+        # The canonical Person aggregates its entries → "all names for one
+        # number"; each entry alone → "name as saved on device X". This is what
+        # stops the rollup from collapsing every saved name into the first one.
+        self._merge_contact_entry(
+            person_key=key, name=name, raw_numbers=raw_phone_numbers,
+            canon_numbers=phone_numbers, emails=emails, user_ids=user_ids,
+            source=source, account=account, contact_type=contact_type,
+            group=group, model_id=model.model_id,
+        )
         self.contacts_created += 1
+
+    def _merge_contact_entry(self, person_key, name, raw_numbers, canon_numbers,
+                             emails, user_ids, source, account, contact_type,
+                             group, model_id):
+        """MERGE one ContactEntry (a single original address-book record) and
+        link it to its canonical Person and source PhoneReport. Idempotent
+        (MERGE on a stable key) so the backfill can re-run safely."""
+        entry_key = f"centry-{self.report_key}-{(model_id or name or '')[:24]}"
+        props = {
+            "id": str(uuid.uuid4()),
+            "key": entry_key,
+            "case_id": self.case_id,
+            "cellebrite_report_key": self.report_key,
+            "source_type": "cellebrite_contact_entry",
+            # name EXACTLY as saved on this device (may be None for number-only)
+            "saved_name": name,
+            "name": name or (raw_numbers[0] if raw_numbers else entry_key),
+            "raw_numbers": raw_numbers or None,
+            "numbers": canon_numbers or None,
+            "emails": emails or None,
+            "user_ids": user_ids or None,
+            "contact_storage": source,      # 'SIM' / 'WhatsApp' / 'Recents' / phone book…
+            "account": account,
+            "contact_type": contact_type,
+            "contact_group": group,
+        }
+        props = {k: v for k, v in props.items() if v is not None}
+        # Create the entry + its two edges in ONE query so it works identically
+        # in pipeline and backfill modes (the generic _create_relationship is a
+        # no-op under identity_only). MERGE throughout → idempotent / re-runnable.
+        self.db.run_query(
+            """
+            MERGE (e:ContactEntry {key: $key, case_id: $case_id})
+            ON CREATE SET e = $props
+            ON MATCH  SET e += $props
+            SET e:CbNode
+            WITH e
+            MATCH (p:CbNode {key: $person_key, case_id: $case_id})
+            MERGE (p)-[:HAS_ENTRY {case_id: $case_id}]->(e)
+            WITH e
+            MATCH (r:CbNode {key: $report_key, case_id: $case_id})
+            MERGE (e)-[:EXTRACTED_FROM {case_id: $case_id}]->(r)
+            """,
+            key=entry_key, case_id=self.case_id, props=props,
+            person_key=person_key, report_key=self.report_key,
+        )
+        self.contact_entries_created += 1
 
     def _write_call(self, model: ParsedModel):
         """Call -> PhoneCall node + Person relationships."""
@@ -1184,6 +1407,16 @@ class CellebriteNeo4jWriter:
     def _write_instant_message(self, model: ParsedModel, parent_chat_key: Optional[str] = None):
         """InstantMessage -> Communication node (individual message)."""
         source = model.get_field("Source") or model.get_field("SourceApplication")
+
+        # Backfill fast-path: the message node + edges already exist. Only the
+        # sender's name needs harvesting into name_aliases. Skip all the prop
+        # building (body/provenance/attachment) for the 100k+ messages.
+        if self.identity_only:
+            fp = model.get_party("From")
+            if fp and (fp.identifier or fp.name):
+                self._ensure_person(identifier=fp.identifier, name=fp.name, source_app=source)
+            return
+
         body = model.get_field("Body")
         timestamp = self._extract_timestamp(model, prefer=("TimeStamp",))
         # Status carries the send/delivery state ("Sent" / "Delivered" /
@@ -2393,6 +2626,53 @@ class CellebriteNeo4jWriter:
             self._sim_categories[prop_key] = category
         self.sim_data_created += 1
 
+    def finalise_person_identities(self) -> int:
+        """Write the accumulated name aliases onto each Person + upgrade the
+        primary display name.
+
+        Call once after the main batch loop (by ingestion.py) so every sighting
+        across the report has contributed to self._person_names. For each
+        identity:
+          * name_aliases = union of EVERY real name seen for this key, merged
+            (apoc.coll.toSet) with any aliases an earlier report already wrote
+            — so a number saved as "Trabajo 444" on one phone and "Boss" on
+            another keeps BOTH, instead of the first sighting winning.
+          * name (primary display) is upgraded to the most-frequently-seen real
+            name ONLY when the current name is junk (bare number / JID / email /
+            equal to the key) — never downgrades a good name (e.g. an
+            investigator-set phone-owner name, or a real name an earlier report
+            already chose). This auto-fixes identities the old code left labelled
+            with a bare number because a message-party sighting happened first.
+        Returns the number of Person nodes updated. Idempotent.
+        """
+        updated = 0
+        for key, counter in self._person_names.items():
+            if not counter:
+                continue
+            # most-common first; ties broken by longer (more descriptive) name
+            aliases = [n for n, _ in counter.most_common()]
+            best = max(counter.items(), key=lambda kv: (kv[1], len(kv[0])))[0]
+            self.db.run_query(
+                """
+                MATCH (p:Person {key: $key, case_id: $case_id})
+                SET p.name_aliases = apoc.coll.toSet(coalesce(p.name_aliases, []) + $aliases)
+                SET p.name = CASE
+                    WHEN p.name IS NULL
+                      OR p.name = p.key
+                      OR p.name = $key_tail
+                      OR p.name =~ '[+\\\\d][\\\\d\\\\s().\\\\-]{4,}'
+                      OR p.name =~ '\\\\+?\\\\d{6,}@(s\\\\.whatsapp\\\\.net|c\\\\.us|g\\\\.us)'
+                      OR p.name STARTS WITH '_$!<'
+                    THEN $best ELSE p.name END
+                """,
+                key=key, case_id=self.case_id, aliases=aliases, best=best,
+                key_tail=key.split("-", 1)[-1] if "-" in key else key,
+            )
+            updated += 1
+        self._log(f"Person identities finalised: {updated} updated, "
+                  f"{self.contact_entries_created} contact entries")
+        return updated
+
     def finalise_sim_card(self) -> Optional[str]:
         """Materialise one SIMCard node from the aggregated SIMData rows.
 
@@ -2739,6 +3019,7 @@ class CellebriteNeo4jWriter:
         """Return ingestion statistics."""
         return {
             "contacts_created": self.contacts_created,
+            "contact_entries_created": self.contact_entries_created,
             "calls_created": self.calls_created,
             "chats_created": self.chats_created,
             "messages_created": self.messages_created,
