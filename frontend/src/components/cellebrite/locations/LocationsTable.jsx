@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { MapPin, Layers } from 'lucide-react';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
@@ -69,12 +69,60 @@ export default function LocationsTable({
     );
   }
 
-  // viewMode === 'rows' (default). Wider column set so investigators
-  // can see accuracy / confidence / place at a glance instead of
-  // having to open every row in the rail. Address column also splits
-  // out admin / country as their own pieces of context.
+  // viewMode === 'rows' (default). Windowed so a 68k-point case doesn't
+  // mount 68k <tr> (its own multi-second freeze, separate from the map).
   return (
-    <div className="h-full overflow-y-auto">
+    <LocationRowsView
+      locations={locations}
+      selectedId={selectedId}
+      onRowClick={onRowClick}
+      showPhoneChip={showPhoneChip}
+      playheadTime={playheadTime}
+      trailWindowMs={trailWindowMs}
+    />
+  );
+}
+
+// Fixed row height drives the windowing math. Keep in sync with the row's
+// padding (py-1 + text-xs ≈ 29px). Overscan keeps a smooth scroll from
+// reaching a blank edge before more rows mount.
+const ROWS_ROW_PX = 29;
+const ROWS_OVERSCAN = 12;
+
+/**
+ * Virtualised 'rows' table — renders only the rows in (and just around) the
+ * viewport, with top/bottom spacer rows holding the scrollbar at full height.
+ * Every location stays in the data + scrollable; we just don't put 68k <tr>
+ * in the DOM at once.
+ */
+function LocationRowsView({ locations, selectedId, onRowClick, showPhoneChip, playheadTime, trailWindowMs }) {
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(480);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    setViewportH(el.clientHeight || 480);
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => setViewportH(el.clientHeight || 480));
+      ro.observe(el);
+    }
+    return () => { el.removeEventListener('scroll', onScroll); if (ro) ro.disconnect(); };
+  }, []);
+
+  const colCount = showPhoneChip ? 10 : 9;
+  const start = Math.max(0, Math.floor(scrollTop / ROWS_ROW_PX) - ROWS_OVERSCAN);
+  const end = Math.min(locations.length, Math.ceil((scrollTop + viewportH) / ROWS_ROW_PX) + ROWS_OVERSCAN);
+  const topPad = start * ROWS_ROW_PX;
+  const bottomPad = Math.max(0, (locations.length - end) * ROWS_ROW_PX);
+  const visible = locations.slice(start, end);
+
+  return (
+    <div ref={scrollRef} className="h-full overflow-y-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-light-50 border-b border-light-200 z-10">
           <tr className="text-left text-light-500">
@@ -91,11 +139,10 @@ export default function LocationsTable({
           </tr>
         </thead>
         <tbody>
-          {locations.map((loc) => {
+          {topPad > 0 && <tr style={{ height: topPad }}><td colSpan={colCount} /></tr>}
+          {visible.map((loc) => {
             const id = loc.id || loc.node_key;
             const sel = id != null && id === selectedId;
-            // Playback state — only meaningful when both the playhead
-            // is active AND the row carries a timestamp.
             let playState = null;
             if (playheadTime && loc.timestamp) {
               const t = new Date(loc.timestamp).getTime();
@@ -115,6 +162,7 @@ export default function LocationsTable({
               <tr
                 key={id || `${loc.latitude},${loc.longitude},${loc.timestamp}`}
                 onClick={() => onRowClick?.(loc)}
+                style={{ height: ROWS_ROW_PX }}
                 className={`border-b border-light-100 cursor-pointer ${playClass} ${
                   sel ? 'bg-emerald-50/60 ring-1 ring-emerald-300/60' : 'hover:bg-light-50'
                 }`}
@@ -174,6 +222,7 @@ export default function LocationsTable({
               </tr>
             );
           })}
+          {bottomPad > 0 && <tr style={{ height: bottomPad }}><td colSpan={colCount} /></tr>}
         </tbody>
       </table>
     </div>

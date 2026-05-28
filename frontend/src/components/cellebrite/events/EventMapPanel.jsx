@@ -278,6 +278,105 @@ function VisibilityInvalidator({ isActive, dataKey }) {
   return null;
 }
 
+/**
+ * Plots every point on a SINGLE canvas drawn in one loop — no per-point
+ * Leaflet/React objects. This is what lets the Locations tab show all ~68k
+ * geolocations without freezing: per-marker objects (divIcon OR canvas
+ * CircleMarker OR imperative L.circleMarker) each cost ~1ms to construct/add,
+ * so 68k = a ~50s main-thread hang. Drawing 68k arcs in a plain loop is
+ * ~50-100ms instead.
+ *
+ * Implementation follows Leaflet's own L.Canvas approach: the canvas lives in
+ * the overlay pane positioned at the current top-left layer point and is drawn
+ * in container coordinates, so during a pan the pane's CSS transform moves it
+ * with the map (no redraw); we only redraw on moveend/zoomend/resize. Clicks
+ * pass through (pointer-events:none) to the map, where we hit-test the nearest
+ * point and fire onEventClick (the rail then loads full detail by id).
+ */
+function CanvasPointsLayer({ points, deviceColorOf, onEventClick }) {
+  const map = useMap();
+  const cbRef = useRef(onEventClick); cbRef.current = onEventClick;
+  const dcRef = useRef(deviceColorOf); dcRef.current = deviceColorOf;
+  const ptsRef = useRef(points);
+  const apiRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = L.DomUtil.create('canvas', 'cb-canvas-points');
+    canvas.style.position = 'absolute';
+    canvas.style.pointerEvents = 'none';
+    const pane = map.getPanes().overlayPane;
+    pane.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    let raf = 0;
+
+    const draw = () => {
+      raf = 0;
+      const size = map.getSize();
+      L.DomUtil.setPosition(canvas, map.containerPointToLayerPoint([0, 0]));
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== size.x * dpr || canvas.height !== size.y * dpr) {
+        canvas.width = size.x * dpr; canvas.height = size.y * dpr;
+        canvas.style.width = `${size.x}px`; canvas.style.height = `${size.y}px`;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, size.x, size.y);
+      const b = map.getBounds();
+      const south = b.getSouth(), north = b.getNorth(), west = b.getWest(), east = b.getEast();
+      const dc = dcRef.current;
+      const pts = ptsRef.current;
+      for (let i = 0; i < pts.length; i += 1) {
+        const e = pts[i];
+        const lat = e.latitude, lon = e.longitude;
+        if (lat == null || lon == null) continue;
+        if (lat < south || lat > north || lon < west || lon > east) continue; // viewport cull
+        const p = map.latLngToContainerPoint([lat, lon]);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 3.5, 0, 6.2832);
+        ctx.fillStyle = EVENT_COLORS[e.event_type] || '#64748b';
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = (dc && dc(e.device_report_key)) || '#2563eb';
+        ctx.stroke();
+      }
+    };
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };
+
+    const onClick = (ev) => {
+      const cb = cbRef.current; if (!cb) return;
+      const cp = ev.containerPoint; const pts = ptsRef.current;
+      let best = null; let bestD = 64; // within ~8px
+      for (let i = 0; i < pts.length; i += 1) {
+        const e = pts[i];
+        if (e.latitude == null || e.longitude == null) continue;
+        const p = map.latLngToContainerPoint([e.latitude, e.longitude]);
+        const dx = p.x - cp.x; const dy = p.y - cp.y; const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; best = e; }
+      }
+      if (best) cb(best);
+    };
+
+    map.on('moveend zoomend viewreset resize', schedule);
+    map.on('click', onClick);
+    apiRef.current = { schedule };
+    schedule();
+    return () => {
+      map.off('moveend zoomend viewreset resize', schedule);
+      map.off('click', onClick);
+      if (raf) cancelAnimationFrame(raf);
+      try { pane.removeChild(canvas); } catch { /* ignore */ }
+      apiRef.current = null;
+    };
+  }, [map]);
+
+  // Redraw (not rebuild) when the point set changes.
+  useEffect(() => {
+    ptsRef.current = points;
+    apiRef.current?.schedule?.();
+  }, [points]);
+
+  return null;
+}
+
 export default function EventMapPanel({
   events = [],
   tracks = [],
@@ -362,32 +461,20 @@ export default function EventMapPanel({
   // DOM divIcon markers inside MarkerClusterGroup melt the main thread at
   // tens of thousands of points — the Locations tab froze Chrome for minutes
   // on this case's ~68k geolocations (each divIcon parses an HTML string into
-  // a DOM node; preferCanvas does NOT apply to divIcons). Above a threshold
-  // we switch to canvas-rendered CircleMarkers and decimate to a cap. The
-  // trajectory POLYLINE is drawn separately from `tracks` and always uses
-  // every point, so the path stays complete; only the clickable dots thin
-  // out — surfaced to the user via a visible note.
+  // a DOM node; preferCanvas does NOT apply to divIcons). Above a threshold we
+  // render EVERY point via one shared canvas layer (CanvasPointsLayer) built
+  // imperatively — no 68k React components, no decimation, all points present.
+  // Sparse sets keep the richer divIcon + clustering UX with inline popups.
   const CANVAS_THRESHOLD = 3000;
-  const MAX_CANVAS_MARKERS = 8000;
   const geoEvents = useMemo(
     () => visibleEvents.filter((e) => e.latitude != null && e.longitude != null),
     [visibleEvents],
   );
   const useCanvasMarkers = geoEvents.length > CANVAS_THRESHOLD;
-  const drawnMarkers = useMemo(() => {
-    if (!useCanvasMarkers || geoEvents.length <= MAX_CANVAS_MARKERS) return geoEvents;
-    // Even stride keeps the spatial/temporal spread of the full set.
-    const stride = Math.ceil(geoEvents.length / MAX_CANVAS_MARKERS);
-    const out = [];
-    for (let i = 0; i < geoEvents.length; i += stride) out.push(geoEvents[i]);
-    // Never drop the selected point just because decimation skipped it.
-    if (selectedEventId) {
-      const sel = geoEvents.find((e) => (e.id || e.node_key) === selectedEventId);
-      if (sel && !out.includes(sel)) out.push(sel);
-    }
-    return out;
-  }, [geoEvents, useCanvasMarkers, selectedEventId]);
-  const markersDecimated = drawnMarkers.length < geoEvents.length;
+  const selectedPoint = useMemo(() => {
+    if (!useCanvasMarkers || !selectedEventId) return null;
+    return geoEvents.find((e) => (e.id || e.node_key) === selectedEventId) || null;
+  }, [useCanvasMarkers, selectedEventId, geoEvents]);
 
   if (!hasPoints) {
     return (
@@ -425,11 +512,6 @@ export default function EventMapPanel({
       {showLowGeoHint && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[400] bg-amber-50 border border-amber-300 text-amber-900 text-[11px] px-3 py-1 rounded-full shadow-sm">
           Only {geolocatedCount.toLocaleString()} of {events.length.toLocaleString()} events are geolocated — switch to <span className="font-semibold">Table</span> or <span className="font-semibold">Split</span> to see the full feed.
-        </div>
-      )}
-      {markersDecimated && (
-        <div className="absolute top-2 right-2 z-[400] bg-owl-blue-50 border border-owl-blue-200 text-owl-blue-900 text-[11px] px-2.5 py-1 rounded-full shadow-sm">
-          {drawnMarkers.length.toLocaleString()} of {geoEvents.length.toLocaleString()} points shown as dots · full path drawn · table lists all
         </div>
       )}
       <MapContainer
@@ -500,28 +582,25 @@ export default function EventMapPanel({
         })}
 
         {/* Event markers. Dense sets (e.g. the Locations tab's tens of
-            thousands of points) render as canvas CircleMarkers — clicking a
-            dot opens its detail in the rail. Sparser sets keep the richer
+            thousands of points) render EVERY point via one shared canvas layer
+            — clicking a dot opens its detail in the rail. The selected point
+            gets a separate highlight ring on top. Sparser sets keep the richer
             divIcon + clustering UX with an inline popup. */}
         {useCanvasMarkers ? (
-          drawnMarkers.map((e) => {
-            const devColor = deviceColorOf?.(e.device_report_key) || '#2563eb';
-            const isSelected = selectedEventId === (e.id || e.node_key);
-            return (
+          <>
+            <CanvasPointsLayer
+              points={geoEvents}
+              deviceColorOf={deviceColorOf}
+              onEventClick={onEventClick}
+            />
+            {selectedPoint && (
               <CircleMarker
-                key={e.id || e.node_key}
-                center={[e.latitude, e.longitude]}
-                radius={isSelected ? 7 : 4}
-                pathOptions={{
-                  color: isSelected ? '#111827' : devColor,
-                  weight: isSelected ? 2 : 1,
-                  fillColor: EVENT_COLORS[e.event_type] || '#64748b',
-                  fillOpacity: 0.85,
-                }}
-                eventHandlers={{ click: () => onEventClick?.(e) }}
+                center={[selectedPoint.latitude, selectedPoint.longitude]}
+                radius={8}
+                pathOptions={{ color: '#111827', weight: 2, fillColor: '#ffffff', fillOpacity: 0.6 }}
               />
-            );
-          })
+            )}
+          </>
         ) : (
           <MarkerClusterGroup disableClusteringAtZoom={15} chunkedLoading>
             {geoEvents.map((e) => {

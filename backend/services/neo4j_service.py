@@ -9217,10 +9217,16 @@ class Neo4jService:
         offset: int = 0,
         place: Optional[str] = None,
         near: Optional[Tuple[float, float, float]] = None,
+        lean: bool = False,
     ) -> dict:
         """
         Unified event feed for the Location & Event Center.
         Returns chronologically-sortable event rows with optional geolocation.
+
+        `lean` (location type only): project just the columns the map / table /
+        search use and omit null fields, instead of returning whole nodes. Keeps
+        every row but roughly halves payload + serialisation time — used by the
+        Locations tab which loads all geolocated points.
         """
         active = set(event_types) if event_types else {
             "location", "cell_tower", "wifi", "call", "message", "email",
@@ -9267,14 +9273,36 @@ class Neo4jService:
 
             if "location" in active:
                 extra = "" if not only_geolocated else "AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL"
-                cypher = f"""
-                    MATCH (n:Location {{source_type:'cellebrite'}})
-                    WHERE {where} {extra}
-                    RETURN n
-                    {ts_order}
-                    LIMIT $per_type_cap
-                """
-                _add(cypher, base_params, "location", lambda rec: _project_event(rec["n"], "location"))
+                if lean:
+                    # Project only the used columns (omit-null happens in the
+                    # projector). Keeps every row; far smaller than RETURN n.
+                    cypher = f"""
+                        MATCH (n:Location {{source_type:'cellebrite'}})
+                        WHERE {where} {extra}
+                        RETURN n.id AS id, n.key AS key,
+                               n.latitude AS latitude, n.longitude AS longitude,
+                               n.nearest_location_lat AS nlat, n.nearest_location_lon AS nlon,
+                               n.timestamp AS timestamp, n.cellebrite_report_key AS rk,
+                               n.label AS label, n.name AS name, n.summary AS summary,
+                               n.place_name AS place_name, n.country AS country,
+                               n.country_code AS country_code, n.admin1 AS admin1,
+                               n.admin2 AS admin2, n.address AS address,
+                               n.geocode_source AS geocode_source, n.geocode_accuracy AS geocode_accuracy,
+                               n.accuracy_meters AS accuracy_meters, n.confidence_score AS confidence_score,
+                               n.location_type AS location_type, n.source_app AS source_app
+                        {ts_order}
+                        LIMIT $per_type_cap
+                    """
+                    _add(cypher, base_params, "location", _project_location_lean)
+                else:
+                    cypher = f"""
+                        MATCH (n:Location {{source_type:'cellebrite'}})
+                        WHERE {where} {extra}
+                        RETURN n
+                        {ts_order}
+                        LIMIT $per_type_cap
+                    """
+                    _add(cypher, base_params, "location", lambda rec: _project_event(rec["n"], "location"))
 
             if "cell_tower" in active:
                 extra = "" if not only_geolocated else "AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL"
@@ -11750,6 +11778,42 @@ def _project_event(node, event_type: str) -> Optional[dict]:
         # filters every row out even when the suggestion was real.
         "location_type": n.get("location_type"),
     }
+
+
+def _project_location_lean(rec) -> Optional[dict]:
+    """Lean projection for Location rows — only the columns the map,
+    trajectory, table and search actually use, with null/empty fields OMITTED
+    so the payload stays small. The Locations tab loads EVERY point, so this is
+    how we keep that complete without shipping the ~36-key fat row (most keys
+    null for locations). Same row shape as `_project_event` minus the
+    always-null comms/device-event keys; the frontend reads `e.field || …`, so
+    omitted keys are safe. Fed projected scalar columns (see the lean cypher),
+    not a whole node, which also cuts Neo4j transfer + serialisation time."""
+    lat = rec["latitude"] if rec["latitude"] is not None else rec["nlat"]
+    lon = rec["longitude"] if rec["longitude"] is not None else rec["nlon"]
+    if lat is None or lon is None:
+        return None
+    direct = rec["latitude"] is not None and rec["longitude"] is not None
+    row = {
+        "id": rec["id"] or rec["key"],
+        "node_key": rec["key"],
+        "latitude": lat,
+        "longitude": lon,
+        "timestamp": rec["timestamp"],
+        "device_report_key": rec["rk"],
+        "location_source": "direct" if direct else "nearest",
+        "is_geolocated": True,
+        "label": rec["label"] or rec["name"] or "Location",
+    }
+    # Optional fields — included only when present so a bare GPS ping doesn't
+    # carry a dozen null keys × tens of thousands of rows.
+    for col in ("summary", "place_name", "country", "country_code", "admin1",
+                "admin2", "address", "geocode_source", "geocode_accuracy",
+                "accuracy_meters", "confidence_score", "location_type", "source_app"):
+        v = rec[col]
+        if v is not None and v != "":
+            row[col] = v
+    return row
 
 
 def _project_call(node, src, dst) -> Optional[dict]:

@@ -2993,6 +2993,7 @@ export const cellebriteEventsAPI = {
     onlyGeolocated = false,
     limit = 5000,
     offset = 0,
+    lean = false,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
@@ -3001,6 +3002,7 @@ export const cellebriteEventsAPI = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     if (onlyGeolocated) params.append('only_geolocated', 'true');
+    if (lean) params.append('lean', 'true');
     params.append('limit', String(limit));
     params.append('offset', String(offset));
     return fetchAPI(`/cellebrite/events?${params.toString()}`);

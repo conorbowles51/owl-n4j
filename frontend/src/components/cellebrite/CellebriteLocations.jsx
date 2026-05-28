@@ -236,6 +236,10 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
           // selected devices, starved location-dense phones (C2 alone has
           // ~42k). Backend hard-ceiling is 500000.
           limit: 500000,
+          // Lean projection: only the columns the map/table/search use, nulls
+          // omitted. Keeps EVERY point but ~halves the payload + load time
+          // (the fat 36-key rows were ~55 MB / 16.5s for this case's 68k pts).
+          lean: true,
         });
 
     Promise.all([

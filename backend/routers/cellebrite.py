@@ -700,6 +700,15 @@ def get_events(
             "coordinates are excluded."
         ),
     ),
+    lean: bool = Query(
+        False,
+        description=(
+            "Location type only: project just the columns the map / table / "
+            "search use and omit null fields, instead of whole nodes. Keeps "
+            "every row; ~halves payload + serialisation. Used by the Locations "
+            "tab which loads all geolocated points."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -718,6 +727,7 @@ def get_events(
         offset=offset,
         place=place or None,
         near=near_tuple,
+        lean=lean,
     )
 
 
