@@ -358,6 +358,37 @@ export default function EventMapPanel({
     return { hasPoints: hp, geolocatedCount: n };
   }, [events, tracks]);
 
+  // --- Marker rendering strategy --------------------------------------
+  // DOM divIcon markers inside MarkerClusterGroup melt the main thread at
+  // tens of thousands of points — the Locations tab froze Chrome for minutes
+  // on this case's ~68k geolocations (each divIcon parses an HTML string into
+  // a DOM node; preferCanvas does NOT apply to divIcons). Above a threshold
+  // we switch to canvas-rendered CircleMarkers and decimate to a cap. The
+  // trajectory POLYLINE is drawn separately from `tracks` and always uses
+  // every point, so the path stays complete; only the clickable dots thin
+  // out — surfaced to the user via a visible note.
+  const CANVAS_THRESHOLD = 3000;
+  const MAX_CANVAS_MARKERS = 8000;
+  const geoEvents = useMemo(
+    () => visibleEvents.filter((e) => e.latitude != null && e.longitude != null),
+    [visibleEvents],
+  );
+  const useCanvasMarkers = geoEvents.length > CANVAS_THRESHOLD;
+  const drawnMarkers = useMemo(() => {
+    if (!useCanvasMarkers || geoEvents.length <= MAX_CANVAS_MARKERS) return geoEvents;
+    // Even stride keeps the spatial/temporal spread of the full set.
+    const stride = Math.ceil(geoEvents.length / MAX_CANVAS_MARKERS);
+    const out = [];
+    for (let i = 0; i < geoEvents.length; i += stride) out.push(geoEvents[i]);
+    // Never drop the selected point just because decimation skipped it.
+    if (selectedEventId) {
+      const sel = geoEvents.find((e) => (e.id || e.node_key) === selectedEventId);
+      if (sel && !out.includes(sel)) out.push(sel);
+    }
+    return out;
+  }, [geoEvents, useCanvasMarkers, selectedEventId]);
+  const markersDecimated = drawnMarkers.length < geoEvents.length;
+
   if (!hasPoints) {
     return (
       <div className="h-full w-full flex flex-col items-center justify-center bg-light-50 text-light-500 text-sm p-6 text-center">
@@ -394,6 +425,11 @@ export default function EventMapPanel({
       {showLowGeoHint && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-[400] bg-amber-50 border border-amber-300 text-amber-900 text-[11px] px-3 py-1 rounded-full shadow-sm">
           Only {geolocatedCount.toLocaleString()} of {events.length.toLocaleString()} events are geolocated — switch to <span className="font-semibold">Table</span> or <span className="font-semibold">Split</span> to see the full feed.
+        </div>
+      )}
+      {markersDecimated && (
+        <div className="absolute top-2 right-2 z-[400] bg-owl-blue-50 border border-owl-blue-200 text-owl-blue-900 text-[11px] px-2.5 py-1 rounded-full shadow-sm">
+          {drawnMarkers.length.toLocaleString()} of {geoEvents.length.toLocaleString()} points shown as dots · full path drawn · table lists all
         </div>
       )}
       <MapContainer
@@ -463,11 +499,32 @@ export default function EventMapPanel({
           );
         })}
 
-        {/* Event markers, clustered */}
-        <MarkerClusterGroup disableClusteringAtZoom={15} chunkedLoading>
-          {visibleEvents
-            .filter((e) => e.latitude != null && e.longitude != null)
-            .map((e) => {
+        {/* Event markers. Dense sets (e.g. the Locations tab's tens of
+            thousands of points) render as canvas CircleMarkers — clicking a
+            dot opens its detail in the rail. Sparser sets keep the richer
+            divIcon + clustering UX with an inline popup. */}
+        {useCanvasMarkers ? (
+          drawnMarkers.map((e) => {
+            const devColor = deviceColorOf?.(e.device_report_key) || '#2563eb';
+            const isSelected = selectedEventId === (e.id || e.node_key);
+            return (
+              <CircleMarker
+                key={e.id || e.node_key}
+                center={[e.latitude, e.longitude]}
+                radius={isSelected ? 7 : 4}
+                pathOptions={{
+                  color: isSelected ? '#111827' : devColor,
+                  weight: isSelected ? 2 : 1,
+                  fillColor: EVENT_COLORS[e.event_type] || '#64748b',
+                  fillOpacity: 0.85,
+                }}
+                eventHandlers={{ click: () => onEventClick?.(e) }}
+              />
+            );
+          })
+        ) : (
+          <MarkerClusterGroup disableClusteringAtZoom={15} chunkedLoading>
+            {geoEvents.map((e) => {
               const devColor = deviceColorOf?.(e.device_report_key) || '#2563eb';
               const isSelected = selectedEventId === (e.id || e.node_key);
               return (
@@ -500,7 +557,8 @@ export default function EventMapPanel({
                 </Marker>
               );
             })}
-        </MarkerClusterGroup>
+          </MarkerClusterGroup>
+        )}
 
         {/* Intersection flags */}
         {intersectionMatches

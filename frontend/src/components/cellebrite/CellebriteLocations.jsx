@@ -661,7 +661,7 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
         <span className="ml-2 text-light-400 truncate">
           {renderMode === 'tiles'
             ? 'Click a tile for the rows it contains. Cluster numbers = nearby tiles grouped at this zoom — zoom in to split them.'
-            : 'Capped at 5,000 points — narrow with date/search. Cluster numbers = overlapping points at this zoom.'}
+            : `${mapEvents.length.toLocaleString()} point${mapEvents.length === 1 ? '' : 's'} loaded — the trajectory line uses every point; dense dots thin out on the map for speed. Narrow with date/search.`}
         </span>
 
         {/* Table-perspective toggle — sits in its own group on the
