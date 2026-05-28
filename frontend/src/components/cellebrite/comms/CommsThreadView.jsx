@@ -8,6 +8,7 @@ import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import { appIconEmoji, buildSenderPalette, senderInitials } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import PersonName from '../shared/PersonName';
+import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import TimelineScrubber from '../shared/TimelineScrubber';
 import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
@@ -33,6 +34,8 @@ export default function CommsThreadView({
   selectedItemId = null,
 }) {
   const phoneCtx = usePhoneReports();
+  // Day separators follow the view's selected timezone (local day, not UTC).
+  const { dayKey: tzDayKey } = useCellebriteTime();
   const showPhoneChip = !!phoneCtx?.hasMultiple && !!selectedThread?.report_key;
   const phoneIdentity = showPhoneChip
     ? phoneCtx.getIdentityByKey(selectedThread.report_key)
@@ -195,7 +198,7 @@ export default function CommsThreadView({
   let currentDate = null;
   let lastSenderKey = null;
   for (const item of filteredItems) {
-    const d = (item.timestamp || '').slice(0, 10);
+    const d = item.timestamp ? tzDayKey(item.timestamp) : '';
     if (d !== currentDate) {
       itemsByDate.push({ type: 'date-sep', date: d });
       currentDate = d;
@@ -392,7 +395,10 @@ export default function CommsThreadView({
 function formatDateSep(d) {
   if (!d) return '';
   try {
-    const dt = new Date(d);
+    // d is a YYYY-MM-DD calendar day (already in the view's zone). Parse as a
+    // plain local date — `new Date("2022-12-02")` would be UTC midnight and can
+    // render as the previous day for examiners behind UTC.
+    const dt = new Date(`${d}T00:00:00`);
     if (isNaN(dt.getTime())) return d;
     return dt.toLocaleDateString([], { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
   } catch {

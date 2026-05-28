@@ -20,6 +20,8 @@ import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
 import PerspectivePill from './shared/PerspectivePill';
 import { PerspectiveProvider } from '../../context/PerspectiveContext';
 import { onCellebriteTabSwitch } from '../../utils/commsHandoff';
+import { CellebriteTimezoneProvider } from './shared/CellebriteTimezone';
+import CellebriteTimezoneSelector from './shared/CellebriteTimezone';
 
 const TABS = [
   { key: 'overview', label: 'Overview', icon: Smartphone },
@@ -131,6 +133,7 @@ export default function CellebriteView({ caseId }) {
   return (
     <CellebriteStatusProvider>
     <CellebriteSelectionProvider>
+    <CellebriteTimezoneProvider caseId={caseId}>
     <PerspectiveProvider caseId={caseId}>
     {/* Cross-tab intent listener — when a tab publishes a selection
         with `_filter_intent: 'comms'` (e.g. the unified-contacts
@@ -161,7 +164,8 @@ export default function CellebriteView({ caseId }) {
           </button>
         ))}
         <div className="flex-1" />
-        <span className="text-xs text-light-500">
+        <CellebriteTimezoneSelector />
+        <span className="text-xs text-light-500 ml-3">
           {reports.length} device{reports.length !== 1 ? 's' : ''}
         </span>
       </div>
@@ -247,6 +251,7 @@ export default function CellebriteView({ caseId }) {
       <CellebriteStatusBar />
     </div>
     </PerspectiveProvider>
+    </CellebriteTimezoneProvider>
     </CellebriteSelectionProvider>
     </CellebriteStatusProvider>
   );

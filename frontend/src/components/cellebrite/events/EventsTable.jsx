@@ -3,6 +3,7 @@ import { ArrowUp, ArrowDown, MapPin } from 'lucide-react';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import PersonName from '../shared/PersonName';
+import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { getPhoneIdentityByKey } from '../../../utils/phoneIdentity';
 
 /**
@@ -32,6 +33,9 @@ export default function EventsTable({
   selectedEventId = null,
   onEventClick,
 }) {
+  // Subscribe to the view's timezone so the table's times (via formatTs)
+  // re-render when the analyst flips Device/UTC.
+  useCellebriteTime();
   const [sort, setSort] = useState({ key: 'timestamp', dir: 'desc' });
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(400);

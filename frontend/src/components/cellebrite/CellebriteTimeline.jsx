@@ -10,6 +10,7 @@ import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
 import HighlightedText from './shared/HighlightedText';
+import { useCellebriteTime } from './shared/CellebriteTimezone';
 import { List, LayoutPanelTop, LayoutPanelLeft } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
@@ -36,6 +37,10 @@ import {
  * a clean activity log the investigator can scan and search.
  */
 export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
+  // Day grouping + headers follow the view's selected timezone so a day is the
+  // local calendar day, not the UTC day (which made days look like they end at
+  // 8 PM). Consuming the hook re-groups live when the analyst flips the zone.
+  const { dayKey: tzDayKey, tzId } = useCellebriteTime();
   // --- Phone selection: sourced from PhoneReportsContext when available so
   // the selection persists across tabs and refreshes. ---
   const phoneCtx = usePhoneReports();
@@ -207,7 +212,10 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     const groups = [];
     let current = null;
     for (const ev of sorted) {
-      const day = (ev.timestamp || '').slice(0, 10) || '—';
+      // Bucket by the calendar day in the SELECTED zone (not the raw UTC
+      // string), so an evening event near local midnight stays in its local
+      // day instead of jumping a UTC day and looking out of order.
+      const day = ev.timestamp ? tzDayKey(ev.timestamp) : '—';
       if (!current || current.day !== day) {
         current = { day, events: [] };
         groups.push(current);
@@ -215,13 +223,14 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       current.events.push(ev);
     }
     return groups;
-  }, [filteredEvents]);
+  }, [filteredEvents, tzDayKey, tzId]);
 
   // Scroll-to-bucket from scrubber bar clicks. Each day header carries
   // data-day so we can find it cheaply.
   const bodyRef = useRef(null);
   const scrollToDate = useCallback((bucketStart) => {
-    const day = toISODate(bucketStart);
+    // Match the day-headers, which are keyed by the selected-zone calendar day.
+    const day = bucketStart ? tzDayKey(bucketStart.toISOString()) : '';
     const root = bodyRef.current;
     if (!root) return;
     // Find the first day header whose ISO is <= the bucket date (lists
@@ -234,7 +243,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       if (d <= day) { target = h; break; }
     }
     if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+  }, [tzDayKey]);
 
   if (phoneCtx?.noneSelected) {
     return (

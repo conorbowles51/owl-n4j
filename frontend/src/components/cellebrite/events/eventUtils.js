@@ -6,6 +6,7 @@ import {
   MapPin, Radio, Wifi, Phone, MessageSquare, Mail, Power,
   Unlock, Smartphone, Search, Globe, Users, Calendar,
 } from 'lucide-react';
+import { fmtDateTime, getTzId } from '../shared/cellebriteTime';
 
 // Event type colour palette
 export const EVENT_COLORS = {
@@ -67,19 +68,13 @@ export function eventColor(eventType) {
 }
 
 /**
- * Format ISO timestamp like "2022-11-14 14:30 UTC".
+ * Format ISO timestamp as "YYYY-MM-DD HH:MM:SS" in the Cellebrite view's
+ * selected timezone (see shared/cellebriteTime). Previously used the browser's
+ * local getters with a hardcoded "UTC" label — the source of the timeline /
+ * detail-drawer timezone mismatch. Now consistent with every other surface.
  */
 export function formatTs(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-           `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  } catch {
-    return iso;
-  }
+  return fmtDateTime(iso, getTzId());
 }
 
 /**

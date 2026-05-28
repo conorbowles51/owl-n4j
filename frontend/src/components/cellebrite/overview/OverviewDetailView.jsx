@@ -8,6 +8,7 @@ import {
   sortRows,
 } from './overviewTableUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { useCellebriteTime } from '../shared/CellebriteTimezone';
 
 /**
  * Shared shell for all Cellebrite Overview drill-down detail views.
@@ -40,6 +41,7 @@ export default function OverviewDetailView({
   caseId,
   onRowClick,
 }) {
+  useCellebriteTime(); // re-render rows (formatTs columns) when the zone toggles
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [rows, setRows] = useState([]);

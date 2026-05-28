@@ -35,6 +35,7 @@ import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import CommsContactTable from './CommsContactTable';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
+import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { buildSenderPalette } from './commsUtils';
 import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
@@ -48,6 +49,7 @@ export default function CommsContactFeed({
   // Push a new drill frame in the parent breadcrumb stack.
   onDrillName = null,
 }) {
+  useCellebriteTime(); // re-render feed times when the zone toggles
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);

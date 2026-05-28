@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activit
 import { cellebriteCommsAPI } from '../../../services/api';
 import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import CommsCrossTypeSwimLane from './CommsCrossTypeSwimLane';
 
@@ -48,6 +49,7 @@ export default function CommsCrossTypeTimeline({
   // the rest of the page (threads + thread view) too.
   onApplyWindow = null,
 }) {
+  useCellebriteTime(); // re-render row times when the zone toggles
   const [expanded, setExpanded] = useState(true);
   // List | Lanes ↓ | Lanes → renderer selector. Same data either
   // way — only the visual layout differs.

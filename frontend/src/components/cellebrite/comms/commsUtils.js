@@ -2,6 +2,8 @@
  * Shared helpers for the Cellebrite Communication Center.
  */
 
+import { fmtShort, getTzId } from '../shared/cellebriteTime';
+
 export const IMAGE_EXT = /\.(jpg|jpeg|png|gif|bmp|webp|heic|heif|tif|tiff)$/i;
 export const AUDIO_EXT = /\.(mp3|m4a|aac|ogg|opus|wav|amr|3gp|flac)$/i;
 export const VIDEO_EXT = /\.(mp4|avi|mov|mkv|webm|3gp|wmv|flv)$/i;
@@ -47,24 +49,11 @@ export function videoThumbUrl(att) {
  * or "Mmm D, YYYY, HH:MM" (other year).
  */
 export function formatShortTime(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    const now = new Date();
-    const sameDay = d.toDateString() === now.toDateString();
-    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    if (sameDay) return time;
-    // Investigators were mis-reading 3-year-old rows as recent because
-    // the year was omitted. Include it whenever the row isn't from the
-    // current year so the temporal context is unambiguous.
-    const dateOpts = { month: 'short', day: 'numeric' };
-    if (d.getFullYear() !== now.getFullYear()) dateOpts.year = 'numeric';
-    const date = d.toLocaleDateString([], dateOpts);
-    return `${date}, ${time}`;
-  } catch {
-    return iso;
-  }
+  // Render in the Cellebrite view's selected timezone (shared/cellebriteTime)
+  // so messages sit on the same clock as events, the timeline, and the detail
+  // drawer. Previously this used the examiner's browser-local time while other
+  // surfaces differed — that mismatch is what made the timelines look split.
+  return fmtShort(iso, getTzId());
 }
 
 /**

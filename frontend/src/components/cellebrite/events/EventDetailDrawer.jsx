@@ -8,6 +8,7 @@ import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import RailEmailBody from '../shared/rail/RailEmailBody';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
+import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 
 /**
@@ -15,6 +16,7 @@ import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils'
  * Reuses Comms Center components for call/message/email renderings.
  */
 export default function EventDetailDrawer({ caseId, event, onClose }) {
+  useCellebriteTime(); // re-render the drawer's times when the zone toggles
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
 
