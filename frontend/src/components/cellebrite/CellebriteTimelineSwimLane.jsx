@@ -228,6 +228,10 @@ export default function CellebriteTimelineSwimLane({
       // Time runs down the y-axis from minMs at top to maxMs at bottom.
       const a = pxToTime(y1, timeAxisPx, minMs, maxMs);
       const b = pxToTime(y2, timeAxisPx, minMs, maxMs);
+      // Degenerate data (empty set / zero-height axis) makes a/b NaN, and
+      // new Date(NaN).toISOString() THROWS — guard so a drag-select doesn't
+      // crash the tab.
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       const startTs = new Date(Math.min(a, b)).toISOString();
       const endTs = new Date(Math.max(a, b)).toISOString();
       // Phone lanes run along x. Each lane occupies a slot of
@@ -242,6 +246,7 @@ export default function CellebriteTimelineSwimLane({
     // horizontal
     const a = pxToTime(x1 - LANE_HEADER_THICKNESS, timeAxisPx, minMs, maxMs);
     const b = pxToTime(x2 - LANE_HEADER_THICKNESS, timeAxisPx, minMs, maxMs);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     const startTs = new Date(Math.min(a, b)).toISOString();
     const endTs = new Date(Math.max(a, b)).toISOString();
     const i1 = Math.max(0, Math.floor(y1 / LANE_THICKNESS));

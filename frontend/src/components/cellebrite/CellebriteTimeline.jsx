@@ -229,8 +229,12 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // data-day so we can find it cheaply.
   const bodyRef = useRef(null);
   const scrollToDate = useCallback((bucketStart) => {
+    // Guard like the old toISODate did: a bucket with a NaN start yields an
+    // Invalid Date whose .toISOString() THROWS (RangeError) — that crash was
+    // taking down the whole tab when narrowing/clicking the scrubber.
+    if (!(bucketStart instanceof Date) || isNaN(bucketStart.getTime())) return;
     // Match the day-headers, which are keyed by the selected-zone calendar day.
-    const day = bucketStart ? tzDayKey(bucketStart.toISOString()) : '';
+    const day = tzDayKey(bucketStart.toISOString());
     const root = bodyRef.current;
     if (!root) return;
     // Find the first day header whose ISO is <= the bucket date (lists

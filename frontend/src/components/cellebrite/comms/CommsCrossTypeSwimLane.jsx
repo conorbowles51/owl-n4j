@@ -227,6 +227,8 @@ export default function CommsCrossTypeSwimLane({
     if (orientation === 'vertical') {
       const a = pxToTime(y1 - LANE_HEADER_THICKNESS, timeAxisPx, minMs, maxMs);
       const b = pxToTime(y2 - LANE_HEADER_THICKNESS, timeAxisPx, minMs, maxMs);
+      // new Date(NaN).toISOString() throws — guard degenerate selections.
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
       const startTs = new Date(Math.min(a, b)).toISOString();
       const endTs = new Date(Math.max(a, b)).toISOString();
       const x1Local = Math.max(0, x1 - TIME_AXIS_THICKNESS);
@@ -238,6 +240,7 @@ export default function CommsCrossTypeSwimLane({
     }
     const a = pxToTime(x1 - LANE_HEADER_THICKNESS, timeAxisPx, minMs, maxMs);
     const b = pxToTime(x2 - LANE_HEADER_THICKNESS, timeAxisPx, minMs, maxMs);
+    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
     const startTs = new Date(Math.min(a, b)).toISOString();
     const endTs = new Date(Math.max(a, b)).toISOString();
     const y1Local = Math.max(0, y1 - TIME_AXIS_THICKNESS);
