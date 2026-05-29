@@ -7791,12 +7791,17 @@ class Neo4jService:
         search: Optional[str] = None,
         limit: int = 200,
         offset: int = 0,
+        has_attachment: bool = False,
     ) -> list:
         """
         Get conversation threads — real chat threads + synthetic call/email threads per participant pair.
 
         thread_types controls which kinds to include: 'chat', 'calls', 'emails'.
         When from_keys/to_keys are provided, returns only threads involving those pairs.
+
+        has_attachment: keep only threads that contain at least one
+        attachment-bearing item. Filtered IN-QUERY (before the per-block cap)
+        so it reaches past the cap rather than just hiding loaded rows.
         """
         active_types = set(thread_types) if thread_types else {"chat", "calls", "emails"}
         threads: list = []
@@ -7862,6 +7867,19 @@ class Neo4jService:
             params["end_date"] = ed
             params["end_date_incl"] = ed_inclusive
 
+        # Has-attachment gate. Chats: keep the chat if ANY of its messages
+        # carries an attachment (EXISTS subquery, evaluated before the cap).
+        # Calls/emails: restrict the aggregated items to attachment-bearing
+        # ones so a pair only forms a thread when it has media.
+        att_chat = att_call = att_email = ""
+        if has_attachment:
+            att_chat = (
+                " AND EXISTS { MATCH (am:Communication)-[:PART_OF]->(chat) "
+                "WHERE coalesce(am.attachment_count, 0) > 0 }"
+            )
+            att_call = " AND coalesce(c.attachment_count, 0) > 0"
+            att_email = " AND coalesce(e.attachment_count, 0) > 0"
+
         with self._driver.session() as session:
             # ---- Chat threads (real Communication nodes with chat_id) ----
             if "chat" in active_types:
@@ -7877,7 +7895,7 @@ class Neo4jService:
                 # of chats this was the dominant cost in Comms Center load.
                 query = f"""
                     MATCH (chat:Communication {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE chat.chat_id IS NOT NULL {rk_filter_chat} {app_filter_chat} {date_filter_chat} {search_clause}
+                    WHERE chat.chat_id IS NOT NULL {rk_filter_chat} {app_filter_chat} {date_filter_chat} {search_clause} {att_chat}
                     WITH chat
                     ORDER BY chat.last_activity IS NULL, chat.last_activity DESC
                     LIMIT $per_block_cap
@@ -7946,7 +7964,7 @@ class Neo4jService:
                 # most-active pairs which are the likely-of-interest ones.
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call}
+                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_call} {app_filter_call} {date_filter_call} {att_call}
                     WITH a, b, c.cellebrite_report_key AS rk,
                          collect(c) AS calls
                     WITH a, b, rk,
@@ -8031,7 +8049,7 @@ class Neo4jService:
             if "emails" in active_types:
                 query = f"""
                     MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite'}})-[:EMAILED]->(e:Email)-[:SENT_TO]->(b:Person {{case_id: $case_id, source_type: 'cellebrite'}})
-                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email}
+                    WHERE a.key IS NOT NULL AND b.key IS NOT NULL {rk_filter_email} {app_filter_email} {date_filter_email} {att_email}
                     WITH a, b, e.cellebrite_report_key AS rk,
                          collect(e) AS emails
                     WITH a, b, rk,
@@ -8475,6 +8493,7 @@ class Neo4jService:
         offset: int = 0,
         sort: str = "desc",
         cursor: Optional[str] = None,
+        has_attachment: bool = False,
     ) -> dict:
         """
         Get chronological cross-type comms where any from_keys participant
@@ -8547,6 +8566,13 @@ class Neo4jService:
             app_filter_call = "AND c.source_app IN $source_apps"
             app_filter_email = "AND e.source_app IN $source_apps"
             params["source_apps"] = list(source_apps)
+
+        # Has-attachment gate (reaches past the per-type cap).
+        att_filter_msg = att_filter_call = att_filter_email = ""
+        if has_attachment:
+            att_filter_msg = " AND coalesce(msg.attachment_count, 0) > 0"
+            att_filter_call = " AND coalesce(c.attachment_count, 0) > 0"
+            att_filter_email = " AND coalesce(e.attachment_count, 0) > 0"
 
         date_filter_msg = ""
         date_filter_call = ""
@@ -8624,7 +8650,7 @@ class Neo4jService:
                     WHERE msg.case_id = $case_id
                       AND (msg.body IS NOT NULL OR coalesce(msg.attachment_count, 0) > 0)
                       AND (size($from_keys) = 0 OR sender.key IN $from_keys)
-                      {rk_filter_msg} {app_filter_msg} {date_filter_msg}
+                      {rk_filter_msg} {app_filter_msg} {date_filter_msg}{att_filter_msg}
                       {msg_cursor_clause}
                     MATCH (recipient:Person)-[:PARTICIPATED_IN]->(chat)
                     WHERE recipient <> sender
@@ -8680,7 +8706,7 @@ class Neo4jService:
                           OR src.key IN $participant_keys
                           OR dst.key IN $participant_keys
                       )
-                      {rk_filter_call} {app_filter_call} {date_filter_call}
+                      {rk_filter_call} {app_filter_call} {date_filter_call}{att_filter_call}
                       {call_cursor_clause}
                     RETURN c, src, dst
                     ORDER BY c.timestamp {sort_dir}
@@ -8728,7 +8754,7 @@ class Neo4jService:
                           OR src.key IN $participant_keys
                           OR dst.key IN $participant_keys
                       )
-                      {rk_filter_email} {app_filter_email} {date_filter_email}
+                      {rk_filter_email} {app_filter_email} {date_filter_email}{att_filter_email}
                       {email_cursor_clause}
                     RETURN e, src, dst
                     ORDER BY e.timestamp {sort_dir}
@@ -8841,6 +8867,7 @@ class Neo4jService:
         source_apps: Optional[List[str]] = None,
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
+        has_attachment: bool = False,
     ) -> dict:
         """
         Cheap aggregation across the comms feed shape: total count,
@@ -8904,6 +8931,14 @@ class Neo4jService:
             app_filter_email = " AND e.source_app IN $source_apps"
             params["source_apps"] = list(source_apps)
 
+        # Has-attachment gate — keep the envelope total/range/density in
+        # lockstep with the has-attachment body fetch.
+        att_filter_msg = att_filter_call = att_filter_email = ""
+        if has_attachment:
+            att_filter_msg = " AND coalesce(msg.attachment_count, 0) > 0"
+            att_filter_call = " AND coalesce(c.attachment_count, 0) > 0"
+            att_filter_email = " AND coalesce(e.attachment_count, 0) > 0"
+
         date_filter_msg = date_filter_call = date_filter_email = ""
         sd = _normalize_date_bound(start_date)
         ed = _normalize_date_bound(end_date)
@@ -8935,7 +8970,7 @@ class Neo4jService:
                       AND msg.source_type = 'cellebrite'
                       AND coalesce(msg.date, msg.timestamp, '') <> ''
                       {rk_filter_msg}{from_filter_msg}{to_filter_msg}{inv_filter_msg}
-                      {app_filter_msg}{date_filter_msg}
+                      {app_filter_msg}{date_filter_msg}{att_filter_msg}
                     WITH coalesce(msg.date, substring(msg.timestamp, 0, 10)) AS d, msg
                     RETURN d, count(DISTINCT msg) AS c
                 """
@@ -8959,7 +8994,7 @@ class Neo4jService:
                       AND c.source_type = 'cellebrite'
                       AND coalesce(c.date, c.timestamp, '') <> ''
                       {rk_filter_call}{from_filter_call}{to_filter_call}{inv_filter_call}
-                      {app_filter_call}{date_filter_call}
+                      {app_filter_call}{date_filter_call}{att_filter_call}
                     WITH coalesce(c.date, substring(c.timestamp, 0, 10)) AS d, c
                     RETURN d, count(DISTINCT c) AS cnt
                 """
@@ -8983,7 +9018,7 @@ class Neo4jService:
                       AND e.source_type = 'cellebrite'
                       AND coalesce(e.date, e.timestamp, '') <> ''
                       {rk_filter_email}{from_filter_email}{to_filter_email}{inv_filter_email}
-                      {app_filter_email}{date_filter_email}
+                      {app_filter_email}{date_filter_email}{att_filter_email}
                     WITH coalesce(e.date, substring(e.timestamp, 0, 10)) AS d, e
                     RETURN d, count(DISTINCT e) AS cnt
                 """
@@ -9218,10 +9253,18 @@ class Neo4jService:
         place: Optional[str] = None,
         near: Optional[Tuple[float, float, float]] = None,
         lean: bool = False,
+        has_attachment: bool = False,
     ) -> dict:
         """
         Unified event feed for the Location & Event Center.
         Returns chronologically-sortable event rows with optional geolocation.
+
+        `has_attachment`: keep only events that carry at least one attachment.
+        Only comms types (message/voicemail-call/email) can — so this also
+        narrows the active types to those three. Unlike a client-side filter
+        over the capped slice, this makes the per-type cap apply to
+        attachment-bearing rows, so the user sees up to ~5000 *media* rows
+        rather than 5000 total of which only a fraction had media.
 
         `lean` (location type only): project just the columns the map / table /
         search use and omit null fields, instead of returning whole nodes. Keeps
@@ -9235,6 +9278,10 @@ class Neo4jService:
             "social_media", "chat_activity", "file_upload", "journey",
             "note", "device_connectivity", "cookie", "log_entry", "motion",
         }
+        # Only comms types can carry attachments — restrict to them when the
+        # has-attachment filter is on (everything else would return 0 anyway).
+        if has_attachment:
+            active = active & {"call", "message", "email"}
 
         # Per-type cap: each Cypher returns at most `per_type_cap` newest rows
         # ordered by timestamp DESC. We then merge-sort them and slice to
@@ -9263,6 +9310,8 @@ class Neo4jService:
                 report_keys, start_date, end_date, source_apps,
                 place=place, near=near,
             )
+            if has_attachment:
+                where = f"({where}) AND coalesce(n.attachment_count, 0) > 0"
             base_params = {"case_id": case_id, "per_type_cap": per_type_cap, **p}
 
             # ORDER BY trick: for types where timestamp may be NULL, we want
@@ -9526,6 +9575,7 @@ class Neo4jService:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
         only_geolocated: bool = False,
+        has_attachment: bool = False,
     ) -> dict:
         """
         Cheap aggregation over the unified event feed: true total count,
@@ -9550,10 +9600,16 @@ class Neo4jService:
             lbl = self._EVENT_TYPE_LABELS.get(et)
             if lbl and lbl not in labels:
                 labels.append(lbl)
+        # Only comms labels can carry attachments — restrict so the envelope
+        # total/range/density match the has-attachment body fetch exactly.
+        if has_attachment:
+            labels = [l for l in labels if l in ("PhoneCall", "Communication", "Email")]
 
         where, params = self._build_event_filters(
             report_keys, start_date, end_date, source_apps,
         )
+        if has_attachment:
+            where = f"({where}) AND coalesce(n.attachment_count, 0) > 0"
         params["case_id"] = case_id
 
         per_day: Dict[str, int] = {}
@@ -11536,6 +11592,7 @@ class Neo4jService:
         types: Optional[List[str]] = None,
         limit: int = 1000,
         offset: int = 0,
+        has_attachment: bool = False,
     ) -> dict:
         """
         Chronological feed of every comm event involving a single Person,
@@ -11543,8 +11600,13 @@ class Neo4jService:
         drill-down drawer.
 
         types: subset of ['call', 'message', 'email'] — defaults to all three.
+        has_attachment: keep only items carrying an attachment (in-query, so
+        it reaches past the per-type cap).
         """
         active = set(types) if types else {"call", "message", "email"}
+        # All three per-type queries below alias the event node as `n`, so one
+        # clause gates them all.
+        att_filter = " AND coalesce(n.attachment_count, 0) > 0" if has_attachment else ""
 
         # No artificial contact cap (2026-05-25): a key contact had a 72k-message
         # thread that the old per-type LIMIT 2000/4000/1000 + outer 5000 cap hid
@@ -11592,7 +11654,7 @@ class Neo4jService:
                       UNION
                       WITH p MATCH (n:PhoneCall {{source_type:'cellebrite'}})-[:CALLED_TO]->(p) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id = $case_id {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id = $case_id {rk_filter}{att_filter}
                     ORDER BY n.timestamp DESC
                     LIMIT $fetch_cap
                     OPTIONAL MATCH (src:Person)-[:CALLED]->(n)
@@ -11640,7 +11702,7 @@ class Neo4jService:
                       UNION
                       WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id = $case_id AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id = $case_id AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {rk_filter}{att_filter}
                     ORDER BY n.timestamp DESC
                     LIMIT $fetch_cap
                     OPTIONAL MATCH (sender:Person)-[:SENT_MESSAGE]->(n)
@@ -11684,7 +11746,7 @@ class Neo4jService:
                       UNION
                       WITH p MATCH (n:Email {{source_type:'cellebrite'}})-[:SENT_TO]->(p) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id = $case_id {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id = $case_id {rk_filter}{att_filter}
                     ORDER BY n.timestamp DESC
                     LIMIT $fetch_cap
                     OPTIONAL MATCH (src:Person)-[:EMAILED]->(n)
@@ -11738,7 +11800,7 @@ class Neo4jService:
                       WITH p MATCH (p)-[:CALLED]->(n:PhoneCall {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (n:PhoneCall {{source_type:'cellebrite'}})-[:CALLED_TO]->(p) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id=$case_id {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id=$case_id {rk_filter}{att_filter}
                     RETURN count(n) AS c
                     """, params).single()
                 true_total += int(r["c"]) if r else 0
@@ -11750,7 +11812,7 @@ class Neo4jService:
                       WITH p MATCH (p)-[:SENT_MESSAGE]->(n:Communication {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (p)-[:PARTICIPATED_IN]->(:Communication)<-[:PART_OF]-(n:Communication {{source_type:'cellebrite'}}) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id=$case_id AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id=$case_id AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {rk_filter}{att_filter}
                     RETURN count(n) AS c
                     """, params).single()
                 true_total += int(r["c"]) if r else 0
@@ -11762,7 +11824,7 @@ class Neo4jService:
                       WITH p MATCH (p)-[:EMAILED]->(n:Email {{source_type:'cellebrite'}}) RETURN n
                       UNION WITH p MATCH (n:Email {{source_type:'cellebrite'}})-[:SENT_TO]->(p) RETURN n
                     }}
-                    WITH DISTINCT n WHERE n.case_id=$case_id {rk_filter}
+                    WITH DISTINCT n WHERE n.case_id=$case_id {rk_filter}{att_filter}
                     RETURN count(n) AS c
                     """, params).single()
                 true_total += int(r["c"]) if r else 0

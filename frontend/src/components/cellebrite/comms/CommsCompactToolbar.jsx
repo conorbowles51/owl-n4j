@@ -4,6 +4,7 @@ import CellebriteSearchInput from '../shared/CellebriteSearchInput';
 import TimelineScrubber from '../shared/TimelineScrubber';
 import CommsTypeFilter from './CommsTypeFilter';
 import CommsAppFilter from './CommsAppFilter';
+import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 
 /**
  * Phase K2 — Compact toolbar for the Comms Center.
@@ -36,6 +37,8 @@ export default function CommsCompactToolbar({
   sourceApps = [],
   activeApps,
   onAppsChange,
+  hasAttachmentOnly = false,
+  onHasAttachmentChange,
   scrubberItems,
   scrubberEnvelope,
   windowStart,
@@ -136,6 +139,15 @@ export default function CommsCompactToolbar({
         {/* Type pills (inline — ~80px wide, no point hiding behind
             a popover; users use these constantly) */}
         <CommsTypeFilter active={activeTypes} onChange={onTypesChange} />
+
+        {/* Has-attachment thread filter */}
+        {onHasAttachmentChange && (
+          <AttachmentFilterToggle
+            value={hasAttachmentOnly}
+            onChange={onHasAttachmentChange}
+            label="Attachments"
+          />
+        )}
 
         {/* Applied-date chips — render BEFORE the scrubber handle so
             they're the closest thing to it visually. Once you set a

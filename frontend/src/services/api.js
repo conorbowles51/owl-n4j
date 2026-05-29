@@ -2814,6 +2814,7 @@ export const cellebriteCommsAPI = {
     search = null,
     limit = 200,
     offset = 0,
+    hasAttachment = false,
     signal = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
@@ -2826,6 +2827,7 @@ export const cellebriteCommsAPI = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     if (search) params.append('search', search);
+    if (hasAttachment) params.append('has_attachment', 'true');
     params.append('limit', String(limit));
     params.append('offset', String(offset));
     return fetchAPI(`/cellebrite/comms/threads?${params.toString()}`, signal ? { signal } : undefined);
@@ -2864,6 +2866,7 @@ export const cellebriteCommsAPI = {
     offset = 0,
     sort = 'desc',
     cursor = null,
+    hasAttachment = false,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (fromKeys?.length) params.append('from_keys', fromKeys.join(','));
@@ -2874,6 +2877,7 @@ export const cellebriteCommsAPI = {
     if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    if (hasAttachment) params.append('has_attachment', 'true');
     params.append('limit', String(limit));
     // When a cursor is supplied, omit `offset` — the server engages
     // keyset pagination and offset becomes a no-op. Send it only for
@@ -2917,6 +2921,7 @@ export const cellebriteCommsAPI = {
     sourceApps = null,
     startDate = null,
     endDate = null,
+    hasAttachment = false,
     signal = null,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
@@ -2928,6 +2933,7 @@ export const cellebriteCommsAPI = {
     if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
+    if (hasAttachment) params.append('has_attachment', 'true');
     return fetchAPI(`/cellebrite/comms/envelope?${params.toString()}`, signal ? { signal } : undefined);
   },
 
@@ -2955,10 +2961,12 @@ export const cellebriteCommsAPI = {
     types = null,
     limit = 1000,
     offset = 0,
+    hasAttachment = false,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
     if (types?.length) params.append('types', types.join(','));
+    if (hasAttachment) params.append('has_attachment', 'true');
     params.append('limit', String(limit));
     params.append('offset', String(offset));
     return fetchAPI(
@@ -2994,6 +3002,7 @@ export const cellebriteEventsAPI = {
     limit = 5000,
     offset = 0,
     lean = false,
+    hasAttachment = false,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
@@ -3003,6 +3012,7 @@ export const cellebriteEventsAPI = {
     if (endDate) params.append('end_date', endDate);
     if (onlyGeolocated) params.append('only_geolocated', 'true');
     if (lean) params.append('lean', 'true');
+    if (hasAttachment) params.append('has_attachment', 'true');
     params.append('limit', String(limit));
     params.append('offset', String(offset));
     return fetchAPI(`/cellebrite/events?${params.toString()}`);
@@ -3021,6 +3031,7 @@ export const cellebriteEventsAPI = {
     startDate = null,
     endDate = null,
     onlyGeolocated = false,
+    hasAttachment = false,
   } = {}) => {
     const params = new URLSearchParams({ case_id: caseId });
     if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
@@ -3029,6 +3040,7 @@ export const cellebriteEventsAPI = {
     if (startDate) params.append('start_date', startDate);
     if (endDate) params.append('end_date', endDate);
     if (onlyGeolocated) params.append('only_geolocated', 'true');
+    if (hasAttachment) params.append('has_attachment', 'true');
     return fetchAPI(`/cellebrite/events/envelope?${params.toString()}`);
   },
 

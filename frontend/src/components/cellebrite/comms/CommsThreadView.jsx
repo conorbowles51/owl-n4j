@@ -10,7 +10,8 @@ import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import PersonName from '../shared/PersonName';
 import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
-import TimelineScrubber from '../shared/TimelineScrubber';
+import CollapsibleScrubber from '../shared/CollapsibleScrubber';
+import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 import { parseQuery, matchItem } from '../../../utils/cellebriteSearch';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 
@@ -50,10 +51,12 @@ export default function CommsThreadView({
   // thread so old query state doesn't leak across conversations.
   // Seed from the parent's search if it matched a body in this thread.
   const [searchQuery, setSearchQuery] = useState(externalSearchQuery || '');
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
   const [windowStart, setWindowStart] = useState(null);
   const [windowEnd, setWindowEnd] = useState(null);
   useEffect(() => {
     setSearchQuery(externalSearchQuery || '');
+    setHasAttachmentOnly(false);
     setWindowStart(null);
     setWindowEnd(null);
   }, [selectedThread?.thread_id, externalSearchQuery]);
@@ -167,9 +170,10 @@ export default function CommsThreadView({
   // threads is fine — only consistency *within* a thread matters).
   const palette = buildSenderPalette(participants);
 
-  // In-thread search + window filter. Pure client-side, instant per
-  // keystroke. Highlights are shown inside message bubbles.
+  // In-thread search + window filter + has-attachment filter. Pure
+  // client-side, instant per keystroke. Highlights are shown inside bubbles.
   const parsedQuery = parseQuery(searchQuery);
+  if (hasAttachmentOnly) parsedQuery.operators = { ...parsedQuery.operators, has: 'attachment' };
   const windowStartMs = windowStart instanceof Date ? windowStart.getTime() : null;
   const windowEndMs = windowEnd instanceof Date ? windowEnd.getTime() : null;
   const reportsForSearch = phoneCtx?.reports || [];
@@ -182,7 +186,7 @@ export default function CommsThreadView({
       if (windowStartMs != null && t < windowStartMs) continue;
       if (windowEndMs != null && t > windowEndMs) continue;
     }
-    if (searchQuery) {
+    if (searchQuery || hasAttachmentOnly) {
       const m = matchItem(item, parsedQuery, 'event', reportsForSearch);
       if (!m.matches) continue;
       m.highlights.forEach((h) => allItemHighlights.add(h));
@@ -302,23 +306,32 @@ export default function CommsThreadView({
       {/* In-thread search + compact scrubber. Both filter the open
           conversation client-side; useful for long threads with
           thousands of messages. */}
-      <div className="px-3 py-1.5 border-b border-light-200 bg-white flex-shrink-0">
-        <CellebriteSearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder='Search this thread — try from:John before:2023-01-15'
-          matchCount={filteredItems.length}
-          totalCount={detail.items.length}
-          itemNoun="message"
-          compact
+      <div className="px-3 py-1.5 border-b border-light-200 bg-white flex-shrink-0 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <CellebriteSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder='Search this thread — try from:John before:2023-01-15'
+            matchCount={filteredItems.length}
+            totalCount={detail.items.length}
+            itemNoun="message"
+            compact
+          />
+        </div>
+        <AttachmentFilterToggle
+          value={hasAttachmentOnly}
+          onChange={setHasAttachmentOnly}
+          className="flex-shrink-0"
         />
       </div>
       {detail.items.length > 1 && (
-        <TimelineScrubber
+        <CollapsibleScrubber
           items={detail.items}
           windowStart={windowStart}
           windowEnd={windowEnd}
           onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+          label="Messages"
+          defaultOpen={false}
           compact
         />
       )}

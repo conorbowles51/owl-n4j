@@ -16,8 +16,9 @@ import EventTypeFilter from './events/EventTypeFilter';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
-import TimelineScrubber from './shared/TimelineScrubber';
+import CollapsibleScrubber from './shared/CollapsibleScrubber';
 import CommsMediaStrip from './comms/CommsMediaStrip';
+import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
 import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle } from 'lucide-react';
@@ -68,6 +69,9 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const [windowStart, setWindowStart] = useState(null);
   const [windowEnd, setWindowEnd] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  // "Has attachment" filter — applied via the shared search matcher
+  // (injected into the parsed query so it composes with text search).
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
 
   // View-mode toggle. The classic chronological list stays as the
   // default ('list'). The two swim-lane orientations share data with
@@ -84,6 +88,12 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // honestly, that older events of those types aren't loaded — never silently
   // truncate an investigative view).
   const [truncatedTypes, setTruncatedTypes] = useState([]);
+  // True when the body fetch came back empty BECAUSE requests failed (e.g. a
+  // backend/connection timeout), not because there genuinely are no matches —
+  // so we can show a retryable error instead of the misleading "no events".
+  const [loadFailed, setLoadFailed] = useState(false);
+  // Bump to force a re-fetch (Retry button).
+  const [reloadKey, setReloadKey] = useState(0);
   // Cheap server-side aggregation (true total + full min/max date + per-day
   // histogram) so the scrubber shows the honest full range/density even though
   // the body feed is capped per type. Loads async, independent of the body.
@@ -144,6 +154,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     setLoading(true);
     setLoadingProgress(0);
     setLoadingStage('');
+    setLoadFailed(false);
     setEvents([]);
     const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
     const stages = [...activeEventTypes];
@@ -151,6 +162,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     const t = setTimeout(() => {
       (async () => {
         const aggregated = [];
+        let errorCount = 0;
         // A Neo4j node can carry multiple event-type labels (e.g. a
         // cell-tower ping that's also a location), so the same event
         // can come back from more than one per-type stage. Dedupe by
@@ -171,6 +183,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
               startDate: startDate || null,
               endDate: endDate || null,
               onlyGeolocated: false,
+              hasAttachment: hasAttachmentOnly,
               limit: 5000,
             });
             if (cancelled) return;
@@ -187,13 +200,16 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             }
           } catch {
             // Skip failed stages so a single broken type doesn't
-            // blank out the whole timeline.
+            // blank out the whole timeline — but remember it failed so an
+            // all-empty result from errors reads as an error, not "no data".
+            errorCount += 1;
           }
           setLoadingProgress(Math.round(((i + 1) / stages.length) * 100));
         }
         if (cancelled) return;
         setEvents(aggregated);
         setTruncatedTypes([...truncated]);
+        setLoadFailed(aggregated.length === 0 && errorCount > 0);
         setLoading(false);
         setLoadingStage('');
       })();
@@ -203,7 +219,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate]);
+  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate, hasAttachmentOnly, reloadKey]);
 
   // Envelope fetch — true total + full min/max date + per-day histogram for
   // the scrubber. Deliberately NOT scoped to the scrubber window (startDate/
@@ -222,6 +238,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       .getEventsEnvelope(caseId, {
         reportKeys: reportKeysArr,
         eventTypes: [...activeEventTypes],
+        hasAttachment: hasAttachmentOnly,
       })
       .then((data) => {
         if (cancelled) return;
@@ -235,7 +252,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       })
       .catch(() => { if (!cancelled) setEnvelope(null); });
     return () => { cancelled = true; };
-  }, [caseId, selectedReportKeys, activeEventTypes]);
+  }, [caseId, selectedReportKeys, activeEventTypes, hasAttachmentOnly]);
 
   // The scrubber shows more than the loaded body slice whenever a type was
   // capped — flag it so the "All time" summary becomes honest.
@@ -244,13 +261,19 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     return { ...envelope, hasMoreThanItems: truncatedTypes.length > 0 };
   }, [envelope, truncatedTypes]);
 
-  // Parsed query is shared by the matcher + the row highlighter.
-  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+  // Parsed query is shared by the matcher + the row highlighter. The
+  // "Has attachment" toggle is folded in as a has:attachment operator so it
+  // composes with whatever the user typed.
+  const parsedQuery = useMemo(() => {
+    const q = parseQuery(searchQuery);
+    if (hasAttachmentOnly) q.operators = { ...q.operators, has: 'attachment' };
+    return q;
+  }, [searchQuery, hasAttachmentOnly]);
 
   // Pure in-memory filter — runs synchronously on every keystroke
   // because the events array is already loaded. No network calls.
   const { filteredEvents, highlights } = useMemo(() => {
-    if (!searchQuery) {
+    if (!searchQuery && !hasAttachmentOnly) {
       return { filteredEvents: events, highlights: [] };
     }
     const out = [];
@@ -263,7 +286,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       }
     }
     return { filteredEvents: out, highlights: Array.from(allHighlights) };
-  }, [events, searchQuery, parsedQuery, reports]);
+  }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports]);
 
   // Sort newest-first by default; group by date for visual rhythm
   const groupedByDay = useMemo(() => {
@@ -358,7 +381,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       {/* Histogram scrubber — replaces the old date-picker pair. The
           envelope gives it the honest full range/density/total even though
           the body feed below is capped per type. */}
-      <TimelineScrubber
+      <CollapsibleScrubber
         items={events}
         envelope={scrubberEnvelope}
         windowStart={windowStart}
@@ -384,16 +407,23 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         </div>
       )}
 
-      {/* Wide search bar */}
-      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
-        <CellebriteSearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder='Search events — try type:call from:John app:WhatsApp before:2023-01-15'
-          matchCount={filteredEvents.length}
-          totalCount={events.length}
-          itemNoun="event"
-          focusOnSlash
+      {/* Wide search bar + Has-attachment toggle */}
+      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <CellebriteSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder='Search events — try type:call from:John app:WhatsApp before:2023-01-15'
+            matchCount={filteredEvents.length}
+            totalCount={events.length}
+            itemNoun="event"
+            focusOnSlash
+          />
+        </div>
+        <AttachmentFilterToggle
+          value={hasAttachmentOnly}
+          onChange={setHasAttachmentOnly}
+          className="flex-shrink-0"
         />
       </div>
 
@@ -405,6 +435,18 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             progress={loadingProgress}
             stage={loadingStage}
           />
+        ) : loadFailed && !loading ? (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-sm text-light-600">
+            <AlertTriangle className="w-6 h-6 text-amber-500" />
+            <span>Couldn’t load events — the request timed out or the connection dropped.</span>
+            <button
+              type="button"
+              onClick={() => setReloadKey((k) => k + 1)}
+              className="mt-1 px-3 py-1 rounded bg-owl-blue-600 text-white text-xs font-medium hover:bg-owl-blue-700"
+            >
+              Retry
+            </button>
+          </div>
         ) : filteredEvents.length === 0 && !loading ? (
           <div className="flex items-center justify-center h-full text-sm text-light-500 italic">
             {events.length === 0

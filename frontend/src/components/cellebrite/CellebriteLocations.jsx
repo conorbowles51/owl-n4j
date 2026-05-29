@@ -5,7 +5,7 @@ import { usePhoneReports } from '../../context/PhoneReportsContext';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
 import EventMapPanel from './events/EventMapPanel';
-import TimelineScrubber from './shared/TimelineScrubber';
+import CollapsibleScrubber from './shared/CollapsibleScrubber';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import LocationsTable from './locations/LocationsTable';
 import PlaybackBar from './locations/PlaybackBar';
@@ -707,11 +707,12 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       </div>
 
       {renderMode === 'raw' && (
-        <TimelineScrubber
+        <CollapsibleScrubber
           items={mapEvents}
           windowStart={windowStart}
           windowEnd={windowEnd}
           onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
+          label="Locations"
         />
       )}
 

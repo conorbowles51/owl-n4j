@@ -35,6 +35,7 @@ import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import CommsContactTable from './CommsContactTable';
 import CellebriteSearchInput from '../shared/CellebriteSearchInput';
+import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { buildSenderPalette } from './commsUtils';
@@ -78,12 +79,14 @@ export default function CommsContactFeed({
   // Full search input — uses the shared parseQuery engine so the
   // syntax matches Timeline + Comms-Center thread search exactly.
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
 
   // Reset per-contact state when the contact changes (drilling into a
   // new person should start with a clean lens).
   useEffect(() => {
     setCellFilters({});
     setSearchQuery('');
+    setHasAttachmentOnly(false);
   }, [contact?.person_key]);
 
   useEffect(() => {
@@ -94,6 +97,7 @@ export default function CommsContactFeed({
     cellebriteCommsAPI
       .getContactFeed(caseId, contact.person_key, {
         types: [...activeTypes],
+        hasAttachment: hasAttachmentOnly,
         limit: 2000,
       })
       .then((res) => {
@@ -108,7 +112,7 @@ export default function CommsContactFeed({
         setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [caseId, contact?.person_key, activeTypes]);
+  }, [caseId, contact?.person_key, activeTypes, hasAttachmentOnly]);
 
   const phoneCtx = usePhoneReports();
   const hasMultiplePhones = !!phoneCtx?.hasMultiple;
@@ -137,10 +141,14 @@ export default function CommsContactFeed({
   // We compute highlights from the search stage so both views can
   // render <mark>'d substrings.
   // -----------------------------------------------------------------
-  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+  const parsedQuery = useMemo(() => {
+    const q = parseQuery(searchQuery);
+    if (hasAttachmentOnly) q.operators = { ...q.operators, has: 'attachment' };
+    return q;
+  }, [searchQuery, hasAttachmentOnly]);
 
   const { searchFiltered, highlights } = useMemo(() => {
-    if (!searchQuery) {
+    if (!searchQuery && !hasAttachmentOnly) {
       return { searchFiltered: data?.items || [], highlights: [] };
     }
     const out = [];
@@ -153,7 +161,7 @@ export default function CommsContactFeed({
       }
     }
     return { searchFiltered: out, highlights: [...allHighlights] };
-  }, [data, searchQuery, parsedQuery, reports]);
+  }, [data, searchQuery, hasAttachmentOnly, parsedQuery, reports]);
 
   const cellFiltered = useMemo(() => {
     const filters = cellFilters || {};
@@ -282,15 +290,22 @@ export default function CommsContactFeed({
       </div>
 
       {/* Full search input — same engine as Timeline / threads. */}
-      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
-        <CellebriteSearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder='Search this contact — try type:call before:2023-01-15 app:WhatsApp "exact phrase"'
-          matchCount={totalMatched}
-          totalCount={data?.items?.length || 0}
-          itemNoun="comm"
-          focusOnSlash
+      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <CellebriteSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder='Search this contact — try type:call before:2023-01-15 app:WhatsApp "exact phrase"'
+            matchCount={totalMatched}
+            totalCount={data?.items?.length || 0}
+            itemNoun="comm"
+            focusOnSlash
+          />
+        </div>
+        <AttachmentFilterToggle
+          value={hasAttachmentOnly}
+          onChange={setHasAttachmentOnly}
+          className="flex-shrink-0"
         />
       </div>
 

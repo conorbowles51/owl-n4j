@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activit
 import { cellebriteCommsAPI } from '../../../services/api';
 import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
+import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import CommsCrossTypeSwimLane from './CommsCrossTypeSwimLane';
@@ -71,6 +72,7 @@ export default function CommsCrossTypeTimeline({
   // Sort: 'desc' (newest first), 'asc' (oldest first), or 'type' (group
   // by message/call/email then by timestamp DESC within group).
   const [sortMode, setSortMode] = useState('desc');
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
 
   // Windowed rendering — track scroll position so only the visible
@@ -107,6 +109,7 @@ export default function CommsCrossTypeTimeline({
       sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
       startDate,
       endDate,
+      hasAttachment: hasAttachmentOnly,
       limit: 2000,
       sort: apiSort,
     }).then((data) => {
@@ -135,9 +138,10 @@ export default function CommsCrossTypeTimeline({
       sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
       startDate,
       endDate,
+      hasAttachment: hasAttachmentOnly,
     }).then((env) => { if (!cancelled) setExactTotal(env?.total ?? null); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode]);
+  }, [caseId, fromKeys, toKeys, participantKeys, reportKeys, types, sourceApps, startDate, endDate, expanded, sortMode, hasAttachmentOnly]);
 
   // Per-phone seed for Lanes view.
   //
@@ -171,6 +175,7 @@ export default function CommsCrossTypeTimeline({
       sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
       startDate,
       endDate,
+      hasAttachment: hasAttachmentOnly,
       limit: 400,
       sort: apiSort,
     };
@@ -201,14 +206,22 @@ export default function CommsCrossTypeTimeline({
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, expanded, viewMode, [...reportKeys].join(','), sortMode]);
+  }, [caseId, expanded, viewMode, [...reportKeys].join(','), sortMode, hasAttachmentOnly]);
 
-  // Apply sort=type client-side (the backend doesn't bucket by type).
-  // For asc/desc the backend already returns the correct order.
+  // Apply the has-attachment filter (client-side over loaded items) +
+  // sort=type client-side (the backend doesn't bucket by type). For asc/desc
+  // the backend already returns the correct order.
   const orderedItems = useMemo(() => {
-    if (sortMode !== 'type') return items;
+    const base = hasAttachmentOnly
+      ? items.filter((it) => (
+        (Array.isArray(it.attachments) && it.attachments.some((a) => a && !a.missing)) ||
+        (Array.isArray(it.attachment_file_ids) && it.attachment_file_ids.length > 0) ||
+        (typeof it.attachment_count === 'number' && it.attachment_count > 0)
+      ))
+      : items;
+    if (sortMode !== 'type') return base;
     const typeRank = { message: 0, call: 1, email: 2 };
-    const arr = [...items];
+    const arr = [...base];
     arr.sort((a, b) => {
       const r = (typeRank[a.type] ?? 99) - (typeRank[b.type] ?? 99);
       if (r !== 0) return r;
@@ -218,7 +231,7 @@ export default function CommsCrossTypeTimeline({
       return tb.localeCompare(ta);
     });
     return arr;
-  }, [items, sortMode]);
+  }, [items, sortMode, hasAttachmentOnly]);
 
   // Window calculation
   const overscan = 8;
@@ -243,6 +256,7 @@ export default function CommsCrossTypeTimeline({
     sourceApps: sourceApps && sourceApps.size > 0 ? [...sourceApps] : null,
     startDate,
     endDate,
+    hasAttachment: hasAttachmentOnly,
     limit: 2000,
     sort: sortMode === 'asc' ? 'asc' : 'desc',
   });
@@ -338,6 +352,13 @@ export default function CommsCrossTypeTimeline({
               <LayoutPanelLeft className="w-3 h-3" /> Lanes →
             </button>
           </div>
+        )}
+        {expanded && (
+          <AttachmentFilterToggle
+            value={hasAttachmentOnly}
+            onChange={setHasAttachmentOnly}
+            className="flex-shrink-0 mr-1"
+          />
         )}
         {expanded && viewMode === 'list' && (
           <div className="relative flex-shrink-0">

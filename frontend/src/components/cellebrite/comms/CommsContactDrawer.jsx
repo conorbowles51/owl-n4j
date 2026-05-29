@@ -3,6 +3,7 @@ import { X, User, Smartphone, Loader2, Phone, MessageSquare, Mail } from 'lucide
 import { cellebriteCommsAPI } from '../../../services/api';
 import CommsTypeFilter from './CommsTypeFilter';
 import CommsMessageBubble from './CommsMessageBubble';
+import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 import CommsCallRow from './CommsCallRow';
 import CommsEmailCard from './CommsEmailCard';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
@@ -27,6 +28,7 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
   const scrollRef = useRef(null);
 
   // Esc closes
@@ -47,6 +49,7 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
     cellebriteCommsAPI
       .getContactFeed(caseId, contact.person_key, {
         types: [...activeTypes],
+        hasAttachment: hasAttachmentOnly,
         limit: 1000,
       })
       .then((res) => {
@@ -63,7 +66,7 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [caseId, contact?.person_key, activeTypes]);
+  }, [caseId, contact?.person_key, activeTypes, hasAttachmentOnly]);
 
   if (!contact) return null;
 
@@ -108,10 +111,19 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
 
   // Build day-grouped list (newest first), tracking speaker runs so the
   // bubble component renders avatar + name only on each run leader.
+  // The has-attachment toggle filters the feed to items carrying media.
+  const feedItems = (data?.items || []).filter((it) => {
+    if (!hasAttachmentOnly) return true;
+    return (
+      (Array.isArray(it.attachments) && it.attachments.some((a) => a && !a.missing)) ||
+      (Array.isArray(it.attachment_file_ids) && it.attachment_file_ids.length > 0) ||
+      (typeof it.attachment_count === 'number' && it.attachment_count > 0)
+    );
+  });
   const grouped = [];
   let currentDay = null;
   let lastSenderKey = null;
-  for (const item of data?.items || []) {
+  for (const item of feedItems) {
     const day = (item.timestamp || '').slice(0, 10) || '—';
     if (currentDay !== day) {
       grouped.push({ type: 'date-sep', day });
@@ -178,9 +190,10 @@ export default function CommsContactDrawer({ caseId, contact, onClose }) {
         </button>
       </div>
 
-      {/* Sub-header: type filter + counts */}
+      {/* Sub-header: type filter + has-attachment + counts */}
       <div className="flex items-center gap-3 px-3 py-2 border-b border-light-200 bg-light-50 flex-shrink-0">
         <CommsTypeFilter active={activeTypes} onChange={setActiveTypes} />
+        <AttachmentFilterToggle value={hasAttachmentOnly} onChange={setHasAttachmentOnly} />
         <div className="flex-1" />
         {loading && <Loader2 className="w-4 h-4 animate-spin text-light-400" />}
         <div className="flex items-center gap-2 text-[11px] text-light-600">

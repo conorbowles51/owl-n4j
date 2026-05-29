@@ -12,7 +12,8 @@ import EventsTable from './events/EventsTable';
 import EventTimelinePanel from './events/EventTimelinePanel';
 import IntersectionPanel from './events/IntersectionPanel';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
-import TimelineScrubber from './shared/TimelineScrubber';
+import CollapsibleScrubber from './shared/CollapsibleScrubber';
+import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import ResizableSplit from './shared/ResizableSplit';
 import { deviceColor, EVENT_LABELS } from './events/eventUtils';
 import { useChatContext } from '../../contexts/ChatContext';
@@ -62,6 +63,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   const startDate = windowStart ? toISODate(windowStart) : '';
   const endDate = windowEnd ? toISODate(windowEnd) : '';
   const [searchQuery, setSearchQuery] = useState('');
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
 
   // --- Data state ---
   const [eventTypes, setEventTypes] = useState([]);
@@ -128,12 +130,17 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
 
   // Pure in-memory search filter — synchronous per keystroke. The
   // server-side fetch is unaffected (it's gated on selectedReportKeys,
-  // event types, and the scrubber window via startDate/endDate).
-  const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
+  // event types, and the scrubber window via startDate/endDate). The
+  // "Has attachment" toggle folds in as a has:attachment operator.
+  const parsedQuery = useMemo(() => {
+    const q = parseQuery(searchQuery);
+    if (hasAttachmentOnly) q.operators = { ...q.operators, has: 'attachment' };
+    return q;
+  }, [searchQuery, hasAttachmentOnly]);
   const filteredEvents = useMemo(() => {
-    if (!searchQuery) return events;
+    if (!searchQuery && !hasAttachmentOnly) return events;
     return events.filter((ev) => matchItem(ev, parsedQuery, 'event', reports).matches);
-  }, [events, searchQuery, parsedQuery, reports]);
+  }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports]);
 
   // Derived: how many events have direct or nearest geolocation
   const geolocatedCount = useMemo(() => {
@@ -292,6 +299,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
               startDate: startDate || null,
               endDate: endDate || null,
               onlyGeolocated,
+              hasAttachment: hasAttachmentOnly,
               limit: 5000,
             });
             if (cancelled) return;
@@ -341,7 +349,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       clearTimeout(t);
     };
-  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, startDate, endDate, reportsReady]);
+  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, startDate, endDate, reportsReady, hasAttachmentOnly]);
 
   // Envelope — true total + full min/max date + per-day histogram for the
   // scrubber. NOT scoped to the scrubber window (must describe the whole
@@ -360,6 +368,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         reportKeys: reportKeysArr,
         eventTypes: [...activeEventTypes],
         onlyGeolocated,
+        hasAttachment: hasAttachmentOnly,
       })
       .then((data) => {
         if (cancelled) return;
@@ -373,7 +382,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       })
       .catch(() => { if (!cancelled) setEnvelope(null); });
     return () => { cancelled = true; };
-  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, reportsReady]);
+  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, reportsReady, hasAttachmentOnly]);
 
   const scrubberEnvelope = useMemo(() => {
     if (!envelope) return null;
@@ -469,7 +478,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
           the server-side coarse filter via startDate/endDate. The envelope
           gives it the honest full range/density/total even though the body
           feed (map + table) is capped per type. */}
-      <TimelineScrubber
+      <CollapsibleScrubber
         items={events}
         envelope={scrubberEnvelope}
         windowStart={windowStart}
@@ -494,16 +503,23 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         </div>
       )}
 
-      {/* Wide search bar */}
-      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
-        <CellebriteSearchInput
-          value={searchQuery}
-          onChange={setSearchQuery}
-          placeholder='Search events — try type:location app:WhatsApp from:John before:2023-01-15'
-          matchCount={filteredEvents.length}
-          totalCount={events.length}
-          itemNoun="event"
-          focusOnSlash
+      {/* Wide search bar + Has-attachment toggle */}
+      <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <CellebriteSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder='Search events — try type:location app:WhatsApp from:John before:2023-01-15'
+            matchCount={filteredEvents.length}
+            totalCount={events.length}
+            itemNoun="event"
+            focusOnSlash
+          />
+        </div>
+        <AttachmentFilterToggle
+          value={hasAttachmentOnly}
+          onChange={setHasAttachmentOnly}
+          className="flex-shrink-0"
         />
       </div>
 

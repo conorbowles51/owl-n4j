@@ -105,6 +105,9 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   }, [participants, participantsMode]);
   const [activeTypes, setActiveTypes] = useState(new Set(['message', 'call', 'email']));
   const [activeApps, setActiveApps] = useState(new Set()); // empty = all apps
+  // "Has attachment" thread filter — client-side over the loaded threads,
+  // gating on the thread-level has_attachments aggregate.
+  const [hasAttachmentOnly, setHasAttachmentOnly] = useState(false);
   // Scrubber-driven coarse window (Date | null). Maps to startDate/endDate
   // strings sent to the server-side filter.
   const [windowStart, setWindowStart] = useState(null);
@@ -389,6 +392,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
       endDate: endDate || null,
+      hasAttachment: hasAttachmentOnly,
       limit: 300,
       signal: controller.signal,
     };
@@ -449,7 +453,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly]);
 
   // Envelope fetch — runs in parallel with the threads load so the
   // scrubber bounds + density bars + status bar's true total can paint
@@ -474,6 +478,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       sourceApps: activeApps.size > 0 ? [...activeApps] : null,
       startDate: startDate || null,
       endDate: endDate || null,
+      hasAttachment: hasAttachmentOnly,
       signal: controller.signal,
     }).then(env => {
       if (cancelled) return;
@@ -489,7 +494,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, activeTypes, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly]);
 
   // Cellebrite sometimes ingests the same logical conversation twice
   // — e.g. once as a Chat node and once as a Conversation node, or once
@@ -564,11 +569,16 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // metadata matches OR a message inside it matches.
   const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
   const { filteredThreads, threadHighlights } = useMemo(() => {
-    if (!searchQuery) return { filteredThreads: dedupedThreads, threadHighlights: [] };
+    if (!searchQuery && !hasAttachmentOnly) {
+      return { filteredThreads: dedupedThreads, threadHighlights: [] };
+    }
     const out = [];
     const allHighlights = new Set();
     const deepHits = deepSearch.threadIds;
     for (const t of dedupedThreads) {
+      // Has-attachment gate (thread-level aggregate flag) — applied before
+      // the text gates so it also bounds the deep-body-search hits.
+      if (hasAttachmentOnly && !(t.has_attachments || (t.attachment_count || 0) > 0)) continue;
       const m = matchItem(t, parsedQuery, 'thread', reports);
       const inDeep = deepHits.has(t.thread_id);
       if (m.matches || inDeep) {
@@ -581,7 +591,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     // anywhere displayable).
     if (searchQuery.trim()) allHighlights.add(searchQuery.trim().toLowerCase());
     return { filteredThreads: out, threadHighlights: Array.from(allHighlights) };
-  }, [dedupedThreads, searchQuery, parsedQuery, reports, deepSearch.threadIds]);
+  }, [dedupedThreads, searchQuery, hasAttachmentOnly, parsedQuery, reports, deepSearch.threadIds]);
 
   // Publish counts to the persistent status bar.
   //
@@ -827,6 +837,8 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         sourceApps={sourceApps}
         activeApps={activeApps}
         onAppsChange={setActiveApps}
+        hasAttachmentOnly={hasAttachmentOnly}
+        onHasAttachmentChange={setHasAttachmentOnly}
         scrubberItems={threads}
         scrubberEnvelope={envelope ? {
           minDate: envelope.min_date,

@@ -466,6 +466,7 @@ def get_comms_threads(
     search: Optional[str] = Query(None),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
+    has_attachment: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -484,6 +485,7 @@ def get_comms_threads(
         search=search,
         limit=limit,
         offset=offset,
+        has_attachment=has_attachment,
     )
     return result
 
@@ -549,6 +551,7 @@ def get_comms_between(
             "pagination so deep pages don't re-read earlier rows."
         ),
     ),
+    has_attachment: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -568,6 +571,7 @@ def get_comms_between(
         offset=offset,
         sort=sort,
         cursor=cursor,
+        has_attachment=has_attachment,
     )
     _resolve_attachments(case_id, result.get("items", []))
     return result
@@ -587,6 +591,7 @@ def get_comms_envelope(
     source_apps: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    has_attachment: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -612,6 +617,7 @@ def get_comms_envelope(
         source_apps=_csv_param(source_apps),
         start_date=start_date,
         end_date=end_date,
+        has_attachment=has_attachment,
     )
 
 
@@ -709,6 +715,13 @@ def get_events(
             "tab which loads all geolocated points."
         ),
     ),
+    has_attachment: bool = Query(
+        False,
+        description=(
+            "Keep only events carrying an attachment (narrows to comms types). "
+            "Server-side so the per-type cap applies to media-bearing rows."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -728,6 +741,7 @@ def get_events(
         place=place or None,
         near=near_tuple,
         lean=lean,
+        has_attachment=has_attachment,
     )
     # Resolve message/voicemail/email attachment file-ids into the richer
     # `attachments` list so the Timeline + Event Center rows can render the
@@ -747,6 +761,7 @@ def get_events_envelope(
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     only_geolocated: bool = Query(False),
+    has_attachment: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -759,7 +774,8 @@ def get_events_envelope(
     this lets the scrubber show the honest full date range/density and the tab
     show "showing N of TOTAL" instead of implying the capped slice is all there
     is. `only_geolocated` mirrors the body's geo filter so the count matches
-    the Event Center's geo-only mode.
+    the Event Center's geo-only mode; `has_attachment` likewise mirrors the
+    body's media filter.
     """
     _require_case_access(case_id, current_user, db)
     return neo4j_service.get_cellebrite_events_envelope(
@@ -770,6 +786,7 @@ def get_events_envelope(
         start_date=start_date,
         end_date=end_date,
         only_geolocated=only_geolocated,
+        has_attachment=has_attachment,
     )
 
 
@@ -1489,6 +1506,7 @@ def comms_contact_feed(
     # total + a `truncated` flag so nothing is hidden silently.
     limit: int = Query(2000, ge=1, le=200000),
     offset: int = Query(0, ge=0),
+    has_attachment: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -1501,6 +1519,7 @@ def comms_contact_feed(
         types=_csv_param(types),
         limit=limit,
         offset=offset,
+        has_attachment=has_attachment,
     )
     # Resolve attachment file_ids → playable/viewable evidence (image/audio/
     # video), same as the thread + between feeds, so media renders in the

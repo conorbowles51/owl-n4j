@@ -46,6 +46,10 @@ const KNOWN_OPERATORS = new Set([
   // unit suffix (km|m, default km) and filters items by haversine
   // distance from the supplied centre.
   'place', 'near',
+  // `has:attachment` (aliases: attachments / media / file) — keep only
+  // items that carry at least one attachment. Drives the shared
+  // "Has attachment" toggle across the messaging views.
+  'has',
 ]);
 
 /**
@@ -71,6 +75,7 @@ export function parseQuery(query) {
       after: null,    // Date.getTime() once parsed
       place: null,    // string; substring match on geocoded fields
       near: null,     // { lat, lng, radiusMeters } once parsed
+      has: null,      // 'attachment' | 'media' | … — structural presence gate
     },
   };
   if (!query || typeof query !== 'string') return result;
@@ -347,6 +352,22 @@ function valueMatches(needle, haystack) {
 }
 
 /**
+ * Does this item carry at least one attachment? Works for both resolved
+ * message/event rows (attachments[] / attachment_file_ids[] / attachment_count)
+ * and thread-level rows (has_attachments / attachment_count aggregate).
+ */
+function itemHasAttachment(item) {
+  if (!item) return false;
+  if (Array.isArray(item.attachments)) {
+    if (item.attachments.some((a) => a && !a.missing)) return true;
+  }
+  if (Array.isArray(item.attachment_file_ids) && item.attachment_file_ids.length > 0) return true;
+  if (typeof item.attachment_count === 'number' && item.attachment_count > 0) return true;
+  if (item.has_attachments) return true;
+  return false;
+}
+
+/**
  * Return `{ matches, highlights }` for one item against a parsed query.
  *
  * `matches` is a boolean. `highlights` is the list of literal substrings
@@ -390,6 +411,14 @@ export function matchItem(item, parsed, kind, reports = []) {
     if (t == null) return NO_MATCH;
     if (ops.before != null && t > ops.before) return NO_MATCH;
     if (ops.after != null && t < ops.after) return NO_MATCH;
+  }
+
+  // has:attachment — structural gate. Items with no attachment fail closed.
+  if (ops.has) {
+    const wantAttachment = (Array.isArray(ops.has) ? ops.has : [ops.has]).some(
+      (v) => ['attachment', 'attachments', 'media', 'file', 'files'].includes(v),
+    );
+    if (wantAttachment && !itemHasAttachment(item)) return NO_MATCH;
   }
 
   // Exclusions short-circuit
