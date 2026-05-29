@@ -162,7 +162,11 @@ async def chat(
     if not model:
         raise HTTPException(status_code=400, detail=f"Invalid model: {model_id}")
 
-    llm = rag_service.llm.create_context(provider=provider, model_id=model_id)
+    llm = rag_service.llm.create_context(
+        provider=provider,
+        model_id=model_id,
+        use_responses_api_for_gpt5=True,
+    )
 
     trace_cm = start_trace(
         meta={

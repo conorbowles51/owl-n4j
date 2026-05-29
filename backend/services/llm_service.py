@@ -28,11 +28,19 @@ config = get_chat_config(allow_postgres=False)
 system_context = config.get("system_context", "You are an AI assistant.")
 analysis_guidance = config.get("analysis_guidance", "Provide clear and helpful answers.")
 
+RESPONSES_API_MODEL_PREFIXES = ("gpt-5",)
+
 
 class LLMExecutionContext:
-    def __init__(self, provider: str, model_id: str):
+    def __init__(
+        self,
+        provider: str,
+        model_id: str,
+        use_responses_api_for_gpt5: bool = False,
+    ):
         self.provider = provider
         self.model_id = model_id
+        self.use_responses_api_for_gpt5 = use_responses_api_for_gpt5
         runtime_config = get_chat_config()
         self.system_context = runtime_config.get("system_context", system_context)
         self.analysis_guidance = runtime_config.get("analysis_guidance", analysis_guidance)
@@ -114,6 +122,12 @@ class LLMExecutionContext:
         if not client:
             raise ValueError("OpenAI client not initialized. OPENAI_API_KEY not set.")
 
+        if (
+            self.use_responses_api_for_gpt5
+            and self.model_id.startswith(RESPONSES_API_MODEL_PREFIXES)
+        ):
+            return self._call_openai_responses(prompt, temperature, json_mode, timeout)
+
         models_without_temperature_support = ["o1", "o3", "gpt-5"]
         supports_custom_temperature = not any(
             self.model_id.startswith(prefix) for prefix in models_without_temperature_support
@@ -159,6 +173,89 @@ class LLMExecutionContext:
                 "total_tokens": usage.total_tokens,
             }
         return content
+
+    def _call_openai_responses(
+        self,
+        prompt: str,
+        temperature: float,
+        json_mode: bool,
+        timeout: int,
+    ) -> str:
+        models_without_temperature_support = ["o1", "o3", "gpt-5"]
+        supports_custom_temperature = not any(
+            self.model_id.startswith(prefix) for prefix in models_without_temperature_support
+        )
+
+        kwargs: Dict[str, Any] = {
+            "model": self.model_id,
+            "instructions": self.system_context,
+            "input": prompt,
+            "store": False,
+            "timeout": timeout,
+        }
+        if supports_custom_temperature:
+            kwargs["temperature"] = temperature
+        if json_mode:
+            kwargs["text"] = {"format": {"type": "json_object"}}
+
+        log_section(
+            source_file=__file__,
+            source_func="_call_openai_responses",
+            title="HTTP request: OpenAI responses payload",
+            content={
+                "model_id": self.model_id,
+                "provider": self.provider,
+                "json_mode": json_mode,
+                "temperature": temperature,
+                "payload": kwargs,
+            },
+            as_json=True,
+        )
+
+        response = client.responses.create(**kwargs)
+        content = self._extract_response_text(response)
+        if not content:
+            status = getattr(response, "status", None)
+            error = getattr(response, "error", None)
+            details = getattr(response, "incomplete_details", None)
+            raise ValueError(
+                "LLM returned empty response"
+                f" (status={status}, error={error}, details={details})"
+            )
+
+        usage = getattr(response, "usage", None)
+        if usage:
+            prompt_tokens = self._usage_value(usage, "input_tokens")
+            completion_tokens = self._usage_value(usage, "output_tokens")
+            total_tokens = self._usage_value(usage, "total_tokens")
+            self.last_usage = {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": total_tokens,
+            }
+        return content
+
+    @staticmethod
+    def _extract_response_text(response: Any) -> str:
+        output_text = getattr(response, "output_text", None)
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text
+
+        text_parts: list[str] = []
+        for item in getattr(response, "output", []) or []:
+            for content_item in getattr(item, "content", []) or []:
+                text = getattr(content_item, "text", None)
+                if isinstance(text, str) and text:
+                    text_parts.append(text)
+        return "\n".join(text_parts).strip()
+
+    @staticmethod
+    def _usage_value(usage: Any, key: str) -> Optional[int]:
+        if isinstance(usage, dict):
+            value = usage.get(key)
+        else:
+            value = getattr(usage, key, None)
+        return int(value) if value is not None else None
 
     def parse_json_response(self, response_text: str) -> Dict[str, Any]:
         start = response_text.find("{")
@@ -312,13 +409,22 @@ class LLMService:
         self.default_provider = provider.lower()
         self.default_model_id = model_id
 
-    def create_context(self, provider: Optional[str] = None, model_id: Optional[str] = None) -> LLMExecutionContext:
+    def create_context(
+        self,
+        provider: Optional[str] = None,
+        model_id: Optional[str] = None,
+        use_responses_api_for_gpt5: bool = False,
+    ) -> LLMExecutionContext:
         resolved_provider = (provider or self.default_provider).lower()
         resolved_model = model_id or self.default_model_id
         model = get_model_by_id(resolved_model)
         if model:
             resolved_provider = model.provider.value
-        return LLMExecutionContext(resolved_provider, resolved_model)
+        return LLMExecutionContext(
+            resolved_provider,
+            resolved_model,
+            use_responses_api_for_gpt5=use_responses_api_for_gpt5,
+        )
 
     # Compatibility helpers for non-chat callers.
     def call(self, prompt: str, temperature: float = 0.3, json_mode: bool = False, timeout: int = 600) -> str:
