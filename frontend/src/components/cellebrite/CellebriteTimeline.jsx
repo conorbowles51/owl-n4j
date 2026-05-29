@@ -1,4 +1,12 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useCallback,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -9,9 +17,10 @@ import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
+import CommsMediaStrip from './comms/CommsMediaStrip';
 import HighlightedText from './shared/HighlightedText';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
-import { List, LayoutPanelTop, LayoutPanelLeft } from 'lucide-react';
+import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import {
@@ -71,6 +80,14 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStage, setLoadingStage] = useState('');
+  // Which event types hit the per-type body cap (so we can tell the user,
+  // honestly, that older events of those types aren't loaded — never silently
+  // truncate an investigative view).
+  const [truncatedTypes, setTruncatedTypes] = useState([]);
+  // Cheap server-side aggregation (true total + full min/max date + per-day
+  // histogram) so the scrubber shows the honest full range/density even though
+  // the body feed is capped per type. Loads async, independent of the body.
+  const [envelope, setEnvelope] = useState(null);
 
   // --- Selection ---
   // Selection drives the universal selection flyout via the
@@ -139,6 +156,9 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         // can come back from more than one per-type stage. Dedupe by
         // id so React keys stay unique and counts aren't inflated.
         const seen = new Set();
+        // Types whose body fetch hit the per-type cap — surfaced to the user
+        // so the capped slice is never mistaken for the whole dataset.
+        const truncated = new Set();
         for (let i = 0; i < stages.length; i += 1) {
           if (cancelled) return;
           const etype = stages[i];
@@ -154,6 +174,9 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
               limit: 5000,
             });
             if (cancelled) return;
+            if (data.truncated) {
+              for (const tt of (data.truncated_types || [etype])) truncated.add(tt);
+            }
             for (const ev of (data.events || [])) {
               const key = ev.id || ev.node_key;
               if (key) {
@@ -170,6 +193,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         }
         if (cancelled) return;
         setEvents(aggregated);
+        setTruncatedTypes([...truncated]);
         setLoading(false);
         setLoadingStage('');
       })();
@@ -180,6 +204,45 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       clearTimeout(t);
     };
   }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate]);
+
+  // Envelope fetch — true total + full min/max date + per-day histogram for
+  // the scrubber. Deliberately NOT scoped to the scrubber window (startDate/
+  // endDate): it must describe the WHOLE available range so the scrubber can
+  // show what's outside the current window. Re-runs only when the device set
+  // or active types change.
+  useEffect(() => {
+    if (!caseId || activeEventTypes.size === 0) {
+      setEnvelope(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
+    setEnvelope((e) => (e ? { ...e, loading: true } : { loading: true }));
+    cellebriteEventsAPI
+      .getEventsEnvelope(caseId, {
+        reportKeys: reportKeysArr,
+        eventTypes: [...activeEventTypes],
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setEnvelope({
+          minDate: data.min_date || undefined,
+          maxDate: data.max_date || undefined,
+          histogram: data.histogram || [],
+          total: data.total || 0,
+          loading: false,
+        });
+      })
+      .catch(() => { if (!cancelled) setEnvelope(null); });
+    return () => { cancelled = true; };
+  }, [caseId, selectedReportKeys, activeEventTypes]);
+
+  // The scrubber shows more than the loaded body slice whenever a type was
+  // capped — flag it so the "All time" summary becomes honest.
+  const scrubberEnvelope = useMemo(() => {
+    if (!envelope) return null;
+    return { ...envelope, hasMoreThanItems: truncatedTypes.length > 0 };
+  }, [envelope, truncatedTypes]);
 
   // Parsed query is shared by the matcher + the row highlighter.
   const parsedQuery = useMemo(() => parseQuery(searchQuery), [searchQuery]);
@@ -225,9 +288,10 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     return groups;
   }, [filteredEvents, tzDayKey, tzId]);
 
-  // Scroll-to-bucket from scrubber bar clicks. Each day header carries
-  // data-day so we can find it cheaply.
-  const bodyRef = useRef(null);
+  // Scroll-to-bucket from scrubber bar clicks. The list is windowed, so the
+  // target day header may not be in the DOM — TimelineList exposes an
+  // imperative scrollToDay() that scrolls by computed offset instead.
+  const listRef = useRef(null);
   const scrollToDate = useCallback((bucketStart) => {
     // Guard like the old toISODate did: a bucket with a NaN start yields an
     // Invalid Date whose .toISOString() THROWS (RangeError) — that crash was
@@ -235,18 +299,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     if (!(bucketStart instanceof Date) || isNaN(bucketStart.getTime())) return;
     // Match the day-headers, which are keyed by the selected-zone calendar day.
     const day = tzDayKey(bucketStart.toISOString());
-    const root = bodyRef.current;
-    if (!root) return;
-    // Find the first day header whose ISO is <= the bucket date (lists
-    // are newest-first so an exact match isn't always present).
-    const headers = root.querySelectorAll('[data-day]');
-    let target = null;
-    for (const h of headers) {
-      const d = h.getAttribute('data-day');
-      if (!d || d === '—') continue;
-      if (d <= day) { target = h; break; }
-    }
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    listRef.current?.scrollToDay(day);
   }, [tzDayKey]);
 
   if (phoneCtx?.noneSelected) {
@@ -302,14 +355,34 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         </div>
       </div>
 
-      {/* Histogram scrubber — replaces the old date-picker pair */}
+      {/* Histogram scrubber — replaces the old date-picker pair. The
+          envelope gives it the honest full range/density/total even though
+          the body feed below is capped per type. */}
       <TimelineScrubber
         items={events}
+        envelope={scrubberEnvelope}
         windowStart={windowStart}
         windowEnd={windowEnd}
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
         onBarClick={(bucketStart) => scrollToDate(bucketStart)}
       />
+
+      {/* Honest truncation notice — the body feed caps each event type at
+          5,000 rows for responsiveness, so older events of capped types
+          aren't loaded. Never let the capped slice pass as the whole set. */}
+      {truncatedTypes.length > 0 && (
+        <div className="px-3 py-1.5 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-800 flex items-start gap-1.5 flex-shrink-0">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>
+            Showing the most recent <span className="font-semibold">5,000</span> per type for{' '}
+            <span className="font-medium">{truncatedTypes.map((t) => EVENT_LABELS[t] || t).join(', ')}</span>
+            {typeof envelope?.total === 'number' && envelope.total > events.length && (
+              <> — <span className="font-semibold">{envelope.total.toLocaleString()}</span> events exist in total</>
+            )}
+            . Narrow the date range (drag the scrubber or use “Pick dates”) to load older events in that window.
+          </span>
+        </div>
+      )}
 
       {/* Wide search bar */}
       <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">
@@ -325,10 +398,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       </div>
 
       {/* Body — grouped chronological list OR swim-lane */}
-      <div
-        ref={bodyRef}
-        className={`flex-1 min-h-0 flex flex-col ${viewMode === 'list' ? 'overflow-y-auto' : 'overflow-hidden'}`}
-      >
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {loading && events.length === 0 ? (
           <TabLoadingIndicator
             label="Loading timeline events"
@@ -365,42 +435,24 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             }}
           />
         ) : (
-          <div className="px-4 py-3">
-            {groupedByDay.map((group) => (
-              <div key={group.day} data-day={group.day} className="mb-4">
-                <div className="sticky top-0 z-10 bg-white border-b border-light-200 mb-2 pb-1 flex items-center gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
-                    {formatDayHeader(group.day)}
-                  </span>
-                  <span className="text-[10px] text-light-400">
-                    {group.events.length} event{group.events.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <ul className="space-y-1">
-                  {group.events.map((ev, idx) => (
-                    <TimelineRow
-                      key={ev.id || ev.node_key || idx}
-                      ev={ev}
-                      reports={reports}
-                      showPhoneChip={reports.length > 1}
-                      highlights={highlights}
-                      onClick={() => {
-                        setSelectedEvent(ev);
-                        selectEntity({
-                          type: ev.event_type || 'event',
-                          id: ev.id || ev.node_key,
-                          caseId,
-                          reportKey: ev.device_report_key,
-                          payload: { ...ev, node_key: ev.node_key || ev.id },
-                          source: 'timeline',
-                        });
-                      }}
-                    />
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
+          <TimelineList
+            ref={listRef}
+            groups={groupedByDay}
+            reports={reports}
+            showPhoneChip={reports.length > 1}
+            highlights={highlights}
+            onRowClick={(ev) => {
+              setSelectedEvent(ev);
+              selectEntity({
+                type: ev.event_type || 'event',
+                id: ev.id || ev.node_key,
+                caseId,
+                reportKey: ev.device_report_key,
+                payload: { ...ev, node_key: ev.node_key || ev.id },
+                source: 'timeline',
+              });
+            }}
+          />
         )}
       </div>
 
@@ -409,6 +461,177 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Windowed list
+//
+// The feed can hold 60K+ events. Rendering one <li> per event mounted ~67K
+// DOM rows and froze the tab for ~40s on load (and re-froze for ~12s every
+// time a scrubber drag committed and the parent re-rendered the whole
+// subtree). We window it like LocationsTable/EventsTable do.
+//
+// Rows are variable height (1–3 lines), so a single fixed ROW_PX would
+// mis-position. We precompute each item's height deterministically from its
+// fields, build a cumulative-offset array, and binary-search the visible
+// slice. Day headers are flattened inline as their own items. Heights are
+// set explicitly on each rendered item (with overflow hidden) so the
+// measured layout matches the offsets exactly — no drift, no blank gaps.
+// ---------------------------------------------------------------------------
+const TL_HEADER_PX = 30;
+const TL_ROW_BASE_PX = 34; // type line + vertical padding
+const TL_ROW_LINE_PX = 18; // each extra line (direction / summary)
+const TL_ROW_MEDIA_PX = 36; // compact media strip (28px thumb + margins), one line
+const TL_OVERSCAN_PX = 600;
+
+function timelineRowHeight(ev) {
+  const sender = ev.sender?.name;
+  const recipient =
+    ev.counterpart?.name ||
+    (Array.isArray(ev.recipients) && ev.recipients[0]?.name) ||
+    null;
+  const hasDirection = !!(sender || recipient);
+  const hasSummary = !!ev.summary;
+  const hasMedia = Array.isArray(ev.attachments) && ev.attachments.length > 0;
+  return (
+    TL_ROW_BASE_PX +
+    (hasDirection ? TL_ROW_LINE_PX : 0) +
+    (hasSummary ? TL_ROW_LINE_PX : 0) +
+    (hasMedia ? TL_ROW_MEDIA_PX : 0)
+  );
+}
+
+// First index i such that arr[i] >= x (arr ascending). O(log n).
+function firstGE(arr, x) {
+  let lo = 0;
+  let hi = arr.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (arr[mid] < x) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+const TimelineList = forwardRef(function TimelineList(
+  { groups, reports, showPhoneChip, highlights, onRowClick },
+  ref,
+) {
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(600);
+
+  // Flatten the day groups into a single list of render items and precompute
+  // the pixel offset where each one starts (offsets[i]). dayOffset maps a day
+  // key → its header's offset for imperative scroll-to-day.
+  const { items, offsets, total, dayOffset } = useMemo(() => {
+    const it = [];
+    const off = [];
+    const dayMap = new Map();
+    let acc = 0;
+    for (const g of groups) {
+      dayMap.set(g.day, acc);
+      it.push({ kind: 'header', day: g.day, n: g.events.length });
+      off.push(acc);
+      acc += TL_HEADER_PX;
+      for (const ev of g.events) {
+        it.push({ kind: 'row', ev });
+        off.push(acc);
+        acc += timelineRowHeight(ev);
+      }
+    }
+    return { items: it, offsets: off, total: acc, dayOffset: dayMap };
+  }, [groups]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    setViewportH(el.clientHeight || 600);
+    const onScroll = () => setScrollTop(el.scrollTop);
+    el.addEventListener('scroll', onScroll, { passive: true });
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => setViewportH(el.clientHeight || 600));
+      ro.observe(el);
+    }
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      if (ro) ro.disconnect();
+    };
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      scrollToDay(day) {
+        const el = scrollRef.current;
+        if (!el) return;
+        // Groups are newest-first, so an exact match isn't guaranteed — jump
+        // to the first day at or before the requested one (old behaviour).
+        let targetDay = null;
+        for (const g of groups) {
+          if (g.day && g.day !== '—' && g.day <= day) {
+            targetDay = g.day;
+            break;
+          }
+        }
+        const off = targetDay != null ? dayOffset.get(targetDay) : 0;
+        if (off != null) el.scrollTo({ top: off, behavior: 'smooth' });
+      },
+    }),
+    [groups, dayOffset],
+  );
+
+  const top = scrollTop - TL_OVERSCAN_PX;
+  const bottom = scrollTop + viewportH + TL_OVERSCAN_PX;
+  const startIdx = Math.max(0, firstGE(offsets, top) - 1);
+  const endIdx = firstGE(offsets, bottom); // exclusive
+  const topPad = offsets[startIdx] || 0;
+  const bottomPad = Math.max(0, total - (endIdx < offsets.length ? offsets[endIdx] : total));
+  const visible = items.slice(startIdx, endIdx);
+
+  return (
+    <div ref={scrollRef} className="h-full overflow-y-auto px-4 py-3">
+      {topPad > 0 && <div style={{ height: topPad }} />}
+      {visible.map((it, i) => {
+        const idx = startIdx + i;
+        if (it.kind === 'header') {
+          return (
+            <div
+              key={`h:${it.day}`}
+              data-day={it.day}
+              style={{ height: TL_HEADER_PX }}
+              className="bg-white border-b border-light-200 flex items-center gap-2 overflow-hidden"
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
+                {formatDayHeader(it.day)}
+              </span>
+              <span className="text-[10px] text-light-400">
+                {it.n} event{it.n === 1 ? '' : 's'}
+              </span>
+            </div>
+          );
+        }
+        const ev = it.ev;
+        return (
+          <div
+            key={ev.id || ev.node_key || idx}
+            style={{ height: timelineRowHeight(ev) }}
+            className="overflow-hidden"
+          >
+            <TimelineRow
+              ev={ev}
+              reports={reports}
+              showPhoneChip={showPhoneChip}
+              highlights={highlights}
+              onClick={() => onRowClick(ev)}
+            />
+          </div>
+        );
+      })}
+      {bottomPad > 0 && <div style={{ height: bottomPad }} />}
+    </div>
+  );
+});
 
 function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights = [] }) {
   const Icon = EVENT_ICONS[ev.event_type] || EVENT_ICONS.location;
@@ -438,7 +661,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
     : undefined;
 
   return (
-    <li
+    <div
       onClick={onClick}
       style={stripeStyle}
       className="grid grid-cols-[80px_18px_1fr] items-start gap-2 py-1.5 pl-2 pr-2 rounded hover:bg-light-50 cursor-pointer"
@@ -492,8 +715,15 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
               : ev.summary}
           </div>
         )}
+        {Array.isArray(ev.attachments) && ev.attachments.length > 0 && (
+          // Compact preview only — the windowed row's fixed height +
+          // overflow-hidden can't grow for inline expansion, so clicking the
+          // strip bubbles to the row click and opens the detail flyout (which
+          // renders the full media). Height budgeted in timelineRowHeight.
+          <CommsMediaStrip attachments={ev.attachments} expandable={false} />
+        )}
       </div>
-    </li>
+    </div>
   );
 }
 

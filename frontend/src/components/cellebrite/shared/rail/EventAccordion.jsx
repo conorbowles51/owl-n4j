@@ -5,6 +5,7 @@ import { EventBody } from '../../events/EventDetailDrawer';
 import { useCellebriteSelection } from '../CellebriteSelectionContext';
 import { formatTs } from '../../events/eventUtils';
 import PersonName from '../PersonName';
+import CommsMediaStrip from '../../comms/CommsMediaStrip';
 
 /**
  * Rail accordion for "event-like" selections (call / message / email /
@@ -253,6 +254,9 @@ function RelatedList({ items, onPick, highlight }) {
                 {it.counterpart?.name && it.summary && <span className="mx-1">·</span>}
                 {it.summary && <span>{it.summary}</span>}
               </div>
+            )}
+            {Array.isArray(it.attachments) && it.attachments.length > 0 && (
+              <CommsMediaStrip attachments={it.attachments} />
             )}
           </li>
         );

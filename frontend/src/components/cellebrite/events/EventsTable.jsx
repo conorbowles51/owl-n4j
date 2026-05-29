@@ -3,6 +3,7 @@ import { ArrowUp, ArrowDown, MapPin } from 'lucide-react';
 import { EVENT_COLORS, EVENT_ICONS, EVENT_LABELS, formatTs } from './eventUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import PersonName from '../shared/PersonName';
+import CommsMediaBadge from '../comms/CommsMediaBadge';
 import { useCellebriteTime } from '../shared/CellebriteTimezone';
 import { getPhoneIdentityByKey } from '../../../utils/phoneIdentity';
 
@@ -344,10 +345,13 @@ const TableRow = React.memo(function TableRow({
           : '—'}
       </div>
       <div
-        className="px-2 border-r border-light-100 text-light-600 truncate"
+        className="px-2 border-r border-light-100 text-light-600 flex items-center gap-1.5 min-w-0"
         title={ev.summary || ''}
       >
-        {ev.summary || ''}
+        {Array.isArray(ev.attachments) && ev.attachments.length > 0 && (
+          <CommsMediaBadge attachments={ev.attachments} className="flex-shrink-0" />
+        )}
+        <span className="truncate">{ev.summary || ''}</span>
       </div>
       <div className="px-2 flex items-center justify-end gap-1 text-[10px] text-light-500 tabular-nums">
         {hasGeo ? (

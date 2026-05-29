@@ -3009,6 +3009,30 @@ export const cellebriteEventsAPI = {
   },
 
   /**
+   * Cheap envelope (true total + per-type counts + min/max date + per-day
+   * histogram) for the timeline scrubber — no event rows loaded. Lets the
+   * scrubber show the honest full range/density even though the body feed is
+   * capped per type.
+   */
+  getEventsEnvelope: (caseId, {
+    reportKeys = null,
+    eventTypes = null,
+    sourceApps = null,
+    startDate = null,
+    endDate = null,
+    onlyGeolocated = false,
+  } = {}) => {
+    const params = new URLSearchParams({ case_id: caseId });
+    if (reportKeys?.length) params.append('report_keys', reportKeys.join(','));
+    if (eventTypes?.length) params.append('event_types', eventTypes.join(','));
+    if (sourceApps?.length) params.append('source_apps', sourceApps.join(','));
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (onlyGeolocated) params.append('only_geolocated', 'true');
+    return fetchAPI(`/cellebrite/events/envelope?${params.toString()}`);
+  },
+
+  /**
    * Tile-aggregated locations for the map at the requested zoom.
    * Returns per-cell counts + top source apps so 100K+ raw points
    * don't ship just to be clustered client-side. Use for zoom < 15.

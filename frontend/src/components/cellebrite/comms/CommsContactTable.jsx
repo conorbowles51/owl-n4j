@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
+import CommsMediaBadge from './CommsMediaBadge';
 import { phoneFromKey } from '../shared/PersonName';
 import { usePhoneReports } from '../../../context/PhoneReportsContext';
 import { useCellebriteSelection } from '../shared/CellebriteSelectionContext';
@@ -288,9 +289,14 @@ function Row({ item, onRowClick, onDrillName, onApplyFilter, highlights, hasMult
 
       {/* Body / Subject — read-only preview, click row to open in rail. */}
       <Td className="max-w-[420px]">
-        <span className="text-light-700 truncate block" title={preview}>
-          <HighlightedText text={truncate(preview, 160)} highlights={highlights} />
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          {Array.isArray(item.attachments) && item.attachments.length > 0 && (
+            <CommsMediaBadge attachments={item.attachments} className="flex-shrink-0" />
+          )}
+          <span className="text-light-700 truncate block" title={preview}>
+            <HighlightedText text={truncate(preview, 160)} highlights={highlights} />
+          </span>
+        </div>
       </Td>
 
       {/* Direction — clickable to filter (Incoming / Outgoing). */}

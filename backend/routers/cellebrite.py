@@ -715,7 +715,7 @@ def get_events(
     """Unified event feed for the Location & Event Center."""
     _require_case_access(case_id, current_user, db)
     near_tuple = _parse_near_param(near)
-    return neo4j_service.get_cellebrite_events(
+    result = neo4j_service.get_cellebrite_events(
         case_id=case_id,
         report_keys=_csv_param(report_keys),
         event_types=_csv_param(event_types),
@@ -728,6 +728,48 @@ def get_events(
         place=place or None,
         near=near_tuple,
         lean=lean,
+    )
+    # Resolve message/voicemail/email attachment file-ids into the richer
+    # `attachments` list so the Timeline + Event Center rows can render the
+    # same inline media (images, voicenotes, video) as the thread view. The
+    # `lean` path is locations-only (no attachments), so skip it.
+    if not lean:
+        _resolve_attachments(case_id, result.get("events", []))
+    return result
+
+
+@router.get("/events/envelope")
+def get_events_envelope(
+    case_id: str = Query(...),
+    report_keys: Optional[str] = Query(None),
+    event_types: Optional[str] = Query(None),
+    source_apps: Optional[str] = Query(None),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    only_geolocated: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Cheap aggregation for the Timeline scrubber: true total count + per-type
+    counts + min/max date + per-day histogram across the active event types,
+    WITHOUT loading any event rows.
+
+    The body feed (/events) caps each type at ~5000 rows for responsiveness;
+    this lets the scrubber show the honest full date range/density and the tab
+    show "showing N of TOTAL" instead of implying the capped slice is all there
+    is. `only_geolocated` mirrors the body's geo filter so the count matches
+    the Event Center's geo-only mode.
+    """
+    _require_case_access(case_id, current_user, db)
+    return neo4j_service.get_cellebrite_events_envelope(
+        case_id=case_id,
+        report_keys=_csv_param(report_keys),
+        event_types=_csv_param(event_types),
+        source_apps=_csv_param(source_apps),
+        start_date=start_date,
+        end_date=end_date,
+        only_geolocated=only_geolocated,
     )
 
 
@@ -976,12 +1018,17 @@ def get_event_related(
     is a non-comms node (Location, CellTower, etc.).
     """
     _require_case_access(case_id, current_user, db)
-    return neo4j_service.get_event_related(
+    result = neo4j_service.get_event_related(
         case_id=case_id,
         node_key=node_key,
         window_h=window_h,
         limit=limit,
     )
+    # Resolve attachments so the rail's related-message lists (thread +
+    # around) can show the same inline media as the thread view.
+    _resolve_attachments(case_id, result.get("thread", []))
+    _resolve_attachments(case_id, result.get("around", []))
+    return result
 
 
 class IntersectionRunRequest(BaseModel):

@@ -9491,6 +9491,149 @@ class Neo4jService:
             "per_type_cap": per_type_cap,
         }
 
+    # Event-type → node-label map for the unified feed. Kept in one place so
+    # the envelope below stays in lockstep with get_cellebrite_events.
+    _EVENT_TYPE_LABELS = {
+        "location": "Location",
+        "cell_tower": "CellTower",
+        "wifi": "WirelessNetwork",
+        "call": "PhoneCall",
+        "message": "Communication",
+        "email": "Email",
+        "power": "DeviceEvent",
+        "device_event": "DeviceEvent",
+        "app_session": "AppSession",
+        "search": "SearchedItem",
+        "visit": "VisitedPage",
+        "meeting": "Meeting",
+        "social_media": "SocialMediaActivity",
+        "chat_activity": "ChatActivity",
+        "file_upload": "FileUpload",
+        "journey": "Journey",
+        "note": "Note",
+        "device_connectivity": "DeviceConnectivity",
+        "cookie": "Cookie",
+        "log_entry": "LogEntry",
+        "motion": "MotionActivity",
+    }
+
+    def get_cellebrite_events_envelope(
+        self,
+        case_id: str,
+        report_keys: Optional[List[str]] = None,
+        event_types: Optional[List[str]] = None,
+        source_apps: Optional[List[str]] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        only_geolocated: bool = False,
+    ) -> dict:
+        """
+        Cheap aggregation over the unified event feed: true total count,
+        per-type counts, min/max date, and a per-day histogram — WITHOUT
+        loading any event rows.
+
+        Mirrors get_cellebrite_comms_envelope but spans every event type the
+        Timeline shows (not just comms). The body fetch caps each type at
+        ~5000 rows for responsiveness; this gives the scrubber the *honest*
+        full date range + density and lets the tab show "showing N of TOTAL"
+        instead of silently implying the capped slice is everything.
+
+        Each leg is a count-by-date aggregation (no row materialisation),
+        gated by the same filters get_cellebrite_events uses so the envelope
+        is always consistent with what the body would return.
+        """
+        active = list(event_types) if event_types else list(self._EVENT_TYPE_LABELS.keys())
+        # Collapse to distinct labels — power + device_event share DeviceEvent,
+        # so we don't double-count it.
+        labels: List[str] = []
+        for et in active:
+            lbl = self._EVENT_TYPE_LABELS.get(et)
+            if lbl and lbl not in labels:
+                labels.append(lbl)
+
+        where, params = self._build_event_filters(
+            report_keys, start_date, end_date, source_apps,
+        )
+        params["case_id"] = case_id
+
+        per_day: Dict[str, int] = {}
+        per_label: Dict[str, int] = {}
+        min_date: Optional[str] = None
+        max_date: Optional[str] = None
+        total = 0
+
+        # Plausibility window — phone-forensics timestamps live in the
+        # smartphone era. Failed-ingest sentinels (0001-01-01, 1970-01-20…)
+        # would otherwise set min_date and stretch the scrubber axis across
+        # ~2000 years. Mirrors the frontend isPlausibleTs guard so the
+        # envelope and the items-path scrubber agree on bounds.
+        from datetime import date, timedelta
+        plausible_min = "2000-01-01"
+        plausible_max = (date.today() + timedelta(days=1)).isoformat()
+
+        # Geo guard per label when only_geolocated — mirrors get_cellebrite_
+        # events exactly so the envelope total matches the body: Location /
+        # CellTower require direct lat+lon; comms types accept direct OR the
+        # nearest-location fallback; all other types are unfiltered (the body
+        # doesn't geo-gate them either).
+        geo_and = {"Location", "CellTower"}
+        geo_or = {"PhoneCall", "Communication", "Email"}
+
+        with self._driver.session() as session:
+            for lbl in labels:
+                # Meeting nodes don't carry source_type in the body fetch, so
+                # match them without it; everything else is cellebrite-scoped.
+                match = (
+                    f"MATCH (n:{lbl})" if lbl == "Meeting"
+                    else f"MATCH (n:{lbl} {{source_type:'cellebrite'}})"
+                )
+                geo_clause = ""
+                if only_geolocated:
+                    if lbl in geo_and:
+                        geo_clause = " AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL"
+                    elif lbl in geo_or:
+                        geo_clause = " AND (n.latitude IS NOT NULL OR n.nearest_location_lat IS NOT NULL)"
+                cypher = f"""
+                    {match}
+                    WHERE {where}
+                      AND coalesce(n.date, n.timestamp, '') <> ''
+                      {geo_clause}
+                    WITH coalesce(n.date, substring(n.timestamp, 0, 10)) AS d
+                    RETURN d, count(*) AS c
+                """
+                try:
+                    rs = session.run(cypher, **params)
+                except Exception:
+                    # A label that doesn't exist in this DB shouldn't sink the
+                    # whole envelope — skip it and keep the others honest.
+                    continue
+                for r in rs:
+                    d = r["d"]
+                    c = r["c"]
+                    if not d:
+                        continue
+                    d = d[:10]
+                    # Drop sentinel / clock-skewed dates from the RANGE +
+                    # histogram so they can't blow up the scrubber axis.
+                    if d < plausible_min or d > plausible_max:
+                        continue
+                    total += c
+                    per_label[lbl] = per_label.get(lbl, 0) + c
+                    per_day[d] = per_day.get(d, 0) + c
+                    if min_date is None or d < min_date:
+                        min_date = d
+                    if max_date is None or d > max_date:
+                        max_date = d
+
+        hist = [{"date": d, "count": c} for d, c in sorted(per_day.items())]
+        return {
+            "total": total,
+            "type_counts": per_label,
+            "min_date": min_date,
+            "max_date": max_date,
+            "histogram": hist,
+        }
+
     def get_cellebrite_event_types(
         self,
         case_id: str,
@@ -11738,6 +11881,13 @@ def _project_event(node, event_type: str) -> Optional[dict]:
         "device_report_key": n.get("cellebrite_report_key"),
         "counterpart": None,
         "thread_id": None,
+        # Raw attachment file-ids carried on the node (messages / voicemails /
+        # email attachments). The router resolves these into the richer
+        # `attachments` list (evidence_id + category + filename) via
+        # _resolve_attachments so list/timeline surfaces can render the same
+        # inline media (images, voicenotes, video) the thread view shows.
+        # Empty for non-comms events.
+        "attachment_file_ids": list(n.get("attachment_file_ids") or []),
         "is_geolocated": bool(is_geo),
         "location_source": loc_source,
         # Per-point precision in metres if Cellebrite carried it (or

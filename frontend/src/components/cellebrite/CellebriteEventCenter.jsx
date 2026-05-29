@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { Loader2, Map as MapIcon, Rows3, Columns2 } from 'lucide-react';
+import { Loader2, Map as MapIcon, Rows3, Columns2, AlertTriangle } from 'lucide-react';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -14,7 +14,7 @@ import IntersectionPanel from './events/IntersectionPanel';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import TimelineScrubber from './shared/TimelineScrubber';
 import ResizableSplit from './shared/ResizableSplit';
-import { deviceColor } from './events/eventUtils';
+import { deviceColor, EVENT_LABELS } from './events/eventUtils';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildEventsContext } from '../../utils/chatContextSummary';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
@@ -70,6 +70,11 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
   const [loading, setLoading] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingStage, setLoadingStage] = useState('');
+  // Honest truncation: which types hit the per-type body cap, + the cheap
+  // envelope (true total + full range/density) so the scrubber and a banner
+  // never let the capped slice pass as the whole dataset.
+  const [truncatedTypes, setTruncatedTypes] = useState([]);
+  const [envelope, setEnvelope] = useState(null);
 
   // --- Playback ---
   const [playheadTime, setPlayheadTime] = useState(null);
@@ -274,6 +279,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
         // can come back from more than one per-type stage. Dedupe by
         // id so React keys stay unique and counts aren't inflated.
         const seen = new Set();
+        const truncated = new Set();
         for (let i = 0; i < typesArr.length; i += 1) {
           if (cancelled) return;
           const etype = typesArr[i];
@@ -289,6 +295,9 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
               limit: 5000,
             });
             if (cancelled) return;
+            if (data.truncated) {
+              for (const tt of (data.truncated_types || [etype])) truncated.add(tt);
+            }
             for (const ev of (data.events || [])) {
               const key = ev.id || ev.node_key;
               if (key) {
@@ -306,6 +315,7 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
 
         if (cancelled) return;
         setEvents(aggregated);
+        setTruncatedTypes([...truncated]);
 
         setLoadingStage('Loading device tracks');
         try {
@@ -332,6 +342,43 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       clearTimeout(t);
     };
   }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, startDate, endDate, reportsReady]);
+
+  // Envelope — true total + full min/max date + per-day histogram for the
+  // scrubber. NOT scoped to the scrubber window (must describe the whole
+  // range) but DOES honour onlyGeolocated so its total matches the geo-only
+  // body. Re-runs only when the device set / types / geo toggle change.
+  useEffect(() => {
+    if (!caseId || !reportsReady || activeEventTypes.size === 0) {
+      setEnvelope(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
+    setEnvelope((e) => (e ? { ...e, loading: true } : { loading: true }));
+    cellebriteEventsAPI
+      .getEventsEnvelope(caseId, {
+        reportKeys: reportKeysArr,
+        eventTypes: [...activeEventTypes],
+        onlyGeolocated,
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setEnvelope({
+          minDate: data.min_date || undefined,
+          maxDate: data.max_date || undefined,
+          histogram: data.histogram || [],
+          total: data.total || 0,
+          loading: false,
+        });
+      })
+      .catch(() => { if (!cancelled) setEnvelope(null); });
+    return () => { cancelled = true; };
+  }, [caseId, selectedReportKeys, activeEventTypes, onlyGeolocated, reportsReady]);
+
+  const scrubberEnvelope = useMemo(() => {
+    if (!envelope) return null;
+    return { ...envelope, hasMoreThanItems: truncatedTypes.length > 0 };
+  }, [envelope, truncatedTypes]);
 
   // Derive list of active intersection match centres (for map flagging)
   const activeIntersectionMatches = useMemo(() => {
@@ -419,13 +466,33 @@ export default function CellebriteEventCenter({ caseId, reports: reportsProp = [
       </div>
 
       {/* Histogram scrubber — replaces the old date-picker pair. Drives
-          the server-side coarse filter via startDate/endDate. */}
+          the server-side coarse filter via startDate/endDate. The envelope
+          gives it the honest full range/density/total even though the body
+          feed (map + table) is capped per type. */}
       <TimelineScrubber
         items={events}
+        envelope={scrubberEnvelope}
         windowStart={windowStart}
         windowEnd={windowEnd}
         onWindowChange={(s, e) => { setWindowStart(s); setWindowEnd(e); }}
       />
+
+      {/* Honest truncation notice — the map + table load at most 5,000 rows
+          per event type for responsiveness. Never let the capped slice pass
+          as the whole dataset. */}
+      {truncatedTypes.length > 0 && (
+        <div className="px-3 py-1.5 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-800 flex items-start gap-1.5 flex-shrink-0">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+          <span>
+            Map & table show the most recent <span className="font-semibold">5,000</span> per type for{' '}
+            <span className="font-medium">{truncatedTypes.map((t) => EVENT_LABELS[t] || t).join(', ')}</span>
+            {typeof envelope?.total === 'number' && envelope.total > events.length && (
+              <> — <span className="font-semibold">{envelope.total.toLocaleString()}</span> match in total</>
+            )}
+            . Narrow the date range (drag the scrubber or use “Pick dates”) to load older events in that window.
+          </span>
+        </div>
+      )}
 
       {/* Wide search bar */}
       <div className="px-3 py-2 border-b border-light-200 bg-white flex-shrink-0">

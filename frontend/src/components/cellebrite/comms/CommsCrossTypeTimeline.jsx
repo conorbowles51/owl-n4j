@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity, ArrowDownWideNarrow, ArrowUpWideNarrow, Layers, List, LayoutPanelTop, LayoutPanelLeft } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity, ArrowDownWideNarrow, ArrowUpWideNarrow, Layers, List, LayoutPanelTop, LayoutPanelLeft, Paperclip } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
 import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
@@ -504,6 +504,17 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
         <span className="text-xs flex-shrink-0" title={item.source_app}>
           {appIconEmoji(item.source_app || item.type)}
         </span>
+        {Array.isArray(item.attachments) && item.attachments.length > 0 && (
+          // Inline indicator only — this is a fixed-height windowed row (and a
+          // <button>, so no nested interactive media). Clicking the row opens
+          // the detail flyout, which renders the full media.
+          <span
+            className="flex-shrink-0 inline-flex items-center gap-0.5 text-[10px] text-light-500"
+            title={`${item.attachments.length} attachment${item.attachments.length > 1 ? 's' : ''}`}
+          >
+            <Paperclip className="w-3 h-3" /> {item.attachments.length}
+          </span>
+        )}
         <span className="flex-1 text-xs text-light-700 truncate">
           {previewBody(body, 120) || <span className="italic text-light-400">(no preview)</span>}
         </span>
