@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RotateCcw } from 'lucide-react';
+import { RotateCcw, CalendarRange } from 'lucide-react';
 
 import { EVENT_COLORS } from '../events/eventUtils';
 
@@ -88,6 +88,16 @@ export default function TimelineScrubber({
   // useEffects, saturating Chrome's 6-per-origin connection cap and
   // stalling new requests at the TCP layer.
   const [dragPreview, setDragPreview] = useState(null); // {start, end} ms or null
+  // Mirror of dragPreview in a ref so pointerup can read the latest window
+  // WITHOUT committing inside a setState updater (calling onWindowChange —
+  // a parent setState — from within setDragPreview's updater ran a parent
+  // update during this component's render = the "Cannot update a component
+  // while rendering a different component" warning).
+  const dragPreviewRef = useRef(null);
+  const setPreview = useCallback((p) => {
+    dragPreviewRef.current = p;
+    setDragPreview(p);
+  }, []);
 
   const effectiveStart = dragPreview ? dragPreview.start : propStart;
   const effectiveEnd = dragPreview ? dragPreview.end : propEnd;
@@ -148,34 +158,33 @@ export default function TimelineScrubber({
       if (which === 'start') {
         const ts = xToTs(px);
         const clamped = Math.min(ts, effectiveEnd - bucketSizeMs);
-        setDragPreview({ start: Math.max(safeMinTs, clamped), end: effectiveEnd });
+        setPreview({ start: Math.max(safeMinTs, clamped), end: effectiveEnd });
       } else if (which === 'end') {
         const ts = xToTs(px);
         const clamped = Math.max(ts, effectiveStart + bucketSizeMs);
-        setDragPreview({ start: effectiveStart, end: Math.min(safeMaxTs, clamped) });
+        setPreview({ start: effectiveStart, end: Math.min(safeMaxTs, clamped) });
       } else if (which === 'window') {
         const newStartPx = Math.max(0, px - dragOffsetRef.current);
         const windowPx = endX - startX;
         const newEndPx = Math.min(rect.width, newStartPx + windowPx);
         const newStartTs = xToTs(newEndPx - windowPx);
         const newEndTs = xToTs(newEndPx);
-        setDragPreview({ start: newStartTs, end: newEndTs });
+        setPreview({ start: newStartTs, end: newEndTs });
       }
     },
-    [bucketSizeMs, effectiveEnd, effectiveStart, endX, safeMaxTs, safeMinTs, startX, xToTs],
+    [bucketSizeMs, effectiveEnd, effectiveStart, endX, safeMaxTs, safeMinTs, startX, xToTs, setPreview],
   );
   const onPointerUp = useCallback(() => {
     if (!dragRef.current) return;
     dragRef.current = null;
     // Commit the previewed window to the parent — single onWindowChange
-    // per drag gesture, instead of one per pointermove event. The
-    // functional setState lets us read the latest preview without
-    // adding it as a dependency (which would re-bind window listeners
-    // on every drag frame).
-    setDragPreview((prev) => {
-      if (prev) onWindowChange?.(new Date(prev.start), new Date(prev.end));
-      return null;
-    });
+    // per drag gesture, instead of one per pointermove event. Read the
+    // latest preview from the ref and clear state separately, so we never
+    // run a parent setState from inside our own setState updater.
+    const prev = dragPreviewRef.current;
+    dragPreviewRef.current = null;
+    setDragPreview(null);
+    if (prev) onWindowChange?.(new Date(prev.start), new Date(prev.end));
   }, [onWindowChange]);
   useEffect(() => {
     if (!hasRange) return;
@@ -373,18 +382,159 @@ export default function TimelineScrubber({
             </span>
           )}
         </div>
-        {!isFullWindow && (
-          <button
-            type="button"
-            onClick={reset}
-            className="inline-flex items-center gap-1 text-owl-blue-700 hover:text-owl-blue-900 hover:underline"
-          >
-            <RotateCcw className="w-3 h-3" /> Reset
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Calendar / manual date-range entry — the scrubber gives the
+              overview, this gives precise start/end selection. Operates in
+              the same browser-local clock the ticks use, and is clamped to
+              the data bounds. */}
+          <DateRangePicker
+            minTs={safeMinTs}
+            maxTs={safeMaxTs}
+            startTs={effectiveStart}
+            endTs={effectiveEnd}
+            onApply={(s, e) => onWindowChange?.(s, e)}
+            onClear={reset}
+          />
+          {!isFullWindow && (
+            <button
+              type="button"
+              onClick={reset}
+              className="inline-flex items-center gap-1 text-owl-blue-700 hover:text-owl-blue-900 hover:underline"
+            >
+              <RotateCcw className="w-3 h-3" /> Reset
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Date-range picker — calendar + manual date/time entry
+//
+// The scrubber is great for seeing the available range at a glance but
+// fiddly for selecting a precise window. This popover lets the analyst
+// pick (or type) an exact start and end. It works in the same
+// browser-local clock the scrubber's ticks render in, and stays in the
+// component so every place that renders a scrubber gets it for free.
+// ---------------------------------------------------------------------------
+function DateRangePicker({ minTs, maxTs, startTs, endTs, onApply, onClear }) {
+  const [open, setOpen] = useState(false);
+  const [startVal, setStartVal] = useState('');
+  const [endVal, setEndVal] = useState('');
+  const ref = useRef(null);
+
+  // Seed the inputs from the current window each time the popover opens
+  // (or when the committed window changes while open, e.g. via a drag).
+  useEffect(() => {
+    if (!open) return;
+    setStartVal(toLocalInputValue(startTs));
+    setEndVal(toLocalInputValue(endTs));
+  }, [open, startTs, endTs]);
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
+
+  const minVal = toLocalInputValue(minTs);
+  const maxVal = toLocalInputValue(maxTs);
+  const startMs = fromLocalInputValue(startVal);
+  const endMs = fromLocalInputValue(endVal);
+  const invalid = startMs == null || endMs == null || startMs > endMs;
+
+  const apply = () => {
+    if (invalid) return;
+    // Clamp to the data bounds so a typed value outside the range can't
+    // push the window off the axis.
+    onApply(
+      new Date(Math.max(minTs, Math.min(maxTs, startMs))),
+      new Date(Math.max(minTs, Math.min(maxTs, endMs))),
+    );
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="inline-flex items-center gap-1 text-owl-blue-700 hover:text-owl-blue-900 hover:underline"
+        title="Pick an exact start and end date"
+      >
+        <CalendarRange className="w-3 h-3" /> Pick dates
+      </button>
+      {open && (
+        <div className="absolute right-0 bottom-full mb-1 z-30 w-64 p-3 bg-white border border-light-300 rounded-lg shadow-lg text-light-700">
+          <div className="space-y-2">
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-wide text-light-500 mb-0.5">Start</span>
+              <input
+                type="datetime-local"
+                value={startVal}
+                min={minVal}
+                max={maxVal}
+                onChange={(e) => setStartVal(e.target.value)}
+                className="w-full px-2 py-1 text-[11px] border border-light-300 rounded focus:outline-none focus:ring-1 focus:ring-owl-blue-400"
+              />
+            </label>
+            <label className="block">
+              <span className="block text-[10px] uppercase tracking-wide text-light-500 mb-0.5">End</span>
+              <input
+                type="datetime-local"
+                value={endVal}
+                min={minVal}
+                max={maxVal}
+                onChange={(e) => setEndVal(e.target.value)}
+                className="w-full px-2 py-1 text-[11px] border border-light-300 rounded focus:outline-none focus:ring-1 focus:ring-owl-blue-400"
+              />
+            </label>
+          </div>
+          {invalid && (
+            <p className="mt-1.5 text-[10px] text-amber-700">Start must be on or before end.</p>
+          )}
+          <div className="flex items-center justify-between mt-2.5">
+            <button
+              type="button"
+              onClick={() => { onClear(); setOpen(false); }}
+              className="text-[11px] text-light-500 hover:text-light-700 hover:underline"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={apply}
+              disabled={invalid}
+              className="px-2.5 py-1 text-[11px] font-medium rounded bg-owl-blue-600 text-white hover:bg-owl-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** ms timestamp → "YYYY-MM-DDTHH:MM" in browser-local time for <input type="datetime-local">. */
+function toLocalInputValue(ms) {
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** "YYYY-MM-DDTHH:MM" (local) → ms timestamp, or null. */
+function fromLocalInputValue(v) {
+  if (!v) return null;
+  const t = new Date(v).getTime();
+  return isNaN(t) ? null : t;
 }
 
 // ---------------------------------------------------------------------------
@@ -414,9 +564,15 @@ function buildBucketsFromEnvelope(envelope, bucketKey) {
   }
   const span = maxTs - minTs;
   const unit = pickBucketUnit(span, bucketKey);
-  const sizeMs = unitMs(unit);
+  let sizeMs = unitMs(unit);
   const startBucket = floorTo(minTs, unit);
-  const bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  let bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  // Backstop against a degenerate server envelope (e.g. a year-0001
+  // minDate) blowing the bar count up and freezing the tab.
+  if (bucketCount > MAX_BUCKETS) {
+    sizeMs = Math.ceil((maxTs - startBucket) / MAX_BUCKETS);
+    bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  }
   const buckets = [];
   for (let i = 0; i < bucketCount; i++) {
     buckets.push({
@@ -454,7 +610,7 @@ function buildBuckets(items, bucketKey) {
   let maxTs = -Infinity;
   for (const it of items) {
     const t = parseTimestamp(it);
-    if (t == null) continue;
+    if (t == null || !isPlausibleTs(t)) continue;
     if (t < minTs) minTs = t;
     if (t > maxTs) maxTs = t;
   }
@@ -468,9 +624,16 @@ function buildBuckets(items, bucketKey) {
   maxTs += pad;
 
   const unit = pickBucketUnit(span, bucketKey);
-  const sizeMs = unitMs(unit);
+  let sizeMs = unitMs(unit);
   const startBucket = floorTo(minTs, unit);
-  const bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  let bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  // Backstop: never build a runaway number of bars even if some
+  // degenerate timestamp survives the plausibility filter — widen the
+  // bucket so we stay under the cap. ~100k SVG <g> bars froze the tab.
+  if (bucketCount > MAX_BUCKETS) {
+    sizeMs = Math.ceil((maxTs - startBucket) / MAX_BUCKETS);
+    bucketCount = Math.max(1, Math.ceil((maxTs - startBucket) / sizeMs));
+  }
   const buckets = [];
   for (let i = 0; i < bucketCount; i++) {
     buckets.push({
@@ -498,6 +661,23 @@ function parseTimestamp(it) {
   if (v instanceof Date) return v.getTime();
   const t = new Date(v).getTime();
   return isNaN(t) ? null : t;
+}
+
+// Hard cap on the number of histogram bars. Each bar is an SVG <g>; left
+// uncapped, a degenerate span renders ~100k of them and freezes the tab.
+const MAX_BUCKETS = 2000;
+
+// Phone-forensics timestamps live in the smartphone era. A value far
+// outside it — most commonly a year-0001 / 1970 epoch-zero sentinel left
+// by a failed date parse at ingest — is not real data, and letting it set
+// the histogram bounds stretches the axis to ~2000 years (→ ~100k bars →
+// frozen tab). Such items are excluded from the RANGE here; they're still
+// dropped into the nearest edge bar by the bucketing loop, so nothing is
+// hidden — they just can't blow up the axis. Upper bound is "tomorrow" so
+// a clock-skewed future stamp can't stretch it either.
+const PLAUSIBLE_MIN_MS = Date.UTC(2000, 0, 1);
+function isPlausibleTs(t) {
+  return t >= PLAUSIBLE_MIN_MS && t <= Date.now() + 24 * 60 * 60 * 1000;
 }
 
 function pickBucketUnit(spanMs, bucketKey) {
