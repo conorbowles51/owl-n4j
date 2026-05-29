@@ -60,7 +60,7 @@ DEFAULT_PROFILE: dict[str, Any] = {
 }
 
 
-def _load_postgres_profile(profile_name: str):
+def _load_postgres_profile(profile_name: str) -> dict[str, Any] | None:
     try:
         from sqlalchemy import select
 
@@ -68,9 +68,19 @@ def _load_postgres_profile(profile_name: str):
         from postgres.session import get_background_session
 
         with get_background_session() as db:
-            return db.scalars(
-                select(ProcessingProfile).where(ProcessingProfile.name == profile_name)
-            ).first()
+            row = db.execute(
+                select(
+                    ProcessingProfile.name,
+                    ProcessingProfile.description,
+                    ProcessingProfile.context_instructions,
+                    ProcessingProfile.mandatory_instructions,
+                    ProcessingProfile.special_entity_types,
+                    ProcessingProfile.chat_config,
+                    ProcessingProfile.llm_config,
+                    ProcessingProfile.folder_processing,
+                ).where(ProcessingProfile.name == profile_name)
+            ).mappings().first()
+            return dict(row) if row else None
     except Exception:
         return None
 
@@ -91,18 +101,22 @@ def load_profile(profile_name: str | None = None, *, allow_postgres: bool = True
         db_profile = _load_postgres_profile("generic")
 
     if db_profile is not None:
-        profile["name"] = db_profile.name
-        profile["description"] = db_profile.description or profile["description"]
-        if db_profile.context_instructions:
-            profile["ingestion"]["system_context"] = db_profile.context_instructions
-        profile["ingestion"]["mandatory_instructions"] = list(db_profile.mandatory_instructions or [])
-        profile["ingestion"]["special_entity_types"] = list(db_profile.special_entity_types or [])
-        if db_profile.chat_config:
-            profile["chat"].update(dict(db_profile.chat_config))
-        if db_profile.llm_config:
-            profile["llm_config"] = dict(db_profile.llm_config)
-        if db_profile.folder_processing:
-            profile["folder_processing"] = dict(db_profile.folder_processing)
+        profile["name"] = db_profile["name"]
+        profile["description"] = db_profile.get("description") or profile["description"]
+        if db_profile.get("context_instructions"):
+            profile["ingestion"]["system_context"] = db_profile["context_instructions"]
+        profile["ingestion"]["mandatory_instructions"] = list(
+            db_profile.get("mandatory_instructions") or []
+        )
+        profile["ingestion"]["special_entity_types"] = list(
+            db_profile.get("special_entity_types") or []
+        )
+        if db_profile.get("chat_config"):
+            profile["chat"].update(dict(db_profile["chat_config"]))
+        if db_profile.get("llm_config"):
+            profile["llm_config"] = dict(db_profile["llm_config"])
+        if db_profile.get("folder_processing"):
+            profile["folder_processing"] = dict(db_profile["folder_processing"])
 
     return profile
 
