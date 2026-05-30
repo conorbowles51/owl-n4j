@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import operator
+import re
 import time
 import uuid
 from typing import Annotated, Any, TypedDict
@@ -76,6 +77,54 @@ def _messages_without_dangling_tool_calls(messages: list[AnyMessage]) -> list[An
     if isinstance(last_message, AIMessage) and (getattr(last_message, "tool_calls", []) or []):
         return messages[:-1]
     return messages
+
+
+_TOOL_PLANNING_RE = re.compile(
+    r"\b(i['’]?ll|i will|i am going to|i’m going to|i'm going to|let me)\s+"
+    r"(run|query|search|use|call|execute|build|inspect)\b",
+    re.IGNORECASE,
+)
+
+_INTERNAL_TOOL_MARKERS = (
+    "to=functions.",
+    "functions.",
+    "run_readonly_cypher",
+    "search_graph_entities",
+    "inspect_graph_schema",
+    "get_entity_details",
+    "get_entity_neighborhood",
+    "find_paths_between_entities",
+    "search_documents",
+    "build_graph_artifact",
+    "build_table_artifact",
+    "build_table_artifact_from_rows",
+    "build_chart_artifact",
+    "build_report_artifact",
+    "build_map_artifact",
+    "request_clarification",
+)
+
+_FINAL_ANSWER_SYSTEM_PROMPT = (
+    "Write the final answer from the completed tool results. "
+    "Be concise, do not call tools, and mention any artifacts created. "
+    "Do not expose internal tool names, tool-call syntax, Cypher implementation details, or messages like "
+    "'I will run a query'. "
+    "If the previous assistant turn requested more tools than the run budget allowed, ignore that unexecuted "
+    "request and summarize only the completed tool results. "
+    "If CSV export is relevant, refer to the artifact CSV button; do not claim a file is attached."
+)
+
+
+def _looks_like_tool_planning_text(text: str) -> bool:
+    normalized = " ".join((text or "").strip().split())
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    if any(marker in lowered for marker in _INTERNAL_TOOL_MARKERS):
+        return True
+    if "running cypher" in lowered or "running query" in lowered:
+        return True
+    return bool(_TOOL_PLANNING_RE.search(normalized))
 
 
 def _arg_text(args: dict[str, Any], key: str, *, max_chars: int = 90) -> str | None:
@@ -241,6 +290,67 @@ class AgentState(TypedDict, total=False):
     final_answer: str
 
 
+def _used_tools(state: AgentState) -> bool:
+    return int(state.get("tool_iterations") or 0) > 0 or bool(state.get("tool_trace"))
+
+
+def _last_message_wants_more_tools(state: AgentState) -> bool:
+    messages = state.get("messages") or []
+    if not messages:
+        return False
+    last_message = messages[-1]
+    tool_calls = getattr(last_message, "tool_calls", []) or []
+    if tool_calls:
+        return True
+    if isinstance(last_message, AIMessage):
+        return _looks_like_tool_planning_text(message_content_to_text(last_message.content))
+    return False
+
+
+def _tool_budget_exhausted(state: AgentState) -> bool:
+    max_tool_calls = int(state.get("max_tool_calls") or 0)
+    if max_tool_calls <= 0:
+        return False
+    return int(state.get("tool_iterations") or 0) >= max_tool_calls and _last_message_wants_more_tools(state)
+
+
+def _messages_for_finalizer(state: AgentState) -> list[AnyMessage]:
+    messages = _messages_without_dangling_tool_calls(state.get("messages") or [])
+    if not messages:
+        return messages
+    last_message = messages[-1]
+    if (
+        _tool_budget_exhausted(state)
+        and isinstance(last_message, AIMessage)
+        and _looks_like_tool_planning_text(message_content_to_text(last_message.content))
+    ):
+        return messages[:-1]
+    return messages
+
+
+def _budget_continuation_clarification(max_tool_calls: int) -> dict[str, Any]:
+    return {
+        "question": "I reached the investigation step limit before I could finish cleanly. Would you like me to continue?",
+        "options": [
+            {
+                "id": "continue",
+                "label": "Continue",
+                "description": "Continues the same investigation with a fresh tool-step budget.",
+            },
+            {
+                "id": "stop",
+                "label": "Stop here",
+                "description": "Leave the current artifacts and findings as they are.",
+            },
+        ],
+        "allow_free_text": True,
+        "context": {
+            "reason": "tool_budget_exhausted",
+            "max_tool_calls": max_tool_calls,
+        },
+    }
+
+
 class AgentGraphRunner:
     def __init__(self, *, provider: str, model_id: str):
         if provider != "openai":
@@ -264,7 +374,7 @@ class AgentGraphRunner:
         case_id: str,
         messages: list[HumanMessage | AIMessage],
         artifact_preference: str = "auto",
-        max_tool_calls: int = 12,
+        max_tool_calls: int = 28,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
@@ -308,6 +418,7 @@ Your job:
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
 - Create one artifact for a normal request. Create more than one only when the user explicitly asks for multiple views.
 - Treat follow-ups like "add emails too", "remove non-transaction nodes", "expand it", or "center this node" as refinements of the previous artifact in the thread.
+- If the user says to continue after a tool-budget clarification, continue the previous unfinished request with this fresh run's tool budget.
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
@@ -435,21 +546,20 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         def finalize_node(state: AgentState) -> dict[str, Any]:
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
-            if isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
+            if state.get("clarifications"):
+                return {"final_answer": ""}
+            if _tool_budget_exhausted(state):
+                return {
+                    "clarifications": [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))],
+                    "final_answer": "",
+                }
+            if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": message_content_to_text(last_message.content)}
 
-            final_messages = _messages_without_dangling_tool_calls(state["messages"])
+            final_messages = _messages_for_finalizer(state)
             response = self.base_model.invoke(
                 [
-                    SystemMessage(
-                        content=(
-                            "Write the final answer from the tool results. "
-                            "Be concise, do not call tools, and mention any artifacts created. "
-                            "If the previous assistant turn requested more tools than the run budget allowed, "
-                            "ignore that unexecuted request and summarize only the completed tool results. "
-                            "If CSV export is relevant, refer to the artifact CSV button; do not claim a file is attached."
-                        )
-                    ),
+                    SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
                     *final_messages,
                 ]
             )
@@ -495,7 +605,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
         case_id: str,
         messages: list[HumanMessage | AIMessage],
         artifact_preference: str = "auto",
-        max_tool_calls: int = 12,
+        max_tool_calls: int = 28,
         thread_id: str | None = None,
         available_artifacts: list[dict[str, Any]] | None = None,
         should_cancel: Callable[[], bool] | None = None,
@@ -540,6 +650,7 @@ Your job:
 - If a visual artifact would materially help the answer, build it even when the user did not explicitly ask.
 - Create one artifact for a normal request. Create more than one only when the user explicitly asks for multiple views.
 - Treat follow-ups like "add emails too", "remove non-transaction nodes", "expand it", or "center this node" as refinements of the previous artifact in the thread.
+- If the user says to continue after a tool-budget clarification, continue the previous unfinished request with this fresh run's tool budget.
 - If the user asks for CSV export, build the relevant artifact and say it can be downloaded with the artifact CSV button. Do not claim you attached a file or wrote a local file.
 - Do not claim evidence exists unless a tool result supports it.
 - Keep final answers professional, concise, and specific. Mention artifact titles when you create them.
@@ -675,21 +786,20 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                 raise AgentRunCancelled("Agent run cancelled")
             last_message = state["messages"][-1]
             tool_calls = getattr(last_message, "tool_calls", []) or []
-            if isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
+            if state.get("clarifications"):
+                return {"final_answer": ""}
+            if _tool_budget_exhausted(state):
+                return {
+                    "clarifications": [_budget_continuation_clarification(int(state.get("max_tool_calls") or max_tool_calls))],
+                    "final_answer": "",
+                }
+            if not _used_tools(state) and isinstance(last_message, AIMessage) and not tool_calls and last_message.content:
                 return {"final_answer": message_content_to_text(last_message.content)}
 
-            final_messages = _messages_without_dangling_tool_calls(state["messages"])
+            final_messages = _messages_for_finalizer(state)
             response = self.base_model.invoke(
                 [
-                    SystemMessage(
-                        content=(
-                            "Write the final answer from the tool results. "
-                            "Be concise, do not call tools, and mention any artifacts created. "
-                            "If the previous assistant turn requested more tools than the run budget allowed, "
-                            "ignore that unexecuted request and summarize only the completed tool results. "
-                            "If CSV export is relevant, refer to the artifact CSV button; do not claim a file is attached."
-                        )
-                    ),
+                    SystemMessage(content=_FINAL_ANSWER_SYSTEM_PROMPT),
                     *final_messages,
                 ]
             )
@@ -755,7 +865,7 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
                         }
                     else:
                         content = message_content_to_text(getattr(last, "content", ""))
-                        if content:
+                        if content and not collected_trace:
                             yield {"type": "assistant_draft", "answer": content}
 
             tools_update = update.get("tools")
@@ -779,7 +889,11 @@ Actual labels and fields vary by case, so inspect the schema when field choice m
             finalize_update = update.get("finalize")
             if finalize_update:
                 finalize_messages = finalize_update.get("messages") or []
+                clarifications = finalize_update.get("clarifications") or []
                 collected_messages.extend(finalize_messages)
+                collected_clarifications.extend(clarifications)
+                for clarification in clarifications:
+                    yield {"type": "clarification", "clarification": clarification}
                 final_answer = finalize_update.get("final_answer") or final_answer
                 if final_answer:
                     yield {"type": "answer", "answer": final_answer}

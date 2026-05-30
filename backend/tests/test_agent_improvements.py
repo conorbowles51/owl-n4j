@@ -3,7 +3,14 @@ from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-from services.agent.graph import _messages_without_dangling_tool_calls
+from services.agent.graph import (
+    _budget_continuation_clarification,
+    _looks_like_tool_planning_text,
+    _messages_for_finalizer,
+    _messages_without_dangling_tool_calls,
+    _tool_budget_exhausted,
+    _used_tools,
+)
 from services.agent.service import AgentService
 from services.agent.tools import AgentToolContext, _extract_graph_selection, _filter_graph, make_agent_tools
 
@@ -52,6 +59,48 @@ class AgentImprovementTests(unittest.TestCase):
         sanitized = _messages_without_dangling_tool_calls(messages)
 
         self.assertEqual(sanitized, messages)
+
+    def test_finalizer_detects_tool_budget_exhaustion_from_planning_text(self):
+        messages = [
+            HumanMessage(content="Build a graph of ownership links"),
+            ToolMessage(
+                tool_call_id="call_1",
+                name="run_readonly_cypher",
+                content='{"summary": "Found ownership rows."}',
+            ),
+            AIMessage(content="I'll run a Cypher to collect the remaining links. to=functions.run_readonly_cypher"),
+        ]
+        state = {
+            "messages": messages,
+            "tool_iterations": 28,
+            "max_tool_calls": 28,
+            "tool_trace": [{"name": "run_readonly_cypher"}],
+        }
+
+        self.assertTrue(_used_tools(state))
+        self.assertTrue(_tool_budget_exhausted(state))
+        self.assertTrue(_looks_like_tool_planning_text(messages[-1].content))
+        self.assertEqual(_messages_for_finalizer(state), messages[:-1])
+
+    def test_budget_continuation_clarification_can_be_resumed_by_user(self):
+        payload = _budget_continuation_clarification(28)
+        clarification = AgentService._clarification_from_runner(
+            payload,
+            thread_id="thread-1",
+            run_id="run-1",
+            original_message="build the graph",
+        )
+
+        self.assertIsNotNone(clarification)
+        self.assertEqual(
+            clarification.question,
+            "I reached the investigation step limit before I could finish cleanly. Would you like me to continue?",
+        )
+        self.assertEqual(clarification.options[0].label, "Continue")
+        self.assertEqual(clarification.options[1].label, "Stop here")
+        self.assertEqual(clarification.context["reason"], "tool_budget_exhausted")
+        self.assertEqual(clarification.context["max_tool_calls"], 28)
+        self.assertTrue(AgentService._is_tool_budget_clarification(clarification))
 
     def test_runner_clarification_payload_preserves_pending_context(self):
         clarification = AgentService._clarification_from_runner(

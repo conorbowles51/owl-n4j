@@ -35,6 +35,9 @@ from services.case_service import check_case_access
 from services.system_log_service import LogOrigin, LogType, system_log_service
 
 
+DEFAULT_AGENT_MAX_TOOL_CALLS = 28
+
+
 class AgentService:
     def stream_message(
         self,
@@ -106,7 +109,7 @@ class AgentService:
                 case_id=str(request.case_id),
                 messages=history,
                 artifact_preference=request.artifact_preference,
-                max_tool_calls=12,
+                max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
                 thread_id=str(thread.id),
                 available_artifacts=self._available_artifacts_for_runner(thread),
                 should_cancel=lambda: is_cancelled(run_id),
@@ -151,7 +154,12 @@ class AgentService:
                 request_message=request.message,
                 thread=thread,
             )
-            artifact_records = [] if runner_clarification else storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
+            persist_partial_artifacts = self._is_tool_budget_clarification(runner_clarification)
+            artifact_records = (
+                storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
+                if artifacts and (not runner_clarification or persist_partial_artifacts)
+                else []
+            )
             storage.persist_tool_trace(db, run=run, trace=tool_trace)
             if runner_clarification:
                 storage.update_run_metadata(
@@ -325,7 +333,7 @@ class AgentService:
                 case_id=str(request.case_id),
                 messages=history,
                 artifact_preference=request.artifact_preference,
-                max_tool_calls=12,
+                max_tool_calls=DEFAULT_AGENT_MAX_TOOL_CALLS,
                 thread_id=str(thread.id),
                 available_artifacts=self._available_artifacts_for_runner(thread),
             )
@@ -359,7 +367,12 @@ class AgentService:
                 request_message=request.message,
                 thread=thread,
             )
-            artifact_records = [] if runner_clarification else storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
+            persist_partial_artifacts = self._is_tool_budget_clarification(runner_clarification)
+            artifact_records = (
+                storage.persist_artifacts(db, thread=thread, run=run, artifacts=artifacts)
+                if artifacts and (not runner_clarification or persist_partial_artifacts)
+                else []
+            )
             storage.persist_tool_trace(db, run=run, trace=tool_trace)
             if runner_clarification:
                 storage.update_run_metadata(
@@ -587,6 +600,14 @@ class AgentService:
             storage.to_api_artifact(artifact).model_dump(mode="json")
             for artifact in artifacts[-8:]
         ]
+
+    @staticmethod
+    def _is_tool_budget_clarification(clarification: AgentClarification | None) -> bool:
+        return bool(
+            clarification
+            and isinstance(clarification.context, dict)
+            and clarification.context.get("reason") == "tool_budget_exhausted"
+        )
 
     @staticmethod
     def _public_trace_item(item: dict[str, Any]) -> dict[str, Any]:
