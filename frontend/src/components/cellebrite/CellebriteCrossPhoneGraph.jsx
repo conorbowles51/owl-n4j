@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2,
+  Loader2, AlertTriangle, ZoomIn, ZoomOut, Maximize2,
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
   Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
   Bluetooth, Filter as FilterIcon, ChevronRight, Tag, Clock,
@@ -238,6 +238,12 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // is otherwise just the active-edge filter, which is honest
   // behaviour and shouldn't surface a warning.
   const [hitCap, setHitCap] = useState(false);
+  // True when the graph fetch itself failed (timeout / connection drop) — so
+  // a fetch error reads as a retryable error instead of the misleading "no
+  // cross-phone data". Bump reloadKey from the Retry button to re-run the
+  // fetch effect.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Per-edge-type edge counts (from the backend). The chip strip
   // renders these as small badges so the user sees "Visits 0" and
@@ -471,6 +477,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     }
 
     setLoading(true);
+    setLoadFailed(false);
     cellebriteAPI.getCrossPhoneGraph(caseId, {
       personKeys: personKeys || undefined,
       // Send the user's active set so the backend includes/excludes
@@ -508,6 +515,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         setTotalPersons(0);
         setEdgeCountsByType({});
         setHitCap(false);
+        setLoadFailed(true);
         setLoading(false);
       }
     });
@@ -526,6 +534,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     (personKeys || []).join('|'),
     depth,
     [...activeEventTypes].sort().join(','),
+    reloadKey,
   ]);
 
   // Build a per-node search haystack ONCE per graph data load so the
@@ -1019,6 +1028,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-6 h-6 animate-spin text-light-400" />
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-light-600">
+        <AlertTriangle className="w-6 h-6 text-amber-500" />
+        <span>Couldn’t load the cross-phone graph — the request timed out or the connection dropped.</span>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="mt-1 px-3 py-1 rounded bg-owl-blue-600 text-white text-xs font-medium hover:bg-owl-blue-700"
+        >
+          Retry
+        </button>
       </div>
     );
   }

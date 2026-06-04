@@ -21,7 +21,7 @@ import CommsMediaStrip from './comms/CommsMediaStrip';
 import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
-import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle } from 'lucide-react';
+import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import {
@@ -77,6 +77,23 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // default ('list'). The two swim-lane orientations share data with
   // the list — only the renderer changes, no extra fetches.
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'swim-v' | 'swim-h'
+
+  // Sort direction for the chronological list. 'desc' (default) shows
+  // newest events first; 'asc' shows oldest first. Drives BOTH the
+  // day-group order and the intra-day row order. Persisted per-case in
+  // localStorage (mirrors the cb.* per-case key style used elsewhere).
+  const sortDirKey = `cb.timeline.sortDir.${caseId || 'unknown'}`;
+  const [sortDir, setSortDir] = useState(() => {
+    if (typeof window === 'undefined') return 'desc';
+    try {
+      return window.localStorage.getItem(sortDirKey) === 'asc' ? 'asc' : 'desc';
+    } catch { return 'desc'; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(sortDirKey, sortDir); }
+    catch { /* ignore */ }
+  }, [sortDir, sortDirKey]);
 
   // --- Data state ---
   const [eventTypes, setEventTypes] = useState([]);
@@ -288,12 +305,14 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     return { filteredEvents: out, highlights: Array.from(allHighlights) };
   }, [events, searchQuery, hasAttachmentOnly, parsedQuery, reports]);
 
-  // Sort newest-first by default; group by date for visual rhythm
+  // Sort by the chosen direction; group by date for visual rhythm. Because
+  // groups are emitted in encounter order, sorting the events ascending also
+  // makes the day groups come out oldest-first (and vice-versa for desc).
   const groupedByDay = useMemo(() => {
     const sorted = [...filteredEvents].sort((a, b) => {
       const ta = a.timestamp ? new Date(a.timestamp).getTime() : 0;
       const tb = b.timestamp ? new Date(b.timestamp).getTime() : 0;
-      return tb - ta;
+      return sortDir === 'asc' ? ta - tb : tb - ta;
     });
     const groups = [];
     let current = null;
@@ -309,7 +328,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       current.events.push(ev);
     }
     return groups;
-  }, [filteredEvents, tzDayKey, tzId]);
+  }, [filteredEvents, tzDayKey, tzId, sortDir]);
 
   // Scroll-to-bucket from scrubber bar clicks. The list is windowed, so the
   // target day header may not be in the DOM — TimelineList exposes an
@@ -349,6 +368,19 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
           onOnlyGeolocatedChange={() => {}}
         />
         <div className="flex-1" />
+        {/* Sort-direction toggle — flips both the day-group order and the
+            intra-day row order. Default 'desc' = newest first. */}
+        <button
+          type="button"
+          onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+          title={sortDir === 'desc' ? 'Newest first (click for oldest first)' : 'Oldest first (click for newest first)'}
+          className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-light-300 rounded-md text-[11px] text-light-700 hover:bg-light-100 flex-shrink-0"
+        >
+          {sortDir === 'desc'
+            ? <ArrowDown className="w-3 h-3" />
+            : <ArrowUp className="w-3 h-3" />}
+          {sortDir === 'desc' ? 'Newest first' : 'Oldest first'}
+        </button>
         {/* View-mode toggle — same data, different rendering. */}
         <div className="inline-flex items-center bg-white border border-light-300 rounded-md overflow-hidden text-[11px] flex-shrink-0">
           <button
@@ -480,6 +512,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
           <TimelineList
             ref={listRef}
             groups={groupedByDay}
+            sortDir={sortDir}
             reports={reports}
             showPhoneChip={reports.length > 1}
             highlights={highlights}
@@ -555,7 +588,7 @@ function firstGE(arr, x) {
 }
 
 const TimelineList = forwardRef(function TimelineList(
-  { groups, reports, showPhoneChip, highlights, onRowClick },
+  { groups, sortDir = 'desc', reports, showPhoneChip, highlights, onRowClick },
   ref,
 ) {
   const scrollRef = useRef(null);
@@ -607,11 +640,15 @@ const TimelineList = forwardRef(function TimelineList(
       scrollToDay(day) {
         const el = scrollRef.current;
         if (!el) return;
-        // Groups are newest-first, so an exact match isn't guaranteed — jump
-        // to the first day at or before the requested one (old behaviour).
+        // An exact match isn't guaranteed — jump to the nearest day in the
+        // current sort direction. Desc (newest-first): first day at or BEFORE
+        // the target. Asc (oldest-first): first day at or AFTER the target.
+        // Either way offsets come from the same group order, so scroll stays
+        // correct when sortDir flips.
         let targetDay = null;
         for (const g of groups) {
-          if (g.day && g.day !== '—' && g.day <= day) {
+          if (!g.day || g.day === '—') continue;
+          if (sortDir === 'asc' ? g.day >= day : g.day <= day) {
             targetDay = g.day;
             break;
           }
@@ -620,7 +657,7 @@ const TimelineList = forwardRef(function TimelineList(
         if (off != null) el.scrollTo({ top: off, behavior: 'smooth' });
       },
     }),
-    [groups, dayOffset],
+    [groups, dayOffset, sortDir],
   );
 
   const top = scrollTop - TL_OVERSCAN_PX;
