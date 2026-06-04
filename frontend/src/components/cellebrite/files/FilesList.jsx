@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef } from 'react';
 import { Loader2, LayoutGrid, List as ListIcon } from 'lucide-react';
 import FileThumbnail from './FileThumbnail';
 
@@ -16,6 +16,9 @@ import FileThumbnail from './FileThumbnail';
  *   onRangeSelect      — (startIdx, endIdx) => void
  *   onOpen             — (file) => void
  *   layout, onLayoutChange
+ *   hasMore            — bool, more rows exist beyond the loaded slice
+ *   loadingMore        — bool, the next page is being fetched
+ *   onLoadMore         — () => void, fetch + append the next offset page
  */
 export default function FilesList({
   files = [],
@@ -27,6 +30,9 @@ export default function FilesList({
   onOpen,
   layout = 'grid',
   onLayoutChange,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
 }) {
   const lastSelectedIndex = useRef(null);
 
@@ -105,6 +111,25 @@ export default function FilesList({
                 layout="list"
               />
             ))}
+          </div>
+        )}
+
+        {/* Load more — appends the next offset page. Only shown once the
+            first page is rendered and more rows exist beyond it. */}
+        {files.length > 0 && hasMore && (
+          <div className="flex flex-col items-center gap-1 py-4 border-t border-light-200">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={loadingMore}
+              className="px-4 py-1.5 rounded bg-owl-blue-600 text-white text-xs font-medium hover:bg-owl-blue-700 disabled:opacity-60 disabled:cursor-default inline-flex items-center gap-1.5"
+            >
+              {loadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+            <span className="text-[11px] text-light-500">
+              Showing {files.length.toLocaleString()} of {total.toLocaleString()}
+            </span>
           </div>
         )}
       </div>

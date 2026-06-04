@@ -21,7 +21,7 @@ import CommsMediaStrip from './comms/CommsMediaStrip';
 import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
-import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle } from 'lucide-react';
+import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle, Loader2 } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import {
@@ -46,6 +46,11 @@ import {
  * focusing on day-by-day behavioural patterns — no map, no playback, just
  * a clean activity log the investigator can scan and search.
  */
+// Per-type body-fetch window. "Load more" grows the shared cap by this step
+// (see pageLimit) so the feed reaches progressively further toward the full
+// envelope total without switching to keyset/cursor pagination (S3-03).
+const PAGE_STEP = 5000;
+
 export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // Day grouping + headers follow the view's selected timezone so a day is the
   // local calendar day, not the UTC day (which made days look like they end at
@@ -94,6 +99,14 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   const [loadFailed, setLoadFailed] = useState(false);
   // Bump to force a re-fetch (Retry button).
   const [reloadKey, setReloadKey] = useState(0);
+  // Progressive loading window. The body fetch is per-event-type, so a single
+  // global offset is awkward (each type paginates independently). Instead we
+  // grow a shared per-type cap by PAGE_STEP on each "Load more" and re-fetch —
+  // this widens every type's window at once while leaving the existing dedupe,
+  // truncation notice, scrubber, and search completely untouched. `loadingMore`
+  // keeps the button in a pending state during the re-fetch.
+  const [pageLimit, setPageLimit] = useState(PAGE_STEP);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Cheap server-side aggregation (true total + full min/max date + per-day
   // histogram) so the scrubber shows the honest full range/density even though
   // the body feed is capped per type. Loads async, independent of the body.
@@ -136,6 +149,14 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
     };
   }, [caseId, selectedReportKeys]);
 
+  // Reset the progressive window to the first page whenever a server-side
+  // filter changes — a new filter set means the previous "Load more" depth no
+  // longer applies. Kept separate from the body-fetch effect so growing
+  // pageLimit (via "Load more") doesn't reset itself.
+  useEffect(() => {
+    setPageLimit(PAGE_STEP);
+  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate, hasAttachmentOnly]);
+
   // Fetch events whenever the *server-side* filters change. Search is
   // applied in-memory in a useMemo below, so adding it here would
   // pointlessly re-run the Cypher round-trip on every keystroke.
@@ -151,11 +172,21 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    setLoadingProgress(0);
-    setLoadingStage('');
-    setLoadFailed(false);
-    setEvents([]);
+    // A "Load more" re-fetch (pageLimit grown past the first page) keeps the
+    // already-rendered events on screen and only flags the button as pending —
+    // blanking the list + showing the full-screen spinner on every page would
+    // be jarring. The first page (and any filter change, which resets pageLimit)
+    // takes the normal loading path.
+    const isLoadMore = pageLimit > PAGE_STEP;
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setLoadingProgress(0);
+      setLoadingStage('');
+      setLoadFailed(false);
+      setEvents([]);
+    }
     const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
     const stages = [...activeEventTypes];
 
@@ -184,7 +215,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
               endDate: endDate || null,
               onlyGeolocated: false,
               hasAttachment: hasAttachmentOnly,
-              limit: 5000,
+              limit: pageLimit,
             });
             if (cancelled) return;
             if (data.truncated) {
@@ -211,6 +242,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         setTruncatedTypes([...truncated]);
         setLoadFailed(aggregated.length === 0 && errorCount > 0);
         setLoading(false);
+        setLoadingMore(false);
         setLoadingStage('');
       })();
     }, 250);
@@ -219,7 +251,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       cancelled = true;
       clearTimeout(t);
     };
-  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate, hasAttachmentOnly, reloadKey]);
+  }, [caseId, selectedReportKeys, activeEventTypes, startDate, endDate, hasAttachmentOnly, reloadKey, pageLimit]);
 
   // Envelope fetch — true total + full min/max date + per-day histogram for
   // the scrubber. Deliberately NOT scoped to the scrubber window (startDate/
@@ -253,6 +285,20 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       .catch(() => { if (!cancelled) setEnvelope(null); });
     return () => { cancelled = true; };
   }, [caseId, selectedReportKeys, activeEventTypes, hasAttachmentOnly]);
+
+  // "Load more" availability + counts. More events exist when the envelope's
+  // true total (for the active filters) exceeds what we've loaded AND at least
+  // one type actually hit the cap (truncated) — without a truncated type the
+  // envelope/body gap is just dedupe/rounding noise, not unloaded rows.
+  const loadedCount = events.length;
+  const totalCount = typeof envelope?.total === 'number' ? envelope.total : null;
+  const hasMore =
+    truncatedTypes.length > 0 &&
+    totalCount != null &&
+    totalCount > loadedCount;
+  const handleLoadMore = useCallback(() => {
+    setPageLimit((n) => n + PAGE_STEP);
+  }, []);
 
   // The scrubber shows more than the loaded body slice whenever a type was
   // capped — flag it so the "All time" summary becomes honest.
@@ -397,7 +443,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
         <div className="px-3 py-1.5 border-b border-amber-200 bg-amber-50 text-[11px] text-amber-800 flex items-start gap-1.5 flex-shrink-0">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
           <span>
-            Showing the most recent <span className="font-semibold">5,000</span> per type for{' '}
+            Showing the most recent <span className="font-semibold">{pageLimit.toLocaleString()}</span> per type for{' '}
             <span className="font-medium">{truncatedTypes.map((t) => EVENT_LABELS[t] || t).join(', ')}</span>
             {typeof envelope?.total === 'number' && envelope.total > events.length && (
               <> — <span className="font-semibold">{envelope.total.toLocaleString()}</span> events exist in total</>
@@ -483,6 +529,11 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             reports={reports}
             showPhoneChip={reports.length > 1}
             highlights={highlights}
+            hasMore={hasMore}
+            loadingMore={loadingMore}
+            loadedCount={loadedCount}
+            totalCount={totalCount}
+            onLoadMore={handleLoadMore}
             onRowClick={(ev) => {
               setSelectedEvent(ev);
               selectEntity({
@@ -555,7 +606,18 @@ function firstGE(arr, x) {
 }
 
 const TimelineList = forwardRef(function TimelineList(
-  { groups, reports, showPhoneChip, highlights, onRowClick },
+  {
+    groups,
+    reports,
+    showPhoneChip,
+    highlights,
+    onRowClick,
+    hasMore = false,
+    loadingMore = false,
+    loadedCount = 0,
+    totalCount = null,
+    onLoadMore,
+  },
   ref,
 ) {
   const scrollRef = useRef(null);
@@ -671,6 +733,24 @@ const TimelineList = forwardRef(function TimelineList(
         );
       })}
       {bottomPad > 0 && <div style={{ height: bottomPad }} />}
+      {hasMore && (
+        <div className="flex flex-col items-center gap-1 py-4 border-t border-light-200 mt-2">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="px-4 py-1.5 rounded bg-owl-blue-600 text-white text-xs font-medium hover:bg-owl-blue-700 disabled:opacity-60 disabled:cursor-default inline-flex items-center gap-1.5"
+          >
+            {loadingMore && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+          {totalCount != null && (
+            <span className="text-[11px] text-light-500">
+              Showing {loadedCount.toLocaleString()} of {totalCount.toLocaleString()}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { MessageSquare, Phone, Mail, Paperclip } from 'lucide-react';
+import { MessageSquare, Phone, Mail, Paperclip, Loader2 } from 'lucide-react';
 import { formatRelative, appIconEmoji } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import HighlightedText from '../shared/HighlightedText';
@@ -25,6 +25,11 @@ export default function CommsThreadList({
   // the PhoneIdentityChip pulls everything it needs from context.
   deviceById = {},
   highlights = [],
+  hasMore = false,
+  loadingMore = false,
+  loadedCount = 0,
+  totalCount = null,
+  onLoadMore,
 }) {
   const phoneCtx = usePhoneReports();
   const hasMultiple = !!phoneCtx?.hasMultiple;
@@ -60,6 +65,28 @@ export default function CommsThreadList({
           highlights={highlights}
         />
       ))}
+
+      {/* Load more — re-fetches with a larger per-type cap and appends the
+          newly-revealed threads. Only shown when more exist beyond the
+          loaded slice. */}
+      {hasMore && (
+        <div className="flex flex-col items-center gap-1 py-3 border-t border-light-100">
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="px-3 py-1 rounded bg-owl-blue-600 text-white text-[11px] font-medium hover:bg-owl-blue-700 disabled:opacity-60 disabled:cursor-default inline-flex items-center gap-1.5"
+          >
+            {loadingMore && <Loader2 className="w-3 h-3 animate-spin" />}
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+          {totalCount != null && (
+            <span className="text-[10px] text-light-500">
+              Showing {loadedCount.toLocaleString()} of {totalCount.toLocaleString()}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
