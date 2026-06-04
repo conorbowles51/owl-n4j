@@ -20,6 +20,7 @@ import CollapsibleScrubber from './shared/CollapsibleScrubber';
 import CommsMediaStrip from './comms/CommsMediaStrip';
 import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
+import { phoneFromKey } from './shared/PersonName';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
 import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
@@ -680,10 +681,17 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const dColor = deviceColorOf(ev.device_report_key, reports);
   const time = formatTs(ev.timestamp).slice(11) || '—';
-  const sender = ev.sender?.name;
+  const fmtParty = (party) => {
+    if (!party) return null;
+    const num = phoneFromKey(party.key) || (Array.isArray(party.phone_numbers) && party.phone_numbers[0]) || null;
+    const name = party.name || party.key;
+    if (!name) return null;
+    return num ? `${name} · ${num}` : name;
+  };
+  const sender = fmtParty(ev.sender);
   const recipient =
-    ev.counterpart?.name ||
-    (Array.isArray(ev.recipients) && ev.recipients[0]?.name) ||
+    fmtParty(ev.counterpart) ||
+    (Array.isArray(ev.recipients) && fmtParty(ev.recipients[0])) ||
     null;
   let direction = '';
   if (sender && recipient) direction = `${sender} → ${recipient}`;
@@ -741,7 +749,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
           )}
         </div>
         {direction && (
-          <div className="text-xs text-light-700 truncate">
+          <div className="text-xs text-light-700 truncate" title={direction}>
             {hasHighlights
               ? <HighlightedText text={direction} highlights={highlights} />
               : direction}
