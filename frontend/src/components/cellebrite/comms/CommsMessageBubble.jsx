@@ -4,7 +4,7 @@ import CommsAttachment from './CommsAttachment';
 import { formatShortTime, paletteForSenderKey, senderInitials } from './commsUtils';
 import HighlightedText from '../shared/HighlightedText';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
-import PersonName from '../shared/PersonName';
+import PersonName, { phoneFromKey } from '../shared/PersonName';
 import LinkNodeToEntityButton from '../../entities/LinkNodeToEntityButton';
 
 /**
@@ -159,7 +159,11 @@ export default function CommsMessageBubble({
                 } else {
                   const names = recipients
                     .filter((r) => r && !r.is_owner)
-                    .map((r) => r.name || r.key || 'Unknown')
+                    .map((r) => {
+                      const label = r.name || r.key || 'Unknown';
+                      const num = phoneFromKey(r.key) || (r.phone_numbers && r.phone_numbers[0]);
+                      return num && num !== label ? `${label} ${num}` : label;
+                    })
                     .filter(Boolean);
                   if (names.length === 0) return null;
                   if (names.length === 1) toLabel = names[0];
