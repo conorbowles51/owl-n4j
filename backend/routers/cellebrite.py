@@ -722,6 +722,14 @@ def get_events(
             "Server-side so the per-type cap applies to media-bearing rows."
         ),
     ),
+    cursor: Optional[str] = Query(
+        None,
+        description=(
+            "Opaque continuation token from a previous response's `next_cursor`. "
+            "Takes priority over `offset` when supplied — keyset pagination so "
+            "deep pages don't re-read earlier rows."
+        ),
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -742,6 +750,7 @@ def get_events(
         near=near_tuple,
         lean=lean,
         has_attachment=has_attachment,
+        cursor=cursor,
     )
     # Resolve message/voicemail/email attachment file-ids into the richer
     # `attachments` list so the Timeline + Event Center rows can render the
