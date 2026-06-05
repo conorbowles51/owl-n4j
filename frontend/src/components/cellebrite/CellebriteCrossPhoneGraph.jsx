@@ -260,6 +260,17 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   //                     match / Phones. For dense graphs.
   const [labelsAllOn, setLabelsAllOn] = useState(true);
 
+  // Connection vs Flow view (S2-18 / S2-20).
+  //   false (default) → "Connection view": undirected edges, arrows
+  //                     OFF. Identical to the legacy rendering — no
+  //                     regression until the user opts in.
+  //   true            → "Flow view": directional arrows drawn along
+  //                     each edge's canonical source->target
+  //                     orientation (the backend canonicalises so the
+  //                     smaller person-id is `source`). Width is
+  //                     unchanged (still driven by `count`/total).
+  const [flowView, setFlowView] = useState(false);
+
   // Selection rubber-band state.
   // Trigger: right-click + drag anywhere on the canvas. Mouse button
   // 2 starts the box; we suppress the browser context-menu so the
@@ -1324,6 +1335,21 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <div className="flex-1" />
         <button
           type="button"
+          onClick={() => setFlowView((v) => !v)}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
+            flowView
+              ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+              : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
+          }`}
+          title={flowView
+            ? 'Flow view — directional arrows on call / message / email edges (source→target). Click for the undirected connection view.'
+            : 'Connection view — undirected edges (no arrows). Click to show direction of flow.'}
+        >
+          <ChevronRight className="w-2.5 h-2.5" />
+          {flowView ? 'Flow view' : 'Connection view'}
+        </button>
+        <button
+          type="button"
           onClick={() => setLabelsAllOn((v) => !v)}
           className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
             labelsAllOn
@@ -1457,7 +1483,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             return c ? withAlpha(c, 0.55) : '#cbd5e1';
           }}
           linkWidth={l => l.count ? Math.min(l.count / 5, 3) : 0.5}
-          linkDirectionalArrowLength={0}
+          // Arrows OFF by default (Connection view). In Flow view we
+          // draw a small arrow at the target end along the edge's
+          // canonical source->target orientation. Only directional
+          // edges (those the backend tagged with dir_counts: call /
+          // message / email) get an arrow; symmetric edges (financial,
+          // resource, contact links) stay arrow-less.
+          linkDirectionalArrowLength={(l) => (flowView && l && l.dir_counts ? 4 : 0)}
+          linkDirectionalArrowRelPos={1}
           onNodeHover={setHoveredNode}
           warmupTicks={50}
           cooldownTicks={100}

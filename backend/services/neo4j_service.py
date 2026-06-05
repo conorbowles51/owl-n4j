@@ -6776,6 +6776,25 @@ class Neo4jService:
                     LIMIT 600
                 """
                 result = session.run(edge_query, case_id=case_id)
+                # Directional aggregation (S2-17). Each pair-MATCH above
+                # naturally emits BOTH the a->b and the b->a row when both
+                # orientations carry traffic (the MATCH binds a/b each
+                # way). For directional kinds (call / message / email)
+                # we collapse the two rows for an unordered pair {x,y}
+                # into a SINGLE logical edge that carries the per-
+                # direction counts. Financial stays symmetric and is
+                # emitted per-row exactly as before.
+                #
+                # Canonicalisation: order the two person ids; the link's
+                # `source` is the smaller id, `target` the larger. `ab`
+                # is the count observed in the source->target orientation
+                # (i.e. the row whose src == source), `ba` the reverse.
+                #
+                # Back-compat: `count` is kept == total (ab+ba) so the
+                # frontend `linkWidth={l => l.count ...}` is unchanged,
+                # and `label` is unchanged. dir_counts/total/initiator
+                # are purely additive.
+                pair_links = {}  # (label, src_id, tgt_id) -> link dict
                 for record in result:
                     src_key = record["src"]
                     tgt_key = record["tgt"]
@@ -6785,13 +6804,63 @@ class Neo4jService:
                             continue
                     src_id = f"person-{src_key}"
                     tgt_id = f"person-{tgt_key}"
-                    if src_id in seen_nodes and tgt_id in seen_nodes:
+                    if src_id not in seen_nodes or tgt_id not in seen_nodes:
+                        continue
+
+                    rel_type = record["rel_type"]
+                    cnt = record["cnt"]
+                    rel_pat = EDGE_PATTERNS.get(rel_type)
+                    rel_kind = rel_pat.get("kind") if rel_pat else None
+
+                    if rel_kind == "financial":
+                        # Symmetric — preserve the legacy per-row emission
+                        # exactly (no dir_counts, undirected).
                         links.append({
                             "source": src_id,
                             "target": tgt_id,
-                            "label": record["rel_type"],
-                            "count": record["cnt"],
+                            "label": rel_type,
+                            "count": cnt,
                         })
+                        continue
+
+                    # Directional kind: canonicalise the unordered pair.
+                    if src_id <= tgt_id:
+                        c_src, c_tgt, is_forward = src_id, tgt_id, True
+                    else:
+                        c_src, c_tgt, is_forward = tgt_id, src_id, False
+                    key = (rel_type, c_src, c_tgt)
+                    link = pair_links.get(key)
+                    if link is None:
+                        link = {
+                            "source": c_src,
+                            "target": c_tgt,
+                            "label": rel_type,
+                            "count": 0,
+                            "dir_counts": {"ab": 0, "ba": 0},
+                            "total": 0,
+                        }
+                        pair_links[key] = link
+                    # ab = source->target orientation; ba = reverse.
+                    if is_forward:
+                        link["dir_counts"]["ab"] += cnt
+                    else:
+                        link["dir_counts"]["ba"] += cnt
+
+                # Finalise directional links: derive total / count /
+                # initiator from the accumulated per-direction counts.
+                for link in pair_links.values():
+                    ab = link["dir_counts"]["ab"]
+                    ba = link["dir_counts"]["ba"]
+                    total = ab + ba
+                    link["total"] = total
+                    link["count"] = total  # back-compat: width unchanged
+                    if ba == 0:
+                        link["initiator"] = "ab"
+                    elif ab == 0:
+                        link["initiator"] = "ba"
+                    else:
+                        link["initiator"] = None
+                    links.append(link)
 
             # -------------------- Resource emission --------------------
             # For every active 'resource' edge type, emit one node per
