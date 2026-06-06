@@ -16,6 +16,10 @@ import { buildFilesContext } from '../../utils/chatContextSummary';
  * Shows the 20,876+ registered Cellebrite media files in a browseable tree
  * with a group-by switcher, plus a list + detail panel for viewing and tagging.
  */
+// Server-side page size for the files list. "Load more" appends the next
+// offset page of this size (mirrors the backend /cellebrite/files default).
+const FILES_PAGE_SIZE = 500;
+
 export default function CellebriteFilesExplorer({ caseId, reports: reportsProp = [] }) {
   const phoneCtx = usePhoneReports();
   const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
@@ -35,6 +39,9 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
   const [files, setFiles] = useState([]);
   const [filesTotal, setFilesTotal] = useState(0);
   const [filesLoading, setFilesLoading] = useState(false);
+  // "Load more" pending state — appends the next offset page without
+  // blanking the already-rendered grid.
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -135,25 +142,30 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
     loadCaseTags();
   }, [loadCaseTags]);
 
-  // Fetch files when filters change
+  // Shared list-filter args so the first page and "Load more" stay in
+  // perfect sync — any new filter belongs here, not duplicated below.
+  const listArgs = useMemo(() => {
+    const filter = activeNode?.filter || {};
+    return {
+      reportKeys: reportKeysArr,
+      category: filter.category || null,
+      parentLabel: filter.parent_label || null,
+      sourceApp: filter.source_app || null,
+      devicePath: filter.device_path || null,
+      search: debouncedSearch || null,
+      onlyRelevant,
+      captureAfter: captureAfter || null,
+      captureBefore: captureBefore || null,
+      hasGeotag,
+    };
+  }, [reportKeysArr, activeNode, debouncedSearch, onlyRelevant, captureAfter, captureBefore, hasGeotag]);
+
+  // Fetch the first page when filters change.
   const loadFiles = useCallback(() => {
     if (!caseId) return;
     setFilesLoading(true);
-    const filter = activeNode?.filter || {};
     cellebriteFilesAPI
-      .list(caseId, {
-        reportKeys: reportKeysArr,
-        category: filter.category || null,
-        parentLabel: filter.parent_label || null,
-        sourceApp: filter.source_app || null,
-        devicePath: filter.device_path || null,
-        search: debouncedSearch || null,
-        onlyRelevant,
-        captureAfter: captureAfter || null,
-        captureBefore: captureBefore || null,
-        hasGeotag,
-        limit: 500,
-      })
+      .list(caseId, { ...listArgs, limit: FILES_PAGE_SIZE, offset: 0 })
       .then((data) => {
         setFiles(data.files || []);
         setFilesTotal(data.total || 0);
@@ -164,11 +176,38 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
         setFilesTotal(0);
         setFilesLoading(false);
       });
-  }, [caseId, reportKeysArr, activeNode, debouncedSearch, onlyRelevant, captureAfter, captureBefore, hasGeotag]);
+  }, [caseId, listArgs]);
 
   useEffect(() => {
     loadFiles();
   }, [loadFiles]);
+
+  // "Load more" — fetch the next offset page and APPEND. Offset is the
+  // current loaded count so we ask the server for exactly the rows we
+  // don't have yet. Dedupe by id defensively in case a page boundary
+  // overlaps. Offset pagination (not keyset) per S3-04 scope.
+  const loadMore = useCallback(() => {
+    if (!caseId || loadingMore || filesLoading) return;
+    setLoadingMore(true);
+    cellebriteFilesAPI
+      .list(caseId, { ...listArgs, limit: FILES_PAGE_SIZE, offset: files.length })
+      .then((data) => {
+        const incoming = data.files || [];
+        setFiles((prev) => {
+          const seen = new Set(prev.map((f) => f.id));
+          const merged = [...prev];
+          for (const f of incoming) {
+            if (f.id && seen.has(f.id)) continue;
+            if (f.id) seen.add(f.id);
+            merged.push(f);
+          }
+          return merged;
+        });
+        if (typeof data.total === 'number') setFilesTotal(data.total);
+        setLoadingMore(false);
+      })
+      .catch(() => setLoadingMore(false));
+  }, [caseId, listArgs, files.length, loadingMore, filesLoading]);
 
   // Selection helpers
   const toggleSelect = (id) => {
@@ -324,6 +363,9 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
           files={files}
           total={filesTotal}
           loading={filesLoading}
+          hasMore={!filesLoading && files.length < filesTotal}
+          loadingMore={loadingMore}
+          onLoadMore={loadMore}
           selectedIds={selectedIds}
           onToggleSelect={toggleSelect}
           onRangeSelect={selectRange}

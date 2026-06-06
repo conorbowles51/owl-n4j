@@ -25,6 +25,11 @@ import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
  * for backwards compatibility with callers that pass an explicit list,
  * but when the context is available it is the source of truth.
  */
+// Per-type thread-fetch window. "Load more" grows the shared cap by this step
+// (see threadLimit) so the merged/sorted/sliced list reaches progressively
+// further toward the true total without keyset/cursor pagination.
+const THREADS_PAGE_STEP = 300;
+
 export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [], isActive = true }) {
   const phoneCtx = usePhoneReports();
   const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
@@ -186,6 +191,14 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [threadsProgress, setThreadsProgress] = useState(0);
   const [threadsStage, setThreadsStage] = useState('');
+  // Progressive loading window. Threads are fetched per-type then merged,
+  // sorted by last_activity DESC and sliced to this cap — so a single global
+  // offset can't align with the merged ordering. Mirroring the Timeline, we
+  // grow the shared per-type cap by THREADS_PAGE_STEP on each "Load more" and
+  // re-fetch, widening every type's window while keeping the existing dedupe,
+  // sort and slice intact. `loadingMore` keeps the button pending.
+  const [threadLimit, setThreadLimit] = useState(THREADS_PAGE_STEP);
+  const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
 
   // Envelope = cheap aggregation across the whole comms shape (no item
   // rows). Powers the "honest" scrubber bounds + density curve and the
@@ -373,11 +386,20 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
     if (!reportsReady) return;
     const controller = new AbortController();
     let cancelled = false;
-    setThreadsLoading(true);
-    setThreadsProgress(0);
-    setThreadsStage('');
-    setThreads([]);
-    setThreadsTotal(0);
+    // A "Load more" re-fetch (threadLimit grown past the first page) keeps the
+    // current rows visible and only flags the button as pending; the first
+    // page (and any filter change, which resets threadLimit) blanks + shows
+    // the normal phased loading indicator.
+    const isLoadMore = threadLimit > THREADS_PAGE_STEP;
+    if (isLoadMore) {
+      setLoadingMoreThreads(true);
+    } else {
+      setThreadsLoading(true);
+      setThreadsProgress(0);
+      setThreadsStage('');
+      setThreads([]);
+      setThreadsTotal(0);
+    }
 
     const reportKeysArr = selectedReportKeys.size > 0 ? [...selectedReportKeys] : null;
     const baseArgs = {
@@ -393,7 +415,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       startDate: startDate || null,
       endDate: endDate || null,
       hasAttachment: hasAttachmentOnly,
-      limit: 300,
+      limit: threadLimit,
       signal: controller.signal,
     };
 
@@ -446,6 +468,7 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       setThreads(sliced);
       setThreadsTotal(totalSum);
       setThreadsLoading(false);
+      setLoadingMoreThreads(false);
       setThreadsStage('');
     })();
 
@@ -453,7 +476,15 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       cancelled = true;
       controller.abort();
     };
-  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly]);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, reportsReady, hasAttachmentOnly, threadLimit]);
+
+  // Reset the progressive window to the first page whenever a server-side
+  // filter changes. Separate from the fetch effect so growing threadLimit
+  // (via "Load more") doesn't reset itself. searchQuery is excluded — it's
+  // client-side only and never refetches.
+  useEffect(() => {
+    setThreadLimit(THREADS_PAGE_STEP);
+  }, [caseId, selectedReportKeys, fromKeys, toKeys, participantKeys, threadTypesParam, activeApps, startDate, endDate, hasAttachmentOnly]);
 
   // Envelope fetch — runs in parallel with the threads load so the
   // scrubber bounds + density bars + status bar's true total can paint
@@ -509,6 +540,15 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
   // participants. The other row's items end up under the chosen
   // thread_id, so opening the survivor still shows the same content.
   const dedupedThreads = useMemo(() => dedupeThreads(threads), [threads]);
+
+  // "Load more" availability. The merged thread list is sliced to threadLimit,
+  // so more exist whenever the true total (sum of per-type totals) is greater
+  // than the loaded (pre-dedupe) slice. Gated off while a fetch is in flight.
+  const threadsHasMore =
+    !threadsLoading && threadsTotal > threads.length;
+  const handleLoadMoreThreads = useCallback(() => {
+    setThreadLimit((n) => n + THREADS_PAGE_STEP);
+  }, []);
 
   // ------------------------------------------------------------------
   // Deep message-body search (server-side full-text)
@@ -676,6 +716,11 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
           onSelect={setSelectedThread}
           deviceById={deviceById}
           highlights={threadHighlights}
+          hasMore={threadsHasMore}
+          loadingMore={loadingMoreThreads}
+          loadedCount={dedupedThreads.length}
+          totalCount={threadsTotal}
+          onLoadMore={handleLoadMoreThreads}
         />
       )}
       second={(
