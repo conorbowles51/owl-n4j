@@ -2716,6 +2716,20 @@ export const cellebriteAPI = {
     if (opts.limit && Number.isFinite(opts.limit)) {
       params.set('limit', String(opts.limit));
     }
+    // S2-15: optionally ask the backend to return a bounded subgraph
+    // (matched nodes + 1-hop neighbours + edges, in the same node/link
+    // shape as get_cellebrite_cross_phone_graph) so the frontend can
+    // merge in a node that's OUTSIDE the rendered ~2000-cap. All three
+    // are additive — absent opts preserve the legacy behaviour.
+    if (opts.includeSubgraph) {
+      params.set('include_subgraph', 'true');
+    }
+    if (Array.isArray(opts.eventTypes) && opts.eventTypes.length > 0) {
+      params.set('event_types', opts.eventTypes.join(','));
+    }
+    if (opts.subgraphTopN && Number.isFinite(opts.subgraphTopN)) {
+      params.set('subgraph_top_n', String(opts.subgraphTopN));
+    }
     return fetchAPI(`/cellebrite/cross-phone-graph/search?${params.toString()}`);
   },
 

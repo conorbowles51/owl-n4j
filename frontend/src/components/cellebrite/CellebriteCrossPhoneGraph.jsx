@@ -329,6 +329,61 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   //     those (Person ids → strip 'person-' prefix) and use as the
   //     pivot lens.
   //   - Otherwise fall back to the active perspective.
+  // Lower-level pivot: hand an EXPLICIT set of person keys off to
+  // another Cellebrite tab. Extracted from pivotTo so callers that
+  // already know the keys (e.g. a search result whose Person is
+  // off-canvas and therefore not in graphData) can pivot reliably
+  // without depending on a graphData node lookup.
+  const pivotPersonKeys = useCallback((tabId, keys, label) => {
+    const personKeys = (keys || []).filter(Boolean);
+    if (personKeys.length === 0) {
+      // Fall back to the active perspective if no explicit keys given.
+      if (perspective?.hasPerspective) {
+        return pivotPersonKeysInner(
+          tabId, [...(perspective.activeKeys || [])], perspective.active?.label,
+        );
+      }
+      requestCellebriteTabSwitch(tabId);
+      return undefined;
+    }
+    return pivotPersonKeysInner(tabId, personKeys, label);
+
+    function pivotPersonKeysInner(tab, pk, lbl) {
+      // Replace the perspective so other tabs read a coherent lens too.
+      // Skip the re-set when the requested keys already match the active
+      // perspective — re-setting identical keys would fire a redundant
+      // rebuild (preserves the original pivotTo behaviour for the
+      // active-perspective fallback path).
+      if (perspective && pk.length > 0) {
+        const cur = [...(perspective.activeKeys || [])].sort().join('|');
+        const next = [...pk].sort().join('|');
+        if (cur !== next) {
+          perspective.setPerspective(pk, lbl || `${pk.length} people`, 'graph.pivot');
+        }
+      }
+      // Always publish a _filter_intent so the Comms Center can pre-fill
+      // its participants chip from the rail event, even if it hasn't
+      // read the perspective context yet.
+      selectEntity({
+        type: 'name-action',
+        id: `graph-pivot-${tab}-${Date.now()}`,
+        caseId,
+        payload: { _filter_intent: 'comms', person_keys: pk },
+        source: 'graph.pivot',
+      });
+      // Some tabs also want the canonical phone-keys handoff.
+      const reportKeys = phoneCtx?.reports?.map((rr) => rr.report_key)
+        .filter(Boolean) || [];
+      if (tab === 'comms' || tab === 'communications') {
+        setCommsHandoff({
+          caseId, startTs: null, endTs: null, reportKeys, source: 'graph.pivot',
+        });
+      }
+      requestCellebriteTabSwitch(tab);
+      return undefined;
+    }
+  }, [caseId, perspective, phoneCtx, selectEntity]);
+
   const pivotTo = useCallback((tabId) => {
     // Resolve the lens — multi-selection wins if non-empty
     let personKeys = null;
@@ -344,46 +399,13 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       label = persons.length === 1
         ? (persons[0].name || personKeys[0])
         : `${persons.length} people`;
-      // Replace the perspective with this multi-selection so other
-      // tabs read a coherent lens too.
-      if (perspective && personKeys.length > 0) {
-        perspective.setPerspective(personKeys, label, 'graph.multi-select-pivot');
-      }
     } else if (perspective?.hasPerspective) {
       personKeys = [...(perspective.activeKeys || [])];
       label = perspective.active?.label;
     }
-
-    // Always publish a _filter_intent so the Comms Center can pre-fill
-    // its participants chip from the rail event, even if it hasn't
-    // read the perspective context yet.
-    if (personKeys && personKeys.length > 0) {
-      selectEntity({
-        type: 'name-action',
-        id: `graph-pivot-${tabId}-${Date.now()}`,
-        caseId,
-        payload: { _filter_intent: 'comms', person_keys: personKeys },
-        source: 'graph.pivot',
-      });
-    }
-
-    // Some tabs also want the canonical phone-keys handoff. Pass
-    // every report_key the lens touches; downstream filters narrow
-    // the device set when the user is anchored on a single phone.
-    const reportKeys = phoneCtx?.reports?.map((r) => r.report_key)
-      .filter(Boolean) || [];
-    if (tabId === 'comms' || tabId === 'communications') {
-      setCommsHandoff({
-        caseId,
-        startTs: null,
-        endTs: null,
-        reportKeys,
-        source: 'graph.pivot',
-      });
-    }
-
-    requestCellebriteTabSwitch(tabId);
-  }, [caseId, graphData.nodes, multiSelection, perspective, phoneCtx, selectEntity]);
+    // Delegate the actual handoff to the explicit-keys helper.
+    pivotPersonKeys(tabId, personKeys || [], label);
+  }, [graphData.nodes, multiSelection, perspective, pivotPersonKeys]);
 
   // centreAndFan: pin a node at origin, arrange its neighbours in
   // a circle around it, zoom to fit. Implements the user's "move
@@ -446,6 +468,201 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       }
     }
   }, [graphData, centreAndFan]);
+
+  // ---- S2-15: search-driven subgraph merge ----------------------------
+  // When the user selects a search result we ask the backend for a
+  // bounded subgraph (matched node + 1-hop neighbours + edges, same
+  // node/link shape as the main graph) and MERGE it into the rendered
+  // graphData. This guarantees a node that fell outside the ~2000-node
+  // render cap is actually present on the canvas so the selection ring
+  // + framing have something to land on.
+  //
+  // mergeBusy drives the spinner on the result row / expand button.
+  // pendingFrameRef holds the node ids to frame once the merged data
+  // has rendered; the framing effect below consumes it. We gate the
+  // auto-frame behind this ref so it ONLY runs right after a
+  // search-driven merge — it never fights the camera-preserve effect
+  // used by event-type refetches (that path leaves pendingFrameRef
+  // null).
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const pendingFrameRef = useRef(null);
+
+  // ---- S2-15: merge a returned subgraph into the rendered graph ------
+  // Pure union:
+  //   - nodes: keyed by id — existing nodes are KEPT (so we don't lose
+  //     their settled x/y or clobber live link references); only nodes
+  //     that weren't already rendered are appended. New nodes are
+  //     seeded from lastNodePosRef if we've seen that id before so they
+  //     don't teleport.
+  //   - links: keyed by `${source}|${target}|${label}` — a link already
+  //     present (by that triple) is kept; genuinely new edges are
+  //     appended. We read source/target whether they're raw ids
+  //     (incoming subgraph) or live node objects (already-simulated).
+  // Returns the merged {nodes, links} AND the set of node ids that the
+  // subgraph contributed (for selection + framing).
+  const mergeSubgraph = useCallback((current, sub) => {
+    const subNodes = (sub && sub.nodes) || [];
+    const subLinks = (sub && sub.links) || [];
+    const contributedIds = new Set(
+      subNodes.map((n) => n.id).filter(Boolean),
+    );
+    if (subNodes.length === 0 && subLinks.length === 0) {
+      return { merged: current, contributedIds };
+    }
+
+    const haveNodeIds = new Set(current.nodes.map((n) => n.id));
+    const addedNodes = [];
+    for (const n of subNodes) {
+      if (n.id == null || haveNodeIds.has(n.id)) continue;
+      const seeded = { ...n };
+      const prev = lastNodePosRef.current.get(n.id);
+      if (prev) {
+        seeded.x = prev.x; seeded.y = prev.y;
+        seeded.vx = prev.vx || 0; seeded.vy = prev.vy || 0;
+      }
+      addedNodes.push(seeded);
+      haveNodeIds.add(n.id);
+    }
+
+    const linkKey = (l) => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      return `${s}|${t}|${l.label || ''}`;
+    };
+    const haveLinkKeys = new Set(current.links.map(linkKey));
+    const addedLinks = [];
+    for (const l of subLinks) {
+      const k = linkKey(l);
+      if (haveLinkKeys.has(k)) continue;
+      // Only add an edge if BOTH endpoints will exist in the merged
+      // node set — guards against a dangling edge crashing the sim.
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (!haveNodeIds.has(s) || !haveNodeIds.has(t)) continue;
+      addedLinks.push({ ...l });
+      haveLinkKeys.add(k);
+    }
+
+    if (addedNodes.length === 0 && addedLinks.length === 0) {
+      return { merged: current, contributedIds };
+    }
+    return {
+      merged: {
+        nodes: current.nodes.concat(addedNodes),
+        links: current.links.concat(addedLinks),
+      },
+      contributedIds,
+    };
+  }, []);
+
+  // Frame + select the contributed nodes once the merged graphData has
+  // rendered. Consumed by the effect below via pendingFrameRef so the
+  // auto-frame fires exactly once per merge and never on a plain
+  // event-type refetch (which leaves pendingFrameRef null and uses the
+  // camera-preserve path instead).
+  useEffect(() => {
+    const pend = pendingFrameRef.current;
+    if (!pend) return;
+    const { ids, focusId } = pend;
+    // Wait until every contributed id is actually in the rendered set.
+    const present = ids.filter((id) => graphData.nodes.some((n) => n.id === id));
+    if (present.length === 0) return;
+    pendingFrameRef.current = null;
+    setMultiSelection(new Set(present));
+    // Prefer a focus-node centre+fan (tighter, more legible) when we
+    // have a single seed; otherwise zoomToFit the whole contributed
+    // set. Both respect the merge-only gate.
+    try {
+      if (focusId && graphData.nodes.some((n) => n.id === focusId)) {
+        centreAndFan(focusId, graphData.nodes, graphData.links);
+      } else if (fgRef.current) {
+        fgRef.current.zoomToFit(400, 60);
+      }
+    } catch { /* ref not ready */ }
+  }, [graphData, centreAndFan]);
+
+  // Fetch a bounded subgraph for a single search hit, merge it, then
+  // queue the select+frame. `match` is a search-result row (has
+  // entity/key, or resource_type/bucket). Used by the result-row click
+  // (S2-15) and re-used by the expand-neighbours affordance.
+  const mergeSubgraphForMatch = useCallback(async (match, { focusId } = {}) => {
+    if (!caseId || !match) return;
+    setMergeBusy(true);
+    try {
+      // Seed the subgraph endpoint with this single match. We pass the
+      // free-text q so the backend's search resolves the same row; the
+      // subgraph builder then expands its 1-hop neighbourhood. Bounded
+      // by subgraphTopN=1 so only this match seeds the neighbourhood.
+      const q = match.entity === 'resource'
+        ? (match.bucket || match.name || '')
+        : (match.name || match.phone || match.key || '');
+      const data = await cellebriteAPI.searchCrossPhoneGraph(caseId, q, {
+        limit: 50,
+        includeSubgraph: true,
+        eventTypes: [...activeEventTypes],
+        subgraphTopN: 1,
+      });
+      const sub = (data && data.subgraph) || { nodes: [], links: [] };
+      const { contributedIds } = mergeSubgraph(graphData, sub);
+      setGraphData((cur) => mergeSubgraph(cur, sub).merged);
+      // Resolve which id to focus: prefer the explicit focusId, else
+      // the person/resource id we expected from the match.
+      let resolvedFocus = focusId || null;
+      if (!resolvedFocus) {
+        if (match.entity === 'resource') {
+          const r = sub.nodes.find((n) =>
+            n.type === 'Resource'
+            && n.resource_type === match.resource_type
+            && (n.bucket === match.bucket || n.name === match.bucket
+                || n.name === match.name));
+          resolvedFocus = r ? r.id : null;
+        } else {
+          resolvedFocus = `person-${match.key}`;
+        }
+      }
+      const frameIds = contributedIds.size > 0
+        ? [...contributedIds]
+        : (resolvedFocus ? [resolvedFocus] : []);
+      if (frameIds.length > 0) {
+        pendingFrameRef.current = { ids: frameIds, focusId: resolvedFocus };
+      }
+    } catch { /* leave canvas as-is on failure */ } finally {
+      setMergeBusy(false);
+    }
+  }, [caseId, activeEventTypes, graphData, mergeSubgraph]);
+
+  // "Expand neighbours" — grow one more hop outward from the currently
+  // selected node deliberately, instead of dumping the whole graph.
+  // Re-uses the subgraph endpoint seeded with the selected node's
+  // identity (name/phone for a Person, bucket for a Resource). Bounded
+  // by the backend's per-match neighbour cap. After the merge the
+  // framing effect re-frames around the same focus node.
+  const expandNeighbours = useCallback(async (nodeId) => {
+    if (!caseId || !nodeId) return;
+    const node = graphData.nodes.find((n) => n.id === nodeId);
+    if (!node || node.type === 'PhoneReport') return; // phones aren't a search seed
+    setMergeBusy(true);
+    try {
+      const q = node.type === 'Resource'
+        ? (node.bucket || node.name || '')
+        : (node.name || node.phone || (node.id || '').replace(/^person-/, ''));
+      if (!q) { setMergeBusy(false); return; }
+      const data = await cellebriteAPI.searchCrossPhoneGraph(caseId, q, {
+        limit: 50,
+        includeSubgraph: true,
+        eventTypes: [...activeEventTypes],
+        subgraphTopN: 3,
+      });
+      const sub = (data && data.subgraph) || { nodes: [], links: [] };
+      const { contributedIds } = mergeSubgraph(graphData, sub);
+      setGraphData((cur) => mergeSubgraph(cur, sub).merged);
+      const frameIds = contributedIds.size > 0 ? [...contributedIds] : [nodeId];
+      pendingFrameRef.current = { ids: frameIds, focusId: nodeId };
+    } catch { /* ignore */ } finally {
+      setMergeBusy(false);
+    }
+  }, [caseId, activeEventTypes, graphData, mergeSubgraph]);
+
   const [searchResults, setSearchResults] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
@@ -1786,9 +2003,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                 const resColor = isResource
                   ? GRAPH_EVENT_TYPES.find((t) => t.key === r.resource_type)?.color
                   : null;
+                // Resolve the node id we'd frame on for the merge /
+                // expand affordances (Person → person-key; Resource →
+                // matched rendered id if present).
+                const selectAndMerge = () => {
+                  // SELECT immediately so the ring shows even before the
+                  // async merge lands (the framing effect re-asserts the
+                  // selection once contributed ids render).
+                  if (candidateId) setMultiSelection(new Set([candidateId]));
+                  mergeSubgraphForMatch(r);
+                };
                 return (
-                  <button
+                  <div
                     key={`${r.entity}-${r.key || r.name}-${idx}`}
+                    className="border-b border-light-100 last:border-b-0"
+                  >
+                  <button
                     type="button"
                     onClick={() => {
                       if (isResource) {
@@ -1855,7 +2085,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                         }
                       }
                     }}
-                    className="w-full text-left px-3 py-2 border-b border-light-100 hover:bg-light-50 last:border-b-0 flex items-start gap-2"
+                    className="w-full text-left px-3 py-2 hover:bg-light-50 flex items-start gap-2"
                   >
                     {isResource && ResIcon && (
                       <ResIcon
@@ -1891,14 +2121,134 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                     </div>
                     <ChevronRight className="w-3 h-3 text-light-400 mt-0.5 flex-shrink-0" />
                   </button>
+                  {/* Per-result action row (S2-15 merge/expand + S2-16
+                      pivot). These are ADDITIVE — the row's main click
+                      above still anchors the graph via the perspective
+                      rebuild exactly as before. */}
+                  <div className="px-3 pb-2 -mt-1 flex items-center gap-1.5 flex-wrap">
+                    {/* S2-15: bring this node + its 1-hop neighbours
+                        onto the canvas via a bounded subgraph merge,
+                        then frame + select — WITHOUT a full perspective
+                        rebuild. The reliable way to surface an
+                        off-canvas hit in place. */}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); selectAndMerge(); }}
+                      disabled={mergeBusy}
+                      className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-owl-blue-200 text-owl-blue-700 hover:bg-owl-blue-50 disabled:opacity-50"
+                      title="Add this node + its direct neighbours to the canvas and frame it"
+                    >
+                      {mergeBusy
+                        ? <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                        : <Maximize2 className="w-2.5 h-2.5" />}
+                      {inRendered ? 'Frame + neighbours' : 'Show on canvas'}
+                    </button>
+                    {/* S2-16: pivot the selected entity into another
+                        Cellebrite tab, pre-filtered, via the existing
+                        pivotTo handoff (multi-selection lens). Persons
+                        only — Resources don't map to a comms/timeline
+                        participant filter. */}
+                    {!isResource && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMultiSelection(new Set([`person-${r.key}`]));
+                            // Explicit-key pivot — robust even when this
+                            // Person is off-canvas (not in graphData).
+                            pivotPersonKeys('timeline', [r.key], r.name || r.key);
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-light-300 text-light-700 hover:bg-light-50"
+                          title="Open Timeline filtered to this person"
+                        >
+                          <Clock className="w-2.5 h-2.5" /> Timeline
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMultiSelection(new Set([`person-${r.key}`]));
+                            pivotPersonKeys('comms', [r.key], r.name || r.key);
+                          }}
+                          className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border border-light-300 text-light-700 hover:bg-light-50"
+                          title="Open Comms Center filtered to this person"
+                        >
+                          <MessageSquare className="w-2.5 h-2.5" /> Comms
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  </div>
                 );
               })}
             </div>
             <div className="px-3 py-1.5 border-t border-light-100 bg-light-50 text-[10px] text-light-600 flex-shrink-0">
-              Click a result to anchor the graph on that Person.
+              Anchor the graph on a result, or "Show on canvas" to merge it in place.
             </div>
           </div>
         )}
+
+        {/* S2-15 / S2-16: selected-node action card. Appears when
+            exactly one Person/Resource node is selected (canvas click
+            OR a search merge). Offers a bounded "Expand neighbours"
+            (grow one more hop in place) and — for Persons — the
+            Timeline / Comms pivots. Phones are excluded (they're not a
+            search seed and pivot from a device makes no sense here). */}
+        {(() => {
+          if (multiSelection.size !== 1) return null;
+          const selId = [...multiSelection][0];
+          const selNode = graphData.nodes.find((n) => n.id === selId);
+          if (!selNode || selNode.type === 'PhoneReport') return null;
+          const isResourceSel = selNode.type === 'Resource';
+          const personKey = isResourceSel
+            ? null
+            : (selNode.id || '').replace(/^person-/, '');
+          return (
+            <div
+              data-graph-overlay="selected-node-actions"
+              className="absolute bottom-3 right-3 bg-white border border-light-300 shadow-lg rounded-lg px-3 py-2 z-20 max-w-[16rem]"
+            >
+              <div className="text-xs font-semibold text-owl-blue-900 truncate mb-1.5">
+                {selNode.name || personKey || 'Selected'}
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => expandNeighbours(selId)}
+                  disabled={mergeBusy}
+                  className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-owl-blue-200 text-owl-blue-700 hover:bg-owl-blue-50 disabled:opacity-50"
+                  title="Add this node's direct neighbours to the canvas and re-frame"
+                >
+                  {mergeBusy
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : <UsersIcon className="w-3 h-3" />}
+                  Expand neighbours
+                </button>
+                {!isResourceSel && personKey && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => pivotPersonKeys('timeline', [personKey], selNode.name || personKey)}
+                      className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-light-300 text-light-700 hover:bg-light-50"
+                      title="Open Timeline filtered to this person"
+                    >
+                      <Clock className="w-3 h-3" /> Timeline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => pivotPersonKeys('comms', [personKey], selNode.name || personKey)}
+                      className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-light-300 text-light-700 hover:bg-light-50"
+                      title="Open Comms Center filtered to this person"
+                    >
+                      <MessageSquare className="w-3 h-3" /> Comms
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Hover tooltip */}
