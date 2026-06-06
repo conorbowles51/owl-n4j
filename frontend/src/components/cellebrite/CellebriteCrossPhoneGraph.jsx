@@ -1516,6 +1516,37 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           // resource, contact links) stay arrow-less.
           linkDirectionalArrowLength={(l) => (flowView && l && l.dir_counts ? 4 : 0)}
           linkDirectionalArrowRelPos={1}
+          // S2-19 flow emphasis & asymmetry (Flow view only). Animated
+          // particles travel source->target; their COUNT scales with the
+          // edge's total volume so heavy channels visibly "flow" more than
+          // light ones, and their SPEED scales with how lopsided the edge
+          // is (dominant-direction share) so a one-sided "X overwhelmingly
+          // messages Y" reads faster than a balanced back-and-forth. Width
+          // already encodes total via `count`; this layers the directional
+          // story on top. Connection view (default) emits zero particles, so
+          // the baseline render is unchanged.
+          linkDirectionalParticles={(l) => {
+            if (!flowView || !l || !l.dir_counts) return 0;
+            const total = l.total || l.count || 0;
+            if (total <= 0) return 0;
+            // 1..4 particles by volume (log-ish via simple thresholds).
+            if (total >= 50) return 4;
+            if (total >= 15) return 3;
+            if (total >= 5) return 2;
+            return 1;
+          }}
+          linkDirectionalParticleWidth={2}
+          linkDirectionalParticleSpeed={(l) => {
+            if (!flowView || !l || !l.dir_counts) return 0;
+            const ab = l.dir_counts.ab || 0;
+            const ba = l.dir_counts.ba || 0;
+            const total = ab + ba;
+            if (total <= 0) return 0;
+            // Dominant-direction share in [0.5, 1]. A fully one-sided edge
+            // (share=1) moves fastest; a balanced edge (share=0.5) slowest.
+            const share = Math.max(ab, ba) / total;
+            return 0.004 + (share - 0.5) * 0.012; // ~0.004 .. 0.010
+          }}
           onNodeHover={setHoveredNode}
           warmupTicks={50}
           cooldownTicks={100}
