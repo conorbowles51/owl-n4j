@@ -164,7 +164,7 @@ export default function IntersectionMethodCard({
                 >
                   <div className="font-medium text-owl-blue-900 truncate">{m.summary}</div>
                   <div className="text-light-500 flex gap-2">
-                    <span>{new Date(m.start_time).toLocaleString()}</span>
+                    <span>{(() => { const d = new Date(m.start_time); return isNaN(d.getTime()) ? '—' : d.toLocaleString(); })()}</span>
                     <span>·</span>
                     <span>{m.devices.length} device{m.devices.length === 1 ? '' : 's'}</span>
                     {m.score != null && (
