@@ -234,6 +234,28 @@ def search_cross_phone_graph(
     case_id: str = Query(...),
     q: str = Query(..., description="Free-text query — name / phone / key substring match"),
     limit: int = Query(50, ge=1, le=200, description="Max results to return"),
+    include_subgraph: bool = Query(
+        False,
+        description=(
+            "When true, additionally return a `subgraph` ({nodes, links}) "
+            "containing the top matched nodes + their 1-hop neighbours + "
+            "connecting edges, in the same shape as /cross-phone-graph. "
+            "Lets a node outside the rendered cap be pulled into view with "
+            "context. Default false returns exactly the legacy response."
+        ),
+    ),
+    event_types: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated active edge types used to build the subgraph "
+            "neighbourhood (call, message, email, location, ...). Only used "
+            "when include_subgraph=true. Defaults to call+message+email."
+        ),
+    ),
+    subgraph_top_n: int = Query(
+        10, ge=1, le=50,
+        description="How many top matched results to seed the subgraph with (include_subgraph only).",
+    ),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_db_user),
 ):
@@ -246,9 +268,31 @@ def search_cross_phone_graph(
 
     Each result carries enough to render a row + offer a one-click
     "anchor the graph on this person" action.
+
+    When `include_subgraph=true`, an additional `subgraph` key is
+    returned carrying the matched nodes + their immediate neighbours +
+    connecting edges (same node/link shape as the main graph endpoint)
+    so a found node outside the rendered set arrives with context. The
+    default (false) path is byte-for-byte the legacy response.
     """
     _require_case_access(case_id, current_user, db)
-    return neo4j_service.search_cellebrite_persons(case_id, q, limit=limit)
+    resp = neo4j_service.search_cellebrite_persons(case_id, q, limit=limit)
+
+    # Additive: only touch the response when explicitly asked. The
+    # default path returns exactly today's {results, total, limited}.
+    if include_subgraph:
+        active_types = None
+        if event_types:
+            active_types = [t.strip() for t in event_types.split(",") if t.strip()]
+        top_matches = (resp.get("results") or [])[: int(subgraph_top_n)]
+        subgraph = neo4j_service.search_cellebrite_graph_subgraph(
+            case_id,
+            top_matches,
+            active_types=active_types,
+        )
+        resp = {**resp, "subgraph": subgraph}
+
+    return resp
 
 
 @router.get("/cross-phone-graph")
