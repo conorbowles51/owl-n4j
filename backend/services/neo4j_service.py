@@ -8086,9 +8086,10 @@ class Neo4jService:
 
                     existing = email_pairs.get(thread_id)
                     if existing is None:
+                        _rk = record["rk"]
                         participants = [
-                            {"key": a_key, "name": a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
-                            {"key": b_key, "name": b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
+                            {"key": a_key, "name": dcn.get((a_key, _rk)) or a.get("name") or a_key, "is_owner": bool(a.get("is_phone_owner"))},
+                            {"key": b_key, "name": dcn.get((b_key, _rk)) or b.get("name") or b_key, "is_owner": bool(b.get("is_phone_owner"))},
                         ]
                         participants.sort(key=lambda p: p["key"])
                         name_parts = [p["name"] for p in participants]
@@ -8595,6 +8596,7 @@ class Neo4jService:
             params["end_date"] = ed
 
         items: list = []
+        dcn = self.device_contact_names(case_id)
 
         # Per-type cursor WHERE fragments. When a cursor for a type is
         # set we narrow the per-type fetch to "rows beyond the cursor"
@@ -8686,7 +8688,7 @@ class Neo4jService:
                             "is_owner": bool(sender.get("is_phone_owner")),
                         } if sender else None,
                         "recipients": [
-                            {"key": rp.get("key"), "name": rp.get("name") or rp.get("key")}
+                            {"key": rp.get("key"), "name": dcn.get((rp.get("key"), msg.get("cellebrite_report_key"))) or rp.get("name") or rp.get("key")}
                             for rp in recipients
                         ],
                         "report_key": msg.get("cellebrite_report_key"),
@@ -12042,7 +12044,7 @@ def _project_call(node, src, dst) -> Optional[dict]:
     counter_node = dst if (src is None or (src and dict(src).get("is_phone_owner"))) else src
     if counter_node:
         c = dict(counter_node)
-        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key")}
+        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key"), "phone_numbers": c.get("phone_numbers") or []}
     return row
 
 
@@ -12055,7 +12057,7 @@ def _project_message(node, sender, chat) -> Optional[dict]:
     row["summary"] = (n.get("body") or "")[:200]
     if sender:
         s = dict(sender)
-        row["counterpart"] = {"key": s.get("key"), "name": s.get("name") or s.get("key")}
+        row["counterpart"] = {"key": s.get("key"), "name": s.get("name") or s.get("key"), "phone_numbers": s.get("phone_numbers") or []}
     if chat:
         row["thread_id"] = dict(chat).get("key")
     return row
@@ -12071,7 +12073,7 @@ def _project_email(node, src, dst) -> Optional[dict]:
     counter_node = dst if (src is None or (src and dict(src).get("is_phone_owner"))) else src
     if counter_node:
         c = dict(counter_node)
-        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key")}
+        row["counterpart"] = {"key": c.get("key"), "name": c.get("name") or c.get("key"), "phone_numbers": c.get("phone_numbers") or []}
     return row
 
 

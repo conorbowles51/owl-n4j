@@ -20,6 +20,7 @@ import CollapsibleScrubber from './shared/CollapsibleScrubber';
 import CommsMediaStrip from './comms/CommsMediaStrip';
 import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
+import { phoneFromKey } from './shared/PersonName';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
 import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle, ArrowDown, ArrowUp } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
@@ -50,7 +51,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // Day grouping + headers follow the view's selected timezone so a day is the
   // local calendar day, not the UTC day (which made days look like they end at
   // 8 PM). Consuming the hook re-groups live when the analyst flips the zone.
-  const { dayKey: tzDayKey, tzId } = useCellebriteTime();
+  const { dayKey: tzDayKey, tzId, offsetLabel: tzOffsetLabel } = useCellebriteTime();
   // --- Phone selection: sourced from PhoneReportsContext when available so
   // the selection persists across tabs and refreshes. ---
   const phoneCtx = usePhoneReports();
@@ -516,6 +517,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             reports={reports}
             showPhoneChip={reports.length > 1}
             highlights={highlights}
+            offsetLabel={tzOffsetLabel}
             onRowClick={(ev) => {
               setSelectedEvent(ev);
               selectEntity({
@@ -588,7 +590,7 @@ function firstGE(arr, x) {
 }
 
 const TimelineList = forwardRef(function TimelineList(
-  { groups, sortDir = 'desc', reports, showPhoneChip, highlights, onRowClick },
+  { groups, sortDir = 'desc', reports, showPhoneChip, highlights, onRowClick, offsetLabel },
   ref,
 ) {
   const scrollRef = useRef(null);
@@ -684,6 +686,11 @@ const TimelineList = forwardRef(function TimelineList(
               <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
                 {formatDayHeader(it.day)}
               </span>
+              {offsetLabel && it.day && it.day !== '—' && (
+                <span className="text-[10px] font-normal text-light-400 normal-case">
+                  · {offsetLabel(`${it.day}T00:00:00Z`)}
+                </span>
+              )}
               <span className="text-[10px] text-light-400">
                 {it.n} event{it.n === 1 ? '' : 's'}
               </span>
@@ -717,10 +724,17 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const dColor = deviceColorOf(ev.device_report_key, reports);
   const time = formatTs(ev.timestamp).slice(11) || '—';
-  const sender = ev.sender?.name;
+  const fmtParty = (party) => {
+    if (!party) return null;
+    const num = phoneFromKey(party.key) || (Array.isArray(party.phone_numbers) && party.phone_numbers[0]) || null;
+    const name = party.name || party.key;
+    if (!name) return null;
+    return num ? `${name} · ${num}` : name;
+  };
+  const sender = fmtParty(ev.sender);
   const recipient =
-    ev.counterpart?.name ||
-    (Array.isArray(ev.recipients) && ev.recipients[0]?.name) ||
+    fmtParty(ev.counterpart) ||
+    (Array.isArray(ev.recipients) && fmtParty(ev.recipients[0])) ||
     null;
   let direction = '';
   if (sender && recipient) direction = `${sender} → ${recipient}`;
@@ -745,7 +759,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
       style={stripeStyle}
       className="grid grid-cols-[80px_18px_1fr] items-start gap-2 py-1.5 pl-2 pr-2 rounded hover:bg-light-50 cursor-pointer"
     >
-      <span className="text-[11px] tabular-nums text-light-500 pt-0.5">{time}</span>
+      <span className="text-[11px] tabular-nums text-light-500 pt-0.5" title={formatTs(ev.timestamp)}>{time}</span>
       <span
         className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
         style={{ background: color }}
@@ -778,7 +792,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
           )}
         </div>
         {direction && (
-          <div className="text-xs text-light-700 truncate">
+          <div className="text-xs text-light-700 truncate" title={direction}>
             {hasHighlights
               ? <HighlightedText text={direction} highlights={highlights} />
               : direction}
