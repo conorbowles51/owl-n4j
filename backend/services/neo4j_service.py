@@ -9256,6 +9256,7 @@ class Neo4jService:
         near: Optional[Tuple[float, float, float]] = None,
         lean: bool = False,
         has_attachment: bool = False,
+        cursor: Optional[str] = None,
     ) -> dict:
         """
         Unified event feed for the Location & Event Center.
@@ -9285,6 +9286,55 @@ class Neo4jService:
         if has_attachment:
             active = active & {"call", "message", "email"}
 
+        # Keyset (cursor) pagination — OPTIONAL and fully backward compatible.
+        # When no cursor is supplied the entire offset path below is unchanged
+        # (every new branch is guarded behind `if cursor:` / the decoded map
+        # being empty). When a cursor IS supplied it takes priority over
+        # `offset`: each per-type Cypher narrows its WHERE to "rows beyond the
+        # cursor" so deep pages don't re-read earlier rows. Mirrors the proven
+        # /comms/between implementation exactly, generalised from 3 types to
+        # the ~20 event types (which are a UNION) via a per-type cursor map.
+        #
+        # Cursor shape: base64(JSON({event_type: [timestamp, node_key]})).
+        # Per-type so a page sourced mostly from one type doesn't short-circuit
+        # the others on the next page. `node_key` is the stable tie-breaker —
+        # every projector (_project_event / _project_location_lean / call /
+        # message / email) returns it as `n.key`, so the Cypher id-expression
+        # is `n.key` and the next_cursor reads `it["node_key"]`. Malformed
+        # tokens degrade to no-cursor (a fresh page) rather than erroring.
+        per_type_cursor: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        if cursor:
+            try:
+                decoded = json.loads(base64.b64decode(cursor.encode("ascii")).decode("utf-8"))
+                if isinstance(decoded, dict):
+                    for k, v in decoded.items():
+                        if isinstance(v, list) and len(v) == 2:
+                            per_type_cursor[k] = (v[0], v[1])
+            except Exception:
+                per_type_cursor = {}
+
+        # Per-type keyset WHERE fragment. The endpoint orders DESC by
+        # timestamp (with NULL timestamps last), so we keep rows strictly
+        # "older" than the cursor: ts < cur_ts, or equal ts with a smaller
+        # node_key to break ties deterministically. `ts_expr` is the same
+        # `n.timestamp` the ORDER BY uses; `id_expr` is `n.key` (== node_key).
+        # Returns "" when this type has no cursor, so a brand-new type added
+        # to the page mid-scroll simply starts from the top. Always returns
+        # "" when `cursor` is falsy, keeping the no-cursor path byte-for-byte
+        # identical to before.
+        def _event_cursor_clause(event_type: str, ts_expr: str = "n.timestamp",
+                                 id_expr: str = "n.key") -> str:
+            if not cursor:
+                return ""
+            cur = per_type_cursor.get(event_type)
+            if not cur or not cur[0]:
+                return ""
+            return (
+                f" AND ({ts_expr} < ${event_type}_cur_ts"
+                f" OR ({ts_expr} = ${event_type}_cur_ts"
+                f" AND coalesce({id_expr}, '') < ${event_type}_cur_id))"
+            )
+
         # Per-type cap: each Cypher returns at most `per_type_cap` newest rows
         # ordered by timestamp DESC. We then merge-sort them and slice to
         # offset+limit. Memory upper bound becomes ~12 × per_type_cap rather
@@ -9292,7 +9342,12 @@ class Neo4jService:
         # this endpoint multi-second on busy cases with no useful indexes).
         # `truncated_types` records which types hit their cap so the response
         # can flag silent truncation honestly per the project rule.
-        per_type_cap = max(limit + offset, limit)
+        #
+        # With a cursor active the keyset predicate already excludes the
+        # earlier pages, so each per-type fetch only needs `limit` rows (not
+        # limit+offset). Without a cursor we keep the original offset budget
+        # so SKIP/OFFSET behaviour is byte-for-byte unchanged.
+        per_type_cap = limit if cursor else max(limit + offset, limit)
         events: list = []
         truncated_types: set = set()
         with self._driver.session() as session:
@@ -9315,6 +9370,14 @@ class Neo4jService:
             if has_attachment:
                 where = f"({where}) AND coalesce(n.attachment_count, 0) > 0"
             base_params = {"case_id": case_id, "per_type_cap": per_type_cap, **p}
+            # Bind the decoded per-type cursor bounds. Named per event_type
+            # so the shared `base_params` (and the meeting branch's own
+            # params) can carry several types' cursors without collision —
+            # only referenced by the matching `_event_cursor_clause`.
+            for _et, (_cur_ts, _cur_id) in per_type_cursor.items():
+                if _cur_ts is not None:
+                    base_params[f"{_et}_cur_ts"] = _cur_ts
+                    base_params[f"{_et}_cur_id"] = _cur_id or ""
 
             # ORDER BY trick: for types where timestamp may be NULL, we want
             # nulls to sort last so they don't crowd out real events when
@@ -9324,12 +9387,13 @@ class Neo4jService:
 
             if "location" in active:
                 extra = "" if not only_geolocated else "AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL"
+                cur = _event_cursor_clause("location")
                 if lean:
                     # Project only the used columns (omit-null happens in the
                     # projector). Keeps every row; far smaller than RETURN n.
                     cypher = f"""
                         MATCH (n:Location {{source_type:'cellebrite'}})
-                        WHERE {where} {extra}
+                        WHERE {where} {extra}{cur}
                         RETURN n.id AS id, n.key AS key,
                                n.latitude AS latitude, n.longitude AS longitude,
                                n.nearest_location_lat AS nlat, n.nearest_location_lon AS nlon,
@@ -9348,7 +9412,7 @@ class Neo4jService:
                 else:
                     cypher = f"""
                         MATCH (n:Location {{source_type:'cellebrite'}})
-                        WHERE {where} {extra}
+                        WHERE {where} {extra}{cur}
                         RETURN n
                         {ts_order}
                         LIMIT $per_type_cap
@@ -9357,9 +9421,10 @@ class Neo4jService:
 
             if "cell_tower" in active:
                 extra = "" if not only_geolocated else "AND n.latitude IS NOT NULL AND n.longitude IS NOT NULL"
+                cur = _event_cursor_clause("cell_tower")
                 cypher = f"""
                     MATCH (n:CellTower {{source_type:'cellebrite'}})
-                    WHERE {where} {extra}
+                    WHERE {where} {extra}{cur}
                     RETURN n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9367,9 +9432,10 @@ class Neo4jService:
                 _add(cypher, base_params, "cell_tower", lambda rec: _project_event(rec["n"], "cell_tower"))
 
             if "wifi" in active:
+                cur = _event_cursor_clause("wifi")
                 cypher = f"""
                     MATCH (n:WirelessNetwork {{source_type:'cellebrite'}})
-                    WHERE {where} AND n.timestamp IS NOT NULL
+                    WHERE {where} AND n.timestamp IS NOT NULL{cur}
                     RETURN n
                     ORDER BY n.timestamp DESC
                     LIMIT $per_type_cap
@@ -9379,9 +9445,10 @@ class Neo4jService:
             if "call" in active:
                 extra = "" if not only_geolocated else \
                     "AND (n.latitude IS NOT NULL OR n.nearest_location_lat IS NOT NULL)"
+                cur = _event_cursor_clause("call")
                 cypher = f"""
                     MATCH (n:PhoneCall {{source_type:'cellebrite'}})
-                    WHERE {where} {extra}
+                    WHERE {where} {extra}{cur}
                     WITH n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9395,9 +9462,10 @@ class Neo4jService:
             if "message" in active:
                 extra = "" if not only_geolocated else \
                     "AND (n.latitude IS NOT NULL OR n.nearest_location_lat IS NOT NULL)"
+                cur = _event_cursor_clause("message")
                 cypher = f"""
                     MATCH (n:Communication {{source_type:'cellebrite'}})
-                    WHERE {where} AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {extra}
+                    WHERE {where} AND (n.body IS NOT NULL OR coalesce(n.attachment_count, 0) > 0) {extra}{cur}
                     WITH n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9411,9 +9479,10 @@ class Neo4jService:
             if "email" in active:
                 extra = "" if not only_geolocated else \
                     "AND (n.latitude IS NOT NULL OR n.nearest_location_lat IS NOT NULL)"
+                cur = _event_cursor_clause("email")
                 cypher = f"""
                     MATCH (n:Email {{source_type:'cellebrite'}})
-                    WHERE {where} {extra}
+                    WHERE {where} {extra}{cur}
                     WITH n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9425,9 +9494,29 @@ class Neo4jService:
                      lambda rec: _project_email(rec["n"], rec["src"], rec["dst"]))
 
             if "power" in active or "device_event" in active:
+                # One query feeds two output types (power vs device_event are
+                # split post-fetch from the same DeviceEvent nodes). A row must
+                # survive if it's beyond EITHER active type's cursor, so OR the
+                # per-type clauses together — being conservative here avoids
+                # dropping a row that one of the two types still needs. The
+                # post-merge dedupe + per-type next_cursor keep the page correct.
+                _de_clauses = [
+                    c for c in (
+                        _event_cursor_clause("power") if "power" in active else "",
+                        _event_cursor_clause("device_event") if "device_event" in active else "",
+                    ) if c
+                ]
+                # Each clause is " AND (...)"; OR them by stripping the leading
+                # " AND " and wrapping. Empty when no device-event cursor set.
+                if _de_clauses:
+                    cur = " AND (" + " OR ".join(
+                        c[len(" AND "):] for c in _de_clauses
+                    ) + ")"
+                else:
+                    cur = ""
                 cypher = f"""
                     MATCH (n:DeviceEvent {{source_type:'cellebrite'}})
-                    WHERE {where}
+                    WHERE {where}{cur}
                     RETURN n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9448,9 +9537,10 @@ class Neo4jService:
                             events.append(row)
 
             if "app_session" in active:
+                cur = _event_cursor_clause("app_session")
                 cypher = f"""
                     MATCH (n:AppSession {{source_type:'cellebrite'}})
-                    WHERE {where}
+                    WHERE {where}{cur}
                     RETURN n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9458,9 +9548,10 @@ class Neo4jService:
                 _add(cypher, base_params, "app_session", lambda rec: _project_event(rec["n"], "app_session"))
 
             if "search" in active:
+                cur = _event_cursor_clause("search")
                 cypher = f"""
                     MATCH (n:SearchedItem {{source_type:'cellebrite'}})
-                    WHERE {where} AND n.timestamp IS NOT NULL
+                    WHERE {where} AND n.timestamp IS NOT NULL{cur}
                     RETURN n
                     ORDER BY n.timestamp DESC
                     LIMIT $per_type_cap
@@ -9468,9 +9559,10 @@ class Neo4jService:
                 _add(cypher, base_params, "search", lambda rec: _project_event(rec["n"], "search"))
 
             if "visit" in active:
+                cur = _event_cursor_clause("visit")
                 cypher = f"""
                     MATCH (n:VisitedPage {{source_type:'cellebrite'}})
-                    WHERE {where} AND n.timestamp IS NOT NULL
+                    WHERE {where} AND n.timestamp IS NOT NULL{cur}
                     RETURN n
                     ORDER BY n.timestamp DESC
                     LIMIT $per_type_cap
@@ -9478,13 +9570,20 @@ class Neo4jService:
                 _add(cypher, base_params, "visit", lambda rec: _project_event(rec["n"], "visit"))
 
             if "meeting" in active:
-                # Meetings may not have all filter fields; simpler filter
+                # Meetings may not have all filter fields; simpler filter.
+                # This branch builds its own params dict (not base_params), so
+                # bind the meeting cursor bounds locally when present.
+                meeting_cur = _event_cursor_clause("meeting")
+                meeting_params = {"case_id": case_id, "per_type_cap": per_type_cap}
+                _m_cur = per_type_cursor.get("meeting")
+                if meeting_cur and _m_cur and _m_cur[0] is not None:
+                    meeting_params["meeting_cur_ts"] = _m_cur[0]
+                    meeting_params["meeting_cur_id"] = _m_cur[1] or ""
                 rows = list(session.run(
                     "MATCH (n:Meeting {case_id:$case_id}) "
-                    "WHERE n.timestamp IS NOT NULL "
+                    f"WHERE n.timestamp IS NOT NULL{meeting_cur} "
                     "RETURN n ORDER BY n.timestamp DESC LIMIT $per_type_cap",
-                    case_id=case_id,
-                    per_type_cap=per_type_cap,
+                    **meeting_params,
                 ))
                 if len(rows) >= per_type_cap:
                     truncated_types.add("meeting")
@@ -9513,9 +9612,10 @@ class Neo4jService:
             for et, lbl in _PHASE9:
                 if et not in active:
                     continue
+                cur = _event_cursor_clause(et)
                 cypher = f"""
                     MATCH (n:{lbl} {{source_type:'cellebrite'}})
-                    WHERE {where}
+                    WHERE {where}{cur}
                     RETURN n
                     {ts_order}
                     LIMIT $per_type_cap
@@ -9533,10 +9633,43 @@ class Neo4jService:
         # The frontend reads `events.length` for display; `truncated` /
         # `truncated_types` is the honest signal that more rows exist.
         total = len(events)
-        events = events[offset: offset + limit]
+        if cursor:
+            # Keyset mode: the per-type predicates already skipped the earlier
+            # pages, so don't re-apply `offset` — just trim the merged feed to
+            # `limit`. Mirrors /comms/between's cursor slice.
+            events = events[:limit]
+        else:
+            events = events[offset: offset + limit]
+
+        # Build next_cursor from the LAST (oldest-in-page, since DESC) row per
+        # event_type within the returned page. Per-type so a page sourced
+        # mostly from one type doesn't short-circuit the others next time. A
+        # type that contributed zero rows is omitted and re-evaluated fresh on
+        # the next request. None when the page didn't fill (no more data) so
+        # the client stops paging. The no-cursor (offset) path returns None
+        # here too — backward compatible: existing callers ignore the key.
+        next_cursor: Optional[str] = None
+        last_per_type: Dict[str, Tuple[str, str]] = {}
+        for ev in events:
+            et = ev.get("event_type")
+            ts = ev.get("timestamp") or ""
+            nk = ev.get("node_key") or ""
+            if not et or not ts:
+                continue
+            # events is sorted DESC, so the last occurrence per type is the
+            # furthest-in-sort (oldest) visible row — exactly the bound the
+            # next page must continue strictly past.
+            last_per_type[et] = (ts, nk)
+        if last_per_type and len(events) >= limit:
+            payload = {k: [v[0], v[1]] for k, v in last_per_type.items()}
+            next_cursor = base64.b64encode(
+                json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            ).decode("ascii")
+
         return {
             "events": events,
             "total": total,
+            "next_cursor": next_cursor,
             "truncated": bool(truncated_types),
             "truncated_types": sorted(truncated_types),
             "per_type_cap": per_type_cap,
