@@ -7110,9 +7110,19 @@ class Neo4jService:
         # Resource labels we surface — keys match the frontend's
         # GRAPH_EVENT_TYPES so a Meeting result will use the meeting
         # chip's colour in the results panel.
+        #
+        # The optional 4th tuple element is a list of EXTRA searchable
+        # fields folded into that label's haystack on top of the
+        # standard (value_field + name + key) trio (S2-14). This is how
+        # a reverse-geocoded address like "Piney Bench Road" — stored
+        # on Location.address / Location.place_name, NOT on .name —
+        # becomes findable. WirelessNetwork also gets bssid so a hex
+        # MAC lookup resolves the network. Only fields confirmed to
+        # exist in the Cellebrite data model are added; everything
+        # else keeps its exact prior haystack (no 4th element).
         RESOURCE_LABELS = [
-            ("Location",        "name", "location"),
-            ("WirelessNetwork", "ssid", "wifi"),
+            ("Location",        "name", "location", ["place_name", "address"]),
+            ("WirelessNetwork", "ssid", "wifi",     ["bssid"]),
             ("CellTower",       "cell_id", "cell_tower"),
             ("Meeting",         "name", "meeting"),
             ("VisitedPage",     "url",  "visit"),
@@ -7140,10 +7150,22 @@ class Neo4jService:
                 f"{haystack} CONTAINS $tok{i}" for i in range(len(tokens))
             )
 
-        def _resource_where(value_field: str):
-            haystack = _cypher_fold(
-                f"coalesce(n.{value_field},'') + ' ' + coalesce(n.name,'') + ' ' + coalesce(n.key,'')"
-            )
+        def _resource_where(value_field: str, extra_fields: Optional[List[str]] = None):
+            # Base haystack = value_field + name + key (unchanged for
+            # every label). `extra_fields` (S2-14) appends label-
+            # specific searchable properties — e.g. Location's
+            # place_name/address so a query for "piney bench" resolves
+            # the Location even though it lives in an address attribute,
+            # not the node label or .name.
+            parts = [
+                f"coalesce(n.{value_field},'')",
+                "coalesce(n.name,'')",
+                "coalesce(n.key,'')",
+            ]
+            for f in (extra_fields or []):
+                parts.append(f"coalesce(n.{f},'')")
+            concat = " + ' ' + ".join(parts)
+            haystack = _cypher_fold(concat)
             return " AND ".join(
                 f"{haystack} CONTAINS $tok{i}" for i in range(len(tokens))
             )
@@ -7198,8 +7220,12 @@ class Neo4jService:
             per_label_cap = max(5, int(limit) // 2)
             params["per_label_cap"] = per_label_cap
 
-            for label, value_field, chip_key in RESOURCE_LABELS:
-                where = _resource_where(value_field)
+            for entry in RESOURCE_LABELS:
+                # 4th tuple element (extra searchable fields) is
+                # optional — older 3-tuples still unpack cleanly.
+                label, value_field, chip_key = entry[0], entry[1], entry[2]
+                extra_fields = entry[3] if len(entry) > 3 else None
+                where = _resource_where(value_field, extra_fields)
                 try:
                     cnt_r = session.run(
                         f"""
@@ -7318,6 +7344,375 @@ class Neo4jService:
             "total": total,
             "limited": total > limit,
         }
+
+    def search_cellebrite_graph_subgraph(
+        self,
+        case_id: str,
+        matches: List[Dict[str, Any]],
+        active_types: Optional[List[str]] = None,
+        limit_neighbours: int = 25,
+    ) -> dict:
+        """Build the SUBGRAPH needed to show a set of matched search hits
+        with context (S2-13).
+
+        Given the top-N rows returned by `search_cellebrite_persons`,
+        return `{nodes, links}` in the EXACT same shape
+        `get_cellebrite_cross_phone_graph` emits, so the frontend
+        renders the result identically — pulling a node that fell
+        outside the ~2000 render cap into view together with its
+        immediate neighbours + connecting edges.
+
+        `matches` rows are the search-result dicts (each has
+        `entity` == 'person' | 'resource', plus `key`, and for
+        resources `resource_type` + `bucket`). For each match we add:
+
+          - PERSON match: the Person node + every Person 1-hop away via
+            the active pair patterns (call/message/email/financial) +
+            the connecting Person↔Person edges (canonical dir_counts
+            shape) + the owning PhoneReport(s) and CONTAINS_CONTACT
+            edges.
+          - RESOURCE match: the Resource node (id `res-<type>-<bucket>`)
+            + the PhoneReport(s) that own it + a Phone→Resource edge per
+            owning phone, mirroring the resource-emission pass.
+
+        Bounded: neighbours per match are capped at `limit_neighbours`
+        so a hub Person / busy Location can't explode the payload.
+
+        Node shapes (identical to get_cellebrite_cross_phone_graph):
+          PhoneReport: {id:"report-<key>", name, type:"PhoneReport",
+                        report_key, phone_owner, val:8}
+          Person:      {id:"person-<key>", name, type:"Person", phone,
+                        device_count, shared, comm_count, val}
+          Resource:    {id:"res-<t>-<bucket>", name, type:"Resource",
+                        resource_type, bucket, hits, phone_count, val}
+        Link shapes (identical):
+          BELONGS_TO / CONTAINS_CONTACT: {source, target, label}
+          pair (directional): {source, target, label, count,
+                               dir_counts:{ab,ba}, total, initiator}
+          financial: {source, target, label, count}
+          Phone→Resource: {source, target, label:<t>, count}
+        """
+        nodes: List[Dict[str, Any]] = []
+        links: List[Dict[str, Any]] = []
+        seen_nodes: set = set()
+
+        if not matches:
+            return {"nodes": nodes, "links": links}
+
+        # Mirror the canonical EDGE_PATTERNS subset used by
+        # get_cellebrite_cross_phone_graph. Kept inline (not shared)
+        # to avoid touching the graph-build method per the additive
+        # constraint; the relationship names + resource value_fields
+        # are the same fixed safe set so the inlined Cypher is not an
+        # injection surface.
+        PAIR_PATTERNS = {
+            "call":    {"out": "CALLED",       "mid": "PhoneCall",     "in": "CALLED_TO"},
+            "message": {"special": "chat_participants"},
+            "email":   {"out": "EMAILED",      "mid": "Email",         "in": "SENT_TO"},
+        }
+        RESOURCE_NODE = {
+            "location":   ("Location",        "name"),
+            "wifi":       ("WirelessNetwork", "ssid"),
+            "cell_tower": ("CellTower",       "cell_id"),
+            "meeting":    ("Meeting",         "name"),
+            "visit":      ("VisitedPage",     "url"),
+            "search":     ("SearchedItem",    "name"),
+            "bookmark":   ("WebBookmark",     "url"),
+            "account":    ("Account",         "username"),
+            "credential": ("Credential",      "label"),
+            "pairing":    ("Device",          "name"),
+        }
+        # Default to the legacy comms triad when the caller passes
+        # nothing — same default as the graph build.
+        if active_types is None:
+            active = ["call", "message", "email"]
+        else:
+            active = list(active_types)
+
+        cap = max(1, int(limit_neighbours or 25))
+
+        def _add_person_node(p: dict, device_keys, device_count, comm_count):
+            pkey = p.get("key", "")
+            node_id = f"person-{pkey}"
+            if node_id in seen_nodes:
+                return node_id
+            seen_nodes.add(node_id)
+            nodes.append({
+                "id": node_id,
+                "name": p.get("name", pkey),
+                "type": "Person",
+                "phone": p.get("phone", ""),
+                "device_count": device_count,
+                "shared": (device_count or 0) > 1,
+                "comm_count": comm_count,
+                "val": 3 + min(int(comm_count or 0), 10),
+            })
+            # Person → owning PhoneReport(s) via CONTAINS_CONTACT,
+            # mirroring the graph build (report node must already exist).
+            for dk in (device_keys or []):
+                report_node_id = f"report-{dk}"
+                if report_node_id in seen_nodes:
+                    links.append({
+                        "source": report_node_id,
+                        "target": node_id,
+                        "label": "CONTAINS_CONTACT",
+                    })
+            return node_id
+
+        def _ensure_report_node(session, rkey: str):
+            node_id = f"report-{rkey}"
+            if node_id in seen_nodes:
+                return node_id
+            rec = session.run(
+                """
+                MATCH (r:PhoneReport {case_id: $case_id, key: $rkey})
+                OPTIONAL MATCH (r)-[:BELONGS_TO]->(owner:Person)
+                RETURN r, owner
+                """,
+                case_id=case_id, rkey=rkey,
+            ).single()
+            if not rec or not rec["r"]:
+                return None
+            r = dict(rec["r"])
+            seen_nodes.add(node_id)
+            owner = dict(rec["owner"]) if rec["owner"] else None
+            nodes.append({
+                "id": node_id,
+                "name": r.get("device_model", "Unknown Device"),
+                "type": "PhoneReport",
+                "report_key": rkey,
+                "phone_owner": owner.get("name", "") if owner else "",
+                "val": 8,
+            })
+            if owner:
+                owner_id = f"person-{owner.get('key', '')}"
+                # Only draw BELONGS_TO if the owner is (or will be) a
+                # node; the final scrub below drops dangling links so
+                # this is safe to emit eagerly.
+                links.append({
+                    "source": node_id,
+                    "target": owner_id,
+                    "label": "BELONGS_TO",
+                })
+            return node_id
+
+        def _project_person(session, pkey: str) -> Optional[str]:
+            """Fetch + emit a Person node (and its PhoneReport(s)) by key."""
+            rec = session.run(
+                """
+                MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite', key: $pkey})
+                OPTIONAL MATCH (r:PhoneReport {case_id: $case_id})
+                WHERE p.cellebrite_report_key = r.key
+                WITH p, collect(DISTINCT r.key) AS device_keys,
+                     count(DISTINCT r) AS device_count
+                OPTIONAL MATCH (p)-[rel]->()
+                WHERE type(rel) IN ['CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN']
+                WITH p, device_keys, device_count, count(rel) AS comm_count
+                RETURN p, device_keys, device_count, comm_count
+                """,
+                case_id=case_id, pkey=pkey,
+            ).single()
+            if not rec or not rec["p"]:
+                return None
+            p = dict(rec["p"])
+            device_keys = list(rec["device_keys"])
+            # Ensure owning PhoneReport node(s) exist first so the
+            # CONTAINS_CONTACT links land (they gate on seen_nodes).
+            for dk in device_keys:
+                _ensure_report_node(session, dk)
+            return _add_person_node(
+                p, device_keys, rec["device_count"], rec["comm_count"]
+            )
+
+        # Accumulator for directional pair edges — same canonicalisation
+        # the graph build uses (smaller id = source).
+        pair_links: Dict[tuple, dict] = {}
+
+        def _accumulate_pair(rel_type: str, src_key: str, tgt_key: str, cnt: int):
+            src_id = f"person-{src_key}"
+            tgt_id = f"person-{tgt_key}"
+            if src_id not in seen_nodes or tgt_id not in seen_nodes:
+                return
+            if src_id <= tgt_id:
+                c_src, c_tgt, is_forward = src_id, tgt_id, True
+            else:
+                c_src, c_tgt, is_forward = tgt_id, src_id, False
+            key = (rel_type, c_src, c_tgt)
+            link = pair_links.get(key)
+            if link is None:
+                link = {
+                    "source": c_src,
+                    "target": c_tgt,
+                    "label": rel_type,
+                    "count": 0,
+                    "dir_counts": {"ab": 0, "ba": 0},
+                    "total": 0,
+                }
+                pair_links[key] = link
+            if is_forward:
+                link["dir_counts"]["ab"] += cnt
+            else:
+                link["dir_counts"]["ba"] += cnt
+
+        # De-dup the match list to unique person keys + unique
+        # (resource_type, bucket) pairs.
+        person_keys = []
+        resource_specs = []
+        seen_pk = set()
+        seen_rk = set()
+        for m in matches:
+            if (m or {}).get("entity") == "person":
+                k = m.get("key")
+                if k and k not in seen_pk:
+                    seen_pk.add(k)
+                    person_keys.append(k)
+            elif (m or {}).get("entity") == "resource":
+                rt = m.get("resource_type")
+                bucket = m.get("bucket")
+                if rt and bucket is not None:
+                    sig = (rt, str(bucket))
+                    if sig not in seen_rk:
+                        seen_rk.add(sig)
+                        resource_specs.append((rt, bucket))
+
+        with self._driver.session() as session:
+            # ---------------- Person matches ----------------
+            for pkey in person_keys:
+                anchor_id = _project_person(session, pkey)
+                if anchor_id is None:
+                    continue
+                # 1-hop neighbours via the active pair patterns. Bounded
+                # at `cap` neighbours per match per pattern so a hub
+                # doesn't explode the payload.
+                for t in active:
+                    pat = PAIR_PATTERNS.get(t)
+                    if not pat:
+                        continue
+                    if pat.get("special") == "chat_participants":
+                        nbr_q = """
+                            MATCH (a:Person {case_id: $case_id, source_type: 'cellebrite', key: $pkey})
+                            MATCH (a)-[:SENT_MESSAGE]->(:Communication)-[:PART_OF]->(chat:Communication)
+                                  <-[:PARTICIPATED_IN]-(b:Person {case_id: $case_id})
+                            WHERE b.key <> a.key
+                            WITH b.key AS nkey, count(*) AS cnt
+                            ORDER BY cnt DESC
+                            LIMIT $cap
+                            RETURN nkey, cnt
+                        """
+                    else:
+                        nbr_q = f"""
+                            MATCH (a:Person {{case_id: $case_id, source_type: 'cellebrite', key: $pkey}})
+                            MATCH (a)-[:{pat['out']}]->(:{pat['mid']})-[:{pat['in']}]->(b:Person {{case_id: $case_id}})
+                            WHERE b.key <> a.key
+                            WITH b.key AS nkey, count(*) AS cnt
+                            ORDER BY cnt DESC
+                            LIMIT $cap
+                            RETURN nkey, cnt
+                        """
+                    for rec in session.run(nbr_q, case_id=case_id, pkey=pkey, cap=cap):
+                        nkey = rec["nkey"]
+                        _project_person(session, nkey)
+                        # Accumulate the directional edge both ways so
+                        # dir_counts reflects observed traffic; the
+                        # reverse orientation is captured when the
+                        # neighbour query runs symmetrically. Here we
+                        # only have the anchor->neighbour count, so we
+                        # add it under the anchor's orientation.
+                        _accumulate_pair(t, pkey, nkey, int(rec["cnt"] or 0))
+
+            # ---------------- Resource matches ----------------
+            for rt, bucket in resource_specs:
+                spec = RESOURCE_NODE.get(rt)
+                if not spec:
+                    continue
+                node_label, value_field = spec
+                # Find the phones owning this resource bucket + a sample
+                # display value + hit count, mirroring the resource
+                # emission pass in the graph build.
+                rollup_domain = rt in ("visit", "bookmark")
+                if rollup_domain:
+                    bucket_expr = (
+                        f"CASE WHEN n.{value_field} IS NULL OR n.{value_field} = '' THEN NULL "
+                        f"     WHEN n.{value_field} CONTAINS '://' THEN "
+                        f"          split(split(n.{value_field}, '://')[1], '/')[0] "
+                        f"     ELSE split(n.{value_field}, '/')[0] END"
+                    )
+                else:
+                    bucket_expr = f"n.{value_field}"
+                try:
+                    rec = session.run(
+                        f"""
+                        MATCH (n:{node_label} {{case_id: $case_id}})
+                        WHERE {bucket_expr} = $bucket
+                        WITH collect(DISTINCT n.cellebrite_report_key) AS phones,
+                             count(*) AS hits,
+                             head(collect(n.{value_field})) AS sample_display
+                        RETURN phones, hits, sample_display
+                        """,
+                        case_id=case_id, bucket=bucket,
+                    ).single()
+                except Exception:
+                    # Unknown property on a label — skip this resource
+                    # rather than 500 (same defensive posture as search).
+                    continue
+                if not rec:
+                    continue
+                phones = [p for p in (rec["phones"] or []) if p]
+                safe_bucket = re.sub(r"[^A-Za-z0-9_.-]", "_", str(bucket))[:80]
+                res_id = f"res-{rt}-{safe_bucket}"
+                if res_id not in seen_nodes:
+                    seen_nodes.add(res_id)
+                    display = rec["sample_display"] or bucket
+                    nodes.append({
+                        "id": res_id,
+                        "name": str(display)[:60],
+                        "type": "Resource",
+                        "resource_type": rt,
+                        "bucket": bucket,
+                        "hits": int(rec["hits"] or 0),
+                        "phone_count": len(phones),
+                        "val": 2 + min(int(rec["hits"] or 0) // 5, 8),
+                    })
+                # Bound the phone fan-out at `cap`.
+                for ph in phones[:cap]:
+                    _ensure_report_node(session, ph)
+                    ph_id = f"report-{ph}"
+                    if ph_id in seen_nodes:
+                        links.append({
+                            "source": ph_id,
+                            "target": res_id,
+                            "label": rt,
+                            "count": 1,
+                        })
+
+            # Finalise directional pair links — derive total / count /
+            # initiator exactly as the graph build does.
+            for link in pair_links.values():
+                ab = link["dir_counts"]["ab"]
+                ba = link["dir_counts"]["ba"]
+                total = ab + ba
+                link["total"] = total
+                link["count"] = total
+                if ba == 0:
+                    link["initiator"] = "ab"
+                elif ab == 0:
+                    link["initiator"] = "ba"
+                else:
+                    link["initiator"] = None
+                links.append(link)
+
+        # Final consistency scrub — never return a link whose source or
+        # target isn't in the node set (d3-force crashes on dangling
+        # links). Same belt-and-braces guard as the graph build.
+        valid_ids = {n["id"] for n in nodes}
+        links = [
+            l for l in links
+            if l.get("source") in valid_ids
+            and l.get("target") in valid_ids
+            and l.get("source") != l.get("target")
+        ]
+
+        return {"nodes": nodes, "links": links}
 
     def get_cellebrite_timeline(
         self,
