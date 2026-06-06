@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useLayoutEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import {
-  Loader2, ZoomIn, ZoomOut, Maximize2,
+  Loader2, AlertTriangle, ZoomIn, ZoomOut, Maximize2,
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
   Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
   Bluetooth, Filter as FilterIcon, ChevronRight, Tag, Clock,
@@ -238,6 +238,12 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // is otherwise just the active-edge filter, which is honest
   // behaviour and shouldn't surface a warning.
   const [hitCap, setHitCap] = useState(false);
+  // True when the graph fetch itself failed (timeout / connection drop) — so
+  // a fetch error reads as a retryable error instead of the misleading "no
+  // cross-phone data". Bump reloadKey from the Retry button to re-run the
+  // fetch effect.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Per-edge-type edge counts (from the backend). The chip strip
   // renders these as small badges so the user sees "Visits 0" and
@@ -259,6 +265,17 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   //   false           → labels suppressed except hover / search
   //                     match / Phones. For dense graphs.
   const [labelsAllOn, setLabelsAllOn] = useState(true);
+
+  // Connection vs Flow view (S2-18 / S2-20).
+  //   false (default) → "Connection view": undirected edges, arrows
+  //                     OFF. Identical to the legacy rendering — no
+  //                     regression until the user opts in.
+  //   true            → "Flow view": directional arrows drawn along
+  //                     each edge's canonical source->target
+  //                     orientation (the backend canonicalises so the
+  //                     smaller person-id is `source`). Width is
+  //                     unchanged (still driven by `count`/total).
+  const [flowView, setFlowView] = useState(false);
 
   // Selection rubber-band state.
   // Trigger: right-click + drag anywhere on the canvas. Mouse button
@@ -471,6 +488,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     }
 
     setLoading(true);
+    setLoadFailed(false);
     cellebriteAPI.getCrossPhoneGraph(caseId, {
       personKeys: personKeys || undefined,
       // Send the user's active set so the backend includes/excludes
@@ -508,6 +526,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         setTotalPersons(0);
         setEdgeCountsByType({});
         setHitCap(false);
+        setLoadFailed(true);
         setLoading(false);
       }
     });
@@ -526,6 +545,7 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     (personKeys || []).join('|'),
     depth,
     [...activeEventTypes].sort().join(','),
+    reloadKey,
   ]);
 
   // Build a per-node search haystack ONCE per graph data load so the
@@ -1023,6 +1043,22 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
     );
   }
 
+  if (loadFailed) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm text-light-600">
+        <AlertTriangle className="w-6 h-6 text-amber-500" />
+        <span>Couldn’t load the cross-phone graph — the request timed out or the connection dropped.</span>
+        <button
+          type="button"
+          onClick={() => setReloadKey((k) => k + 1)}
+          className="mt-1 px-3 py-1 rounded bg-owl-blue-600 text-white text-xs font-medium hover:bg-owl-blue-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   if (graphData.nodes.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-light-500 text-sm">
@@ -1324,6 +1360,21 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <div className="flex-1" />
         <button
           type="button"
+          onClick={() => setFlowView((v) => !v)}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
+            flowView
+              ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+              : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
+          }`}
+          title={flowView
+            ? 'Flow view — directional arrows on call / message / email edges (source→target). Click for the undirected connection view.'
+            : 'Connection view — undirected edges (no arrows). Click to show direction of flow.'}
+        >
+          <ChevronRight className="w-2.5 h-2.5" />
+          {flowView ? 'Flow view' : 'Connection view'}
+        </button>
+        <button
+          type="button"
           onClick={() => setLabelsAllOn((v) => !v)}
           className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
             labelsAllOn
@@ -1457,7 +1508,14 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
             return c ? withAlpha(c, 0.55) : '#cbd5e1';
           }}
           linkWidth={l => l.count ? Math.min(l.count / 5, 3) : 0.5}
-          linkDirectionalArrowLength={0}
+          // Arrows OFF by default (Connection view). In Flow view we
+          // draw a small arrow at the target end along the edge's
+          // canonical source->target orientation. Only directional
+          // edges (those the backend tagged with dir_counts: call /
+          // message / email) get an arrow; symmetric edges (financial,
+          // resource, contact links) stay arrow-less.
+          linkDirectionalArrowLength={(l) => (flowView && l && l.dir_counts ? 4 : 0)}
+          linkDirectionalArrowRelPos={1}
           onNodeHover={setHoveredNode}
           warmupTicks={50}
           cooldownTicks={100}

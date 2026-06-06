@@ -641,11 +641,15 @@ function HorizontalCommsLanes({
 function CommMarker({ item, x, y, onSelect }) {
   const Icon = TYPE_ICONS[item.type] || MessageSquare;
   const color = TYPE_COLORS[item.type] || '#64748b';
-  const ts = item.timestamp
-    ? new Date(item.timestamp).toLocaleString([], {
-        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-      })
-    : '';
+  const ts = (() => {
+    if (!item.timestamp) return '';
+    const d = new Date(item.timestamp);
+    return isNaN(d.getTime())
+      ? ''
+      : d.toLocaleString([], {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+  })();
   const from = item.sender?.name || '?';
   const to = (item.recipients && item.recipients[0]?.name) || '?';
   const preview = item.type === 'email' ? (item.subject || '') : (item.body || '');
