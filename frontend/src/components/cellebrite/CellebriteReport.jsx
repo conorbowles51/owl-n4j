@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   FileText, Loader2, User, Phone, MessageSquare, AlertTriangle,
-  ChevronDown, ChevronRight, Hash, Clock, Tag,
+  ChevronDown, ChevronRight, Hash, Clock, Tag, Download,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { phoneFromKey } from './shared/PersonName';
+import EntitySummaryCard from './report/EntitySummaryCard';
+import { exportCellebriteReportToPDF } from '../../utils/cellebritePdfExport';
 
 /**
  * Report tab — the honest, traffic-derived profile of every phone.
@@ -20,6 +22,7 @@ export default function CellebriteReport({ caseId, isActive = true }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!isActive || !caseId || devices) return;
@@ -35,6 +38,20 @@ export default function CellebriteReport({ caseId, isActive = true }) {
     next.has(key) ? next.delete(key) : next.add(key);
     return next;
   });
+
+  // Export the device summaries to a client-side PDF (no backend). The
+  // component only receives `caseId`, so it's passed as the report name.
+  const handleExport = async () => {
+    if (!devices || !devices.length || exporting) return;
+    setExporting(true);
+    try {
+      await exportCellebriteReportToPDF(caseId, devices, new Date());
+    } catch (e) {
+      console.error('Cellebrite report PDF export failed:', e);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -67,7 +84,7 @@ export default function CellebriteReport({ caseId, isActive = true }) {
         <div className="w-9 h-9 bg-owl-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
           <FileText className="w-5 h-5 text-owl-blue-700" />
         </div>
-        <div>
+        <div className="flex-1">
           <h2 className="text-base font-semibold text-owl-blue-900">Device Report</h2>
           <p className="text-xs text-light-600 max-w-3xl mt-0.5">
             Each phone's <strong>assigned owner</strong> (investigator-set) shown with
@@ -76,6 +93,24 @@ export default function CellebriteReport({ caseId, isActive = true }) {
             different person than the assigned owner, it's flagged. Expand a row for device
             numbers, IMEI, and every saved alias.
           </p>
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-owl-blue-200 text-owl-blue-700 hover:bg-owl-blue-50 disabled:opacity-60 disabled:cursor-not-allowed flex-shrink-0"
+        >
+          {exporting
+            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating…</>
+            : <><Download className="w-3.5 h-3.5" /> Export PDF</>}
+        </button>
+      </div>
+
+      <div>
+        <h3 className="text-sm font-semibold text-owl-blue-900 mb-2">Summary</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {devices.map((d) => (
+            <EntitySummaryCard key={d.report_key} device={d} />
+          ))}
         </div>
       </div>
 
