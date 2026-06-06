@@ -51,7 +51,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // Day grouping + headers follow the view's selected timezone so a day is the
   // local calendar day, not the UTC day (which made days look like they end at
   // 8 PM). Consuming the hook re-groups live when the analyst flips the zone.
-  const { dayKey: tzDayKey, tzId } = useCellebriteTime();
+  const { dayKey: tzDayKey, tzId, offsetLabel: tzOffsetLabel } = useCellebriteTime();
   // --- Phone selection: sourced from PhoneReportsContext when available so
   // the selection persists across tabs and refreshes. ---
   const phoneCtx = usePhoneReports();
@@ -484,6 +484,7 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             reports={reports}
             showPhoneChip={reports.length > 1}
             highlights={highlights}
+            offsetLabel={tzOffsetLabel}
             onRowClick={(ev) => {
               setSelectedEvent(ev);
               selectEntity({
@@ -556,7 +557,7 @@ function firstGE(arr, x) {
 }
 
 const TimelineList = forwardRef(function TimelineList(
-  { groups, reports, showPhoneChip, highlights, onRowClick },
+  { groups, reports, showPhoneChip, highlights, onRowClick, offsetLabel },
   ref,
 ) {
   const scrollRef = useRef(null);
@@ -648,6 +649,11 @@ const TimelineList = forwardRef(function TimelineList(
               <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
                 {formatDayHeader(it.day)}
               </span>
+              {offsetLabel && it.day && it.day !== '—' && (
+                <span className="text-[10px] font-normal text-light-400 normal-case">
+                  · {offsetLabel(`${it.day}T00:00:00Z`)}
+                </span>
+              )}
               <span className="text-[10px] text-light-400">
                 {it.n} event{it.n === 1 ? '' : 's'}
               </span>
@@ -716,7 +722,7 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
       style={stripeStyle}
       className="grid grid-cols-[80px_18px_1fr] items-start gap-2 py-1.5 pl-2 pr-2 rounded hover:bg-light-50 cursor-pointer"
     >
-      <span className="text-[11px] tabular-nums text-light-500 pt-0.5">{time}</span>
+      <span className="text-[11px] tabular-nums text-light-500 pt-0.5" title={formatTs(ev.timestamp)}>{time}</span>
       <span
         className="w-3 h-3 rounded-full mt-1 flex-shrink-0"
         style={{ background: color }}
