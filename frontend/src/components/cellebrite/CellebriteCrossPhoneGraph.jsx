@@ -1199,6 +1199,23 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           <span className="text-light-400 italic">no edge types selected</span>
         )}
 
+        {/* Flow-view legend (S2-20) — only shown when Flow view is on, so
+            the user can read what the arrows + animated particles mean.
+            Connection view (default) hides this so the legend stays lean. */}
+        {flowView && (
+          <>
+            <span className="h-4 w-px bg-light-300" />
+            <span className="flex items-center gap-1" title="Arrow points from the initiator toward the recipient (canonical source→target).">
+              <span aria-hidden className="text-light-500">→</span>
+              <span>direction</span>
+            </span>
+            <span className="flex items-center gap-1" title="Animated particles: more/faster particles = higher volume; a one-sided channel flows faster than a balanced back-and-forth.">
+              <span aria-hidden className="text-light-500">∙∙∙</span>
+              <span>flow (volume &amp; asymmetry)</span>
+            </span>
+          </>
+        )}
+
         {phoneCtx?.hasMultiple && (
           <>
             <span className="h-4 w-px bg-light-300" />
