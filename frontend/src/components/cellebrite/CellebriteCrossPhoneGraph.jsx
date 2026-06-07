@@ -277,6 +277,25 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   //                     unchanged (still driven by `count`/total).
   const [flowView, setFlowView] = useState(false);
 
+  // react-force-graph-2d caches the link accessor functions
+  // (linkDirectionalArrowLength / linkDirectionalParticles / speed) and
+  // only re-evaluates them on a data change or an explicit refresh — NOT
+  // when an unrelated React state like `flowView` flips. Without this,
+  // toggling Flow view updates state but the canvas keeps painting the
+  // old (zero-arrow, zero-particle) values, so the user sees no change.
+  // Force a re-read + a particle re-emit whenever the view mode changes.
+  useEffect(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    try { fg.refresh?.(); } catch { /* ignore */ }
+    // Particles are emitted by the simulation tick loop; a gentle reheat
+    // makes them appear immediately rather than only after the next
+    // natural interaction.
+    if (flowView) {
+      try { fg.d3ReheatSimulation?.(); } catch { /* ignore */ }
+    }
+  }, [flowView]);
+
   // Selection rubber-band state.
   // Trigger: right-click + drag anywhere on the canvas. Mouse button
   // 2 starts the box; we suppress the browser context-menu so the
