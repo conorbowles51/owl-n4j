@@ -103,6 +103,7 @@ def _evidence_record_from_db(record) -> dict:
         "last_error": record.last_error,
         "engine_job_id": record.engine_job_id,
         "summary": record.summary,
+        "transcription": record.transcription,
         "entity_count": record.entity_count,
         "relationship_count": record.relationship_count,
         "processing_stale": record.processing_stale,
@@ -564,6 +565,7 @@ class EvidenceRecord(BaseModel):
     processed_at: Optional[str] = None
     last_error: Optional[str] = None
     summary: Optional[str] = None  # Document summary if available
+    transcription: Optional[str] = None  # Full audio transcript if available
     entity_count: Optional[int] = None
     relationship_count: Optional[int] = None
     engine_job_id: Optional[str] = None  # Evidence engine job ID for progress tracking

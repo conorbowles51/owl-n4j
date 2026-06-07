@@ -57,6 +57,8 @@ class Job(Base):
     source_folder_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     # AI-generated document summary (first-N-chars → LLM)
     document_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Full audio transcript for audio/video evidence, when extraction produced one.
+    transcription: Mapped[str | None] = mapped_column(Text, nullable=True)
     requested_by_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
     source_evidence_file_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True, index=True)
 

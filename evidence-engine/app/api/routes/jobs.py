@@ -6,12 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.models.job import Job, JobStatus
-from app.schemas.job import JobResponse
+from app.schemas.job import JobDetailResponse, JobResponse
 
 router = APIRouter()
 
 
-@router.get("/jobs/{job_id}", response_model=JobResponse)
+@router.get("/jobs/{job_id}", response_model=JobDetailResponse)
 async def get_job(job_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()

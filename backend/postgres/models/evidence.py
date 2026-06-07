@@ -151,6 +151,7 @@ class EvidenceFile(Base, TimestampMixin):
     legacy_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     engine_job_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    transcription: Mapped[str | None] = mapped_column(Text, nullable=True)
     entity_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     relationship_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     processing_stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

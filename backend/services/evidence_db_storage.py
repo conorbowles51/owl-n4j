@@ -755,6 +755,7 @@ class EvidenceDBStorage:
             ef.last_error = None
             ef.processed_at = None
             ef.engine_job_id = None
+            ef.transcription = None
         db.flush()
 
     @staticmethod
@@ -1017,6 +1018,7 @@ class EvidenceDBStorage:
             "last_error": ef.last_error,
             "legacy_id": ef.legacy_id,
             "summary": ef.summary,
+            "transcription": ef.transcription,
             "entity_count": ef.entity_count,
             "relationship_count": ef.relationship_count,
             "last_processed_folder_id": str(ef.last_processed_folder_id) if ef.last_processed_folder_id else None,

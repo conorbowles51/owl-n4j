@@ -116,6 +116,9 @@ class JobStatusSubscriber:
                                 doc_summary = job.get("document_summary")
                                 if doc_summary:
                                     ef.summary = doc_summary
+                                transcription = job.get("transcription")
+                                if transcription is not None:
+                                    ef.transcription = transcription
                                 ec = job.get("entity_count")
                                 rc = job.get("relationship_count")
                                 if ec is not None:
@@ -204,7 +207,7 @@ class JobStatusSubscriber:
         case_id = self._tracked.get(job_id)
 
         try:
-            handled = self._dispatch_terminal(job_id, data, status, case_id)
+            handled = await self._dispatch_terminal(job_id, data, status, case_id)
         except Exception:
             logger.exception(
                 "Handler raised for %s; leaving subscription intact for retry",
@@ -219,19 +222,27 @@ class JobStatusSubscriber:
             except Exception:
                 pass
 
-    def _dispatch_terminal(self, job_id: str, data: dict, status: str, case_id: str | None) -> bool:
+    async def _dispatch_terminal(self, job_id: str, data: dict, status: str, case_id: str | None) -> bool:
         """Route a terminal message to the right DB writer. Returns True only
         when the work succeeded; False/raise leaves the subscription in place."""
         from postgres.session import get_background_session
         from postgres.models.merge_job import MergeJob
         from services.evidence_db_storage import EvidenceDBStorage
+        from services import evidence_engine_client
+
+        job_detail = data
+        if status == "completed":
+            try:
+                job_detail = await evidence_engine_client.get_job(job_id)
+            except Exception:
+                logger.exception("Failed to fetch completed engine job %s detail", job_id)
 
         with get_background_session() as db:
             merge_job = db.query(MergeJob).filter(
                 MergeJob.engine_job_id == job_id
             ).first()
             if merge_job:
-                self._handle_merge_completion(db, merge_job, data, status, case_id)
+                self._handle_merge_completion(db, merge_job, job_detail, status, case_id)
                 return True
 
             db_rec = EvidenceDBStorage.find_by_engine_job_id(db, job_id)
@@ -244,12 +255,16 @@ class JobStatusSubscriber:
             EvidenceDBStorage.mark_processed(db, [db_rec.id], error=err)
 
             if status == "completed":
-                doc_summary = data.get("document_summary")
+                doc_summary = job_detail.get("document_summary")
                 if doc_summary:
                     db_rec.summary = doc_summary
 
-                entity_count = data.get("entity_count")
-                rel_count = data.get("relationship_count")
+                transcription = job_detail.get("transcription")
+                if transcription is not None:
+                    db_rec.transcription = transcription
+
+                entity_count = job_detail.get("entity_count")
+                rel_count = job_detail.get("relationship_count")
                 if entity_count is not None:
                     db_rec.entity_count = entity_count
                 if rel_count is not None:

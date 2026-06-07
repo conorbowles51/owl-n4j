@@ -9,7 +9,7 @@ from app.pipeline.chunk_embed import chunk_and_embed
 from app.pipeline.consolidate_entities import consolidate_entities
 from app.pipeline.context_injector import build_enriched_context
 from app.pipeline.extract_entities import extract_entities_and_relationships
-from app.pipeline.extract_text import extract_text
+from app.pipeline.extract_text import extract_text, get_transcription
 from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
 from app.pipeline.link_transaction_parties import link_transaction_parties
@@ -62,6 +62,7 @@ async def run_pipeline(job_id: str, db: AsyncSession) -> None:
             # Stage 1: Text extraction -> 0-15%
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.0, db, "Extracting text...")
             doc = await extract_text(job.file_path, job.file_name)
+            job.transcription = get_transcription(doc)
             await _update_job(job, JobStatus.EXTRACTING_TEXT, 0.15, db, "Text extracted")
 
             # Stage 1.5: Document summary -> 15-20%

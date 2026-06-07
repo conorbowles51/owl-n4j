@@ -11,6 +11,7 @@ export interface EvidenceFile {
   processed_at?: string | null
   last_error?: string | null
   summary?: string | null
+  transcription?: string | null
   entity_count?: number
   engine_job_id?: string | null
 }
@@ -186,6 +187,7 @@ export interface EvidenceFileRecord {
   last_error: string | null
   legacy_id: string | null
   summary: string | null
+  transcription: string | null
   entity_count: number | null
   relationship_count: number | null
   last_processed_folder_id: string | null

@@ -31,6 +31,10 @@ class JobResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class JobDetailResponse(JobResponse):
+    transcription: str | None = None
+
+
 class JobProgress(BaseModel):
     job_id: str
     status: str

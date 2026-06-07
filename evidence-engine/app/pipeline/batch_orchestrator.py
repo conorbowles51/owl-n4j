@@ -15,7 +15,7 @@ from app.pipeline.extract_entities import (
     RawRelationship,
     extract_entities_and_relationships,
 )
-from app.pipeline.extract_text import extract_text
+from app.pipeline.extract_text import extract_text, get_transcription
 from app.pipeline.generate_document_summary import generate_document_summary
 from app.pipeline.generate_summaries import generate_summaries
 from app.pipeline.link_transaction_parties import link_transaction_parties
@@ -58,6 +58,7 @@ async def _update_job_status(
     entity_count: int | None = None,
     relationship_count: int | None = None,
     document_summary: str | None = None,
+    transcription: str | None = None,
 ) -> None:
     async with async_session() as db:
         result = await db.execute(select(Job).where(Job.id == job_id))
@@ -72,6 +73,8 @@ async def _update_job_status(
             job.relationship_count = relationship_count
         if document_summary is not None:
             job.document_summary = document_summary
+        if transcription is not None:
+            job.transcription = transcription
         await db.commit()
     await _publish_job_status(
         job_id,
@@ -96,7 +99,7 @@ async def _extract_file(
     effective_context: str | None = None,
     effective_mandatory_instructions: list | None = None,
     effective_special_entity_types: list | None = None,
-) -> tuple[list[RawEntity], list[RawRelationship], str | None]:
+) -> tuple[list[RawEntity], list[RawRelationship], str | None, str | None]:
     async with ingestion_cost_context(
         case_id=case_id,
         requested_by_user_id=requested_by_user_id,
@@ -107,7 +110,14 @@ async def _extract_file(
     ):
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.0, "Extracting text...")
         doc = await extract_text(file_path, file_name)
-        await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.15, "Text extracted")
+        transcription = get_transcription(doc)
+        await _update_job_status(
+            job_id,
+            JobStatus.EXTRACTING_TEXT,
+            0.15,
+            "Text extracted",
+            transcription=transcription,
+        )
 
         await _update_job_status(job_id, JobStatus.EXTRACTING_TEXT, 0.15, "Generating document summary...")
         doc_summary = await generate_document_summary(doc, file_name)
@@ -140,7 +150,7 @@ async def _extract_file(
             f"Extracted {len(raw_entities)} entities, {len(raw_rels)} relationships",
         )
 
-        return raw_entities, raw_rels, doc_summary
+        return raw_entities, raw_rels, doc_summary, transcription
 
 
 async def _force_fail_unfinished_batch_rows(batch_id: str, reason: str) -> None:
@@ -241,6 +251,7 @@ async def run_batch_pipeline(
         active_job_ids: list[uuid.UUID] = []
         active_file_names: list[str] = []
         job_summaries: dict[uuid.UUID, str | None] = {}
+        job_transcriptions: dict[uuid.UUID, str | None] = {}
 
         for ji, extraction_result in zip(job_info, results):
             if isinstance(extraction_result, Exception):
@@ -254,8 +265,9 @@ async def run_batch_pipeline(
                 )
                 continue
 
-            raw_ents, raw_rels, doc_summary = extraction_result
+            raw_ents, raw_rels, doc_summary, transcription = extraction_result
             job_summaries[ji["id"]] = doc_summary
+            job_transcriptions[ji["id"]] = transcription
 
             prefix = f"{ji['id']}_"
             for entity in raw_ents:
@@ -278,6 +290,7 @@ async def run_batch_pipeline(
                     1.0,
                     "No entities found",
                     document_summary=job_summaries.get(jid),
+                    transcription=job_transcriptions.get(jid),
                 )
             return
 
@@ -358,6 +371,7 @@ async def run_batch_pipeline(
                 entity_count=ent_count,
                 relationship_count=len(resolved_rels),
                 document_summary=job_summaries.get(jid),
+                transcription=job_transcriptions.get(jid),
             )
 
         logger.info("Batch %s complete: %d entities, %d relationships", batch_id, len(resolved_ents), len(resolved_rels))

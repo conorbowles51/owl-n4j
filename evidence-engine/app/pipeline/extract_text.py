@@ -261,7 +261,11 @@ async def _extract_audio(file_path: str) -> ExtractedDocument:
         transcript = await transcribe_audio(file_path)
         return ExtractedDocument(
             text=transcript,
-            metadata={"file_type": "audio", "file_size": file_size},
+            metadata={
+                "file_type": "audio",
+                "file_size": file_size,
+                "transcription": transcript,
+            },
         )
 
     # Split into 10-minute segments via ffmpeg
@@ -287,12 +291,14 @@ async def _extract_audio(file_path: str) -> ExtractedDocument:
 
     Path(segments_dir).rmdir()
 
+    transcription = "\n\n".join(transcripts)
     return ExtractedDocument(
-        text="\n\n".join(transcripts),
+        text=transcription,
         metadata={
             "file_type": "audio",
             "file_size": file_size,
             "segment_count": len(transcripts),
+            "transcription": transcription,
         },
     )
 
@@ -504,6 +510,7 @@ async def _extract_video(file_path: str, file_name: str) -> ExtractedDocument:
                 if audio_doc.text.strip():
                     parts.append("[Audio Transcription]\n" + audio_doc.text)
                     metadata["has_transcription"] = True
+                    metadata["transcription"] = audio_doc.text
             except Exception as e:
                 logger.warning("Video audio transcription failed: %s", e)
 
@@ -552,6 +559,14 @@ def _sanitize_extracted(doc: ExtractedDocument) -> ExtractedDocument:
         metadata=sanitize_json(doc.metadata) if doc.metadata else {},
         tables=[sanitize_text(t) for t in (doc.tables or [])],
     )
+
+
+def get_transcription(doc: ExtractedDocument) -> str | None:
+    """Return the full transcript when extraction produced one."""
+    transcription = doc.metadata.get("transcription")
+    if isinstance(transcription, str) and transcription.strip():
+        return sanitize_text(transcription.strip())
+    return None
 
 
 async def extract_text(file_path: str, file_name: str) -> ExtractedDocument:
