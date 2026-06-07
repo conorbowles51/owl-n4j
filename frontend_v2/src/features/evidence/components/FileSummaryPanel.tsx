@@ -18,13 +18,5 @@ export function FileSummaryPanel({ summary, onOpenFile }: FileSummaryPanelProps)
     )
   }
 
-  return (
-    <div className="rounded-md bg-amber-500/5 border border-amber-500/20 p-4">
-      <div className="mb-2 flex items-center gap-1.5">
-        <Sparkles className="size-3.5 text-amber-500" />
-        <span className="text-xs font-medium text-amber-500">AI Summary</span>
-      </div>
-      <MarkdownSummary content={summary} onOpenFile={onOpenFile} />
-    </div>
-  )
+  return <MarkdownSummary content={summary} onOpenFile={onOpenFile} />
 }

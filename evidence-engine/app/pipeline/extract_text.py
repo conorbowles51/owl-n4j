@@ -27,6 +27,8 @@ AUDIO_EXTENSIONS = {
 VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tiff", ".tif", ".bmp", ".gif"}
 MAX_WHISPER_SIZE = 25 * 1024 * 1024  # 25 MB
+MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS = 60
+TRANSCRIPTION_PROMPT_CONTEXT_CHARS = 1200
 
 
 @dataclass
@@ -254,52 +256,244 @@ def _extract_markdown(file_path: str) -> ExtractedDocument:
 # Audio
 # ---------------------------------------------------------------------------
 
-async def _extract_audio(file_path: str) -> ExtractedDocument:
-    file_size = os.path.getsize(file_path)
+class AudioTranscriptionError(RuntimeError):
+    """Raised when an audio segment cannot be transcribed."""
 
-    if file_size <= MAX_WHISPER_SIZE:
-        transcript = await transcribe_audio(file_path)
-        return ExtractedDocument(
-            text=transcript,
-            metadata={
-                "file_type": "audio",
-                "file_size": file_size,
-                "transcription": transcript,
-            },
-        )
 
-    # Split into 10-minute segments via ffmpeg
-    segments_dir = tempfile.mkdtemp()
-    ext = Path(file_path).suffix
-    segment_pattern = os.path.join(segments_dir, f"segment_%03d{ext}")
-
-    subprocess.run(
-        [
-            "ffmpeg", "-i", file_path,
-            "-f", "segment", "-segment_time", "600",
-            "-c", "copy", segment_pattern,
-        ],
-        check=True,
-        capture_output=True,
+def _configured_audio_segment_seconds() -> int:
+    return max(
+        MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS,
+        int(settings.audio_transcription_segment_seconds or 240),
     )
 
-    transcripts: list[str] = []
-    for seg_file in sorted(Path(segments_dir).iterdir()):
-        transcript = await transcribe_audio(str(seg_file))
-        transcripts.append(transcript)
-        seg_file.unlink()
 
-    Path(segments_dir).rmdir()
+def _configured_audio_max_single_seconds() -> int:
+    return max(
+        MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS,
+        int(settings.audio_transcription_max_single_seconds or 240),
+    )
+
+
+def _probe_media_duration_seconds(file_path: str) -> float | None:
+    """Return media duration using ffprobe, or None when probing fails."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                file_path,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0 or not result.stdout:
+            return None
+        info = json.loads(result.stdout)
+        duration = (info.get("format") or {}).get("duration")
+        if duration is None:
+            return None
+        parsed = float(duration)
+        return parsed if parsed > 0 else None
+    except Exception as exc:
+        logger.warning("Audio duration probe failed for %s: %s", file_path, exc)
+        return None
+
+
+def _split_audio_segments(
+    file_path: str,
+    output_dir: str,
+    segment_seconds: int,
+) -> list[Path]:
+    """Split audio into normalized MP3 chunks for transcription."""
+    segment_pattern = os.path.join(output_dir, "segment_%03d.mp3")
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-i",
+                file_path,
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "16000",
+                "-c:a",
+                "libmp3lame",
+                "-b:a",
+                "64k",
+                "-f",
+                "segment",
+                "-segment_time",
+                str(segment_seconds),
+                "-reset_timestamps",
+                "1",
+                segment_pattern,
+            ],
+            check=True,
+            capture_output=True,
+            timeout=1800,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (
+            exc.stderr.decode("utf-8", errors="replace")
+            if isinstance(exc.stderr, bytes)
+            else (exc.stderr or "")
+        )
+        raise AudioTranscriptionError(
+            f"Audio segmentation failed: {stderr.strip() or exc}"
+        ) from exc
+
+    segments = sorted(Path(output_dir).glob("segment_*.mp3"))
+    if not segments:
+        raise AudioTranscriptionError("Audio segmentation produced no chunks")
+    return segments
+
+
+def _is_input_too_large_error(exc: Exception) -> bool:
+    candidates: list[str] = []
+    for attr in ("code", "message", "param"):
+        value = getattr(exc, attr, None)
+        if value:
+            candidates.append(str(value))
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        candidates.extend(str(value) for value in body.values() if value is not None)
+    elif body:
+        candidates.append(str(body))
+    candidates.append(str(exc))
+    text = " ".join(candidates).lower()
+    return "input_too_large" in text or "too large for this model" in text
+
+
+def _build_transcription_prompt(previous_transcript: str | None) -> str | None:
+    if not previous_transcript:
+        return None
+    tail = previous_transcript.strip()[-TRANSCRIPTION_PROMPT_CONTEXT_CHARS:]
+    if not tail:
+        return None
+    return (
+        "The previous audio segment ended with this transcript. Continue "
+        "transcribing the same conversation, preserving names, punctuation, "
+        "and context.\n\nPrevious segment ending:\n"
+        f"{tail}"
+    )
+
+
+async def _transcribe_audio_segments(
+    segments: list[Path],
+    segment_seconds: int,
+    transcripts: list[str],
+    stats: dict[str, int],
+) -> None:
+    total_segments = len(segments)
+    for index, segment in enumerate(segments, start=1):
+        prompt = _build_transcription_prompt(transcripts[-1] if transcripts else None)
+        try:
+            transcript = await transcribe_audio(str(segment), prompt=prompt)
+            stats["segment_count"] = stats.get("segment_count", 0) + 1
+        except Exception as exc:
+            if (
+                _is_input_too_large_error(exc)
+                and segment_seconds > MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS
+            ):
+                retry_seconds = max(
+                    MIN_AUDIO_TRANSCRIPTION_SEGMENT_SECONDS,
+                    segment_seconds // 2,
+                )
+                logger.warning(
+                    "Audio segment %s/%s was too large for transcription; retrying with %ss chunks",
+                    index,
+                    total_segments,
+                    retry_seconds,
+                )
+                with tempfile.TemporaryDirectory() as retry_dir:
+                    retry_segments = _split_audio_segments(
+                        str(segment),
+                        retry_dir,
+                        retry_seconds,
+                    )
+                    try:
+                        await _transcribe_audio_segments(
+                            retry_segments,
+                            retry_seconds,
+                            transcripts,
+                            stats,
+                        )
+                    except Exception as retry_exc:
+                        raise AudioTranscriptionError(
+                            "Audio transcription failed on segment "
+                            f"{index}/{total_segments} after retrying with "
+                            f"{retry_seconds}s chunks: {retry_exc}"
+                        ) from retry_exc
+                continue
+
+            raise AudioTranscriptionError(
+                f"Audio transcription failed on segment {index}/{total_segments}: {exc}"
+            ) from exc
+
+        transcript = transcript.strip()
+        if transcript:
+            transcripts.append(transcript)
+
+
+async def _extract_audio(file_path: str) -> ExtractedDocument:
+    file_size = os.path.getsize(file_path)
+    duration_seconds = _probe_media_duration_seconds(file_path)
+    segment_seconds = _configured_audio_segment_seconds()
+    max_single_seconds = _configured_audio_max_single_seconds()
+    metadata: dict[str, Any] = {
+        "file_type": "audio",
+        "file_size": file_size,
+    }
+    if duration_seconds is not None:
+        metadata["duration_seconds"] = duration_seconds
+
+    should_segment = file_size > MAX_WHISPER_SIZE or (
+        duration_seconds is not None and duration_seconds > max_single_seconds
+    )
+    if not should_segment:
+        try:
+            transcript = await transcribe_audio(file_path)
+            metadata["segment_count"] = 1
+            metadata["transcription"] = transcript
+            return ExtractedDocument(text=transcript, metadata=metadata)
+        except Exception as exc:
+            if not _is_input_too_large_error(exc):
+                raise
+            logger.warning(
+                "Single audio transcription request was too large; falling back to %ss chunks",
+                segment_seconds,
+            )
+
+    stats = {"segment_count": 0}
+    transcripts: list[str] = []
+    with tempfile.TemporaryDirectory() as segments_dir:
+        segments = _split_audio_segments(file_path, segments_dir, segment_seconds)
+        await _transcribe_audio_segments(
+            segments,
+            segment_seconds,
+            transcripts,
+            stats,
+        )
 
     transcription = "\n\n".join(transcripts)
+    metadata["segment_count"] = stats["segment_count"]
+    metadata["segment_seconds"] = segment_seconds
+    metadata["transcription"] = transcription
     return ExtractedDocument(
         text=transcription,
-        metadata={
-            "file_type": "audio",
-            "file_size": file_size,
-            "segment_count": len(transcripts),
-            "transcription": transcription,
-        },
+        metadata=metadata,
     )
 
 

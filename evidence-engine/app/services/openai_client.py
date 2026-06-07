@@ -94,14 +94,17 @@ async def embed_texts(
     return results
 
 
-async def transcribe_audio(file_path: str) -> str:
+async def transcribe_audio(file_path: str, prompt: str | None = None) -> str:
     client = get_openai_client()
     with open(file_path, "rb") as f:
         async with _semaphore:
-            resp = await client.audio.transcriptions.create(
-                model=settings.openai_transcription_model,
-                file=f,
-            )
+            kwargs: dict[str, Any] = {
+                "model": settings.openai_transcription_model,
+                "file": f,
+            }
+            if prompt:
+                kwargs["prompt"] = prompt
+            resp = await client.audio.transcriptions.create(**kwargs)
     duration_seconds = None
     try:
         result = subprocess.run(

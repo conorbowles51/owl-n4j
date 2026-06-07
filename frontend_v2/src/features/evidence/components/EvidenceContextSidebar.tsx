@@ -321,6 +321,24 @@ function RelationshipList({ relationships }: { relationships: FileRelationship[]
   )
 }
 
+function TranscriptionPanel({ transcription }: { transcription: string | null }) {
+  const transcript = transcription?.trim()
+
+  if (!transcript) {
+    return (
+      <p className="py-4 text-sm text-muted-foreground">
+        No transcription available for this audio file.
+      </p>
+    )
+  }
+
+  return (
+    <div className="max-h-80 overflow-y-auto py-3 pr-2 text-sm leading-6 text-foreground">
+      <p className="whitespace-pre-wrap break-words">{transcript}</p>
+    </div>
+  )
+}
+
 // --- Details panel content (inline version of EvidenceDetailSheet) ---
 
 function DetailsPanelContent({
@@ -333,6 +351,7 @@ function DetailsPanelContent({
   const [viewerOpen, setViewerOpen] = useState(false)
   const fileUrl = evidenceAPI.getFileUrl(file.id)
   const ext = getExt(file.original_filename)
+  const mediaType = getMediaType(file.original_filename)
   const displayStatus = getDisplayStatus(file)
 
   const isProcessed = file.status === "processed"
@@ -556,6 +575,15 @@ function DetailsPanelContent({
               <CollapsibleSection title="AI Summary">
                 <FileSummaryPanel summary={file.summary} />
               </CollapsibleSection>
+
+              {mediaType === "audio" && (
+                <CollapsibleSection
+                  title="Transcription"
+                  defaultOpen={Boolean(file.transcription?.trim())}
+                >
+                  <TranscriptionPanel transcription={file.transcription} />
+                </CollapsibleSection>
+              )}
 
               {/* Extracted Entities section */}
               <CollapsibleSection

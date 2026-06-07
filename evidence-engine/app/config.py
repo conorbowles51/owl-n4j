@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     tesseract_lang: str = "eng"
     openai_vision_model: str = "gpt-4o"
     openai_transcription_model: str = "gpt-4o-mini-transcribe"
+    audio_transcription_segment_seconds: int = 240
+    audio_transcription_max_single_seconds: int = 240
 
     # Video processing
     video_frame_interval: int = 30  # seconds between extracted frames
