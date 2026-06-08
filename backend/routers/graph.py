@@ -901,6 +901,15 @@ def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_use
         if not node_key:
             node_key = f"node-{abs(hash(request.name)) % 1000000}"
 
+        # Provenance / audit (S2-28): stamp every user-authored node so it is
+        # queryably + visually distinct from imported (ingested) data on every
+        # graph surface. `user_created=true` is the flag the frontends check to
+        # render authored nodes differently; created_by/created_at give the
+        # audit trail; source='manual' future-proofs for other authored sources.
+        from datetime import datetime, timezone
+        created_by = user.get("username") or user.get("email") or user.get("id") or "unknown"
+        created_at = datetime.now(timezone.utc).isoformat()
+
         # Create node data structure
         node_data = {
             "key": node_key,
@@ -910,12 +919,22 @@ def create_node(request: CreateNodeRequest, user: dict = Depends(get_current_use
             "summary": request.summary.strip() if request.summary else None,
             "notes": request.description.strip() if request.description else None,
         }
-        
+
+        # Provenance lives in `properties` because the cypher_generator only
+        # persists the explicit top-level fields (key/id/name/summary/notes)
+        # plus everything in `properties`. Putting it there guarantees the
+        # flags actually land on the Neo4j node.
+        node_data["properties"] = {
+            "user_created": True,
+            "created_by": created_by,
+            "created_at": created_at,
+            "source": "manual",
+        }
+
         # Add type-specific properties if provided
         if request.properties:
-            # Put additional properties into a properties dict
-            # The cypher_generator will merge these with standard properties
-            node_data["properties"] = {}
+            # Merge additional properties into the same dict the generator
+            # persists.
             for key, value in request.properties.items():
                 # Skip standard fields that are already handled
                 if key not in ['key', 'id', 'name', 'type', 'summary', 'notes', 'case_id']:
