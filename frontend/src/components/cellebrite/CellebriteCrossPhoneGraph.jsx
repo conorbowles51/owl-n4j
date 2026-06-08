@@ -14,6 +14,7 @@ import PhoneIdentityChip from './shared/PhoneIdentityChip';
 import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import { requestCellebriteTabSwitch, setCommsHandoff } from '../../utils/commsHandoff';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
+import SubgraphEventStream from './shared/SubgraphEventStream';
 
 /**
  * Convert a `#rrggbb` hex string to `rgba()` with the supplied alpha.
@@ -276,6 +277,26 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   //                     smaller person-id is `source`). Width is
   //                     unchanged (still driven by `count`/total).
   const [flowView, setFlowView] = useState(false);
+
+  // Subgraph Event Stream panel (one chronological feed of all comms
+  // across the people currently in the graph). Closed by default; the
+  // panel fetches nothing while closed.
+  const [streamOpen, setStreamOpen] = useState(false);
+
+  // Person keys currently rendered in the subgraph — drives the event
+  // stream's participant filter. id format is `person-<key>`; strip the
+  // prefix to get the comms key. (Distinct from the perspective-anchor
+  // `personKeys` memo below, which is the active-perspective lens, not
+  // the full set of rendered person nodes.)
+  const subgraphPersonKeys = useMemo(() => {
+    const keys = [];
+    for (const n of graphData.nodes) {
+      if (typeof n?.id === 'string' && n.id.startsWith('person-')) {
+        keys.push(n.id.slice('person-'.length));
+      }
+    }
+    return keys;
+  }, [graphData.nodes]);
 
   // react-force-graph-2d caches the link accessor functions
   // (linkDirectionalArrowLength / linkDirectionalParticles / speed) and
@@ -1613,6 +1634,19 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <div className="flex-1" />
         <button
           type="button"
+          onClick={() => setStreamOpen((v) => !v)}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
+            streamOpen
+              ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+              : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
+          }`}
+          title="Open one chronological feed of every call / message / email across the people currently shown in the graph"
+        >
+          <Clock className="w-2.5 h-2.5" />
+          Event stream
+        </button>
+        <button
+          type="button"
           onClick={() => setFlowView((v) => !v)}
           className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
             flowView
@@ -2366,6 +2400,19 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           )}
         </div>
       )}
+
+      {/* Subgraph Event Stream — one chronological feed of all comms
+          across the people currently in the graph. Self-contained
+          right-docked panel (z-30, below the selection rail's z-40).
+          Fetches nothing while closed. Clicking a row publishes the
+          single event to the rail for full detail. */}
+      <SubgraphEventStream
+        open={streamOpen}
+        onClose={() => setStreamOpen(false)}
+        caseId={caseId}
+        personKeys={subgraphPersonKeys}
+        activeTypes={[...activeEventTypes]}
+      />
     </div>
   );
 }
