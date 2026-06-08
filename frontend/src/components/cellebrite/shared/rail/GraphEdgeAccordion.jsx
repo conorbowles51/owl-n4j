@@ -53,26 +53,41 @@ export default function GraphEdgeAccordion({ selection }) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    cellebriteCommsAPI
-      .getBetween(caseId, {
-        participantKeys: [a, b],
-        types: ['message', 'call', 'email'],
-        limit: 100,
-        sort: 'asc',
-      })
-      .then((res) => {
+    // Pair-isolated, directional fetch. `participant_keys` is an OR
+    // *involvement* filter — for a shared-chat edge it returns every
+    // message either party sent in any chat (incl. with 3rd parties),
+    // which is why the old strict client-filter dropped everything and
+    // the body read "no events" despite a non-zero header.
+    //
+    // The correct query for "the comms ON this edge" is two DIRECTED
+    // calls: from_keys=a→to_keys=b and from_keys=b→to_keys=a. Each
+    // returns exactly the messages/calls/emails addressed between the
+    // two parties (matching the edge's dir_counts), with no group-chat
+    // noise. We merge + sort ascending to get the true sequence.
+    const types = ['message', 'call', 'email'];
+    Promise.all([
+      cellebriteCommsAPI.getBetween(caseId, { fromKeys: [a], toKeys: [b], types, limit: 200, sort: 'asc' }),
+      cellebriteCommsAPI.getBetween(caseId, { fromKeys: [b], toKeys: [a], types, limit: 200, sort: 'asc' }),
+    ])
+      .then(([abRes, baRes]) => {
         if (cancelled) return;
-        const raw = res?.items || [];
-        // Strictly-the-pair filter: drop 3rd-party noise that the
-        // involvement-based query can surface on group threads.
-        const pair = new Set([a, b]);
-        const strict = raw.filter((it) => {
-          const sKey = it?.sender?.key;
-          if (!sKey || !pair.has(sKey)) return false;
-          const recips = Array.isArray(it?.recipients) ? it.recipients : [];
-          return recips.some((r) => r?.key && pair.has(r.key));
+        const merged = [...(abRes?.items || []), ...(baRes?.items || [])];
+        // De-dupe by id (a call can surface from both directions) and
+        // sort chronologically so the panel reads as a flow.
+        const seen = new Set();
+        const deduped = [];
+        for (const it of merged) {
+          const key = it?.id || `${it?.type}-${it?.timestamp}-${it?.sender?.key}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push(it);
+        }
+        deduped.sort((x, y) => {
+          const tx = x?.timestamp ? new Date(x.timestamp).getTime() : 0;
+          const ty = y?.timestamp ? new Date(y.timestamp).getTime() : 0;
+          return tx - ty;
         });
-        setItems(strict);
+        setItems(deduped);
         setLoading(false);
       })
       .catch((err) => {
@@ -145,11 +160,13 @@ export default function GraphEdgeAccordion({ selection }) {
           </div>
         )}
         {!loading && !error && items.length > 0 && (
-          <ul className="space-y-1">
-            {items.map((it) => (
+          <ul className="space-y-1.5">
+            {items.map((it, idx) => (
               <EdgeEventRow
-                key={it.id || `${it.type}-${it.timestamp}`}
+                key={it.id || `${it.type}-${it.timestamp}-${idx}`}
                 item={it}
+                seq={idx + 1}
+                aKey={a}
                 onSelect={() => publishItem(selectEntity, it, caseId)}
               />
             ))}
@@ -162,7 +179,7 @@ export default function GraphEdgeAccordion({ selection }) {
 
 /* ────────────────────── Sub-components ────────────────────── */
 
-function EdgeEventRow({ item, onSelect }) {
+function EdgeEventRow({ item, seq, aKey, onSelect }) {
   const Icon = ICON_FOR_TYPE[item.type] || MessageSquare;
   const fromName = item?.sender?.name || item?.sender?.key || 'Unknown';
   const toName = (Array.isArray(item?.recipients) && item.recipients[0]?.name)
@@ -170,36 +187,59 @@ function EdgeEventRow({ item, onSelect }) {
     || 'Unknown';
   const when = item?.timestamp ? formatTs(item.timestamp) : '';
   const body = (item?.body || '').trim();
+  // Direction relative to the edge's "a" party: events a→ sit on the
+  // left tinted blue, events →a (from the other party) sit on the right
+  // tinted slate — so the panel reads as a back-and-forth flow.
+  const fromA = item?.sender?.key === aKey;
+  const dur = item?.duration || item?.call_duration || null;
 
   return (
-    <li>
+    <li className={`flex ${fromA ? 'justify-start' : 'justify-end'}`}>
       <button
         type="button"
         onClick={onSelect}
-        className="w-full text-left border border-light-200 rounded bg-white px-2.5 py-1.5 hover:bg-light-50"
+        className={`text-left rounded-lg px-2.5 py-1.5 max-w-[88%] border hover:brightness-95 ${
+          fromA
+            ? 'bg-owl-blue-50 border-owl-blue-100'
+            : 'bg-light-100 border-light-200'
+        }`}
       >
-        <div className="flex items-center gap-1.5 text-[11px] text-light-600">
-          <Icon className="w-3 h-3 text-light-500 flex-shrink-0" />
-          <span className="truncate">{fromName}</span>
-          <ArrowRight className="w-3 h-3 text-light-400 flex-shrink-0" />
-          <span className="truncate">{toName}</span>
-          <span className="ml-auto text-light-400 whitespace-nowrap">{when}</span>
+        {/* sequence + direction + time */}
+        <div className="flex items-center gap-1.5 text-[10px] text-light-500">
+          <span className="font-mono text-light-400">#{seq}</span>
+          <Icon className="w-3 h-3 flex-shrink-0" />
+          <span className="font-medium text-light-700 truncate max-w-[80px]" title={fromName}>{fromName}</span>
+          <ArrowRight className="w-2.5 h-2.5 text-light-400 flex-shrink-0" />
+          <span className="truncate max-w-[80px]" title={toName}>{toName}</span>
+          {when && <span className="ml-auto whitespace-nowrap pl-1.5">{when}</span>}
         </div>
+        {/* content */}
         {item.type === 'message' && body && (
-          <div className="mt-0.5 text-[12px] text-owl-blue-900 break-words line-clamp-3">
+          <div className="mt-0.5 text-[12px] text-owl-blue-900 break-words line-clamp-4">
             {body}
           </div>
         )}
         {item.type === 'email' && (item.subject || body) && (
-          <div className="mt-0.5 text-[12px] text-owl-blue-900 break-words line-clamp-2">
-            {item.subject || body}
+          <div className="mt-0.5 text-[12px] text-owl-blue-900 break-words">
+            {item.subject && <span className="font-semibold">{item.subject}</span>}
+            {item.subject && body && <span className="text-light-400"> — </span>}
+            {body && <span className="line-clamp-3">{body}</span>}
           </div>
         )}
-        {(item.source_app || (item.type === 'call' && item.call_type)) && (
+        {item.type === 'call' && (
+          <div className="mt-0.5 text-[12px] text-owl-blue-900">
+            {item.call_type ? `${item.call_type} call` : 'Call'}
+            {dur ? <span className="text-light-500"> · {dur}</span> : null}
+          </div>
+        )}
+        {/* metadata footer: app + attachment count */}
+        {(item.source_app || (Array.isArray(item.attachments) && item.attachments.length > 0)) && (
           <div className="mt-0.5 text-[10px] text-light-500 flex items-center gap-1.5 flex-wrap">
-            {item.type === 'call' && item.call_type && <span>{item.call_type}</span>}
-            {item.type === 'call' && item.call_type && item.source_app && <span>·</span>}
             {item.source_app && <span>{item.source_app}</span>}
+            {item.source_app && Array.isArray(item.attachments) && item.attachments.length > 0 && <span>·</span>}
+            {Array.isArray(item.attachments) && item.attachments.length > 0 && (
+              <span>{item.attachments.length} attachment{item.attachments.length > 1 ? 's' : ''}</span>
+            )}
           </div>
         )}
       </button>
