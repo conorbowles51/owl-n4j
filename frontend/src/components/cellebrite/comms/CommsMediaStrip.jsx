@@ -22,9 +22,16 @@ import CommsAttachment from './CommsAttachment';
  *   className?: string
  *   expandable?: boolean (default true) — when false the strip renders the
  *     compact preview only and lets clicks bubble to an enclosing row handler
- *     (e.g. a windowed timeline row whose fixed height + overflow-hidden can't
- *     grow to fit inline-expanded media; the row's click opens the detail
- *     flyout, which already renders full media).
+ *     (the row's click opens the detail flyout, which already renders full
+ *     media).
+ *   inline?: boolean (default false) — inline mode for the measured (dynamic-
+ *     height) timeline scroller. Renders image thumbnails (click = lightbox via
+ *     the full CommsAttachment renderer) AND an always-visible <audio> player
+ *     for voice notes, so the investigator can see thumbnails and play voice
+ *     notes with ZERO clicks while scrolling. The audio uses preload="none" so
+ *     bytes aren't fetched until play; only on-screen rows are mounted (the
+ *     virtualizer handles that), so no extra lazy logic is needed. All media
+ *     clicks stop propagation so they don't trigger the enclosing row's onClick.
  */
 const KIND_META = {
   image: { Icon: ImageIcon, label: 'photo' },
@@ -36,10 +43,52 @@ const KIND_META = {
 
 const MAX_THUMBS = 3;
 
-export default function CommsMediaStrip({ attachments, className = '', expandable = true }) {
+export default function CommsMediaStrip({ attachments, className = '', expandable = true, inline = false }) {
   const [expanded, setExpanded] = useState(false);
   const atts = Array.isArray(attachments) ? attachments.filter(Boolean) : [];
   if (atts.length === 0) return null;
+
+  // Inline mode (measured timeline scroller): render media directly in the row.
+  // Voice notes get an ALWAYS-VISIBLE <audio> player (no click to listen);
+  // images render via the full CommsAttachment renderer so the thumbnail is
+  // visible inline and clicking it opens the lightbox. Other kinds (video/doc)
+  // also use CommsAttachment. Clicks are stopped from bubbling so they don't
+  // fire the enclosing row's onClick (which opens the detail flyout).
+  if (inline) {
+    // Split audio out so we can render a lean <audio preload="none"> directly
+    // (CommsAttachment's audio uses preload="metadata", which would fetch
+    // header bytes per row — we explicitly avoid that here).
+    const audioAtts = atts.filter((a) => !a.missing && attachmentKind(a) === 'audio' && attachmentUrl(a));
+    const otherAtts = atts.filter((a) => !(audioAtts.includes(a)));
+    return (
+      <div
+        className={`mt-1 ${className}`}
+        onClick={(e) => e.stopPropagation()}
+        role="presentation"
+      >
+        {audioAtts.length > 0 && (
+          <div className="flex flex-col gap-1">
+            {audioAtts.map((a, i) => (
+              <audio
+                key={a.file_id || a.evidence_id || `audio-${i}`}
+                controls
+                preload="none"
+                src={attachmentUrl(a)}
+                className="max-w-[300px] h-9"
+              />
+            ))}
+          </div>
+        )}
+        {otherAtts.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-1">
+            {otherAtts.map((a, i) => (
+              <CommsAttachment key={a.file_id || a.evidence_id || `att-${i}`} attachment={a} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   // Expanded: the full attachment renderers, stopping clicks from bubbling to
   // an enclosing clickable row.
