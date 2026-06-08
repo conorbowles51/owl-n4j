@@ -5,7 +5,7 @@ import {
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
   Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
   Bluetooth, Filter as FilterIcon, ChevronRight, Tag, Clock,
-  FolderTree, UserCheck, Move, MousePointerSquareDashed,
+  FolderTree, UserCheck, Move, MousePointerSquareDashed, Share2,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
@@ -15,6 +15,7 @@ import CellebriteSearchInput from './shared/CellebriteSearchInput';
 import { requestCellebriteTabSwitch, setCommsHandoff } from '../../utils/commsHandoff';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import SubgraphEventStream from './shared/SubgraphEventStream';
+import PathFlowPanel from './shared/PathFlowPanel';
 
 /**
  * Convert a `#rrggbb` hex string to `rgba()` with the supplied alpha.
@@ -292,6 +293,13 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // across the people currently in the graph). Closed by default; the
   // panel fetches nothing while closed.
   const [streamOpen, setStreamOpen] = useState(false);
+
+  // Path Flow panel — multi-hop shortest-path event flow between exactly
+  // two selected people. null when closed, else { aKey, bKey, aName,
+  // bName } with `person-` already stripped from the keys. Opened from
+  // the "Trace path" button that appears when the multi-selection holds
+  // exactly two Person nodes.
+  const [pathFlow, setPathFlow] = useState(null);
 
   // Person keys currently rendered in the subgraph — drives the event
   // stream's participant filter. id format is `person-<key>`; strip the
@@ -1666,6 +1674,35 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
                 Selected:
               </span>
               <span>{multiSelection.size} node{multiSelection.size === 1 ? '' : 's'}</span>
+              {/* Trace path — appears only when EXACTLY two Person nodes
+                  are selected. Resolves both ids, strips the `person-`
+                  prefix to recover the comms keys, looks names up in
+                  graphData.nodes, and opens the PathFlowPanel. */}
+              {(() => {
+                if (multiSelection.size !== 2) return null;
+                const ids = [...multiSelection];
+                if (!ids.every((id) => typeof id === 'string' && id.startsWith('person-'))) {
+                  return null;
+                }
+                const [idA, idB] = ids;
+                const nodeA = graphData.nodes.find((n) => n.id === idA);
+                const nodeB = graphData.nodes.find((n) => n.id === idB);
+                const aKey = idA.replace(/^person-/, '');
+                const bKey = idB.replace(/^person-/, '');
+                const aName = nodeA?.name || aKey;
+                const bName = nodeB?.name || bKey;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setPathFlow({ aKey, bKey, aName, bName })}
+                    className="text-[10px] text-owl-blue-800 bg-white border border-owl-blue-200 hover:bg-owl-blue-50 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                    title="Trace the shortest path between these two people and the comms exchanged at each hop"
+                  >
+                    <Share2 className="w-2.5 h-2.5" />
+                    Trace path
+                  </button>
+                );
+              })()}
               <button
                 type="button"
                 onClick={() => setMultiSelection(new Set())}
@@ -2526,6 +2563,18 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         caseId={caseId}
         personKeys={subgraphPersonKeys}
         activeTypes={[...activeEventTypes]}
+      />
+
+      {/* Path Flow — multi-hop shortest-path event flow between exactly
+          two selected people. Right-docked at the same z-30 as the event
+          stream (below the selection rail's z-40). Opened from the
+          "Trace path" button in the selection banner. Fetches nothing
+          while closed. */}
+      <PathFlowPanel
+        open={!!pathFlow}
+        onClose={() => setPathFlow(null)}
+        caseId={caseId}
+        {...(pathFlow || {})}
       />
     </div>
   );
