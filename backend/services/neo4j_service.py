@@ -12497,6 +12497,103 @@ class Neo4jService:
             "truncated": true_total > offset + len(items),
         }
 
+    # -----------------------------------------------------------------------
+    # Cellebrite callouts (S3-07)
+    #
+    # A DEDICATED, lightweight store (NOT Findings — product decision) that
+    # lets an investigator flag a single Cellebrite timeline event as a
+    # "callout" for the client report, with an optional note. Persisted as a
+    # case-scoped CellebriteCallout node, one per (case_id, event_node_key)
+    # via MERGE so re-marking the same event updates rather than duplicates.
+    #
+    # `event_summary` / `event_timestamp` are denormalised snapshots passed
+    # from the frontend at mark-time so the report (S3-08/09) can render the
+    # callout list without re-fetching every referenced event.
+    # -----------------------------------------------------------------------
+
+    def upsert_cellebrite_callout(
+        self,
+        case_id: str,
+        event_node_key: str,
+        note: Optional[str] = None,
+        event_summary: Optional[str] = None,
+        event_timestamp: Optional[str] = None,
+        created_by: Optional[str] = None,
+    ) -> dict:
+        """
+        MERGE a callout for (case_id, event_node_key) and return it.
+
+        MERGE keys on (case_id, event_node_key) so marking the same event
+        twice updates the existing callout (note / snapshot / timestamp)
+        rather than creating a duplicate. Provenance (created_by/created_at/
+        user_created) is stamped ON CREATE only; updated_at refreshes on
+        every write. `user_created` is passed as a native Python bool — the
+        neo4j driver persists it as a boolean (no cypher_generator involved).
+        """
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        # Build the SET payload for fields that may change on re-mark. Only
+        # include keys the caller supplied so a note-less re-mark doesn't wipe
+        # an existing note (callers pass None to leave-as-is).
+        set_props: Dict[str, Any] = {"updated_at": now}
+        if note is not None:
+            set_props["note"] = note
+        if event_summary is not None:
+            set_props["event_summary"] = event_summary
+        if event_timestamp is not None:
+            set_props["event_timestamp"] = event_timestamp
+        with self._driver.session() as session:
+            rec = session.run(
+                """
+                MERGE (c:CellebriteCallout {case_id: $case_id, event_node_key: $event_node_key})
+                ON CREATE SET c += $on_create
+                SET c += $set_props
+                RETURN c
+                """,
+                case_id=case_id,
+                event_node_key=event_node_key,
+                on_create={
+                    "created_at": now,
+                    "created_by": created_by,
+                    "user_created": True,
+                },
+                set_props=set_props,
+            ).single()
+            return dict(rec["c"]) if rec else None
+
+    def list_cellebrite_callouts(self, case_id: str) -> List[dict]:
+        """
+        Return all callouts for a case, sorted chronologically by the
+        referenced event's timestamp (then created_at) so the report renders
+        them in event order. Null event_timestamps sort last.
+        """
+        with self._driver.session() as session:
+            rs = session.run(
+                """
+                MATCH (c:CellebriteCallout {case_id: $case_id})
+                RETURN c
+                ORDER BY coalesce(c.event_timestamp, '9999') ASC,
+                         coalesce(c.created_at, '') ASC
+                """,
+                case_id=case_id,
+            )
+            return [dict(rec["c"]) for rec in rs]
+
+    def delete_cellebrite_callout(self, case_id: str, event_node_key: str) -> bool:
+        """Remove the callout for (case_id, event_node_key). Returns True if one existed."""
+        with self._driver.session() as session:
+            rec = session.run(
+                """
+                MATCH (c:CellebriteCallout {case_id: $case_id, event_node_key: $event_node_key})
+                WITH c, c.event_node_key AS k
+                DELETE c
+                RETURN k
+                """,
+                case_id=case_id,
+                event_node_key=event_node_key,
+            ).single()
+            return rec is not None
+
 
 # ---------------------------------------------------------------------------
 # Helpers for event projections (used by get_cellebrite_events)

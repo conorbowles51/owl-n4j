@@ -23,7 +23,7 @@ import AttachmentFilterToggle from './shared/AttachmentFilterToggle';
 import HighlightedText from './shared/HighlightedText';
 import { phoneFromKey } from './shared/PersonName';
 import { useCellebriteTime } from './shared/CellebriteTimezone';
-import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle, Loader2, ArrowDown, ArrowUp } from 'lucide-react';
+import { List, LayoutPanelTop, LayoutPanelLeft, AlertTriangle, Loader2, ArrowDown, ArrowUp, Star } from 'lucide-react';
 import CellebriteTimelineSwimLane from './CellebriteTimelineSwimLane';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import {
@@ -130,6 +130,12 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
   // histogram) so the scrubber shows the honest full range/density even though
   // the body feed is capped per type. Loads async, independent of the body.
   const [envelope, setEnvelope] = useState(null);
+
+  // --- Callouts (S3-07) ---
+  // Set of event node_keys that the investigator has flagged as report
+  // callouts for this case. Fetched once per case; toggled optimistically so
+  // the star fills/empties instantly without waiting on the round-trip.
+  const [calloutKeys, setCalloutKeys] = useState(() => new Set());
 
   // --- Selection ---
   // Selection drives the universal selection flyout via the
@@ -304,6 +310,66 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
       .catch(() => { if (!cancelled) setEnvelope(null); });
     return () => { cancelled = true; };
   }, [caseId, selectedReportKeys, activeEventTypes, hasAttachmentOnly]);
+
+  // Fetch the case's existing callouts once per case so each row knows whether
+  // it's already flagged (filled star). Independent of the event/filter feeds —
+  // a callout set is small and case-wide, not scoped to the visible window.
+  useEffect(() => {
+    if (!caseId) { setCalloutKeys(new Set()); return undefined; }
+    let cancelled = false;
+    cellebriteEventsAPI
+      .getCallouts(caseId)
+      .then((data) => {
+        if (cancelled) return;
+        const keys = (data.callouts || [])
+          .map((c) => c.event_node_key)
+          .filter(Boolean);
+        setCalloutKeys(new Set(keys));
+      })
+      .catch(() => { if (!cancelled) setCalloutKeys(new Set()); });
+    return () => { cancelled = true; };
+  }, [caseId]);
+
+  // Toggle a row's callout state. Optimistic: flip the local Set immediately,
+  // fire the write, and roll back if it fails. The event_summary snapshot is
+  // derived from label + direction + body so the report (S3-08/09) can render
+  // the callout without re-fetching the event. event_node_key is the event's
+  // node addressing key (ev.node_key, falling back to ev.id).
+  const handleToggleCallout = useCallback((ev) => {
+    if (!caseId || !ev) return;
+    const nodeKey = ev.node_key || ev.id;
+    if (!nodeKey) return;
+    const wasCallout = calloutKeys.has(nodeKey);
+    // Optimistic flip.
+    setCalloutKeys((prev) => {
+      const next = new Set(prev);
+      if (wasCallout) next.delete(nodeKey);
+      else next.add(nodeKey);
+      return next;
+    });
+    const rollback = () => setCalloutKeys((prev) => {
+      const next = new Set(prev);
+      if (wasCallout) next.add(nodeKey);
+      else next.delete(nodeKey);
+      return next;
+    });
+    if (wasCallout) {
+      cellebriteEventsAPI.deleteCallout(caseId, nodeKey).catch(rollback);
+    } else {
+      // Short, human-readable snapshot: "<Label> · <direction>" + a clipped
+      // body/summary line. Mirrors what the row shows so the report reads the
+      // same. Kept compact since it's denormalised onto the callout node.
+      const label = EVENT_LABELS[ev.event_type] || ev.event_type || 'Event';
+      const dir = ev.direction ? ` · ${ev.direction}` : '';
+      const body = (ev.body || ev.summary || '').slice(0, 200);
+      const summary = body ? `${label}${dir} — ${body}` : `${label}${dir}`;
+      cellebriteEventsAPI.markCallout(caseId, {
+        eventNodeKey: nodeKey,
+        eventSummary: summary,
+        eventTimestamp: ev.timestamp || null,
+      }).catch(rollback);
+    }
+  }, [caseId, calloutKeys]);
 
   // "Load more" availability + counts. More events exist when the envelope's
   // true total (for the active filters) exceeds what we've loaded AND at least
@@ -570,6 +636,8 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
             loadedCount={loadedCount}
             totalCount={totalCount}
             onLoadMore={handleLoadMore}
+            calloutKeys={calloutKeys}
+            onToggleCallout={handleToggleCallout}
             onRowClick={(ev) => {
               setSelectedEvent(ev);
               selectEntity({
@@ -680,6 +748,8 @@ const TimelineList = forwardRef(function TimelineList(
     loadedCount = 0,
     totalCount = null,
     onLoadMore,
+    calloutKeys,
+    onToggleCallout,
   },
   ref,
 ) {
@@ -794,6 +864,8 @@ const TimelineList = forwardRef(function TimelineList(
                   showPhoneChip={showPhoneChip}
                   highlights={highlights}
                   onClick={() => onRowClick(it.ev)}
+                  isCallout={!!calloutKeys?.has(it.ev.node_key || it.ev.id)}
+                  onToggleCallout={onToggleCallout}
                 />
               )}
             </div>
@@ -822,7 +894,7 @@ const TimelineList = forwardRef(function TimelineList(
   );
 });
 
-function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights = [] }) {
+function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights = [], isCallout = false, onToggleCallout }) {
   const Icon = EVENT_ICONS[ev.event_type] || EVENT_ICONS.location;
   const color = EVENT_COLORS[ev.event_type] || '#64748b';
   const dColor = deviceColorOf(ev.device_report_key, reports);
@@ -895,13 +967,35 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
           {ev.duration && (
             <span className="text-[10px] text-light-500">· {ev.duration}</span>
           )}
-          {showPhoneChip && ev.device_report_key && (
-            <PhoneIdentityChip
-              reportKey={ev.device_report_key}
-              variant="dense"
-              className="ml-auto flex-shrink-0"
-            />
-          )}
+          {/* Right-aligned row controls: phone chip + callout star. Grouped in
+              an ml-auto flex so the chip and star sit together at the row end
+              without fighting over `ml-auto`. */}
+          <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+            {showPhoneChip && ev.device_report_key && (
+              <PhoneIdentityChip
+                reportKey={ev.device_report_key}
+                variant="dense"
+                className="flex-shrink-0"
+              />
+            )}
+            {/* Callout toggle (S3-07). Subtle, additive star. stopPropagation so
+                clicking it flags/unflags the event WITHOUT opening the row
+                flyout. Filled amber when already a callout. */}
+            <button
+              type="button"
+              aria-pressed={isCallout}
+              title={isCallout ? 'Remove report callout' : 'Mark as callout for report'}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleCallout?.(ev);
+              }}
+              className={`flex-shrink-0 inline-flex items-center justify-center w-5 h-5 rounded hover:bg-light-100 ${
+                isCallout ? 'text-amber-500' : 'text-light-400 hover:text-amber-500'
+              }`}
+            >
+              <Star className="w-3.5 h-3.5" fill={isCallout ? 'currentColor' : 'none'} />
+            </button>
+          </span>
         </div>
         {direction && (
           <div className="text-xs text-light-700 truncate" title={direction}>

@@ -1101,6 +1101,82 @@ def get_event_related(
     return result
 
 
+# -------------------------------------------------------------------
+# Callouts (S3-07) — investigator flags a timeline event for the client
+# report, with an optional note. DEDICATED store (not Findings, per
+# product decision). Case-scoped CellebriteCallout node, one per
+# (case_id, event_node_key) via MERGE.
+# -------------------------------------------------------------------
+
+
+class CalloutCreateRequest(BaseModel):
+    """POST body for /callouts — mark a Cellebrite event as a report callout."""
+    case_id: str
+    event_node_key: str
+    note: Optional[str] = None
+    # Denormalised snapshot of the flagged event so the report (S3-08/09) can
+    # render the callout list without re-fetching every referenced event.
+    event_summary: Optional[str] = None
+    event_timestamp: Optional[str] = None
+
+
+@router.post("/callouts")
+def create_callout(
+    body: CalloutCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """
+    Mark a Cellebrite timeline event as a callout for the client report.
+
+    MERGEs on (case_id, event_node_key) so re-marking the same event updates
+    its note/snapshot rather than creating a duplicate. A plain persist —
+    no email/export side-effects (S3-07 sign-off). The report-rendering side
+    is S3-08/09.
+    """
+    if not body.case_id or not body.case_id.strip():
+        raise HTTPException(status_code=400, detail="case_id is required")
+    if not body.event_node_key or not body.event_node_key.strip():
+        raise HTTPException(status_code=400, detail="event_node_key is required")
+    _require_case_access(body.case_id, current_user, db)
+    actor = getattr(current_user, "email", None) or getattr(current_user, "username", None)
+    callout = neo4j_service.upsert_cellebrite_callout(
+        case_id=body.case_id,
+        event_node_key=body.event_node_key,
+        note=body.note,
+        event_summary=body.event_summary,
+        event_timestamp=body.event_timestamp,
+        created_by=actor,
+    )
+    return {"callout": callout}
+
+
+@router.get("/callouts")
+def list_callouts(
+    case_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """List all callouts for a case, sorted by event_timestamp then created_at."""
+    _require_case_access(case_id, current_user, db)
+    return {"callouts": neo4j_service.list_cellebrite_callouts(case_id)}
+
+
+@router.delete("/callouts/{event_node_key:path}")
+def delete_callout(
+    event_node_key: str,
+    case_id: str = Query(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Remove the callout flagging the given Cellebrite event."""
+    _require_case_access(case_id, current_user, db)
+    removed = neo4j_service.delete_cellebrite_callout(case_id, event_node_key)
+    if not removed:
+        raise HTTPException(status_code=404, detail="Callout not found")
+    return {"status": "deleted", "event_node_key": event_node_key}
+
+
 class IntersectionRunRequest(BaseModel):
     methods: List[str]
     report_keys: Optional[List[str]] = None
