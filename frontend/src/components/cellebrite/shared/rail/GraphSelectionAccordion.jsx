@@ -7,6 +7,7 @@ import {
 import PhoneIdentityChip from '../PhoneIdentityChip';
 import PersonName from '../PersonName';
 import { useCellebriteSelection } from '../CellebriteSelectionContext';
+import { usePerspective } from '../../../../context/PerspectiveContext';
 
 /**
  * Rail accordion for Cross-Phone Graph selections.
@@ -26,7 +27,29 @@ import { useCellebriteSelection } from '../CellebriteSelectionContext';
  */
 export default function GraphSelectionAccordion({ selection }) {
   const { selectEntity } = useCellebriteSelection();
+  const perspective = usePerspective();
   const payload = selection?.payload || {};
+
+  // Drill = re-anchor the graph on this node. For a Person that means
+  // setting the perspective (which rebuilds the Cross-Phone Graph around
+  // them) — that's the part that was missing, so the button looked dead.
+  // We still republish the single node to the selection rail so other
+  // surfaces stay in sync. Phones/resources can't anchor a person
+  // perspective, so they just republish.
+  const handleDrill = (node) => {
+    if (!node) return;
+    const kind = inferKind(node);
+    if (kind === 'person' && perspective?.setPerspective) {
+      const personKey =
+        node.person_key
+        || node.node_key
+        || (typeof node.id === 'string' ? node.id.replace(/^person-/, '') : null);
+      if (personKey) {
+        perspective.setPerspective([personKey], node.name || personKey, 'graph.drill');
+      }
+    }
+    publishSingle(selectEntity, node, selection?.caseId);
+  };
 
   // Normalise to a list of nodes regardless of which selection shape
   // we received. Single-node selections fake a list of one so the
@@ -70,7 +93,7 @@ export default function GraphSelectionAccordion({ selection }) {
   if (nodes.length === 1) {
     return (
       <div className="px-2 py-2">
-        <NodeCard node={nodes[0]} onDrill={(n) => publishSingle(selectEntity, n, selection?.caseId)} />
+        <NodeCard node={nodes[0]} onDrill={handleDrill} />
       </div>
     );
   }
@@ -98,7 +121,7 @@ export default function GraphSelectionAccordion({ selection }) {
             <NodeCard
               key={n.id || n.node_key || n.name}
               node={n}
-              onDrill={(node) => publishSingle(selectEntity, node, selection?.caseId)}
+              onDrill={handleDrill}
             />
           ))}
         </Section>
@@ -110,7 +133,7 @@ export default function GraphSelectionAccordion({ selection }) {
             <NodeCard
               key={n.id || n.node_key || n.name}
               node={n}
-              onDrill={(node) => publishSingle(selectEntity, node, selection?.caseId)}
+              onDrill={handleDrill}
             />
           ))}
         </Section>
@@ -122,7 +145,7 @@ export default function GraphSelectionAccordion({ selection }) {
             <NodeCard
               key={n.id || n.node_key || n.name}
               node={n}
-              onDrill={(node) => publishSingle(selectEntity, node, selection?.caseId)}
+              onDrill={handleDrill}
             />
           ))}
         </Section>
