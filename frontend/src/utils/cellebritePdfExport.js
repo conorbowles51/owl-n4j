@@ -68,14 +68,69 @@ function ownerName(d) {
 
 const fmtDate = (ts) => (ts ? String(ts).slice(0, 10) : '—');
 
+// Format a callout/event timestamp for the report. Callout timestamps are
+// stored as the event's raw timestamp (may be ISO, may be a date-only string).
+// Show a readable date+time when parseable, falling back to the raw string,
+// then to an em-dash.
+const fmtEventTs = (ts) => {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+  return String(ts);
+};
+
 /**
  * Export the Cellebrite device report to PDF.
  *
+ * Backward-compat note (S3-09): this function originally had the positional
+ * signature `(caseName, devicesArray, createdAt)`. It now ALSO accepts an
+ * options object `(caseName, { devices, callouts, visualizations, createdAt })`.
+ * The second argument is normalized at runtime:
+ *   - If it's an Array, we treat it as the legacy `devices` positional arg and
+ *     read `createdAt` from the third positional argument.
+ *   - Otherwise it's treated as the options object (and the third arg is
+ *     ignored).
+ * This keeps every existing caller (e.g. older callers passing a devices
+ * array) working unchanged while letting new callers pass extra sections.
+ *
  * @param {string} caseName - Case name (or case id when only the id is known).
- * @param {Array}  devices  - Device objects from cellebriteAPI.getDeviceReport.
- * @param {string|Date} [createdAt] - Generation timestamp (defaults to now).
+ * @param {Array|Object} [optsOrDevices] - Either the legacy devices array, or
+ *   an options object: { devices, callouts, visualizations, createdAt }.
+ * @param {string|Date} [maybeCreatedAt] - Legacy positional createdAt; only
+ *   used when the second argument is an Array.
+ * @param {Array}  [optsOrDevices.devices=[]] - Device objects from getDeviceReport.
+ * @param {Array}  [optsOrDevices.callouts=[]] - Flagged callouts (S3-07),
+ *   each { event_node_key, note, event_summary, event_timestamp, ... }.
+ * @param {Array}  [optsOrDevices.visualizations=[]] - Images to embed, each
+ *   { title, dataUrl } where dataUrl is a PNG/JPEG data URL (S3-08).
+ * @param {string|Date} [optsOrDevices.createdAt] - Generation timestamp.
  */
-export async function exportCellebriteReportToPDF(caseName, devices = [], createdAt = new Date()) {
+export async function exportCellebriteReportToPDF(caseName, optsOrDevices = {}, maybeCreatedAt = new Date()) {
+  // ---- Normalize args for backward compatibility (see JSDoc above) ----
+  let devices;
+  let callouts;
+  let visualizations;
+  let createdAt;
+  if (Array.isArray(optsOrDevices)) {
+    // Legacy positional call: (caseName, devicesArray, createdAt).
+    devices = optsOrDevices;
+    callouts = [];
+    visualizations = [];
+    createdAt = maybeCreatedAt || new Date();
+  } else {
+    // New options-object call.
+    const opts = optsOrDevices || {};
+    devices = Array.isArray(opts.devices) ? opts.devices : [];
+    callouts = Array.isArray(opts.callouts) ? opts.callouts : [];
+    visualizations = Array.isArray(opts.visualizations) ? opts.visualizations : [];
+    createdAt = opts.createdAt || new Date();
+  }
+
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -184,7 +239,22 @@ export async function exportCellebriteReportToPDF(caseName, devices = [], create
   doc.text(String(devices.length), margin + 24, yPosition);
   yPosition += 8;
 
-  yPosition += 3;
+  // Contents line — reflects which sections this run actually includes.
+  const contentsParts = ['Device Summary'];
+  if (callouts.length) contentsParts.push('Key Events / Callouts');
+  if (visualizations.length) contentsParts.push('Investigation Visualizations');
+  doc.setFillColor(...OWL_COLORS.blue[50]);
+  doc.roundedRect(margin, yPosition - 4, contentWidth, 6, 1, 1, 'F');
+  doc.setTextColor(...OWL_COLORS.blue[700]);
+  doc.setFont(undefined, 'bold');
+  doc.setFontSize(9);
+  doc.text('Contents:', margin + 2, yPosition);
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, 'normal');
+  doc.text(contentsParts.join('  ·  '), margin + 22, yPosition);
+  yPosition += 10;
+
+  doc.setFontSize(11);
   const intro =
     "Each phone's assigned owner (investigator-set) shown with the dominant user "
     + "by traffic, recovered aliases, in/out communications and the activity window. "
@@ -196,7 +266,8 @@ export async function exportCellebriteReportToPDF(caseName, devices = [], create
   doc.line(margin, yPosition, pageWidth - margin, yPosition);
   yPosition += 8;
 
-  // ---- One block per device ----
+  // ---- Section 2: Device Summary (one block per device) ----
+  addSubsectionHeader('Device Summary');
   if (!devices.length) {
     addLine('No devices to report on.', 0, 11);
   }
@@ -249,6 +320,104 @@ export async function exportCellebriteReportToPDF(caseName, devices = [], create
 
     yPosition += 4;
   });
+
+  // ---- Section 3: Key Events / Callouts (S3-09) ----
+  // The events the investigator flagged for the report. Always render the
+  // section header so the report reads consistently; when nothing is flagged
+  // show a muted note rather than omitting it (keeps the contents line honest).
+  addSubsectionHeader('Key Events / Callouts');
+  if (callouts.length) {
+    // Already sorted chronologically by the API, but sort defensively so the
+    // PDF order can't depend on caller behaviour.
+    const ordered = [...callouts].sort((a, b) => {
+      const ta = a && a.event_timestamp ? String(a.event_timestamp) : '';
+      const tb = b && b.event_timestamp ? String(b.event_timestamp) : '';
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
+    });
+    ordered.forEach((c, idx) => {
+      // Keep each callout's timestamp + first line together near a page edge.
+      checkPageBreak(18);
+      // Timestamp line (bold, blue).
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'bold');
+      doc.setTextColor(...OWL_COLORS.blue[700]);
+      doc.text(`${idx + 1}. ${fmtEventTs(c.event_timestamp)}`, margin + 5, yPosition);
+      yPosition += 6;
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(0, 0, 0);
+      // Event summary snapshot (denormalised at flag time).
+      if (c.event_summary) {
+        checkPageBreak(7);
+        yPosition += addWrappedText(c.event_summary, margin + 9, yPosition, contentWidth - 9, 10, 6);
+      }
+      // Investigator note (if any), set off in amber italic.
+      if (c.note) {
+        checkPageBreak(7);
+        doc.setFont(undefined, 'italic');
+        doc.setTextColor(...OWL_COLORS.amber[600]);
+        yPosition += addWrappedText(`Note: ${c.note}`, margin + 9, yPosition, contentWidth - 9, 10, 6);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(0, 0, 0);
+      }
+      yPosition += 4;
+    });
+  } else {
+    doc.setFontSize(10);
+    doc.setTextColor(...OWL_COLORS.blue[600]);
+    doc.setFont(undefined, 'italic');
+    checkPageBreak(7);
+    doc.text('No callouts flagged.', margin + 5, yPosition);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(0, 0, 0);
+    yPosition += 6;
+  }
+
+  // ---- Section 4: Investigation Visualizations (S3-08) ----
+  // Each visualization is { title, dataUrl } — a PNG/JPEG data URL captured
+  // upstream. Omit the whole section when none are supplied.
+  if (visualizations.length) {
+    addSubsectionHeader('Investigation Visualizations');
+    visualizations.forEach((viz) => {
+      if (!viz || !viz.dataUrl) return;
+      if (viz.title) {
+        checkPageBreak(8);
+        doc.setFontSize(11);
+        doc.setFont(undefined, 'bold');
+        doc.setTextColor(...OWL_COLORS.blue[800]);
+        doc.text(String(viz.title), margin + 5, yPosition);
+        doc.setFont(undefined, 'normal');
+        doc.setTextColor(0, 0, 0);
+        yPosition += 6;
+      }
+      try {
+        // Detect format from the data URL header; default to PNG.
+        const fmt = /^data:image\/jpe?g/i.test(viz.dataUrl) ? 'JPEG' : 'PNG';
+        // Read natural pixel dimensions so we can preserve aspect ratio.
+        const props = doc.getImageProperties(viz.dataUrl);
+        const imgW = contentWidth;
+        let imgH = props.height ? (props.width ? (props.height * imgW) / props.width : imgW * 0.6) : imgW * 0.6;
+        // Cap height so a tall image doesn't overflow a fresh page.
+        const maxH = pageHeight - margin - 25;
+        let drawW = imgW;
+        if (imgH > maxH) {
+          drawW = props.width ? (props.width * maxH) / props.height : imgW;
+          imgH = maxH;
+        }
+        checkPageBreak(imgH + 6);
+        const xOffset = (contentWidth - drawW) / 2;
+        doc.addImage(viz.dataUrl, fmt, margin + xOffset, yPosition, drawW, imgH);
+        yPosition += imgH + 8;
+      } catch (err) {
+        console.error('Error adding visualization image:', err);
+        checkPageBreak(7);
+        doc.setFontSize(10);
+        doc.setTextColor(...OWL_COLORS.blue[600]);
+        doc.text('Visualization could not be included.', margin + 5, yPosition);
+        doc.setTextColor(0, 0, 0);
+        yPosition += 6;
+      }
+    });
+  }
 
   // ---- Footer on every page (mirrors theoryPdfExport) ----
   const addFooter = (pageNum) => {

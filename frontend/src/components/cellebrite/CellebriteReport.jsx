@@ -3,7 +3,7 @@ import {
   FileText, Loader2, User, Phone, MessageSquare, AlertTriangle,
   ChevronDown, ChevronRight, Hash, Clock, Tag, Download,
 } from 'lucide-react';
-import { cellebriteAPI } from '../../services/api';
+import { cellebriteAPI, cellebriteEventsAPI } from '../../services/api';
 import { phoneFromKey } from './shared/PersonName';
 import EntitySummaryCard from './report/EntitySummaryCard';
 import { exportCellebriteReportToPDF } from '../../utils/cellebritePdfExport';
@@ -39,13 +39,39 @@ export default function CellebriteReport({ caseId, isActive = true }) {
     return next;
   });
 
-  // Export the device summaries to a client-side PDF (no backend). The
+  // Export the assembled client-facing report to a client-side PDF (no
+  // backend; the download is user-initiated via the Export button). The
   // component only receives `caseId`, so it's passed as the report name.
+  //
+  // Sections (S3-09): device summaries (already loaded), plus the investigator's
+  // flagged "Key Events / Callouts" fetched here. Callouts are best-effort —
+  // a failure to load them must not block the device-summary export, so we
+  // default to [] on error.
+  //
+  // Visualizations (S3-08): the export utility now has an image slot ready
+  // ({ title, dataUrl }), but live graph-image capture is DEFERRED for this
+  // PR. Rationale: the cross-phone graph canvas lives in a different tab and is
+  // not mounted inside the Report tab, so there's no canvas here to rasterize.
+  // We pass `visualizations: []` now; wiring a real capture requires the graph
+  // component to be mounted (a follow-up). The slot is exercised by the util's
+  // own tests/callers and works when images are supplied.
   const handleExport = async () => {
     if (!devices || !devices.length || exporting) return;
     setExporting(true);
     try {
-      await exportCellebriteReportToPDF(caseId, devices, new Date());
+      let callouts = [];
+      try {
+        const res = await cellebriteEventsAPI.getCallouts(caseId);
+        callouts = (res && res.callouts) || [];
+      } catch (e) {
+        console.warn('Could not load callouts for report; continuing without them:', e);
+      }
+      await exportCellebriteReportToPDF(caseId, {
+        devices,
+        callouts,
+        visualizations: [],
+        createdAt: new Date(),
+      });
     } catch (e) {
       console.error('Cellebrite report PDF export failed:', e);
     } finally {
