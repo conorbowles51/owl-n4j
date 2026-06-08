@@ -611,7 +611,33 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
 const TL_HEADER_PX = 30;
 const TL_ROW_BASE_PX = 34; // type line + vertical padding
 const TL_ROW_LINE_PX = 18; // each extra line (direction / summary)
-const TL_ROW_MEDIA_PX = 36; // compact media strip (28px thumb + margins), one line
+// Inline-body preview is clamped to ~3 lines (line-clamp-3), so budget up to
+// three lines for the estimate when a body is present.
+const TL_ROW_BODY_MAX_PX = TL_ROW_LINE_PX * 3; // clamped body, up to 3 lines
+// Inline media estimates. Images render a thumbnail strip (~80px tall); voice
+// notes render an always-visible <audio> control (~54px). These are only the
+// INITIAL estimate — measureElement corrects each row to its real height — but
+// keeping it in the right ballpark avoids scroll jumps when media-heavy rows
+// mount. We can't know exact attachment kinds cheaply for every row, so we use
+// a representative inline-media block height.
+const TL_ROW_MEDIA_IMG_PX = 84;   // inline image thumbnail strip + margins
+const TL_ROW_MEDIA_AUDIO_PX = 58; // inline <audio> control + margins
+
+// Whether any attachment on an event looks like audio (so the estimate can
+// account for the taller, always-rendered audio player). Defensive: tolerates
+// missing fields and mirrors commsUtils.attachmentKind's category/extension
+// logic without importing it into the hot estimate path.
+function evHasAudioAttachment(atts) {
+  if (!Array.isArray(atts)) return false;
+  for (const a of atts) {
+    if (!a) continue;
+    const cat = (a.category || '').toLowerCase();
+    if (cat === 'audio') return true;
+    const name = a.original_filename || '';
+    if (/\.(mp3|m4a|aac|ogg|opus|wav|amr|3gp|flac)$/i.test(name)) return true;
+  }
+  return false;
+}
 
 function timelineRowHeight(ev) {
   const sender = ev.sender?.name;
@@ -620,13 +646,23 @@ function timelineRowHeight(ev) {
     (Array.isArray(ev.recipients) && ev.recipients[0]?.name) ||
     null;
   const hasDirection = !!(sender || recipient);
-  const hasSummary = !!ev.summary;
-  const hasMedia = Array.isArray(ev.attachments) && ev.attachments.length > 0;
+  // Mirror the row's bodyText derivation: a body shows when either body or
+  // summary is present.
+  const hasBody = !!(ev.body || ev.summary);
+  const atts = Array.isArray(ev.attachments) ? ev.attachments : [];
+  const hasMedia = atts.length > 0;
+  // Inline media grows the row: audio rows carry an always-visible player, and
+  // image rows carry a thumbnail strip. Add both budgets when both kinds may be
+  // present so the estimate isn't wildly short.
+  let mediaPx = 0;
+  if (hasMedia) {
+    mediaPx = evHasAudioAttachment(atts) ? TL_ROW_MEDIA_AUDIO_PX : TL_ROW_MEDIA_IMG_PX;
+  }
   return (
     TL_ROW_BASE_PX +
     (hasDirection ? TL_ROW_LINE_PX : 0) +
-    (hasSummary ? TL_ROW_LINE_PX : 0) +
-    (hasMedia ? TL_ROW_MEDIA_PX : 0)
+    (hasBody ? TL_ROW_BODY_MAX_PX : 0) +
+    mediaPx
   );
 }
 
@@ -809,6 +845,15 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
   else if (recipient) direction = `→ ${recipient}`;
   const hasHighlights = highlights && highlights.length > 0;
 
+  // Body text to show inline. The projector slices ev.summary to ~200 chars;
+  // ev.body (when present) is the fuller message. Prefer whichever carries more
+  // text so the clamped inline preview shows the most content. Falls back
+  // cleanly to summary-only (or nothing) — events with neither render no body.
+  const bodyText =
+    (typeof ev.body === 'string' && typeof ev.summary === 'string'
+      ? (ev.body.length > ev.summary.length ? ev.body : ev.summary)
+      : (ev.body || ev.summary)) || '';
+
   // Phone accent stripe — 4px coloured left border when there are
   // multiple phones in the case. Replaces the previous 2px ring around
   // the event-type dot, which was nearly invisible.
@@ -865,22 +910,33 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
               : direction}
           </div>
         )}
-        {ev.summary && (
+        {bodyText && (
+          // Inline message body. The dynamic-measurement scroller measures each
+          // row's true height, so the body can grow to a few lines instead of a
+          // single ellipsised line — the investigator reads the message with
+          // zero clicks. Clamp at ~3 lines (line-clamp) to keep rows scannable
+          // and stop one long message dominating the feed; the full text is
+          // still in the title tooltip. Prefer ev.body (fuller) over the
+          // 200-char ev.summary slice when it carries more text. The clamp is
+          // on this block container so it works whether the child is a plain
+          // string or the HighlightedText <span>.
           <div
-            className="text-xs text-light-600 truncate"
-            title={ev.summary}
+            className="text-xs text-light-600 line-clamp-3"
+            title={bodyText}
           >
             {hasHighlights
-              ? <HighlightedText text={ev.summary} highlights={highlights} />
-              : ev.summary}
+              ? <HighlightedText text={bodyText} highlights={highlights} />
+              : bodyText}
           </div>
         )}
         {Array.isArray(ev.attachments) && ev.attachments.length > 0 && (
-          // Compact preview only — the windowed row's fixed height +
-          // overflow-hidden can't grow for inline expansion, so clicking the
-          // strip bubbles to the row click and opens the detail flyout (which
-          // renders the full media). Height budgeted in timelineRowHeight.
-          <CommsMediaStrip attachments={ev.attachments} expandable={false} />
+          // Inline media. Rows now live on a dynamic-measurement virtual
+          // scroller (measureElement reports each row's real height), so media
+          // can render inline and grow the row. `inline` shows image thumbnails
+          // (click = lightbox) AND an always-visible <audio preload="none">
+          // player for voice notes — no click needed to read/listen. Media
+          // clicks stop propagation so they don't trigger the row's onClick.
+          <CommsMediaStrip attachments={ev.attachments} inline />
         )}
       </div>
     </div>
