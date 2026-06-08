@@ -1914,6 +1914,59 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
               });
             }
           }}
+          // Single-click a directional comms edge → publish an
+          // edge selection to the rail so the user sees the actual
+          // calls/messages/emails exchanged between exactly those two
+          // parties. Only edges the backend tagged with `dir_counts`
+          // (the call/message/email comms edges) carry a direction
+          // breakdown; structural edges (contains_contact / belongs_to)
+          // and any resource edge without dir_counts are ignored.
+          onLinkClick={(l) => {
+            if (!l || !l.dir_counts) return;
+            if (!selectEntity) return;
+            // source/target are node-object refs once force-graph has
+            // mutated the string ids, but can still be raw strings
+            // before the sim runs — handle both, then strip the
+            // `person-` id prefix to get the person key the comms
+            // API expects.
+            const sid = typeof l.source === 'object' ? l.source.id : l.source;
+            const tid = typeof l.target === 'object' ? l.target.id : l.target;
+            if (!sid || !tid) return;
+            const a = String(sid).replace(/^person-/, '');
+            const b = String(tid).replace(/^person-/, '');
+            // Prefer names already on the link's node refs; fall back
+            // to a lookup in graphData.nodes by id; finally the key.
+            const aNode = (typeof l.source === 'object' && l.source)
+              || graphData.nodes.find((n) => n.id === sid);
+            const bNode = (typeof l.target === 'object' && l.target)
+              || graphData.nodes.find((n) => n.id === tid);
+            const aName = aNode?.name || a;
+            const bName = bNode?.name || b;
+            const label = l.label || 'comms';
+            // Edge clicks own the rail selection — clear any node
+            // multi-selection so the two gestures don't conflict.
+            setMultiSelection(new Set());
+            selectEntity({
+              type: 'graph-edge',
+              id: `edge-${a}-${b}-${label}`,
+              caseId,
+              payload: {
+                _kind: 'graph-edge',
+                a,
+                b,
+                aName,
+                bName,
+                label,
+                total: l.total != null ? l.total : (l.count || 0),
+                // dir_counts.ab is source(a)→target(b); ba is b→a.
+                dir_counts: l.dir_counts,
+                initiator: l.initiator || null,
+                // `name` drives the rail header's "· <name>" suffix.
+                name: `${aName} ↔ ${bName}`,
+              },
+              source: 'graph.link-click',
+            });
+          }}
           // Right-click on a node is now the rubber-band-selection
           // gesture at the canvas level (handled by the wrapper's
           // onMouseDown). We DO want to forward the contextmenu
