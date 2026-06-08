@@ -283,6 +283,12 @@ def format_properties(properties: Dict) -> str:
                      .replace("\0", "")       # remove null bytes
             )
             formatted_props.append(f"{escaped_key}: '{escaped_value}'")
+        elif isinstance(value, bool):
+            # MUST come before the int/float branch: in Python bool is a
+            # subclass of int, so isinstance(True, int) is True. Without this
+            # ordering a boolean property would serialise as 1/0 instead of
+            # Cypher's true/false (this branch was previously unreachable).
+            formatted_props.append(f"{escaped_key}: {str(value).lower()}")
         elif isinstance(value, (int, float)):
             # For numeric values, ensure they're properly formatted
             # Handle special float values
@@ -297,8 +303,6 @@ def format_properties(properties: Dict) -> str:
                     formatted_props.append(f"{escaped_key}: {value}")
             else:
                 formatted_props.append(f"{escaped_key}: {value}")
-        elif isinstance(value, bool):
-            formatted_props.append(f"{escaped_key}: {str(value).lower()}")
         elif value is None:
             formatted_props.append(f"{escaped_key}: null")
         elif isinstance(value, (list, dict)):
