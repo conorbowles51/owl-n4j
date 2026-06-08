@@ -7,6 +7,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { cellebriteEventsAPI } from '../../services/api';
 import PhoneSelector from './shared/PhoneSelector';
 import NoPhonesSelectedEmptyState from './shared/NoPhonesSelectedEmptyState';
@@ -596,20 +597,21 @@ export default function CellebriteTimeline({ caseId, reports: reportsProp }) {
 // The feed can hold 60K+ events. Rendering one <li> per event mounted ~67K
 // DOM rows and froze the tab for ~40s on load (and re-froze for ~12s every
 // time a scrubber drag committed and the parent re-rendered the whole
-// subtree). We window it like LocationsTable/EventsTable do.
+// subtree). We virtualize it with @tanstack/react-virtual.
 //
 // Rows are variable height (1–3 lines), so a single fixed ROW_PX would
-// mis-position. We precompute each item's height deterministically from its
-// fields, build a cumulative-offset array, and binary-search the visible
-// slice. Day headers are flattened inline as their own items. Heights are
-// set explicitly on each rendered item (with overflow hidden) so the
-// measured layout matches the offsets exactly — no drift, no blank gaps.
+// mis-position. We flatten the day groups (header + its rows) into one
+// `items` array and feed it to useVirtualizer with DYNAMIC measurement:
+// `estimateSize` returns a deterministic height per item (from its fields)
+// for the initial layout, then `measureElement` corrects each row to its
+// actual rendered height. timelineRowHeight() stays the estimate source —
+// keeping it accurate avoids scroll jumps — but variable heights (e.g.
+// inline media) are now handled by measurement, not the estimate.
 // ---------------------------------------------------------------------------
 const TL_HEADER_PX = 30;
 const TL_ROW_BASE_PX = 34; // type line + vertical padding
 const TL_ROW_LINE_PX = 18; // each extra line (direction / summary)
 const TL_ROW_MEDIA_PX = 36; // compact media strip (28px thumb + margins), one line
-const TL_OVERSCAN_PX = 600;
 
 function timelineRowHeight(ev) {
   const sender = ev.sender?.name;
@@ -626,18 +628,6 @@ function timelineRowHeight(ev) {
     (hasSummary ? TL_ROW_LINE_PX : 0) +
     (hasMedia ? TL_ROW_MEDIA_PX : 0)
   );
-}
-
-// First index i such that arr[i] >= x (arr ascending). O(log n).
-function firstGE(arr, x) {
-  let lo = 0;
-  let hi = arr.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (arr[mid] < x) lo = mid + 1;
-    else hi = mid;
-  }
-  return lo;
 }
 
 const TimelineList = forwardRef(function TimelineList(
@@ -658,58 +648,51 @@ const TimelineList = forwardRef(function TimelineList(
   ref,
 ) {
   const scrollRef = useRef(null);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [viewportH, setViewportH] = useState(600);
 
-  // Flatten the day groups into a single list of render items and precompute
-  // the pixel offset where each one starts (offsets[i]). dayOffset maps a day
-  // key → its header's offset for imperative scroll-to-day.
-  const { items, offsets, total, dayOffset } = useMemo(() => {
+  // Flatten the day groups into a single list of render items. dayToIndex maps
+  // a day key → the index of that day's header item, for imperative
+  // scroll-to-day (we hand react-virtual an index, not a pixel offset).
+  const { items, dayToIndex } = useMemo(() => {
     const it = [];
-    const off = [];
     const dayMap = new Map();
-    let acc = 0;
     for (const g of groups) {
-      dayMap.set(g.day, acc);
+      dayMap.set(g.day, it.length);
       it.push({ kind: 'header', day: g.day, n: g.events.length });
-      off.push(acc);
-      acc += TL_HEADER_PX;
       for (const ev of g.events) {
         it.push({ kind: 'row', ev });
-        off.push(acc);
-        acc += timelineRowHeight(ev);
       }
     }
-    return { items: it, offsets: off, total: acc, dayOffset: dayMap };
+    return { items: it, dayToIndex: dayMap };
   }, [groups]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return undefined;
-    setViewportH(el.clientHeight || 600);
-    const onScroll = () => setScrollTop(el.scrollTop);
-    el.addEventListener('scroll', onScroll, { passive: true });
-    let ro;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => setViewportH(el.clientHeight || 600));
-      ro.observe(el);
-    }
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      if (ro) ro.disconnect();
-    };
-  }, []);
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => scrollRef.current,
+    // Deterministic estimate per item drives the initial layout; measureElement
+    // corrects each rendered row to its true height (so variable-height content
+    // like inline media lands correctly without scroll drift).
+    estimateSize: (i) =>
+      items[i].kind === 'header' ? TL_HEADER_PX : timelineRowHeight(items[i].ev),
+    overscan: 8,
+    // Stable key per item so the measurement cache survives re-renders / sort
+    // flips. Headers key by day; rows by their event id (falling back to
+    // node_key, then index).
+    getItemKey: (i) => {
+      const it = items[i];
+      return it.kind === 'header'
+        ? `h:${it.day}`
+        : it.ev.id || it.ev.node_key || i;
+    },
+  });
 
   useImperativeHandle(
     ref,
     () => ({
       scrollToDay(day) {
-        const el = scrollRef.current;
-        if (!el) return;
         // An exact match isn't guaranteed — jump to the nearest day in the
         // current sort direction. Desc (newest-first): first day at or BEFORE
         // the target. Asc (oldest-first): first day at or AFTER the target.
-        // Either way offsets come from the same group order, so scroll stays
+        // Either way the items array uses the same group order, so scroll stays
         // correct when sortDir flips.
         let targetDay = null;
         for (const g of groups) {
@@ -719,66 +702,68 @@ const TimelineList = forwardRef(function TimelineList(
             break;
           }
         }
-        const off = targetDay != null ? dayOffset.get(targetDay) : 0;
-        if (off != null) el.scrollTo({ top: off, behavior: 'smooth' });
+        const idx = targetDay != null ? dayToIndex.get(targetDay) : 0;
+        if (idx != null) {
+          rowVirtualizer.scrollToIndex(idx, { align: 'start', behavior: 'smooth' });
+        }
       },
     }),
-    [groups, dayOffset, sortDir],
+    [groups, dayToIndex, sortDir, rowVirtualizer],
   );
 
-  const top = scrollTop - TL_OVERSCAN_PX;
-  const bottom = scrollTop + viewportH + TL_OVERSCAN_PX;
-  const startIdx = Math.max(0, firstGE(offsets, top) - 1);
-  const endIdx = firstGE(offsets, bottom); // exclusive
-  const topPad = offsets[startIdx] || 0;
-  const bottomPad = Math.max(0, total - (endIdx < offsets.length ? offsets[endIdx] : total));
-  const visible = items.slice(startIdx, endIdx);
+  const virtualItems = rowVirtualizer.getVirtualItems();
 
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto px-4 py-3">
-      {topPad > 0 && <div style={{ height: topPad }} />}
-      {visible.map((it, i) => {
-        const idx = startIdx + i;
-        if (it.kind === 'header') {
+      {/* Total-size spacer establishes the full scroll height; virtual rows are
+          absolutely positioned inside it and translated to their measured
+          start. measureElement on each outer wrapper feeds true heights back. */}
+      <div style={{ height: rowVirtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualItems.map((virtualRow) => {
+          const it = items[virtualRow.index];
           return (
             <div
-              key={`h:${it.day}`}
-              data-day={it.day}
-              style={{ height: TL_HEADER_PX }}
-              className="bg-white border-b border-light-200 flex items-center gap-2 overflow-hidden"
+              key={virtualRow.key}
+              ref={rowVirtualizer.measureElement}
+              data-index={virtualRow.index}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
             >
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
-                {formatDayHeader(it.day)}
-              </span>
-              {offsetLabel && it.day && it.day !== '—' && (
-                <span className="text-[10px] font-normal text-light-400 normal-case">
-                  · {offsetLabel(`${it.day}T00:00:00Z`)}
-                </span>
+              {it.kind === 'header' ? (
+                <div
+                  data-day={it.day}
+                  className="bg-white border-b border-light-200 flex items-center gap-2"
+                >
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-light-700">
+                    {formatDayHeader(it.day)}
+                  </span>
+                  {offsetLabel && it.day && it.day !== '—' && (
+                    <span className="text-[10px] font-normal text-light-400 normal-case">
+                      · {offsetLabel(`${it.day}T00:00:00Z`)}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-light-400">
+                    {it.n} event{it.n === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ) : (
+                <TimelineRow
+                  ev={it.ev}
+                  reports={reports}
+                  showPhoneChip={showPhoneChip}
+                  highlights={highlights}
+                  onClick={() => onRowClick(it.ev)}
+                />
               )}
-              <span className="text-[10px] text-light-400">
-                {it.n} event{it.n === 1 ? '' : 's'}
-              </span>
             </div>
           );
-        }
-        const ev = it.ev;
-        return (
-          <div
-            key={ev.id || ev.node_key || idx}
-            style={{ height: timelineRowHeight(ev) }}
-            className="overflow-hidden"
-          >
-            <TimelineRow
-              ev={ev}
-              reports={reports}
-              showPhoneChip={showPhoneChip}
-              highlights={highlights}
-              onClick={() => onRowClick(ev)}
-            />
-          </div>
-        );
-      })}
-      {bottomPad > 0 && <div style={{ height: bottomPad }} />}
+        })}
+      </div>
       {hasMore && (
         <div className="flex flex-col items-center gap-1 py-4 border-t border-light-200 mt-2">
           <button
