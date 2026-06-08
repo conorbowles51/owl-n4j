@@ -3228,6 +3228,51 @@ export const cellebriteEventsAPI = {
         params,
       },
     }),
+
+  // -------------------------------------------------------------------
+  // Callouts (S3-07) — flag a timeline event for the client report with
+  // an optional note. Dedicated store (not Findings). Re-marking the same
+  // event updates rather than duplicating (backend MERGEs on node_key).
+  // -------------------------------------------------------------------
+
+  /**
+   * Mark a Cellebrite event as a report callout. `eventSummary` /
+   * `eventTimestamp` are denormalised snapshots so the report can render
+   * callouts without re-fetching every event. Returns { callout }.
+   */
+  markCallout: (caseId, {
+    eventNodeKey,
+    note = null,
+    eventSummary = null,
+    eventTimestamp = null,
+  }) =>
+    fetchAPI('/cellebrite/callouts', {
+      method: 'POST',
+      body: {
+        case_id: caseId,
+        event_node_key: eventNodeKey,
+        note,
+        event_summary: eventSummary,
+        event_timestamp: eventTimestamp,
+      },
+    }),
+
+  /**
+   * List every callout flagged for a case, sorted chronologically by the
+   * referenced event's timestamp. Returns { callouts: [...] }.
+   */
+  getCallouts: (caseId) =>
+    fetchAPI(`/cellebrite/callouts?case_id=${encodeURIComponent(caseId)}`),
+
+  /**
+   * Remove the callout flagging a given event.
+   */
+  deleteCallout: (caseId, eventNodeKey) =>
+    fetchAPI(
+      `/cellebrite/callouts/${encodeURIComponent(eventNodeKey)}`
+        + `?case_id=${encodeURIComponent(caseId)}`,
+      { method: 'DELETE' },
+    ),
 };
 
 
