@@ -7035,6 +7035,54 @@ class Neo4jService:
             if n.get("type") == "PhoneReport" or n["id"] in endpoints
         ]
 
+        # --- Per-person activity window (for the opt-in Timeline layout) ---
+        # Additive: attach first_activity / last_activity (ISO strings or
+        # None) to each rendered Person node ONLY. We run ONE batched query
+        # over the final rendered person keys (already capped at ~2000 by
+        # the build above) rather than touching the per-path node-emission
+        # Cypher, so existing node shape stays byte-for-byte the same for
+        # every other consumer. Phone/resource nodes are untouched.
+        person_nodes = [n for n in nodes if n.get("type") == "Person"]
+        if person_nodes:
+            # node id is f"person-{key}" — recover the bare key.
+            rendered_person_keys = [
+                n["id"][len("person-"):] for n in person_nodes
+            ]
+            activity_by_key: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+            with self._driver.session() as session:
+                act_result = session.run(
+                    """
+                    MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'})
+                    WHERE p.key IN $keys
+                    OPTIONAL MATCH (p)-[:SENT_MESSAGE]->(c:Communication)
+                    WHERE c.timestamp IS NOT NULL
+                    WITH p, min(c.timestamp) AS fm, max(c.timestamp) AS lm
+                    OPTIONAL MATCH (p)-[:CALLED]->(cl:PhoneCall)
+                    WHERE cl.timestamp IS NOT NULL
+                    WITH p, fm, lm,
+                         min(cl.timestamp) AS fc, max(cl.timestamp) AS lc
+                    RETURN p.key AS k,
+                           [x IN [fm, fc] WHERE x IS NOT NULL] AS firsts,
+                           [x IN [lm, lc] WHERE x IS NOT NULL] AS lasts
+                    """,
+                    case_id=case_id,
+                    keys=rendered_person_keys,
+                )
+                for rec in act_result:
+                    firsts = list(rec["firsts"] or [])
+                    lasts = list(rec["lasts"] or [])
+                    first_activity = min(firsts) if firsts else None
+                    last_activity = max(lasts) if lasts else None
+                    activity_by_key[rec["k"]] = (first_activity, last_activity)
+            # Attach to each Person node (default None when no comms/calls).
+            for n in person_nodes:
+                key = n["id"][len("person-"):]
+                first_activity, last_activity = activity_by_key.get(
+                    key, (None, None)
+                )
+                n["first_activity"] = first_activity
+                n["last_activity"] = last_activity
+
         return {
             "nodes": nodes,
             "links": links,

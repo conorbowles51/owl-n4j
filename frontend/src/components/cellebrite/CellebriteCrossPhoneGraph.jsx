@@ -278,6 +278,16 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   //                     unchanged (still driven by `count`/total).
   const [flowView, setFlowView] = useState(false);
 
+  // Timeline layout (opt-in, S2-21). When true we pin each Person
+  // node's x-coordinate to a position derived from its earliest
+  // activity timestamp (first_activity, attached per-person by the
+  // backend), laying the graph out left→right = earliest→latest. The
+  // y-axis is still owned by the force simulation so connected people
+  // stay clustered vertically. Default false → identical to today's
+  // pure force layout (no regression). Combines freely with flowView
+  // (direction arrows) since this only constrains x, not edges.
+  const [timeLayout, setTimeLayout] = useState(false);
+
   // Subgraph Event Stream panel (one chronological feed of all comms
   // across the people currently in the graph). Closed by default; the
   // panel fetches nothing while closed.
@@ -316,6 +326,71 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
       try { fg.d3ReheatSimulation?.(); } catch { /* ignore */ }
     }
   }, [flowView]);
+
+  // Timeline layout: domain of all Person nodes' first_activity.
+  // Returns { minMs, maxMs } in epoch-ms or null when there aren't at
+  // least two distinct parseable timestamps (a domain of width 0 can't
+  // be scaled, so we fall back to "no time pinning" in that case).
+  const timeDomain = useMemo(() => {
+    let minMs = Infinity;
+    let maxMs = -Infinity;
+    let count = 0;
+    for (const n of graphData.nodes) {
+      if (n?.type !== 'Person' || !n.first_activity) continue;
+      const ms = new Date(n.first_activity).getTime();
+      if (!Number.isFinite(ms)) continue;
+      count += 1;
+      if (ms < minMs) minMs = ms;
+      if (ms > maxMs) maxMs = ms;
+    }
+    if (count === 0 || minMs === maxMs) return null;
+    return { minMs, maxMs };
+  }, [graphData.nodes]);
+
+  // Pin / unpin Person node x to its activity time when timeLayout is
+  // toggled (and re-apply when the rendered node set changes while
+  // active). We use node.fx (the d3-force fixed-x channel the lib
+  // already respects for sticky drag) rather than a custom d3Force —
+  // it's simpler, doesn't require importing d3-force, and pins x while
+  // leaving y to the simulation so connected people still cluster.
+  //
+  // x mapping: linear from [minTime, maxTime] → [-X_HALF, +X_HALF].
+  // Persons with no parseable first_activity (null) are pinned to the
+  // far LEFT edge (just before the earliest dated person) so they form
+  // a distinct "no known activity time" column rather than floating
+  // through the dated band and confusing the read.
+  //
+  // OFF / cleanup: clear fx on every Person node (delete, matching the
+  // centreAndFan unpin pattern) so the node returns to pure force
+  // layout, then reheat. We intentionally do NOT touch fy — vertical
+  // position has always been sim-owned.
+  useEffect(() => {
+    const fg = fgRef.current;
+    const X_HALF = 600; // canvas-units half-width for the time axis
+    const personNodes = graphData.nodes.filter((n) => n?.type === 'Person');
+
+    if (timeLayout && timeDomain) {
+      const { minMs, maxMs } = timeDomain;
+      const span = maxMs - minMs; // > 0 guaranteed by timeDomain
+      const xForMs = (ms) => -X_HALF + ((ms - minMs) / span) * (2 * X_HALF);
+      // Undated people sit one step left of the earliest dated column.
+      const noTimeX = -X_HALF - 80;
+      for (const n of personNodes) {
+        const ms = n.first_activity ? new Date(n.first_activity).getTime() : NaN;
+        n.fx = Number.isFinite(ms) ? xForMs(ms) : noTimeX;
+      }
+      try { fg?.d3ReheatSimulation?.(); } catch { /* ignore */ }
+    } else {
+      // Off (or no usable domain): release every Person's x so the
+      // force layout fully reclaims it. Leaves fy untouched.
+      for (const n of personNodes) {
+        if (n && 'fx' in n) delete n.fx;
+      }
+      try { fg?.d3ReheatSimulation?.(); } catch { /* ignore */ }
+    }
+    // graphData.nodes so a refetch (new node set) re-pins; timeDomain so
+    // a domain change re-scales; timeLayout to toggle the whole thing.
+  }, [timeLayout, timeDomain, graphData.nodes]);
 
   // Selection rubber-band state.
   // Trigger: right-click + drag anywhere on the canvas. Mouse button
@@ -1473,6 +1548,25 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
           </>
         )}
 
+        {/* Timeline-layout hint (S2-21) — only when the layout is on and
+            usable, so the investigator knows the x-axis now encodes time
+            and what the date span is. */}
+        {timeLayout && timeDomain && (
+          <>
+            <span className="h-4 w-px bg-light-300" />
+            <span
+              className="flex items-center gap-1"
+              title="Each person's horizontal position is their earliest call/message activity; vertical position is still force-clustered."
+            >
+              <Clock className="w-2.5 h-2.5 text-light-500" />
+              <span>Left → right = earliest → latest activity</span>
+            </span>
+            <span className="text-light-400 tabular-nums">
+              {new Date(timeDomain.minMs).toLocaleDateString()} … {new Date(timeDomain.maxMs).toLocaleDateString()}
+            </span>
+          </>
+        )}
+
         {phoneCtx?.hasMultiple && (
           <>
             <span className="h-4 w-px bg-light-300" />
@@ -1659,6 +1753,26 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         >
           <ChevronRight className="w-2.5 h-2.5" />
           {flowView ? 'Flow view' : 'Connection view'}
+        </button>
+        <button
+          type="button"
+          onClick={() => setTimeLayout((v) => !v)}
+          disabled={!timeDomain}
+          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
+            !timeDomain
+              ? 'border-light-200 bg-light-50 text-light-400 cursor-not-allowed'
+              : timeLayout
+                ? 'border-owl-blue-300 bg-owl-blue-50 text-owl-blue-900'
+                : 'border-light-300 bg-white text-light-700 hover:bg-light-100'
+          }`}
+          title={!timeDomain
+            ? 'Timeline layout unavailable — not enough dated activity on the people currently shown.'
+            : timeLayout
+              ? 'Timeline layout — people are laid out left→right by earliest activity. Click to return to the force layout.'
+              : 'Timeline layout — lay people out left→right by earliest activity (earliest = left). Y-axis stays force-clustered.'}
+        >
+          <Clock className="w-2.5 h-2.5" />
+          {timeLayout ? 'Timeline on' : 'Timeline layout'}
         </button>
         <button
           type="button"
