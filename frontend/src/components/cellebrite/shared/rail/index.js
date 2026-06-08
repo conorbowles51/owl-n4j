@@ -14,6 +14,7 @@ import LocationTileAccordion from './LocationTileAccordion';
 import UnifiedContactAccordion from './UnifiedContactAccordion';
 import ThreadAccordion from './ThreadAccordion';
 import GraphSelectionAccordion from './GraphSelectionAccordion';
+import GraphEdgeAccordion from './GraphEdgeAccordion';
 
 const RENDERERS = {
   // Event-like selections from the Events Center (any of the artifact
@@ -47,6 +48,9 @@ const RENDERERS = {
   'person':          GraphSelectionAccordion,
   'phone-report':    GraphSelectionAccordion,
   'resource':        GraphSelectionAccordion,
+  // A clicked directional comms edge in the Cross-Phone Graph — renders
+  // the actual calls/messages/emails exchanged between the two parties.
+  'graph-edge':      GraphEdgeAccordion,
 };
 
 export function rendererFor(type) {
@@ -74,6 +78,7 @@ const TYPE_LABELS = {
   'person': 'Person',
   'phone-report': 'Phone',
   'resource': 'Resource',
+  'graph-edge': 'Connection',
 };
 
 export function labelFor(type) {
