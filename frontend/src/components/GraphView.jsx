@@ -383,6 +383,23 @@ const GraphView = forwardRef(function GraphView({
     ctx.fillStyle = nodeColor;
     ctx.fill();
 
+    // User-created (authored) node marker (S2-26): a distinct amber dashed
+    // ring so investigator-authored nodes are unmistakable from imported
+    // (ingested) data. The provenance flag lives on node.properties.user_created
+    // (stamped by /api/graph/create-node); tolerate a top-level flag too.
+    const isUserCreated = node.user_created === true
+      || (node.properties && node.properties.user_created === true);
+    if (isUserCreated) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, nodeRadius + 2.2, 0, 2 * Math.PI);
+      ctx.strokeStyle = '#d97706'; // amber-600
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([3, 2]);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     // Relevance border for result graph nodes (mentioned = thick blue border)
     if (node.mentioned === true) {
       ctx.strokeStyle = '#245e8f';
