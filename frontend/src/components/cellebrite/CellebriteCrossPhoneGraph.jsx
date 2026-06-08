@@ -5,7 +5,7 @@ import {
   Phone, MessageSquare, Mail, MapPin, Wifi, Radio, Users as UsersIcon, X,
   Globe, Search as SearchIcon, Bookmark, Key, ShieldCheck, DollarSign,
   Bluetooth, Filter as FilterIcon, ChevronRight, Tag, Clock,
-  FolderTree, UserCheck, Move, MousePointerSquareDashed, Share2,
+  FolderTree, UserCheck, Move, MousePointerSquareDashed, Share2, Plus,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import { usePhoneReports } from '../../context/PhoneReportsContext';
@@ -16,6 +16,7 @@ import { requestCellebriteTabSwitch, setCommsHandoff } from '../../utils/commsHa
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import SubgraphEventStream from './shared/SubgraphEventStream';
 import PathFlowPanel from './shared/PathFlowPanel';
+import AddNodeModal from '../AddNodeModal';
 
 /**
  * Convert a `#rrggbb` hex string to `rgba()` with the supplied alpha.
@@ -293,6 +294,13 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
   // across the people currently in the graph). Closed by default; the
   // panel fetches nothing while closed.
   const [streamOpen, setStreamOpen] = useState(false);
+
+  // Add-node modal (S2-25). The cross-phone graph had no way to author a
+  // node; this opens the shared AddNodeModal (same one the main GraphView
+  // uses → same /api/graph/create-node endpoint, which now stamps provenance
+  // so authored nodes are distinct from imported Cellebrite data). On create
+  // we bump reloadKey to re-fetch the graph so the new node appears.
+  const [addNodeOpen, setAddNodeOpen] = useState(false);
 
   // Path Flow panel — multi-hop shortest-path event flow between exactly
   // two selected people. null when closed, else { aKey, bKey, aName,
@@ -1765,6 +1773,15 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         <div className="flex-1" />
         <button
           type="button"
+          onClick={() => setAddNodeOpen(true)}
+          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] border-light-300 bg-white text-light-700 hover:bg-light-100"
+          title="Add a node you author yourself (person, place, org, …). It is marked as user-created so it's distinct from imported phone data."
+        >
+          <Plus className="w-2.5 h-2.5" />
+          Add node
+        </button>
+        <button
+          type="button"
           onClick={() => setStreamOpen((v) => !v)}
           className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[10px] ${
             streamOpen
@@ -2575,6 +2592,18 @@ export default function CellebriteCrossPhoneGraph({ caseId }) {
         onClose={() => setPathFlow(null)}
         caseId={caseId}
         {...(pathFlow || {})}
+      />
+      {/* Add-node modal (S2-25) — shared with the main GraphView; posts to
+          /api/graph/create-node (provenance-stamped). On create we re-fetch
+          the graph so the authored node appears. */}
+      <AddNodeModal
+        isOpen={addNodeOpen}
+        onClose={() => setAddNodeOpen(false)}
+        caseId={caseId}
+        onNodeCreated={() => {
+          setAddNodeOpen(false);
+          setReloadKey((k) => k + 1);
+        }}
       />
     </div>
   );
