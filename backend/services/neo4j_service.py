@@ -10141,6 +10141,50 @@ class Neo4jService:
             key=lambda e: (1 if e.get("timestamp") else 0, e.get("timestamp") or ""),
             reverse=True,
         )
+
+        # Multi-source de-dup (#77). Cellebrite extracts the same logical
+        # message from several on-device sources (e.g. Native Messages, IMS
+        # Service, Android CallLog database) — and sometimes more than once from
+        # the same source — so a single message can surface as 2-3 distinct
+        # Communication nodes with different keys. They slip past any key-based
+        # dedup because the keys genuinely differ. Collapse them by CONTENT:
+        # same timestamp + same body + same sender = one logical message.
+        # Conservative by design:
+        #   - only `message` events are collapsed (calls/locations/etc. are
+        #     never touched);
+        #   - the key requires a non-empty timestamp AND body AND sender, so we
+        #     never merge two distinct messages that merely lack those fields;
+        #   - the first occurrence (already sorted) is kept; the dropped copies'
+        #     distinct source_apps are preserved on `also_in_sources` so no
+        #     provenance is lost ("also in: Android CallLog database").
+        _seen_msg: Dict[Tuple[str, str, str], dict] = {}
+        _deduped: List[dict] = []
+        for ev in events:
+            if ev.get("event_type") != "message":
+                _deduped.append(ev)
+                continue
+            ts = ev.get("timestamp")
+            body = ev.get("summary")
+            sender_key = (ev.get("counterpart") or {}).get("key")
+            if not (ts and body and sender_key):
+                # Not enough to safely collapse — keep as-is.
+                _deduped.append(ev)
+                continue
+            mkey = (ts, body, sender_key)
+            existing = _seen_msg.get(mkey)
+            if existing is None:
+                _seen_msg[mkey] = ev
+                _deduped.append(ev)
+            else:
+                # Duplicate — fold its source into the kept row's provenance.
+                src = ev.get("source_app")
+                if src:
+                    also = existing.setdefault("also_in_sources", [])
+                    kept_src = existing.get("source_app")
+                    if src != kept_src and src not in also:
+                        also.append(src)
+        events = _deduped
+
         # `total` is now the post-cap count (was the true pre-slice count).
         # The frontend reads `events.length` for display; `truncated` /
         # `truncated_types` is the honest signal that more rows exist.
