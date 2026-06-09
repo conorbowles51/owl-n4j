@@ -2735,9 +2735,11 @@ export const cellebriteAPI = {
 
   /**
    * Unified Search & Discovery across all phones + all data types (Epic 2A).
-   * Returns results grouped by type:
-   *   { query, groups: [{ type, label, total, items: [...] }] }
-   * Types: person, message, location, resource, file.
+   * Returns results grouped by category, each tagged with a family:
+   *   { query, groups: [{ type, label, family, total, items: [...] }] }
+   * Categories span every Cellebrite node type (people, contacts, calls,
+   * messages, emails, locations, web history, accounts, devices, files, …).
+   * Each item carries inline `detail` fields + a `pivot` deep-link hint.
    * @param {string} caseId - REQUIRED
    * @param {string} q - the search phrase
    * @param {Object} opts - { reportKeys?: string[], types?: string[],

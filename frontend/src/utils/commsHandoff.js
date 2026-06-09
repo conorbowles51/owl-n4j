@@ -108,3 +108,62 @@ export function onCellebriteTabSwitch(handler) {
   window.addEventListener(SWITCH_EVENT, wrapped);
   return () => window.removeEventListener(SWITCH_EVENT, wrapped);
 }
+
+/**
+ * Generic "deep-link" target used by Search & Discovery to land a result
+ * in its native tab pre-filtered. Unlike the comms handoff (time × phones)
+ * this just carries a tab id + a text seed the destination tab drops into
+ * its own search box:
+ *   - Files       → filename search
+ *   - Locations   → place / address search
+ *   - Comms Center→ message-body / subject deep-search (auto-opens the thread)
+ *
+ * Each tab consumes ONLY the target addressed to it (so a stray target for
+ * another tab is left untouched until that tab opens). Person filtering is
+ * NOT done here — that rides the existing `_filter_intent: 'comms'` path.
+ *
+ * payload: { caseId, tab, search }
+ */
+const TARGET_KEY = 'owl.cellebrite.discoveryTarget';
+
+export function setDiscoveryTarget(payload) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!payload) {
+      window.sessionStorage.removeItem(TARGET_KEY);
+      return;
+    }
+    window.sessionStorage.setItem(TARGET_KEY, JSON.stringify({
+      ...payload,
+      writtenAt: Date.now(),
+    }));
+  } catch {
+    /* sessionStorage disabled — deep-link silently no-ops */
+  }
+}
+
+/**
+ * Read-and-clear, but ONLY if the stored target is addressed to `tab`
+ * (and, when given, the same `caseId`). Returns the payload or null.
+ * A target for a different tab is left in place. Targets older than
+ * 5 minutes are treated as stale and dropped.
+ */
+export function consumeDiscoveryTarget(tab, caseId = null) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.sessionStorage.getItem(TARGET_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.tab !== tab) return null;
+    if (caseId && parsed.caseId && parsed.caseId !== caseId) return null;
+    const writtenAt = Number(parsed.writtenAt) || 0;
+    if (writtenAt && Date.now() - writtenAt > 5 * 60_000) {
+      window.sessionStorage.removeItem(TARGET_KEY);
+      return null;
+    }
+    window.sessionStorage.removeItem(TARGET_KEY);
+    return parsed;
+  } catch {
+    return null;
+  }
+}

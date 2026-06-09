@@ -7400,123 +7400,478 @@ class Neo4jService:
         report_keys: Optional[List[str]] = None,
         limit_per_type: int = 10,
     ) -> dict:
-        """Unified "Search & Discovery" across every phone in the case and
-        every data type at once (Epic 2A — S2-01/02/04).
+        """Unified "Search & Discovery" — a detailed search engine across
+        every phone in the case AND every data type Cellebrite ingests.
 
-        Composes the existing, already-tuned search building blocks rather
-        than re-implementing matching:
-          * People + Locations + other resources via search_cellebrite_persons
-            (diacritics-folded; resolves an address like "Piney Bench Road"
-            stored on Location.place_name/address).
-          * Message / email / call bodies via search_cellebrite_comms_messages.
+        Unlike the original (which surfaced only person/message/location/
+        "Other"), this scans EVERY node label and returns one labelled
+        category per type, grouped into families. Each result carries:
+          * a stable `key` (the node id),
+          * `title` / `subtitle` / `timestamp` for the row,
+          * a `detail` list of {label, value} pairs (the record's own fields)
+            so the UI can expand it IN PLACE without a second fetch, and
+          * deep-link identifiers (`person_keys`, `thread_id`, `latitude`/
+            `longitude`, …) + a `pivot` hint so "open in native tab" can land
+            on the EXACT record pre-filtered.
 
-        Returns results bucketed by type so the UI can group them (S2-02):
-            { "query", "groups": [ { "type", "label", "total", "items":[...] } ] }
-        Each group reports its own `total` (the true match count) even when
-        only `limit_per_type` items are inlined, so the UI can say "+N more".
-        File results are NOT included here — they live in evidence storage,
-        not Neo4j, and are assembled by the router. Returns the
-        Neo4j-backed groups: person, message, location, resource.
+        People (relationship-aware, diacritics-folded) and chat Messages
+        (thread-linked, snippeted) keep their tuned helpers; every other
+        label flows through the generic `_discovery_label_group` engine.
+
+        Returns: { "query", "groups": [ { type, label, family, total, items } ] }
+        Each group reports its true `total` even when only `limit_per_type`
+        items are inlined, so the UI can say "+N more". File results are
+        appended by the router (they live in evidence storage, not Neo4j).
         """
         q = (query or "").strip()
         empty = {"query": q, "groups": []}
         if not q:
             return empty
+        if len(q) > 200:  # paste-mishap guard (mirrors comms search)
+            q = q[:200]
 
-        # --- People + resources (one scan, already diacritics-folded) ---
-        # Ask for a generous cap so per-type buckets can each fill to
-        # limit_per_type after we split person vs location vs other.
-        person_cap = max(50, limit_per_type * 6)
-        people_res = self.search_cellebrite_persons(case_id, q, limit=person_cap)
-        all_rows = people_res.get("results", [])
+        # Diacritics fold so "dia" matches "Día" — Spanish-heavy data.
+        def _fold(s):
+            out = (s or "").lower()
+            for src, dst in (
+                ("á", "a"), ("à", "a"), ("ä", "a"), ("â", "a"), ("ã", "a"), ("å", "a"),
+                ("é", "e"), ("è", "e"), ("ë", "e"), ("ê", "e"),
+                ("í", "i"), ("ì", "i"), ("ï", "i"), ("î", "i"),
+                ("ó", "o"), ("ò", "o"), ("ö", "o"), ("ô", "o"), ("õ", "o"),
+                ("ú", "u"), ("ù", "u"), ("ü", "u"), ("û", "u"),
+                ("ñ", "n"), ("ç", "c"),
+            ):
+                out = out.replace(src, dst)
+            return out
 
-        # Honour optional phone scope — the person search isn't report-
-        # scoped, so filter here. A row with no report_key (cross-device
-        # person) is kept (it spans phones).
+        def _cypher_fold(expr):
+            chain = f"toLower({expr})"
+            for src, dst in (
+                ("á", "a"), ("à", "a"), ("ä", "a"), ("â", "a"), ("ã", "a"), ("å", "a"),
+                ("é", "e"), ("è", "e"), ("ë", "e"), ("ê", "e"),
+                ("í", "i"), ("ì", "i"), ("ï", "i"), ("î", "i"),
+                ("ó", "o"), ("ò", "o"), ("ö", "o"), ("ô", "o"), ("õ", "o"),
+                ("ú", "u"), ("ù", "u"), ("ü", "u"), ("û", "u"),
+                ("ñ", "n"), ("ç", "c"),
+            ):
+                chain = f"replace({chain}, '{src}', '{dst}')"
+            return chain
+
+        tokens = [t for t in (_fold(tok) for tok in q.split()) if t]
+        if not tokens:
+            return empty
+
         rk_set = set(report_keys) if report_keys else None
+
         def _in_scope(row):
             if not rk_set:
                 return True
             rk = row.get("report_key")
             return (rk is None) or (rk in rk_set)
 
-        persons = [r for r in all_rows if r.get("entity") == "person" and _in_scope(r)]
-        locations = [r for r in all_rows
-                     if r.get("resource_type") == "location" and _in_scope(r)]
-        other_res = [r for r in all_rows
-                     if r.get("entity") == "resource"
-                     and r.get("resource_type") != "location"
-                     and _in_scope(r)]
+        # ---------------- People (relationship-aware, own session) ----------
+        # Dedicated person-only query (NOT search_cellebrite_persons, which
+        # also re-scans the 10 resource labels we now cover ourselves and
+        # ran them sequentially — that was the long pole). comm_count keeps
+        # the most-active match first, matching the old relevance signal.
+        def _person_group():
+            person_cap = max(50, limit_per_type * 6)
+            p_haystack = _cypher_fold(
+                "coalesce(p.name,'') + ' ' + coalesce(p.phone,'') + ' ' + coalesce(p.key,'')"
+            )
+            p_params = {"case_id": case_id, "cap": int(person_cap)}
+            p_where = []
+            for i, tok in enumerate(tokens):
+                p_params[f"t{i}"] = tok
+                p_where.append(f"{p_haystack} CONTAINS $t{i}")
+            p_cypher = (
+                "MATCH (p:Person {case_id: $case_id, source_type: 'cellebrite'}) "
+                f"WHERE {' AND '.join(p_where)} "
+                "OPTIONAL MATCH (p)-[rel]->() "
+                "WHERE type(rel) IN ['CALLED','SENT_MESSAGE','EMAILED','PARTICIPATED_IN'] "
+                "WITH p, count(rel) AS comm_count "
+                "RETURN p.key AS key, p.name AS name, p.phone AS phone, "
+                "p.cellebrite_report_key AS report_key, comm_count "
+                "ORDER BY comm_count DESC, p.name LIMIT $cap"
+            )
+            with self._driver.session() as session:
+                rows = [dict(r) for r in session.run(p_cypher, **p_params)]
+            persons = [r for r in rows if _in_scope(r)]
+            if not persons:
+                return None
 
-        def _person_item(r):
+            def _person_item(r):
+                phone = r.get("phone") or ""
+                cc = int(r.get("comm_count") or 0)
+                detail = []
+                if phone:
+                    detail.append({"label": "Phone", "value": phone})
+                if cc:
+                    detail.append({"label": "Communications", "value": cc})
+                if r.get("report_key"):
+                    detail.append({"label": "Phone report", "value": r.get("report_key")})
+                return {
+                    "key": r.get("key"),
+                    "title": r.get("name") or r.get("key"),
+                    "subtitle": phone,
+                    "report_key": r.get("report_key"),
+                    "person_keys": [r.get("key")] if r.get("key") else [],
+                    "comm_count": cc,
+                    "detail": detail,
+                    "pivot": "comms",
+                }
             return {
-                "key": r.get("key"),
-                "title": r.get("name") or r.get("key"),
-                "subtitle": r.get("phone") or "",
-                "report_key": r.get("report_key"),
-                "person_keys": [r.get("key")] if r.get("key") else [],
-                "comm_count": int(r.get("comm_count") or 0),
-            }
-
-        def _location_item(r):
-            return {
-                "key": r.get("key"),
-                "title": r.get("name") or r.get("key"),
-                "subtitle": "location",
-                "report_key": r.get("report_key"),
-                "bucket": r.get("bucket"),
-            }
-
-        def _resource_item(r):
-            return {
-                "key": r.get("key"),
-                "title": r.get("name") or r.get("key"),
-                "subtitle": r.get("resource_type") or r.get("label") or "",
-                "resource_type": r.get("resource_type"),
-                "label": r.get("label"),
-                "report_key": r.get("report_key"),
-                "bucket": r.get("bucket"),
-            }
-
-        # --- Comms bodies (messages / emails / calls) ---
-        comms_res = self.search_cellebrite_comms_messages(
-            case_id, q, report_keys=report_keys, limit=max(50, limit_per_type * 5)
-        )
-        comms_matches = comms_res.get("matches", [])
-
-        def _message_item(m):
-            return {
-                "key": m.get("message_id"),
-                "title": (m.get("snippet") or "").strip() or "(message)",
-                "subtitle": m.get("source_app") or "",
-                "timestamp": m.get("timestamp"),
-                "thread_id": m.get("thread_id"),
-                "thread_type": m.get("thread_type") or "chat",
-                "report_key": m.get("report_key"),
-            }
-
-        groups = [
-            {
-                "type": "person", "label": "People",
+                "type": "person", "label": "People", "family": "People",
                 "total": len(persons),
                 "items": [_person_item(r) for r in persons[:limit_per_type]],
-            },
-            {
-                "type": "message", "label": "Messages",
+            }
+
+        # ---------------- Chat Messages (tuned, thread-linked) --------------
+        def _message_group():
+            comms_res = self.search_cellebrite_comms_messages(
+                case_id, q, report_keys=report_keys, limit=max(50, limit_per_type * 5)
+            )
+            comms_matches = comms_res.get("matches", [])
+            if not comms_matches:
+                return None
+
+            def _message_item(m):
+                app = m.get("source_app") or ""
+                detail = []
+                if app:
+                    detail.append({"label": "App", "value": app})
+                if m.get("thread_id"):
+                    detail.append({"label": "Thread", "value": m.get("thread_id")})
+                return {
+                    "key": m.get("message_id"),
+                    "title": (m.get("snippet") or "").strip() or "(message)",
+                    "subtitle": app,
+                    "timestamp": m.get("timestamp"),
+                    "thread_id": m.get("thread_id"),
+                    "message_id": m.get("message_id"),
+                    "thread_type": m.get("thread_type") or "chat",
+                    "report_key": m.get("report_key"),
+                    "detail": detail,
+                    "pivot": "comms",
+                }
+            return {
+                "type": "message", "label": "Messages", "family": "Communications",
                 "total": len(comms_matches),
                 "items": [_message_item(m) for m in comms_matches[:limit_per_type]],
-            },
-            {
-                "type": "location", "label": "Locations",
-                "total": len(locations),
-                "items": [_location_item(r) for r in locations[:limit_per_type]],
-            },
-            {
-                "type": "resource", "label": "Other (accounts, networks, pages…)",
-                "total": len(other_res),
-                "items": [_resource_item(r) for r in other_res[:limit_per_type]],
-            },
+            }
+
+        # ---------------- Generic per-label categories ----------------------
+        # Registry: one entry per Cellebrite node label (Person + chat
+        # Communication handled above are intentionally omitted). Field
+        # names verified against ingestion/.../neo4j_writer.py. Referencing
+        # a property a node lacks is harmless in Cypher (coalesce → '').
+        #   search:   props folded into the match haystack (+ name + key always)
+        #   title:    first non-empty wins the row title
+        #   subtitle: non-empty values joined with " · "
+        #   ts:       timestamp property (ordering + row time); None → order by name
+        #   detail:   (prop, "Label") pairs shown in the expand panel
+        #   pivot:    native-tab deep-link hint (comms|locations|graph|None)
+        CATEGORIES = [
+            # --- Communications ---
+            {"key": "call", "label": "Calls", "family": "Communications", "neo_label": "PhoneCall",
+             "search": ["call_type", "direction", "status", "source_app", "account"],
+             "title": ["name"], "subtitle": ["call_type", "direction", "source_app"], "ts": "timestamp",
+             "detail": [("direction", "Direction"), ("call_type", "Type"), ("duration", "Duration"),
+                        ("status", "Status"), ("source_app", "App"), ("account", "Account")],
+             "pivot": "comms"},
+            {"key": "email", "label": "Emails", "family": "Communications", "neo_label": "Email",
+             "search": ["subject", "body", "source_app", "folder", "account"],
+             "title": ["subject", "name"], "subtitle": ["source_app", "folder"], "ts": "timestamp",
+             "detail": [("subject", "Subject"), ("body", "Body"), ("folder", "Folder"),
+                        ("email_status", "Status"), ("source_app", "App"), ("account", "Account")],
+             "pivot": "comms"},
+            {"key": "contact", "label": "Contacts (saved)", "family": "People", "neo_label": "ContactEntry",
+             "search": ["saved_name", "name", "raw_numbers", "numbers", "emails", "user_ids", "account"],
+             "title": ["saved_name", "name"], "subtitle": ["numbers", "contact_storage", "account"], "ts": None,
+             "detail": [("saved_name", "Saved as"), ("numbers", "Numbers"), ("emails", "Emails"),
+                        ("user_ids", "User IDs"), ("contact_storage", "Storage"), ("account", "Account")],
+             "pivot": None},
+            # --- Location ---
+            {"key": "location", "label": "Locations", "family": "Location", "neo_label": "Location",
+             "search": ["address", "place_label", "location_type", "location_category", "description", "source_app"],
+             "title": ["place_label", "address", "location_type", "name"],
+             "subtitle": ["location_type", "address"], "ts": "timestamp",
+             "detail": [("address", "Address"), ("place_label", "Place"), ("location_type", "Type"),
+                        ("latitude", "Latitude"), ("longitude", "Longitude"), ("source_app", "App")],
+             "pivot": "locations"},
+            {"key": "cell_tower", "label": "Cell towers", "family": "Location", "neo_label": "CellTower",
+             "search": ["cell_id", "mcc", "mnc", "lac", "tac", "source_app"],
+             "title": ["cell_id", "name"], "subtitle": ["mcc", "mnc", "source_app"], "ts": "timestamp",
+             "detail": [("cell_id", "Cell ID"), ("mcc", "MCC"), ("mnc", "MNC"), ("lac", "LAC"),
+                        ("tac", "TAC"), ("latitude", "Latitude"), ("longitude", "Longitude")],
+             "pivot": "locations"},
+            {"key": "wifi", "label": "Wi-Fi networks", "family": "Location", "neo_label": "WirelessNetwork",
+             "search": ["ssid", "bssid", "security_mode", "source_app"],
+             "title": ["ssid", "name"], "subtitle": ["bssid", "security_mode"], "ts": "timestamp",
+             "detail": [("ssid", "SSID"), ("bssid", "BSSID"), ("security_mode", "Security"),
+                        ("last_connection", "Last connection"), ("source_app", "App")],
+             "pivot": "graph"},
+            {"key": "journey", "label": "Journeys", "family": "Location", "neo_label": "Journey",
+             "search": ["name", "source_app", "account"],
+             "title": ["name"], "subtitle": ["source_app", "waypoint_count"], "ts": "timestamp",
+             "detail": [("source_app", "App"), ("waypoint_count", "Waypoints"), ("latitude", "Start lat"),
+                        ("longitude", "Start lon"), ("end_latitude", "End lat"), ("end_longitude", "End lon")],
+             "pivot": "locations"},
+            # --- Web & Apps ---
+            {"key": "web_visit", "label": "Web history", "family": "Web & Apps", "neo_label": "VisitedPage",
+             "search": ["url", "title", "search_query", "source_app"],
+             "title": ["title", "url", "name"], "subtitle": ["url", "source_app"], "ts": "timestamp",
+             "detail": [("title", "Title"), ("url", "URL"), ("search_query", "Search query"),
+                        ("visit_count", "Visits"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "web_search", "label": "Searches", "family": "Web & Apps", "neo_label": "SearchedItem",
+             "search": ["query", "name", "origin", "source_app"],
+             "title": ["query", "name"], "subtitle": ["origin", "source_app"], "ts": "timestamp",
+             "detail": [("query", "Query"), ("origin", "Origin"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "bookmark", "label": "Bookmarks", "family": "Web & Apps", "neo_label": "WebBookmark",
+             "search": ["url", "name", "bookmark_path", "source_app"],
+             "title": ["name", "url"], "subtitle": ["url", "source_app"], "ts": "timestamp",
+             "detail": [("url", "URL"), ("bookmark_path", "Path"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "installed_app", "label": "Installed apps", "family": "Web & Apps", "neo_label": "InstalledApp",
+             "search": ["app_name", "app_package", "publisher", "app_version"],
+             "title": ["app_name", "app_package", "name"], "subtitle": ["app_package", "app_version"], "ts": "timestamp",
+             "detail": [("app_name", "App"), ("app_package", "Package"), ("app_version", "Version"),
+                        ("publisher", "Publisher"), ("install_date", "Installed")],
+             "pivot": None},
+            {"key": "app_session", "label": "App sessions", "family": "Web & Apps", "neo_label": "AppSession",
+             "search": ["app_name", "app_package", "source_app"],
+             "title": ["app_name", "app_package", "name"], "subtitle": ["app_package"], "ts": "timestamp",
+             "detail": [("app_name", "App"), ("app_package", "Package"), ("start_time", "Start"),
+                        ("end_time", "End"), ("duration_s", "Duration (s)")],
+             "pivot": None},
+            {"key": "cookie", "label": "Cookies", "family": "Web & Apps", "neo_label": "Cookie",
+             "search": ["cookie_name", "domain", "path", "related_application", "source_app"],
+             "title": ["domain", "cookie_name", "name"], "subtitle": ["cookie_name", "related_application"], "ts": "timestamp",
+             "detail": [("cookie_name", "Cookie"), ("domain", "Domain"), ("path", "Path"),
+                        ("related_application", "App"), ("expiry", "Expiry")],
+             "pivot": None},
+            # --- Accounts & Security ---
+            {"key": "account", "label": "Accounts", "family": "Accounts & Security", "neo_label": "Account",
+             "search": ["username", "name", "platform", "service_type", "service_identifier", "user_ids"],
+             "title": ["username", "name", "platform"], "subtitle": ["platform", "service_type"], "ts": "time_created",
+             "detail": [("username", "Username"), ("platform", "Platform"), ("service_type", "Service"),
+                        ("service_identifier", "Identifier"), ("time_created", "Created")],
+             "pivot": "graph"},
+            {"key": "credential", "label": "Credentials", "family": "Accounts & Security", "neo_label": "Credential",
+             "search": ["label", "service", "service_identifier", "credential_type", "source_app"],
+             "title": ["label", "name"], "subtitle": ["service", "credential_type"], "ts": None,
+             "detail": [("label", "Label"), ("service", "Service"), ("credential_type", "Type"),
+                        ("service_identifier", "Identifier"), ("source_app", "App")],
+             "pivot": "graph"},
+            {"key": "autofill", "label": "Autofill", "family": "Accounts & Security", "neo_label": "Autofill",
+             "search": ["field_name", "value", "url", "source_app"],
+             "title": ["value", "field_name", "name"], "subtitle": ["field_name", "url"], "ts": "timestamp",
+             "detail": [("field_name", "Field"), ("value", "Value"), ("url", "URL"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "device_user", "label": "Device users", "family": "Accounts & Security", "neo_label": "DeviceUser",
+             "search": ["user_name", "user_id", "user_type", "serial_number", "source_app"],
+             "title": ["user_name", "user_id", "name"], "subtitle": ["user_type", "source_app"], "ts": None,
+             "detail": [("user_name", "User"), ("user_id", "User ID"), ("user_type", "Type"),
+                        ("serial_number", "Serial"), ("time_last_logged_in", "Last login")],
+             "pivot": None},
+            {"key": "sim", "label": "SIM cards", "family": "Accounts & Security", "neo_label": "SIMCard",
+             "search": ["name", "msisdn", "phone_number", "iccid", "imsi"],
+             "title": ["name"], "subtitle": ["msisdn", "iccid"], "ts": None,
+             "detail": [("msisdn", "MSISDN"), ("phone_number", "Number"), ("iccid", "ICCID"), ("imsi", "IMSI")],
+             "pivot": None},
+            # --- Calendar & Notes ---
+            {"key": "meeting", "label": "Calendar", "family": "Calendar & Notes", "neo_label": "Meeting",
+             "search": ["name", "details", "location_text", "category", "source_app"],
+             "title": ["name"], "subtitle": ["location_text", "category", "source_app"], "ts": "start_date",
+             "detail": [("details", "Details"), ("location_text", "Location"), ("category", "Category"),
+                        ("start_date", "Start"), ("end_date", "End"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "note", "label": "Notes", "family": "Calendar & Notes", "neo_label": "Note",
+             "search": ["title", "body", "summary", "source_app", "account"],
+             "title": ["title", "name"], "subtitle": ["folder", "source_app"], "ts": "timestamp",
+             "detail": [("title", "Title"), ("body", "Body"), ("summary", "Summary"),
+                        ("folder", "Folder"), ("source_app", "App")],
+             "pivot": None},
+            # --- Social & Media ---
+            {"key": "social_media", "label": "Social media", "family": "Social & Media", "neo_label": "SocialMediaActivity",
+             "search": ["title", "body", "url", "activity_type", "account", "author", "source_app"],
+             "title": ["title", "body", "name"], "subtitle": ["activity_type", "source_app", "author"], "ts": "timestamp",
+             "detail": [("title", "Title"), ("body", "Body"), ("url", "URL"), ("activity_type", "Activity"),
+                        ("author", "Author"), ("account", "Account"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "file_download", "label": "Downloads", "family": "Social & Media", "neo_label": "FileDownload",
+             "search": ["url", "filename", "target_path", "download_status", "source_app"],
+             "title": ["filename", "url", "name"], "subtitle": ["download_status", "source_app"], "ts": "timestamp",
+             "detail": [("filename", "File"), ("url", "URL"), ("target_path", "Saved to"),
+                        ("size", "Size"), ("download_status", "Status"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "file_upload", "label": "Uploads", "family": "Social & Media", "neo_label": "FileUpload",
+             "search": ["name", "file_type", "source_app", "account"],
+             "title": ["name"], "subtitle": ["file_type", "source_app"], "ts": "timestamp",
+             "detail": [("file_type", "Type"), ("source_app", "App"), ("account", "Account")],
+             "pivot": None},
+            {"key": "chat_activity", "label": "Chat activity", "family": "Social & Media", "neo_label": "ChatActivity",
+             "search": ["action", "body", "account", "source_app"],
+             "title": ["action", "name"], "subtitle": ["source_app", "account"], "ts": "timestamp",
+             "detail": [("action", "Action"), ("body", "Detail"), ("account", "Account"), ("source_app", "App")],
+             "pivot": None},
+            # --- Device & System ---
+            {"key": "device", "label": "Paired devices", "family": "Device & System", "neo_label": "Device",
+             "search": ["name", "device_type", "mac_address", "serial_number", "source_app"],
+             "title": ["name", "mac_address"], "subtitle": ["device_type", "mac_address"], "ts": "timestamp",
+             "detail": [("device_type", "Type"), ("mac_address", "MAC"), ("serial_number", "Serial"), ("source_app", "App")],
+             "pivot": "graph"},
+            {"key": "device_event", "label": "Device events", "family": "Device & System", "neo_label": "DeviceEvent",
+             "search": ["event_type", "state", "reason", "source_app"],
+             "title": ["event_type", "state", "name"], "subtitle": ["state", "source_app"], "ts": "timestamp",
+             "detail": [("event_type", "Event"), ("state", "State"), ("reason", "Reason"),
+                        ("battery", "Battery"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "connectivity", "label": "Connectivity", "family": "Device & System", "neo_label": "DeviceConnectivity",
+             "search": ["connectivity_method", "connectivity_nature", "device_identifiers"],
+             "title": ["name"], "subtitle": ["connectivity_method", "connectivity_nature"], "ts": "timestamp",
+             "detail": [("connectivity_method", "Method"), ("connectivity_nature", "Nature"),
+                        ("device_identifiers", "Devices")],
+             "pivot": None},
+            {"key": "log", "label": "Logs", "family": "Device & System", "neo_label": "LogEntry",
+             "search": ["application", "body", "identifier", "source_app"],
+             "title": ["application", "name"], "subtitle": ["identifier", "source_app"], "ts": "timestamp",
+             "detail": [("application", "Application"), ("body", "Entry"), ("identifier", "Identifier")],
+             "pivot": None},
+            {"key": "motion", "label": "Motion", "family": "Device & System", "neo_label": "MotionActivity",
+             "search": ["name", "source_app"],
+             "title": ["name"], "subtitle": ["source_app", "distance_m"], "ts": "timestamp",
+             "detail": [("distance_m", "Distance (m)"), ("sample_count", "Samples"), ("source_app", "App")],
+             "pivot": None},
+            {"key": "network_usage", "label": "Network usage", "family": "Device & System", "neo_label": "NetworkUsage",
+             "search": ["app_identifier", "ssid", "connection_type", "usage_mode", "source_app"],
+             "title": ["app_identifier", "ssid", "name"], "subtitle": ["connection_type", "ssid"], "ts": "timestamp",
+             "detail": [("app_identifier", "App"), ("ssid", "SSID"), ("connection_type", "Connection"),
+                        ("bytes_total", "Bytes"), ("usage_mode", "Mode")],
+             "pivot": None},
+            {"key": "dictionary_word", "label": "Typed words", "family": "Device & System", "neo_label": "DictionaryWord",
+             "search": ["word", "source_app"],
+             "title": ["word", "name"], "subtitle": ["source_app", "frequency"], "ts": None,
+             "detail": [("word", "Word"), ("frequency", "Frequency"), ("source_app", "App")],
+             "pivot": None},
         ]
+
+        def _truncate(v, n=500):
+            if isinstance(v, list):
+                v = ", ".join(str(x) for x in v if x not in (None, ""))
+            s = str(v)
+            return s if len(s) <= n else s[:n] + "…"
+
+        def _build_item(cfg, props):
+            def first(names):
+                for p in names:
+                    val = props.get(p)
+                    if val not in (None, "", []):
+                        return val
+                return None
+            title = first(cfg["title"]) or props.get("name") or props.get("key") or "(record)"
+            sub_vals = []
+            for p in cfg.get("subtitle", []):
+                val = props.get(p)
+                if val not in (None, "", []):
+                    sub_vals.append(_truncate(val, 80))
+            detail = []
+            for p, lbl in cfg.get("detail", []):
+                val = props.get(p)
+                if val not in (None, "", []):
+                    detail.append({"label": lbl, "value": _truncate(val)})
+            ts_prop = cfg.get("ts")
+            item = {
+                "key": props.get("key"),
+                "title": _truncate(title, 200),
+                "subtitle": " · ".join(sub_vals),
+                "timestamp": (props.get(ts_prop) if ts_prop else None) or props.get("date"),
+                "report_key": props.get("cellebrite_report_key"),
+                "detail": detail,
+                "pivot": cfg.get("pivot"),
+            }
+            if cfg.get("pivot") == "locations":
+                item["latitude"] = props.get("latitude")
+                item["longitude"] = props.get("longitude")
+            return item
+
+        def _label_group(session, cfg):
+            label = cfg["neo_label"]
+            concat = " + ' ' + ".join(
+                f"coalesce(n.`{p}`,'')" for p in (list(cfg["search"]) + ["name", "key"])
+            )
+            haystack = _cypher_fold(concat)
+            params = {"case_id": case_id, "cap": int(limit_per_type)}
+            where = []
+            if rk_set:
+                where.append("n.cellebrite_report_key IN $report_keys")
+                params["report_keys"] = list(rk_set)
+            for i, tok in enumerate(tokens):
+                params[f"t{i}"] = tok
+                where.append(f"{haystack} CONTAINS $t{i}")
+            where_clause = " AND ".join(where) if where else "true"
+            ts_prop = cfg.get("ts")
+            if ts_prop:
+                order_expr = f"coalesce(n.`{ts_prop}`, n.date, n.timestamp, '') DESC"
+            else:
+                order_expr = "coalesce(n.name, n.key, '')"
+            # Two bounded subqueries: count streams (no materialisation);
+            # the fetch uses ORDER BY … LIMIT (bounded top-N heap) so a
+            # high-match label like Email/Calls/Logs never collects all
+            # matched nodes into memory just to slice the first ten.
+            match_clause = f"MATCH (n:`{label}` {{case_id: $case_id}}) WHERE {where_clause}"
+            cypher = (
+                f"CALL {{ {match_clause} RETURN count(n) AS total }} "
+                f"CALL {{ {match_clause} WITH n ORDER BY {order_expr} LIMIT $cap "
+                f"RETURN collect(properties(n)) AS items }} "
+                f"RETURN total, items"
+            )
+            try:
+                rec = session.run(cypher, **params).single()
+            except Exception:
+                return None
+            if not rec:
+                return None
+            total = int(rec["total"] or 0)
+            if total == 0:
+                return None
+            return {
+                "type": cfg["key"], "label": cfg["label"], "family": cfg["family"],
+                "total": total,
+                "items": [_build_item(cfg, p) for p in (rec["items"] or [])],
+            }
+
+        def _label_group_task(cfg):
+            # Each task owns its own Neo4j session — sessions are NOT
+            # thread-safe, but the driver is, so fanning out is safe.
+            with self._driver.session() as session:
+                return _label_group(session, cfg)
+
+        # Fan out every category search concurrently. Run sequentially this
+        # was ~30+ label scans = >10s; concurrently the wall time collapses
+        # to roughly the slowest single scan. People + chat Messages reuse
+        # their tuned helpers and ride the same pool so they overlap too.
+        # `executor.map` preserves task order, so groups come back already
+        # ordered: People, Messages, then the CATEGORIES family order.
+        import concurrent.futures as _cf
+
+        def _safe(fn):
+            try:
+                return fn()
+            except Exception:
+                return None
+
+        tasks = [_person_group, _message_group]
+        tasks += [(lambda c=cfg: _label_group_task(c)) for cfg in CATEGORIES]
+
+        groups = []
+        with _cf.ThreadPoolExecutor(max_workers=12) as executor:
+            for g in executor.map(_safe, tasks):
+                if g:
+                    groups.append(g)
+
         return {"query": q, "groups": groups}
 
     def search_cellebrite_graph_subgraph(

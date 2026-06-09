@@ -15,6 +15,7 @@ import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import { deviceColor } from './events/eventUtils';
+import { consumeDiscoveryTarget } from '../../utils/commsHandoff';
 
 /**
  * Dedicated Locations tab.
@@ -139,6 +140,16 @@ export default function CellebriteLocations({ caseId, reports: reportsProp = [],
       setRenderMode('raw');
     }
   }, [searchQuery, renderMode]);
+
+  // Deep-link from Search & Discovery: a Location/cell-tower/journey
+  // result's "Open in Locations" seeds the place search here.
+  useEffect(() => {
+    if (!isActive) return;
+    const target = consumeDiscoveryTarget('locations', caseId);
+    if (target?.search) {
+      setSearchQuery(target.search);
+    }
+  }, [isActive, caseId]);
 
   // One-shot small fetch of raw location rows for the search typeahead.
   // The main fetch is filter-dependent and (in tile mode) returns

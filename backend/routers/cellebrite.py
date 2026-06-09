@@ -342,32 +342,62 @@ def discovery_search(
     rks = _csv_param(report_keys)
     wanted = set(_csv_param(types) or [])  # empty set => all types
 
-    result = neo4j_service.discovery_search(
-        case_id, q, report_keys=rks, limit_per_type=limit_per_type
-    )
-    groups = result.get("groups", [])
-
-    # Files: assembled from evidence storage (not Neo4j). Filename substring,
-    # mirroring the /files endpoint's `search` behaviour.
-    if (not wanted) or ("file" in wanted):
+    # Files come from evidence storage (not Neo4j) and scanning them is its
+    # own multi-second cost. Run that scan CONCURRENTLY with the Neo4j scan
+    # so the file group hides under the graph search's wall time instead of
+    # stacking on top of it.
+    def _build_file_group():
         ql = q.strip().lower()
+        if not ql:
+            return None
         file_recs = _cellebrite_files_for_case(case_id, rks)
         matched = [
             f for f in file_recs
-            if ql and ql in (f.get("original_filename") or "").lower()
+            if ql in (f.get("original_filename") or "").lower()
         ]
-        file_items = [{
-            "key": f.get("id") or f.get("original_filename"),
-            "title": f.get("original_filename") or "(file)",
-            "subtitle": f.get("cellebrite_category") or "",
-            "report_key": f.get("cellebrite_report_key"),
-            "evidence_id": f.get("id"),
-            "model_id": f.get("cellebrite_model_id"),
-        } for f in matched[:limit_per_type]]
-        groups.append({
-            "type": "file", "label": "Files",
-            "total": len(matched), "items": file_items,
-        })
+        if not matched:
+            return None
+
+        def _file_item(f):
+            detail = []
+            for prop, lbl in (("cellebrite_category", "Category"),
+                              ("mime_type", "MIME type"),
+                              ("file_size", "Size"),
+                              ("cellebrite_report_key", "Phone report")):
+                val = f.get(prop)
+                if val not in (None, "", []):
+                    detail.append({"label": lbl, "value": val})
+            return {
+                "key": f.get("id") or f.get("original_filename"),
+                "title": f.get("original_filename") or "(file)",
+                "subtitle": f.get("cellebrite_category") or "",
+                "report_key": f.get("cellebrite_report_key"),
+                "evidence_id": f.get("id"),
+                "model_id": f.get("cellebrite_model_id"),
+                "detail": detail,
+                "pivot": "files",
+            }
+        return {
+            "type": "file", "label": "Files", "family": "Media & Files",
+            "total": len(matched),
+            "items": [_file_item(f) for f in matched[:limit_per_type]],
+        }
+
+    import concurrent.futures as _cf
+    do_files = (not wanted) or ("file" in wanted)
+    with _cf.ThreadPoolExecutor(max_workers=2) as _ex:
+        file_future = _ex.submit(_build_file_group) if do_files else None
+        result = neo4j_service.discovery_search(
+            case_id, q, report_keys=rks, limit_per_type=limit_per_type
+        )
+        groups = result.get("groups", [])
+        if file_future is not None:
+            try:
+                fg = file_future.result()
+            except Exception:
+                fg = None
+            if fg is not None:
+                groups.append(fg)
 
     # Honour the optional `types` filter on the Neo4j-backed groups too.
     if wanted:

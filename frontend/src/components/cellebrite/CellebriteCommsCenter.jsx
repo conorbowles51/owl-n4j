@@ -16,6 +16,7 @@ import { usePhoneReports } from '../../context/PhoneReportsContext';
 import { parseQuery, matchItem } from '../../utils/cellebriteSearch';
 import { useCellebriteStatus } from './shared/CellebriteStatusBar';
 import { useCellebriteSelection } from './shared/CellebriteSelectionContext';
+import { consumeDiscoveryTarget } from '../../utils/commsHandoff';
 
 /**
  * Cellebrite Communication Center — the hybrid dashboard orchestrator.
@@ -257,6 +258,18 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
       return [...byKey.values()];
     });
   }, [selection]);
+
+  // Deep-link from Search & Discovery: a Message/Email result's "Open in
+  // Comms" seeds the body/subject deep-search, which finds the matching
+  // thread(s) and auto-selects the first — landing the user ON the record
+  // instead of an unfiltered feed.
+  useEffect(() => {
+    if (!isActive) return;
+    const target = consumeDiscoveryTarget('comms', caseId);
+    if (target?.search) {
+      setSearchQuery(target.search);
+    }
+  }, [isActive, caseId]);
 
   const handleItemSelect = useCallback((item) => {
     if (!item) return;

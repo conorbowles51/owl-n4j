@@ -10,6 +10,7 @@ import FileDetailPanel from './files/FileDetailPanel';
 import FileBulkActionsBar from './files/FileBulkActionsBar';
 import { useChatContext } from '../../contexts/ChatContext';
 import { buildFilesContext } from '../../utils/chatContextSummary';
+import { consumeDiscoveryTarget } from '../../utils/commsHandoff';
 
 /**
  * Cellebrite Files Explorer — 7th tab in CellebriteView.
@@ -20,7 +21,7 @@ import { buildFilesContext } from '../../utils/chatContextSummary';
 // offset page of this size (mirrors the backend /cellebrite/files default).
 const FILES_PAGE_SIZE = 500;
 
-export default function CellebriteFilesExplorer({ caseId, reports: reportsProp = [] }) {
+export default function CellebriteFilesExplorer({ caseId, reports: reportsProp = [], isActive = true }) {
   const phoneCtx = usePhoneReports();
   const fallbackReports = useMemo(() => reportsProp || [], [reportsProp]);
   const fallbackSelection = useMemo(
@@ -101,6 +102,18 @@ export default function CellebriteFilesExplorer({ caseId, reports: reportsProp =
     const id = setTimeout(() => setDebouncedSearch(searchQuery), 300);
     return () => clearTimeout(id);
   }, [searchQuery]);
+
+  // Deep-link from Search & Discovery: when a file result's "Open in Files"
+  // lands here, seed the filename search and drop any category filter so the
+  // file is actually visible (the bug was landing here unfiltered).
+  useEffect(() => {
+    if (!isActive) return;
+    const target = consumeDiscoveryTarget('files', caseId);
+    if (target?.search) {
+      setActiveNode(null);
+      setSearchQuery(target.search);
+    }
+  }, [isActive, caseId]);
 
   const reportKeysArr = useMemo(
     () => (selectedReportKeys.size > 0 ? [...selectedReportKeys] : null),
