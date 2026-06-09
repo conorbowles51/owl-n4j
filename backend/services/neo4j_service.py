@@ -7393,6 +7393,132 @@ class Neo4jService:
             "limited": total > limit,
         }
 
+    def discovery_search(
+        self,
+        case_id: str,
+        query: str,
+        report_keys: Optional[List[str]] = None,
+        limit_per_type: int = 10,
+    ) -> dict:
+        """Unified "Search & Discovery" across every phone in the case and
+        every data type at once (Epic 2A — S2-01/02/04).
+
+        Composes the existing, already-tuned search building blocks rather
+        than re-implementing matching:
+          * People + Locations + other resources via search_cellebrite_persons
+            (diacritics-folded; resolves an address like "Piney Bench Road"
+            stored on Location.place_name/address).
+          * Message / email / call bodies via search_cellebrite_comms_messages.
+
+        Returns results bucketed by type so the UI can group them (S2-02):
+            { "query", "groups": [ { "type", "label", "total", "items":[...] } ] }
+        Each group reports its own `total` (the true match count) even when
+        only `limit_per_type` items are inlined, so the UI can say "+N more".
+        File results are NOT included here — they live in evidence storage,
+        not Neo4j, and are assembled by the router. Returns the
+        Neo4j-backed groups: person, message, location, resource.
+        """
+        q = (query or "").strip()
+        empty = {"query": q, "groups": []}
+        if not q:
+            return empty
+
+        # --- People + resources (one scan, already diacritics-folded) ---
+        # Ask for a generous cap so per-type buckets can each fill to
+        # limit_per_type after we split person vs location vs other.
+        person_cap = max(50, limit_per_type * 6)
+        people_res = self.search_cellebrite_persons(case_id, q, limit=person_cap)
+        all_rows = people_res.get("results", [])
+
+        # Honour optional phone scope — the person search isn't report-
+        # scoped, so filter here. A row with no report_key (cross-device
+        # person) is kept (it spans phones).
+        rk_set = set(report_keys) if report_keys else None
+        def _in_scope(row):
+            if not rk_set:
+                return True
+            rk = row.get("report_key")
+            return (rk is None) or (rk in rk_set)
+
+        persons = [r for r in all_rows if r.get("entity") == "person" and _in_scope(r)]
+        locations = [r for r in all_rows
+                     if r.get("resource_type") == "location" and _in_scope(r)]
+        other_res = [r for r in all_rows
+                     if r.get("entity") == "resource"
+                     and r.get("resource_type") != "location"
+                     and _in_scope(r)]
+
+        def _person_item(r):
+            return {
+                "key": r.get("key"),
+                "title": r.get("name") or r.get("key"),
+                "subtitle": r.get("phone") or "",
+                "report_key": r.get("report_key"),
+                "person_keys": [r.get("key")] if r.get("key") else [],
+                "comm_count": int(r.get("comm_count") or 0),
+            }
+
+        def _location_item(r):
+            return {
+                "key": r.get("key"),
+                "title": r.get("name") or r.get("key"),
+                "subtitle": "location",
+                "report_key": r.get("report_key"),
+                "bucket": r.get("bucket"),
+            }
+
+        def _resource_item(r):
+            return {
+                "key": r.get("key"),
+                "title": r.get("name") or r.get("key"),
+                "subtitle": r.get("resource_type") or r.get("label") or "",
+                "resource_type": r.get("resource_type"),
+                "label": r.get("label"),
+                "report_key": r.get("report_key"),
+                "bucket": r.get("bucket"),
+            }
+
+        # --- Comms bodies (messages / emails / calls) ---
+        comms_res = self.search_cellebrite_comms_messages(
+            case_id, q, report_keys=report_keys, limit=max(50, limit_per_type * 5)
+        )
+        comms_matches = comms_res.get("matches", [])
+
+        def _message_item(m):
+            return {
+                "key": m.get("message_id"),
+                "title": (m.get("snippet") or "").strip() or "(message)",
+                "subtitle": m.get("source_app") or "",
+                "timestamp": m.get("timestamp"),
+                "thread_id": m.get("thread_id"),
+                "thread_type": m.get("thread_type") or "chat",
+                "report_key": m.get("report_key"),
+            }
+
+        groups = [
+            {
+                "type": "person", "label": "People",
+                "total": len(persons),
+                "items": [_person_item(r) for r in persons[:limit_per_type]],
+            },
+            {
+                "type": "message", "label": "Messages",
+                "total": len(comms_matches),
+                "items": [_message_item(m) for m in comms_matches[:limit_per_type]],
+            },
+            {
+                "type": "location", "label": "Locations",
+                "total": len(locations),
+                "items": [_location_item(r) for r in locations[:limit_per_type]],
+            },
+            {
+                "type": "resource", "label": "Other (accounts, networks, pages…)",
+                "total": len(other_res),
+                "items": [_resource_item(r) for r in other_res[:limit_per_type]],
+            },
+        ]
+        return {"query": q, "groups": groups}
+
     def search_cellebrite_graph_subgraph(
         self,
         case_id: str,

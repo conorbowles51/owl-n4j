@@ -295,6 +295,87 @@ def search_cross_phone_graph(
     return resp
 
 
+@router.get("/discovery/search")
+def discovery_search(
+    case_id: str = Query(...),
+    q: str = Query(..., description="Free-text phrase / name / number / address."),
+    report_keys: Optional[str] = Query(
+        None, description="Comma-separated phone report keys to scope the search."
+    ),
+    types: Optional[str] = Query(
+        None,
+        description=(
+            "Comma-separated result types to include "
+            "(person, message, location, resource, file). "
+            "Defaults to all types."
+        ),
+    ),
+    limit_per_type: int = Query(
+        10, ge=1, le=50,
+        description="Max items inlined per group. Each group still reports its true total.",
+    ),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_db_user),
+):
+    """Unified Search & Discovery across all phones + all data types (Epic 2A).
+
+    One query → results grouped by type (People, Messages, Locations, Other,
+    Files), each openable in its native tab pre-filtered (the frontend handles
+    the pivot). The Neo4j-backed groups come from
+    ``neo4j_service.discovery_search``; the Files group is assembled here from
+    evidence storage (files aren't Neo4j nodes).
+
+    Response shape::
+
+        {
+          "query": "piney bench",
+          "groups": [
+            {"type": "person",   "label": "People",    "total": N, "items": [...]},
+            {"type": "message",  "label": "Messages",  "total": N, "items": [...]},
+            {"type": "location", "label": "Locations", "total": N, "items": [...]},
+            {"type": "resource", "label": "Other …",   "total": N, "items": [...]},
+            {"type": "file",     "label": "Files",     "total": N, "items": [...]}
+          ]
+        }
+    """
+    _require_case_access(case_id, current_user, db)
+    rks = _csv_param(report_keys)
+    wanted = set(_csv_param(types) or [])  # empty set => all types
+
+    result = neo4j_service.discovery_search(
+        case_id, q, report_keys=rks, limit_per_type=limit_per_type
+    )
+    groups = result.get("groups", [])
+
+    # Files: assembled from evidence storage (not Neo4j). Filename substring,
+    # mirroring the /files endpoint's `search` behaviour.
+    if (not wanted) or ("file" in wanted):
+        ql = q.strip().lower()
+        file_recs = _cellebrite_files_for_case(case_id, rks)
+        matched = [
+            f for f in file_recs
+            if ql and ql in (f.get("original_filename") or "").lower()
+        ]
+        file_items = [{
+            "key": f.get("id") or f.get("original_filename"),
+            "title": f.get("original_filename") or "(file)",
+            "subtitle": f.get("cellebrite_category") or "",
+            "report_key": f.get("cellebrite_report_key"),
+            "evidence_id": f.get("id"),
+            "model_id": f.get("cellebrite_model_id"),
+        } for f in matched[:limit_per_type]]
+        groups.append({
+            "type": "file", "label": "Files",
+            "total": len(matched), "items": file_items,
+        })
+
+    # Honour the optional `types` filter on the Neo4j-backed groups too.
+    if wanted:
+        groups = [g for g in groups if g.get("type") in wanted]
+
+    return {"query": result.get("query", q.strip()), "groups": groups}
+
+
 @router.get("/cross-phone-graph")
 def get_cross_phone_graph(
     case_id: str = Query(...),

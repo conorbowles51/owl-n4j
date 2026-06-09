@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Smartphone, Network, Clock, Users, MessageSquare, MapPin, FolderTree, Loader2,
-  Globe, UserCheck, FileText,
+  Globe, UserCheck, FileText, Search,
 } from 'lucide-react';
 import { cellebriteAPI } from '../../services/api';
 import CellebriteOverview from './CellebriteOverview';
@@ -14,6 +14,7 @@ import CellebriteEventCenter from './CellebriteEventCenter';
 import CellebriteLocations from './CellebriteLocations';
 import CellebriteFilesExplorer from './CellebriteFilesExplorer';
 import CellebriteUnifiedContacts from './CellebriteUnifiedContacts';
+import CellebriteDiscovery from './CellebriteDiscovery';
 import CellebriteStatusBar, { CellebriteStatusProvider } from './shared/CellebriteStatusBar';
 import { CellebriteSelectionProvider, useCellebriteSelection } from './shared/CellebriteSelectionContext';
 import CellebriteSelectionRail from './shared/CellebriteSelectionRail';
@@ -28,6 +29,10 @@ const TABS = [
   // Report: honest, traffic-derived per-device profile (true owner, recovered
   // aliases, in/out comms, activity window). Sits beside Overview.
   { key: 'report', label: 'Report', icon: FileText },
+  // Search & Discovery: the unified omni-search across every phone and
+  // every data type (people, messages, places, files). The single entry
+  // point that pivots out to the right tab (Epic 2A).
+  { key: 'discovery', label: 'Search & Discovery', icon: Search },
   { key: 'comms', label: 'Comms Center', icon: MessageSquare },
   // Unified contacts: rolls Persons up by canonical phone number so
   // the same human across multiple phones (different alias names)
@@ -196,6 +201,11 @@ export default function CellebriteView({ caseId }) {
         {mountedTabs.has('report') && (
           <TabPane active={activeTab === 'report'}>
             <CellebriteReport caseId={caseId} isActive={activeTab === 'report'} />
+          </TabPane>
+        )}
+        {mountedTabs.has('discovery') && (
+          <TabPane active={activeTab === 'discovery'}>
+            <CellebriteDiscovery caseId={caseId} isActive={activeTab === 'discovery'} />
           </TabPane>
         )}
         {mountedTabs.has('comms') && (
