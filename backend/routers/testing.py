@@ -69,12 +69,28 @@ def require_tester(
 
 # ---- the page ----
 
-@router.get("/testing", include_in_schema=False)
-def testing_hub_page():
-    """Serve the hub page (its JS handles login + the checklist)."""
+def _serve_page():
     if not _PAGE.exists():
         raise HTTPException(status_code=404, detail="testing hub page not found")
     return FileResponse(str(_PAGE), media_type="text/html")
+
+
+@router.get("/testing", include_in_schema=False)
+def testing_hub_page():
+    """Serve the hub page directly off the backend (e.g. :8000/testing)."""
+    return _serve_page()
+
+
+@router.get("/api/testing/hub", include_in_schema=False)
+def testing_hub_page_via_api():
+    """Same page, served under /api so it rides the existing /api proxy.
+
+    In every environment the frontend already proxies /api → the backend
+    (Vite dev proxy + nginx), so testers can open the hub at
+    <app-origin>/api/testing/hub with NO extra reverse-proxy rule, and the
+    page's /api/testing/* calls are same-origin from there.
+    """
+    return _serve_page()
 
 
 # ---- login ----
