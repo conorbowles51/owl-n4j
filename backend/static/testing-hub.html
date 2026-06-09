@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cellebrite — Testing Hub</title>
+<style>
+  :root{
+    --owl-blue:#245e8f; --owl-blue-700:#1d4a73; --owl-blue-50:#eef5fb;
+    --bg:#f6f8fa; --card:#ffffff; --line:#e3e8ee; --ink:#1f2a37; --muted:#5b6775;
+    --amber:#b45309; --amber-bg:#fff7ed; --green:#0f7b3f; --green-bg:#ecfdf3;
+    --red:#c0392b; --red-bg:#fef2f2;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg); color:var(--ink); line-height:1.5; font-size:15px;
+  }
+  header{
+    background:linear-gradient(135deg,var(--owl-blue),var(--owl-blue-700));
+    color:#fff; padding:28px 24px 22px;
+  }
+  header h1{margin:0 0 4px; font-size:22px; letter-spacing:.2px}
+  header p{margin:0; opacity:.92; font-size:13.5px; max-width:820px}
+  .wrap{max-width:1000px; margin:0 auto; padding:22px 18px 90px}
+  .bar{
+    position:sticky; top:0; z-index:5; background:var(--card);
+    border:1px solid var(--line); border-radius:12px; padding:12px 16px;
+    margin:-34px 0 18px; box-shadow:0 6px 20px rgba(20,40,70,.08);
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  }
+  .progress{flex:1; min-width:220px}
+  .progress .track{height:10px; background:#eef1f5; border-radius:99px; overflow:hidden}
+  .progress .fill{height:100%; width:0%; background:var(--green); transition:width .25s ease}
+  .progress .label{font-size:12.5px; color:var(--muted); margin-top:5px}
+  .tester{display:flex; align-items:center; gap:7px; font-size:13px; color:var(--muted)}
+  .tester input{
+    font:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--line);
+    border-radius:8px; color:var(--ink); min-width:150px;
+  }
+  .savestate{font-size:12px; color:var(--muted); min-width:90px; text-align:right}
+  .savestate.ok{color:var(--green)} .savestate.err{color:var(--red)}
+  .legend{font-size:12.5px; color:var(--muted); display:flex; gap:14px; flex-wrap:wrap}
+  .legend span{display:inline-flex; align-items:center; gap:6px}
+  .dot{width:9px;height:9px;border-radius:99px;display:inline-block}
+  .dot.data{background:var(--green)} .dot.ui{background:var(--amber)}
+  .intro{
+    background:var(--owl-blue-50); border:1px solid #d6e6f3; border-radius:12px;
+    padding:14px 16px; margin-bottom:20px; font-size:13.5px; color:#234;
+  }
+  .intro b{color:var(--owl-blue-700)}
+  .authwarn{
+    background:var(--amber-bg); border:1px solid #fcd9a8; color:#7a4a09;
+    border-radius:12px; padding:12px 16px; margin-bottom:18px; font-size:13.5px; display:none;
+  }
+  section{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    margin-bottom:18px; overflow:hidden;
+  }
+  .sec-head{
+    padding:14px 18px; border-bottom:1px solid var(--line);
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  }
+  .sec-head h2{margin:0; font-size:16px; color:var(--owl-blue-700)}
+  .sec-head .desc{font-size:13px; color:var(--muted); flex-basis:100%}
+  .sec-head .count{font-size:12px; color:var(--muted); margin-left:auto}
+  ul.items{list-style:none; margin:0; padding:6px 0}
+  li.item{padding:13px 18px; border-top:1px solid #f0f3f7;}
+  li.item:first-child{border-top:0}
+  li.item.st-pass{box-shadow:inset 3px 0 0 var(--green)}
+  li.item.st-fail{box-shadow:inset 3px 0 0 var(--red)}
+  li.item.st-blocked{box-shadow:inset 3px 0 0 var(--amber)}
+  .title{font-weight:600; font-size:14.5px}
+  .how{font-size:13px; color:var(--muted); margin-top:3px}
+  .meta{margin-top:7px; display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+  .tag{font-size:11px; padding:2px 8px; border-radius:99px; border:1px solid transparent; white-space:nowrap;}
+  .tag.data{background:var(--green-bg); color:var(--green); border-color:#bfe6cd}
+  .tag.ui{background:var(--amber-bg); color:var(--amber); border-color:#fcd9a8}
+  .tag.pr{background:#eef2f7; color:#3a4b5e; border-color:#dde4ec; font-variant-numeric:tabular-nums}
+  .tag.ticket{background:#f3f0fb; color:#6b21a8; border-color:#e6dcf6}
+  .note{
+    margin-top:8px; font-size:12.5px; background:#fffdf2;
+    border:1px solid #f3e7b8; border-radius:8px; padding:7px 10px; color:#6b5a1e;
+  }
+  .fb{margin-top:10px; display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap}
+  .fb .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden}
+  .fb .seg button{
+    font:inherit; font-size:12.5px; padding:6px 12px; border:0; background:#fff;
+    color:var(--muted); cursor:pointer; border-right:1px solid var(--line);
+  }
+  .fb .seg button:last-child{border-right:0}
+  .fb .seg button.on.pass{background:var(--green); color:#fff}
+  .fb .seg button.on.fail{background:var(--red); color:#fff}
+  .fb .seg button.on.blocked{background:var(--amber); color:#fff}
+  .fb textarea{
+    font:inherit; font-size:13px; flex:1; min-width:260px; min-height:36px;
+    resize:vertical; padding:7px 9px; border:1px solid var(--line); border-radius:8px;
+    color:var(--ink); background:#fff; line-height:1.4;
+  }
+  .fb textarea:focus{outline:2px solid var(--owl-blue-50); border-color:var(--owl-blue)}
+  .fb textarea.has{border-color:#b9c9d8; background:#fbfdff}
+  .toast{
+    position:fixed; bottom:22px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:#1f2a37; color:#fff; padding:10px 16px; border-radius:10px; font-size:13.5px;
+    opacity:0; pointer-events:none; transition:all .25s ease; z-index:50; box-shadow:0 8px 24px rgba(0,0,0,.25);
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0)}
+  footer{max-width:1000px;margin:0 auto;padding:0 18px 60px;color:var(--muted);font-size:12.5px}
+  #loading{padding:50px 0; text-align:center; color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Cellebrite — Testing Hub</h1>
+  <p>Everything shipped in this round of work, in plain language. For each item, set a status and leave a note —
+     your feedback is saved to the server so the devs see it directly (no exporting needed).</p>
+</header>
+
+<div class="wrap">
+  <div class="bar">
+    <div class="progress">
+      <div class="track"><div class="fill" id="fill"></div></div>
+      <div class="label" id="plabel">loading…</div>
+    </div>
+    <div class="tester">
+      <label for="tester">Tester:</label>
+      <input id="tester" type="text" placeholder="your name" autocomplete="name" />
+    </div>
+    <div class="legend">
+      <span><span class="dot data"></span> data verified</span>
+      <span><span class="dot ui"></span> needs your eyes</span>
+    </div>
+    <div class="savestate" id="savestate"></div>
+  </div>
+
+  <div class="authwarn" id="authwarn">
+    <b>Not signed in.</b> Open this from the same browser where you're logged into the app
+    (your feedback saves under your account). If you keep seeing this, log into the main app
+    first, then reload this page.
+  </div>
+
+  <div class="intro">
+    <b>How to use this.</b> Each item says <i>what</i> the feature is and <i>how</i> to test it.
+    Set <b>Pass / Fail / Blocked</b> and add a note. Both save automatically as you go.
+    Tags show confidence: <span class="tag data">data verified</span> = the underlying logic was
+    already confirmed against the live case (mainly a visual check);
+    <span class="tag ui">needs your eyes</span> = built &amp; compiles but the on-screen behaviour
+    hasn't been exercised — please test it properly.
+    Most features live in: <b>open a case → Open Workspace → Phone Reports → (device)</b>.
+  </div>
+
+  <div id="loading">Loading checklist…</div>
+  <div id="sections"></div>
+</div>
+
+<footer id="footer"></footer>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  const API = {
+    checklist: '/api/testing/checklist',
+    feedback: '/api/testing/feedback',
+  };
+  // Same token the main app stores. Lets the feedback API authenticate the tester.
+  const token = localStorage.getItem('authToken');
+  function authHeaders(extra) {
+    const h = Object.assign({}, extra || {});
+    if (token) h['Authorization'] = 'Bearer ' + token;
+    return h;
+  }
+
+  const els = {
+    sections: document.getElementById('sections'),
+    loading: document.getElementById('loading'),
+    fill: document.getElementById('fill'),
+    plabel: document.getElementById('plabel'),
+    tester: document.getElementById('tester'),
+    savestate: document.getElementById('savestate'),
+    authwarn: document.getElementById('authwarn'),
+    toast: document.getElementById('toast'),
+    footer: document.getElementById('footer'),
+  };
+
+  let feedback = {};            // item_id -> { status, note, tester, updated_at }
+  let allItems = [];            // flat list of {id, ...}
+  const TESTER_KEY = 'owl-testing-tester-name';
+
+  // Restore tester name from localStorage for convenience.
+  els.tester.value = localStorage.getItem(TESTER_KEY) || '';
+  els.tester.addEventListener('input', () => {
+    localStorage.setItem(TESTER_KEY, els.tester.value.trim());
+  });
+
+  let toastTimer = null;
+  function toast(msg, isErr) {
+    els.toast.textContent = msg;
+    els.toast.style.background = isErr ? '#c0392b' : '#1f2a37';
+    els.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove('show'), 1800);
+  }
+  function setSaveState(txt, cls) {
+    els.savestate.textContent = txt;
+    els.savestate.className = 'savestate' + (cls ? ' ' + cls : '');
+  }
+
+  async function loadAll() {
+    try {
+      const cl = await fetch(API.checklist).then(r => {
+        if (!r.ok) throw new Error('checklist ' + r.status);
+        return r.json();
+      });
+      // Feedback needs auth; tolerate 401 (page still renders, saving will warn).
+      try {
+        const fbRes = await fetch(API.feedback, { headers: authHeaders() });
+        if (fbRes.status === 401 || fbRes.status === 403) {
+          els.authwarn.style.display = 'block';
+        } else if (fbRes.ok) {
+          const data = await fbRes.json();
+          feedback = (data && data.items) || {};
+        }
+      } catch (_) { /* offline feedback — render anyway */ }
+      render(cl.sections || []);
+    } catch (err) {
+      els.loading.textContent = 'Could not load the checklist: ' + err.message;
+    }
+  }
+
+  function render(sections) {
+    els.loading.style.display = 'none';
+    els.sections.innerHTML = '';
+    allItems = [];
+    let totalItems = 0;
+
+    sections.forEach(sec => {
+      const s = document.createElement('section');
+      const head = document.createElement('div');
+      head.className = 'sec-head';
+      head.innerHTML =
+        '<h2></h2><span class="count"></span><div class="desc"></div>';
+      head.querySelector('h2').textContent = sec.h;
+      head.querySelector('.desc').textContent = sec.d || '';
+      s.appendChild(head);
+
+      const ul = document.createElement('ul');
+      ul.className = 'items';
+      (sec.items || []).forEach(it => {
+        totalItems++;
+        allItems.push(it);
+        ul.appendChild(renderItem(it, head, ul));
+      });
+      s.appendChild(ul);
+      els.sections.appendChild(s);
+      updateSectionCount(head, ul);
+    });
+
+    els.footer.textContent =
+      'Owl / Cellebrite QA — ' + totalItems + ' testable items across ' +
+      sections.length + ' areas. Status & notes save to the server as you type.';
+    updateProgress();
+  }
+
+  function renderItem(it, head, ul) {
+    const li = document.createElement('li');
+    li.className = 'item';
+    li.dataset.id = it.id;
+
+    const fb = feedback[it.id] || {};
+    const status = fb.status || '';
+    if (status) li.classList.add('st-' + status);
+
+    // Title + how
+    const title = document.createElement('div');
+    title.className = 'title';
+    title.textContent = it.t;
+    const how = document.createElement('div');
+    how.className = 'how';
+    how.textContent = it.how;
+
+    // Meta tags
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.appendChild(tag(it.tag === 'data' ? 'data verified' : 'needs your eyes', it.tag));
+    if (it.pr) meta.appendChild(tag(it.pr, 'pr'));
+    if (it.ticket) meta.appendChild(tag(it.ticket, 'ticket'));
+
+    li.appendChild(title);
+    li.appendChild(how);
+    li.appendChild(meta);
+
+    if (it.note) {
+      const n = document.createElement('div');
+      n.className = 'note';
+      n.textContent = '⚠ ' + it.note;
+      li.appendChild(n);
+    }
+
+    // Feedback row: status segmented control + notes
+    const row = document.createElement('div');
+    row.className = 'fb';
+
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    ['pass', 'fail', 'blocked'].forEach(st => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = st.charAt(0).toUpperCase() + st.slice(1);
+      b.className = (status === st ? 'on ' + st : '');
+      b.addEventListener('click', () => {
+        const next = (currentStatus(it.id) === st) ? '' : st; // toggle off if same
+        setStatus(li, seg, it.id, next);
+        save(it.id, { status: next }, head, ul);
+      });
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);
+
+    const ta = document.createElement('textarea');
+    ta.placeholder = 'Notes / what went wrong / repro steps…';
+    ta.value = fb.note || '';
+    if (ta.value) ta.classList.add('has');
+    let noteTimer = null;
+    ta.addEventListener('input', () => {
+      ta.classList.toggle('has', !!ta.value.trim());
+      clearTimeout(noteTimer);
+      setSaveState('typing…', '');
+      noteTimer = setTimeout(() => save(it.id, { note: ta.value }, head, ul), 650);
+    });
+    row.appendChild(ta);
+
+    li.appendChild(row);
+    return li;
+  }
+
+  function tag(text, cls) {
+    const s = document.createElement('span');
+    s.className = 'tag ' + cls;
+    s.textContent = text;
+    return s;
+  }
+
+  function currentStatus(id) {
+    return (feedback[id] && feedback[id].status) || '';
+  }
+  function setStatus(li, seg, id, status) {
+    feedback[id] = Object.assign({}, feedback[id], { status });
+    li.classList.remove('st-pass', 'st-fail', 'st-blocked');
+    if (status) li.classList.add('st-' + status);
+    [...seg.querySelectorAll('button')].forEach(b => {
+      const st = b.textContent.toLowerCase();
+      b.className = (status === st ? 'on ' + st : '');
+    });
+    updateProgress();
+    const head = li.closest('section').querySelector('.sec-head');
+    const ul = li.closest('ul');
+    updateSectionCount(head, ul);
+  }
+
+  async function save(id, patch, head, ul) {
+    // Keep local copy in sync immediately (note edits).
+    feedback[id] = Object.assign({}, feedback[id], patch);
+    if ('note' in patch) { /* status handled in setStatus */ }
+    setSaveState('saving…', '');
+    const body = Object.assign({ item_id: id, tester: els.tester.value.trim() || null }, patch);
+    try {
+      const res = await fetch(API.feedback, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401 || res.status === 403) {
+        els.authwarn.style.display = 'block';
+        setSaveState('not saved', 'err');
+        toast('Not signed in — feedback not saved', true);
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      setSaveState('saved ✓', 'ok');
+    } catch (err) {
+      setSaveState('save failed', 'err');
+      toast('Save failed: ' + err.message, true);
+    }
+  }
+
+  function updateSectionCount(head, ul) {
+    const lis = [...ul.querySelectorAll('li.item')];
+    const done = lis.filter(li => {
+      const st = currentStatus(li.dataset.id);
+      return st === 'pass' || st === 'fail' || st === 'blocked';
+    }).length;
+    head.querySelector('.count').textContent = done + '/' + lis.length;
+  }
+  function updateProgress() {
+    const total = allItems.length;
+    const done = allItems.filter(it => {
+      const st = currentStatus(it.id);
+      return st === 'pass' || st === 'fail' || st === 'blocked';
+    }).length;
+    els.fill.style.width = total ? (done / total * 100) + '%' : '0%';
+    els.plabel.textContent = done + ' of ' + total + ' reviewed';
+  }
+
+  loadAll();
+})();
+</script>
+</body>
+</html>
