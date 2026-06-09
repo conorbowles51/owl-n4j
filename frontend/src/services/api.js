@@ -2733,6 +2733,35 @@ export const cellebriteAPI = {
     return fetchAPI(`/cellebrite/cross-phone-graph/search?${params.toString()}`);
   },
 
+  /**
+   * Unified Search & Discovery across all phones + all data types (Epic 2A).
+   * Returns results grouped by type:
+   *   { query, groups: [{ type, label, total, items: [...] }] }
+   * Types: person, message, location, resource, file.
+   * @param {string} caseId - REQUIRED
+   * @param {string} q - the search phrase
+   * @param {Object} opts - { reportKeys?: string[], types?: string[],
+   *                          limitPerType?: number, signal?: AbortSignal }
+   */
+  discoverySearch: (caseId, q, opts = {}) => {
+    const params = new URLSearchParams();
+    params.set('case_id', caseId);
+    params.set('q', q);
+    if (Array.isArray(opts.reportKeys) && opts.reportKeys.length > 0) {
+      params.set('report_keys', opts.reportKeys.join(','));
+    }
+    if (Array.isArray(opts.types) && opts.types.length > 0) {
+      params.set('types', opts.types.join(','));
+    }
+    if (opts.limitPerType && Number.isFinite(opts.limitPerType)) {
+      params.set('limit_per_type', String(opts.limitPerType));
+    }
+    return fetchAPI(
+      `/cellebrite/discovery/search?${params.toString()}`,
+      opts.signal ? { signal: opts.signal } : {},
+    );
+  },
+
   getCrossPhoneGraph: (caseId, opts = {}) => {
     // Backwards-compatible: callers passing only caseId get the legacy
     // shape. The new optional params power the perspective rebuild and
