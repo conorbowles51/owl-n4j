@@ -2,17 +2,22 @@
 Testing feedback storage — JSON file on disk.
 
 Backs the QA testing hub: testers leave a status (pass/fail/blocked) and a
-note per checklist item, keyed by the stable item id. Stored centrally so
-devs can read everyone's feedback in one place (no per-browser export needed).
+note per checklist item. Stored centrally so devs read everyone's feedback in
+one place (no per-browser export needed).
+
+Feedback is keyed by **item id → tester** so each tester's own status/note is
+preserved and attributable (two testers don't overwrite each other).
 
 Shape on disk (data/testing-feedback.json):
     {
       "items": {
         "<item_id>": {
-          "status": "pass" | "fail" | "blocked" | "",
-          "note": "...",
-          "tester": "Neil",
-          "updated_at": "2026-06-09T12:00:00Z"
+          "<tester_name>": {
+            "status": "pass" | "fail" | "blocked" | "",
+            "note": "...",
+            "updated_at": "2026-06-09T12:00:00Z"
+          },
+          ...
         },
         ...
       }
@@ -54,7 +59,7 @@ def _load() -> Dict[str, Any]:
 
 
 def get_all() -> Dict[str, Any]:
-    """Return all feedback ({"items": {item_id: {...}}})."""
+    """Return all feedback ({"items": {item_id: {tester: {...}}}})."""
     return _load()
 
 
@@ -64,28 +69,33 @@ def upsert_feedback(
     note: Optional[str] = None,
     tester: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create or update one item's feedback. Returns the stored record.
+    """Create or update one (item, tester) feedback record. Returns it.
 
     Only the provided fields are changed; omitted fields keep their prior
-    value. `status` is validated against VALID_STATUSES (an unknown value
-    is coerced to "").
+    value. `status` is validated (unknown coerced to ""). `tester` is required
+    so feedback is always attributable.
     """
     if not item_id:
         raise ValueError("item_id is required")
+    who = (tester or "").strip() or "unknown"
 
     data = _load()
     items = data["items"]
-    rec = items.get(item_id, {}) if isinstance(items.get(item_id), dict) else {}
+    by_tester = items.get(item_id)
+    if not isinstance(by_tester, dict):
+        by_tester = {}
+    rec = by_tester.get(who)
+    if not isinstance(rec, dict):
+        rec = {}
 
     if status is not None:
         rec["status"] = status if status in VALID_STATUSES else ""
     if note is not None:
         rec["note"] = str(note)[:5000]
-    if tester is not None:
-        rec["tester"] = str(tester)[:120]
     rec["updated_at"] = utcnow_iso()
 
-    items[item_id] = rec
+    by_tester[who] = rec
+    items[item_id] = by_tester
     data["items"] = items
     save_json_atomic(STORAGE_FILE, data)
     return rec
