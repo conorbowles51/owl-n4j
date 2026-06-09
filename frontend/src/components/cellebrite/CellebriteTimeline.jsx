@@ -961,6 +961,17 @@ function TimelineRow({ ev, reports, onClick, showPhoneChip = false, highlights =
                 : ev.source_app}
             </span>
           )}
+          {Array.isArray(ev.also_in_sources) && ev.also_in_sources.length > 0 && (
+            // #77 provenance: this message was extracted from multiple device
+            // sources and collapsed to one row; show the extra sources so the
+            // de-dup is transparent rather than hidden.
+            <span
+              className="text-[10px] text-light-400 italic"
+              title={`Also extracted from: ${ev.also_in_sources.join(', ')}`}
+            >
+              · +{ev.also_in_sources.length} source{ev.also_in_sources.length === 1 ? '' : 's'}
+            </span>
+          )}
           {ev.direction && (
             <span className="text-[10px] text-light-500">· {ev.direction}</span>
           )}
