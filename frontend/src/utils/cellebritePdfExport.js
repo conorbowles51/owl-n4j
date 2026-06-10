@@ -174,11 +174,22 @@ export async function exportCellebriteReportToPDF(caseName, optsOrDevices = {}, 
   };
 
   const addLine = (text, indent = 5, fontSize = 10) => {
-    checkPageBreak(7);
     doc.setFontSize(fontSize);
     doc.setTextColor(0, 0, 0);
-    doc.text(text, margin + indent, yPosition);
-    yPosition += 6;
+    // Wrap to the page width so long values (owner names, the counts line,
+    // examiner, etc.) don't run off the right edge and get clipped. jsPDF's
+    // doc.text() does NOT wrap on its own — without splitTextToSize a long
+    // single line is simply drawn past the margin and lost ("cut off").
+    const x = margin + indent;
+    const maxWidth = contentWidth - indent;
+    const lines = doc.splitTextToSize(String(text), maxWidth);
+    // Page-break per line so a multi-line value that crosses the page edge
+    // continues on the next page instead of vanishing past the bottom.
+    for (const line of lines) {
+      checkPageBreak(7);
+      doc.text(line, x, yPosition);
+      yPosition += 6;
+    }
   };
 
   // ---- Cover page with Owl branding (mirrors theoryPdfExport) ----
@@ -208,8 +219,10 @@ export async function exportCellebriteReportToPDF(caseName, optsOrDevices = {}, 
   doc.setFontSize(20);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(...OWL_COLORS.blue[800]);
-  doc.text(caseName || 'Cellebrite Report', margin, yPosition);
-  yPosition += 12;
+  // Wrap the title so a long case name doesn't run off the page edge.
+  const titleLines = doc.splitTextToSize(String(caseName || 'Cellebrite Report'), contentWidth);
+  doc.text(titleLines, margin, yPosition);
+  yPosition += 12 + (titleLines.length - 1) * 9;
 
   // Metadata badges
   doc.setFontSize(11);
