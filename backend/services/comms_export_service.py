@@ -192,18 +192,18 @@ def generate_comms_pdf(
     generated_at: Optional[str] = None,
     thumbnails: Optional[Dict[str, str]] = None,
 ) -> str:
-    """Return a self-contained HTML document for the filtered comms.
+    """Return a self-contained HTML document for the filtered comms — the WHOLE
+    filtered conversation, never truncated.
 
     thumbnails: optional {evidence_id: data-URI} map; when given, image
     attachments render as embedded thumbnails."""
-    truncated = len(items) > MAX_ITEMS
-    shown = items[:MAX_ITEMS]
+    shown = items  # render everything — no item cap
 
     counts: Dict[str, int] = {}
     for it in items:
         counts[it.get("type", "?")] = counts.get(it.get("type", "?"), 0) + 1
 
-    people = ", ".join(_esc(p.get("name") or p.get("key")) for p in (participants or [])) or "all participants"
+    people = ", ".join(_esc(_party(p)) for p in (participants or [])) or "all participants"
     date_range = ""
     if start_date or end_date:
         date_range = f"{_esc(start_date or '…')} → {_esc(end_date or '…')}"
@@ -225,11 +225,6 @@ def generate_comms_pdf(
     )
     head.append(f"<div><b>Mode:</b> {_esc(mode)}</div>")
     head.append("</div>")
-    if truncated:
-        head.append(
-            f"<div class='trunc'>Showing the first {MAX_ITEMS:,} of {len(items):,} "
-            "communications — narrow the date range or participants for the rest.</div>"
-        )
 
     body_parts: List[str] = []
     if mode == "conversation":
@@ -277,8 +272,8 @@ def generate_comms_pdf(
         "attachments shown as labels (enable 'with media' to embed image thumbnails)"
     )
     foot = (
-        f"<div class='foot'>Generated {_esc(generated_at or '')} · {len(shown):,} of {len(items):,} "
-        f"communications rendered · {media_note} · "
+        f"<div class='foot'>Generated {_esc(generated_at or '')} · {len(shown):,} "
+        f"communications (complete conversation) · {media_note} · "
         "Confidential — attorney work product.</div>"
     )
 

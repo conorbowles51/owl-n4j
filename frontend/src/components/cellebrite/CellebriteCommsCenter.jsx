@@ -719,15 +719,12 @@ export default function CellebriteCommsCenter({ caseId, reports: reportsProp = [
         hasAttachment: hasAttachmentOnly,
         expandIdentities: linkIdentities,
         sort: 'asc',     // chronological reads best when pasted
-        limit: 2000,
+        limit: 10000000, // whole conversation — no cap
       });
       const items = data?.items || [];
       if (items.length === 0) { setCopyState('Nothing to copy'); }
       else {
-        let text = asTable ? commsToTSV(items) : commsToTranscript(items);
-        if (typeof data.total === 'number' && data.total > items.length) {
-          text += `\n\n(showing the first ${items.length.toLocaleString()} of ${data.total.toLocaleString()} — narrow the date range or participants to copy the rest)`;
-        }
+        const text = asTable ? commsToTSV(items) : commsToTranscript(items);
         await copyToClipboard(text);
         setCopyState(`Copied ${items.length.toLocaleString()}`);
       }

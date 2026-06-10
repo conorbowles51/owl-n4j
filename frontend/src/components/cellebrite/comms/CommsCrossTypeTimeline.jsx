@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Loader2, Phone, MessageSquare, Mail, Activity, ArrowDownWideNarrow, ArrowUpWideNarrow, Layers, List, LayoutPanelTop, LayoutPanelLeft, Paperclip } from 'lucide-react';
 import { cellebriteCommsAPI } from '../../../services/api';
-import { formatShortTime, previewBody, appIconEmoji } from './commsUtils';
+import { formatShortTime, previewBody, appIconEmoji, attachmentKind, attachmentUrl, videoThumbUrl } from './commsUtils';
 import PhoneIdentityChip from '../shared/PhoneIdentityChip';
 import AttachmentFilterToggle from '../shared/AttachmentFilterToggle';
 import { useCellebriteTime } from '../shared/CellebriteTimezone';
@@ -15,7 +15,7 @@ import CommsCrossTypeSwimLane from './CommsCrossTypeSwimLane';
 // glance; sender→recipient sits on its own line so it's never truncated
 // out by a long body. Height bumped so the windowed renderer math
 // stays accurate.
-const ROW_HEIGHT = 46;
+const ROW_HEIGHT = 58;  // taller so image/video thumbnails fit inline
 
 /**
  * Bottom panel showing a chronological cross-type feed of all comms matching
@@ -525,6 +525,17 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
     : item.type === 'email' ? 'email'
     : 'message';
 
+  // Attachments → inline image/video thumbnails (the rest, e.g. voice notes,
+  // get a small paperclip count). Capped at 4 thumbs per row for layout.
+  const atts = Array.isArray(item.attachments) ? item.attachments.filter((a) => a && !a.missing) : [];
+  const imageAtts = atts.filter((a) => {
+    const k = attachmentKind(a);
+    return k === 'image' || k === 'video';
+  });
+  const imgThumbs = imageAtts.slice(0, 4);
+  const imgAttCount = imageAtts.length;
+  const otherAttCount = atts.length - imageAtts.length;
+
   // Two-line layout. Phone chip on the FAR LEFT (user feedback: easier
   // to scan device column). Sender → recipient lives on line 2 so a
   // long body never elbows it off-screen.
@@ -565,20 +576,47 @@ function TimelineRow({ item, onClick, showPhoneChip = false }) {
         <span className="text-xs flex-shrink-0" title={item.source_app}>
           {appIconEmoji(item.source_app || item.type)}
         </span>
-        {Array.isArray(item.attachments) && item.attachments.length > 0 && (
-          // Inline indicator only — this is a fixed-height windowed row (and a
-          // <button>, so no nested interactive media). Clicking the row opens
-          // the detail flyout, which renders the full media.
-          <span
-            className="flex-shrink-0 inline-flex items-center gap-0.5 text-[10px] text-light-500"
-            title={`${item.attachments.length} attachment${item.attachments.length > 1 ? 's' : ''}`}
-          >
-            <Paperclip className="w-3 h-3" /> {item.attachments.length}
-          </span>
-        )}
         <span className="flex-1 text-xs text-light-700 truncate">
           {previewBody(body, 120) || <span className="italic text-light-400">(no preview)</span>}
         </span>
+        {/* Inline image/video thumbnails (lazy + only visible rows load).
+            Click the row to open the full media in the detail flyout. */}
+        {imgThumbs.length > 0 && (
+          <span className="flex items-center gap-1 flex-shrink-0">
+            {imgThumbs.map((a, i) => {
+              const k = attachmentKind(a);
+              const src = k === 'video' ? videoThumbUrl(a) : attachmentUrl(a);
+              if (!src) return null;
+              return (
+                <span key={a.evidence_id || i} className="relative inline-flex">
+                  <img
+                    src={src}
+                    alt={a.original_filename || ''}
+                    loading="lazy"
+                    decoding="async"
+                    width="40"
+                    height="40"
+                    className="w-10 h-10 rounded object-cover border border-light-200 bg-light-100"
+                  />
+                  {k === 'video' && (
+                    <span className="absolute inset-0 flex items-center justify-center text-white text-[11px] drop-shadow">▶</span>
+                  )}
+                </span>
+              );
+            })}
+            {imgAttCount > imgThumbs.length && (
+              <span className="text-[10px] text-light-500">+{imgAttCount - imgThumbs.length}</span>
+            )}
+          </span>
+        )}
+        {otherAttCount > 0 && (
+          <span
+            className="flex-shrink-0 inline-flex items-center gap-0.5 text-[10px] text-light-500"
+            title={`${otherAttCount} other attachment${otherAttCount > 1 ? 's' : ''} (e.g. voice note) — open the row to view`}
+          >
+            <Paperclip className="w-3 h-3" /> {otherAttCount}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-1 min-w-0 pl-[18px]">
         <span className="text-[10px] text-light-500 truncate" title={`${from} → ${to}${extraTo} (${typeLabel})`}>

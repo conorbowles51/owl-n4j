@@ -557,7 +557,7 @@ def _resolve_attachments(case_id: str, items: List[dict]) -> None:
         it["attachments"] = atts
 
 
-def _build_comms_thumbnails(items: List[dict], max_px: int = 130, max_thumbs: int = 600) -> dict:
+def _build_comms_thumbnails(items: List[dict], max_px: int = 130, max_thumbs: int = 100000) -> dict:
     """{evidence_id: base64 JPEG data-URI} for image attachments in the comms
     items — read off disk and downscaled. Capped to bound PDF size/time;
     unreadable/non-image files are skipped."""
@@ -739,7 +739,8 @@ def get_comms_between(
     source_apps: Optional[str] = Query(None, description="Comma-separated source app names"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    limit: int = Query(500, ge=1, le=2000),
+    limit: int = Query(500, ge=1, le=10_000_000,
+                       description="High ceiling so 'Copy whole conversation' can pull everything."),
     offset: int = Query(0, ge=0),
     sort: str = Query("desc", regex="^(asc|desc)$",
                       description="Order: 'desc' (newest first) or 'asc' (oldest first)"),
@@ -821,7 +822,7 @@ def export_comms_pdf(
         source_apps=_csv_param(source_apps),
         start_date=start_date,
         end_date=end_date,
-        limit=comms_export_service.MAX_ITEMS,
+        limit=10_000_000,   # whole conversation — no cap
         offset=0,
         sort="asc",  # chronological reads best in a report
         expand_identities=expand_identities,
