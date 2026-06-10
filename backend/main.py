@@ -170,6 +170,19 @@ app.include_router(docket_router)
 app.include_router(case_entities_router, prefix="/api/case-profiles")
 app.include_router(case_entities_router, prefix="/api/entities")
 
+# Docket standalone UI (built React app) served at /docket. The bundle is
+# produced by `npm run build` in docket/ during deploy; mount only if present so
+# the backend still boots in environments where the UI hasn't been built.
+from pathlib import Path as _Path  # noqa: E402
+from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
+
+_DOCKET_DIST = _Path(__file__).resolve().parent.parent / "docket" / "dist"
+if _DOCKET_DIST.is_dir():
+    app.mount("/docket", _StaticFiles(directory=str(_DOCKET_DIST), html=True), name="docket")
+    print(f"[Docket] UI mounted at /docket from {_DOCKET_DIST}")
+else:
+    print("[Docket] UI bundle not found at docket/dist — run `npm run build` in docket/ to enable /docket")
+
 
 @app.get("/")
 async def root():

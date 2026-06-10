@@ -20,18 +20,23 @@
 ## ▶ STATUS / NEXT  (keep this block fresh — resume point for "Continue Docket")
 
 - **Phase:** Phase 1 (Rails) — IN PROGRESS, on branch `feat/docket` (off `main`).
-- **Last completed:** Backend complete + tested.
-  (1) Store/state-machine `backend/services/docket_storage.py` (tickets/ticket_events/
-  notifications; legal-transition enforcement; priority+FIFO queue; activity ticker).
-  (2) API `backend/routers/docket.py` → `/api/tickets/*` (meta, testers, list, queue,
-  board, create, get-detail, patch, submit, transition, comment), registered in
-  `routers/__init__.py` + `main.py`. (3) Auth extended in `services/testing_auth.py`:
-  added `arturo` + an `_EMAILS` map (neil filled, others TODO) + `tester_email()` /
-  `all_testers()` helpers. Verified via FastAPI TestClient: 401 gate, token attribution,
-  submit→queued, illegal-move 400, comments, timeline, board, testers list.
-- **Next action:** Scaffold the **standalone React app** (Vite) — app shell + the
-  production-line **board** that reads `/api/tickets/board`, reusing the tester login.
-  Decide where it builds to / how the backend serves its static bundle.
+- **Last completed:** Backend + standalone UI scaffolded & verified.
+  - Backend: store/state-machine `backend/services/docket_storage.py`; API
+    `backend/routers/docket.py` → `/api/tickets/*`; auth (`testing_auth.py`: arturo +
+    `_EMAILS` + helpers). Verified via TestClient.
+  - UI: standalone **Vite+React+Tailwind** app in `docket/` (React 18 / Vite 5, mirrors
+    the main frontend). Login (reuses tester JWT), production-line **Board** (columns =
+    lifecycle; live activity ticker, queue position, priority chips, mini progress bar,
+    polls `/api/tickets/board` every 4s), **TicketDetail** drawer (timeline polls every
+    3s, lifecycle action buttons from the state machine, comments), **NewTicketModal**
+    (acceptance-criteria is a first-class field). Build is clean; backend serves it at
+    **`/docket`** via a guarded StaticFiles mount in `main.py` (verified serving).
+  - Dev: `cd docket && npm run dev` (port 5175, proxies /api → :8000).
+- **Next action:** (a) live browser smoke test against a running backend; (b) the
+  **amend-on-fail** UX for resubmit (edit desc/test-instructions when bouncing from
+  User Review); (c) migrate the **old hub** (checklist + feedback + discussion) in and
+  retire `backend/static/testing-hub.html`; (d) deploy wiring (build step + nginx
+  `/docket` route) — see Deploy notes below.
 - **Blocked on:** Nothing for Phases 1–early-2. SMTP credential pending for the email
   channel only (Neil is setting up a send-from address + app password later).
 - **Provisional (confirm):** priority scheme = P0–P3 (P0 highest) — used in the store now.
@@ -114,9 +119,10 @@ Discussion → [Submit for Processing] →
   - [x] SQLite ticket store + lifecycle state machine (`backend/services/docket_storage.py`)
   - [x] API surface (`backend/routers/docket.py` → `/api/tickets/*`) + register in main.py
   - [x] Auth: add `arturo` + per-tester email + helpers (`services/testing_auth.py`)
-  - [ ] Standalone React app shell + production-line board
-  - [ ] Submit-for-processing / resubmit-with-amendment flows
+  - [x] Standalone React app shell + production-line board (`docket/`, served at /docket)
+  - [~] Submit/resubmit flows — submit + fail→requeue work; amend-on-fail UX still TODO
   - [ ] Migrate old hub (checklist + feedback + discussion) in, retire vanilla-JS page
+  - [ ] Deploy wiring: build `docket/dist` in deploy.sh + nginx route for /docket
 - [ ] **Phase 2 — Plumbing:** worktree-per-ticket + per-phase agent + `gh` PR + live
   progress/heartbeat + msmtp notifications.
 - [ ] **Phase 3 — Turn autonomy on** behind a flag, ticket-by-ticket with caps; open the
@@ -125,6 +131,15 @@ Discussion → [Submit for Processing] →
   effort dashboards.
 
 ---
+
+## Deploy notes (TODO — not yet wired)
+- **Build step:** deploy must run `cd docket && npm ci && npm run build` to produce
+  `docket/dist`, which `backend/main.py` mounts at `/docket` (the mount is skipped if the
+  bundle is absent, so the backend still boots without it).
+- **Reverse proxy:** the prod nginx must route `/docket` (and `/docket/assets/...`) to the
+  backend (same target as `/api`). Until then, reach it only via the backend origin
+  directly (e.g. `:8000/docket`).
+- **DB:** `data/docket.db` is created automatically on first import; it's gitignored.
 
 ## Decision log
 - 2026-06-10 — Name = **Docket**. Standalone React app, subsumes old hub. SQLite store.
