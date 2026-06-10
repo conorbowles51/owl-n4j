@@ -32,7 +32,14 @@
     (acceptance-criteria is a first-class field). Build is clean; backend serves it at
     **`/docket`** via a guarded StaticFiles mount in `main.py` (verified serving).
   - Dev: `cd docket && npm run dev` (port 5175, proxies /api → :8000).
-- **Next action:** (a) live browser smoke test against a running backend; (b) the
+- **Live verification (done):** ran the updated backend on `127.0.0.1:8011` (Neo4j
+  connected); drove the full flow over HTTP — `/docket` serves the bundle, login,
+  create, submit→queued(#1), transition, comment, illegal-move 400, board grouping.
+  Seeded 8 demo tickets spread across every lane (some with live activity tickers).
+  NOTE: no browser-driver tooling here, so the pixel render wasn't automated — view via
+  SSH tunnel to :8011 `/docket` (testers: alex/neil/conor/arturo, pw `testing`). The
+  `:8011` server + `data/docket.db` demo data are EPHEMERAL test artifacts.
+- **Next action:** (a) [done — see Live verification] ; (b) the
   **amend-on-fail** UX for resubmit (edit desc/test-instructions when bouncing from
   User Review); (c) migrate the **old hub** (checklist + feedback + discussion) in and
   retire `backend/static/testing-hub.html`; (d) deploy wiring (build step + nginx
