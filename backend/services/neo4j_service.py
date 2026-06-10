@@ -34,6 +34,13 @@ def parse_json_field(value: Optional[str]) -> Optional[List]:
         return None
 
 
+# Sentinel for the implicit device owner on a one-sided call-log row (a
+# PhoneCall with only a CALLED or only a CALLED_TO Person edge). Used so a
+# from/to filter naming a contact can never accidentally match the owner side.
+# A NUL char guarantees it equals no real person key.
+_OWNER_SENTINEL = "\x00owner"
+
+
 def _normalize_date_bound(value: Optional[str]) -> Optional[str]:
     """
     Normalize a date-bound parameter coming from the API to a clean
@@ -9827,29 +9834,56 @@ class Neo4jService:
 
             if "call" in active_types:
                 call_cursor_clause = _cursor_clause("call", "c.timestamp", "c.id")
+                # A Cellebrite call-log row carries ONE Person edge — the
+                # counterparty — plus a direction; the device owner is implicit
+                # (no Person node on the other side). The old strict
+                # src-CALLED->c-CALLED_TO->dst join required BOTH endpoints to be
+                # Persons, so it dropped almost every call (Alex: "Comms Center
+                # only shows 1 call") while the Timeline (direct PhoneCall match)
+                # showed them all. Match the call directly, OPTIONAL-resolve each
+                # side, require at least one party, and filter on whichever party
+                # is present. `_OWNER` is a sentinel that no real key equals so a
+                # from/to filter naming a contact never accidentally matches the
+                # implicit owner side.
+                from_call = " AND caller_key IN $from_keys" if from_keys else ""
+                to_call = " AND callee_key IN $to_keys" if to_keys else ""
+                inv_call = (
+                    " AND ((src IS NOT NULL AND src.key IN $participant_keys)"
+                    " OR (dst IS NOT NULL AND dst.key IN $participant_keys))"
+                ) if participant_keys else ""
                 query = f"""
-                    MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
+                    MATCH (c:PhoneCall)
                     WHERE c.case_id = $case_id
-                      AND (
-                          (size($from_keys) = 0 OR src.key IN $from_keys)
-                          AND (size($to_keys) = 0 OR dst.key IN $to_keys)
-                      )
-                      AND (
-                          size($participant_keys) = 0
-                          OR src.key IN $participant_keys
-                          OR dst.key IN $participant_keys
-                      )
                       {rk_filter_call} {app_filter_call} {date_filter_call}{att_filter_call}
                       {call_cursor_clause}
+                    OPTIONAL MATCH (src:Person)-[:CALLED]->(c)
+                    OPTIONAL MATCH (c)-[:CALLED_TO]->(dst:Person)
+                    WITH c, src, dst,
+                         coalesce(src.key, $owner_sentinel) AS caller_key,
+                         coalesce(dst.key, $owner_sentinel) AS callee_key
+                    WHERE (src IS NOT NULL OR dst IS NOT NULL)
+                      {from_call} {to_call} {inv_call}
                     RETURN c, src, dst
                     ORDER BY c.timestamp {sort_dir}
                     LIMIT $limit
                 """
-                result = tx.run(query, {**params, "limit": per_type_budget})
+                result = tx.run(query, {**params, "limit": per_type_budget, "owner_sentinel": _OWNER_SENTINEL})
+                owner_party = {"key": None, "name": "Owner", "is_owner": True}
                 for r in result:
                     c = dict(r["c"])
                     src = dict(r["src"]) if r["src"] else None
                     dst = dict(r["dst"]) if r["dst"] else None
+                    # caller -> callee. A missing side = the implicit device owner.
+                    sender = {
+                        "key": src.get("key"),
+                        "name": src.get("name") or src.get("key"),
+                        "is_owner": bool(src.get("is_phone_owner")),
+                    } if src else dict(owner_party)
+                    recipient = {
+                        "key": dst.get("key"),
+                        "name": dst.get("name") or dst.get("key"),
+                        "is_owner": bool(dst.get("is_phone_owner")),
+                    } if dst else dict(owner_party)
                     items.append({
                         "id": c.get("id"),
                         "type": "call",
@@ -9862,14 +9896,8 @@ class Neo4jService:
                         "attachment_file_ids": list(c.get("attachment_file_ids") or []),
                         "thread_id": None,
                         "thread_type": "calls",
-                        "sender": {
-                            "key": src.get("key"),
-                            "name": src.get("name") or src.get("key"),
-                            "is_owner": bool(src.get("is_phone_owner")),
-                        } if src else None,
-                        "recipients": [
-                            {"key": dst.get("key"), "name": dst.get("name") or dst.get("key")}
-                        ] if dst else [],
+                        "sender": sender,
+                        "recipients": [recipient],
                         "report_key": c.get("cellebrite_report_key"),
                     })
 
@@ -10146,17 +10174,33 @@ class Neo4jService:
                         max_date = d
 
             if "call" in active_types:
+                # Match PhoneCall directly + fill the implicit owner side — same
+                # model as get_cellebrite_comms_between, so the scrubber/tab count
+                # matches the body (a call log row carries one Person edge, not
+                # two; the strict join undercounted to ~0 for most contacts).
+                from_call_e = " AND caller_key IN $from_keys" if from_keys else ""
+                to_call_e = " AND callee_key IN $to_keys" if to_keys else ""
+                inv_call_e = (
+                    " AND ((src IS NOT NULL AND src.key IN $participant_keys)"
+                    " OR (dst IS NOT NULL AND dst.key IN $participant_keys))"
+                ) if participant_keys else ""
                 cypher = f"""
-                    MATCH (src:Person)-[:CALLED]->(c:PhoneCall)-[:CALLED_TO]->(dst:Person)
+                    MATCH (c:PhoneCall)
                     WHERE c.case_id = $case_id
                       AND c.source_type = 'cellebrite'
                       AND coalesce(c.date, c.timestamp, '') <> ''
-                      {rk_filter_call}{from_filter_call}{to_filter_call}{inv_filter_call}
-                      {app_filter_call}{date_filter_call}{att_filter_call}
+                      {rk_filter_call}{app_filter_call}{date_filter_call}{att_filter_call}
+                    OPTIONAL MATCH (src:Person)-[:CALLED]->(c)
+                    OPTIONAL MATCH (c)-[:CALLED_TO]->(dst:Person)
+                    WITH c, src, dst,
+                         coalesce(src.key, $owner_sentinel) AS caller_key,
+                         coalesce(dst.key, $owner_sentinel) AS callee_key
+                    WHERE (src IS NOT NULL OR dst IS NOT NULL)
+                      {from_call_e}{to_call_e}{inv_call_e}
                     WITH coalesce(c.date, substring(c.timestamp, 0, 10)) AS d, c
                     RETURN d, count(DISTINCT c) AS cnt
                 """
-                rs = session.run(cypher, **params)
+                rs = session.run(cypher, **{**params, "owner_sentinel": _OWNER_SENTINEL})
                 for r in rs:
                     d = r["d"]
                     cnt = r["cnt"]
