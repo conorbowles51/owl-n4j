@@ -273,7 +273,7 @@ CHECKLIST = [
             {"id": "disc-address-search", "t": "Finds a place by its address (the \u201cPiney Bench Road\u201d ask)",
              "how": "Search an address that lives on a location's attributes (not its name). It surfaces under Locations. Diacritics fold too (e.g. \u201cdia\u201d matches \u201cD\u00eda\u201d).",
              "tag": "data", "pr": "S&D rebuild", "ticket": "S2-04",
-             "note": "Stylised-unicode names (e.g. \ud835\udcda\ud835\udcea\ud835\udcfd\ud835\udcf1\ud835\udcf2\ud83c\udfad) are NOT yet matched by plain text \u2014 tracked as a separate bug (user-bug-2)."},
+             "note": "Stylised-unicode names (e.g. a fancy-font/emoji name) are NOT yet matched by plain text \u2014 tracked as a separate bug (user-bug-2)."},
         ],
     },
     {
@@ -300,7 +300,7 @@ CHECKLIST = [
              "tag": "data", "pr": "fixes r2", "ticket": "user-bug-1",
              "note": "Phase 1: device-lens names. The optional 'universal label alongside the device name' idea is a separate follow-up."},
             {"id": "fix-unicode-search", "t": "Stylised-unicode names are searchable by plain text",
-             "how": "In the Comms/Contacts/Timeline search boxes, search a plain word (e.g. 'kathia') for a contact saved with fancy letters/emoji (e.g. 𝓚𝓪𝓽𝓱𝓲𝓪🎭). It should now match. Accents fold too (Día ↔ dia).",
+             "how": "In the Comms/Contacts/Timeline search boxes, search a plain word (e.g. 'kathia') for a contact saved with fancy letters/emoji (e.g. a fancy-font/emoji name). It should now match. Accents fold too (Día ↔ dia).",
              "tag": "data", "pr": "fixes r2", "ticket": "user-bug-2",
              "note": "Fixed for client-side filters. Backend Search & Discovery against stylised STORED names is a follow-up (needs a normalised index)."},
             {"id": "fix-comms-timeline-window", "t": "Comms Timeline flyover fills its window (no white gap)",
