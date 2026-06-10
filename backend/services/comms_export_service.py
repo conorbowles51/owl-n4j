@@ -154,20 +154,15 @@ h1 { font-size: 18px; margin: 0 0 2px; color: #15324a; }
         padding: 8px 12px; margin: 0 0 14px; }
 .meta b { color: #15324a; }
 .counts span { display: inline-block; margin-right: 14px; }
-/* table-layout: fixed is ESSENTIAL — without it a long "From → To" list (or any
-   nowrap cell) makes the column expand past its width and pushes the whole table
-   off the right edge of the page, clipping the Content column entirely. Fixed
-   layout pins each column to its width and the rest wraps inside the page box. */
-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-th { text-align: left; background: #15324a; color: #fff; padding: 5px 7px;
-     font-size: 10px; font-weight: 600; }
-td { padding: 5px 7px; border-bottom: 1px solid #eef2f7; vertical-align: top;
-     overflow-wrap: anywhere; word-break: break-word; }
-tr:nth-child(even) td { background: #fafcff; }
-.tcol { white-space: nowrap; color: #5b6b7b; width: 88px; }
-.kcol { white-space: nowrap; width: 52px; text-transform: capitalize; color: #6b21a8; }
-/* participant lists wrap now (no nowrap) so multi-recipient rows stay on-page. */
-.pcol { width: 150px; color: #36506a; }
+/* Timeline mode = stacked full-width records (no column table). Each record uses
+   the whole page width so contacts and the message both wrap freely on A4. */
+.rec { margin: 0 0 7px; padding: 5px 9px; border: 1px solid #e6edf4;
+       border-left: 3px solid #15324a; border-radius: 5px; break-inside: avoid; }
+.rh { font-size: 10px; color: #5b6b7b; margin-bottom: 3px;
+      overflow-wrap: anywhere; word-break: break-word; }
+.rh .t { color: #5b6b7b; }
+.rh .k { color: #6b21a8; text-transform: capitalize; font-weight: 600; margin: 0 6px; }
+.rh .ppl { color: #36506a; }
 /* pre-wrap: keep the message's own line breaks AND wrap long lines so a
    multi-line message reads the way it was sent, not as one run-on paragraph. */
 .body { overflow-wrap: anywhere; word-break: break-word; white-space: pre-wrap; }
@@ -258,19 +253,24 @@ def generate_comms_pdf(
                 )
             body_parts.append("</div>")
     else:
-        body_parts.append(
-            "<table><thead><tr><th>Time</th><th>Type</th><th>From → To</th><th>Content</th></tr></thead><tbody>"
-        )
+        # Stacked blocks (NOT a column table). A column table cramped the message
+        # into a sliver while a multi-recipient "From → To" ate the width — so the
+        # body was unreadable. Here each record gets the FULL A4 width: a metadata
+        # line (time · type · sender → recipients, wrapping) then the message body
+        # on its own line(s), wrapping. Everything is visible regardless of how
+        # many participants a row has.
         for it in shown:
+            who = _party(it.get("sender"))
+            owner = " owner" if (it.get("sender") or {}).get("is_owner") else ""
             body_parts.append(
-                "<tr>"
-                f"<td class='tcol'>{_esc(_fmt_ts(it.get('timestamp')))}</td>"
-                f"<td class='kcol'>{_esc(it.get('type'))}</td>"
-                f"<td class='pcol'>{_esc(_party(it.get('sender')))} → {_esc(_recipients(it))}</td>"
-                f"<td class='body'>{_content(it)}{_thumbs_html(it, thumbnails)}</td>"
-                "</tr>"
+                "<div class='rec'>"
+                f"<div class='rh'><span class='t'>{_esc(_fmt_ts(it.get('timestamp')))}</span>"
+                f"<span class='k'>{_esc(it.get('type'))}</span>"
+                f"<span class='ppl'><span class='{owner.strip()}'>{_esc(who)}</span>"
+                f" &rarr; {_esc(_recipients(it))}</span></div>"
+                f"<div class='body'>{_content(it)}{_thumbs_html(it, thumbnails)}</div>"
+                "</div>"
             )
-        body_parts.append("</tbody></table>")
 
     media_note = (
         "image thumbnails embedded; audio/video shown as labels"
